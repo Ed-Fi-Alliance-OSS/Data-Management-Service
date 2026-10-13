@@ -613,7 +613,7 @@ removes them from the environment; see
 # files avoids.
 #
 # Acquiring the bytes does not enable them. Nothing here writes Plugins:Allowed; the allowlist is
-# a separate deployment-owned setting on the config service. See eng/docker-compose/README.md,
+# a separate deployment-owned setting on the Configuration Service. See eng/docker-compose/README.md,
 # "Loading plugins into the Configuration Service".
 services:
   config:

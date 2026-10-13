@@ -128,12 +128,12 @@ pwsh ../provision/setup-env.ps1 -PublicHost <FQDN> -LetsEncryptEmail you@org.tld
 ```
 
 Generates `.env` (secrets, locked to `0600`), obtains the TLS cert, starts PostgreSQL + Keycloak +
-both Config Services + gateway, and runs `bootstrap.ps1` (Keycloak realm/clients, tenants, CMS
+both Configuration Services + gateway, and runs `bootstrap.ps1` (Keycloak realm/clients, tenants, the Configuration Service
 data stores, and 15 review apps: one full-access `EdFiSandbox` app plus the four claim-set
 variants per deployment). **Record the API key/secret pairs it prints** into your private vault.
 It deliberately does **not** start the DMS.
 
-> Don't use `localhost` as the FQDN — CMS calls the public host from inside its container. A
+> Don't use `localhost` as the FQDN — the Configuration Service calls the public host from inside its container. A
 > real FQDN (Let's Encrypt) is the tested path.
 
 ## Part E — Seed all three data databases  [bash]

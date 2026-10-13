@@ -35,9 +35,9 @@ Only per-client and per-connection caches remain cold:
 | ---------------- | -------- | ------------------------------ |
 | Compiled Schemas | Warm     | Pre-compiled on startup        |
 | OIDC Metadata    | Warm     | Loaded during startup          |
-| data stores    | Warm     | Loaded from CMS on startup     |
-| ClaimSets        | Warm     | Loaded from CMS on startup     |
-| CMS Token        | Warm     | Fetched as startup dependency  |
+| data stores    | Warm     | Loaded from the Configuration Service on startup     |
+| ClaimSets        | Warm     | Loaded from the Configuration Service on startup     |
+| Configuration Service Token        | Warm     | Fetched as startup dependency  |
 | App Context      | Cold     | Fetched per client on auth     |
 | Identity Tenants | Cold     | Fetched on first identity call |
 | NpgsqlDataSource | Cold     | Created on first DB connection |
@@ -80,8 +80,8 @@ client's `DataStoreIds` determine which data they can access.
 **Dependency Scope:** Every authenticated resource request path that runs
 `ProfileResolutionMiddleware` requires a resolvable application context, because
 profile resolution needs the `ApplicationId`. This is broader than the
-ownership-gated operations alone. With a cold or missing cache entry, a CMS
-outage or a malformed CMS response makes those requests fail closed with
+ownership-gated operations alone. With a cold or missing cache entry, a Configuration Service
+outage or a malformed Configuration Service response makes those requests fail closed with
 `503 Service Unavailable`. A `NotFound` context still maps to
 `401 Unauthorized` as an invalid token.
 
@@ -99,7 +99,7 @@ Within one request scope the answer is also memoized, so a request asks at most 
 **Invalidation Strategy:**
 
 - TTL-based expiration after the configured duration. This is the only invalidation an operator has.
-- Follows cache-aside pattern with fallback to Configuration Service
+- Follows cache-aside pattern with fallback to the Configuration Service
 - The provider has an internal reload that evicts one client's entry and fetches it again, but
   application reload is internal: no endpoint calls it and no operator setting reaches it, so it is
   not a way to clear this cache.
@@ -231,7 +231,7 @@ during startup and entries are never evicted or replaced.
 ### 4. Configuration Service Token Cache
 
 **Purpose:** Caches OAuth bearer tokens used to authenticate with the
-Configuration Management Service (CMS).
+Configuration Service.
 
 **Location:**
 
@@ -256,7 +256,7 @@ built-in stampede protection
 
 **Invalidation Strategy:**
 
-- TTL matches the token's `expires_in` value from CMS response
+- TTL matches the token's `expires_in` value from the Configuration Service response
 - No manual invalidation - relies on automatic expiration
 - Cache-aside pattern: fetches new token when cache miss occurs
 
@@ -591,7 +591,7 @@ A caller's own cancellation propagates and is never turned into an answer.
 | ClaimSets    | MemoryCache  | Sing. | 10 min | Yes    | Yes      | Manual + TTL |
 | Id. Tenants  | Snapshot     | Sing. | 60 s   | N/A    | Yes      | TTL + miss refresh |
 | Comp. Schema | ConcurDict   | Sing. | None   | No     | No       | Reload ID    |
-| CMS Token    | HybridCache  | Sing. | 25 min | No     | Yes      | TTL only     |
+| Configuration Service Token    | HybridCache  | Sing. | 25 min | No     | Yes      | TTL only     |
 | NpgsqlDS     | Dict + lock  | Sing. | None   | N/A    | No       | Reconcile + Shutdown |
 | data store | ConcurDict   | Sing. | Configurable (CacheSettings.DataStoreCacheExpirationSeconds) | Yes    | No       | TTL + Restart      |
 | OIDC Meta    | ConfigMgr    | Sing. | 60 min | No     | Yes      | Auto-refresh |
@@ -604,7 +604,7 @@ DMS uses several invalidation patterns:
 
 ### 1. TTL-Based Expiration
 
-Used by: Application Context, ClaimSets, CMS Token, OIDC Metadata, data store cache
+Used by: Application Context, ClaimSets, Configuration Service Token, OIDC Metadata, data store cache
 
 Cache entries automatically expire after a configured time period. This is the
 simplest pattern and requires no manual intervention.
@@ -718,7 +718,7 @@ schemas on-demand only when first requested.
 
 | Setting         | Value      | Location                         |
 | --------------- | ---------- | -------------------------------- |
-| CMS Token TTL   | 25 minutes | `CacheSettings` (configurable)   |
+| Configuration Service Token TTL   | 25 minutes | `CacheSettings` (configurable)   |
 | Schema Cache    | No TTL     | Version-based invalidation       |
 
 Note: All cache TTLs are now configurable via `CacheSettings`.
@@ -745,9 +745,9 @@ Since caches are local to each instance:
 
 DMS warms most caches during startup (see `Program.cs`):
 
-- **data stores** - Loaded from Configuration Service before accepting requests
+- **data stores** - Loaded from the Configuration Service before accepting requests
 - **ClaimSets** - Retrieved and cached for all tenants on startup
-- **CMS Token** - Fetched as a dependency of the above operations
+- **Configuration Service Token** - Fetched as a dependency of the above operations
 - **Compiled Schemas** - Primed via `ProvideApiSchemaMiddleware`
 - **OIDC Metadata** - Fetched from identity provider on startup (fails fast if unavailable)
 

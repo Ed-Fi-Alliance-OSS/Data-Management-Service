@@ -113,7 +113,7 @@ authentication for each instance.
 
 ### Configuration Overview
 
-To enable context-based routing, administrators use the **DMS Configuration Service**
+To enable context-based routing, administrators use the **Configuration Service**
 to:
 
 1. **Create DMS Database Instances** - Define separate database instances with
@@ -143,7 +143,7 @@ your instances.
 
 ### Step 1: Authenticate with Configuration Service
 
-Obtain an access token from the DMS Configuration Service:
+Obtain an access token from the Configuration Service:
 
 ```http
 POST http://localhost:8081/connect/token

@@ -40,7 +40,7 @@ pwsh ../provision/setup-env.ps1 -PublicHost <FQDN> -LetsEncryptEmail you@org.tld
 ```
 
 `setup-env.ps1` generates secrets into `.env`, obtains the TLS cert (omit `-LetsEncryptEmail` for
-self-signed), starts identity + CMS, and runs `bootstrap.ps1` (Keycloak realm/clients, tenants,
+self-signed), starts identity + the Configuration Service, and runs `bootstrap.ps1` (Keycloak realm/clients, tenants,
 data stores, the review apps). It does **not** start the DMS services — stage the ApiSchema
 workspace and provision the relational schema (below), then start them with
 `setup-env.ps1 -StartDms` (or `./up.sh st-dms mt-dms`); both refuse to start the DMS services
@@ -48,7 +48,7 @@ while `compose/.bootstrap/ApiSchema` is unstaged.
 Record the generated credentials in your private deployment doc, then verify with [`../http/`](../http/).
 
 Re-running `setup-env.ps1` after a completed bootstrap is safe: secrets are preserved and a sentinel
-in `compose/.bootstrap/` prevents duplicate CMS objects. An interrupted bootstrap is deliberately
+in `compose/.bootstrap/` prevents duplicate Configuration Service objects. An interrupted bootstrap is deliberately
 not retried; run `reset.sh` first — reset removes Keycloak state too, so partial or stale
 application clients cannot survive it. To rotate secrets,
 run `down.sh -v` **before** `setup-env.ps1 -RotateSecrets`; the script refuses to rotate while the
@@ -77,7 +77,7 @@ bootstrap, so it only starts the DMS services.
   [`UPDATE.md`](UPDATE.md).
 - **Keycloak image-pin change or lost Keycloak volume:** its H2 data cannot be migrated or rebuilt
   independently after bootstrap. The review applications are Keycloak clients whose generated
-  secrets and UUIDs are referenced by CMS, so recreating only the three service clients would leave
+  secrets and UUIDs are referenced by the Configuration Service, so recreating only the three service clients would leave
   every review API credential broken. Use the [clean redeploy runbook](REDEPLOY.md).
 - **Cert renewal:** `pwsh provision/renew-cert.ps1 -PublicHost <FQDN>`.
 - **Wipe + redeploy** (existing VM, fresh secrets/schema/data, **new API keys**): [`REDEPLOY.md`](REDEPLOY.md).
@@ -100,7 +100,7 @@ bootstrap, so it only starts the DMS services.
   no-.NET VM hosts, build it self-contained in a container instead, see
   [`REDEPLOY.md`](REDEPLOY.md) Part C), **or** restore the relational populated template
   (**DMS-1159**, e.g. `eng/docker-compose/bootstrap-published-dms.ps1 -SeedTemplate Populated`).
-- **Startup order** — the DMS fail-fast crash-loops until Keycloak + CMS data stores exist
+- **Startup order** — the DMS fail-fast crash-loops until Keycloak + Configuration Service data stores exist
   (**DMS-1093 / DMS-1109**); `setup-env.ps1` therefore bootstraps first and starts the DMS only
   with `-StartDms` (after the schema is provisioned).
 - **Multi-tenant seeding** — `DMS-1230` (the MT XSD 404) is fixed in `:pre` ≥ 2026-06-24, so MT can

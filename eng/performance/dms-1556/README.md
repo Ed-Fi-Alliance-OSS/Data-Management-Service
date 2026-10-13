@@ -1,6 +1,6 @@
 # DMS-1556 investigation tooling
 
-Harness and diagnostics recipes for the DMS-1556 investigation (CMS profile requests
+Harness and diagnostics recipes for the DMS-1556 investigation (Configuration Service profile requests
 return HTTP 500 during concurrent catalog loading). The plan, experiment definitions, and
 decision gates live in
 `reference/design/configuration-service/DMS-1556-cms-signing-key-resolution-under-load.md`
@@ -14,12 +14,12 @@ code or configuration.
 The experiment environment is the dms-local E2E stack (spec §3.1): from
 `src/dms/tests/EdFi.DataManagementService.Tests.E2E`, `pwsh ./teardown-local-dms.ps1`
 then `pwsh ./setup-local-dms.ps1 -EnvironmentFile ./.env.e2e` (self-contained identity,
-PostgreSQL, database-backed signing keys). CMS answers at `http://127.0.0.1:8081/config`.
+PostgreSQL, database-backed signing keys). The Configuration Service answers at `http://127.0.0.1:8081/config`.
 Always address it as `127.0.0.1`, not `localhost`: on Windows the dual-stack fallback adds
 ~2 s to every new connection to the 127.0.0.1-bound port — a client-side artifact that
 would contaminate latency evidence (measured during the 0.1 smoke).
 
-For harness/diagnostics smoke work, the lighter CMS-only stack is equivalent: from
+For harness/diagnostics smoke work, the lighter Configuration Service-only stack is equivalent: from
 `eng/docker-compose`, `pwsh ./start-local-config.ps1 -EnvironmentFile ./.env.e2e
 -IdentityProvider self-contained`.
 
@@ -27,7 +27,7 @@ For harness/diagnostics smoke work, the lighter CMS-only stack is equivalent: fr
 
 Both overlays are additive compose files in `eng/docker-compose/`. Apply them with the
 stack's own `-f` list, `--env-file`, and project name, then recreate the affected
-services. For the CMS-only stack:
+services. For the Configuration Service-only stack:
 
 ```powershell
 cd eng/docker-compose
@@ -38,12 +38,12 @@ docker compose -f postgresql.yml -f local-config.yml -f keycloak.yml `
 
 For the dms-local stack, use that stack's `-f` list and `-p dms-local`.
 
-- `local-config-diagnostics.yml` — CMS `DOTNET_DiagnosticPorts` (connect + suspend mode)
+- `local-config-diagnostics.yml` — Configuration Service `DOTNET_DiagnosticPorts` (connect + suspend mode)
   plus a digest-pinned `dotnet-monitor` sidecar in listen mode, `--no-auth`, run as root
-  (the in-process call-stacks socket is created by the CMS user and is otherwise
+  (the in-process call-stacks socket is created by the Configuration Service user and is otherwise
   unreachable across containers), bound to `127.0.0.1:52323`. Suspend mode is required:
   `/stacks` depends on in-process features the monitor can only inject while the runtime
-  waits at startup, so CMS start blocks until the sidecar is up under this overlay.
+  waits at startup, so Configuration Service startup blocks until the sidecar is up under this overlay.
   Endpoints used by the investigation (all take an explicit `pid` from `/processes` —
   the target is not marked default):
   - `GET /processes` — pid discovery
@@ -72,7 +72,7 @@ For the dms-local stack, use that stack's `-f` list and `-p dms-local`.
   and covering both the send and the body read, so a stalled response body cannot hold a
   semaphore slot past the deadline; body validation is ordinal. **Cold-run order**: the
   token is minted BEFORE the restart and reused afterwards (unauthenticated `/health`
-  readiness only), so token issuance does not warm CMS's database connections between
+  readiness only), so token issuance does not warm the Configuration Service's database connections between
   the restart and the measured burst; the order is recorded in the summary's
   `coldPreparation` block. **`-WithSamplers`** makes the harness the coordinator:
   restart → new-process discovery → sampler readiness → burst → coverage validation,
@@ -107,17 +107,17 @@ For the dms-local stack, use that stack's `-f` list and `-p dms-local`.
 The PostgreSQL samplers hold exactly two persistent connections for the whole window,
 self-identified as `application_name=dms1556-sampler-activity-<id>` and
 `dms1556-sampler-io-<id>` (a unique suffix per sampler set), both to `dbname=postgres` —
-not to the CMS database. For M-conn:
+not to the Configuration Service database. For M-conn:
 
 - `log_connections` lines for the samplers are the two session starts per run; exclude
   them by the `dms1556-sampler-` application-name prefix (or by database `postgres`).
-- Per-database `numbackends` for the CMS database is unaffected by the samplers; the
+- Per-database `numbackends` for the Configuration Service database is unaffected by the samplers; the
   `postgres` database rows carry the constant +2 sampler offset.
-- `pg_stat_activity` rows retain datname/usename/application_name, so CMS connections
+- `pg_stat_activity` rows retain datname/usename/application_name, so Configuration Service connections
   and sampler connections are directly distinguishable in the capture itself.
 - `Get-CmsThreadPoolMinLimit.ps1` — Q17 mechanism: `/dump?type=Full` via the sidecar,
   analyzed with the **pinned** `dotnet-dump` version's `threadpool` command inside an
-  Alpine SDK container (the CMS image is linux-musl). The script verifies the
+  Alpine SDK container (the Configuration Service image is linux-musl). The script verifies the
   `Worker Min Limit` label in the output instead of assuming it, records the parsed
   value plus `docker inspect` of `DOTNET_ThreadPool_ForceMinWorkerThreads` /
   `DOTNET_PROCESSOR_COUNT`, and must be run **outside timed burst windows** so dump
@@ -126,34 +126,34 @@ not to the CMS database. For M-conn:
 - `Invoke-E1Baseline.ps1` — step 0.3 driver: `-Runs` cold+warm E1 runs for one resource
   profile, per-run logs, dump, classification (`e1-<profile>-index.json`).
 - `Invoke-E2Sweep.ps1` — step 0.4 driver: the E2 warm concurrency sweep. For every point
-  (`-Points`, default the spec's seven `TxN` pairs) it restarts CMS, runs an untimed
+  (`-Points`, default the spec's seven `TxN` pairs) it restarts the Configuration Service, runs an untimed
   serial warm-up (87 requests at `-WarmupConcurrency 1`, recorded as `…-warm`), then the
   timed burst (`…-burst`: `-Rounds 5`, `-InterRoundDelaySeconds 3`, samplers, body
-  validation), captures the point's CMS/PostgreSQL logs, resolves the CMS container IP,
+  validation), captures the point's Configuration Service/PostgreSQL logs, resolves the Configuration Service container IP,
   measures the host↔Docker-VM clock offset, analyzes every round, and takes one dump
   outside the timed windows. Repetitions alternate ascending/descending point order.
   Refuses to start when the container CPU limits do not match `-ResourceProfile`.
   Outputs `e2-<profile>-index.json` and the flat `e2-<profile>-rounds.csv`.
 - `dms-1556-analysis.psm1` — pure window analysis over the captures, used by the E2
   driver and usable on any retained run: M-conn from `log_connections` (connections the
-  CMS container IP created to the CMS database, samplers and every other client
+  Configuration Service container IP created to the Configuration Service database, samplers and every other client
   reported separately), `pg_stat_activity` backends/states/waits, livemetrics
   thread-pool and Npgsql pool counters, docker-stats CPU/BlockIO, `pg_stat_io` deltas,
-  host disk, PostgreSQL errors/slow statements/checkpoints, and CMS warning/error lines
+  host disk, PostgreSQL errors/slow statements/checkpoints, and Configuration Service warning/error lines
   classified by *scope* (request-scoped via `RequestPath`, background, unattributed).
   Scope says where a line was emitted, not what caused a response status.
 
-- `Set-Dms1556StackCondition.ps1` — step 0.5: recomposes CMS/PostgreSQL into one
+- `Set-Dms1556StackCondition.ps1` — step 0.5: recomposes Configuration Service/PostgreSQL into one
   condition (`baseline`, `e3-certificates`, `e4-threads`, `e5-pool16`, `headroom`); each
   differs from `baseline` by exactly one overlay (`eng/docker-compose/local-control-*.yml`,
   `local-postgresql-headroom.yml`). `-RecreateDb` also recreates PostgreSQL and then
-  restarts CMS (a recreated server terminates pooled connections); `-ClaimsMountSource`
+  restarts the Configuration Service (a recreated server terminates pooled connections); `-ClaimsMountSource`
   keeps the `.e2e-claims` mount of a stack provisioned by `build-dms.ps1 E2ETest`. It
-  always brings up the dotnet-monitor sidecar first (CMS waits for it in suspend mode).
+  always brings up the dotnet-monitor sidecar first (the Configuration Service waits for it in suspend mode).
 - `Invoke-ControlBatch.ps1` — step 0.5 driver: one block of runs for one condition,
   refusing to start unless the live container state matches the condition. Workloads
   `cold-87x87` (E1 shape), `warm-87x87` (serial warm-up, then the first concurrent burst),
-  `warm-256x128` (stress; keep in its own blocks). Every run restarts CMS; round 1 gets
+  `warm-256x128` (stress; keep in its own blocks). Every run restarts the Configuration Service; round 1 gets
   managed stacks requested at `-StackCaptureOffsetsSeconds` (default 2/8/14 s). A
   capture takes ~2.4 s and its snapshot instant is unknown, so each is recorded as the
   interval `[requested, completed]`: connections received/authorized at both boundaries
@@ -172,20 +172,20 @@ not to the CMS database. For M-conn:
   (cold-256x128 + warm-256x128), 5 repetitions each, then the supplementary headroom
   stress block (`max_connections=200`). Each block starts from a recreated PostgreSQL and
   runs `Invoke-ControlBatch.ps1 -LabelPrefix h41 -DumpOncePerBlock`; the block index
-  records the CMS image id and the effective configuration (secrets redacted).
+  records the Configuration Service image id and the effective configuration (secrets redacted).
 - `Invoke-Step41Outage.ps1` — step 4.1-O: `pause-warm` (`docker pause` of PostgreSQL for
   20 s, 0.4 s into a round of 870 requests through 87 slots), `pause-warm-long` (the same,
-  40 s), and `keylock-cold` (CMS restarted while one session holds
+  40 s), and `keylock-cold` (Configuration Service restarted while one session holds
   `LOCK TABLE dmscs."OpenIddictKey"` for 75 s). It runs a JWKS probe beside the rounds and
   takes stacks while the dependency is held. It classifies every non-200 by stage through its correlation id
   (authentication with category / post-authentication / transport / unclassified),
   checks the dependency contract on every 503, and records the timeline against the
-  recovery bound (max backoff 72 s + load timeout 10 s). A pause run streams the CMS log
+  recovery bound (max backoff 72 s + load timeout 10 s). A pause run streams the Configuration Service log
   during the burst: at Debug level it exceeds Docker's json-file rotation.
 - `Invoke-CmsProfileBurst.ps1` step 4.1 additions: `-FaultKind PausePostgres|LockKeyTable`
   (fault on a thread job, removed unconditionally in `finally`), `-JwksProbeIntervalMilliseconds`,
   and `retryAfter`/`contentType`/`wwwAuthenticate` columns for non-200 responses.
-- `dms-1556-step41.psm1` — fixed-image analysis: CMS log entries (Warning/Error and
+- `dms-1556-step41.psm1` — fixed-image analysis: Configuration Service log entries (Warning/Error and
   signing-key lines only), the spec §4.9 signal counts (with the retired
   `Failed to fetch public keys for JWKS` string counted only to show it is absent),
   per-response stage classification, and authentication frames in sync waits.
@@ -193,7 +193,7 @@ not to the CMS database. For M-conn:
   `artifacts/h41-report.md` / `.json` (the tables in the investigation record).
 - `Invoke-E7Shard.ps1` — E7 overlay variant: runs a DMS E2E shard directly (same
   test-process context as `build-dms.ps1 E2ETest`, `--no-build`) against an already
-  provisioned stack with samplers over the whole run, then summarizes the CMS side
+  provisioned stack with samplers over the whole run, then summarizes the Configuration Service side
   (profile bursts, handshakes, thread pool, pool, log scopes, trx counts).
 
 ### Recomposing the resource profile
@@ -222,7 +222,7 @@ cd eng/performance/dms-1556
     -ValidateBodies -WithSamplers -SamplerDurationSeconds 240
 ```
 
-The single coordinated command sequences: token mint → CMS restart → `/health`
+The single coordinated command sequences: token mint → Configuration Service restart → `/health`
 readiness → sampler start against the restarted process → sampler readiness → rounds →
 sampler stop → coverage validation. The summary JSON embeds the sampler report
 (`samplerReport`), the burst window, and the cold preparation order; the run exits
@@ -261,13 +261,13 @@ goes to Jira DMS-1556 except the full dumps (EV-DUMP). Counts and sizes were tak
 | — | Tooling shake-down only, **not evidence** | `e2-smoke/`, `e5-pilot/`, `e5-smoke/` | 74 / 23 MB | — | excluded; see 0.6 bookkeeping |
 | EV-H41 | 4.1-H fixed image, default settings + headroom | `{cold,warm}-{87x87,256x128}-h41-*`, `h41-sequence-console.log` | — | `h41-<block>-<condition>-{index.json,rounds.csv,stacks.csv}`, `h41-report.md` | 4.1 |
 | EV-O41 | 4.1-O injected outages, both profiles | `o41-<scenario>-<profile>-rep<n>-*` (`-responses.csv`, `-outage.json`, `-burst-*-jwks.csv`) | — | `o41-<profile>-index.json`, `o41-<profile>-console.log` | 4.1 |
-| EV-E42 | 4.2 DMS shards 1 and 2 × 2 runs, CMS E2E × 1 | `e42/`: `<lane>.log`, `<lane>-*.trx`, `<lane>-<container>.log` per run, Release build logs, teardown logs | 28 / 341 MB | `e42/e42-index.json` (commit, exit codes, summary lines, image ids) | 4.2 |
+| EV-E42 | 4.2 DMS shards 1 and 2 × 2 runs, Configuration Service E2E × 1 | `e42/`: `<lane>.log`, `<lane>-*.trx`, `<lane>-<container>.log` per run, Release build logs, teardown logs | 28 / 341 MB | `e42/e42-index.json` (commit, exit codes, summary lines, image ids) | 4.2 |
 | EV-PM-INT | Post-merge PostgreSQL and SQL Server integration lanes, plus the merged-tree unit runs | `postmerge/integration/` (trx and logs) | 10 / 21 MB | — | Post-merge validation |
-| EV-PM-E2E | Post-merge DMS shards 1 and 2 × 1, CMS E2E × 1 | `postmerge/e2e/` (`<lane>.log`, `<lane>-*.trx`, `<lane>-<container>.log`, teardown logs, log-signal summaries) | 22 / 173 MB | `postmerge/e2e/pm-e2e-index.json` | Post-merge validation |
+| EV-PM-E2E | Post-merge DMS shards 1 and 2 × 1, Configuration Service E2E × 1 | `postmerge/e2e/` (`<lane>.log`, `<lane>-*.trx`, `<lane>-<container>.log`, teardown logs, log-signal summaries) | 22 / 173 MB | `postmerge/e2e/pm-e2e-index.json` | Post-merge validation |
 | EV-PM-CAT | Post-merge catalog runtime, P-runner-approx 87/87, 3 cold + 1 warm, image `dms1556-0b8fd96d6` | `postmerge/catalog/` (`h41-pm-catalog-*` tables, run captures, seed manifest, Worker Min Limit record) | 86 / 30 MB (+1 dump) | `h41-pm-catalog-{cold,warm}-baseline-*`, `h41-report.md`, `pm-catalog-image.json` | Post-merge validation |
 | EV-PM-CTL | Matched control: pre-merge image (`dms1556-c799f084d-rebuild`), 3 cold | `postmerge/control/` | 58 / 22 MB (+1 dump) | `h41-pm-control-premerge-cold-baseline-*`, `h41-report.md` | Post-merge validation |
 | — | Evidence bundle for archival | `evidence-bundle-20261001/`: `INDEX.md`, `INDEX.json`, `SHA256SUMS.txt`, 21 per-ID zip archives (692 MB). Copies only; dumps excluded; originals kept until archival is verified | 3,904 files bundled | — | Post-merge validation |
-| — | 4.1 superseded / aborted, **not evidence** | `o41-superseded/` (first P-runner-approx outage set: pause-run CMS logs truncated by Docker log rotation; key-lock window ended before recovery), `h41-aborted/` (P-dev catalog block stopped at 8 of 10 runs for host memory), `h41-smoke/` (shake-down) | — | — | 4.1 deviations |
+| — | 4.1 superseded / aborted, **not evidence** | `o41-superseded/` (first P-runner-approx outage set: pause-run the Configuration Service logs truncated by Docker log rotation; key-lock window ended before recovery), `h41-aborted/` (P-dev catalog block stopped at 8 of 10 runs for host memory), `h41-smoke/` (shake-down) | — | — | 4.1 deviations |
 
 The tooling folders hold harness and driver shake-down runs made before the timed
 sequences. No table or claim in the record uses them. They are kept only because a

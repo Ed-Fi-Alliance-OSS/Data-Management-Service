@@ -12,6 +12,13 @@
 > clustering, may not be well secured, and it will not utilize cloud providers'
 > managed services.
 
+> [!IMPORTANT]
+> Configuration Service variables start with `CONFIGURATION_SERVICE_`, and the Ed-Fi API's
+> settings for calling it start with `DMS_CONFIGURATION_SERVICE_`. A `.env` created before
+> this change still uses `DMS_CONFIG_*` and `CONFIG_SERVICE_*`, which are no longer read; the
+> setup scripts warn about each one. Rename them as described in
+> [Migrating from the earlier variable names](../../docs/CONFIGURATION.md#migrating-from-the-earlier-variable-names).
+
 ## Starting Services with Docker Compose
 
 This directory contains several Docker Compose files, which can be combined to
@@ -111,15 +118,15 @@ By default, authentication uses the Self-Contained (OpenIddict) identity provide
 
 When an E2E environment file defines `E2E_DATABASE_NAME`, that database must be
 provisioned and DMS must observe the provisioned `dms.EffectiveSchema` before
-it can serve requests. The DMS E2E setup wrapper starts infra and CMS, configures
-the CMS data store, provisions the E2E database, then starts DMS:
+it can serve requests. The DMS E2E setup wrapper starts infra and the Configuration Service, configures
+the Configuration Service data store, provisions the E2E database, then starts DMS:
 
 ```pwsh
 ../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1 -EnvironmentFile ./.env.e2e
 ```
 
 To run the late phases manually after `start-local-dms.ps1 -InfraOnly` has
-already brought up infra and CMS:
+already brought up infra and the Configuration Service:
 
 ```pwsh
 ./provision-e2e-database.ps1 -EnvironmentFile ./.env.e2e
@@ -224,7 +231,7 @@ override those base settings, and the overlay still composes on top of it.
 
 > [!NOTE]
 > **Database topology.** By default, local deployments host the Configuration Service and DMS in
-> one shared physical database on both engines: the CMS `dmscs` schema, and the self-contained
+> one shared physical database on both engines: the Configuration Service `dmscs` schema, and the self-contained
 > (OpenIddict) identity stores, live inside the same database as the DMS datastore
 > (`POSTGRES_DB_NAME` on PostgreSQL, `MSSQL_DB_NAME` on MSSQL). An opt-in
 > `-SeparateConfigDatabase` switch moves the Configuration Service (and the OpenIddict stores)
@@ -234,12 +241,12 @@ override those base settings, and the overlay still composes on top of it.
 A few things are specific to the MSSQL path:
 
 * **It is single-engine.** SQL Server hosts everything: the DMS datastore, the Configuration
-  Service (CMS SQL Server backend), and the self-contained (OpenIddict) identity stores.
+  Service (Configuration Service SQL Server backend), and the self-contained (OpenIddict) identity stores.
   `mssql.yml` swaps in for `postgresql.yml` - both define the same `db` service that
   `local-config.yml` health-gates on - and no PostgreSQL container runs. In the default
   self-contained flow, `setup-openiddict.ps1 -InitDb` creates the Configuration Service's
   database during the infrastructure phase (the shared datastore database by default; the
-  dedicated one under `-SeparateConfigDatabase`); CMS then deploys its `dmscs` schema before the
+  dedicated one under `-SeparateConfigDatabase`); the Configuration Service then deploys its `dmscs` schema before the
   provision phase deploys the DMS relational schema into the datastore database (see
   "Configuration Service database topology" below).
 * **Relational backend only.** MSSQL is supported through the relational backend
@@ -296,25 +303,25 @@ After the stack is up, run the smoke tests the same way as for PostgreSQL:
 
 ## Configuration Service database topology
 
-The Configuration Service (CMS) — its `dmscs` schema and, in the self-contained flow, the
+The Configuration Service — its `dmscs` schema and, in the self-contained flow, the
 OpenIddict identity stores — can live in one of two places, on either database engine:
 
-* **Shared (default).** CMS lives inside the DMS datastore database (`POSTGRES_DB_NAME` on
+* **Shared (default).** The Configuration Service lives inside the DMS datastore database (`POSTGRES_DB_NAME` on
   PostgreSQL, `MSSQL_DB_NAME` on MSSQL). This is today's behavior, unchanged; omitting the switch
   changes nothing.
-* **Separate (opt-in).** Pass `-SeparateConfigDatabase` and CMS lives in a dedicated
+* **Separate (opt-in).** Pass `-SeparateConfigDatabase` and the Configuration Service lives in a dedicated
   `edfi_configurationservice` database on the same server container. The database is created
   during the infrastructure phase if absent (`setup-openiddict.ps1 -InitDb` in the self-contained
-  flow; CMS's own startup deploy otherwise). The switch leaves the DMS datastore's selection and
+  flow; the Configuration Service's own startup deploy otherwise). The switch leaves the DMS datastore's selection and
   lifecycle unchanged — ordinary startup and provisioning still create and use the datastore
-  database exactly as in shared mode; it just no longer hosts CMS.
+  database exactly as in shared mode; it just no longer hosts the Configuration Service.
 
 The switch exists on every public entry point and is forwarded unchanged:
 `start-local-dms.ps1`, `start-published-dms.ps1`, `bootstrap-local-dms.ps1`,
 `bootstrap-published-dms.ps1`, and `build-dms.ps1 StartEnvironment`.
 
 ```pwsh
-# Turnkey local stack with a dedicated CMS database (either engine)
+# Turnkey local stack with a dedicated Configuration Service database (either engine)
 ./bootstrap-local-dms.ps1 -SeparateConfigDatabase
 ./bootstrap-local-dms.ps1 -DatabaseEngine mssql -SeparateConfigDatabase
 
@@ -322,16 +329,16 @@ The switch exists on every public entry point and is forwarded unchanged:
 ../../build-dms.ps1 StartEnvironment -SeparateConfigDatabase -DatabaseEngine postgresql
 ```
 
-### Predicting the effective CMS database
+### Predicting the effective Configuration Service database
 
 | Invocation shape | Switch omitted | With `-SeparateConfigDatabase` |
 |---|---|---|
 | `start-local-dms.ps1` / `start-published-dms.ps1`, default or `-InfraOnly` | Datastore database (`POSTGRES_DB_NAME` / `MSSQL_DB_NAME`) | `edfi_configurationservice` |
-| `start-published-dms.ps1` with `-IdentityProvider keycloak` and no `-EnableConfig`/`-InfraOnly` | CMS does not run at all (`published-config.yml` is opt-in on the published flow) | `edfi_configurationservice` — the switch also adds `published-config.yml` to the compose set so CMS actually runs to create it |
-| `-DmsOnly`, `-DbOnly`, teardown (`-d [-v]`) | No effect either way: these shapes never start CMS. The switch is accepted so continuation invocations of a running stack don't have to drop it; the stack keeps the topology it was started with |
+| `start-published-dms.ps1` with `-IdentityProvider keycloak` and no `-EnableConfig`/`-InfraOnly` | the Configuration Service does not run at all (`published-config.yml` is opt-in on the published flow) | `edfi_configurationservice` — the switch also adds `published-config.yml` to the compose set so Configuration Service actually runs to create it |
+| `-DmsOnly`, `-DbOnly`, teardown (`-d [-v]`) | No effect either way: these shapes never start the Configuration Service. The switch is accepted so continuation invocations of a running stack don't have to drop it; the stack keeps the topology it was started with |
 | `bootstrap-local-dms.ps1` / `bootstrap-published-dms.ps1` / `build-dms.ps1 StartEnvironment` | Same as the start script they invoke | Same — forwarded unchanged |
 
-The switch moves only the CMS seam: the DMS relational datastore itself and
+The switch moves only the Configuration Service seam: the DMS relational datastore itself and
 `DATABASE_CONNECTION_STRING_ADMIN` are unaffected. The configure and provision phases do consume
 the topology declaration, though, because each enforces one half of the same rule — in separate
 mode every DMS datastore, newly registered or reused, must stay distinct from
@@ -355,12 +362,12 @@ When the connection string is entirely absent on PostgreSQL, the Compose fallbac
 (`${CONFIGURATION_SERVICE_DATABASE_NAME:-${POSTGRES_DB_NAME}}`). That fallback is PostgreSQL-shaped — Compose
 interpolation cannot branch on the engine — so MSSQL always requires an explicit
 `CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING` (the `.env.mssql` overlay supplies it), and an MSSQL run
-with the key entirely absent fails clearly rather than starting CMS against an unusable fallback.
+with the key entirely absent fails clearly rather than starting the Configuration Service against an unusable fallback.
 
-CMS-starting invocations validate the result before any container starts: the resolved connection
+Invocations that start the Configuration Service validate the result before any container starts: the resolved connection
 string's database, host, and port must agree with the selected topology, and a hand-edited
 `CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING` that disagrees fails fast with a
-`CMS database topology mismatch` error rather than silently starting CMS against the wrong
+`CMS database topology mismatch` error rather than silently starting the Configuration Service against the wrong
 database. In separate mode the datastore database must also be genuinely distinct from
 `edfi_configurationservice`, so a datastore name (or `-DataStoreDatabaseName`) that would land in it
 is rejected rather than quietly re-sharing the database the switch exists to split.
@@ -391,7 +398,7 @@ at all — and which differ between instances: a case variant that collides unde
 collation is a genuinely distinct database on a case-sensitive one. The only entity that can answer
 is the SQL Server that will host these databases, so *every* SQL Server start that runs the
 Configuration Service verifies its database names against the running instance itself: after the
-database container starts and reports ready, and before OpenIddict, CMS, DMS, or the data-store
+database container starts and reports ready, and before OpenIddict, the Configuration Service, DMS, or the data-store
 registration touch it, the names are checked on the server. In shared mode the check is that the
 Configuration Service's target — the `CONFIGURATION_SERVICE_DATABASE_NAME` seam and every `Database` /
 `Initial Catalog` segment of its connection string — really is the DMS datastore database. In
@@ -411,7 +418,7 @@ non-blank, and carry a SQL Server data-source keyword (`Server=`, `Data Source=`
 parsed with ADO.NET, no database segment is discovered or validated, and no host or port is
 inspected. On PostgreSQL these shapes get no engine-composition check at all. No SQL Server name is
 judged for any of them: `-DbOnly` does start a database server, but the Configuration Service takes
-no part in these shapes, so CMS topology consistency is not evaluated — and where nothing is
+no part in these shapes, so Configuration Service topology consistency is not evaluated — and where nothing is
 running there is no instance to ask, and no offline rule can answer in its place.
 
 To continue the manual phases from a `-SeparateConfigDatabase -InfraOnly` start, declare the same
@@ -434,9 +441,9 @@ connection string and before SchemaTools runs — the only point at which a *reu
 registers no name for the configure phase to judge. Omit the switch and both phases behave exactly
 as they do for a shared-topology stack.
 
-Switching an existing stack between modes re-points CMS but does not move data: `dmscs` content
+Switching an existing stack between modes re-points the Configuration Service but does not move data: `dmscs` content
 already written in one database stays there. For a clean switch, tear down with `-d -v` and start
-fresh, or migrate the CMS data yourself.
+fresh, or migrate the Configuration Service data yourself.
 
 ## Selecting a Data Standard version (bootstrap)
 
@@ -611,7 +618,7 @@ into core.
 For managed CDC bootstrap, follow the repository-root
 [PostgreSQL](../../reference/cdc-documentation/operations-runbook.md#postgresql-setup)
 or [SQL Server](../../reference/cdc-documentation/operations-runbook.md#sql-server-setup)
-procedure. Both require separate CMS topology, a dedicated new database, protected
+procedure. Both require separate Configuration Service topology, a dedicated new database, protected
 complete settings and an original managed state root. The
 [SchemaTools reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#bootstrap-cdc-handoff)
 owns command/configuration details; the
@@ -676,7 +683,7 @@ published stack up while deleting the workspace its containers bind-mount.
 ## IDE Debugging Workflow
 
 Use the IDE debugging workflow when you want to run DMS from your IDE (e.g. Visual Studio or Rider)
-against Docker-managed infrastructure (PostgreSQL, Config Service, Keycloak/OpenIddict).
+against Docker-managed infrastructure (PostgreSQL, Configuration Service, Keycloak/OpenIddict).
 
 ### Starter configuration artifact
 
@@ -692,7 +699,7 @@ The artifact includes:
 | Key | Value |
 |-----|-------|
 | `ConnectionStrings:DatabaseConnection` | `host=localhost;port=5435;...` (matches `.env.example` PostgreSQL port) |
-| `ConfigurationServiceSettings:BaseUrl` | `http://localhost:8081` (Config Service host port) |
+| `ConfigurationServiceSettings:BaseUrl` | `http://localhost:8081` (Configuration Service host port) |
 | `ConfigurationServiceSettings:ClientId` | `CMSReadOnlyAccess` (created by identity setup) |
 | `ConfigurationServiceSettings:ClientSecret` | `<local-cms-readonly-secret>` (replace with the `CMSReadOnlyAccess` client secret; local-dev default `ValidClientSecret1234567890!Abcd`) |
 | `ConfigurationServiceSettings:Scope` | `edfi_admin_api/readonly_access` |
@@ -700,7 +707,7 @@ The artifact includes:
 | `AppSettings:UseApiSchemaPath` | `true` (use staged bootstrap workspace schema; see activation note below) |
 | `AppSettings:ApiSchemaPath` | `<repo-root>/eng/docker-compose/.bootstrap/ApiSchema` (replace `<repo-root>` with your absolute path) |
 | `AppSettings:AuthenticationService` | `http://localhost:8081/connect/token` |
-| `JwtAuthentication:Authority` | `http://localhost:8081` (must exactly match the self-contained CMS issuer configured in `.env.ide`) |
+| `JwtAuthentication:Authority` | `http://localhost:8081` (must exactly match the self-contained Configuration Service issuer configured in `.env.ide`) |
 | `JwtAuthentication:MetadataAddress` | `http://localhost:8081/.well-known/openid-configuration` (must share the advertised JWKS origin) |
 | `JwtAuthentication:ClientRole` | `dms-client` |
 | `JwtAuthentication:RoleClaimType` | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` |
@@ -721,7 +728,7 @@ Copy-Item $baseEnvironmentFile .env.ide
 ```
 
 Use [.env.ide.example](.env.ide.example) as the documented override template. In `.env.ide`, set both
-values below to the host-reachable Config Service origin:
+values below to the host-reachable Configuration Service origin:
 
 ```dotenv
 SELF_CONTAINED_DMS_JWT_AUTHORITY=http://localhost:8081
@@ -729,10 +736,10 @@ SELF_CONTAINED_DMS_JWT_METADATA_ADDRESS=http://localhost:8081/.well-known/openid
 ```
 
 Pass `-EnvironmentFile ./.env.ide` to every bootstrap invocation for that IDE environment. The
-self-contained startup uses these values for the CMS issuer and DMS JWT settings, so metadata and
+self-contained startup uses these values for the Configuration Service issuer and DMS JWT settings, so metadata and
 the advertised JWKS URL share the `localhost:8081` origin without a hosts-file entry. Use this file
 for every manual phase, but only combine it with `-InfraOnly` when invoking a DMS start or bootstrap
-command; a containerized DMS cannot reach the Config Service through its own `localhost`. Keep
+command; a containerized DMS cannot reach the Configuration Service through its own `localhost`. Keep
 `ConfigurationServiceSettings:BaseUrl` and `AppSettings:AuthenticationService` on `localhost:8081`
 for their separate host-side calls.
 
@@ -758,7 +765,7 @@ after provisioning completes.
 ### Two IDE workflow shapes
 
 **Shape 1 — Pre-DMS stop (terminal):** `-InfraOnly` alone starts infrastructure, creates or confirms the
-DMS instance in Config Service, provisions the schema, prints IDE configuration guidance, then stops.
+DMS instance in Configuration Service, provisions the schema, prints IDE configuration guidance, then stops.
 Start DMS in your IDE using the printed settings; this invocation does not wait for it.
 
 ```pwsh
@@ -778,12 +785,12 @@ wait passes.
 > The two shapes are alternatives, not a sequence. If a previous wrapper run already created the
 > data store (for example a Shape 1 run on the same stack), add `-NoDataStore` to the follow-up run
 > so the configure phase reuses the existing data store; without it, the configure phase registers
-> the same name again and CMS rejects it with 400:
+> the same name again and the Configuration Service rejects it with 400:
 > `./bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> -NoDataStore -EnvironmentFile ./.env.ide [-LoadSeedData ...]`
 >
 > `-NoDataStore` supports exactly one existing route-unqualified data store. If the earlier run
 > used `-SchoolYearRange` (or otherwise created route-qualified data stores), do **not** re-run the
-> wrapper — re-supplying `-SchoolYearRange` tries to create these data stores again, and CMS rejects
+> wrapper — re-supplying `-SchoolYearRange` tries to create these data stores again, and the Configuration Service rejects
 > the repeated names with 400. Use the explicit phase commands against the data stores the earlier run
 > created: `./start-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> -EnvironmentFile ./.env.ide` for the health wait, then
 > `./load-dms-seed-data.ps1 -DmsBaseUrl <url> -SchoolYear <years...> -EnvironmentFile ./.env.ide` for seed loading.
@@ -913,7 +920,7 @@ docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d25590
 
 Key testing steps:
 
-1. **Get Config Service Token** - Authenticates with the configuration service
+1. **Get Configuration Service Token** - Authenticates with the Configuration Service
 2. **Create Data Stores** - Sets up 3 data stores with different route contexts:
    * Data store 1: District 255901, School Year 2024
    * Data store 2: District 255901, School Year 2025
@@ -980,7 +987,7 @@ When you make requests to:
 docker logs ed-fi-api --follow
 ```
 
-**Check Config Service logs:**
+**Check Configuration Service logs:**
 
 ```powershell
 docker logs ed-fi-api-config-service --follow
@@ -1209,8 +1216,8 @@ port defined in DMS_HTTP_PORTS).
 `setup-keycloak.ps1` will setup all the required realm, client, client
 credentials, required role, and custom claims.
 
-Keep the Keycloak client secret aligned with the CMS `IdentitySettings:ClientSecretValidation`
-settings in `appsettings.json` or environment variables. CMS startup will
+Keep the Keycloak client secret aligned with the Configuration Service `IdentitySettings:ClientSecretValidation`
+settings in `appsettings.json` or environment variables. Configuration Service startup will
 reject configured secrets whose length falls outside the configured
 minimum/maximum range.
 
@@ -1242,7 +1249,7 @@ $parameters = @{
 ./setup-keycloak.ps1  @parameters
 
 # Optionally use the $SetClientAsRealmAdmin switch to assign realm admin role to the new client. 
-# This is required for DMS Configuration Service. 
+# This is required for the Configuration Service.
 $parameters = @{
     NewClientRole = "config-service-ap"         # Defined in Configuration Service appsettings
     NewClientId = "DmsConfigurationService"     # Defined in Configuration Service appsettings
@@ -1308,8 +1315,8 @@ $parameters = @{
 * `EnvironmentFile` is required for DB connection and other settings.
 * `$InitDb` initializes the database schema and keys.
 * `$InsertData` inserts the OpenIddict client, roles, scopes, and claims.
-* `ClientSecretMinimumLength` and `ClientSecretMaximumLength` should match the configured `IdentitySettings:ClientSecretValidation` bounds used by CMS.
-* `NewClientSecret` must also satisfy the CMS complexity rule: lowercase, uppercase, number, and one special character from `!@#$%^&*()-_=+[]{}:;,.?`.
+* `ClientSecretMinimumLength` and `ClientSecretMaximumLength` should match the configured `IdentitySettings:ClientSecretValidation` bounds used by the Configuration Service.
+* `NewClientSecret` must also satisfy the Configuration Service complexity rule: lowercase, uppercase, number, and one special character from `!@#$%^&*()-_=+[]{}:;,.?`.
 * `NewClientSecret` is always the literal secret, even when it begins with `ENV:`. Use `NewClientSecretEnvironmentVariable` (naming the variable, in place of `NewClientSecret`) only when the secret must be read from that process's environment instead of the argument list.
 * Both switches can be used together or separately as needed.
 

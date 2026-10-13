@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Ed-Fi DMS Configuration Service supports three distinct modes for loading and managing claims authorization data based on the `CONFIGURATION_SERVICE_CLAIMS_SOURCE` configuration. This guide covers the deployment, configuration, and management of all claims loading modes, from embedded defaults to dynamic fragment composition and direct API uploads.
+The Ed-Fi API Configuration Service supports three distinct modes for loading and managing claims authorization data based on the `CONFIGURATION_SERVICE_CLAIMS_SOURCE` configuration. This guide covers the deployment, configuration, and management of all claims loading modes, from embedded defaults to dynamic fragment composition and direct API uploads.
 
 ### Claims System Architecture
 
@@ -503,9 +503,9 @@ This flag enables:
 
 ### Endpoint Authentication
 
-Every `/management/*` claims endpoint requires a valid CMS bearer token that satisfies **both** of the following, in addition to the dangerous flag above:
+Every `/management/*` claims endpoint requires a valid Configuration Service bearer token that satisfies **both** of the following, in addition to the dangerous flag above:
 
-1. **The configuration-service role** — enforced by `SecurityConstants.ServicePolicy`. The token must carry the configured configuration-service role (the same role every other CMS management endpoint requires); a token for a different role is rejected even when its scope would otherwise be sufficient.
+1. **The configuration-service role** — enforced by `SecurityConstants.ServicePolicy`. The token must carry the configured configuration-service role (the same role every other Configuration Service management endpoint requires); a token for a different role is rejected even when its scope would otherwise be sufficient.
 2. **The endpoint-appropriate scope:**
    - `POST /management/upload-claims` and `POST /management/reload-claims` require the **admin** scope.
    - `GET /management/current-claims` requires the **read-only or admin** scope.

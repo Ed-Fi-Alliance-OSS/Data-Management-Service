@@ -17,7 +17,7 @@ artifacts, and the design goal is that **each artifact has one obvious place to 
 | Concern | Single obvious place | Selected by |
 |---------|----------------------|-------------|
 | **Schema** (ApiSchema + extensions) | `SCHEMA_PACKAGES` in the `.env.ds<NN>` overlay, with matching `PackageVersion` entries in `src/Directory.Packages.props` | `USE_API_SCHEMA_PATH=true` + `SCHEMA_PACKAGES` (downloaded at container start by `src/dms/run.sh`) |
-| **Security metadata** (CMS claims) | `src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/Standards/ds<NN>/Claims.json` | `ClaimsOptions:DataStandardVersion` (env `CONFIGURATION_SERVICE_DATA_STANDARD_VERSION`) |
+| **Security metadata** (Configuration Service claims) | `src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/Standards/ds<NN>/Claims.json` | `ClaimsOptions:DataStandardVersion` (env `CONFIGURATION_SERVICE_DATA_STANDARD_VERSION`) |
 | **Local dev** | the `.env.ds<NN>` overlay | the `-DataStandardVersion` script parameter |
 | **CI** (template/package builds) | the per-workflow `standard_version` matrix | the matrix `include` entry |
 
@@ -55,7 +55,7 @@ and `CONFIGURATION_SERVICE_DATA_STANDARD_VERSION` — so it can be applied on to
 `.env.*` file. Everything else comes from the base file.
 
 Because the overlay sets both `SCHEMA_PACKAGES` (the DMS schema surface) and
-`CONFIGURATION_SERVICE_DATA_STANDARD_VERSION` (the CMS claims selector), selecting a version
+`CONFIGURATION_SERVICE_DATA_STANDARD_VERSION` (the Configuration Service claims selector), selecting a version
 keeps schema and security metadata in lockstep.
 
 - **No parameter ⇒ Data Standard 5.2.** The base env file is used unchanged, so every
@@ -73,7 +73,7 @@ The mechanics live in `eng/docker-compose/env-utility.psm1`
 `Get-DataStandardOverlayToken`) and are covered by
 `eng/docker-compose/tests/DataStandardEnvironmentFile.Tests.ps1`.
 
-## Security metadata selection (CMS)
+## Security metadata selection (Configuration Service)
 
 The Configuration Service embeds each version's base `Claims.json` as an assembly
 resource under `Claims/Standards/ds<NN>/`. The csproj globs

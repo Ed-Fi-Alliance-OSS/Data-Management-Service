@@ -36,7 +36,7 @@ dms-document-cache --help
 The CLI loads DMS configuration from the normal settings and environment providers. Use
 `--settings <path>` and `--environment <name>` for non-secret configuration selection, and
 use `--datastore postgresql|sqlserver` only to override the provider value for the current
-run. Connection strings, CMS credentials, client secrets, and other secrets must come from
+run. Connection strings, Configuration Service credentials, client secrets, and other secrets must come from
 settings, environment variables, user secrets, or the deployment secret provider. The CLI
 does not expose secret-bearing command-line options.
 
@@ -48,7 +48,7 @@ bootstrap workspace with `bootstrap-api-schema-manifest.json`.
 For history-gated offline administration, add this **fragment to the complete settings**;
 it is not a standalone DMS configuration. Replace the state path with the original
 protected controller root and the deployment key with its original namespace. Keep normal
-CMS/target/provider/schema settings intact. The root must contain the original managed
+Configuration Service/target/provider/schema settings intact. The root must contain the original managed
 CREATE receipt, workflow and source history; creating an empty directory or choosing a
 new key does not establish ownership or internal-only history.
 
@@ -158,7 +158,7 @@ Target and request options:
 
 | Option | Description |
 | --- | --- |
-| `--data-store-id <id>` | Positive CMS data store identifier. |
+| `--data-store-id <id>` | Positive Configuration Service data store identifier. |
 | `--tenant-key <value>` | Target tenant key; omitted means the default tenant. |
 | `--request-json <path|->` | Path to a shared JSON request document, or `-` for stdin. |
 

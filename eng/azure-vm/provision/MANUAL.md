@@ -161,7 +161,7 @@ Or **self-signed** (testing): `./ssl/generate-certificate.sh "$FQDN"`
 
 ---
 
-## Step 8 — Start identity + CMS (NOT the DMS services yet)
+## Step 8 — Start identity + the Configuration Service (NOT the DMS services yet)
 
 The DMS fail-fasts on boot if the Keycloak realm / clients / data stores don't exist, so start
 everything EXCEPT `st-dms`/`mt-dms` first; they come up at the end of Step 9 (after bootstrap +
@@ -193,7 +193,7 @@ curl -sk -o /dev/null -w "keycloak %{http_code}\n" "https://localhost/auth/realm
 
 ## Step 9 — Bootstrap clients, tenants, data stores (on the VM)
 
-This step is inherently scripted (Keycloak realm/clients + CMS vendor/application/tenant/
+This step is inherently scripted (Keycloak realm/clients + Configuration Service vendor/application/tenant/
 data-store API calls). Run it over the loopback:
 
 ```bash
@@ -247,10 +247,10 @@ cd ~/dms-src/eng/azure-vm/compose
 # keys: UPDATE.md.
 
 # State reset (on the VM). reset.sh drops data plus Keycloak so stale review credentials are
-# revoked, then restarts infra/CMS only (NOT the DMS services -- they start after bootstrap +
+# revoked, then restarts infrastructure and Configuration Service only (NOT the DMS services -- they start after bootstrap +
 # schema, like a first stand-up), then prints the remaining steps:
 ./reset.sh
-# Wait for the freshly recreated identity/CMS services before bootstrap writes its attempted marker.
+# Wait for the freshly recreated identity and Configuration Service services before bootstrap writes its attempted marker.
 until curl -skf https://localhost/auth/realms/master >/dev/null \
   && curl -skf https://localhost/st-config/health >/dev/null \
   && curl -skf https://localhost/mt-config/health >/dev/null; do sleep 5; done

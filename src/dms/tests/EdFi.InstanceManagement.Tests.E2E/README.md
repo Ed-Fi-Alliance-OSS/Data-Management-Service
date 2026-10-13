@@ -140,7 +140,7 @@ belongs to the standard DMS E2E suite, not this one.
 ### Why not `dotnet test` directly?
 
 Ordinary `dotnet test` only runs the scenarios; it does not provision the three databases,
-register the CMS fixture, or perform the single post-registration DMS restart. Without that
+register the Configuration Service fixture, or perform the single post-registration DMS restart. Without that
 lifecycle and the test-process environment contract it establishes, the `@InstanceFixture`
 scenarios fail fast (missing/invalid fixture state), so run the tests only through the build
 target unless that exact lifecycle and contract already exist in your session.

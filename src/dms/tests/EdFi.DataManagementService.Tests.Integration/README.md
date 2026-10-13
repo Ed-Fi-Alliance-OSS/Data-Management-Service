@@ -18,7 +18,7 @@ These tests boot the production DMS host via
 `WebApplicationFactory<Program>` and drive it through HTTP against an isolated
 per-test database leased from a per-fixture cached baseline. The pieces that
 exist purely to talk to external systems are faked in `Doubles/`: JWT
-validation, the CMS claim-set provider, the application context, the DMS
+validation, the Configuration Service claim-set provider, the application context, the DMS
 instance directory. Everything else is the real production code path -
 ApiSchema loading, profile XML parsing, write/read middleware, the relational
 backend, and the DDL pipeline that provisions each baseline.
@@ -26,7 +26,7 @@ backend, and the DDL pipeline that provisions each baseline.
 ## What this is not
 
 - Not a docker-stack E2E. See `EdFi.DataManagementService.Tests.E2E` for tests
-  that run against a fully composed stack with DMS, CMS, and an identity
+  that run against a fully composed stack with DMS, the Configuration Service, and an identity
   provider.
 - Not an exhaustive matrix. Deep edge cases for backend DDL generation,
   relational write merging, and apiSchema shape coverage live in
@@ -158,7 +158,7 @@ or in a scenario-owned overlay - they will not be invented by the harness.
 Profile XML for each fixture lives at
 `Fixtures/Profiles/<FixtureKey>/*.xml` within this project. Each fixture
 that uses a profile in any of its scenarios gets its own directory. The
-fake CMS profile catalog walks that directory at harness startup.
+fake Configuration Service profile catalog walks that directory at harness startup.
 
 `Fixtures/Profiles/ProfileRootOnlyMerge/` holds the first profile XML
 files used by the suite (`profilerootonlymergeitem-visible.xml` and

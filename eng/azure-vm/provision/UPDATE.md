@@ -106,6 +106,27 @@ Commands are labeled **[bash]** (WSL shell) or **[pwsh]** (`pwsh` inside WSL) an
 cd ~/dms-src && git status --short --untracked-files=no | grep -v 'packages\.lock\.json$'   # expect no output
 ```
 
+A `.env` created before the Configuration Service variable rename still uses `DMS_CONFIG_*` and `CONFIG_SERVICE_*` names, which Compose no longer reads.
+`update.sh` names each one it finds, but rename them before running it below, or the stack fails to start (see [Migrating from the earlier variable names](../../../docs/CONFIGURATION.md#migrating-from-the-earlier-variable-names)).
+This renames each assignment in place, including `export` and indented spellings, and changes only the name before `=`: every value stays as it is, including the database encryption key and the client secrets.
+The `grep` should print nothing; any line it prints is an assignment or a `$` reference the rename did not cover, so fix that line by hand before updating:
+
+```bash
+cd ~/dms-src/eng/azure-vm/compose && cp -p .env .env.before-rename &&
+  sed -i -E \
+    -e '/^[[:space:]]*(export[[:space:]]+)?DMS_CONFIG_IDENTITY_ENCRYPTION_KEY[[:space:]]*=/d' \
+    -e 's/^([[:space:]]*(export[[:space:]]+)?)DMS_CONFIG_ENABLE_CLAIMS_RELOAD([[:space:]]*=)/\1CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING\3/' \
+    -e 's/^([[:space:]]*(export[[:space:]]+)?)DMS_CONFIG_([A-Za-z0-9_]+[[:space:]]*=)/\1CONFIGURATION_SERVICE_\3/' \
+    -e 's/^([[:space:]]*(export[[:space:]]+)?)CONFIG_SERVICE_([A-Za-z0-9_]+[[:space:]]*=)/\1DMS_CONFIGURATION_SERVICE_\3/' \
+    .env
+grep -nE '^[[:space:]]*(export[[:space:]]+)?(DMS_CONFIG_|CONFIG_SERVICE_)[A-Za-z0-9_]*[[:space:]]*=|\$\{?(DMS_CONFIG_|CONFIG_SERVICE_)' \
+  ~/dms-src/eng/azure-vm/compose/.env
+```
+
+Comments are left unchanged.
+`cp -p` keeps the owner-only mode, because `.env.before-rename` holds the secrets too; delete it once the stack is healthy.
+If the update below fails, copy it back over `.env` before running the previous build again.
+
 ```bash
 cd ~/dms-src && git restore -- '*packages.lock.json' &&
   git fetch --force --tags origin && git switch --detach origin/main && git log -1 --oneline &&
@@ -121,7 +142,7 @@ If the first command lists anything else, it was edited on the VM: keep or disca
 `update.sh` pulls the images for the current `DMS_IMAGE_TAG` (`pre` by default) and recreates the changed containers.
 It then restarts the gateway and Swagger UI, because both read their mounted files only at container start; that is how a pulled route such as `/swagger/` takes effect.
 The Configuration Service applies its database migrations at startup.
-If a config service stays unhealthy, `./logs.sh st-config` (or `mt-config`) names the migration that failed.
+If a Configuration Service stays unhealthy, `./logs.sh st-config` (or `mt-config`) names the migration that failed.
 
 Keycloak: `keycloak.yml` pins the floating minor tag `26.7`.
 `update.sh` refuses a changed pin, because the H2 realm volume cannot cross minor versions, but it does apply a patch release published under the same tag.

@@ -1,8 +1,8 @@
 # Configuration Service Background Jobs
 
-The DMS Configuration Service (CMS) runs durable background jobs in-process, with no broker and no
-extra deployable service. A job is a row in the CMS database: consumers enqueue it inside their
-own CMS transaction, a worker on any CMS instance claims and runs it under a lease, and clients
+The Configuration Service runs durable background jobs in-process, with no broker and no
+extra deployable service. A job is a row in the Configuration Service database: consumers enqueue it inside their
+own Configuration Service transaction, a worker on any Configuration Service instance claims and runs it under a lease, and clients
 poll its status through `GET /v3/jobs/{jobId}`. Recurring work is described by schedules, which a
 dispatcher turns into ordinary jobs.
 
@@ -22,7 +22,7 @@ The design record, with every decision and its evidence, is
 | Retention sweep                | `JobSettings:RetentionEnabled`   | Deletes finished jobs older than `FinishedJobRetention`                                |
 | `GET /v3/jobs/{jobId}`         | Always                           | Returns the status of one job of the caller's tenant                                   |
 
-Each switch is independent and is read at startup. Every CMS instance may run all three; the
+Each switch is independent and is read at startup. Every Configuration Service instance may run all three; the
 database coordinates them, so running several instances is safe and adds capacity.
 
 ## Configuration
@@ -131,7 +131,7 @@ present:
 ### Differences from the upstream OpenAPI document
 
 The contract was compared with the Admin API v3 document generated from ODS-Admin-API commit
-`ed115fd8` (`reference/design/jobs-DMS-1437/admin-api-v3-ed115fd8.yaml`). The CMS document matches
+`ed115fd8` (`reference/design/jobs-DMS-1437/admin-api-v3-ed115fd8.yaml`). The Configuration Service document matches
 it on the path parameter, the declared responses (200, 401, 403, 404, and 500, each error as
 `application/problem+json`), the property names, types, and formats, and the nullability of
 `createdAt`, `finishedAt`, and `errorMessage`. It differs as follows:
@@ -142,11 +142,11 @@ it on the path parameter, the declared responses (200, 401, 403, 404, and 500, e
   `required`.
 - The schema does not declare `additionalProperties: false`.
 - Problem responses reference the framework `ProblemDetails` schema, not `problemDetails`.
-- The operation's tag is `JobModule`, as for every CMS module, not `Jobs`.
+- The operation's tag is `JobModule`, as for every Configuration Service module, not `Jobs`.
 
 None of these changes a 200 response body. One runtime difference is deliberate: the not-found
-problem type is the CMS `urn:ed-fi:api:not-found`, not upstream's
-`urn:ed-fi:management-api:not-found`, consistent with every other CMS route.
+problem type is the Configuration Service `urn:ed-fi:api:not-found`, not upstream's
+`urn:ed-fi:management-api:not-found`, consistent with every other Configuration Service route.
 
 ## Writing a job handler
 
@@ -164,7 +164,7 @@ breaks the payload contract, or a type registered twice.
 
 ### Payload contract
 
-Payloads carry CMS identifiers only. A payload type is a sealed record or class whose public
+Payloads carry Configuration Service identifiers only. A payload type is a sealed record or class whose public
 properties are `int`, `long`, `short`, `Guid`, `bool`, enums, strings marked
 `[JobIdentifier(MaxLength)]` (at most 256), read-only lists of those, or nested types following the
 same rules. Dates, floating point, dictionaries, `object`, and JSON nodes are rejected, as are
@@ -195,7 +195,7 @@ resolved from), the attempt number and maximum, and a fence.
 
 ### Fence rules
 
-`context.Fence.ExecuteAsync(work, ct)` runs `work(transaction, ct)` in a CMS database transaction
+`context.Fence.ExecuteAsync(work, ct)` runs `work(transaction, ct)` in a Configuration Service database transaction
 that holds the job's row lock, and commits only if the execution still owns the job:
 
 - A fence waits for a renewal in progress, and a renewal never runs during a fence.
@@ -342,7 +342,7 @@ measure normal queue delay.
 
 ## Deployment
 
-- **Database:** the `dmscs.JobSchedule` and `dmscs.Job` tables are added by the CMS deploy scripts
+- **Database:** the `dmscs.JobSchedule` and `dmscs.Job` tables are added by the Configuration Service deploy scripts
   (`0033`, `0034`) on PostgreSQL and SQL Server. The change is additive; a downgrade leaves the
   tables in place.
 - **Job type rollout:** every instance with the worker enabled must register every job type and

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This directory contains JSON fragment files that extend the base Ed-Fi claims configuration when the DMS Configuration Service is running in hybrid mode. These fragments are automatically discovered and composed with the embedded base claims during service startup to create a complete claims hierarchy.
+This directory contains JSON fragment files that extend the base Ed-Fi claims configuration when the Configuration Service is running in hybrid mode. These fragments are automatically discovered and composed with the embedded base claims during service startup to create a complete claims hierarchy.
 
 ## Fragment Composition Process
 

@@ -153,7 +153,7 @@ on first connection. Schema provisioning happens after the data stores exist in
 Configuration Service (Step 5).
 
 You do not need to create the databases manually. The provisioning phase uses
-the configured CMS data store connection strings, creates missing PostgreSQL
+the configured Configuration Service data store connection strings, creates missing PostgreSQL
 databases, and runs the SchemaTools ddl provision workflow for each distinct
 target database. If you prefer to create empty databases yourself before
 provisioning, use commands like these:
@@ -221,7 +221,7 @@ Prerequisites:
 - If `CONFIGURATION_SERVICE_MULTI_TENANCY=true`, include `Tenant: {tenant-name}` on all
   tenant-scoped Configuration Service calls.
 - Choose the target PostgreSQL database names first (Step 3). Provision them
-  after creating the CMS data stores and route contexts.
+  after creating the Configuration Service data stores and route contexts.
 
 Steps (repeat per school year):
 
@@ -289,7 +289,7 @@ Notes:
 ## Step 5: Provision Schemas and Restart DMS
 
 After creating all instances and route contexts, provision the tenant
-databases. `provision-dms-schema.ps1` reads data stores from Configuration
+databases. `provision-dms-schema.ps1` reads data stores from the Configuration
 Service for the tenant named by `DMS_CONFIGURATION_SERVICE_TENANT` in the environment
 file, translates Docker-internal PostgreSQL connection strings to host-side
 targets, creates missing databases, and invokes `api-schema-tools ddl provision`.

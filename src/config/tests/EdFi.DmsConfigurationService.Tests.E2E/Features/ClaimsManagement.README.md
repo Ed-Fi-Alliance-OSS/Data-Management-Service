@@ -2,7 +2,7 @@
 
 ## Overview
 
-This test suite validates the claims management functionality of the DMS Configuration Service, specifically focusing on hybrid mode operation where base claims are loaded from embedded resources and extended with filesystem fragments.
+This test suite validates the claims management functionality of the Configuration Service, specifically focusing on hybrid mode operation where base claims are loaded from embedded resources and extended with filesystem fragments.
 
 ## Prerequisites
 
@@ -84,7 +84,7 @@ Tests that a downloaded claims document can be uploaded unmodified:
 
 ## Authorization Coverage
 
-This feature's `Background` obtains a **full-access** CMS token (`Given valid credentials` / `And token received`) and sends it on every request, so scenarios 01–06 exercise only the **authenticated happy path** (including the 400 validation case in scenario 05). The feature does **not** contain a negative-authorization scenario.
+This feature's `Background` obtains a **full-access** Configuration Service token (`Given valid credentials` / `And token received`) and sends it on every request, so scenarios 01–06 exercise only the **authenticated happy path** (including the 400 validation case in scenario 05). The feature does **not** contain a negative-authorization scenario.
 
 The negative authorization behavior of the `/management/*` claims endpoints is covered by the focused in-process unit tests in `ClaimsManagementModuleTests` (project `EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit`), not by this E2E feature:
 
