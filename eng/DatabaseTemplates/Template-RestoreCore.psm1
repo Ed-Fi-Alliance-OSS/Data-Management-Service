@@ -1109,11 +1109,12 @@ function Get-InventoryObjectQuerySql {
     over the InventoryEnumeration schema scope. Every category a database can hold inside a
     schema is listed, so an object the authoritative DDL does not create is visible even
     inside an allowed schema: SQL Server lists every schema-scoped sys.objects entry (plus
-    triggers), user-defined types, and XML schema collections; PostgreSQL lists relations,
-    routines, types and domains, collations, conversions, operators, operator classes and
-    families, statistics objects, text search objects, and table triggers, rules, and
-    policies. PostgreSQL function names carry their identity-argument signature (overloads
-    must stay distinct), table-attached objects are qualified by their table, and objects
+    triggers and table constraints), user-defined types, and XML schema collections;
+    PostgreSQL lists relations, routines, types and domains, collations, conversions,
+    operators, operator classes and families, statistics objects, text search objects, and
+    table triggers, rules, policies, and constraints. PostgreSQL function names carry their
+    identity-argument signature (overloads must stay distinct), table constraints and other
+    table-attached objects are qualified by their table, and objects
     owned by the allow-listed bootstrap extensions are filtered so everything else an
     artifact creates stays visible to the DMS-only gate.
     #>
@@ -1126,8 +1127,8 @@ function Get-InventoryObjectQuerySql {
     if ($DatabaseEngine -eq "mssql") {
         # Only sys and INFORMATION_SCHEMA are skipped: no user object can live there. A user
         # object inside the built-in guest or fixed-role schemas is listed like any other, and
-        # the schema query reports its schema for exactly that case. Child objects other than
-        # triggers (constraints) belong to their table. A table type is listed once, by its
+        # the schema query reports its schema for exactly that case. Constraints are listed in
+        # their own arm, qualified by their table. A table type is listed once, by its
         # sys.types name: its sys.objects row (TT) carries a generated per-database name.
         return @(
             "SET NOCOUNT ON;",
@@ -1139,6 +1140,24 @@ function Get-InventoryObjectQuerySql {
             "WHERE o.is_ms_shipped = 0",
             "  AND (o.parent_object_id = 0 OR o.type IN ('TR','TA'))",
             "  AND o.type <> 'TT'",
+            "  AND s.name NOT IN ('sys','INFORMATION_SCHEMA')",
+            "UNION ALL",
+            # Table constraints as "table.constraint". A system-named constraint (an unnamed
+            # DEFAULT in the generated DDL, for one) gets a different generated name in every
+            # database, so it is keyed by its column instead; its type stays in the type field.
+            "SELECT (s.name + '|' + p.name + '.' +",
+            "  CASE WHEN COALESCE(kc.is_system_named, fk.is_system_named, cc.is_system_named, dc.is_system_named, 0) = 1",
+            "    THEN '#system(' + ISNULL(COL_NAME(o.parent_object_id, COALESCE(dc.parent_column_id, NULLIF(cc.parent_column_id, 0))), '') + ')'",
+            "    ELSE o.name END + '|' +",
+            "  CASE o.type WHEN 'PK' THEN 'primarykey' WHEN 'UQ' THEN 'unique' WHEN 'F' THEN 'foreignkey' WHEN 'C' THEN 'check'",
+            "    WHEN 'D' THEN 'default' WHEN 'EC' THEN 'edgeconstraint' END) COLLATE DATABASE_DEFAULT",
+            "FROM sys.objects o JOIN sys.objects p ON p.object_id = o.parent_object_id AND p.type = 'U'",
+            "JOIN sys.schemas s ON s.schema_id = o.schema_id",
+            "LEFT JOIN sys.key_constraints kc ON kc.object_id = o.object_id",
+            "LEFT JOIN sys.foreign_keys fk ON fk.object_id = o.object_id",
+            "LEFT JOIN sys.check_constraints cc ON cc.object_id = o.object_id",
+            "LEFT JOIN sys.default_constraints dc ON dc.object_id = o.object_id",
+            "WHERE o.type IN ('PK','UQ','F','C','D','EC') AND o.is_ms_shipped = 0 AND p.is_ms_shipped = 0",
             "  AND s.name NOT IN ('sys','INFORMATION_SCHEMA')",
             "UNION ALL",
             "SELECT s.name + '|' + t.name + '|' + CASE WHEN t.is_table_type = 1 THEN 'tabletype' ELSE 'type' END",
@@ -1183,6 +1202,14 @@ function Get-InventoryObjectQuerySql {
         "SELECT n.nspname || '|' || c.relname || '.' || pol.polname || '|' || 'policy'",
         "FROM pg_catalog.pg_policy pol JOIN pg_catalog.pg_class c ON c.oid = pol.polrelid JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace",
         "WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'",
+        "UNION ALL",
+        # Table constraints, qualified by their table (PostgreSQL names are unique only per
+        # table). Generated names are derived from the table and columns, so they agree across
+        # databases replayed from the same DDL.
+        "SELECT n.nspname || '|' || c.relname || '.' || con.conname || '|' ||",
+        "  CASE con.contype WHEN 'p' THEN 'primarykey' WHEN 'u' THEN 'unique' WHEN 'f' THEN 'foreignkey' WHEN 'c' THEN 'check' WHEN 'x' THEN 'exclusion' END",
+        "FROM pg_catalog.pg_constraint con JOIN pg_catalog.pg_class c ON c.oid = con.conrelid JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace",
+        "WHERE con.contype IN ('p','u','f','c','x') AND n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'",
         "UNION ALL",
         # Standalone types only: a table's row type (composite over a non-'c' relation) and
         # array types (typtype 'b') come with the object they belong to.

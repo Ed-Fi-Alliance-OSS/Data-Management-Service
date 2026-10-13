@@ -1777,6 +1777,173 @@ Describe "Build-TemplateNuGetPackage authoritative source comparison" {
     }
 }
 
+# The synthetic inventories above cannot show that the catalog query DISCOVERS an object; this
+# live suite runs the real query, through each side's own transport, against databases built
+# from one DDL, and feeds the results to the real producer and consumer gates. OPT-IN: each
+# engine row self-skips unless its DISPOSABLE fixture container is configured (the suite
+# creates and drops its own generated databases there):
+#   DMS_TEMPLATE_INVENTORY_PG_CONTAINER      (superuser 'postgres')
+#   DMS_TEMPLATE_INVENTORY_MSSQL_CONTAINER   (+ DMS_TEMPLATE_INVENTORY_MSSQL_SA_PASSWORD)
+Describe "Authoritative inventory table constraints against a live <Engine> catalog" -ForEach @(
+    @{
+        Engine             = "postgresql"
+        Container          = $env:DMS_TEMPLATE_INVENTORY_PG_CONTAINER
+        AdminDatabase      = "postgres"
+        SourceHistory      = @()
+        SchemaBatches      = @(
+            'CREATE SCHEMA dms;
+             CREATE TABLE dms."Document" ("DocumentId" bigint PRIMARY KEY, "ResourceKeyId" smallint NOT NULL, CONSTRAINT "CK_Positive" CHECK ("DocumentId" > 0));
+             CREATE TABLE dms."Alias" ("AliasId" bigint NOT NULL, "DocumentId" bigint NOT NULL REFERENCES dms."Document" ("DocumentId"), CONSTRAINT "PK_Alias" PRIMARY KEY ("AliasId"));
+             INSERT INTO dms."Document" VALUES (1, 1);'
+        )
+        ExpectedConstraint = @("Document.Document_pkey|primarykey", "Document.CK_Positive|check", "Alias.PK_Alias|primarykey", "Alias.Alias_DocumentId_fkey|foreignkey")
+        Contamination      = @(
+            @{ Index = 0; Name = "a NOT VALID check on an expected table"; Sql = 'ALTER TABLE dms."Document" ADD CONSTRAINT "RejectNewDocuments" CHECK ("DocumentId" < 0) NOT VALID;'; Extra = "dms.Document.RejectNewDocuments (check)" }
+            @{ Index = 1; Name = "a constraint reusing another table's constraint name"; Sql = 'ALTER TABLE dms."Alias" ADD CONSTRAINT "CK_Positive" CHECK ("AliasId" < 0) NOT VALID;'; Extra = "dms.Alias.CK_Positive (check)" }
+        )
+    }
+    @{
+        Engine             = "mssql"
+        Container          = $env:DMS_TEMPLATE_INVENTORY_MSSQL_CONTAINER
+        AdminDatabase      = "master"
+        # Source databases get a different object-id history than the expected replay, as a
+        # real source does; SQL Server derives the generated names from object ids.
+        SourceHistory      = @("CREATE TABLE dbo.ShiftObjectIds (Id int); DROP TABLE dbo.ShiftObjectIds;")
+        SchemaBatches      = @(
+            "CREATE SCHEMA dms;",
+            "CREATE TABLE dms.Document (DocumentId bigint NOT NULL CONSTRAINT PK_Document PRIMARY KEY, ResourceKeyId smallint NOT NULL CHECK (ResourceKeyId > 0), ContentVersion bigint NOT NULL DEFAULT (0));
+             CREATE TABLE dms.Alias (AliasId bigint NOT NULL PRIMARY KEY, DocumentId bigint NOT NULL CONSTRAINT FK_Alias_Document REFERENCES dms.Document (DocumentId));
+             INSERT INTO dms.Document (DocumentId, ResourceKeyId) VALUES (1, 1);"
+        )
+        # The unnamed check, default, and primary key are system-named: keyed by column, not name.
+        ExpectedConstraint = @("Document.PK_Document|primarykey", "Document.#system(ResourceKeyId)|check", "Document.#system(ContentVersion)|default", "Alias.#system()|primarykey", "Alias.FK_Alias_Document|foreignkey")
+        Contamination      = @(
+            @{ Index = 0; Name = "a WITH NOCHECK check on an expected table"; Sql = "ALTER TABLE [dms].[Document] WITH NOCHECK ADD CONSTRAINT [RejectNewDocuments] CHECK ([DocumentId] < 0);"; Extra = "dms.Document.RejectNewDocuments (check)" }
+            @{ Index = 1; Name = "an unnamed WITH NOCHECK check"; Sql = "ALTER TABLE [dms].[Alias] WITH NOCHECK ADD CHECK ([AliasId] < 0);"; Extra = "dms.Alias.#system(AliasId) (check)" }
+        )
+    }
+) {
+    BeforeAll {
+        if ([string]::IsNullOrWhiteSpace($Container)) { return }
+
+        # Template-RestoreCore first, forced: the producer and consumer modules import it without
+        # -Force, so they would otherwise keep whatever copy this session loaded earlier.
+        $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Import-Module (Join-Path $script:templatesDir "Template-RestoreCore.psm1") -Force
+        Push-Location $script:templatesDir
+        try {
+            Import-Module (Join-Path $script:templatesDir "Template-Management.psm1") -Force
+        }
+        finally {
+            Pop-Location
+        }
+        Import-Module (Join-Path $script:templatesDir "../docker-compose/bootstrap-restore.psm1") -Force
+
+        $script:live = @{
+            Engine    = $Engine
+            Container = $Container
+            Password  = $env:DMS_TEMPLATE_INVENTORY_MSSQL_SA_PASSWORD
+        }
+
+        function script:Invoke-LiveQuery {
+            param([string]$Database, [string]$Query)
+            Invoke-RestoreCatalogQuery -DatabaseEngine $script:live.Engine -ContainerName $script:live.Container -DatabaseName $Database `
+                -MssqlPassword $script:live.Password -Query $Query -FailureMessage "Live inventory fixture query failed against '$Database'."
+        }
+
+        # Reads a database's inventory with the producer's transport or the consumer's.
+        function script:Read-LiveInventory {
+            param([string]$Database, [switch]$Producer)
+            $runQuery = if ($Producer) {
+                {
+                    param($database, $query)
+                    InModuleScope Template-Management -Parameters @{ live = $script:live; database = $database; query = $query } {
+                        param($live, $database, $query)
+                        Invoke-TemplateCatalogQuery -DatabaseEngine $live.Engine -ContainerName $live.Container -DatabaseName $database `
+                            -MssqlPassword $live.Password -Query $query -FailureMessage "Producer inventory read failed against '$database'."
+                    }
+                }
+            }
+            else {
+                { param($database, $query) Invoke-LiveQuery -Database $database -Query $query }
+            }
+
+            ConvertFrom-InventoryQueryRow `
+                -SchemaRow (& $runQuery $Database (Get-InventorySchemaQuerySql -DatabaseEngine $script:live.Engine -Purpose InventoryEnumeration)) `
+                -ObjectRow (& $runQuery $Database (Get-InventoryObjectQuerySql -DatabaseEngine $script:live.Engine))
+        }
+
+        # The real producer gate, with only its schema-file derivation replaced by the live
+        # expected database's inventory.
+        function script:Invoke-LiveProducerGate {
+            param($SourceInventory)
+            InModuleScope Template-Management -Parameters @{ engine = $script:live.Engine; expected = $script:expectedInventory; source = $SourceInventory } {
+                param($engine, $expected, $source)
+                $expected.schemas | Should -Not -BeNullOrEmpty
+                Mock Get-TemplateAuthoritativeObjectInventory { $expected }
+                Assert-TemplateSourceMatchesAuthoritativeInventory -Facts ([pscustomobject]@{ FullInventory = $source }) -DatabaseEngine $engine `
+                    -DatabaseName "edfi_datamanagementservice" -SchemaFilePath @("ApiSchema.json")
+            }
+        }
+
+        $prefix = "dms_inventory_probe_$([Guid]::NewGuid().ToString('N').Substring(0, 12))"
+        $script:databases = [ordered]@{ expected = "${prefix}_expected"; clean = "${prefix}_clean" }
+        foreach ($row in $Contamination) { $script:databases["c$($row.Index)"] = "${prefix}_c$($row.Index)" }
+
+        foreach ($database in $script:databases.Values) {
+            $createSql = if ($Engine -eq "mssql") { "CREATE DATABASE [$database];" } else { "CREATE DATABASE `"$database`";" }
+            $null = Invoke-LiveQuery -Database $AdminDatabase -Query $createSql
+            $history = if ($database -ceq $script:databases.expected) { @() } else { $SourceHistory }
+            foreach ($batch in @($history) + @($SchemaBatches)) { $null = Invoke-LiveQuery -Database $database -Query $batch }
+        }
+        foreach ($row in $Contamination) { $null = Invoke-LiveQuery -Database $script:databases["c$($row.Index)"] -Query $row.Sql }
+
+        $script:expectedInventory = Read-LiveInventory -Database $script:databases.expected
+    }
+
+    AfterAll {
+        if ([string]::IsNullOrWhiteSpace($Container) -or $null -eq $script:databases) { return }
+        foreach ($database in $script:databases.Values) {
+            $dropSql = if ($Engine -eq "mssql") { "DROP DATABASE IF EXISTS [$database];" } else { "DROP DATABASE IF EXISTS `"$database`" WITH (FORCE);" }
+            $null = Invoke-LiveQuery -Database $AdminDatabase -Query $dropSql
+        }
+    }
+
+    It "discovers the table constraints and derives the same inventory from two databases built from one DDL" -Skip:([string]::IsNullOrWhiteSpace($Container)) {
+        $dmsObjects = @(@($script:expectedInventory.schemas | Where-Object { $_.schemaName -ceq "dms" })[0].objects |
+                Where-Object { $_.type -notin @("table") } | ForEach-Object { "$($_.name)|$($_.type)" })
+        @($dmsObjects | Sort-Object) | Should -Be @($ExpectedConstraint | Sort-Object)
+
+        (Compare-RestoreObjectInventory -ExpectedInventory $script:expectedInventory -ActualInventory (Read-LiveInventory -Database $script:databases.clean)).IsMatch |
+            Should -BeTrue
+
+        if ($Engine -eq "mssql") {
+            # The keying above is load-bearing: the two databases' generated names really differ.
+            $nameSql = "SET NOCOUNT ON; SELECT name FROM sys.default_constraints;"
+            (Invoke-LiveQuery -Database $script:databases.expected -Query $nameSql) |
+                Should -Not -Be (Invoke-LiveQuery -Database $script:databases.clean -Query $nameSql)
+        }
+    }
+
+    It "accepts the clean source at the producer gate and the clean scratch at the consumer gate" -Skip:([string]::IsNullOrWhiteSpace($Container)) {
+        { Invoke-LiveProducerGate -SourceInventory (Read-LiveInventory -Database $script:databases.clean -Producer) } | Should -Not -Throw
+
+        { Assert-RestoreScratchMatchesAuthoritativeInventory -AuthoritativeInventory $script:expectedInventory `
+                -ScratchInventory (Read-LiveInventory -Database $script:databases.clean) -ScratchDatabaseName $script:databases.clean } |
+            Should -Not -Throw
+    }
+
+    It "rejects <Name> at the producer gate and at the consumer gate" -ForEach $Contamination -Skip:([string]::IsNullOrWhiteSpace($Container)) {
+        $database = $script:databases["c$Index"]
+        { Invoke-LiveProducerGate -SourceInventory (Read-LiveInventory -Database $database -Producer) } |
+            Should -Throw "*objects the schema files do not define: $Extra*Nothing was dumped or packaged*"
+
+        { Assert-RestoreScratchMatchesAuthoritativeInventory -AuthoritativeInventory $script:expectedInventory `
+                -ScratchInventory (Read-LiveInventory -Database $database) -ScratchDatabaseName $database } |
+            Should -Throw "*objects the candidate schema does not define: $Extra*"
+    }
+}
+
 Describe "Build-TemplateNuGetPackage attestation" {
     BeforeAll {
         $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))

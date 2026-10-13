@@ -893,6 +893,26 @@ Describe "inventory catalog query SQL builders" {
         $sql | Should -BeLike "*END COLLATE DATABASE_DEFAULT*"
     }
 
+    It "lists PostgreSQL table constraints qualified by their table" {
+        # Constraint names are unique only per table, so the table qualifies them. NOT NULL
+        # ('n', PostgreSQL 18) and constraint triggers ('t', listed as triggers) stay out.
+        $sql = Get-InventoryObjectQuerySql -DatabaseEngine postgresql
+        $sql | Should -BeLike "*FROM pg_catalog.pg_constraint con JOIN pg_catalog.pg_class c ON c.oid = con.conrelid*"
+        $sql | Should -BeLike "*c.relname || '.' || con.conname*"
+        $sql | Should -BeLike "*con.contype IN ('p','u','f','c','x')*"
+    }
+
+    It "lists MSSQL table constraints qualified by their table, keying system-named ones by column" {
+        # A system-generated name (DF__Table__Col__1A2B3C4D) differs per database, so keying
+        # on it would reject a clean backup against an inventory derived from a fresh replay.
+        $sql = Get-InventoryObjectQuerySql -DatabaseEngine mssql
+        $sql | Should -BeLike "*o.type IN ('PK','UQ','F','C','D','EC')*"
+        $sql | Should -BeLike "*JOIN sys.objects p ON p.object_id = o.parent_object_id AND p.type = 'U'*"
+        $sql | Should -BeLike "*p.name + '.' +*"
+        $sql | Should -BeLike "*is_system_named*THEN '#system(' + ISNULL(COL_NAME(o.parent_object_id,*ELSE o.name END*"
+        $sql | Should -BeLike "*WHEN 'D' THEN 'default'*) COLLATE DATABASE_DEFAULT*"
+    }
+
     It "excludes the built-in public role and fixed roles from the MSSQL principal query" {
         $sql = Get-InventoryPrincipalQuerySql -DatabaseEngine mssql
         $sql | Should -BeLike "*is_fixed_role = 0*"
