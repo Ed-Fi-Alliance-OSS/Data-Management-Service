@@ -33,10 +33,6 @@ internal static class NaturalKeyProbeCompiler
     {
         ArgumentNullException.ThrowIfNull(modelSet);
 
-        HashSet<QualifiedResourceName> abstractResources =
-        [
-            .. modelSet.AbstractIdentityTablesInNameOrder.Select(table => table.AbstractResourceKey.Resource),
-        ];
         HashSet<QualifiedResourceName> referencedResources =
         [
             .. modelSet.ConcreteResourcesInNameOrder.SelectMany(resource =>
@@ -66,7 +62,7 @@ internal static class NaturalKeyProbeCompiler
 
             ownKeys.Add(resource, BuildOwnKeyProbe(concreteResource));
 
-            if (referencedResources.Contains(resource) && !abstractResources.Contains(resource))
+            if (referencedResources.Contains(resource))
             {
                 targets.Add(resource, BuildConcreteTarget(concreteResource));
             }
