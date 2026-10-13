@@ -17,12 +17,6 @@ internal static class ForeignKeyStorageValidator
         RelationalNameConventions.DocumentIdColumnName,
     ];
 
-    private static readonly DbColumnName[] _documentResourceKeyTarget =
-    [
-        RelationalNameConventions.DocumentIdColumnName,
-        RelationalNameConventions.ResourceKeyIdColumnName,
-    ];
-
     /// <summary>
     /// Validates that foreign-key endpoint columns are stored columns and not synthetic presence flags.
     /// </summary>
@@ -110,7 +104,7 @@ internal static class ForeignKeyStorageValidator
 
         if (
             targetColumns.SequenceEqual(_documentIdTarget)
-            || targetColumns.SequenceEqual(_documentResourceKeyTarget)
+            || targetColumns.SequenceEqual(RelationalNameConventions.DocumentResourceKeyColumns)
         )
         {
             return;

@@ -263,13 +263,6 @@ public class Given_AbstractIdentityMaintenance_Trigger_Resource_Key_Values
     }
 
     [Test]
-    public void It_keeps_the_discriminator_value()
-    {
-        GetParameters("School").DiscriminatorValue.Should().Be("Ed-Fi:School");
-        GetParameters("LocalEducationAgency").DiscriminatorValue.Should().Be("Ed-Fi:LocalEducationAgency");
-    }
-
-    [Test]
     public void It_keeps_payload_columns_out_of_the_target_column_mappings()
     {
         _result

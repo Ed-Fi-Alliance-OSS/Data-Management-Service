@@ -1149,18 +1149,12 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
             tableName,
             ConstraintNaming.DocumentResourceKeyToken
         );
-        DbColumnName[] documentResourceKeyColumns =
-        [
-            RelationalNameConventions.DocumentIdColumnName,
-            RelationalNameConventions.ResourceKeyIdColumnName,
-        ];
-
         constraints.Add(
             new TableConstraint.ForeignKey(
                 fkName,
-                documentResourceKeyColumns,
+                RelationalNameConventions.DocumentResourceKeyColumns,
                 _documentTableName,
-                documentResourceKeyColumns,
+                RelationalNameConventions.DocumentResourceKeyColumns,
                 OnDelete: ReferentialAction.Cascade
             )
         );

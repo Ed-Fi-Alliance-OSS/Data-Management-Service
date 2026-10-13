@@ -21,12 +21,6 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
         RelationalNameConventions.DocumentIdColumnName,
     ];
 
-    private static readonly DbColumnName[] _documentResourceKeyColumns =
-    [
-        RelationalNameConventions.DocumentIdColumnName,
-        RelationalNameConventions.ResourceKeyIdColumnName,
-    ];
-
     /// <summary>
     /// Populates <see cref="RelationalModelSetBuilderContext.IndexInventory"/> with PK-implied,
     /// UK-implied, and FK-support indexes for each derived table.
@@ -208,7 +202,7 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
     )
     {
         return foreignKey.TargetTable.Equals(_documentTableName)
-            && foreignKey.Columns.SequenceEqual(_documentResourceKeyColumns)
+            && foreignKey.Columns.SequenceEqual(RelationalNameConventions.DocumentResourceKeyColumns)
             && table.Key.Columns.Select(column => column.ColumnName).SequenceEqual(_documentIdKeyColumns);
     }
 
