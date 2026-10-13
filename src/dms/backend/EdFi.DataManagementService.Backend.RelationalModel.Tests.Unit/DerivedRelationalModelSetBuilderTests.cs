@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.RelationalModel;
 using FluentAssertions;
 using NUnit.Framework;
@@ -187,5 +188,52 @@ public class Given_A_Derived_Relational_Model_Set_Without_Key_Unification
                 resource.RelationalModel.TablesInDependencyOrder
             )
             .Concat(derived.AbstractIdentityTablesInNameOrder.Select(table => table.TableModel));
+    }
+}
+
+/// <summary>
+/// Test fixture for a derived relational model set whose resource identity mixes reference parts and a
+/// scalar part.
+/// </summary>
+[TestFixture]
+public class Given_A_Derived_Relational_Model_Set_With_A_Reference_Bearing_Identity
+{
+    private ConcreteResourceModel _session = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var root = BackendFixturePaths.GetAuthoritativeFixtureRoot(TestContext.CurrentContext.TestDirectory);
+        var projectSchema = JsonNode.Parse(
+            File.ReadAllText(Path.Combine(root, "ds-5.2", "inputs", "ds-5.2-api-schema-authoritative.json"))
+        )!["projectSchema"]!.AsObject();
+        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([
+            EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(projectSchema, false),
+        ]);
+
+        var derived = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault()).Build(
+            effectiveSchemaSet,
+            SqlDialect.Pgsql,
+            new PgsqlDialectRules()
+        );
+
+        _session = derived.ConcreteResourcesInNameOrder.Single(resource =>
+            resource.ResourceKey.Resource == new QualifiedResourceName("Ed-Fi", "Session")
+        );
+    }
+
+    /// <summary>
+    /// It carries the identity JSON paths in schema order.
+    /// </summary>
+    [Test]
+    public void It_carries_identity_json_paths_in_schema_order()
+    {
+        _session
+            .IdentityJsonPaths.Select(path => path.Canonical)
+            .Should()
+            .Equal("$.schoolReference.schoolId", "$.schoolYearTypeReference.schoolYear", "$.sessionName");
     }
 }
