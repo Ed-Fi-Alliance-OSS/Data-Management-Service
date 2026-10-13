@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.OAuth;
+using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
@@ -58,10 +59,51 @@ public class TokenEndpointModule : IEndpointModule
         if (httpContext.Request.HasFormContentType)
         {
             var form = await httpContext.Request.ReadFormAsync();
-            tokenRequest = new TokenRequest { grant_type = form["grant_type"].ToString() };
+
+            // RFC 6749 section 3.2: request parameters must not be included more than once.
+            if (Array.Exists(_singleValuedFormParameters, name => form[name].Count > 1))
+            {
+                await WriteBadRequest(
+                    httpContext,
+                    appSettings,
+                    "A request parameter was included more than once"
+                );
+                return;
+            }
+
+            // A body credential field is null only when absent, so that the manager can tell a
+            // present-but-empty field (still a second authentication mechanism) from no field.
+            tokenRequest = new TokenRequest
+            {
+                grant_type = form["grant_type"].ToString(),
+                client_id = form.ContainsKey("client_id") ? form["client_id"].ToString() : null,
+                client_secret = form.ContainsKey("client_secret") ? form["client_secret"].ToString() : null,
+            };
         }
 
         await GenerateToken(httpContext, tokenRequest, appSettings, oAuthManager, logger, httpClientFactory);
+    }
+
+    private static readonly string[] _singleValuedFormParameters =
+    [
+        "grant_type",
+        "client_id",
+        "client_secret",
+    ];
+
+    private static async Task WriteBadRequest(
+        HttpContext httpContext,
+        IOptions<AppSettings> appSettings,
+        string detail
+    )
+    {
+        var traceId = AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, appSettings);
+        httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+        // Matches the media type of the manager's problem responses, which are UTF-8 StringContent.
+        httpContext.Response.ContentType = "application/problem+json; charset=utf-8";
+        await httpContext.Response.WriteAsync(
+            FailureResponse.ForBadRequest(detail, traceId, [], []).ToString()
+        );
     }
 
     internal static async Task HandleJsonData(
@@ -93,12 +135,20 @@ public class TokenEndpointModule : IEndpointModule
 
         var client = new HttpClientWrapper(httpClientFactory.CreateClient());
 
-        httpContext.Request.Headers.TryGetValue("Authorization", out var authHeader);
+        // null when the request carried no Authorization header at all, which the manager must
+        // tell apart from a header that is present but empty.
+        string? authHeader = httpContext.Request.Headers.TryGetValue(
+            "Authorization",
+            out var authHeaderValues
+        )
+            ? authHeaderValues.ToString()
+            : null;
 
         var response = await oAuthManager.GetAccessTokenAsync(
             client,
-            tokenRequest.grant_type,
-            authHeader.ToString(),
+            tokenRequest.grant_type ?? string.Empty,
+            authHeader,
+            new TokenRequestCredentials(tokenRequest.client_id, tokenRequest.client_secret),
             appSettings.Value.AuthenticationService,
             traceId
         );
@@ -122,5 +172,19 @@ public class TokenEndpointModule : IEndpointModule
 
 public class TokenRequest
 {
-    public string grant_type { get; set; } = "";
+    /// <summary>
+    /// Nullable because JSON binding assigns a JSON <c>null</c> whatever the declared type, and a
+    /// non-nullable declaration let that <c>null</c> reach the manager unchecked.
+    /// </summary>
+    public string? grant_type { get; set; } = "";
+
+    /// <summary>
+    /// <c>null</c> when the body did not carry the field.
+    /// </summary>
+    public string? client_id { get; set; }
+
+    /// <summary>
+    /// <c>null</c> when the body did not carry the field. Never logged.
+    /// </summary>
+    public string? client_secret { get; set; }
 }
