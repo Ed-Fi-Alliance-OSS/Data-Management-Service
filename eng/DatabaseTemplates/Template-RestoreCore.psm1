@@ -1109,12 +1109,13 @@ function Get-InventoryObjectQuerySql {
     over the InventoryEnumeration schema scope. Every category a database can hold inside a
     schema is listed, so an object the authoritative DDL does not create is visible even
     inside an allowed schema: SQL Server lists every schema-scoped sys.objects entry (plus
-    triggers and table constraints), user-defined types, and XML schema collections;
-    PostgreSQL lists relations, routines, types and domains, collations, conversions,
-    operators, operator classes and families, statistics objects, text search objects, and
-    table triggers, rules, policies, and constraints. PostgreSQL function names carry their
-    identity-argument signature (overloads must stay distinct), table constraints and other
-    table-attached objects are qualified by their table, and objects
+    triggers, table constraints, and standalone indexes), user-defined types, and XML schema
+    collections; PostgreSQL lists relations, routines, types and domains, collations,
+    conversions, operators, operator classes and families, statistics objects, text search
+    objects, and table triggers, rules, policies, constraints, and standalone indexes.
+    PostgreSQL function names carry their identity-argument signature (overloads must stay
+    distinct), table constraints, indexes, and other table-attached objects are qualified by
+    their table, and objects
     owned by the allow-listed bootstrap extensions are filtered so everything else an
     artifact creates stays visible to the DMS-only gate.
     #>
@@ -1158,6 +1159,16 @@ function Get-InventoryObjectQuerySql {
             "LEFT JOIN sys.check_constraints cc ON cc.object_id = o.object_id",
             "LEFT JOIN sys.default_constraints dc ON dc.object_id = o.object_id",
             "WHERE o.type IN ('PK','UQ','F','C','D','EC') AND o.is_ms_shipped = 0 AND p.is_ms_shipped = 0",
+            "  AND s.name NOT IN ('sys','INFORMATION_SCHEMA')",
+            "UNION ALL",
+            # Standalone indexes as "table.index", unique ones tagged as such. Heaps (type 0) are
+            # not indexes, and primary key and unique constraint indexes are already listed as
+            # their constraint. sys.indexes is not in sys.objects, so nothing above lists these.
+            "SELECT (s.name + '|' + p.name + '.' + i.name + '|' +",
+            "  CASE WHEN i.is_unique = 1 THEN 'uniqueindex' ELSE 'index' END) COLLATE DATABASE_DEFAULT",
+            "FROM sys.indexes i JOIN sys.objects p ON p.object_id = i.object_id AND p.type IN ('U','V')",
+            "JOIN sys.schemas s ON s.schema_id = p.schema_id",
+            "WHERE i.type <> 0 AND i.is_primary_key = 0 AND i.is_unique_constraint = 0 AND p.is_ms_shipped = 0",
             "  AND s.name NOT IN ('sys','INFORMATION_SCHEMA')",
             "UNION ALL",
             "SELECT s.name + '|' + t.name + '|' + CASE WHEN t.is_table_type = 1 THEN 'tabletype' ELSE 'type' END",
@@ -1210,6 +1221,17 @@ function Get-InventoryObjectQuerySql {
         "  CASE con.contype WHEN 'p' THEN 'primarykey' WHEN 'u' THEN 'unique' WHEN 'f' THEN 'foreignkey' WHEN 'c' THEN 'check' WHEN 'x' THEN 'exclusion' END",
         "FROM pg_catalog.pg_constraint con JOIN pg_catalog.pg_class c ON c.oid = con.conrelid JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace",
         "WHERE con.contype IN ('p','u','f','c','x') AND n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'",
+        "UNION ALL",
+        # Standalone indexes, qualified by their table, unique ones tagged as such. An index
+        # that backs a primary key, unique, or exclusion constraint is already listed as that
+        # constraint (a foreign key's conindid names the referenced index, so it does not count).
+        "SELECT n.nspname || '|' || t.relname || '.' || c.relname || '|' || CASE WHEN i.indisunique THEN 'uniqueindex' ELSE 'index' END",
+        "FROM pg_catalog.pg_index i JOIN pg_catalog.pg_class c ON c.oid = i.indexrelid JOIN pg_catalog.pg_class t ON t.oid = i.indrelid",
+        "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace",
+        "WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'",
+        "  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_constraint con WHERE con.conindid = c.oid AND con.contype IN ('p','u','x'))",
+        "  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d JOIN pg_catalog.pg_extension e ON e.oid = d.refobjid",
+        "                  WHERE d.classid = 'pg_catalog.pg_class'::regclass AND d.objid = t.oid AND d.deptype = 'e' AND e.extname IN ($allowedExtensionList))",
         "UNION ALL",
         # Standalone types only: a table's row type (composite over a non-'c' relation) and
         # array types (typtype 'b') come with the object they belong to.
@@ -2105,6 +2127,86 @@ $$;
 '@
 }
 
+function Get-PostgresqlTemplateOwnershipQuerySql {
+    <#
+    .SYNOPSIS
+    SQL listing, as "kind|owner|identity" rows, every schema, relation, function, and standalone
+    type in the dumped schemas that the dumping administrator (current_user) does not own. A
+    template is dumped with --no-owner so it never names the source administrator; on replay
+    the restoring administrator owns everything, exactly as provisioning would. These rows are
+    the ownership that --no-owner would otherwise drop. Identities are pre-quoted (%I), and the
+    identity is the last field because a quoted name may itself contain the separator.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [string[]]$SchemaName
+    )
+
+    foreach ($name in $SchemaName) {
+        if ($name -cnotmatch '^[A-Za-z0-9_]+\z') {
+            throw "Dumped schema name '$name' contains unsupported characters. Only letters, digits, and underscores are allowed."
+        }
+    }
+    $schemaList = ($SchemaName | ForEach-Object { "'" + $_ + "'" }) -join ", "
+
+    return @(
+        "SELECT x.kind || '|' || pg_catalog.pg_get_userbyid(x.owner) || '|' || x.identity FROM (",
+        "  SELECT 'schema' AS kind, n.nspowner AS owner, pg_catalog.format('%I', n.nspname) AS identity, n.nspname AS ns FROM pg_catalog.pg_namespace n",
+        "  UNION ALL SELECT 'relation', c.relowner, pg_catalog.format('%I.%I', n.nspname, c.relname), n.nspname",
+        "    FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace",
+        "  UNION ALL SELECT 'function', p.proowner, pg_catalog.format('%I.%I(%s)', n.nspname, p.proname, pg_catalog.pg_get_function_identity_arguments(p.oid)), n.nspname",
+        "    FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace",
+        "  UNION ALL SELECT 'type', t.typowner, pg_catalog.format('%I.%I', n.nspname, t.typname), n.nspname",
+        "    FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace",
+        "    WHERE t.typtype IN ('c','d','e','r','m') AND (t.typtype <> 'c' OR EXISTS (SELECT 1 FROM pg_catalog.pg_class c WHERE c.oid = t.typrelid AND c.relkind = 'c'))",
+        ") x",
+        "WHERE x.ns IN ($schemaList) AND x.owner <> (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = current_user)",
+        "ORDER BY 1;"
+    ) -join "`n"
+}
+
+function ConvertTo-PostgresqlTemplateOwnershipFinalizationSql {
+    <#
+    .SYNOPSIS
+    The ownership finalization appended to a --no-owner PostgreSQL template dump, before the
+    artifact is hashed, described by the manifest, and attested. The authoritative DDL makes
+    edfi_dms_enqueue_owner own the SECURITY DEFINER enqueue trigger functions (EXECUTE revoked
+    from PUBLIC); everything else belongs to the provisioning administrator. Each such function
+    gets its ALTER FUNCTION ... OWNER TO back. It runs after the dump's ACL statements, so
+    PostgreSQL carries the restoring owner's privileges over to the new owner. Any other
+    ownership the source carries cannot be reproduced without naming a source role, so it fails
+    the build instead of being silently reassigned.
+    #>
+    param (
+        [AllowEmptyCollection()]
+        [AllowNull()]
+        [string[]]$OwnershipRow
+    )
+
+    $enqueueOwnerRoleName = "edfi_dms_enqueue_owner"
+    $statements = [System.Collections.Generic.List[string]]::new()
+    $unsupported = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($rawRow in @($OwnershipRow)) {
+        if ([string]::IsNullOrWhiteSpace($rawRow)) { continue }
+        $fields = $rawRow.Trim() -split '\|', 3
+        if ($fields.Count -ne 3 -or [string]::IsNullOrWhiteSpace($fields[2])) {
+            throw "Template ownership query returned a malformed row (expected 'kind|owner|identity'): '$rawRow'."
+        }
+        if ($fields[0] -ceq "function" -and $fields[1] -ceq $enqueueOwnerRoleName) {
+            $statements.Add("ALTER FUNCTION $($fields[2]) OWNER TO `"$enqueueOwnerRoleName`";")
+            continue
+        }
+        $unsupported.Add("$($fields[0]) $($fields[2]) (owner $($fields[1]))")
+    }
+
+    if ($unsupported.Count -gt 0) {
+        throw "The template source carries ownership a portable dump cannot reproduce: $($unsupported -join ', '). Only the dumping administrator and $enqueueOwnerRoleName (functions only) may own dumped objects. Nothing was dumped or packaged."
+    }
+
+    return (@("", "-- Ownership the --no-owner dump does not carry (DMS template finalization).") + $statements) -join "`n"
+}
+
 function Get-SourceIdentitySelectSql {
     <#
     .SYNOPSIS
@@ -2235,5 +2337,7 @@ Export-ModuleMember -Function `
     New-MssqlRestoreMoveClause, `
     Get-SourceIdentityReseedSql, `
     Get-PostgresqlRestoreGlobalRoleSql, `
+    Get-PostgresqlTemplateOwnershipQuerySql, `
+    ConvertTo-PostgresqlTemplateOwnershipFinalizationSql, `
     Get-SourceIdentitySelectSql, `
     Test-RestoredSourceIdentityValue

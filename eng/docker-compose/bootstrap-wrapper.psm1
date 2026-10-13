@@ -987,6 +987,13 @@ function Invoke-BootstrapWrapper {
                     -EnvironmentValues $restoreEnvironmentValues `
                     -Name "MSSQL_SA_PASSWORD" `
                     -DefaultValue "abcdefgh1!"
+                # Likewise the PostgreSQL administrator: postgresql.yml initializes the container
+                # with ${POSTGRES_USER:-postgres}, and no postgres role exists under an override,
+                # so every restore helper and the preflight cleanup connect as this account.
+                $restorePostgresUser = Get-ComposeResolvedEnvValue `
+                    -EnvironmentValues $restoreEnvironmentValues `
+                    -Name "POSTGRES_USER" `
+                    -DefaultValue "postgres"
 
                 $restorePackage = $null
                 $restoreStage = $null
@@ -1065,18 +1072,20 @@ function Invoke-BootstrapWrapper {
                         -Manifest $restoreStage.Manifest `
                         -SeparateConfigDatabase:$SeparateConfigDatabase `
                         -EffectiveConfigDatabaseName $effectiveConfigDatabaseName `
-                        -MssqlPassword $restoreMssqlPassword
+                        -MssqlPassword $restoreMssqlPassword `
+                        -PostgresUser $restorePostgresUser
                     $restoreScratch = Invoke-RestoreScratchValidation `
                         -Stage $restoreStage `
                         -CandidateFact $restoreCandidateFact `
                         -RestoreTemplate $RestoreTemplate `
                         -DatabaseEngine $DatabaseEngine `
-                        -MssqlPassword $restoreMssqlPassword
+                        -MssqlPassword $restoreMssqlPassword `
+                        -PostgresUser $restorePostgresUser
 
                     # Drop the preflight database, stop the db-only slice, and re-prove the stop
                     # before the whole-tree workspace commit (D10 precondition). The drop is
                     # required: a failure stops here, before the commit and the replacement.
-                    Remove-RestorePreflightDatabase -DatabaseEngine $DatabaseEngine -PreflightDatabaseName $restorePreflightDatabaseName -Required
+                    Remove-RestorePreflightDatabase -DatabaseEngine $DatabaseEngine -PreflightDatabaseName $restorePreflightDatabaseName -PostgresUser $restorePostgresUser -Required
                     # Stopped with the SAME compose shape that started the slice (database-only
                     # compose files + the preflight env file + this run's project), never a bare
                     # "docker compose -p <project> stop db", and never "down"/-v: nothing is removed.
@@ -1107,12 +1116,13 @@ function Invoke-BootstrapWrapper {
                         -DatabaseEngine $DatabaseEngine `
                         -SeparateConfigDatabase:$SeparateConfigDatabase `
                         -EffectiveConfigDatabaseName $effectiveConfigDatabaseName `
-                        -MssqlPassword $restoreMssqlPassword
+                        -MssqlPassword $restoreMssqlPassword `
+                        -PostgresUser $restorePostgresUser
 
                     # The generated preflight database is dropped BEFORE the real-env -InfraOnly below
                     # (argv-order asserted by tests); the finally repeats the drop best-effort only
                     # when a failure skips this line.
-                    Remove-RestorePreflightDatabase -DatabaseEngine $DatabaseEngine -PreflightDatabaseName $restorePreflightDatabaseName
+                    Remove-RestorePreflightDatabase -DatabaseEngine $DatabaseEngine -PreflightDatabaseName $restorePreflightDatabaseName -PostgresUser $restorePostgresUser
                     $restorePreflightDatabaseName = ""
                 }
                 finally {
@@ -1145,7 +1155,7 @@ function Invoke-BootstrapWrapper {
                         Remove-Item -LiteralPath $restorePackage.DownloadDirectory -Recurse -Force
                     }
                     if (-not [string]::IsNullOrWhiteSpace($restorePreflightDatabaseName)) {
-                        Remove-RestorePreflightDatabase -DatabaseEngine $DatabaseEngine -PreflightDatabaseName $restorePreflightDatabaseName
+                        Remove-RestorePreflightDatabase -DatabaseEngine $DatabaseEngine -PreflightDatabaseName $restorePreflightDatabaseName -PostgresUser $restorePostgresUser
                     }
                     # The derived preflight env file is a one-run transient consumed only by the two
                     # -DbOnly slices above; it is removed on success and on every failure path.

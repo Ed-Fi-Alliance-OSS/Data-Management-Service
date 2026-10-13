@@ -540,6 +540,7 @@ Describe "Invoke-DatabaseDump" {
             InModuleScope Template-Management -Parameters @{ backupDir = $TestDrive } {
                 param($backupDir)
                 $calls = [System.Collections.Generic.List[object]]::new()
+                Mock Invoke-TemplateCatalogQuery { @() }
                 Mock docker {
                     $calls.Add(@($args))
                     $global:LASTEXITCODE = 0
@@ -548,7 +549,7 @@ Describe "Invoke-DatabaseDump" {
                 Invoke-DatabaseDump -DatabaseEngine postgresql -ContainerName "dms-postgresql" -DatabaseName "edfi_datamanagementservice" -DatabaseSchemas @("dms", "edfi") -BackupDirectory $backupDir -BackupFileName "test.sql"
 
                 $calls.Count | Should -Be 1
-                ($calls[0] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'pg_dump', '-U', 'postgres', 'edfi_datamanagementservice', '-n', 'dms', '-n', 'edfi') -join '|')
+                ($calls[0] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'pg_dump', '-U', 'postgres', '--no-owner', 'edfi_datamanagementservice', '-n', 'dms', '-n', 'edfi') -join '|')
 
                 # Schema-scoped pg_dump never emits CREATE EXTENSION, but the dumped dms.uuidv5()
                 # function requires pgcrypto's digest(), so the preamble must precede the dump.
@@ -563,6 +564,7 @@ Describe "Invoke-DatabaseDump" {
                 # pg_dump writes some output and then fails: the redirection has already produced a
                 # partial file, so a missing exit-code check would report "Backup Created" over a
                 # truncated dump and let manifest/packaging/attestation consume it.
+                Mock Invoke-TemplateCatalogQuery { @() }
                 Mock docker {
                     "-- partial dump output"
                     $global:LASTEXITCODE = 1
@@ -581,6 +583,7 @@ Describe "Invoke-DatabaseDump" {
         It "produces byte-identical pg_dump arguments whether or not -DatabaseEngine is supplied" {
             InModuleScope Template-Management -Parameters @{ backupDir = $TestDrive } {
                 param($backupDir)
+                Mock Invoke-TemplateCatalogQuery { @() }
                 $explicitCalls = [System.Collections.Generic.List[object]]::new()
                 Mock docker { $explicitCalls.Add(@($args)); $global:LASTEXITCODE = 0 }
                 Invoke-DatabaseDump -DatabaseEngine postgresql -ContainerName "dms-postgresql" -DatabaseName "edfi_datamanagementservice" -DatabaseSchemas @("dms") -BackupDirectory $backupDir -BackupFileName "explicit.sql"
@@ -591,6 +594,49 @@ Describe "Invoke-DatabaseDump" {
 
                 $defaultCalls.Count | Should -Be $explicitCalls.Count
                 ($defaultCalls[0] -join '|') | Should -Be ($explicitCalls[0] -join '|')
+            }
+        }
+
+        It "appends the enqueue owner's function ownership after the --no-owner dump, so the hashed artifact names no source administrator" {
+            InModuleScope Template-Management -Parameters @{ backupDir = $TestDrive } {
+                param($backupDir)
+                Mock Invoke-TemplateCatalogQuery {
+                    @(
+                        'function|edfi_dms_enqueue_owner|dms."TF_Document_EnqueueProjectionInsert"()',
+                        'function|edfi_dms_enqueue_owner|dms."TF_Document_EnqueueProjectionUpdate"()'
+                    )
+                }
+                Mock docker { "-- dump body"; $global:LASTEXITCODE = 0 }
+
+                Invoke-DatabaseDump -DatabaseEngine postgresql -ContainerName "dms-postgresql" -DatabaseName "edfi_datamanagementservice" -DatabaseSchemas @("dms", "edfi") -BackupDirectory $backupDir -BackupFileName "portable.sql"
+
+                # The ownership is read from the dumped schemas of the same source, as the dumping administrator.
+                Should -Invoke Invoke-TemplateCatalogQuery -Times 1 -Exactly -ParameterFilter {
+                    $DatabaseName -ceq "edfi_datamanagementservice" -and $ContainerName -ceq "dms-postgresql" -and
+                    $Query -ceq (Get-PostgresqlTemplateOwnershipQuerySql -SchemaName @("dms", "edfi"))
+                }
+                $lines = @(Get-Content -LiteralPath (Join-Path $backupDir "portable.sql") | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+                $lines | Should -Be @(
+                    'CREATE EXTENSION IF NOT EXISTS "pgcrypto";',
+                    '-- dump body',
+                    '-- Ownership the --no-owner dump does not carry (DMS template finalization).',
+                    'ALTER FUNCTION dms."TF_Document_EnqueueProjectionInsert"() OWNER TO "edfi_dms_enqueue_owner";',
+                    'ALTER FUNCTION dms."TF_Document_EnqueueProjectionUpdate"() OWNER TO "edfi_dms_enqueue_owner";'
+                )
+            }
+        }
+
+        It "refuses a source whose ownership the portable dump cannot reproduce, before pg_dump runs" {
+            InModuleScope Template-Management -Parameters @{ backupDir = $TestDrive } {
+                param($backupDir)
+                Mock Invoke-TemplateCatalogQuery { @('relation|someone_else|dms."Document"') }
+                Mock docker { $global:LASTEXITCODE = 0 }
+
+                { Invoke-DatabaseDump -DatabaseEngine postgresql -ContainerName "dms-postgresql" -DatabaseName "edfi_datamanagementservice" -DatabaseSchemas @("dms") -BackupDirectory $backupDir -BackupFileName "refused.sql" } |
+                    Should -Throw '*cannot reproduce: relation dms."Document" (owner someone_else)*Nothing was dumped or packaged*'
+
+                Should -Invoke docker -Times 0 -Exactly
+                Test-Path -LiteralPath (Join-Path $backupDir "refused.sql") | Should -BeFalse
             }
         }
     }
@@ -1784,22 +1830,30 @@ Describe "Build-TemplateNuGetPackage authoritative source comparison" {
 # creates and drops its own generated databases there):
 #   DMS_TEMPLATE_INVENTORY_PG_CONTAINER      (superuser 'postgres')
 #   DMS_TEMPLATE_INVENTORY_MSSQL_CONTAINER   (+ DMS_TEMPLATE_INVENTORY_MSSQL_SA_PASSWORD)
-Describe "Authoritative inventory table constraints against a live <Engine> catalog" -ForEach @(
+Describe "Authoritative inventory table constraints and indexes against a live <Engine> catalog" -ForEach @(
     @{
         Engine             = "postgresql"
         Container          = $env:DMS_TEMPLATE_INVENTORY_PG_CONTAINER
         AdminDatabase      = "postgres"
         SourceHistory      = @()
+        # The unique expression index has the generated UX_Descriptor_ResourceKeyId_Uri shape.
         SchemaBatches      = @(
             'CREATE SCHEMA dms;
              CREATE TABLE dms."Document" ("DocumentId" bigint PRIMARY KEY, "ResourceKeyId" smallint NOT NULL, CONSTRAINT "CK_Positive" CHECK ("DocumentId" > 0));
              CREATE TABLE dms."Alias" ("AliasId" bigint NOT NULL, "DocumentId" bigint NOT NULL REFERENCES dms."Document" ("DocumentId"), CONSTRAINT "PK_Alias" PRIMARY KEY ("AliasId"));
+             CREATE INDEX "IX_Alias_DocumentId" ON dms."Alias" ("DocumentId");
+             CREATE UNIQUE INDEX "UX_Document_ResourceKeyId_Uri" ON dms."Document" ("ResourceKeyId", ("DocumentId"::text || ''#''));
              INSERT INTO dms."Document" VALUES (1, 1);'
         )
-        ExpectedConstraint = @("Document.Document_pkey|primarykey", "Document.CK_Positive|check", "Alias.PK_Alias|primarykey", "Alias.Alias_DocumentId_fkey|foreignkey")
+        # Constraint-backed indexes (Document_pkey, PK_Alias) appear once, as their constraint.
+        ExpectedAttached   = @("Document.Document_pkey|primarykey", "Document.CK_Positive|check", "Alias.PK_Alias|primarykey", "Alias.Alias_DocumentId_fkey|foreignkey",
+            "Alias.IX_Alias_DocumentId|index", "Document.UX_Document_ResourceKeyId_Uri|uniqueindex")
         Contamination      = @(
             @{ Index = 0; Name = "a NOT VALID check on an expected table"; Sql = 'ALTER TABLE dms."Document" ADD CONSTRAINT "RejectNewDocuments" CHECK ("DocumentId" < 0) NOT VALID;'; Extra = "dms.Document.RejectNewDocuments (check)" }
             @{ Index = 1; Name = "a constraint reusing another table's constraint name"; Sql = 'ALTER TABLE dms."Alias" ADD CONSTRAINT "CK_Positive" CHECK ("AliasId" < 0) NOT VALID;'; Extra = "dms.Alias.CK_Positive (check)" }
+            @{ Index = 2; Name = "a missing required unique index"; Sql = 'DROP INDEX dms."UX_Document_ResourceKeyId_Uri";'; Missing = "dms.Document.UX_Document_ResourceKeyId_Uri (uniqueindex)" }
+            @{ Index = 3; Name = "an unexpected index on an expected table"; Sql = 'CREATE INDEX "IX_Extra" ON dms."Document" ("ResourceKeyId");'; Extra = "dms.Document.IX_Extra (index)" }
+            @{ Index = 4; Name = "a required unique index recreated without uniqueness"; Sql = 'DROP INDEX dms."UX_Document_ResourceKeyId_Uri"; CREATE INDEX "UX_Document_ResourceKeyId_Uri" ON dms."Document" ("ResourceKeyId", ("DocumentId"::text || ''#''));'; Extra = "dms.Document.UX_Document_ResourceKeyId_Uri (index)"; Missing = "dms.Document.UX_Document_ResourceKeyId_Uri (uniqueindex)" }
         )
     }
     @{
@@ -1813,13 +1867,20 @@ Describe "Authoritative inventory table constraints against a live <Engine> cata
             "CREATE SCHEMA dms;",
             "CREATE TABLE dms.Document (DocumentId bigint NOT NULL CONSTRAINT PK_Document PRIMARY KEY, ResourceKeyId smallint NOT NULL CHECK (ResourceKeyId > 0), ContentVersion bigint NOT NULL DEFAULT (0));
              CREATE TABLE dms.Alias (AliasId bigint NOT NULL PRIMARY KEY, DocumentId bigint NOT NULL CONSTRAINT FK_Alias_Document REFERENCES dms.Document (DocumentId));
+             CREATE INDEX IX_Alias_DocumentId ON dms.Alias (DocumentId);
+             CREATE UNIQUE INDEX UX_Document_ResourceKeyId_Uri ON dms.Document (ResourceKeyId, DocumentId);
              INSERT INTO dms.Document (DocumentId, ResourceKeyId) VALUES (1, 1);"
         )
         # The unnamed check, default, and primary key are system-named: keyed by column, not name.
-        ExpectedConstraint = @("Document.PK_Document|primarykey", "Document.#system(ResourceKeyId)|check", "Document.#system(ContentVersion)|default", "Alias.#system()|primarykey", "Alias.FK_Alias_Document|foreignkey")
+        # Primary key indexes appear once, as their constraint.
+        ExpectedAttached   = @("Document.PK_Document|primarykey", "Document.#system(ResourceKeyId)|check", "Document.#system(ContentVersion)|default", "Alias.#system()|primarykey", "Alias.FK_Alias_Document|foreignkey",
+            "Alias.IX_Alias_DocumentId|index", "Document.UX_Document_ResourceKeyId_Uri|uniqueindex")
         Contamination      = @(
             @{ Index = 0; Name = "a WITH NOCHECK check on an expected table"; Sql = "ALTER TABLE [dms].[Document] WITH NOCHECK ADD CONSTRAINT [RejectNewDocuments] CHECK ([DocumentId] < 0);"; Extra = "dms.Document.RejectNewDocuments (check)" }
             @{ Index = 1; Name = "an unnamed WITH NOCHECK check"; Sql = "ALTER TABLE [dms].[Alias] WITH NOCHECK ADD CHECK ([AliasId] < 0);"; Extra = "dms.Alias.#system(AliasId) (check)" }
+            @{ Index = 2; Name = "a missing required unique index"; Sql = "DROP INDEX [UX_Document_ResourceKeyId_Uri] ON [dms].[Document];"; Missing = "dms.Document.UX_Document_ResourceKeyId_Uri (uniqueindex)" }
+            @{ Index = 3; Name = "an unexpected index on an expected table"; Sql = "CREATE INDEX [IX_Extra] ON [dms].[Document] ([ResourceKeyId]);"; Extra = "dms.Document.IX_Extra (index)" }
+            @{ Index = 4; Name = "a required unique index recreated without uniqueness"; Sql = "DROP INDEX [UX_Document_ResourceKeyId_Uri] ON [dms].[Document]; CREATE INDEX [UX_Document_ResourceKeyId_Uri] ON [dms].[Document] ([ResourceKeyId], [DocumentId]);"; Extra = "dms.Document.UX_Document_ResourceKeyId_Uri (index)"; Missing = "dms.Document.UX_Document_ResourceKeyId_Uri (uniqueindex)" }
         )
     }
 ) {
@@ -1909,10 +1970,10 @@ Describe "Authoritative inventory table constraints against a live <Engine> cata
         }
     }
 
-    It "discovers the table constraints and derives the same inventory from two databases built from one DDL" -Skip:([string]::IsNullOrWhiteSpace($Container)) {
+    It "discovers the table constraints and indexes and derives the same inventory from two databases built from one DDL" -Skip:([string]::IsNullOrWhiteSpace($Container)) {
         $dmsObjects = @(@($script:expectedInventory.schemas | Where-Object { $_.schemaName -ceq "dms" })[0].objects |
                 Where-Object { $_.type -notin @("table") } | ForEach-Object { "$($_.name)|$($_.type)" })
-        @($dmsObjects | Sort-Object) | Should -Be @($ExpectedConstraint | Sort-Object)
+        @($dmsObjects | Sort-Object) | Should -Be @($ExpectedAttached | Sort-Object)
 
         (Compare-RestoreObjectInventory -ExpectedInventory $script:expectedInventory -ActualInventory (Read-LiveInventory -Database $script:databases.clean)).IsMatch |
             Should -BeTrue
@@ -1935,12 +1996,24 @@ Describe "Authoritative inventory table constraints against a live <Engine> cata
 
     It "rejects <Name> at the producer gate and at the consumer gate" -ForEach $Contamination -Skip:([string]::IsNullOrWhiteSpace($Container)) {
         $database = $script:databases["c$Index"]
+        # A row names what is extra, what is missing, or both; the gates report extras first.
+        $producerPattern = "*"
+        $consumerPattern = "*"
+        if ($_.ContainsKey("Extra")) {
+            $producerPattern += "objects the schema files do not define: $($_.Extra)*"
+            $consumerPattern += "objects the candidate schema does not define: $($_.Extra)*"
+        }
+        if ($_.ContainsKey("Missing")) {
+            $producerPattern += "objects the schema files define but the source lacks: $($_.Missing)*"
+            $consumerPattern += "objects the candidate schema defines but the artifact lacks: $($_.Missing)*"
+        }
+
         { Invoke-LiveProducerGate -SourceInventory (Read-LiveInventory -Database $database -Producer) } |
-            Should -Throw "*objects the schema files do not define: $Extra*Nothing was dumped or packaged*"
+            Should -Throw "$($producerPattern)Nothing was dumped or packaged*"
 
         { Assert-RestoreScratchMatchesAuthoritativeInventory -AuthoritativeInventory $script:expectedInventory `
                 -ScratchInventory (Read-LiveInventory -Database $database) -ScratchDatabaseName $database } |
-            Should -Throw "*objects the candidate schema does not define: $Extra*"
+            Should -Throw $consumerPattern
     }
 }
 

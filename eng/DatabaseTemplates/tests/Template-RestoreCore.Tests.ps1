@@ -738,6 +738,56 @@ Describe "Get-PostgresqlRestoreGlobalRoleSql" {
     }
 }
 
+Describe "PostgreSQL template ownership finalization" {
+    It "reads, from the dumped schemas only, every schema, relation, function, and standalone type the dumping administrator does not own" {
+        $sql = Get-PostgresqlTemplateOwnershipQuerySql -SchemaName @("dms", "edfi")
+
+        $sql | Should -BeLike "*WHERE x.ns IN ('dms', 'edfi') AND x.owner <> (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = current_user)*"
+        foreach ($catalog in @("pg_namespace", "pg_class", "pg_proc", "pg_type")) {
+            $sql | Should -BeLike "*FROM pg_catalog.$catalog *"
+        }
+        # Identities are quoted by the server and come last, so a quoted name may hold the separator.
+        $sql | Should -BeLike "*pg_catalog.format('%I.%I(%s)', n.nspname, p.proname, pg_catalog.pg_get_function_identity_arguments(p.oid))*"
+        $sql | Should -BeLike "SELECT x.kind || '|' || pg_catalog.pg_get_userbyid(x.owner) || '|' || x.identity FROM (*"
+    }
+
+    It "refuses a schema name outside the safe identifier charset" {
+        { Get-PostgresqlTemplateOwnershipQuerySql -SchemaName @("dms", "edfi');--") } | Should -Throw "*Dumped schema name*unsupported characters*"
+    }
+
+    It "restores the enqueue owner of each SECURITY DEFINER function, quoting the role" {
+        $sql = ConvertTo-PostgresqlTemplateOwnershipFinalizationSql -OwnershipRow @(
+            'function|edfi_dms_enqueue_owner|dms."TF_Document_EnqueueProjectionInsert"()',
+            '',
+            'function|edfi_dms_enqueue_owner|dms."odd|name"(a integer)'
+        )
+
+        @($sql -split "`n" | Where-Object { $_ -like "ALTER *" }) | Should -Be @(
+            'ALTER FUNCTION dms."TF_Document_EnqueueProjectionInsert"() OWNER TO "edfi_dms_enqueue_owner";',
+            'ALTER FUNCTION dms."odd|name"(a integer) OWNER TO "edfi_dms_enqueue_owner";'
+        )
+    }
+
+    It "adds no statement when the dumping administrator owns everything" {
+        $sql = ConvertTo-PostgresqlTemplateOwnershipFinalizationSql -OwnershipRow @()
+        $sql | Should -Not -BeLike "*ALTER*"
+    }
+
+    It "refuses ownership it cannot reproduce without naming a source role (<Case>)" -ForEach @(
+        @{ Case = "a relation owned by another role"; Row = 'relation|someone_else|dms."Document"'; Named = 'relation dms."Document" (owner someone_else)' }
+        @{ Case = "a function owned by another role"; Row = 'function|someone_else|dms.uuidv5(namespace_uuid uuid, name_text text)'; Named = 'function dms.uuidv5(namespace_uuid uuid, name_text text) (owner someone_else)' }
+        @{ Case = "a non-function owned by the enqueue owner"; Row = 'relation|edfi_dms_enqueue_owner|dms."DocumentProjectionWork"'; Named = 'relation dms."DocumentProjectionWork" (owner edfi_dms_enqueue_owner)' }
+        @{ Case = "a case-variant enqueue owner name"; Row = 'function|EDFI_DMS_ENQUEUE_OWNER|dms.f()'; Named = 'function dms.f() (owner EDFI_DMS_ENQUEUE_OWNER)' }
+    ) {
+        { ConvertTo-PostgresqlTemplateOwnershipFinalizationSql -OwnershipRow @('function|edfi_dms_enqueue_owner|dms.ok()', $Row) } |
+            Should -Throw "*cannot reproduce: $Named.*Nothing was dumped or packaged*"
+    }
+
+    It "rejects a malformed ownership row" {
+        { ConvertTo-PostgresqlTemplateOwnershipFinalizationSql -OwnershipRow @("function|edfi_dms_enqueue_owner") } | Should -Throw "*malformed row*"
+    }
+}
+
 Describe "Get-SourceIdentityReseedSql" {
     It "builds the MSSQL reseed that requires exactly the singleton row, joined with LF" {
         $sql = Get-SourceIdentityReseedSql -DatabaseEngine mssql
@@ -911,6 +961,22 @@ Describe "inventory catalog query SQL builders" {
         $sql | Should -BeLike "*p.name + '.' +*"
         $sql | Should -BeLike "*is_system_named*THEN '#system(' + ISNULL(COL_NAME(o.parent_object_id,*ELSE o.name END*"
         $sql | Should -BeLike "*WHEN 'D' THEN 'default'*) COLLATE DATABASE_DEFAULT*"
+    }
+
+    It "lists PostgreSQL standalone indexes qualified by their table, leaving constraint-backed ones to their constraint" {
+        # pg_class index relkinds are not in the relation arm; the pg_index arm lists them. A
+        # foreign key's conindid names the REFERENCED index, so only p/u/x may exclude one.
+        $sql = Get-InventoryObjectQuerySql -DatabaseEngine postgresql
+        $sql | Should -BeLike "*FROM pg_catalog.pg_index i JOIN pg_catalog.pg_class c ON c.oid = i.indexrelid JOIN pg_catalog.pg_class t ON t.oid = i.indrelid*"
+        $sql | Should -BeLike "*t.relname || '.' || c.relname || '|' || CASE WHEN i.indisunique THEN 'uniqueindex' ELSE 'index' END*"
+        $sql | Should -BeLike "*NOT EXISTS (SELECT 1 FROM pg_catalog.pg_constraint con WHERE con.conindid = c.oid AND con.contype IN ('p','u','x'))*"
+    }
+
+    It "lists MSSQL standalone indexes qualified by their table, leaving heaps and constraint-backed ones out" {
+        $sql = Get-InventoryObjectQuerySql -DatabaseEngine mssql
+        $sql | Should -BeLike "*FROM sys.indexes i JOIN sys.objects p ON p.object_id = i.object_id AND p.type IN ('U','V')*"
+        $sql | Should -BeLike "*p.name + '.' + i.name + '|' +*CASE WHEN i.is_unique = 1 THEN 'uniqueindex' ELSE 'index' END) COLLATE DATABASE_DEFAULT*"
+        $sql | Should -BeLike "*WHERE i.type <> 0 AND i.is_primary_key = 0 AND i.is_unique_constraint = 0 AND p.is_ms_shipped = 0*"
     }
 
     It "excludes the built-in public role and fixed roles from the MSSQL principal query" {

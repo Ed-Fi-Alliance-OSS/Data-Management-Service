@@ -6,6 +6,7 @@
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Pester stubs intentionally keep production-compatible signatures.')]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Pester stubs intentionally shadow production plural-noun helpers.')]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Pester stubs accept the production -MssqlPassword parameter and record fake test values.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Pester stubs accept the production -MssqlPassword and -PostgresUser parameters and record fake test values.')]
 param()
 
 # Exact workspace ownership, recorded at creation. Fixtures below stage copies of repository
@@ -446,6 +447,8 @@ $failureStatement
             # The MSSQL password each database helper receives goes to a side log, so the ordered
             # call log the sequencing tests match line by line stays unchanged.
             $passwordLog = "$LogPath.passwords"
+            # Likewise the PostgreSQL administrator each helper, including preflight cleanup, receives.
+            $postgresUserLog = "$LogPath.postgres-users"
             $packageDownloadDirectory = if ([string]::IsNullOrWhiteSpace($DownloadDirectory)) { $null } else { $DownloadDirectory }
             $root = $FixtureRoot
             $activeBootstrapRoot = if ([string]::IsNullOrWhiteSpace($DockerComposeRoot)) { "" } else { Join-Path $DockerComposeRoot ".bootstrap" }
@@ -509,21 +512,24 @@ $failureStatement
                 [pscustomobject]@{ EnvironmentFile = $preflightEnvironmentPath; PreflightDatabaseName = "edfi_dms_restore_preflight_0123456789ab"; IsDerived = $true }
             }.GetNewClosure()
             Set-Item function:global:Assert-RestoreTargetSafety {
-                param($DatabaseEngine, $TargetDatabaseName, $Manifest, $ContainerName, [switch]$SeparateConfigDatabase, $EffectiveConfigDatabaseName, $MssqlPassword)
+                param($DatabaseEngine, $TargetDatabaseName, $Manifest, $ContainerName, [switch]$SeparateConfigDatabase, $EffectiveConfigDatabaseName, $MssqlPassword, $PostgresUser)
                 Add-Content -LiteralPath $log -Value "restore:target-safety"
                 Add-Content -LiteralPath $passwordLog -Value "target-safety password=[$MssqlPassword]"
+                Add-Content -LiteralPath $postgresUserLog -Value "target-safety user=[$PostgresUser]"
                 & $stubThrow "Assert-RestoreTargetSafety"
             }.GetNewClosure()
             Set-Item function:global:Invoke-RestoreScratchValidation {
-                param($Stage, $CandidateFact, $RestoreTemplate, $DatabaseEngine, $MssqlPassword)
+                param($Stage, $CandidateFact, $RestoreTemplate, $DatabaseEngine, $MssqlPassword, $PostgresUser)
                 Add-Content -LiteralPath $log -Value "restore:scratch template=$RestoreTemplate"
                 Add-Content -LiteralPath $passwordLog -Value "scratch password=[$MssqlPassword]"
+                Add-Content -LiteralPath $postgresUserLog -Value "scratch user=[$PostgresUser]"
                 & $stubThrow "Invoke-RestoreScratchValidation"
                 [pscustomobject]@{ PackageSourceIdentity = "11111111-1111-1111-1111-111111111111"; ScratchFacts = $null; ProjectSchemaNames = @("edfi") }
             }.GetNewClosure()
             Set-Item function:global:Remove-RestorePreflightDatabase {
-                param($DatabaseEngine, $PreflightDatabaseName, $ContainerName)
+                param($DatabaseEngine, $PreflightDatabaseName, $ContainerName, $PostgresUser)
                 Add-Content -LiteralPath $log -Value "restore:preflight-drop name=[$PreflightDatabaseName]"
+                Add-Content -LiteralPath $postgresUserLog -Value "preflight-drop user=[$PostgresUser]"
                 & $stubThrow "Remove-RestorePreflightDatabase"
             }.GetNewClosure()
             Set-Item function:global:Stop-RestoreDatabaseOnlySlice {
@@ -555,9 +561,10 @@ $failureStatement
                 [pscustomobject]@{ Replaced = $true; ActiveBootstrapRoot = $activeBootstrapRoot }
             }.GetNewClosure()
             Set-Item function:global:Invoke-RestoreTargetReplacement {
-                param($Stage, $TargetDatabaseName, $PackageSourceIdentity, $DatabaseEngine, $ContainerName, [switch]$SeparateConfigDatabase, $EffectiveConfigDatabaseName, $MssqlPassword)
+                param($Stage, $TargetDatabaseName, $PackageSourceIdentity, $DatabaseEngine, $ContainerName, [switch]$SeparateConfigDatabase, $EffectiveConfigDatabaseName, $MssqlPassword, $PostgresUser)
                 Add-Content -LiteralPath $log -Value "restore:replacement package-identity=$PackageSourceIdentity"
                 Add-Content -LiteralPath $passwordLog -Value "replacement password=[$MssqlPassword]"
+                Add-Content -LiteralPath $postgresUserLog -Value "replacement user=[$PostgresUser]"
                 & $stubThrow "Invoke-RestoreTargetReplacement"
                 [pscustomobject]@{ TargetDatabaseName = $TargetDatabaseName; RestoredSourceIdentity = "33333333-3333-3333-3333-333333333333" }
             }.GetNewClosure()
@@ -2853,6 +2860,44 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "configure dataStore=[`$Dat
                 "scratch password=[$Expected]"
                 "replacement password=[$Expected]"
             )
+        }
+
+        It "postgresql: the PostgreSQL administrator reaches every restore database helper and the preflight cleanup (<Case>)" -ForEach @(
+            @{ Case = "set only in the environment file"; FileValue = "dmsadmin"; Ambient = $null; ThrowAt = @(); Expected = "dmsadmin" }
+            @{ Case = "ambient value wins over the environment file"; FileValue = "dmsadmin"; Ambient = "ambientadmin"; ThrowAt = @(); Expected = "ambientadmin" }
+            @{ Case = "set nowhere, the documented default"; FileValue = $null; Ambient = $null; ThrowAt = @(); Expected = "postgres" }
+            @{ Case = "scratch failure, cleanup only"; FileValue = "dmsadmin"; Ambient = $null; ThrowAt = @("Invoke-RestoreScratchValidation"); Expected = "dmsadmin" }
+        ) {
+            $userEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.restore-postgres-user"
+            $envLines = @(Get-Content -LiteralPath $script:repo.EnvFile | Where-Object { $_ -notlike "POSTGRES_USER=*" })
+            if ($null -ne $FileValue) { $envLines += "POSTGRES_USER=$FileValue" }
+            $envLines | Set-Content -LiteralPath $userEnvFile -Encoding utf8
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot -ThrowAt $ThrowAt
+
+            $callerValue = [System.Environment]::GetEnvironmentVariable("POSTGRES_USER")
+            Set-TestAmbientVariable -Name POSTGRES_USER -Value $Ambient
+            try {
+                $run = { & $script:repo.WrapperScript -EnvironmentFile $userEnvFile -RestoreTemplate Minimal }
+                if ($ThrowAt.Count -gt 0) {
+                    $run | Should -Throw "*injected $($ThrowAt[0]) failure*"
+                }
+                else {
+                    & $run
+                }
+                [System.Environment]::GetEnvironmentVariable("POSTGRES_USER") | Should -Be $Ambient -Because "the wrapper must not mutate the process environment"
+            }
+            finally {
+                Set-TestAmbientVariable -Name POSTGRES_USER -Value $callerValue
+            }
+
+            $expectedLines = if ($ThrowAt.Count -gt 0) {
+                # The scratch failure leaves only the finally's best-effort preflight drop.
+                @("target-safety user=[$Expected]", "scratch user=[$Expected]", "preflight-drop user=[$Expected]")
+            }
+            else {
+                @("target-safety user=[$Expected]", "scratch user=[$Expected]", "preflight-drop user=[$Expected]", "replacement user=[$Expected]", "preflight-drop user=[$Expected]")
+            }
+            @(Get-Content -LiteralPath "$script:restoreLog.postgres-users") | Should -Be $expectedLines
         }
 
         It "removes the download directory an HTTP-feed resolution created (<Case>)" -ForEach @(

@@ -515,7 +515,20 @@ function Invoke-DatabaseDump {
         return
     }
 
-    $options = @("exec", $ContainerName, "pg_dump", "-U", "postgres", $DatabaseName)
+    # Portable across restoring administrators: --no-owner keeps the source administrator's name
+    # out of the artifact (a POSTGRES_USER-overridden server has no "postgres" role to replay it
+    # against), and the restoring administrator owns everything, as provisioning would make it.
+    # The ownership --no-owner drops (the enqueue owner's SECURITY DEFINER functions) is read from
+    # the source first and appended after the dump, before the artifact is hashed and attested.
+    $ownershipRows = Invoke-TemplateCatalogQuery `
+        -DatabaseEngine postgresql `
+        -ContainerName $ContainerName `
+        -DatabaseName $DatabaseName `
+        -Query (Get-PostgresqlTemplateOwnershipQuerySql -SchemaName $DatabaseSchemas) `
+        -FailureMessage "Failed to read object ownership from template source '$DatabaseName'; nothing was dumped."
+    $ownershipFinalizationSql = ConvertTo-PostgresqlTemplateOwnershipFinalizationSql -OwnershipRow $ownershipRows
+
+    $options = @("exec", $ContainerName, "pg_dump", "-U", "postgres", "--no-owner", $DatabaseName)
 
     foreach ($schema in $DatabaseSchemas) {
         $options += "-n"
@@ -540,6 +553,7 @@ function Invoke-DatabaseDump {
         }
         throw "pg_dump of '$DatabaseName' failed in container '$ContainerName' with exit code $dumpExitCode."
     }
+    $ownershipFinalizationSql | Out-File -FilePath $backupPath -Encoding utf8 -Append
 
     Write-Host
     Write-Host "Backup Created: " -ForegroundColor Green -NoNewline

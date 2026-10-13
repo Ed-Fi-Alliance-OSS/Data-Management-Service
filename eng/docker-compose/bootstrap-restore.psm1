@@ -1388,7 +1388,7 @@ function Invoke-RestoreCatalogQuery {
     catalog reader, hardened fail-closed: an unresolvable docker, an invocation failure, or a
     nonzero exit each throw - a silent empty answer must never read as "no rows".
     #>
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The MSSQL password is handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); the account is always "sa" so there is no companion username parameter, and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The MSSQL password is handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); the MSSQL account is always "sa", and -PostgresUser names a PostgreSQL account that has no password here (psql authenticates over the container socket), so a PSCredential adds no protection across that boundary.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The MSSQL password is handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); SecureString adds no protection across that boundary.')]
     param (
         [Parameter(Mandatory = $true)]
@@ -1402,6 +1402,10 @@ function Invoke-RestoreCatalogQuery {
         [string]$DatabaseName,
 
         [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!",
+
+        # The PostgreSQL administrator the container was initialized with (POSTGRES_USER,
+        # default postgres). The restore wrapper resolves it as the start scripts do.
+        [string]$PostgresUser = "postgres",
 
         [Parameter(Mandatory = $true)]
         [string]$Query,
@@ -1423,7 +1427,7 @@ function Invoke-RestoreCatalogQuery {
             $output = docker exec -e "SQLCMDPASSWORD=$MssqlPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -d $DatabaseName -C -b -h -1 -W -Q $Query 2>&1
         }
         else {
-            $output = docker exec $ContainerName psql -U postgres -d $DatabaseName -tA -c $Query 2>&1
+            $output = docker exec $ContainerName psql -U $PostgresUser -d $DatabaseName -tA -c $Query 2>&1
         }
     }
     catch {
@@ -1470,7 +1474,7 @@ function Assert-RestoreTargetSafety {
     server), and the CDC-binding refusal (a CDC-bound target needs the governed new-generation
     recovery workflow, not an in-place replace). Every indeterminate answer fails closed.
     #>
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to Invoke-RestoreCatalogQuery, whose sqlcmd transport carries the password via SQLCMDPASSWORD on docker exec; the account is always "sa" and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to Invoke-RestoreCatalogQuery, whose sqlcmd transport carries the password via SQLCMDPASSWORD on docker exec; the MSSQL account is always "sa", and -PostgresUser names a PostgreSQL account that has no password here (psql authenticates over the container socket), so a PSCredential adds no protection across that boundary.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Forwarded to Invoke-RestoreCatalogQuery; SecureString adds no protection across the docker exec boundary.')]
     param (
         [Parameter(Mandatory = $true)]
@@ -1489,7 +1493,9 @@ function Assert-RestoreTargetSafety {
 
         [string]$EffectiveConfigDatabaseName = "",
 
-        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!"
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!",
+
+        [string]$PostgresUser = "postgres"
     )
 
     if ([string]::IsNullOrWhiteSpace($ContainerName)) {
@@ -1510,6 +1516,7 @@ function Assert-RestoreTargetSafety {
         ContainerName  = $ContainerName
         DatabaseName   = $adminDatabaseName
         MssqlPassword  = $MssqlPassword
+        PostgresUser   = $PostgresUser
     }
 
     # 2) Live-catalog reserved check: the NAME denylist cannot see a template/system database
@@ -1606,6 +1613,7 @@ function Assert-RestoreTargetSafety {
                     -ContainerName $ContainerName `
                     -DatabaseName $TargetDatabaseName `
                     -MssqlPassword $MssqlPassword `
+                    -PostgresUser $PostgresUser `
                     -Query "SELECT pubname FROM pg_publication;" `
                     -FailureMessage "CDC-binding (publication) check failed for restore target '$TargetDatabaseName'.")
             if (@($publicationRows | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }).Count -gt 0) {
@@ -2007,7 +2015,7 @@ function Get-RestoreDatabaseCatalogFact {
     exactly the artifact's content, so the same Select-InventorySchemaScope transformation the
     producer applied reproduces the manifest's inventory shape.
     #>
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to Invoke-RestoreCatalogQuery, whose sqlcmd transport carries the password via SQLCMDPASSWORD on docker exec; the account is always "sa" and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to Invoke-RestoreCatalogQuery, whose sqlcmd transport carries the password via SQLCMDPASSWORD on docker exec; the MSSQL account is always "sa", and -PostgresUser names a PostgreSQL account that has no password here (psql authenticates over the container socket), so a PSCredential adds no protection across that boundary.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Forwarded to Invoke-RestoreCatalogQuery; SecureString adds no protection across the docker exec boundary.')]
     param (
         [Parameter(Mandatory = $true)]
@@ -2020,7 +2028,9 @@ function Get-RestoreDatabaseCatalogFact {
         [Parameter(Mandatory = $true)]
         [string]$DatabaseName,
 
-        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!"
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!",
+
+        [string]$PostgresUser = "postgres"
     )
 
     $queryParameters = @{
@@ -2028,6 +2038,7 @@ function Get-RestoreDatabaseCatalogFact {
         ContainerName  = $ContainerName
         DatabaseName   = $DatabaseName
         MssqlPassword  = $MssqlPassword
+        PostgresUser   = $PostgresUser
     }
 
     $effectiveSchemaRow = Invoke-RestoreCatalogQuery @queryParameters `
@@ -2113,7 +2124,7 @@ function Remove-RestoreExpectedDatabase {
     a real database.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Drops only generator-shaped throwaway expected databases; the restore flow does not expose -WhatIf end to end.')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to the sqlcmd transport, which carries the password via SQLCMDPASSWORD on docker exec; the account is always "sa" and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to the sqlcmd transport, which carries the password via SQLCMDPASSWORD on docker exec; the MSSQL account is always "sa", and -PostgresUser names a PostgreSQL account that has no password here (psql authenticates over the container socket), so a PSCredential adds no protection across that boundary.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Forwarded to the sqlcmd transport; SecureString adds no protection across the docker exec boundary.')]
     param (
         [Parameter(Mandatory = $true)]
@@ -2126,7 +2137,9 @@ function Remove-RestoreExpectedDatabase {
         [Parameter(Mandatory = $true)]
         [string]$ContainerName,
 
-        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!"
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!",
+
+        [string]$PostgresUser = "postgres"
     )
 
     if ($ExpectedDatabaseName -cnotmatch '^edfi_dms_restore_expected_[0-9a-f]{12}\z') {
@@ -2138,6 +2151,7 @@ function Remove-RestoreExpectedDatabase {
         ContainerName  = $ContainerName
         DatabaseName   = $(if ($DatabaseEngine -eq "mssql") { "master" } else { "postgres" })
         MssqlPassword  = $MssqlPassword
+        PostgresUser   = $PostgresUser
     }
 
     if ($DatabaseEngine -eq "postgresql") {
@@ -2170,7 +2184,7 @@ function Get-RestoreAuthoritativeObjectInventory {
     in-container DDL file are removed in finally on every path.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Restore-internal derivation against a generated throwaway database; the restore flow does not expose -WhatIf end to end.')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to the sqlcmd transport, which carries the password via SQLCMDPASSWORD on docker exec; the account is always "sa" and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to the sqlcmd transport, which carries the password via SQLCMDPASSWORD on docker exec; the MSSQL account is always "sa", and -PostgresUser names a PostgreSQL account that has no password here (psql authenticates over the container socket), so a PSCredential adds no protection across that boundary.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Forwarded to the sqlcmd transport; SecureString adds no protection across the docker exec boundary.')]
     param (
         [Parameter(Mandatory = $true)]
@@ -2188,7 +2202,9 @@ function Get-RestoreAuthoritativeObjectInventory {
 
         [string]$SchemaToolPath = "",
 
-        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!"
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!",
+
+        [string]$PostgresUser = "postgres"
     )
 
     # Emit the candidate schema set's DDL into the private stage (never the candidate tree).
@@ -2220,6 +2236,7 @@ function Get-RestoreAuthoritativeObjectInventory {
         ContainerName  = $ContainerName
         DatabaseName   = $(if ($DatabaseEngine -eq "mssql") { "master" } else { "postgres" })
         MssqlPassword  = $MssqlPassword
+        PostgresUser   = $PostgresUser
     }
     $containerDdlPath = $null
 
@@ -2241,6 +2258,7 @@ function Get-RestoreAuthoritativeObjectInventory {
                 -ContainerName $ContainerName `
                 -DatabaseName $expectedDatabaseName `
                 -MssqlPassword $MssqlPassword `
+                -PostgresUser $PostgresUser `
                 -Query "CREATE EXTENSION IF NOT EXISTS `"pgcrypto`";" `
                 -FailureMessage "Failed to create the pgcrypto extension in expected database '$expectedDatabaseName'."
 
@@ -2249,7 +2267,7 @@ function Get-RestoreAuthoritativeObjectInventory {
                 -ArgumentList @("cp", $ddlPath, "$($ContainerName):$containerDdlPath") `
                 -FailureMessage "Failed to copy the candidate DDL into container '$ContainerName'."
             $null = Invoke-RestoreDockerCommand `
-                -ArgumentList @("exec", $ContainerName, "psql", "-U", "postgres", "-d", $expectedDatabaseName, "-v", "ON_ERROR_STOP=1", "-f", $containerDdlPath) `
+                -ArgumentList @("exec", $ContainerName, "psql", "-U", $PostgresUser, "-d", $expectedDatabaseName, "-v", "ON_ERROR_STOP=1", "-f", $containerDdlPath) `
                 -FailureMessage "Replay of the candidate DDL into expected database '$expectedDatabaseName' failed."
         }
         else {
@@ -2272,7 +2290,8 @@ function Get-RestoreAuthoritativeObjectInventory {
             -DatabaseEngine $DatabaseEngine `
             -ContainerName $ContainerName `
             -DatabaseName $expectedDatabaseName `
-            -MssqlPassword $MssqlPassword
+            -MssqlPassword $MssqlPassword `
+            -PostgresUser $PostgresUser
 
         return $expectedFacts.FullInventory
     }
@@ -2293,7 +2312,8 @@ function Get-RestoreAuthoritativeObjectInventory {
                 -DatabaseEngine $DatabaseEngine `
                 -ExpectedDatabaseName $expectedDatabaseName `
                 -ContainerName $ContainerName `
-                -MssqlPassword $MssqlPassword
+                -MssqlPassword $MssqlPassword `
+                -PostgresUser $PostgresUser
         }
         catch {
             Write-Warning "Expected-database cleanup did not complete: $(($_.Exception.Message | Out-String).Trim()) Remove expected database '$expectedDatabaseName' in container '$ContainerName' manually if it remains."
@@ -2368,7 +2388,7 @@ function Invoke-RestoreScratchValidation {
     failed, its error stays the error and the cleanup failure is a loud warning.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Restore-internal validation step against a generated throwaway database; the restore flow does not expose -WhatIf end to end.')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to the sqlcmd transport, which carries the password via SQLCMDPASSWORD on docker exec; the account is always "sa" and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to the sqlcmd transport, which carries the password via SQLCMDPASSWORD on docker exec; the MSSQL account is always "sa", and -PostgresUser names a PostgreSQL account that has no password here (psql authenticates over the container socket), so a PSCredential adds no protection across that boundary.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Forwarded to the sqlcmd transport; SecureString adds no protection across the docker exec boundary.')]
     param (
         [Parameter(Mandatory = $true)]
@@ -2389,7 +2409,9 @@ function Invoke-RestoreScratchValidation {
 
         [string]$SchemaToolPath = "",
 
-        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!"
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!",
+
+        [string]$PostgresUser = "postgres"
     )
 
     if ([string]::IsNullOrWhiteSpace($ContainerName)) {
@@ -2410,6 +2432,7 @@ function Invoke-RestoreScratchValidation {
         ContainerName  = $ContainerName
         DatabaseName   = $adminDatabaseName
         MssqlPassword  = $MssqlPassword
+        PostgresUser   = $PostgresUser
     }
     $containerArtifactPath = $null
     $scratchProof = $null
@@ -2443,7 +2466,7 @@ function Invoke-RestoreScratchValidation {
                 -ExpectedSha256 ([string]$manifest.artifactSha256) `
                 -ConsumerDescription "the scratch replay"
             $null = Invoke-RestoreDockerCommand `
-                -ArgumentList @("exec", $ContainerName, "psql", "-U", "postgres", "-d", $scratchDatabaseName, "-v", "ON_ERROR_STOP=1", "-f", $containerArtifactPath) `
+                -ArgumentList @("exec", $ContainerName, "psql", "-U", $PostgresUser, "-d", $scratchDatabaseName, "-v", "ON_ERROR_STOP=1", "-f", $containerArtifactPath) `
                 -FailureMessage "Replay of the artifact into scratch database '$scratchDatabaseName' failed."
         }
         else {
@@ -2478,7 +2501,8 @@ function Invoke-RestoreScratchValidation {
             -DatabaseEngine $DatabaseEngine `
             -ContainerName $ContainerName `
             -DatabaseName $scratchDatabaseName `
-            -MssqlPassword $MssqlPassword
+            -MssqlPassword $MssqlPassword `
+            -PostgresUser $PostgresUser
 
         $scratchPartition = Assert-DmsOnlyInventory `
             -DatabaseEngine $DatabaseEngine `
@@ -2513,7 +2537,8 @@ function Invoke-RestoreScratchValidation {
             -ContainerName $ContainerName `
             -OutputRoot $Stage.StageDirectory `
             -SchemaToolPath $SchemaToolPath `
-            -MssqlPassword $MssqlPassword
+            -MssqlPassword $MssqlPassword `
+            -PostgresUser $PostgresUser
         Assert-RestoreScratchMatchesAuthoritativeInventory `
             -AuthoritativeInventory $authoritativeInventory `
             -ScratchInventory $scratchFacts.FullInventory `
@@ -2540,6 +2565,7 @@ function Invoke-RestoreScratchValidation {
                 -ContainerName $ContainerName `
                 -DatabaseName $scratchDatabaseName `
                 -MssqlPassword $MssqlPassword `
+                -PostgresUser $PostgresUser `
                 -Query $populatedCountQuery `
                 -FailureMessage "Failed to count populated documents in scratch database '$scratchDatabaseName'."
             $populatedCountText = ([string]@($populatedRows | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1)).Trim()
@@ -2559,6 +2585,7 @@ function Invoke-RestoreScratchValidation {
                 -ContainerName $ContainerName `
                 -DatabaseName $scratchDatabaseName `
                 -MssqlPassword $MssqlPassword `
+                -PostgresUser $PostgresUser `
                 -Query (Get-SourceIdentitySelectSql -DatabaseEngine $DatabaseEngine) `
                 -FailureMessage "Failed to read dms.DataStoreIdentity.SourceIdentity from scratch database '$scratchDatabaseName'." |
                 Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
@@ -2579,7 +2606,8 @@ function Invoke-RestoreScratchValidation {
                 -DatabaseEngine $DatabaseEngine `
                 -ScratchDatabaseName $scratchDatabaseName `
                 -ContainerName $ContainerName `
-                -MssqlPassword $MssqlPassword
+                -MssqlPassword $MssqlPassword `
+                -PostgresUser $PostgresUser
             if ($null -ne $containerArtifactPath) {
                 $null = Invoke-RestoreDockerCommand `
                     -ArgumentList @("exec", $ContainerName, "rm", "-f", $containerArtifactPath) `
@@ -2611,7 +2639,7 @@ function Remove-RestoreScratchDatabase {
     passed validation and warns after a failed one).
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Drops only generator-shaped throwaway scratch databases; the restore flow does not expose -WhatIf end to end.')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to the sqlcmd transport, which carries the password via SQLCMDPASSWORD on docker exec; the account is always "sa" and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to the sqlcmd transport, which carries the password via SQLCMDPASSWORD on docker exec; the MSSQL account is always "sa", and -PostgresUser names a PostgreSQL account that has no password here (psql authenticates over the container socket), so a PSCredential adds no protection across that boundary.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Forwarded to the sqlcmd transport; SecureString adds no protection across the docker exec boundary.')]
     param (
         [Parameter(Mandatory = $true)]
@@ -2624,7 +2652,9 @@ function Remove-RestoreScratchDatabase {
         [Parameter(Mandatory = $true)]
         [string]$ContainerName,
 
-        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!"
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!",
+
+        [string]$PostgresUser = "postgres"
     )
 
     if ($ScratchDatabaseName -cnotmatch '^edfi_dms_restore_scratch_[0-9a-f]{12}\z') {
@@ -2636,6 +2666,7 @@ function Remove-RestoreScratchDatabase {
         ContainerName  = $ContainerName
         DatabaseName   = $(if ($DatabaseEngine -eq "mssql") { "master" } else { "postgres" })
         MssqlPassword  = $MssqlPassword
+        PostgresUser   = $PostgresUser
     }
 
     if ($DatabaseEngine -eq "postgresql") {
@@ -2674,6 +2705,8 @@ function Remove-RestorePreflightDatabase {
 
         [string]$ContainerName = "",
 
+        [string]$PostgresUser = "postgres",
+
         [switch]$Required
     )
 
@@ -2694,12 +2727,14 @@ function Remove-RestorePreflightDatabase {
             -DatabaseEngine $DatabaseEngine `
             -ContainerName $ContainerName `
             -DatabaseName "postgres" `
+            -PostgresUser $PostgresUser `
             -Query "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$PreflightDatabaseName' AND pid <> pg_backend_pid();" `
             -FailureMessage "Failed to terminate connections to preflight database '$PreflightDatabaseName'."
         $null = Invoke-RestoreCatalogQuery `
             -DatabaseEngine $DatabaseEngine `
             -ContainerName $ContainerName `
             -DatabaseName "postgres" `
+            -PostgresUser $PostgresUser `
             -Query "DROP DATABASE IF EXISTS `"$PreflightDatabaseName`";" `
             -FailureMessage "Failed to drop preflight database '$PreflightDatabaseName'."
     }
@@ -2734,7 +2769,7 @@ function Invoke-RestoreTargetReplacement {
     select the target. The transient in-container artifact copy is removed in finally.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'The guarded destructive restore step itself; the restore flow does not expose -WhatIf end to end, and every precondition is enforced by the preceding gates.')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to the sqlcmd transport, which carries the password via SQLCMDPASSWORD on docker exec; the account is always "sa" and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to the sqlcmd transport, which carries the password via SQLCMDPASSWORD on docker exec; the MSSQL account is always "sa", and -PostgresUser names a PostgreSQL account that has no password here (psql authenticates over the container socket), so a PSCredential adds no protection across that boundary.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Forwarded to the sqlcmd transport; SecureString adds no protection across the docker exec boundary.')]
     param (
         [Parameter(Mandatory = $true)]
@@ -2756,7 +2791,9 @@ function Invoke-RestoreTargetReplacement {
 
         [string]$EffectiveConfigDatabaseName = "",
 
-        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!"
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!",
+
+        [string]$PostgresUser = "postgres"
     )
 
     if ([string]::IsNullOrWhiteSpace($ContainerName)) {
@@ -2777,6 +2814,7 @@ function Invoke-RestoreTargetReplacement {
         SeparateConfigDatabase      = $SeparateConfigDatabase
         EffectiveConfigDatabaseName = $EffectiveConfigDatabaseName
         MssqlPassword               = $MssqlPassword
+        PostgresUser                = $PostgresUser
     }
     Assert-RestoreTargetSafety @targetSafetyArguments
 
@@ -2789,12 +2827,14 @@ function Invoke-RestoreTargetReplacement {
         ContainerName  = $ContainerName
         DatabaseName   = $adminDatabaseName
         MssqlPassword  = $MssqlPassword
+        PostgresUser   = $PostgresUser
     }
     $targetQueryArguments = @{
         DatabaseEngine = $DatabaseEngine
         ContainerName  = $ContainerName
         DatabaseName   = $TargetDatabaseName
         MssqlPassword  = $MssqlPassword
+        PostgresUser   = $PostgresUser
     }
     $containerArtifactPath = $null
 
@@ -2841,7 +2881,7 @@ function Invoke-RestoreTargetReplacement {
                 -FailureMessage "Failed to create target database '$TargetDatabaseName'."
 
             $null = Invoke-RestoreDockerCommand `
-                -ArgumentList @("exec", $ContainerName, "psql", "-U", "postgres", "-d", $TargetDatabaseName, "-v", "ON_ERROR_STOP=1", "-f", $containerArtifactPath) `
+                -ArgumentList @("exec", $ContainerName, "psql", "-U", $PostgresUser, "-d", $TargetDatabaseName, "-v", "ON_ERROR_STOP=1", "-f", $containerArtifactPath) `
                 -FailureMessage "Replay of the artifact into target database '$TargetDatabaseName' failed."
         }
         else {

@@ -1153,6 +1153,22 @@ Describe "Invoke-RestoreCatalogQuery" {
         }
     }
 
+    It "runs psql as the caller's PostgreSQL administrator when POSTGRES_USER overrides it" {
+        Mock docker { $global:LASTEXITCODE = 0 } -ModuleName bootstrap-restore
+
+        Invoke-RestoreCatalogQuery `
+            -DatabaseEngine postgresql `
+            -ContainerName "dms-postgresql" `
+            -DatabaseName "postgres" `
+            -PostgresUser "dmsadmin" `
+            -Query "SELECT 1;" `
+            -FailureMessage "query failed." | Out-Null
+
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+            ($args -join " ") -eq "exec dms-postgresql psql -U dmsadmin -d postgres -tA -c SELECT 1;"
+        }
+    }
+
     It "runs sqlcmd through docker exec with the sa transport for SQL Server" {
         Mock docker { $global:LASTEXITCODE = 0 } -ModuleName bootstrap-restore
 
@@ -1209,6 +1225,21 @@ Describe "Assert-RestoreTargetSafety" {
         } -ModuleName bootstrap-restore
         $script:pgManifest = [pscustomobject]@{ engineVersion = "16.8" }
         $script:mssqlManifest = [pscustomobject]@{ engineVersion = "17.0.900.7" }
+    }
+
+    It "PostgreSQL: every live check, including the in-target publication query, connects as the caller's administrator" {
+        Mock Invoke-RestoreCatalogQuery {
+            if ($Query -like "*server_version*") { return "16.8" }
+            if ($Query -like "SELECT 1 FROM pg_database*") { return "1" }
+            return @()
+        } -ModuleName bootstrap-restore
+
+        Assert-RestoreTargetSafety -DatabaseEngine postgresql -TargetDatabaseName "edfi_datamanagementservice" -Manifest $script:pgManifest -PostgresUser "dmsadmin"
+
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+            $Query -like "*pg_publication*" -and $DatabaseName -ceq "edfi_datamanagementservice" -and $PostgresUser -ceq "dmsadmin"
+        }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $PostgresUser -cne "dmsadmin" }
     }
 
     It "passes for a safe PostgreSQL target, skipping the publication query when the target is absent" {
@@ -1657,6 +1688,34 @@ Describe "Invoke-RestoreScratchValidation" {
         }
     }
 
+    It "PostgreSQL: every scratch step uses the caller's administrator, including the cleanup (<Case>)" -ForEach @(
+        @{ Case = "validation passes"; Fail = $false }
+        @{ Case = "validation fails after the replay"; Fail = $true }
+    ) {
+        $stage = New-ScratchStage -Directory $script:scratchRoot
+        if ($Fail) {
+            $global:AuthoritativeInventoryOverride = @{ schemas = @(@{ schemaName = "dms"; objects = @() }); principals = @() }
+        }
+
+        $run = { Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Populated -DatabaseEngine postgresql -PostgresUser "dmsadmin" }
+        if ($Fail) {
+            $run | Should -Throw "*does not match the authoritative inventory*"
+        }
+        else {
+            & $run | Out-Null
+        }
+
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql psql -U dmsadmin -d edfi_dms_restore_scratch_* -v ON_ERROR_STOP=1 -f /tmp/restore-scratch-*.sql" }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { ($args -join " ") -like "*psql -U postgres*" }
+        # The defensive drop and the cleanup drop in finally.
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 2 -Exactly -ParameterFilter {
+            $Query -like 'DROP DATABASE IF EXISTS "edfi_dms_restore_scratch_*' -and $PostgresUser -ceq "dmsadmin"
+        }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $PostgresUser -cne "dmsadmin" }
+        Should -Invoke Get-RestoreDatabaseCatalogFact -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $PostgresUser -ceq "dmsadmin" }
+        Should -Invoke Get-RestoreAuthoritativeObjectInventory -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $PostgresUser -ceq "dmsadmin" }
+    }
+
     It "<Engine>: a successful validation whose <Step> fails returns no proof, so nothing can commit" -ForEach @(
         @{ Engine = "postgresql"; Step = "scratch drop"; Container = "dms-postgresql" }
         @{ Engine = "mssql"; Step = "scratch drop"; Container = "dms-mssql" }
@@ -1890,6 +1949,29 @@ exit 0
         @($dockerCalls | Where-Object { $_ -like "exec dms-postgresql rm -f /tmp/restore-expected-*.sql" }) | Should -Not -BeNullOrEmpty
     }
 
+    It "PostgreSQL: creates, replays, reads, and drops the expected database as the caller's administrator" {
+        Get-RestoreAuthoritativeObjectInventory `
+            -SchemaFilePath ([string[]]@("C:\candidate\core.json")) `
+            -DatabaseEngine postgresql `
+            -ContainerName "dms-postgresql" `
+            -OutputRoot $script:derivationRoot `
+            -SchemaToolPath $script:derivationTool.ToolPath `
+            -PostgresUser "dmsadmin" | Out-Null
+
+        @($global:DerivationDockerLog | Where-Object { $_ -like "exec dms-postgresql psql -U dmsadmin -d edfi_dms_restore_expected_* -v ON_ERROR_STOP=1 -f /tmp/restore-expected-*.sql" }) |
+            Should -Not -BeNullOrEmpty
+        @($global:DerivationDockerLog | Where-Object { $_ -like "*psql -U postgres*" }) | Should -BeNullOrEmpty
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+            $Query -like 'CREATE DATABASE "edfi_dms_restore_expected_*' -and $PostgresUser -ceq "dmsadmin"
+        }
+        # Remove-RestoreExpectedDatabase is not mocked, so its drop arrives here too.
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 2 -Exactly -ParameterFilter {
+            $Query -like 'DROP DATABASE IF EXISTS "edfi_dms_restore_expected_*' -and $PostgresUser -ceq "dmsadmin"
+        }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $PostgresUser -cne "dmsadmin" }
+        Should -Invoke Get-RestoreDatabaseCatalogFact -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $PostgresUser -ceq "dmsadmin" }
+    }
+
     It "SQL Server: creates, replays with sqlcmd -i, and single-user-drops the expected database" {
         Get-RestoreAuthoritativeObjectInventory `
             -SchemaFilePath ([string[]]@("C:\candidate\core.json")) `
@@ -2044,6 +2126,23 @@ Describe "Invoke-RestoreTargetReplacement" {
         Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql rm -f /tmp/restore-target-*.sql" }
     }
 
+    It "PostgreSQL: the safety gate, drop/create, replay, and reseed all run as the caller's administrator" {
+        $stage = New-ScratchStage -Directory $script:targetRoot
+
+        Invoke-RestoreTargetReplacement -Stage $stage -TargetDatabaseName "edfi_datamanagementservice" -PackageSourceIdentity $script:packageSourceIdentity -DatabaseEngine postgresql -PostgresUser "dmsadmin" | Out-Null
+
+        Should -Invoke Assert-RestoreTargetSafety -ModuleName bootstrap-restore -Times 2 -Exactly -ParameterFilter { $PostgresUser -ceq "dmsadmin" }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql psql -U dmsadmin -d edfi_datamanagementservice -v ON_ERROR_STOP=1 -f /tmp/restore-target-*.sql" }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { ($args -join " ") -like "*psql -U postgres*" }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+            $Query -eq 'DROP DATABASE IF EXISTS "edfi_datamanagementservice";' -and $PostgresUser -ceq "dmsadmin"
+        }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+            $Query -like "*UPDATE*DataStoreIdentity*" -and $PostgresUser -ceq "dmsadmin"
+        }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $PostgresUser -cne "dmsadmin" }
+    }
+
     It "SQL Server: cp, exists-check, single-user drop, FILELISTONLY, RESTORE MOVE with target-derived names" {
         $stage = New-ScratchStage -Directory $script:targetRoot -DatabaseEngine mssql
 
@@ -2194,6 +2293,24 @@ Describe "Get-RestoreDatabaseCatalogFact" {
             $Query -ceq (Get-InventoryDatabaseObjectQuerySql -DatabaseEngine postgresql) -and $DatabaseName -ceq "edfi_dms_restore_scratch_0123456789ab"
         }
     }
+
+    It "reads every PostgreSQL fact as the caller's administrator" {
+        Mock Invoke-RestoreCatalogQuery {
+            if ($Query -like "*EffectiveSchema*") { return "1.0.0|$('ab' * 32)|42|$('cd' * 32)" }
+            if ($Query -like "*server_version*") { return "16.8" }
+            if ($Query -like "*DocumentJson*") { return "DocumentCache|jsonb" }
+            if ($Query -like "*relkind*") { return @("dms|Document|table") }
+            if ($Query -like "*pg_namespace*") { return @("dms", "public") }
+            return @()
+        } -ModuleName bootstrap-restore
+
+        Get-RestoreDatabaseCatalogFact -DatabaseEngine postgresql -ContainerName dms-postgresql -DatabaseName "edfi_dms_restore_scratch_0123456789ab" -PostgresUser "dmsadmin" | Out-Null
+
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+            $Query -ceq (Get-InventoryObjectQuerySql -DatabaseEngine postgresql) -and $PostgresUser -ceq "dmsadmin"
+        }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $PostgresUser -cne "dmsadmin" }
+    }
 }
 
 Describe "Invoke-RestoreTargetReplacement target-safety recheck after the transfer" {
@@ -2306,6 +2423,20 @@ Describe "Remove-RestorePreflightDatabase and Remove-RestoreScratchDatabase" {
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
             $Query -eq 'DROP DATABASE IF EXISTS "edfi_dms_restore_preflight_0123456789ab";' -and $DatabaseName -eq "postgres"
         }
+    }
+
+    It "drops the preflight and scratch databases as the caller's PostgreSQL administrator" {
+        Remove-RestorePreflightDatabase -DatabaseEngine postgresql -PreflightDatabaseName "edfi_dms_restore_preflight_0123456789ab" -PostgresUser "dmsadmin" -Required
+        Remove-RestoreScratchDatabase -DatabaseEngine postgresql -ScratchDatabaseName "edfi_dms_restore_scratch_0123456789ab" -ContainerName "dms-postgresql" -PostgresUser "dmsadmin"
+
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+            $Query -eq 'DROP DATABASE IF EXISTS "edfi_dms_restore_preflight_0123456789ab";' -and $PostgresUser -ceq "dmsadmin"
+        }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+            $Query -eq 'DROP DATABASE IF EXISTS "edfi_dms_restore_scratch_0123456789ab";' -and $PostgresUser -ceq "dmsadmin"
+        }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 4 -Exactly
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $PostgresUser -cne "dmsadmin" }
     }
 
     It "is a no-op for SQL Server and for a blank name" {
