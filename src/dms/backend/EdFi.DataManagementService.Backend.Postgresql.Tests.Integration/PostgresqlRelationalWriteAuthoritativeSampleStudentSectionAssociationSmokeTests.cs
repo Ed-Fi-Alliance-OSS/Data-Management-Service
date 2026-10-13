@@ -1697,18 +1697,21 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 "Program_ProgramName",
                 "Program_ProgramTypeDescriptor_DescriptorId",
                 "Student_StudentUniqueId",
+                "ResourceKeyId",
                 "Discriminator"
             )
-            VALUES (
-                @documentId,
+            SELECT
+                d."DocumentId",
                 @beginDate,
                 @educationOrganizationId,
                 @programEducationOrganizationId,
                 @programName,
                 @programTypeDescriptorId,
                 @studentUniqueId,
+                d."ResourceKeyId",
                 @discriminator
-            )
+            FROM "dms"."Document" d
+            WHERE d."DocumentId" = @documentId
             ON CONFLICT ("DocumentId") DO NOTHING;
             """,
             new NpgsqlParameter("documentId", documentId),

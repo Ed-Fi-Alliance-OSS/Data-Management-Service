@@ -172,6 +172,123 @@ public class Given_Auth_Hierarchy_Without_Abstract_EducationOrganization
 }
 
 /// <summary>
+/// Test fixture for auth hierarchy derivation when the abstract EducationOrganization identity table and
+/// union view list a <c>ResourceKeyId</c> payload scalar ahead of the identity column.
+/// </summary>
+[TestFixture]
+public class Given_Auth_Hierarchy_With_A_Payload_Scalar_Ahead_Of_The_Identity_Column
+{
+    private DerivedRelationalModelSet _result = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = AuthHierarchyTestSchemaBuilder.BuildHierarchyProjectSchema();
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([project]);
+        var passes = AuthHierarchyTestSchemaBuilder.BuildPassesThroughAuthHierarchy().ToList();
+        passes.Insert(passes.Count - 1, new PayloadScalarAheadOfIdentityColumnFixturePass());
+        var builder = new DerivedRelationalModelSetBuilder(passes);
+
+        _result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+    }
+
+    [Test]
+    public void It_maps_each_member_to_its_identity_source_column()
+    {
+        _result
+            .AuthEdOrgHierarchy!.EntitiesInNameOrder.Select(e => (e.EntityName, e.IdentityColumn.Value))
+            .Should()
+            .Equal(
+                ("LocalEducationAgency", "EducationOrganizationId"),
+                ("StateEducationAgency", "EducationOrganizationId")
+            );
+    }
+}
+
+/// <summary>
+/// Fixture pass that inserts a <c>ResourceKeyId</c> payload scalar (no JSON path) directly after
+/// <c>DocumentId</c> in the abstract EducationOrganization identity table and union view, with a per-arm
+/// <see cref="AbstractUnionViewProjectionExpression.Int16Literal"/>.
+/// </summary>
+file sealed class PayloadScalarAheadOfIdentityColumnFixturePass : IRelationalModelSetPass
+{
+    private static readonly DbColumnName _resourceKeyIdColumn = new("ResourceKeyId");
+    private static readonly RelationalScalarType _int16Type = new(ScalarKind.Int16);
+
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        var tableIndex = context.AbstractIdentityTablesInNameOrder.FindIndex(IsEducationOrganization);
+        var table = context.AbstractIdentityTablesInNameOrder[tableIndex];
+        var columnIndex = IndexAfterDocumentId(table.TableModel.Columns.Select(c => c.ColumnName));
+        context.AbstractIdentityTablesInNameOrder[tableIndex] = table with
+        {
+            TableModel = table.TableModel with
+            {
+                Columns = InsertAt(
+                    table.TableModel.Columns,
+                    columnIndex,
+                    new DbColumnModel(
+                        _resourceKeyIdColumn,
+                        ColumnKind.Scalar,
+                        _int16Type,
+                        IsNullable: false,
+                        SourceJsonPath: null,
+                        TargetResource: null
+                    )
+                ),
+            },
+        };
+
+        var viewIndex = context.AbstractUnionViewsInNameOrder.FindIndex(view =>
+            view.AbstractResourceKey.Resource.ResourceName == "EducationOrganization"
+        );
+        var view = context.AbstractUnionViewsInNameOrder[viewIndex];
+        var outputIndex = IndexAfterDocumentId(view.OutputColumnsInSelectOrder.Select(c => c.ColumnName));
+        context.AbstractUnionViewsInNameOrder[viewIndex] = view with
+        {
+            OutputColumnsInSelectOrder = InsertAt(
+                view.OutputColumnsInSelectOrder,
+                outputIndex,
+                new AbstractUnionViewOutputColumn(
+                    _resourceKeyIdColumn,
+                    _int16Type,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                )
+            ),
+            UnionArmsInOrder =
+            [
+                .. view.UnionArmsInOrder.Select(arm =>
+                    arm with
+                    {
+                        ProjectionExpressionsInSelectOrder = InsertAt(
+                            arm.ProjectionExpressionsInSelectOrder,
+                            outputIndex,
+                            new AbstractUnionViewProjectionExpression.Int16Literal(
+                                arm.ConcreteMemberResourceKey.ResourceKeyId
+                            )
+                        ),
+                    }
+                ),
+            ],
+        };
+    }
+
+    private static bool IsEducationOrganization(AbstractIdentityTableInfo table) =>
+        table.AbstractResourceKey.Resource.ResourceName == "EducationOrganization";
+
+    private static int IndexAfterDocumentId(IEnumerable<DbColumnName> columnNames) =>
+        columnNames.ToList().IndexOf(RelationalNameConventions.DocumentIdColumnName) + 1;
+
+    private static IReadOnlyList<T> InsertAt<T>(IReadOnlyList<T> items, int index, T item) =>
+        [.. items.Take(index), item, .. items.Skip(index)];
+}
+
+/// <summary>
 /// Schema builder for auth hierarchy pass tests.
 /// </summary>
 internal static class AuthHierarchyTestSchemaBuilder

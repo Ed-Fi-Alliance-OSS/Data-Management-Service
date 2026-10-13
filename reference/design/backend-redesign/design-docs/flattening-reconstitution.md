@@ -1170,7 +1170,8 @@ public enum ScalarKind
     Boolean,
     Date,
     DateTime,
-    Time
+    Time,
+    Int16
 }
 
 /// <summary>
@@ -1221,6 +1222,7 @@ Rules:
 | `Date` | `type: "string", format: "date"` | `date` | `date` |
 | `DateTime` | `type: "string", format: "date-time"` | `timestamp with time zone` | `datetime2(7)` |
 | `Time` | `type: "string", format: "time"` | `time` | `time(7)` |
+| `Int16` | none (model-only payload columns, e.g. abstract-identity `ResourceKeyId`) | `smallint` | `smallint` |
 
 ### 7.2 JSON path compilation (avoid parsing JSONPath per value)
 

@@ -33,6 +33,7 @@ CREATE TABLE [edfi].[EducationOrganizationIdentity]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganizationId] int NOT NULL,
+    [ResourceKeyId] smallint NOT NULL,
     [Discriminator] nvarchar(50) NOT NULL,
     CONSTRAINT [PK_EducationOrganizationIdentity] PRIMARY KEY ([DocumentId])
 );
@@ -61,12 +62,12 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_EducationOrganizationIdentity_Document' AND parent_object_id = OBJECT_ID(N'edfi.EducationOrganizationIdentity')
+    WHERE name = N'FK_EducationOrganizationIdentity_DocumentResourceKey' AND parent_object_id = OBJECT_ID(N'edfi.EducationOrganizationIdentity')
 )
 ALTER TABLE [edfi].[EducationOrganizationIdentity]
-ADD CONSTRAINT [FK_EducationOrganizationIdentity_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
+ADD CONSTRAINT [FK_EducationOrganizationIdentity_DocumentResourceKey]
+FOREIGN KEY ([DocumentId], [ResourceKeyId])
+REFERENCES [dms].[Document] ([DocumentId], [ResourceKeyId])
 ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
@@ -80,10 +81,10 @@ CREATE INDEX [IX_EducationOrganizationIdToEducationOrganizationId_Target] ON [au
 
 GO
 CREATE OR ALTER VIEW [edfi].[EducationOrganization_View] AS
-SELECT [DocumentId] AS [DocumentId], [EducationOrganizationId] AS [EducationOrganizationId], CAST(N'Ed-Fi:LocalEducationAgency' AS nvarchar(50)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [EducationOrganizationId] AS [EducationOrganizationId], CAST(2 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:LocalEducationAgency' AS nvarchar(50)) AS [Discriminator]
 FROM [edfi].[LocalEducationAgency]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [EducationOrganizationId] AS [EducationOrganizationId], CAST(N'Ed-Fi:StateEducationAgency' AS nvarchar(50)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [EducationOrganizationId] AS [EducationOrganizationId], CAST(3 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:StateEducationAgency' AS nvarchar(50)) AS [Discriminator]
 FROM [edfi].[StateEducationAgency]
 ;
 
@@ -104,8 +105,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], s.[EducationOrganizationId], N'Ed-Fi:LocalEducationAgency'
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[EducationOrganizationId], 2, N'Ed-Fi:LocalEducationAgency'
         FROM inserted s
         LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -124,8 +125,8 @@ BEGIN
             FROM [edfi].[EducationOrganizationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-            SELECT s.[DocumentId], s.[EducationOrganizationId], N'Ed-Fi:LocalEducationAgency'
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[EducationOrganizationId], 2, N'Ed-Fi:LocalEducationAgency'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -378,8 +379,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], s.[EducationOrganizationId], N'Ed-Fi:StateEducationAgency'
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[EducationOrganizationId], 3, N'Ed-Fi:StateEducationAgency'
         FROM inserted s
         LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -398,8 +399,8 @@ BEGIN
             FROM [edfi].[EducationOrganizationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-            SELECT s.[DocumentId], s.[EducationOrganizationId], N'Ed-Fi:StateEducationAgency'
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[EducationOrganizationId], 3, N'Ed-Fi:StateEducationAgency'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
