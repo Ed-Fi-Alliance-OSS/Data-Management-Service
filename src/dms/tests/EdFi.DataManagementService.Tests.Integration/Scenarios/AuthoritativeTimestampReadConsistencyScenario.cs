@@ -202,6 +202,45 @@ internal static class AuthoritativeTimestampReadConsistencyScenario
         }
     }
 
+    public static async Task RunLookupDeletionAsync(ApiIntegrationHarness harness)
+    {
+        Resource resource = await CreateAsync(harness, descriptor: false);
+        ReadBoundary boundary = harness.Services.GetRequiredService<ReadBoundary>();
+        boundary.DeleteDuringUuidLookup = true;
+        boundary.Armed = true;
+        boundary.Gate.Arm();
+        using CancellationTokenSource cancellation = new(Watchdog);
+        Task<HttpResponseMessage> pending = harness.HttpClient.GetAsync(resource.Path, cancellation.Token);
+        try
+        {
+            Task reached = await Task.WhenAny(boundary.Gate.Arrived, pending).WaitAsync(cancellation.Token);
+            reached.Should().BeSameAs(boundary.Gate.Arrived, "GET must capture the existing UUID lookup row");
+            using HttpResponseMessage deleted = await harness.HttpClient.DeleteAsync(
+                resource.Path,
+                cancellation.Token
+            );
+            deleted
+                .StatusCode.Should()
+                .Be(HttpStatusCode.NoContent, await deleted.Content.ReadAsStringAsync());
+        }
+        finally
+        {
+            boundary.Gate.Release();
+            try
+            {
+                await pending.WaitAsync(Watchdog);
+            }
+            catch
+            {
+                await cancellation.CancelAsync();
+            }
+        }
+
+        using HttpResponseMessage response = await pending;
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound, await response.Content.ReadAsStringAsync());
+        boundary.Hits.Should().Be(1);
+    }
+
     private static async Task<JsonObject> ReadAsync(ApiIntegrationHarness harness, string path)
     {
         using HttpResponseMessage response = await harness.HttpClient.GetAsync(path);
@@ -227,6 +266,7 @@ internal static class AuthoritativeTimestampReadConsistencyScenario
         public bool SelectedDescriptorFallback { get; set; }
         public bool BetweenMetadataAndContent { get; set; }
         public bool BeforeMetadata { get; set; }
+        public bool DeleteDuringUuidLookup { get; set; }
         public bool SplitHydration => BetweenMetadataAndContent || BeforeMetadata;
         public int RetriedAttempts { get; set; }
         public string Checkpoint { get; private set; } = "";
@@ -465,6 +505,45 @@ internal static class AuthoritativeTimestampReadConsistencyScenario
             CancellationToken cancellationToken = default
         )
         {
+            if (
+                boundary.DeleteDuringUuidLookup
+                && command.CommandText.Contains("LEFT JOIN", StringComparison.Ordinal)
+                && command.CommandText.Contains("owner.", StringComparison.Ordinal)
+                && command.Parameters.Any(parameter => parameter.Name == "@documentUuid")
+                && boundary.Claim("UUID lookup row captured before canonical deletion")
+            )
+            {
+                using DataTable table = await inner.ExecuteReaderAsync(
+                    command,
+                    async (reader, ct) =>
+                    {
+                        (await reader.ReadAsync(ct)).Should().BeTrue();
+                        reader.IsDBNull(reader.GetOrdinal("ContentLastModifiedAt")).Should().BeFalse();
+                        DataTable captured = new();
+                        captured.Columns.Add("DocumentId", typeof(long));
+                        captured.Columns.Add("DocumentUuid", typeof(Guid));
+                        captured.Columns.Add("ResourceKeyId", typeof(short));
+                        captured.Columns.Add("ContentVersion", typeof(long));
+                        captured.Columns.Add("ContentLastModifiedAt", typeof(DateTimeOffset));
+                        captured.Rows.Add(
+                            reader.GetRequiredFieldValue<long>("DocumentId"),
+                            reader.GetRequiredFieldValue<Guid>("DocumentUuid"),
+                            reader.GetRequiredFieldValue<short>("ResourceKeyId"),
+                            reader.GetRequiredFieldValue<long>("ContentVersion"),
+                            DBNull.Value
+                        );
+                        (await reader.ReadAsync(ct)).Should().BeFalse();
+                        return captured;
+                    },
+                    cancellationToken
+                );
+                // Release the real reader before the canonical delete. Replay the mixed joined row
+                // deterministically: old document metadata with an owner absent after deletion.
+                await boundary.Gate.WaitIfArmedAsync();
+                await using var replay = new DbRelationalCommandReader(new DataTableReader(table));
+                return await readAsync(replay, cancellationToken);
+            }
+
             if (
                 boundary.Descriptor
                 && boundary.BeforeMetadata

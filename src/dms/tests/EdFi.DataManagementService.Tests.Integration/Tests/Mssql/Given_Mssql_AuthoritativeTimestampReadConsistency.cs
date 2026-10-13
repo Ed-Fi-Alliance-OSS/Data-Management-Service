@@ -22,6 +22,10 @@ public sealed class Given_Mssql_AuthoritativeTimestampReadConsistency(bool readC
     protected override bool EnableDocumentCacheReadAcceleration => false;
     protected override bool MatchProductionWriteIsolation => true;
 
+    [Test]
+    public Task It_returns_not_found_when_the_uuid_lookup_owner_disappears_during_canonical_delete() =>
+        AuthoritativeTimestampReadConsistencyScenario.RunLookupDeletionAsync(Harness);
+
     protected override async Task<string> LeaseDatabaseAsync(FixtureContext fixture)
     {
         string connectionString = await base.LeaseDatabaseAsync(fixture);

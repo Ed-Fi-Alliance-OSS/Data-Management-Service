@@ -98,14 +98,34 @@ internal sealed class RelationalReadTargetLookupService(IRelationalCommandExecut
                 );
             }
 
+            if (resolvedDocument.ContentLastModifiedAt is null)
+            {
+                // A canonical delete can commit between the joined document and owner reads.
+                // Confirm disappearance before treating the missing owner as an invariant violation.
+                var currentDocument = await RelationalDocumentUuidLookupSupport
+                    .TryResolveByDocumentUuidAsync(
+                        _commandExecutor,
+                        mappingSet,
+                        documentUuid,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                if (currentDocument is null)
+                {
+                    return new RelationalReadTargetLookupResult.NotFound();
+                }
+
+                throw new InvalidOperationException(
+                    $"Relational GET target lookup for document uuid '{documentUuid.Value}' returned a row without ContentLastModifiedAt."
+                );
+            }
+
             return new RelationalReadTargetLookupResult.ExistingDocument(
                 resolvedDocument.DocumentId,
                 resolvedDocument.DocumentUuid,
                 resolvedDocument.ContentVersion.Value,
-                resolvedDocument.ContentLastModifiedAt
-                    ?? throw new InvalidOperationException(
-                        $"Relational GET target lookup for document uuid '{documentUuid.Value}' returned a row without ContentLastModifiedAt."
-                    )
+                resolvedDocument.ContentLastModifiedAt.Value
             );
         }
 

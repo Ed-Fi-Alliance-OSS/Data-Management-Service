@@ -228,6 +228,79 @@ public class Given_RelationalReadTargetLookupService
             .Equal(documentUuid.Value, (short)13);
     }
 
+    [TestCase(SqlDialect.Pgsql, false)]
+    [TestCase(SqlDialect.Mssql, false)]
+    [TestCase(SqlDialect.Pgsql, true)]
+    [TestCase(SqlDialect.Mssql, true)]
+    public async Task It_rechecks_document_existence_before_classifying_a_missing_owner_timestamp(
+        SqlDialect dialect,
+        bool documentSurvives
+    )
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var documentRow = RelationalAccessTestData.CreateRow(
+            ("DocumentId", 404L),
+            ("DocumentUuid", documentUuid.Value),
+            ("ResourceKeyId", (short)1),
+            ("ContentVersion", 907L)
+        );
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    RelationalAccessTestData.CreateRow(
+                        ("DocumentId", 404L),
+                        ("DocumentUuid", documentUuid.Value),
+                        ("ResourceKeyId", (short)1),
+                        ("ContentVersion", 907L),
+                        ("ContentLastModifiedAt", null)
+                    )
+                ),
+            ]),
+            new InMemoryRelationalCommandExecution([
+                documentSurvives
+                    ? InMemoryRelationalResultSet.Create(documentRow)
+                    : InMemoryRelationalResultSet.Create(),
+            ]),
+        ]);
+        var sut = new RelationalReadTargetLookupService(commandExecutor);
+
+        if (documentSurvives)
+        {
+            Func<Task> act = () =>
+                sut.ResolveForGetByIdAsync(CreateMappingSet(dialect), _requestResource, documentUuid);
+            await act.Should()
+                .ThrowAsync<InvalidOperationException>()
+                .WithMessage(
+                    $"Relational GET target lookup for document uuid '{documentUuid.Value}' returned a row without ContentLastModifiedAt."
+                );
+        }
+        else
+        {
+            var result = await sut.ResolveForGetByIdAsync(
+                CreateMappingSet(dialect),
+                _requestResource,
+                documentUuid
+            );
+            result.Should().BeOfType<RelationalReadTargetLookupResult.NotFound>();
+        }
+
+        commandExecutor.Commands.Should().HaveCount(2);
+        commandExecutor.Commands[0].CommandText.Should().Contain("LEFT JOIN").And.Contain("owner.");
+        var reread = commandExecutor.Commands[1];
+        reread
+            .CommandText.Should()
+            .Contain(
+                dialect == SqlDialect.Pgsql
+                    ? "FROM dms.\"Document\" document"
+                    : "FROM [dms].[Document] document"
+            )
+            .And.NotContain("JOIN")
+            .And.NotContain("ContentLastModifiedAt")
+            .And.NotContain("owner.");
+        reread.Parameters.Select(parameter => parameter.Name).Should().Equal("@documentUuid");
+        reread.Parameters.Select(parameter => parameter.Value).Should().Equal(documentUuid.Value);
+    }
+
     private static MappingSet CreateMappingSet(SqlDialect dialect)
     {
         var mappingSet = RelationalAccessTestData.CreateMappingSet(_requestResource);

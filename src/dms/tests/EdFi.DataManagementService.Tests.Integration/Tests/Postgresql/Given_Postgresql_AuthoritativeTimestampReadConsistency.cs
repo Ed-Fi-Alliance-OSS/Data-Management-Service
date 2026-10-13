@@ -15,6 +15,10 @@ public sealed class Given_Postgresql_AuthoritativeTimestampReadConsistency : Pos
     protected override FixtureKey Fixture => FixtureKey.CompactDescriptorResources;
     protected override bool EnableDocumentCacheReadAcceleration => false;
 
+    [Test]
+    public Task It_returns_not_found_when_the_uuid_lookup_owner_disappears_during_canonical_delete() =>
+        AuthoritativeTimestampReadConsistencyScenario.RunLookupDeletionAsync(Harness);
+
     protected override void CustomizeServices(
         IServiceCollection services,
         FixtureContext fixture,
