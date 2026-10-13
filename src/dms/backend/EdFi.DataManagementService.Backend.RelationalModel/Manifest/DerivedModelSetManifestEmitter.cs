@@ -280,6 +280,10 @@ public static class DerivedModelSetManifestEmitter
                 writer.WriteString("kind", "StringLiteral");
                 writer.WriteString("value", stringLiteral.Value);
                 break;
+            case AbstractUnionViewProjectionExpression.Int16Literal int16Literal:
+                writer.WriteString("kind", "Int16Literal");
+                writer.WriteNumber("value", int16Literal.Value);
+                break;
             default:
                 throw new ArgumentOutOfRangeException(
                     nameof(expression),
@@ -359,6 +363,7 @@ public static class DerivedModelSetManifestEmitter
                     writer.WritePropertyName("target_table");
                     WriteTableReference(writer, abstractId.TargetTable);
                     WriteTargetColumnMappings(writer, abstractId.TargetColumnMappings);
+                    writer.WriteNumber("resource_key_id_value", abstractId.ResourceKeyIdValue);
                     writer.WriteString("discriminator_value", abstractId.DiscriminatorValue);
                     break;
 

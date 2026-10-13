@@ -147,6 +147,12 @@ public enum ScalarKind
     /// A time-only value.
     /// </summary>
     Time,
+
+    /// <summary>
+    /// A 16-bit integer (<c>smallint</c>). Model-only: never produced from ApiSchema. Used for
+    /// payload columns such as the abstract identity table's <c>ResourceKeyId</c>.
+    /// </summary>
+    Int16,
 }
 
 /// <summary>
