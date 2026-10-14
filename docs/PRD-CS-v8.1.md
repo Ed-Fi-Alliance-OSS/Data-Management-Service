@@ -118,7 +118,7 @@ in CS v8.0.
 
 - **FR-ERROR-6**: Every non-success CS response — including framework-level
   errors, authentication/authorization failures, tenant-resolution middleware
-  failures, dynamic claims-management endpoints, and and `/connect/token`
+  failures, dynamic claims-management endpoints, and `/connect/token`
   errors — SHOULD return a JSON body conforming to the Ed-Fi Error
   Response Knowledge Base contract: `detail`, `type`, `title`, `status`,
   `correlationId`, `validationErrors`, and `errors`. `/connect/revoke`

@@ -33,8 +33,8 @@ The most significant architectural difference from the ODS Admin API is that
 **CS is also the OAuth 2.0 identity provider for the platform**, not only for
 its own administrative clients. A single CS deployment issues, validates, and
 revokes access tokens both for administrative/automation clients that manage
-CS itself and for the vendor/integrator API clients that call the Ed-Fi API
-resource API to read and write student data. CS supports this either through
+CS itself and for the vendor/integrator API clients that call the Ed-Fi Resource
+API to read and write student data. CS supports this either through
 a bundled, self-contained OAuth 2.0 server (OpenIddict) or by delegating to an
 external Keycloak realm — making the identity-provider role itself an optional,
 host-configurable capability rather than a fixed dependency.
@@ -101,7 +101,7 @@ environment setup (vendors, applications, data stores, tenants).
 #### API Client Developer (Vendor/Integrator)
 
 Does not call CS's administrative endpoints directly, but depends on it
-indirectly: the `client_id`/`client_secret` used to call the Ed-Fi API resource API
+indirectly: the `client_id`/`client_secret` used to call the Ed-Fi Resource API
 is issued by CS, and the access token used against Ed-Fi API is obtained from
 CS's token endpoint.
 
@@ -166,9 +166,12 @@ authorization strategies, \
 **so that** access rules are visible and editable without direct database
 access.
 
-**How CS Helps**: Exposes read/write endpoints for claim sets and read-only
-endpoints for the resource-claim hierarchy, resource claim actions, and
-default authorization-strategy assignments (FR-CLAIM-1 through FR-CLAIM-9).
+**How CS Helps**: Exposes read/write endpoints for claim sets, with
+resource-claim-action associations changed by importing a claim set
+(FR-CLAIM-4), and read-only endpoints for the resource-claim hierarchy,
+resource claim actions, default authorization-strategy assignments, and the
+available actions and authorization strategies (FR-CLAIM-1 through
+FR-CLAIM-10).
 
 #### JTBD 5: Transfer Claim Sets Between Environments
 
@@ -227,12 +230,12 @@ steps, \
 schema-rename/migration notes for pre-release breaking changes (see
 NFR-COMPAT-4).
 
-#### JTBD 9: Authenticate Ed-Fi API API Clients (New — no ODS Admin API equivalent)
+#### JTBD 9: Authenticate Ed-Fi API Clients (New — no ODS Admin API equivalent)
 
 **Personas**: API Client Developer (Vendor/Integrator), Platform Host System
 Administrator
 
-**When** a vendor or integrator application needs to call the Ed-Fi API resource
+**When** a vendor or integrator application needs to call the Ed-Fi Resource
 API, \
 **I want** to obtain an access token from CS using the `client_id` and
 `client_secret` CS issued when its Application/ApiClient was created, \
@@ -240,7 +243,7 @@ API, \
 CS and resource-API access to Ed-Fi API, without a separate credential system.
 
 **How CS Helps**: CS's token endpoint (`POST /connect/token`) is the sole
-source of access tokens for Ed-Fi API resource-API clients as well as for CS's own
+source of access tokens for Ed-Fi Resource API clients as well as for CS's own
 administrative clients. Ed-Fi API never calls CS synchronously to validate a
 token — it validates the bearer JWT statelessly via JWKS and retrieves the
 associated authorization context (claim set, education organizations,
@@ -268,8 +271,8 @@ reporting is deferred to v8.1.
 Database instance provisioning, education organization synchronization,
 asynchronous job tracking, rate limiting, dependency-aware health checks,
 full non-success error-response conformance, application-profile lookup by
-application, and OpenAPI disablement are deferred to the v8.1 planning
-document: [CS v8.1 Deferred Requirements](./PRD-CS-v8.1.md).
+application, and OpenAPI disablement are deferred to later releases; see
+[CS v8.1](./PRD-CS-v8.1.md) and [CS v8.2](./PRD-CS-v8.2.md).
 
 ## 2. Enterprise Architecture
 
@@ -285,7 +288,7 @@ graph TB
 
     subgraph Platform["Ed-Fi API Platform (Host-Operated)"]
         AdminUI["Ed-Fi Admin App<br/>(User Interface)"]
-        Ed-Fi API["Ed-Fi API Service<br/>(Ed-Fi API)"]
+        EdFiAPI["Ed-Fi API Service"]
         CS["Ed-Fi Configuration<br/>Management Service (CS)"]
         DMSDB[("Ed-Fi API Database<br/>(operational/resource data)")]
         CSDB[("CS Database<br/>('dmscs' schema —<br/>configuration data)")]
@@ -293,10 +296,10 @@ graph TB
     end
 
     ClientApp -->|"Authenticate<br/>(client_credentials grant)"| CS
-    ClientApp -->|"Transmit & retrieve<br/>student data (bearer JWT)"| Ed-Fi API
+    ClientApp -->|"Transmit & retrieve<br/>student data (bearer JWT)"| EdFiAPI
     AdminUI -->|"Manage config"| CS
-    Ed-Fi API -->|"Retrieve & cache<br/>configuration data"| CS
-    Ed-Fi API --> DMSDB
+    EdFiAPI -->|"Retrieve & cache<br/>configuration data"| CS
+    EdFiAPI --> DMSDB
     CS --> CSDB
     CS -->|"[Optional]<br/>Delegate authentication &<br/>client management"| KeyCloak
 ```
@@ -369,7 +372,7 @@ External systems and dependencies:
   store context, and data store derivative list/retrieve endpoints.
 - **FR-AUTH-7**: CS SHALL serve as the OAuth 2.0 identity provider for both
   (a) its own administrative/automation clients and (b) the vendor/API
-  clients that call the Ed-Fi API resource API. A Ed-Fi API API client's `client_id` and
+  clients that call the Ed-Fi Resource API. An Ed-Fi API client's `client_id` and
   `client_secret` SHALL be generated by CS at the time its Application and
   ApiClient records are created, and the same `POST /connect/token` endpoint
   SHALL issue access tokens for both categories of client.
@@ -387,6 +390,11 @@ External systems and dependencies:
   list/lookup endpoints SHALL accept any of the three defined scopes; and
   health, discovery, metadata, OAuth `/connect/*`, and self-contained OIDC
   discovery/JWKS endpoints SHALL remain anonymous.
+- **FR-AUTH-11**: CS SHALL expose an anonymous
+  `GET /.well-known/openiddict-status` endpoint in both identity-provider
+  modes, reporting the configured authority and its discovery, JWKS, and token
+  endpoint URLs. In v8.0 its `OpenIddictServerEnabled` value is always
+  `false`, even in self-contained mode.
 
 ### 3.3 Vendor Management
 
@@ -398,6 +406,8 @@ External systems and dependencies:
   comma-separated values, with whitespace trimmed and empty prefixes ignored.
 - **FR-VENDOR-4**: Deleting a vendor SHALL remove its associated applications
   and their API clients.
+- **FR-VENDOR-5**: CS SHALL allow authorized clients to list a vendor's
+  applications (`GET /v3/vendors/{id}/applications`).
 
 ### 3.4 Application Management
 
@@ -467,6 +477,9 @@ External systems and dependencies:
 - **FR-DATASTORE-9**: An API client SHALL be associable with one or more data
   stores, so a client may be scoped to a single fixed data store or to
   several (for context-based routing scenarios).
+- **FR-DATASTORE-10**: CS SHALL allow authorized clients to list the
+  applications associated with a data store
+  (`GET /v3/dataStores/{id}/applications`).
 
 ### 3.7 Profiles
 
@@ -527,6 +540,9 @@ External systems and dependencies:
   authorization strategies it grants — accessible via any of the three
   defined scopes, including the metadata-only scope
   (`edfi_admin_api/authMetadata_readonly_access`).
+- **FR-CLAIM-10**: CS SHALL expose read-only lists of the available actions
+  (`GET /v3/actions`) and authorization strategies
+  (`GET /v3/authorizationStrategies`).
 
 ### 3.9 Tenants and Multi-Tenancy
 
@@ -548,7 +564,7 @@ External systems and dependencies:
   database rather than storing per-tenant configuration-database connection
   details.
 - **FR-TENANT-6**: In multi-tenant mode, CS-issued API-client credentials
-  used against the Ed-Fi API resource API SHALL remain scoped to the data store(s)
+  used against the Ed-Fi Resource API SHALL remain scoped to the data store(s)
   associated with the tenant/application under which they were created, even
   though the CS management credential that created them is not itself
   tenant-restricted (see NFR-SEC-6 for the resulting host guidance).
@@ -608,7 +624,7 @@ External systems and dependencies:
   configuration, Profile assignments and definitions, and claim-set
   authorization metadata.
 - **FR-INTEGRATION-2**: CS SHALL NOT be a synchronous dependency of every
-  Ed-Fi API resource-API request; Ed-Fi API's caching layer SHALL allow it to continue
+  Ed-Fi Resource API request; Ed-Fi API's caching layer SHALL allow it to continue
   serving requests using previously fetched configuration if CS is
   temporarily unavailable, subject to the cache's configured refresh
   interval.
@@ -617,7 +633,7 @@ External systems and dependencies:
   self-contained server or the configured Keycloak realm) rather than
   calling CS synchronously to validate each token.
 - **FR-INTEGRATION-4**: A credential revoked through CS SHALL take effect
-  against the Ed-Fi API resource API only once the token's own expiration (or the
+  against the Ed-Fi Resource API only once the token's own expiration (or the
   data-API's configured validation clock skew) elapses; Ed-Fi API's stateless
   validation model does not check revocation status on every request. Hosts
   requiring faster revocation SHOULD configure a shorter access-token
@@ -626,8 +642,8 @@ External systems and dependencies:
 ### 3.13 Deferred Functional Requirements
 
 Database instance provisioning, education organization synchronization,
-asynchronous job tracking, and rate limiting are deferred to
-[CS v8.1 Deferred Requirements](./PRD-CS-v8.1.md).
+asynchronous job tracking, and rate limiting are deferred to later releases; see
+[CS v8.1](./PRD-CS-v8.1.md) and [CS v8.2](./PRD-CS-v8.2.md).
 
 ## 4. Non-Functional Requirements
 
@@ -659,7 +675,7 @@ asynchronous job tracking, and rate limiting are deferred to
 - **NFR-SEC-4**: OpenAPI metadata is exposed through the
   generated `/openapi/v1.json` document and the transformed
   `/metadata/specifications` endpoint. Independent production disablement is
-  deferred to v8.1.
+  deferred to a later release; see [CS v8.2](./PRD-CS-v8.2.md).
 - **NFR-SEC-5**: Self-registration (`POST /connect/register`) SHALL be
   disabled after initial bootstrap in deployments that do not require open
   client self-registration.
@@ -671,11 +687,11 @@ asynchronous job tracking, and rate limiting are deferred to
   isolation. This is a documented host responsibility, not a gap CS itself
   closes.
 - **NFR-SEC-7**: This tenant-header caveat applies only to CS's own
-  administrative credentials. Vendor credentials that CS issues *for the Ed-Fi API
-  resource API* are separately constrained at the Ed-Fi API layer by claim set,
+  administrative credentials. Vendor credentials that CS issues *for the Ed-Fi Resource
+  API* are separately constrained at the Ed-Fi API layer by claim set,
   education organization, namespace prefix, and data-store authorization —
   a CS management credential's platform-wide reach does not itself grant a
-  Ed-Fi API API client platform-wide data access.
+  Ed-Fi API client platform-wide data access.
 
 ### 4.3 Reliability and Operations
 
@@ -700,7 +716,7 @@ asynchronous job tracking, and rate limiting are deferred to
   sensitive values (secrets, tokens, raw database or configuration error
   text); such detail SHALL be logged server-side only when needed for
   diagnosis and never included in the client-facing response body.
-- **NFR-OBS-4**: Unlike the Ed-Fi API resource API, CS's endpoints do not
+- **NFR-OBS-4**: Unlike the Ed-Fi Resource API, CS's endpoints do not
   currently support a client-supplied Correlation ID; this is a known,
   documented asymmetry between the two services rather than an oversight.
 
@@ -773,7 +789,7 @@ asynchronous job tracking, and rate limiting are deferred to
 - **OUT-1**: CS does not implement Management API v1 or v2, and has no
   ODS/API 6.x- or 7.x-specific compatibility behavior. It is not a drop-in
   replacement for ODS Admin API clients; a documented gap analysis
-  (`reference/Ed-Fi API-1039/AdminApi-CS GAP Analysis.md`) enumerates the
+  (`reference/DMS-1039/AdminApi-CMS GAP Analysis.md`) enumerates the
   route-naming (`odsInstance*` → `dataStore*`), payload-shape, status-code,
   and error-format differences between the two implementations as of this
   writing.
@@ -783,7 +799,8 @@ asynchronous job tracking, and rate limiting are deferred to
   authorization-strategy assignments are exposed read-only (FR-CLAIM-7).
   Replacing this metadata is a deployment/bootstrap concern;
   the `/management/reload-claims` and `/management/upload-claims`
-  endpoints that do so return `404` unless
+  endpoints that do so, and the `/management/current-claims` endpoint that
+  returns the loaded claims document, return `404` unless
   `ClaimsOptions:DangerouslyEnableUnrestrictedClaimsLoading` is enabled
   (default `false`), and are intended for development and testing only.
 - **OUT-4**: A richer, database-instance-provisioning workflow with
@@ -791,15 +808,15 @@ asynchronous job tracking, and rate limiting are deferred to
   synchronization cache, request rate limiting, dependency-aware health
   checks, full non-success error-response conformance, an
   application-profile lookup endpoint, token cleanup, and OpenAPI
-  disablement are deferred to
-  [CS v8.1 Deferred Requirements](./PRD-CS-v8.1.md).
+  disablement are deferred to later releases; see
+  [CS v8.1](./PRD-CS-v8.1.md) and [CS v8.2](./PRD-CS-v8.2.md).
 - **OUT-5**: Client-secret expiration and scheduled rotation were researched
   in a design spike but are not implemented; today, secret rotation is a
   manual reset (`FR-CLIENT-4`) with no expiration date tracked or enforced.
 - **OUT-6**: Tenant `/details` and other tenant-summary projections available
   in the ODS Admin API are not implemented in CS; only tenant list, retrieve,
   and create are current CS behavior (FR-TENANT-5).
-- **OUT-7**: Client-supplied Correlation IDs, supported on the Ed-Fi API resource
+- **OUT-7**: Client-supplied Correlation IDs, supported on the Ed-Fi Resource
   API, are not supported on CS (NFR-OBS-4).
 - **OUT-8**: A built-in administrative UI is not part of CS; CS is
   consumed by a separate administrative application (e.g., Ed-Fi Admin App).
@@ -816,16 +833,17 @@ asynchronous job tracking, and rate limiting are deferred to
   platform.
 - **Ed-Fi API**: Ed-Fi API service ("Data Management Service") — the platform's
   resource/data-management API, and CS's primary internal client.
-- **`dmscs` schema**: The CS configuration database schema (short for "Ed-Fi API
+- **`dmscs` schema**: The CS configuration database schema (short for "DMS
   Configuration Service"), distinct from any schema used by Ed-Fi API's operational
   data.
 - **Application**: An administrative representation of a client application,
   associated with a vendor, claim set, education organizations, data stores,
   Profiles, and one or more ApiClient credential sets.
-- **API Client (ApiClient)**: A credentialed record — `client_id`,
-  `client_secret`, and `ClientUuid` — used to obtain an access token from
-  CS's identity provider and access either CS or (more commonly) the Ed-Fi API
-  resource API.
+- **API Client (ApiClient)**: A credentialed record — `client_id` (the stable
+  external identifier), `client_secret`, and `ClientUuid` (the identity
+  provider's internal client identifier, which can change) — used to obtain
+  an access token from CS's identity provider and access either CS or (more
+  commonly) the Ed-Fi Resource API.
 - **Claim Set**: A named collection of resource-claim/action grants,
   optionally including per-action authorization-strategy overrides.
 - **Data Store**: The CS v3 term for an administratively managed database
@@ -844,7 +862,7 @@ asynchronous job tracking, and rate limiting are deferred to
   OAuth 2.0/OIDC server.
 - **Profile**: A named data policy restricting which properties, references,
   and collection items of a resource a client may read and/or write on the
-  Ed-Fi API resource API; authored and stored in CS, enforced by Ed-Fi API.
+  Ed-Fi Resource API; authored and stored in CS, enforced by Ed-Fi API.
 - **Resource Claim**: A node in the authorization claims hierarchy that a
   claim set can grant access to, together with its allowed actions and
   default authorization strategy.

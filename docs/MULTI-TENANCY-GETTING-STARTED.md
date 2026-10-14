@@ -440,8 +440,9 @@ and it is not an access control mechanism. This is a deliberate design decision:
 - Any Configuration Service client with the appropriate scope may set any valid
   `Tenant` value and administer that tenant's vendors, applications, API clients,
   claim sets, and data store connection strings.
-- `GET /v3/tenants` is answerable without a `Tenant` header, so the set of tenant
-  names is discoverable by any authenticated client.
+- Tenant names are discoverable: `GET /tenancy` lists them without authentication,
+  and `GET /v3/tenants` lists them to any authenticated client without a `Tenant`
+  header.
 
 **Treat every Configuration Service credential as a platform-wide administrative
 credential.** Do not issue Configuration Service client credentials to a party who
