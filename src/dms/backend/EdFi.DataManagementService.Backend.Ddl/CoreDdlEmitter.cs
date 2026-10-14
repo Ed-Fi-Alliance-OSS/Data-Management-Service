@@ -74,6 +74,11 @@ public sealed class CoreDdlEmitter
     }
 
     private const string DescriptorStampingTriggerName = "TR_Descriptor_Stamp_Document";
+
+    /// <summary>
+    /// The PostgreSQL collation that folds the lowered descriptor URI independently of the database default.
+    /// </summary>
+    private const string PgsqlUriFoldingCollation = "pg_c_utf8";
     private const string DocumentCacheUuidValidationTriggerName = DocumentCacheInventoryDefinition
         .DocumentCacheTriggers
         .ValidateDocumentUuid;
@@ -467,6 +472,13 @@ public sealed class CoreDdlEmitter
                 // The index stores the reconstructed URI; the base row does not. Both components
                 // carry the identity text collation, which the computed Uri inherits.
                 writer.AppendLine($"{Quote("Uri")} AS ({Quote("Namespace")} + N'#' + {Quote("CodeValue")}),");
+                // Lowered whole URI for UX_Descriptor_UriLowered_ResourceKeyId. Computed from the stored
+                // components, never from Uri, and non-persisted like Uri.
+                var uriExpression = $"({Quote("Namespace")} + N'#' + {Quote("CodeValue")})";
+                var collatedUri = _dialect.Rules.IdentityEquality.IdentityTextCollation is { } collation
+                    ? $"{uriExpression} COLLATE {collation}"
+                    : uriExpression;
+                writer.AppendLine($"{Quote("UriLowered")} AS LOWER({collatedUri}),");
             }
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ContentVersion"), "bigint", false, "DF_Descriptor_ContentVersion", "0")},"
@@ -1065,6 +1077,21 @@ public sealed class CoreDdlEmitter
                     _descriptorTable,
                     "UX_Descriptor_ResourceKeyId_Uri",
                     [Col("ResourceKeyId"), Col("Uri")],
+                    isUnique: true
+                )
+        );
+        writer.AppendLine();
+
+        // Lowered whole-URI uniqueness per descriptor type. Case folding is engine-owned: SQL Server folds
+        // under the identity text collation through the computed UriLowered column, and PostgreSQL pins
+        // pg_c_utf8 instead of following the database default collation.
+        writer.AppendLine(
+            _dialect.Rules.Dialect == SqlDialect.Pgsql
+                ? $"CREATE UNIQUE INDEX IF NOT EXISTS {Quote("UX_Descriptor_UriLowered_ResourceKeyId")} ON {_dialect.QualifyTable(_descriptorTable)} (lower(({Quote("Namespace")} || '#' || {Quote("CodeValue")}) COLLATE {Quote(PgsqlUriFoldingCollation)}), {Quote("ResourceKeyId")});"
+                : _dialect.CreateIndexIfNotExists(
+                    _descriptorTable,
+                    "UX_Descriptor_UriLowered_ResourceKeyId",
+                    [Col("UriLowered"), Col("ResourceKeyId")],
                     isUnique: true
                 )
         );

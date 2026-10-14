@@ -634,9 +634,24 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_not_store_descriptor_uri_or_discriminator()
+    public void It_should_have_unique_on_pinned_lowered_whole_uri_and_resource_key()
     {
-        DescriptorTableColumnExtractor.ExtractPgColumns(_ddl).Should().NotContain(["Uri", "Discriminator"]);
+        _ddl.Should()
+            .Contain(
+                "CREATE UNIQUE INDEX IF NOT EXISTS \"UX_Descriptor_UriLowered_ResourceKeyId\" ON \"dms\".\"Descriptor\" (lower((\"Namespace\" || '#' || \"CodeValue\") COLLATE \"pg_c_utf8\"), \"ResourceKeyId\");"
+            );
+        // Folding must not follow the database default collation.
+        _ddl.Should().NotContain("lower((\"Namespace\" || '#' || \"CodeValue\"))");
+        _ddl.Should().NotContain("lower(\"Namespace\" || '#' || \"CodeValue\")");
+    }
+
+    [Test]
+    public void It_should_not_store_descriptor_uri_lowered_uri_or_discriminator()
+    {
+        DescriptorTableColumnExtractor
+            .ExtractPgColumns(_ddl)
+            .Should()
+            .NotContain(["Uri", "UriLowered", "Discriminator"]);
     }
 
     [Test]
@@ -2072,6 +2087,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     public void It_should_have_the_descriptor_identity_and_core_support_indexes()
     {
         _ddl.Should().Contain("[UX_Descriptor_ResourceKeyId_Uri]");
+        _ddl.Should().Contain("[UX_Descriptor_UriLowered_ResourceKeyId]");
         _ddl.Should().Contain("[IX_Descriptor_ResourceKeyId_DocumentId]");
         _ddl.Should().Contain("[IX_Document_CreatedByOwnershipTokenId]");
         _ddl.Should().Contain("[IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId]");
@@ -2101,6 +2117,23 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
             );
         _ddl.Should().NotContain("UX_Descriptor_Uri_Discriminator");
         _ddl.Should().NotContain("IX_Descriptor_Discriminator_ContentVersion");
+    }
+
+    [Test]
+    public void It_should_use_a_non_persisted_lowered_uri_from_the_components_in_the_lowered_index()
+    {
+        var columns = DescriptorTableColumnExtractor.ExtractMssqlColumns(_ddl);
+        columns.Should().Contain(("UriLowered", "AS"));
+        _ddl.Should()
+            .Contain(
+                "[UriLowered] AS LOWER(([Namespace] + N'#' + [CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS),"
+            );
+        _ddl.Should().NotContain("LOWER([Uri]");
+        _ddl.Should().NotContain("PERSISTED");
+        _ddl.Should()
+            .Contain(
+                "CREATE UNIQUE INDEX [UX_Descriptor_UriLowered_ResourceKeyId] ON [dms].[Descriptor] ([UriLowered], [ResourceKeyId]);"
+            );
     }
 
     // ── MSSQL DocumentCache UUID validation trigger ─────────────────
@@ -2421,7 +2454,9 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
                 );
         }
 
-        foreach (var excludedColumn in stampColumns.Concat(immutableColumns).Append("Uri"))
+        foreach (
+            var excludedColumn in stampColumns.Concat(immutableColumns).Append("Uri").Append("UriLowered")
+        )
         {
             descriptorTriggerBody
                 .Should()
@@ -3031,6 +3066,7 @@ public class Given_CoreDdlEmitter_Descriptor_Stamping_Trigger_Metadata
         _pgsqlDdl.Should().NotContain("IX_Descriptor_Discriminator_ContentVersion");
         _pgsqlDdl.Should().NotContain("IX_Descriptor_Uri_Discriminator");
         _pgsqlDdl.Should().Contain("UX_Descriptor_ResourceKeyId_Uri");
+        _pgsqlDdl.Should().Contain("UX_Descriptor_UriLowered_ResourceKeyId");
         _pgsqlDdl.Should().NotContain("UX_Descriptor_Uri_Discriminator");
     }
 
