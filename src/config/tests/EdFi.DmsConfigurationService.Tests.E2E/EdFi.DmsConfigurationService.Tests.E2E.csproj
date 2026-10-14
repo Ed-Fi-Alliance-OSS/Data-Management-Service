@@ -14,7 +14,6 @@
         <PackageReference Include="FluentAssertions" />
         <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
         <PackageReference Include="Microsoft.Data.SqlClient" />
-        <PackageReference Include="System.Security.Cryptography.Pkcs" />
         <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
         <PackageReference Include="Microsoft.IdentityModel.Protocols" />
         <PackageReference Include="Microsoft.NET.Test.Sdk" />

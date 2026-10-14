@@ -10,7 +10,6 @@
         <PackageReference Include="dbup-sqlserver" />
         <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
         <PackageReference Include="Microsoft.Data.SqlClient" />
-        <PackageReference Include="System.Security.Cryptography.Pkcs" />
         <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
         <PackageReference Include="Microsoft.Extensions.Resilience" />
         <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
