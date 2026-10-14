@@ -18,7 +18,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 
 /// <summary>
-/// AppSettings:EnableIdentityManagement gates the identity route surface at mapping time.
+/// DataManagement:IdentityManagement:Enabled gates the identity route surface at mapping time.
 /// With the toggle off (the default), every identity route falls through to the same MapFallback
 /// 404 every other unmapped route reaches.
 /// </summary>
@@ -62,7 +62,7 @@ public class IdentityFeatureToggleTests
                     configuration.AddInMemoryCollection(
                         new Dictionary<string, string?>
                         {
-                            ["AppSettings:EnableIdentityManagement"] = enableIdentityManagement
+                            ["DataManagement:IdentityManagement:Enabled"] = enableIdentityManagement
                                 ? "true"
                                 : "false",
                         }
@@ -86,7 +86,7 @@ public class IdentityFeatureToggleTests
                 (context, configuration) =>
                 {
                     configuration.AddInMemoryCollection(
-                        new Dictionary<string, string?> { ["AppSettings:EnableIdentityManagement"] = "true" }
+                        new Dictionary<string, string?> { ["DataManagement:IdentityManagement:Enabled"] = "true" }
                     );
                 }
             );

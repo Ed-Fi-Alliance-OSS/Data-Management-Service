@@ -61,7 +61,7 @@ public class IdentityLocationRoundTripTests
                 {
                     Dictionary<string, string?> inMemorySettings = new()
                     {
-                        ["AppSettings:EnableIdentityManagement"] = "true",
+                        ["DataManagement:IdentityManagement:Enabled"] = "true",
                         ["AppSettings:MultiTenancy"] = multiTenancy ? "true" : "false",
                         ["AppSettings:RouteQualifierSegments"] = routeQualifierSegments,
                     };

@@ -24,10 +24,10 @@ When it is on and no provider is registered, a request that passes every check t
 Three things must all be true before an identity operation runs.
 
 1. **The surface is switched on.**
-   Set `AppSettings:EnableIdentityManagement` to `true`.
-   The environment override is `AppSettings__EnableIdentityManagement`, and the shipped Docker Compose files map it from `DMS_ENABLE_IDENTITY_MANAGEMENT`.
+   Set `DataManagement:IdentityManagement:Enabled` to `true`.
+   The environment override is `DataManagement__IdentityManagement__Enabled`, and the shipped Docker Compose files map it from `DMS_ENABLE_IDENTITY_MANAGEMENT`.
    The default is `false`, and with it off none of the identity routes, the identity OpenAPI document, its listing in the metadata index, or the `identity` Discovery URL exist.
-   See [AppSettings](./CONFIGURATION.md#appsettings).
+   See [DataManagement:IdentityManagement](./CONFIGURATION.md#datamanagementidentitymanagement).
 2. **A provider plugin is delivered and allowlisted.**
    The plugin's directory name must appear in `Plugins:Allowed`, as for any plugin.
    See [Plugins](./CONFIGURATION.md#plugins).
@@ -145,19 +145,17 @@ The cache design itself, including how concurrent misses share one fetch, is in 
 The Ed-Fi API has one operator route that clears an identity-relevant cache, and it clears the claim sets.
 Every gate below must be open before it works.
 
-1. **`AppSettings:EnableManagementEndpoints` is `true`.**
+1. **`AppSettings:ManagementEndpoints:Enabled` is `true`.**
    Otherwise the `/management` routes are not mapped at all.
+   This one switch controls both the reload and view routes.
 2. **`AppSettings:ManagementEndpoints:RequiredRole` holds a usable role, and `JwtAuthentication:RoleClaimType` is set.**
    Without both, the routes are not mapped.
    Every call must then carry a bearer token that holds that role under `JwtAuthentication:RoleClaimType`.
    A call with no valid token answers `401`, and a valid token without the role answers `403`.
-3. **`AppSettings:EnableClaimsetReload` is `true`.**
-   It is checked last, after authorization, and when it is `false` the route answers a `404` with no body.
-   It does not control whether the route is mapped.
 
 The routes are `POST /management/reload-claimsets` on a single-tenant host and `POST /management/{tenant}/reload-claimsets` on a multi-tenant host.
 **On a multi-tenant host the unscoped `/management/reload-claimsets` answers `404`, because it names no tenant, even for a caller that is authorized.**
-See [Configuration](./CONFIGURATION.md#appsettings) for the three controls.
+See [Configuration](./CONFIGURATION.md#appsettings) for both controls.
 
 A reload has a narrow effect.
 
@@ -262,7 +260,7 @@ Correct the claim in the Configuration Service, and the next request after the c
 ## CORS
 
 A browser-based client that reads the asynchronous flow must read the `Location` header of a `202` and of an incomplete results poll.
-**The Ed-Fi API exposes `Location` through CORS only to the one origin named by `Cors:SwaggerUIOrigin`, and only when `AppSettings:EnableIdentityManagement` is `true`.**
+**The Ed-Fi API exposes `Location` through CORS only to the one origin named by `Cors:SwaggerUIOrigin`, and only when `DataManagement:IdentityManagement:Enabled` is `true`.**
 `Cors:SwaggerUIOrigin` defaults to `http://localhost:8082`, and its environment override is `Cors__SwaggerUIOrigin`.
 The shipped Docker Compose files map it from `DMS_SWAGGER_UI_URL`.
 

@@ -78,6 +78,21 @@ as `CMS_E2E_API_URL`, `CMS_COMPOSE_PROJECT`, and `CMS_POSTGRES_CONTAINER`, now s
 `CONFIGURATION_SERVICE_` (`CMS_CONFIG_CONTAINER` became `CONFIGURATION_SERVICE_CONTAINER`), and
 `SECRETS_E2E_CMS_*` became `SECRETS_E2E_CONFIGURATION_SERVICE_*`.
 
+## Renamed feature switches
+
+The switches for these optional features moved into each feature's own section. The earlier
+keys are not read, and there are no aliases: a deployment that keeps an earlier key runs with
+the feature switched off. Rename each key in `appsettings.json` overrides and in any
+environment variables your deployment sets. The Docker Compose variables
+(`DMS_ENABLE_MANAGEMENT_ENDPOINTS`, `DMS_ENABLE_IDENTITY_MANAGEMENT`) keep their names; the
+shipped Compose files map them to the new keys.
+
+| Earlier key | Current key | Environment variable |
+| --- | --- | --- |
+| `AppSettings:EnableManagementEndpoints` | `AppSettings:ManagementEndpoints:Enabled` | `AppSettings__ManagementEndpoints__Enabled` |
+| `AppSettings:EnableClaimsetReload` | Removed. `AppSettings:ManagementEndpoints:Enabled` now controls both the reload and view operations. Compose no longer reads `DMS_ENABLE_CLAIMSET_RELOAD`. | None |
+| `AppSettings:EnableIdentityManagement` (8.1 pre-release builds only) | `DataManagement:IdentityManagement:Enabled` | `DataManagement__IdentityManagement__Enabled` |
+
 ## AppSettings
 
 | Parameter                        | Description                                                                                                                                                                                                                   |
@@ -94,10 +109,8 @@ as `CMS_E2E_API_URL`, `CMS_COMPOSE_PROJECT`, and `CMS_POSTGRES_CONTAINER`, now s
 | IdentityProvider                 | Specifies the authentication provider. Valid values are `keycloak` (to use Keycloak's authentication) and `self-contained` (to use self-contained authentication). When using `self-contained`, you must also provide a value for `IdentitySettings:EncryptionKey`. Default: self-contained |
 | RouteQualifierSegments           | Comma separated list of route qualifier context segments as defined by `dataStoreContexts` in Configuration Service. Example: "districtId,schoolYear". The names `__identityId` and `__identityToken` are reserved, and names that are equal under case-insensitive comparison are rejected, whether or not identity management is enabled. As with `CorrelationIdMaxLength`, a rejected value does not stop the process: the host starts, logs the validation failure at `Critical`, and answers every request, including `/health`, with the generic Ed-Fi `500` until the setting is corrected and the service is restarted. |
 | MultiTenancy                     | When `true`, enables multi-tenancy mode where the tenant identifier is extracted from the URL route. Default: `false` |
-| EnableManagementEndpoints       | When `true`, allows the DMS claimset management endpoint surface to be registered. When `false`, `/management/reload-claimsets` and `/management/view-claimsets` are not mapped. Environment override: `AppSettings__EnableManagementEndpoints`. Default: `false` |
-| EnableIdentityManagement        | When `true`, maps the DMS-owned `/identity/v2/identities` routes and serves the identity OpenAPI document, its metadata listing entry, and the `identity` Discovery URL. When `false`, none of them exist and the identity routes fall through to the catch-all `404`. The operations themselves are performed by an identity provider plugin; with none registered, a request that passes authentication, tenant, client-binding and identity-claim checks answers `404` with `urn:ed-fi:api:identities:operation-not-supported`. With it `true`, CORS also exposes the `Location` response header to the one origin named by `Cors:SwaggerUIOrigin`, which a browser client needs to follow an asynchronous request; see [Cors](#cors). See [Identity Management](./IDENTITY-MANAGEMENT.md) for enabling it, the responses a client sees, and how quickly a change to a client or claim set takes effect. Environment override: `AppSettings__EnableIdentityManagement`. Default: `false` |
+| ManagementEndpoints:Enabled      | When `true`, allows the DMS claimset management endpoints, `reload-claimsets` and `view-claimsets`, to be mapped. This one switch controls both operations. When `false`, `/management/reload-claimsets` and `/management/view-claimsets` are not mapped. Environment override: `AppSettings__ManagementEndpoints__Enabled`; the shipped Docker Compose files map it from `DMS_ENABLE_MANAGEMENT_ENDPOINTS`. Default: `false` |
 | ManagementEndpoints:RequiredRole | Single literal role token a bearer must carry, under `JwtAuthentication:RoleClaimType`, to reach `reload-claimsets` and `view-claimsets`. Empty by default, which leaves those endpoints unmapped. Environment override: `AppSettings__ManagementEndpoints__RequiredRole`. Recommended: `cms-client` |
-| EnableClaimsetReload            | When `true`, a call to `reload-claimsets` or `view-claimsets` that passes authorization is carried out. When `false`, it answers `404` with no body. It is checked after authorization and does not control whether the routes are mapped; `EnableManagementEndpoints` and `ManagementEndpoints:RequiredRole` do. Environment override: `AppSettings__EnableClaimsetReload`. Default: `false` |
 | MaximumPageSize                  | Upper bound for the `limit` and `pageSize` query parameters on GET-many requests, and the page size applied when neither is supplied. Also published in the OpenAPI specification as the `maximum` of `limit` and `pageSize`; neither publishes a `default`, because `pageSize` is valid only with `pageToken` and `limit` only without it. Must be greater than `0`; the service refuses to start otherwise. Environment override: `AppSettings__MaximumPageSize`. Default: `500` |
 | DefaultPartitionCount            | Number of partitions returned by a resource or descriptor `/partitions` request that omits the `number` query parameter. Also the `default` published for `numberOfPartitions` in the OpenAPI specification. Must be between `1` and `200`, the same range accepted for `number`; the service refuses to start otherwise. Environment override: `AppSettings__DefaultPartitionCount`. See [Cursor Paging](./CURSOR-PAGING.md). Default: `10` |
 | UseLegacyDocumentIdOrderingForChangeQueries | When `true`, restores unconditional `DocumentId` ordering and anchoring for change-version-filtered collection reads, disabling the conditional `ContentVersion` ordering and anchoring used for bounded and max-only change-version windows, and for any change-version-filtered read served from a snapshot. Governs all three paging shapes of a GET-many collection: `limit`/`offset` page selection, `pageToken` cursor pages, and `/partitions` boundary calculation. **Changing this setting invalidates the cursor and partition tokens already issued for the shapes whose anchor it governs**: those issued for a max-bearing window, and those issued for any change-version-filtered read served from a snapshot. Those tokens are `ContentVersion`-anchored while the setting is `false` and `DocumentId`-anchored while it is `true`, which is why a flip in either direction invalidates them. A client replaying one is answered with the invalid-page-token response and must restart its walk, so expect in-flight walks and distributed partition tokens of those shapes to fail after a flip in either direction. Tokens anchored on `DocumentId` — every unfiltered walk, and every min-only walk against current data — resolve that same anchor under either setting and keep working across a flip. Deployment-wide rollback switch for incident response; not per-client. See [Cursor Paging](./CURSOR-PAGING.md). Default: `false` |
@@ -105,16 +118,17 @@ as `CMS_E2E_API_URL`, `CMS_COMPOSE_PROJECT`, and `CMS_POSTGRES_CONTAINER`, now s
 | ReverseProxy:KnownProxies        | Comma-separated list of exact trusted reverse-proxy IP addresses (IPv4 or IPv6) whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.5,10.0.0.6` |
 | ReverseProxy:KnownNetworks       | Comma-separated list of trusted reverse-proxy networks in CIDR notation whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.0/8,172.16.0.0/12` |
 
-Claimset management endpoints use three separate controls. `EnableManagementEndpoints` is the
-global exposure switch; when it is `false`, the claimset management routes are not mapped.
-When it is `true`, `ManagementEndpoints:RequiredRole` must be one untrimmed token no longer
-than 256 characters, and `JwtAuthentication:RoleClaimType` must be present. Values containing
+Claimset management endpoints use two controls in the `AppSettings:ManagementEndpoints`
+section. `Enabled` is the exposure switch for both the reload and view operations; when it is
+`false`, the claimset management routes are not mapped. When it is `true`, `RequiredRole` must
+be one untrimmed token no longer than 256 characters, and `JwtAuthentication:RoleClaimType`
+must be present. Values containing
 ASCII whitespace, commas, semicolons, quotes, brackets, braces, or control characters are
 invalid and leave the claimset management endpoints unmapped, as does a missing or blank
 `JwtAuthentication:RoleClaimType`. A request to a mapped endpoint without a valid bearer token
 receives `401`; a valid token whose claims do not include this exact role under the configured
-role claim type receives `403`. `EnableClaimsetReload` is checked later by the claimset
-operation handlers; it does not control route registration.
+role claim type receives `403`. An authorized request is carried out; there is no separate
+switch for the reload or view operation.
 
 ## MappingPacks
 
@@ -135,6 +149,12 @@ is `false`. See the
 | AllowRuntimeCompileFallback | When `true` (default), allow runtime compilation when a pack is enabled but not found.                                                      |
 | FailureCooldownSeconds      | Seconds a faulted cache entry is retained before eviction. `0` (default) evicts immediately.                                                |
 | CacheMode                   | Cache strategy for compiled mapping sets. Currently only `InMemory` (default).                                                              |
+
+## DataManagement:IdentityManagement
+
+| Parameter | Description |
+| --- | --- |
+| Enabled | When `true`, maps the DMS-owned `/identity/v2/identities` routes and serves the identity OpenAPI document, its metadata listing entry, and the `identity` Discovery URL. When `false`, none of them exist and the identity routes fall through to the catch-all `404`. The operations themselves are performed by an identity provider plugin; with none registered, a request that passes authentication, tenant, client-binding and identity-claim checks answers `404` with `urn:ed-fi:api:identities:operation-not-supported`. With it `true`, CORS also exposes the `Location` response header to the one origin named by `Cors:SwaggerUIOrigin`, which a browser client needs to follow an asynchronous request; see [Cors](#cors). See [Identity Management](./IDENTITY-MANAGEMENT.md) for enabling it, the responses a client sees, and how quickly a change to a client or claim set takes effect. Environment override: `DataManagement__IdentityManagement__Enabled`; the shipped Docker Compose files map it from `DMS_ENABLE_IDENTITY_MANAGEMENT`. Default: `false` |
 
 ## DataManagement:DocumentCache
 
@@ -418,7 +438,7 @@ Any other origin gets no CORS headers.
 
 | Parameter | Description |
 | --- | --- |
-| `Cors:SwaggerUIOrigin` | The single origin allowed to call DMS from a browser. Environment override: `Cors__SwaggerUIOrigin`; the shipped Docker Compose files map it from `DMS_SWAGGER_UI_URL`. When `AppSettings:EnableIdentityManagement` is `true`, DMS also exposes the `Location` response header to this origin and to no other, so a browser client at this origin can follow an asynchronous identity request. See [Identity Management](./IDENTITY-MANAGEMENT.md#cors). Default: `http://localhost:8082` |
+| `Cors:SwaggerUIOrigin` | The single origin allowed to call DMS from a browser. Environment override: `Cors__SwaggerUIOrigin`; the shipped Docker Compose files map it from `DMS_SWAGGER_UI_URL`. When `DataManagement:IdentityManagement:Enabled` is `true`, DMS also exposes the `Location` response header to this origin and to no other, so a browser client at this origin can follow an asynchronous identity request. See [Identity Management](./IDENTITY-MANAGEMENT.md#cors). Default: `http://localhost:8082` |
 
 ## CacheSettings
 

@@ -288,7 +288,7 @@ internal static class IdentityCmsStubHost
                     configuration.AddInMemoryCollection(
                         new Dictionary<string, string?>
                         {
-                            ["AppSettings:EnableIdentityManagement"] = "true",
+                            ["DataManagement:IdentityManagement:Enabled"] = "true",
                             ["AppSettings:MultiTenancy"] = "true",
                         }
                     );

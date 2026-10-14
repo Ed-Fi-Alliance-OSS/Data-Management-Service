@@ -50,7 +50,7 @@ public class IdentityCorsExposeHeadersTests
                     configuration.AddInMemoryCollection(
                         new Dictionary<string, string?>
                         {
-                            ["AppSettings:EnableIdentityManagement"] = enableIdentityManagement
+                            ["DataManagement:IdentityManagement:Enabled"] = enableIdentityManagement
                                 ? "true"
                                 : "false",
                         }

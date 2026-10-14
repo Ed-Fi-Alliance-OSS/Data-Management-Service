@@ -18,50 +18,69 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 [NonParallelizable]
 public class Given_ManagementEndpointsOptionsBinding
 {
-    private static WebApplicationFactory<Program> CreateFactory(string? requiredRole)
+    private static WebApplicationFactory<Program> CreateFactory(Dictionary<string, string?> settings)
     {
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
             builder.ConfigureAppConfiguration(
-                (context, configuration) =>
-                {
-                    if (requiredRole is not null)
-                    {
-                        configuration.AddInMemoryCollection(
-                            new Dictionary<string, string?>
-                            {
-                                ["AppSettings:ManagementEndpoints:RequiredRole"] = requiredRole,
-                            }
-                        );
-                    }
-                }
+                (context, configuration) => configuration.AddInMemoryCollection(settings)
             );
             builder.ConfigureServices(TestMockHelper.AddEssentialMocks);
         });
     }
 
+    private static ManagementEndpointsOptions BoundOptions(WebApplicationFactory<Program> factory) =>
+        factory.Services.GetRequiredService<IOptions<ManagementEndpointsOptions>>().Value;
+
     [Test]
     public void It_binds_the_configured_required_role()
     {
-        using WebApplicationFactory<Program> factory = CreateFactory("cms-client");
+        using WebApplicationFactory<Program> factory = CreateFactory(
+            new() { ["AppSettings:ManagementEndpoints:RequiredRole"] = "cms-client" }
+        );
 
-        factory
-            .Services.GetRequiredService<IOptions<ManagementEndpointsOptions>>()
-            .Value.RequiredRole.Should()
-            .Be("cms-client");
+        BoundOptions(factory).RequiredRole.Should().Be("cms-client");
     }
 
     [Test]
     public void It_defaults_the_required_role_to_the_shipped_empty_value()
     {
-        using WebApplicationFactory<Program> factory = CreateFactory(requiredRole: null);
+        using WebApplicationFactory<Program> factory = CreateFactory([]);
 
-        ManagementEndpointsOptions options = factory
-            .Services.GetRequiredService<IOptions<ManagementEndpointsOptions>>()
-            .Value;
-
-        options.TryGetRequiredRoleForEndpointMapping(out string? requiredRole).Should().BeFalse();
+        BoundOptions(factory).TryGetRequiredRoleForEndpointMapping(out string? requiredRole).Should().BeFalse();
         requiredRole.Should().BeNull();
+    }
+
+    [Test]
+    public void It_binds_the_enabled_switch_from_the_management_endpoints_section()
+    {
+        using WebApplicationFactory<Program> factory = CreateFactory(
+            new() { ["AppSettings:ManagementEndpoints:Enabled"] = "true" }
+        );
+
+        BoundOptions(factory).Enabled.Should().BeTrue();
+    }
+
+    [Test]
+    public void It_defaults_the_enabled_switch_to_the_shipped_false_value()
+    {
+        using WebApplicationFactory<Program> factory = CreateFactory([]);
+
+        BoundOptions(factory).Enabled.Should().BeFalse();
+    }
+
+    [Test]
+    public void It_ignores_the_removed_flat_switches()
+    {
+        using WebApplicationFactory<Program> factory = CreateFactory(
+            new()
+            {
+                ["AppSettings:EnableManagementEndpoints"] = "true",
+                ["AppSettings:EnableClaimsetReload"] = "true",
+            }
+        );
+
+        BoundOptions(factory).Enabled.Should().BeFalse();
     }
 }

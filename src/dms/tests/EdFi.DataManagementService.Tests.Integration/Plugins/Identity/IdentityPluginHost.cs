@@ -135,7 +135,7 @@ internal sealed class IdentityPluginHost : IAsyncDisposable
                     ["Plugins:Allowed"] = allowed,
                     ["AppSettings:BypassAuthorization"] = "false",
                     ["JwtAuthentication:Authority"] = FakeOidcConfigurationManager.Issuer,
-                    ["AppSettings:EnableIdentityManagement"] = "true",
+                    ["DataManagement:IdentityManagement:Enabled"] = "true",
                     ["AppSettings:MultiTenancy"] = "true",
                     ["AppSettings:RouteQualifierSegments"] = IdentityTestClients.RouteQualifierSegments,
                 };

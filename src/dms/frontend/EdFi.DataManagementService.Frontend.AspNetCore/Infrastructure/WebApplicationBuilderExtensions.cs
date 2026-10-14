@@ -80,6 +80,9 @@ public static class WebApplicationBuilderExtensions
             .Configure<ManagementEndpointsOptions>(
                 webAppBuilder.Configuration.GetSection(ManagementEndpointsOptions.SectionName)
             )
+            .Configure<IdentityManagementOptions>(
+                webAppBuilder.Configuration.GetSection(IdentityManagementOptions.SectionName)
+            )
             .Configure<ConfigurationServiceSettings>(
                 webAppBuilder.Configuration.GetSection("ConfigurationServiceSettings")
             )
