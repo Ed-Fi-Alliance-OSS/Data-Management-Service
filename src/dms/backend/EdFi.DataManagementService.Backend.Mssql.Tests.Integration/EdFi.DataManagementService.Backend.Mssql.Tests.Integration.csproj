@@ -12,6 +12,7 @@
         <PackageReference Include="FluentAssertions" />
         <PackageReference Include="coverlet.collector" />
         <PackageReference Include="Microsoft.Data.SqlClient" />
+        <PackageReference Include="System.Security.Cryptography.Pkcs" />
         <PackageReference Include="Microsoft.Extensions.Configuration" />
         <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
         <PackageReference Include="Microsoft.NET.Test.Sdk" />
