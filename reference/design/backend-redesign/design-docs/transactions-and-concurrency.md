@@ -607,10 +607,15 @@ Invalidation approaches:
 
 ## Authoritative response metadata
 
-GET UUID lookup left joins the compiled root or `dms.Descriptor` by `DocumentId`, retaining a
-wrong-resource document row so the existing resource check still returns 404. PUT version checks
-and descriptor delete-target lookup select document identity/version only; they do not join or
-query an owner just to satisfy a shared timestamp contract.
+GET-by-id target lookup is split in two. The uncached lookup reads `dms.Document` only (identity,
+`ResourceKeyId`, and `ContentVersion`); the response timestamp comes from the hydrated metadata, so
+this lookup never touches the owning root. Only cache-candidate selection needs the stamp before
+hydration: its lookup left joins the compiled root by `DocumentId`, gated on the expected
+`ResourceKeyId`, so a wrong-resource document row is still returned and the existing resource check
+still returns 404. Descriptor GET-by-id does not use either lookup; it reads through the descriptor
+read handler's own `dms.Descriptor` path (below). PUT version checks and descriptor delete-target
+lookup select document identity/version only; they do not join or query an owner just to satisfy a
+shared timestamp contract.
 
 Ordinary hydration obtains owner timestamps in the existing metadata SELECT for the full keyset.
 Standalone hydration captures document-only baseline versions after keyset materialization and before

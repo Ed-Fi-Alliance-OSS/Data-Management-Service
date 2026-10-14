@@ -1,14 +1,12 @@
 {
-  "task": "T24",
   "story": "reference/design/backend-redesign/epics/21-storage-reduction/16-drop-document-content-last-modified-at.md",
   "audited_commit": "3f1bd4dd71c5b2d22a586fd5d2fbde5c4893bd99",
   "producing_commit": "b0d04812293b415188333fc2e46e79ed5fd0277d",
   "affected_fixed_consumer_pins": [],
-  "decision": "No affected fixed repository template package-version pins exist. Apply the T24 no-pins exception: do not introduce pins or publish packages solely for this task.",
+  "decision": "No affected fixed repository template package-version pins exist. Apply the no-pins exception: do not introduce pins or publish packages solely for this change.",
   "search": {
     "required_command": "rg -n --hidden 'DATABASE_TEMPLATE|EdFi\\.Api\\.(Minimal|Populated)\\.Template|template.*[Vv]ersion' eng .github src",
-    "additional_scope": "Repository-wide template selection search, tracked environment assignments, package download helpers, bootstrap provisioning, smoke workflow restore steps, and Azure VM deployment examples; distinguished Data Standard suffixes from package versions.",
-    "local_evidence": "/tmp/t24-results"
+    "additional_scope": "Repository-wide template selection search, tracked environment assignments, package download helpers, bootstrap provisioning, smoke workflow restore steps, and Azure VM deployment examples; distinguished Data Standard suffixes from package versions."
   },
   "consumers": [
     {
@@ -213,7 +211,7 @@
     "published_packages": [],
     "feed_downloads": [],
     "fresh_consumer_restores": [],
-    "reason": "Not applicable under the explicit no-affected-fixed-pins exception. No selected exact consumer versions require publication, feed download or additional consumer restoration. T20-T23 retain the fresh-source/fresh-restore catalog, data and authenticated API evidence for all eight product artifacts.",
+    "reason": "Not applicable under the explicit no-affected-fixed-pins exception. No selected exact consumer versions require publication, feed download or additional consumer restoration. The four template matrix records (minimal-postgresql.json, minimal-mssql.json, populated-postgresql.json, populated-mssql.json) retain the fresh-source/fresh-restore catalog, data and authenticated API evidence for all eight product artifacts.",
     "release_view_promotion": false
   },
   "relational_mapping_version": "v3",

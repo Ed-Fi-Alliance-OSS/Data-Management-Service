@@ -209,7 +209,8 @@ Write-Host 'Mock verification completed.'
             $evidence.engine_image | Should -Be 'engine:current sha256:image'
             $evidence.require_populated_data | Should -Be ($kind -eq 'populated')
             Get-Content './template-evidence/catalog-assertions.sql' -Raw | Should -Match ([regex]::Escape($expectedManifest))
-            Should -Invoke Start-Transcript -Exactly 1 -ParameterFilter { $Path -eq "$work/template-evidence/verification.log" }
+            # Join-Path in the workflow uses the platform separator; compare separator-agnostically.
+            Should -Invoke Start-Transcript -Exactly 1 -ParameterFilter { $Path.Replace('\', '/') -eq "$work/template-evidence/verification.log".Replace('\', '/') }
             Should -Invoke Stop-Transcript -Exactly 1
 
             # A later failed gate must never leave the earlier success marker in retained evidence.

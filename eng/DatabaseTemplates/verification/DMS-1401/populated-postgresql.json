@@ -1,13 +1,9 @@
 {
-  "task": "T22",
   "story": "reference/design/backend-redesign/epics/21-storage-reduction/16-drop-document-content-last-modified-at.md",
   "workflow": ".github/workflows/EdFi.Api.Populated.Template.PostgreSQL.yml",
   "publish_package": false,
   "run_conclusion": "success",
   "producing_ref": "DMS-1401",
-  "remaining_matrix_tasks": [
-    "T23"
-  ],
   "artifacts": [
     {
       "producing_commit": "b0d04812293b415188333fc2e46e79ed5fd0277d",
@@ -53,7 +49,7 @@
         "downloaded_package_sha256": "passed",
         "nuspec_identity_and_sql_payload": "passed",
         "generated_document_columns": "passed",
-        "exact_reviewed_T18_manifest": "passed",
+        "exact_reviewed_manifest": "passed",
         "authoritative_root_metadata": "passed",
         "catalog_checks_before_api": "passed",
         "populated_source_restore_counts_and_authenticated_probe": "passed",
@@ -129,7 +125,7 @@
         "downloaded_package_sha256": "passed",
         "nuspec_identity_and_sql_payload": "passed",
         "generated_document_columns": "passed",
-        "exact_reviewed_T18_manifest": "passed",
+        "exact_reviewed_manifest": "passed",
         "authoritative_root_metadata": "passed",
         "catalog_checks_before_api": "passed",
         "populated_source_restore_counts_and_authenticated_probe": "passed",
