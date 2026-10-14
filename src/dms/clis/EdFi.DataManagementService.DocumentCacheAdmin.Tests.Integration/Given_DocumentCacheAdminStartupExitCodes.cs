@@ -369,7 +369,7 @@ public sealed class Given_DocumentCacheAdminStartupExitCodes
             {
                 ["Datastore"] = DocumentCacheAdminCommandSurface.PostgresqlDatastoreOptionValue,
                 ["DefaultPartitionCount"] = 10,
-                ["UseApiSchemaPath"] = false,
+                ["ApiSchema"] = new JsonObject { ["UseCustomPath"] = false },
             },
             ["ConfigurationServiceSettings"] = new JsonObject
             {

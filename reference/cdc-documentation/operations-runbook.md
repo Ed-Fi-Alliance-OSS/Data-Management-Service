@@ -345,7 +345,7 @@ configuration after admission. An initial timeout retains the original workflow.
 It is a **wrapper input**: the empty `Schemas` array is deliberately filled by staging
 and must not be passed directly to the CLI. Bootstrap snapshots it to owner-only
 `eng/docker-compose/.bootstrap/cdc-runtime/bootstrap-*.settings.json`, replacing
-`Cdc.Schemas`, `Cdc.Compose`, `AppSettings.UseApiSchemaPath` and `ApiSchemaPath`
+`Cdc.Schemas`, `Cdc.Compose`, `AppSettings.ApiSchema.UseCustomPath` and `AppSettings.ApiSchema.Path`
 with staged paths and the selected environment/project. The matching DMS Compose
 override carries DocumentCache settings and Configuration Service credentials, translating the Configuration Service
 URL to the container address. Only known Configuration Service database addresses are translated to

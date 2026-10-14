@@ -704,8 +704,8 @@ The artifact includes:
 | `ConfigurationServiceSettings:ClientSecret` | `<local-cms-readonly-secret>` (replace with the `CMSReadOnlyAccess` client secret; local-dev default `ValidClientSecret1234567890!Abcd`) |
 | `ConfigurationServiceSettings:Scope` | `edfi_admin_api/readonly_access` |
 | `ConfigurationServiceSettings:EncryptionKey` | `<dms-config-database-encryption-key>` (replace with value of `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` from `.env`; `.env.example` default `secret!_32_chars_xxxxxxxxxxxxxxx`) |
-| `AppSettings:UseApiSchemaPath` | `true` (use staged bootstrap workspace schema; see activation note below) |
-| `AppSettings:ApiSchemaPath` | `<repo-root>/eng/docker-compose/.bootstrap/ApiSchema` (replace `<repo-root>` with your absolute path) |
+| `AppSettings:ApiSchema:UseCustomPath` | `true` (use staged bootstrap workspace schema; see activation note below) |
+| `AppSettings:ApiSchema:Path` | `<repo-root>/eng/docker-compose/.bootstrap/ApiSchema` (replace `<repo-root>` with your absolute path) |
 | `AppSettings:AuthenticationService` | `http://localhost:8081/connect/token` |
 | `JwtAuthentication:Authority` | `http://localhost:8081` (must exactly match the self-contained Configuration Service issuer configured in `.env.ide`) |
 | `JwtAuthentication:MetadataAddress` | `http://localhost:8081/.well-known/openid-configuration` (must share the advertised JWKS origin) |
@@ -743,8 +743,8 @@ command; a containerized DMS cannot reach the Configuration Service through its 
 `ConfigurationServiceSettings:BaseUrl` and `AppSettings:AuthenticationService` on `localhost:8081`
 for their separate host-side calls.
 
-> **Activation note:** `AppSettings:UseApiSchemaPath` and `AppSettings:ApiSchemaPath` point at
-> the staged bootstrap workspace. With `UseApiSchemaPath=true`, DMS reads discovery/specification
+> **Activation note:** `AppSettings:ApiSchema:UseCustomPath` and `AppSettings:ApiSchema:Path`
+> point at the staged bootstrap workspace. With `ApiSchema:UseCustomPath=true`, DMS reads discovery/specification
 > JSON and XSD content from the staged workspace via the bootstrap asset manifest, with no
 > schema assemblies loaded on this path.
 

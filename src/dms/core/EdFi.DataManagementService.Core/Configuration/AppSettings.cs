@@ -40,16 +40,9 @@ public class AppSettings
     public int DefaultPartitionCount { get; set; } = DefaultPartitionCountDefault;
 
     /// <summary>
-    /// If true, loads manifest-backed ApiSchema workspace content from ApiSchemaPath.
-    /// Otherwise, loads the bundled manifest-backed ApiSchema workspace from the application output.
+    /// Selects the bundled or a custom manifest-backed ApiSchema workspace.
     /// </summary>
-    public bool UseApiSchemaPath { get; set; }
-
-    /// <summary>
-    /// Provides the file system path for a runtime ApiSchema workspace containing
-    /// bootstrap-api-schema-manifest.json and its declared core and extension schema files.
-    /// </summary>
-    public string? ApiSchemaPath { get; set; }
+    public ApiSchemaSettings ApiSchema { get; set; } = new();
 
     /// <summary>
     /// Get or set the authentication service URL.

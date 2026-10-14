@@ -78,20 +78,23 @@ as `CMS_E2E_API_URL`, `CMS_COMPOSE_PROJECT`, and `CMS_POSTGRES_CONTAINER`, now s
 `CONFIGURATION_SERVICE_` (`CMS_CONFIG_CONTAINER` became `CONFIGURATION_SERVICE_CONTAINER`), and
 `SECRETS_E2E_CMS_*` became `SECRETS_E2E_CONFIGURATION_SERVICE_*`.
 
-## Renamed feature switches
+## Renamed configuration keys
 
-The switches for these optional features moved into each feature's own section. The earlier
-keys are not read, and there are no aliases: a deployment that keeps an earlier key runs with
-the feature switched off. Rename each key in `appsettings.json` overrides and in any
-environment variables your deployment sets. The Docker Compose variables
-(`DMS_ENABLE_MANAGEMENT_ENDPOINTS`, `DMS_ENABLE_IDENTITY_MANAGEMENT`) keep their names; the
-shipped Compose files map them to the new keys.
+These settings moved into their feature's own section. The earlier keys are not read, and
+there are no aliases: a deployment that keeps an earlier key gets the default, which leaves the
+feature switched off or loads the bundled ApiSchema workspace instead of a custom one. Rename
+each key in `appsettings.json` overrides and in any environment variables your deployment
+sets. The Docker Compose variables (`DMS_ENABLE_MANAGEMENT_ENDPOINTS`,
+`DMS_ENABLE_IDENTITY_MANAGEMENT`, `USE_API_SCHEMA_PATH`, `API_SCHEMA_PATH`) keep their names;
+the shipped Compose files map them to the new keys.
 
 | Earlier key | Current key | Environment variable |
 | --- | --- | --- |
 | `AppSettings:EnableManagementEndpoints` | `AppSettings:ManagementEndpoints:Enabled` | `AppSettings__ManagementEndpoints__Enabled` |
 | `AppSettings:EnableClaimsetReload` | Removed. `AppSettings:ManagementEndpoints:Enabled` now controls both the reload and view operations. Compose no longer reads `DMS_ENABLE_CLAIMSET_RELOAD`. | None |
 | `AppSettings:EnableIdentityManagement` (8.1 pre-release builds only) | `DataManagement:IdentityManagement:Enabled` | `DataManagement__IdentityManagement__Enabled` |
+| `AppSettings:UseApiSchemaPath` | `AppSettings:ApiSchema:UseCustomPath` | `AppSettings__ApiSchema__UseCustomPath` |
+| `AppSettings:ApiSchemaPath` | `AppSettings:ApiSchema:Path` | `AppSettings__ApiSchema__Path` |
 
 ## AppSettings
 
@@ -103,8 +106,8 @@ shipped Compose files map them to the new keys.
 | MaskRequestBodyInLogs            | Controls whether to mask HTTP request bodies in log statements to avoid potentially logging PII. This setting only applies to `DEBUG` logging where requests are logged.                                  |
 | CorrelationIdHeader              | Name of the request header a client-supplied correlation ID is read from. When this setting is non-empty and the named header is present with a value that still has content after normalization, that value identifies the request in logs and in the `correlationId` of error responses; otherwise — header absent, sent empty, or normalizing to nothing but whitespace, as a value made up only of removed characters or only of whitespace does — the server-generated trace identifier is used. Client-supplied values are normalized — a logging-safe character allowlist, which removes control characters (`Cc`), format characters (`Cf` — bidirectional overrides, zero-width characters, soft hyphen, BOM) and the Unicode line/paragraph separators, and `CorrelationIdMaxLength` are applied — before use; see [Logging Policy](./LOGGING.md#correlation-id-normalization). Leave empty to disable client-supplied correlation IDs entirely: no header name is honored on any path, including the catch-all `404` for an unmatched route. Environment override: `AppSettings__CorrelationIdHeader`. Default: empty |
 | CorrelationIdMaxLength           | Maximum number of UTF-16 code units retained from a correlation ID, client-supplied or server-generated, before it is used in a log event or an error response body; longer values are truncated rather than rejected. The cut is made on a code unit rather than on a user-perceived character, which is why a non-BMP character costs two. Truncation happens before disallowed characters are removed, so an over-length value can end up shorter than this limit — either because it also contains characters the allowlist removes, which are removed after the cut, or because the cut landed inside a surrogate pair, which costs one further code unit even when there is nothing to remove. Must be between `64` and `1024` inclusive - the floor keeps the cap above every common correlation ID scheme, including the 22-character server-generated trace identifier, and the ceiling bounds how much client-controlled text one request can reflect into logs and error bodies; see [the ADR](../reference/adr-correlation-id-normalization.md#bounds-on-the-length-cap). An out-of-range value does **not** prevent the process from starting: the host starts, logs the validation failure at `Critical` once at startup, and short-circuits every request — including `/health` — with the generic Ed-Fi `500` problem-details body, carrying the same `correlationId` the request is logged under, until the setting is corrected and the service is restarted. See [Logging Policy](./LOGGING.md#correlation-id-normalization). Environment override: `AppSettings__CorrelationIdMaxLength`. Default: `255` |
-| UseApiSchemaPath                 | When set to `true`, the application loads core data standard and extension artifacts from the manifest-backed workspace at `ApiSchemaPath`. When `false`, it loads the bundled manifest-backed ApiSchema workspace from the application output. Loose no-manifest `ApiSchema*.json` folders are not a runtime loading contract. |
-| ApiSchemaPath                    | Specifies the runtime ApiSchema workspace directory containing `bootstrap-api-schema-manifest.json` and the manifest-declared core and extension schema files. The ApiSchemaDownloader CLI can be used to download and extract the published ApiSchema packages before the root manifest is materialized. |
+| ApiSchema:UseCustomPath          | When set to `true`, the application loads core data standard and extension artifacts from the manifest-backed workspace at `ApiSchema:Path`. When `false`, it loads the bundled manifest-backed ApiSchema workspace from the application output. Loose no-manifest `ApiSchema*.json` folders are not a runtime loading contract. Environment override: `AppSettings__ApiSchema__UseCustomPath`; the shipped Docker Compose files map it from `USE_API_SCHEMA_PATH`. Default: `false` |
+| ApiSchema:Path                   | Specifies the runtime ApiSchema workspace directory containing `bootstrap-api-schema-manifest.json` and the manifest-declared core and extension schema files. The ApiSchemaDownloader CLI can be used to download and extract the published ApiSchema packages before the root manifest is materialized. Used only when `ApiSchema:UseCustomPath` is `true`. Environment override: `AppSettings__ApiSchema__Path`; the shipped Docker Compose files map it from `API_SCHEMA_PATH`. |
 | DomainsExcludedFromOpenApi       | Comma separated list of domain names to exclude from OpenAPI documentation generation. Domains listed here will not appear in the generated OpenAPI specifications. Case insensitive. |
 | IdentityProvider                 | Specifies the authentication provider. Valid values are `keycloak` (to use Keycloak's authentication) and `self-contained` (to use self-contained authentication). When using `self-contained`, you must also provide a value for `IdentitySettings:EncryptionKey`. Default: self-contained |
 | RouteQualifierSegments           | Comma separated list of route qualifier context segments as defined by `dataStoreContexts` in Configuration Service. Example: "districtId,schoolYear". The names `__identityId` and `__identityToken` are reserved, and names that are equal under case-insensitive comparison are rejected, whether or not identity management is enabled. As with `CorrelationIdMaxLength`, a rejected value does not stop the process: the host starts, logs the validation failure at `Critical`, and answers every request, including `/health`, with the generic Ed-Fi `500` until the setting is corrected and the service is restarted. |
@@ -690,7 +693,7 @@ qualifier above.
 >     the environment leaves it unset still gets the PostgreSQL wait, which does not
 >     end.
 >   - `DATABASE_CONNECTION_STRING_ADMIN`, which that wait connects with.
->   - `AppSettings__UseApiSchemaPath` and `AppSettings__ApiSchemaPath`, which decide
+>   - `AppSettings__ApiSchema__UseCustomPath` and `AppSettings__ApiSchema__Path`, which decide
 >     whether and where it downloads the schema packages. A plugin that supplies
 >     either sends .NET to read a directory the script did not fill.
 >

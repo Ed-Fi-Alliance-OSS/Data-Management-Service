@@ -50,8 +50,8 @@ services:
       ConfigurationServiceSettings__ClientSecret: ${DMS_CONFIGURATION_SERVICE_CLIENT_SECRET}
       ConfigurationServiceSettings__EncryptionKey: ${CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY:-}
       AppSettings__MultiTenancy: ${DMS_MULTI_TENANCY:-false}
-      AppSettings__UseApiSchemaPath: ${USE_API_SCHEMA_PATH:-false}
-      AppSettings__ApiSchemaPath: ${API_SCHEMA_PATH:-}
+      AppSettings__ApiSchema__UseCustomPath: ${USE_API_SCHEMA_PATH:-false}
+      AppSettings__ApiSchema__Path: ${API_SCHEMA_PATH:-}
       Cors__SwaggerUIOrigin: ${DMS_SWAGGER_UI_URL:-http://localhost:8082}
       DataManagement__IdentityManagement__Enabled: ${DMS_ENABLE_IDENTITY_MANAGEMENT:-false}
       AppSettings__ManagementEndpoints__Enabled: ${DMS_ENABLE_MANAGEMENT_ENDPOINTS:-false}

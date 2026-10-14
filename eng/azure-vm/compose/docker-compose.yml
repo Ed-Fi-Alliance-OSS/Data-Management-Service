@@ -56,8 +56,8 @@ x-dms-common-env: &dms-common-env
   AppSettings__ReverseProxy__KnownNetworks: "172.16.0.0/12,192.168.0.0/16"
   AppSettings__Datastore: "postgresql"
   DatabaseOptions__IsolationLevel: "ReadCommitted"
-  AppSettings__UseApiSchemaPath: "true"
-  AppSettings__ApiSchemaPath: "/app/ApiSchema"
+  AppSettings__ApiSchema__UseCustomPath: "true"
+  AppSettings__ApiSchema__Path: "/app/ApiSchema"
   # The staged ApiSchema workspace (.bootstrap/ApiSchema, produced by the official
   # prepare-dms-schema.ps1) is mounted read-only at /app/ApiSchema in each DMS service below,
   # so the image's effective-schema hash matches exactly what 'api-schema-tools ddl provision' wrote.

@@ -123,8 +123,8 @@ internal sealed class IdentityPluginHost : IAsyncDisposable
 
                 Dictionary<string, string> layered = new()
                 {
-                    ["AppSettings:UseApiSchemaPath"] = "true",
-                    ["AppSettings:ApiSchemaPath"] = fixture.ApiSchemaDirectory,
+                    ["AppSettings:ApiSchema:UseCustomPath"] = "true",
+                    ["AppSettings:ApiSchema:Path"] = fixture.ApiSchemaDirectory,
                     ["AppSettings:StartupStatusFilePath"] = startupStatusFilePath,
                     ["AppSettings:Datastore"] = "postgresql",
                     ["ConfigurationServiceSettings:BaseUrl"] = "http://localhost/test-cms",

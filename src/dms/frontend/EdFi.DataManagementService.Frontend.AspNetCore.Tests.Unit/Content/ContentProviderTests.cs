@@ -315,8 +315,7 @@ internal static class FileModeWorkspaceBuilder
         var appSettings = Options.Create(
             new AppSettings
             {
-                ApiSchemaPath = workspaceRoot,
-                UseApiSchemaPath = true,
+                ApiSchema = new() { UseCustomPath = true, Path = workspaceRoot },
                 AllowIdentityUpdateOverrides = "",
             }
         );
@@ -405,8 +404,7 @@ public class Given_file_mode_discovery_spec_load
             var appSettings = Options.Create(
                 new AppSettings
                 {
-                    ApiSchemaPath = workspaceNoSpec,
-                    UseApiSchemaPath = true,
+                    ApiSchema = new() { UseCustomPath = true, Path = workspaceNoSpec },
                     AllowIdentityUpdateOverrides = "",
                 }
             );
@@ -913,8 +911,7 @@ public class Given_file_mode_path_escape_rejection
         var appSettings = Options.Create(
             new AppSettings
             {
-                ApiSchemaPath = _workspaceRoot,
-                UseApiSchemaPath = true,
+                ApiSchema = new() { UseCustomPath = true, Path = _workspaceRoot },
                 AllowIdentityUpdateOverrides = "",
             }
         );
