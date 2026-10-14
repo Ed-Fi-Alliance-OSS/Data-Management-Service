@@ -252,6 +252,28 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
     }
 
     [Test]
+    public void It_reports_a_missing_own_natural_key_probe_for_an_identity_conflict()
+    {
+        ConfigureRootNaturalKeyUniqueViolation();
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+        var requestWithoutProbe = request with
+        {
+            MappingSet = request.MappingSet with
+            {
+                OwnNaturalKeyProbesByResource = new Dictionary<QualifiedResourceName, OwnNaturalKeyProbe>(),
+            },
+        };
+
+        var act = () => _sut.TryBuild(requestWithoutProbe, new StubDbException("unique violation"), out _);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Mapping set 'schema-hash/Pgsql/v1' is missing the own natural-key probe for resource 'Ed-Fi.School'."
+            );
+    }
+
+    [Test]
     public void It_maps_abstract_education_organization_identity_unique_violations_to_identity_conflicts()
     {
         // Drive the real resolver through the mapper so this covers mapping
@@ -321,7 +343,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
     {
         // A non-School EducationOrganization subclass colliding on the shared abstract identity table must
         // report its own identity element (localEducationAgencyId), proving the duplicate values are taken from
-        // the concrete resource's referential-identity metadata rather than a hard-coded School identity.
+        // the concrete resource's own natural-key probe rather than a hard-coded School identity.
         var classifier = new RecordingRelationalWriteExceptionClassifier
         {
             ClassificationToReturn = new RelationalWriteExceptionClassification.UniqueConstraintViolation(
@@ -459,7 +481,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             column.SourceJsonPath?.Canonical == "$.schoolId"
         );
         var identityJsonPath =
-            identityColumn.SourceJsonPath?.Canonical
+            identityColumn.SourceJsonPath
             ?? throw new InvalidOperationException("Expected the School identity source path.");
 
         return new MappingSet(
@@ -493,30 +515,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
                 AbstractIdentityTablesInNameOrder: [],
                 AbstractUnionViewsInNameOrder: [],
                 IndexesInCreateOrder: [],
-                TriggersInCreateOrder:
-                [
-                    new DbTriggerInfo(
-                        new DbTriggerName("TR_School_ReferentialIdentity"),
-                        resourceModel.Root.Table,
-                        [new DbColumnName("DocumentId")],
-                        [identityColumn.ColumnName],
-                        new TriggerKindParameters.ReferentialIdentityMaintenance(
-                            resourceKey.ResourceKeyId,
-                            resource.ProjectName,
-                            resource.ResourceName,
-                            [
-                                new IdentityElementMapping(
-                                    identityColumn.ColumnName,
-                                    identityJsonPath,
-                                    identityColumn.ScalarType
-                                        ?? throw new InvalidOperationException(
-                                            "Expected the School identity column to have a scalar type."
-                                        )
-                                ),
-                            ]
-                        )
-                    ),
-                ]
+                TriggersInCreateOrder: []
             ),
             WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>
             {
@@ -535,7 +534,29 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
                 QualifiedResourceName,
                 IReadOnlyList<ResolvedSecurableElementPath>
             >()
-        );
+        )
+        {
+            OwnNaturalKeyProbesByResource = new Dictionary<QualifiedResourceName, OwnNaturalKeyProbe>
+            {
+                [resource] = new(
+                    resource,
+                    resourceModel.Root.Table,
+                    [
+                        new NaturalKeyProbeKeyColumn(
+                            identityJsonPath,
+                            identityColumn.ColumnName,
+                            new NaturalKeyProbeKeyBinding.Scalar(
+                                identityColumn.ScalarType
+                                    ?? throw new InvalidOperationException(
+                                        "Expected the School identity column to have a scalar type."
+                                    )
+                            )
+                        ),
+                    ],
+                    new DbColumnName("DocumentId")
+                ),
+            },
+        };
     }
 
     // Dedicated, isolated builder for the abstract-identity end-to-end tests, parameterized by operation kind
@@ -621,7 +642,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
         );
     }
 
-    private sealed class RecordingRelationalWriteExceptionClassifier : IRelationalWriteExceptionClassifier
+    internal sealed class RecordingRelationalWriteExceptionClassifier : IRelationalWriteExceptionClassifier
     {
         public DbException? CapturedException { get; private set; }
 
@@ -669,5 +690,316 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
         }
     }
 
-    private sealed class StubDbException(string message) : DbException(message);
+    internal sealed class StubDbException(string message) : DbException(message);
+}
+
+/// <summary>
+/// A root natural-key violation on a resource whose semantic identity order (sessionName, termDescriptor,
+/// schoolReference.schoolId) differs from ordinal path order, ordinal column-name order, and the root table's
+/// column order. Every authoritative identity list is path-sorted, so only a permuted fixture can catch a
+/// derivation that sorts. The mapping set carries no trigger metadata.
+/// </summary>
+[TestFixture]
+[Parallelizable]
+public class Given_A_Root_Natural_Key_Violation_With_A_Non_Ordinal_Identity
+{
+    private const string NaturalKeyConstraintName = "UX_Session_NK";
+    private const string TermDescriptorUri = "uri://ed-fi.org/TermDescriptor#Fall Semester";
+
+    private static readonly QualifiedResourceName SessionResource = new("Ed-Fi", "Session");
+    private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
+    private static readonly QualifiedResourceName TermDescriptorResource = new("Ed-Fi", "TermDescriptor");
+
+    private RelationalWriteExecutorResult? _fullBodyResult;
+    private RelationalWriteExecutorResult? _bodyWithoutTermDescriptorResult;
+
+    [SetUp]
+    public void Setup()
+    {
+        var sut = new RelationalWriteDatabaseFailureResultMapper(
+            new Given_RelationalWriteDatabaseFailureResultMapper.RecordingRelationalWriteExceptionClassifier
+            {
+                ClassificationToReturn = new RelationalWriteExceptionClassification.UniqueConstraintViolation(
+                    NaturalKeyConstraintName
+                ),
+            },
+            new RelationalWriteConstraintResolver()
+        );
+
+        sut.TryBuild(
+            CreateRequest(
+                $$$"""{"sessionName":"Fall","termDescriptor":"{{{TermDescriptorUri}}}","schoolReference":{"schoolId":255901}}"""
+            ),
+            new Given_RelationalWriteDatabaseFailureResultMapper.StubDbException("unique violation"),
+            out _fullBodyResult
+        );
+        sut.TryBuild(
+            CreateRequest("""{"sessionName":"Fall","schoolReference":{"schoolId":255901}}"""),
+            new Given_RelationalWriteDatabaseFailureResultMapper.StubDbException("unique violation"),
+            out _bodyWithoutTermDescriptorResult
+        );
+    }
+
+    [Test]
+    public void It_classifies_the_violation_as_a_root_natural_key_identity_conflict()
+    {
+        _fullBodyResult
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureIdentityConflict>()
+            .Which.ResourceName.Should()
+            .Be(new ResourceName("Session"));
+    }
+
+    [Test]
+    public void It_reports_the_duplicate_identity_values_in_semantic_order()
+    {
+        DuplicateIdentityValuesOf(_fullBodyResult)
+            .Should()
+            .Equal(
+                new KeyValuePair<string, string>("sessionName", "Fall"),
+                new KeyValuePair<string, string>("termDescriptor", TermDescriptorUri),
+                new KeyValuePair<string, string>("schoolId", "255901")
+            );
+    }
+
+    [Test]
+    public void It_omits_an_identity_value_the_body_does_not_carry()
+    {
+        DuplicateIdentityValuesOf(_bodyWithoutTermDescriptorResult)
+            .Should()
+            .Equal(
+                new KeyValuePair<string, string>("sessionName", "Fall"),
+                new KeyValuePair<string, string>("schoolId", "255901")
+            );
+    }
+
+    private static IEnumerable<KeyValuePair<string, string>> DuplicateIdentityValuesOf(
+        RelationalWriteExecutorResult? result
+    ) =>
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureIdentityConflict>()
+            .Which.DuplicateIdentityValues;
+
+    private static RelationalWriteExecutorRequest CreateRequest(string body)
+    {
+        var (writePlan, mappingSet) = CreateWriteModel();
+        var createDocumentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"));
+
+        return new RelationalWriteExecutorRequest(
+            mappingSet,
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetRequest.Post(
+                new ReferentialId(Guid.Parse("99999999-8888-7777-6666-555555555555")),
+                createDocumentUuid
+            ),
+            writePlan,
+            existingDocumentReadPlan: null,
+            JsonNode.Parse(body)!,
+            allowIdentityUpdates: false,
+            new TraceId("non-ordinal-identity-conflict-test"),
+            new ReferenceResolverRequest(mappingSet, SessionResource, [], DescriptorReferences: []),
+            new RelationalWriteTargetContext.CreateNew(createDocumentUuid)
+        );
+    }
+
+    private static (ResourceWritePlan WritePlan, MappingSet MappingSet) CreateWriteModel()
+    {
+        var sessionNamePath = new JsonPathExpression(
+            "$.sessionName",
+            [new JsonPathSegment.Property("sessionName")]
+        );
+        var termDescriptorPath = new JsonPathExpression(
+            "$.termDescriptor",
+            [new JsonPathSegment.Property("termDescriptor")]
+        );
+        var schoolReferencePath = new JsonPathExpression(
+            "$.schoolReference",
+            [new JsonPathSegment.Property("schoolReference")]
+        );
+        var schoolIdPath = new JsonPathExpression(
+            "$.schoolReference.schoolId",
+            [new JsonPathSegment.Property("schoolReference"), new JsonPathSegment.Property("schoolId")]
+        );
+
+        // The table declares the identity columns in a third order: descriptor, reference, then scalar.
+        var rootTable = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "Session"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_Session",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    null,
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Term_DescriptorId"),
+                    ColumnKind.DescriptorFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    termDescriptorPath,
+                    TermDescriptorResource,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("School_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    schoolReferencePath,
+                    SchoolResource,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("SchoolReference_SchoolId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    schoolIdPath,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("SessionName"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, 60),
+                    false,
+                    sessionNamePath,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+            ],
+            [
+                new TableConstraint.Unique(
+                    NaturalKeyConstraintName,
+                    [
+                        new DbColumnName("SessionName"),
+                        new DbColumnName("Term_DescriptorId"),
+                        new DbColumnName("School_DocumentId"),
+                    ]
+                ),
+            ]
+        );
+
+        var schoolReferenceBinding = new DocumentReferenceBinding(
+            true,
+            schoolReferencePath,
+            rootTable.Table,
+            new DbColumnName("School_DocumentId"),
+            SchoolResource,
+            [
+                new ReferenceIdentityBinding(
+                    new JsonPathExpression("$.schoolId", [new JsonPathSegment.Property("schoolId")]),
+                    schoolIdPath,
+                    new DbColumnName("SchoolReference_SchoolId")
+                ),
+            ],
+            IsRequired: true
+        );
+
+        var resourceModel = new RelationalResourceModel(
+            SessionResource,
+            new DbSchemaName("edfi"),
+            ResourceStorageKind.RelationalTables,
+            rootTable,
+            [rootTable],
+            [schoolReferenceBinding],
+            [
+                new DescriptorEdgeSource(
+                    true,
+                    termDescriptorPath,
+                    rootTable.Table,
+                    new DbColumnName("Term_DescriptorId"),
+                    TermDescriptorResource,
+                    IsRequired: true
+                ),
+            ]
+        );
+
+        var writePlan = new ResourceWritePlan(resourceModel, []);
+
+        var sessionKey = new ResourceKeyEntry(1, SessionResource, "1.0.0", false);
+        var schoolKey = new ResourceKeyEntry(2, SchoolResource, "1.0.0", false);
+        var termDescriptorKey = new ResourceKeyEntry(3, TermDescriptorResource, "1.0.0", false);
+
+        var mappingSet = new MappingSet(
+            new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
+            new DerivedRelationalModelSet(
+                new EffectiveSchemaInfo(
+                    "1.0",
+                    "v1",
+                    "schema-hash",
+                    3,
+                    [1, 2, 3],
+                    [new SchemaComponentInfo("ed-fi", "Ed-Fi", "1.0.0", false, "component-hash")],
+                    [sessionKey, schoolKey, termDescriptorKey]
+                ),
+                SqlDialect.Pgsql,
+                [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, new DbSchemaName("edfi"))],
+                [new ConcreteResourceModel(sessionKey, ResourceStorageKind.RelationalTables, resourceModel)],
+                [],
+                [],
+                [],
+                []
+            ),
+            new Dictionary<QualifiedResourceName, ResourceWritePlan> { [SessionResource] = writePlan },
+            new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+            new Dictionary<QualifiedResourceName, short>
+            {
+                [SessionResource] = sessionKey.ResourceKeyId,
+                [SchoolResource] = schoolKey.ResourceKeyId,
+                [TermDescriptorResource] = termDescriptorKey.ResourceKeyId,
+            },
+            new Dictionary<short, ResourceKeyEntry>
+            {
+                [sessionKey.ResourceKeyId] = sessionKey,
+                [schoolKey.ResourceKeyId] = schoolKey,
+                [termDescriptorKey.ResourceKeyId] = termDescriptorKey,
+            },
+            new Dictionary<QualifiedResourceName, IReadOnlyList<ResolvedSecurableElementPath>>()
+        )
+        {
+            OwnNaturalKeyProbesByResource = new Dictionary<QualifiedResourceName, OwnNaturalKeyProbe>
+            {
+                [SessionResource] = new(
+                    SessionResource,
+                    rootTable.Table,
+                    [
+                        new NaturalKeyProbeKeyColumn(
+                            sessionNamePath,
+                            new DbColumnName("SessionName"),
+                            new NaturalKeyProbeKeyBinding.Scalar(
+                                new RelationalScalarType(ScalarKind.String, 60)
+                            )
+                        ),
+                        new NaturalKeyProbeKeyColumn(
+                            termDescriptorPath,
+                            new DbColumnName("Term_DescriptorId"),
+                            new NaturalKeyProbeKeyBinding.Descriptor(TermDescriptorResource)
+                        ),
+                        new NaturalKeyProbeKeyColumn(
+                            schoolIdPath,
+                            new DbColumnName("School_DocumentId"),
+                            new NaturalKeyProbeKeyBinding.DocumentReference(0)
+                        ),
+                    ],
+                    new DbColumnName("DocumentId")
+                ),
+            },
+        };
+
+        return (writePlan, mappingSet);
+    }
 }
