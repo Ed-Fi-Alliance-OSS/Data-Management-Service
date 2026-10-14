@@ -805,7 +805,7 @@ start the previous build to clean up through the API either.
    whose `ClientId` or `ClientUuid` is also held by another row, with a flag
    for each, its ownership chain (application, vendor, tenant), its audit
    columns, and its data-store and ownership-token associations. Save the
-   output: it is the review record for steps 4 to 6 and the identifier list
+   output: it is the review record for steps 4 to 6 and the starting point
    for step 8.
 
    PostgreSQL:
@@ -904,11 +904,17 @@ start the previous build to clean up through the API either.
    once the upgrade has been verified, because they are not part of the
    schema and nothing else removes them.
 
-4. **Inspect each duplicate group.** Rows that share a value are adjacent in
-   the output. For each row, read both identifiers and both flags, the
-   application, vendor and tenant it belongs to, the audit columns (who
-   created it and when), and the associations the row would lose if deleted.
-   Then look at the identity provider for every key and UUID in the group:
+4. **Form the duplicate groups and inspect each one.** The output is ordered
+   by `ClientId`, then `ClientUuid`, so rows that share a key are adjacent but
+   rows that share a UUID under different keys are not. Group the rows twice:
+   once by `ClientId` over the rows flagged `SharesClientId`, and once by
+   `ClientUuid` over the rows flagged `SharesClientUuid`. A row flagged for
+   both belongs to one group of each kind; review such overlapping groups
+   together, because a decision in one changes what the other contains. For
+   each row, read both identifiers and both flags, the application, vendor
+   and tenant it belongs to, the audit columns (who created it and when), and
+   the associations the row would lose if deleted. Then look at the identity
+   provider for every key and UUID in the group:
 
    * Keycloak: `GET {keycloak}/admin/realms/{realm}/clients?clientId={ClientId}`
      finds a client by key; `GET {keycloak}/admin/realms/{realm}/clients/{ClientUuid}`
@@ -962,6 +968,10 @@ start the previous build to clean up through the API either.
    discards its data-store assignments and ownership-token links. The
    provider client is not touched.
 
+   Run the deletion in an interactive session that stays open: `psql`, or
+   `sqlcmd` without `-Q` or `-i`, or a client with autocommit off. The block
+   opens the transaction and deletes; it does not end the transaction.
+
    PostgreSQL:
 
    ```sql
@@ -972,8 +982,6 @@ start the previous build to clean up through the API either.
    RETURNING "ApiClientId", "DataStoreId";
    DELETE FROM dmscs."ApiClient" WHERE "Id" IN (<reviewed ids>)
    RETURNING "Id", "ClientId", "ClientUuid";
-   -- Compare the returned rows with the review. COMMIT only if they match; otherwise ROLLBACK.
-   COMMIT;
    ```
 
    SQL Server:
@@ -990,8 +998,36 @@ start the previous build to clean up through the API either.
    DELETE FROM dmscs.ApiClient
    OUTPUT deleted.Id, deleted.ClientId, deleted.ClientUuid
    WHERE Id IN (<reviewed ids>);
-   -- Compare the returned rows with the review. COMMIT only if they match; otherwise ROLLBACK TRANSACTION.
+   ```
+
+   The transaction is still open. In the same session, compare the returned
+   rows with the review record: every id from step 5 and no other, and for
+   each one the associations step 2 listed. Then end the transaction with
+   exactly one of the statements below. If the session closes before either
+   runs, both engines roll the deletion back and nothing was deleted.
+
+   PostgreSQL, when the rows match:
+
+   ```sql
+   COMMIT;
+   ```
+
+   PostgreSQL, otherwise:
+
+   ```sql
+   ROLLBACK;
+   ```
+
+   SQL Server, when the rows match:
+
+   ```sql
    COMMIT TRANSACTION;
+   ```
+
+   SQL Server, otherwise:
+
+   ```sql
+   ROLLBACK TRANSACTION;
    ```
 
    The child tables cascade from `ApiClient` on both engines, but the
@@ -1028,15 +1064,23 @@ start the previous build to clean up through the API either.
    (SQL Server) returns one row once it has. Start the remaining instances
    after that.
 
-8. **Provider cleanup is a separate activity.** A deleted row whose
-   `ClientUuid` no surviving row holds leaves its provider client behind,
-   with no row referencing it and no caller holding its credentials. Leave it
-   until the upgrade is done, then handle it under
+8. **Provider cleanup is a separate activity.** Deleting a row removes the
+   Configuration Service's reference to a provider client and establishes
+   nothing about that client. A row seeded outside the API, or corrupted, can
+   point at a provider client that is legitimately in use, including a client
+   registered through `POST /connect/register`, which never has an
+   `ApiClient` row. Leave every provider client in place until the upgrade is
+   done. Afterwards, handle a provider client you suspect is orphaned under
    [the one rule for deleting a client during recovery](#the-one-rule-for-deleting-a-client-during-recovery):
-   the `ClientUuid` recorded for that row in step 2 is the identifier that
-   authorizes the deletion, and a provider client whose UUID a surviving row
-   still holds must not be deleted. Nothing in the migration or in this
-   procedure deletes provider objects.
+   deleting it requires independent evidence of ownership, such as provider
+   audit events tying the client's creation to the attempt that produced the
+   deleted row, or an operator's recorded confirmation documenting how
+   ownership was established, together with recorded operator approval of
+   the deletion. The `ClientUuid` in the step 2 review record says where to
+   look; it is not authorization. A provider client whose UUID a surviving
+   row still holds is in use and must not be deleted. If ownership remains
+   uncertain, stop and leave the client in place. Nothing in the migration or
+   in this procedure deletes provider objects.
 
 ## Configuration Service: identity-provider clients left behind by failed provisioning
 
