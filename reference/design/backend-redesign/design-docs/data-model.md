@@ -90,8 +90,6 @@ CREATE TABLE dms.Document (
     ContentVersion bigint NOT NULL DEFAULT nextval('dms.ChangeVersionSequence'),
     ContentLastModifiedAt timestamp with time zone NOT NULL DEFAULT now(),
 
-    CreatedAt timestamp with time zone NOT NULL DEFAULT now(),
-
     CONSTRAINT UX_Document_DocumentUuid UNIQUE (DocumentUuid),
     CONSTRAINT UX_Document_DocumentId_ResourceKeyId UNIQUE (DocumentId, ResourceKeyId)
 );
@@ -119,8 +117,6 @@ CREATE TABLE dms.Document (
     ContentVersion bigint NOT NULL CONSTRAINT DF_Document_ContentVersion DEFAULT (NEXT VALUE FOR dms.ChangeVersionSequence),
     ContentLastModifiedAt datetime2(7) NOT NULL CONSTRAINT DF_Document_ContentLastModifiedAt DEFAULT (sysutcdatetime()),
 
-    CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_Document_CreatedAt DEFAULT (sysutcdatetime()),
-
     CONSTRAINT UX_Document_DocumentUuid UNIQUE (DocumentUuid),
     CONSTRAINT UX_Document_DocumentId_ResourceKeyId UNIQUE (DocumentId, ResourceKeyId),
     CONSTRAINT FK_Document_ResourceKey FOREIGN KEY (ResourceKeyId)
@@ -146,6 +142,9 @@ Notes:
   - `ContentVersion` / `ContentLastModifiedAt`: bump when the document's full resource-state representation changes (local write, or cascaded update to reference-identity storage columns and any dependent generated aliases).
   - Identity-projection changes that alter the stored representation are reflected through the same content stamps.
   - API `_lastModifiedDate` and per-item `ChangeVersion` are served from these stored stamps. `_lastModifiedDate` uses the existing DMS whole-second UTC `yyyy-MM-ddTHH:mm:ssZ` formatter, discarding fractional seconds without rounding. API `_etag` is composed from `ContentVersion` plus a representation `variantKey` (schema epoch, format, profile code, link flag, and content-coding code); the document body is not hashed for etag construction.
+- `dms.Document` has no creation-time column. The former `CreatedAt` was never read and was
+  removed without replacement (DMS-1403); no API field, ETag, change query, or ownership
+  decision depended on it.
 - Time semantics: store timestamps as UTC instants at provider precision. In PostgreSQL, use `timestamp with time zone`; in SQL Server, use `datetime2` with UTC writers (e.g., `sysutcdatetime()`). Public `_lastModifiedDate` formatting is the whole-second UTC representation defined above.
 - Authorization is addressed separately in [auth.md](auth.md).
 

@@ -181,9 +181,53 @@ the [current conversion recipe](../eng/northridge/README.md#copy-legacy-data-int
 
 This conversion loads legacy data into a fresh schema; an unchanged legacy dump restore
 and an in-place schema upgrade do not produce the required target. Discard and reprovision
-a partially loaded target after failure. The tool currently requires both document stamp
-columns; DMS-1401 owns removing its document-timestamp dependency. A full Northridge reload
-or dataset republication is not a DMS-1404 closure gate.
+a partially loaded target after failure. The tool requires the `ContentVersion` and
+`ContentLastModifiedAt` document stamp columns; DMS-1401 owns removing its document-timestamp
+dependency. It no longer reads `dms.Document.CreatedAt` and accepts source dumps that still
+carry that column, which it stages but does not copy. A full Northridge reload or dataset
+republication is not a DMS-1404 closure gate.
+
+**`dms.Document.CreatedAt` removal (DMS-1403).** Freshly provisioned schemas no longer have
+`dms.Document.CreatedAt` on either engine. The column was never read, and it is removed without
+a replacement creation-time capability. `RelationalMappingVersion` stays `v3`, and generated
+DDL is not a hash input, so `EffectiveSchemaHash` is unchanged. A matching hash and successful
+startup validation therefore cannot prove that a database no longer has the column. Verify the
+catalog instead. The first query must return at least one row, which proves the table exists.
+The second must return no rows:
+
+```sql
+-- PostgreSQL
+SELECT column_name FROM information_schema.columns
+WHERE table_schema = 'dms' AND table_name = 'Document' ORDER BY ordinal_position;
+SELECT column_name FROM information_schema.columns
+WHERE table_schema = 'dms' AND table_name = 'Document' AND column_name = 'CreatedAt';
+
+-- SQL Server
+SELECT c.name FROM sys.columns c WHERE c.object_id = OBJECT_ID(N'dms.Document') ORDER BY c.column_id;
+SELECT c.name FROM sys.columns c WHERE c.object_id = OBJECT_ID(N'dms.Document') AND c.name = N'CreatedAt';
+```
+
+The DMS API reads and writes correctly whether or not the column is present. Existing databases
+keep it, and the storage saving exists only after you deliberately reprovision them from current
+DDL. No in-place `ALTER TABLE … DROP COLUMN` is provided, and rerunning create-only provisioning
+does not remove it. To get the saving on a PostgreSQL store without CDC, use the carry-forward
+route above. On SQL Server, reprovision and reload.
+
+CDC setup and validation compare the live `dms.Document` columns with the expected inventory
+and fail closed on any difference. This covers initial enablement, `cdc-validate`, and the
+guarded start, restart, and resume pre-checks. Fresh provisioning followed by eligible initial
+CDC enablement is supported. **Established CDC deployments have no supported upgrade or cutover
+path to the new `dms.Document` shape in this release.** With the new runtime, validation and
+the guarded pre-checks fail closed on such a binding while its database still has the column;
+the DMS API keeps serving. The CDC design
+[defers physical-source replacement](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-physical-source-replacement-deferral),
+and no documented sequence moves an established binding onto a reprovisioned database. Do not
+treat carry-forward or generation retirement as one. Resolving this is a separate release
+coordination item.
+
+Database template packages built before this change still have the column. They restore and
+serve, but they do not deliver the saving. Replace them with packages built from DDL that
+includes this change.
 
 ### Descriptor catalog checks and template handoff
 

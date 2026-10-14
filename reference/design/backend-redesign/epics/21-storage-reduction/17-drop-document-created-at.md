@@ -161,6 +161,14 @@ text, not in this story's change; the Pester lane runs on ubuntu. P2 is therefor
 target's columns, compared by name, because a whole-row comparison cannot hold once the source
 row has one more column (§6 step 4.2).
 
+Found while reviewing step 4.2 (Phase 4 approved 2026-10-13): the 5.1 documentation grep said
+"only tracked-change references", which the required removal explanation, the §7.3 catalog
+queries, and the limitation statements would all violate. Step 5.1's gate now classifies every
+hit into one of four allowed kinds and forbids only a description of the column as current. It
+also covers `eng/northridge/README.md`, whose copy-forward wording step 4.1 already updated, so
+5.1 does not edit that file again; `EPIC.md` was done in 0.2. The sentence that the template
+verifier rejects older packages moves from 5.1 to 5.3, the step that adds the check.
+
 ---
 
 ## 1. Problem, proposed decision, alternatives, assumptions, open questions
@@ -874,10 +882,17 @@ holds an exception fails the gate.
   reads `CreatedAt` and tolerates source dumps carrying it), `eng/northridge/README.md`,
   `docs/changelog/8.1.0.md` (entry under the storage section with the same reprovisioning
   warning as the DMS-1404 entry plus the CDC limitation), `EPIC.md` (if not done in 0.2).
-- Verification: `rg -n "CreatedAt" docs reference/design/backend-redesign/design-docs/data-model.md`
-  shows only tracked-change references; `rg -n -i "retire|re-enable|cutover" docs/RELATIONAL-BACKEND.md docs/changelog/8.1.0.md`
-  shows no procedure text for established CDC deployments (only the limitation statement); links
-  checked by eye.
+- Verification: `rg -n "CreatedAt" docs reference/design/backend-redesign/design-docs/data-model.md eng/northridge/README.md`;
+  every hit is classified in the evidence as exactly one of (i) an unrelated same-named column
+  (§5.7, e.g. tracked-change and descriptor-history `CreatedAt`), (ii) an intentional explanation
+  of the removal, (iii) a §7.3 catalog query, or (iv) a limitation statement (existing databases,
+  older templates, established CDC deployments, copy-tool tolerance of older dumps). No hit may
+  describe `dms.Document.CreatedAt` as a current column. `rg -n -i "retire|re-enable|cutover" docs/RELATIONAL-BACKEND.md docs/changelog/8.1.0.md`
+  shows no procedure text for established CDC deployments: every hit is the limitation statement
+  or a statement that a route is not a CDC path. Links checked by eye.
+- The template paragraph in 5.1 states that older packages retain the column and require
+  replacement; the sentence that the verifier rejects them is added by step 5.3, which
+  introduces that check, so that no commit documents behavior it does not contain.
 - Commit: `[DMS-1403] Document the dms.Document.CreatedAt removal, reprovisioning, and CDC limitation`.
 
 **5.2 Coordination record with DMS-1401 and release (no files).** In the PR description and in
@@ -932,6 +947,9 @@ evidence (§7.6). The release handoff (§7.5) includes the established-CDC limit
 - Non-goal restated: no package build, restore matrix, publication, or consumer pin changes. The
   verifier's real end-to-end run (restore + DMS/CMS probe) is exercised only by the template
   workflows (§7.5 handoff).
+- Docs: add to the DMS-1403 template paragraph in `docs/RELATIONAL-BACKEND.md` that
+  `verify-template-restore.ps1` now rejects a source or restored database whose `dms.Document`
+  still carries the column (§7.5).
 - Verification: P3; lane registration visible in the workflow diff.
 - Commit: `[DMS-1403] Assert dms.Document shape in template restore verification`.
 
