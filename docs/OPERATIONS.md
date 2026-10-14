@@ -763,11 +763,12 @@ nothing and describe what blocks them, and this section is the operator
 procedure for resolving it.
 
 Run an upgrade from one Configuration Service instance, or from the Installer,
-with no other instance serving writes. A blocking script takes an exclusive
-lock on the table it checks, so a concurrent writer waits rather than slipping
-past the check, but two instances running the upgrade at the same time are not
-serialized by DbUp. Stop every instance first, upgrade from one, then start
-the rest.
+with no other instance serving writes. Migration `0036` holds an exclusive
+lock on `dmscs."ApiClient"` from its preflight through constraint creation, so
+a concurrent writer waits rather than slipping past its check; other blocking
+scripts, such as `0035`, take no such lock. Two instances running the upgrade
+at the same time are not serialized by DbUp either. Stop every instance first,
+upgrade from one, then start the rest.
 
 ### Migration 0036: API client identifiers must be unique
 
