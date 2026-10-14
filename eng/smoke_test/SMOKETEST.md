@@ -46,7 +46,7 @@ smoke testing. This function:
 ### Usage
 
 For the self-contained identity provider, set
-`DMS_CONFIG_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1` in the stack's `.env`
+`CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1` in the stack's `.env`
 before starting or recreating it. The Smoke Test Utility requests a new token
 for each resource GET and otherwise exceeds the default limit of 15. Restore
 the configured limit and recreate the stack after the smoke run.

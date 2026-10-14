@@ -4,20 +4,20 @@
 # See the LICENSE and NOTICES files in the project root for more information.
 
 # Renames the Configuration Service E2E stack so build-config.ps1 E2ETest can run beside another local
-# stack. start-local-config.ps1 composes it after its own files when CMS_COMPOSE_OVERLAY_FILES names
+# stack. start-local-config.ps1 composes it after its own files when CONFIGURATION_SERVICE_COMPOSE_OVERLAY_FILES names
 # it; Invoke-IsolatedConfigE2E.ps1 writes that and every variable below into the environment file it
 # derives. Only names change here; the derived file moves the ports, including the Configuration
 # Service's, which listens on the same port inside and outside its container as in the stock stack.
 # Hostnames stay as the base files set them, because they are per network.
 services:
   db:
-    container_name: ${CMS_POSTGRES_CONTAINER:?}
+    container_name: ${CONFIGURATION_SERVICE_POSTGRES_CONTAINER:?}
   keycloak:
-    container_name: ${CMS_KEYCLOAK_CONTAINER:?}
+    container_name: ${CONFIGURATION_SERVICE_KEYCLOAK_CONTAINER:?}
   config:
-    container_name: ${CMS_CONFIG_CONTAINER:?}
+    container_name: ${CONFIGURATION_SERVICE_CONTAINER:?}
 
 networks:
   dms:
-    name: ${CMS_COMPOSE_NETWORK:?}
+    name: ${CONFIGURATION_SERVICE_COMPOSE_NETWORK:?}
     external: true

@@ -40,7 +40,7 @@ BeforeAll {
         # Writes a minimal effective env file for the boundary. The connection-string database
         # segment defaults to the reserved name so separate-mode tests satisfy the structural
         # requirements by default; pass -ConnectionString to control the string verbatim, and
-        # -SeamName (even empty) to add a DMS_CONFIG_DATABASE_NAME declaration.
+        # -SeamName (even empty) to add a CONFIGURATION_SERVICE_DATABASE_NAME declaration.
         param(
             [Parameter(Mandatory)] [string]$FileName,
             [Parameter(Mandatory)] [string]$Marker,
@@ -55,10 +55,10 @@ BeforeAll {
             $content += "MSSQL_DB_NAME=$DatastoreName`n"
         }
         if ($PSBoundParameters.ContainsKey("SeamName")) {
-            $content += "DMS_CONFIG_DATABASE_NAME=$SeamName`n"
+            $content += "CONFIGURATION_SERVICE_DATABASE_NAME=$SeamName`n"
         }
         if (-not $OmitConnectionString) {
-            $content += "DMS_CONFIG_DATABASE_CONNECTION_STRING=$ConnectionString`n"
+            $content += "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=$ConnectionString`n"
         }
         [System.IO.File]::WriteAllText($path, $content, [System.Text.UTF8Encoding]::new($false))
         return $path
@@ -219,11 +219,11 @@ Describe "New-MssqlTopologyConsistencyQuery emitted-SQL contract" {
 Describe "ConvertFrom-MssqlTopologyConsistencyQueryOutput strict parsing (mutant M-R8)" {
 
     It "classifies the exact happy set as ok, tolerating sqlcmd's blank separator lines" {
-        $output = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "DMS_CONFIG_DATABASE_CONNECTION_STRING" = "equal"; "MSSQL_DB_NAME" = "distinct" })
-        $parsed = ConvertFrom-MssqlTopologyConsistencyQueryOutput -OutputText $output -ExpectedSourceKey @("DMS_CONFIG_DATABASE_CONNECTION_STRING", "MSSQL_DB_NAME")
+        $output = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" = "equal"; "MSSQL_DB_NAME" = "distinct" })
+        $parsed = ConvertFrom-MssqlTopologyConsistencyQueryOutput -OutputText $output -ExpectedSourceKey @("CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING", "MSSQL_DB_NAME")
         $parsed.Category | Should -Be "ok"
         $parsed.ExpectedPresent | Should -BeTrue
-        $parsed.Verdict["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be "equal"
+        $parsed.Verdict["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] | Should -Be "equal"
         $parsed.Verdict["MSSQL_DB_NAME"] | Should -Be "distinct"
     }
 
@@ -288,8 +288,8 @@ Describe "ConvertFrom-MssqlTopologyConsistencyQueryOutput strict parsing (mutant
         (ConvertFrom-MssqlTopologyConsistencyQueryOutput -OutputText $noCandidates -ExpectedSourceKey @("MSSQL_DB_NAME")).Category |
             Should -Be "unexpected-output"
         # Out-of-order candidate lines are refused: the batch emits keys in generation order.
-        $swapped = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "MSSQL_DB_NAME" = "distinct"; "DMS_CONFIG_DATABASE_CONNECTION_STRING" = "equal" })
-        (ConvertFrom-MssqlTopologyConsistencyQueryOutput -OutputText $swapped -ExpectedSourceKey @("DMS_CONFIG_DATABASE_CONNECTION_STRING", "MSSQL_DB_NAME")).Category |
+        $swapped = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "MSSQL_DB_NAME" = "distinct"; "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" = "equal" })
+        (ConvertFrom-MssqlTopologyConsistencyQueryOutput -OutputText $swapped -ExpectedSourceKey @("CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING", "MSSQL_DB_NAME")).Category |
             Should -Be "unexpected-output"
     }
 
@@ -379,14 +379,14 @@ Describe "Assert-MssqlTopologyPhysicalConsistency boundary" {
 
     BeforeAll {
         # Ambient hermeticity. Production deliberately gives ambient MSSQL_DB_NAME and
-        # DMS_CONFIG_DATABASE_NAME Compose precedence over the file, and deliberately IGNORES an
+        # CONFIGURATION_SERVICE_DATABASE_NAME Compose precedence over the file, and deliberately IGNORES an
         # ambient marker (raw file read) - so this Describe must control all three variables per
         # test AND hand back the caller's exact pre-existing state afterwards: present with its
         # value, absent, or (where the platform can represent it) present-empty.
         # SetEnvironmentVariable is used for the restore because it preserves a present-empty
         # value on Windows; on Unix a blank variable cannot exist, so absent is the faithful
         # representation there.
-        $script:ambientNames = @("DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE", "MSSQL_DB_NAME", "DMS_CONFIG_DATABASE_NAME")
+        $script:ambientNames = @("DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE", "MSSQL_DB_NAME", "CONFIGURATION_SERVICE_DATABASE_NAME")
         $script:ambientSnapshot = @{}
         foreach ($name in $script:ambientNames) {
             $script:ambientSnapshot[$name] = @{
@@ -419,9 +419,9 @@ Describe "Assert-MssqlTopologyPhysicalConsistency boundary" {
         # cannot flip the mode.
         $sharedDatastore = [char]0x00E9 + "dfi_shared_datastore"
         $expectedQuery = New-MssqlTopologyConsistencyQuery -ExpectedName $sharedDatastore -Candidate ([ordered]@{
-                "DMS_CONFIG_DATABASE_CONNECTION_STRING" = $sharedDatastore
+                "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" = $sharedDatastore
             })
-        $happy = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "DMS_CONFIG_DATABASE_CONNECTION_STRING" = "equal" })
+        $happy = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" = "equal" })
         Mock Invoke-NativeCommandWithInput -ModuleName env-utility -MockWith {
             $script:capturedInputText = $InputText
             New-TransportResult -StandardOutput $happy
@@ -437,14 +437,14 @@ Describe "Assert-MssqlTopologyPhysicalConsistency boundary" {
     }
 
     It "throws in shared mode when the server reports a CMS target physically different from the datastore" {
-        $different = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "DMS_CONFIG_DATABASE_CONNECTION_STRING" = "distinct" })
+        $different = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" = "distinct" })
         Mock Invoke-NativeCommandWithInput -ModuleName env-utility -MockWith { New-TransportResult -StandardOutput $different }
 
         $envFile = New-TopologyEnvFile -FileName "shared-diff.env" -Marker "false" -DatastoreName "edfi_datastore" `
             -ConnectionString "Server=dms-mssql,1433;Database=edfi_other;User Id=sa;Password=pw;TrustServerCertificate=true;"
         $thrown = { Assert-MssqlTopologyPhysicalConsistency -EnvironmentFile $envFile -ContainerName "dms-mssql" -SaPassword "pw" }
         $thrown | Should -Throw "*DIFFERENT physical database*"
-        $thrown | Should -Throw "*'DMS_CONFIG_DATABASE_CONNECTION_STRING'*"
+        $thrown | Should -Throw "*'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING'*"
         try { & $thrown } catch { $failureMessage = $_.Exception.Message }
         $failureMessage | Should -Not -Match "edfi_other"
         $failureMessage | Should -Match "withheld"
@@ -452,10 +452,10 @@ Describe "Assert-MssqlTopologyPhysicalConsistency boundary" {
 
     It "verifies separate mode through the runner exactly once, sending the generated batch over the pinned argv" {
         $expectedQuery = New-MssqlTopologyConsistencyQuery -ExpectedName $script:reservedName -Candidate ([ordered]@{
-                "DMS_CONFIG_DATABASE_CONNECTION_STRING" = $script:reservedName
+                "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" = $script:reservedName
                 "MSSQL_DB_NAME"                         = $script:reviewerName
             })
-        $happy = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "DMS_CONFIG_DATABASE_CONNECTION_STRING" = "equal"; "MSSQL_DB_NAME" = "distinct" })
+        $happy = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" = "equal"; "MSSQL_DB_NAME" = "distinct" })
         Mock Invoke-NativeCommandWithInput -ModuleName env-utility -MockWith {
             $script:capturedFilePath = $FilePath
             $script:capturedArgumentList = @($ArgumentList)
@@ -474,14 +474,14 @@ Describe "Assert-MssqlTopologyPhysicalConsistency boundary" {
     }
 
     It "throws in separate mode when a CMS target is physically different from the reserved database (mutant: separate-mode CMS-agreement comparison removed)" {
-        $badCms = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "DMS_CONFIG_DATABASE_CONNECTION_STRING" = "distinct"; "MSSQL_DB_NAME" = "distinct" })
+        $badCms = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" = "distinct"; "MSSQL_DB_NAME" = "distinct" })
         Mock Invoke-NativeCommandWithInput -ModuleName env-utility -MockWith { New-TransportResult -StandardOutput $badCms }
 
         $envFile = New-TopologyEnvFile -FileName "sep-badcms.env" -Marker "true" -DatastoreName "edfi_datastore" `
             -ConnectionString "Server=dms-mssql,1433;Database=$($script:reviewerName);User Id=sa;Password=pw;TrustServerCertificate=true;"
         $thrown = { Assert-MssqlTopologyPhysicalConsistency -EnvironmentFile $envFile -ContainerName "dms-mssql" -SaPassword "pw" }
         $thrown | Should -Throw "*DIFFERENT physical database*"
-        $thrown | Should -Throw "*'DMS_CONFIG_DATABASE_CONNECTION_STRING'*"
+        $thrown | Should -Throw "*'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING'*"
         try { & $thrown } catch { $failureMessage = $_.Exception.Message }
         $failureMessage | Should -Not -Match ([regex]::Escape($script:reviewerName))
         $failureMessage | Should -Match "withheld"
@@ -489,7 +489,7 @@ Describe "Assert-MssqlTopologyPhysicalConsistency boundary" {
 
     It "includes the provider-parsed registered candidate when supplied in separate mode, and a same-database verdict names the parameter - never the value" {
         $registeredValue = [char]0x00E9 + "dfi_registered"
-        $collision = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "DMS_CONFIG_DATABASE_CONNECTION_STRING" = "equal"; "MSSQL_DB_NAME" = "distinct"; "-DataStoreDatabaseName" = "equal" })
+        $collision = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" = "equal"; "MSSQL_DB_NAME" = "distinct"; "-DataStoreDatabaseName" = "equal" })
         Mock Invoke-NativeCommandWithInput -ModuleName env-utility -MockWith {
             $script:capturedInputText = $InputText
             New-TransportResult -StandardOutput $collision
@@ -507,7 +507,7 @@ Describe "Assert-MssqlTopologyPhysicalConsistency boundary" {
 
     It "excludes the registered candidate in shared mode - it is the separate-mode distinctness rule's participant only" {
         $registeredValue = "edfi_registered_shared"
-        $happy = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "DMS_CONFIG_DATABASE_CONNECTION_STRING" = "equal" })
+        $happy = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" = "equal" })
         Mock Invoke-NativeCommandWithInput -ModuleName env-utility -MockWith {
             $script:capturedInputText = $InputText
             New-TransportResult -StandardOutput $happy
@@ -522,7 +522,7 @@ Describe "Assert-MssqlTopologyPhysicalConsistency boundary" {
     }
 
     It "throws the same-database diagnostic for the datastore candidate in separate mode, withholding the resolved value" {
-        $collision = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "DMS_CONFIG_DATABASE_CONNECTION_STRING" = "equal"; "MSSQL_DB_NAME" = "equal" })
+        $collision = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" = "equal"; "MSSQL_DB_NAME" = "equal" })
         Mock Invoke-NativeCommandWithInput -ModuleName env-utility -MockWith { New-TransportResult -StandardOutput $collision }
 
         $envFile = New-TopologyEnvFile -FileName "sep-collide.env" -Marker "true" -DatastoreName $script:reviewerName
@@ -537,10 +537,10 @@ Describe "Assert-MssqlTopologyPhysicalConsistency boundary" {
     It "sends the declared seam as a first-class candidate, before the connection-string segments (mutant: seam candidate omitted)" {
         $seamValue = [char]0x00E9 + "dfi_seam_value"
         $expectedQuery = New-MssqlTopologyConsistencyQuery -ExpectedName "edfi_datastore" -Candidate ([ordered]@{
-                "DMS_CONFIG_DATABASE_NAME"              = $seamValue
-                "DMS_CONFIG_DATABASE_CONNECTION_STRING" = "edfi_datastore"
+                "CONFIGURATION_SERVICE_DATABASE_NAME"              = $seamValue
+                "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" = "edfi_datastore"
             })
-        $happy = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "DMS_CONFIG_DATABASE_NAME" = "equal"; "DMS_CONFIG_DATABASE_CONNECTION_STRING" = "equal" })
+        $happy = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "CONFIGURATION_SERVICE_DATABASE_NAME" = "equal"; "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" = "equal" })
         Mock Invoke-NativeCommandWithInput -ModuleName env-utility -MockWith {
             $script:capturedInputText = $InputText
             New-TransportResult -StandardOutput $happy
@@ -555,8 +555,8 @@ Describe "Assert-MssqlTopologyPhysicalConsistency boundary" {
 
     It "verifies every connection-string database segment independently, keyed by position (mutant: connection-string candidate omitted)" {
         $secondSegmentBad = New-BatchOutput -VerdictBySourceKey ([ordered]@{
-                "DMS_CONFIG_DATABASE_CONNECTION_STRING"   = "equal"
-                "DMS_CONFIG_DATABASE_CONNECTION_STRING.2" = "distinct"
+                "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"   = "equal"
+                "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING.2" = "distinct"
             })
         Mock Invoke-NativeCommandWithInput -ModuleName env-utility -MockWith {
             $script:capturedInputText = $InputText
@@ -566,9 +566,9 @@ Describe "Assert-MssqlTopologyPhysicalConsistency boundary" {
         $envFile = New-TopologyEnvFile -FileName "shared-dual.env" -Marker "false" -DatastoreName "edfi_datastore" `
             -ConnectionString "Server=dms-mssql,1433;Database=edfi_datastore;Initial Catalog=edfi_other;User Id=sa;Password=pw;TrustServerCertificate=true;"
         $thrown = { Assert-MssqlTopologyPhysicalConsistency -EnvironmentFile $envFile -ContainerName "dms-mssql" -SaPassword "pw" }
-        $thrown | Should -Throw "*'DMS_CONFIG_DATABASE_CONNECTION_STRING.2'*"
-        $script:capturedInputText | Should -Match ([regex]::Escape("CMSTOPOLOGYCAND|DMS_CONFIG_DATABASE_CONNECTION_STRING|"))
-        $script:capturedInputText | Should -Match ([regex]::Escape("CMSTOPOLOGYCAND|DMS_CONFIG_DATABASE_CONNECTION_STRING.2|"))
+        $thrown | Should -Throw "*'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING.2'*"
+        $script:capturedInputText | Should -Match ([regex]::Escape("CMSTOPOLOGYCAND|CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING|"))
+        $script:capturedInputText | Should -Match ([regex]::Escape("CMSTOPOLOGYCAND|CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING.2|"))
     }
 
     It "fails closed as unverifiable for every transport failure shape, with type names only" {
@@ -594,8 +594,8 @@ Describe "Assert-MssqlTopologyPhysicalConsistency boundary" {
     It "fails closed for every non-ok parse category - exit code zero alone is never success (mutant: strict parsing weakened)" {
         $parseShapes = @(
             @{ Label = "garbage stdout with exit zero"; Output = "Msg 208, Level 16, State 1"; Category = "unexpected-output" }
-            @{ Label = "context assertion"; Output = (New-BatchOutput -VerdictBySourceKey ([ordered]@{ "DMS_CONFIG_DATABASE_CONNECTION_STRING" = "equal"; "MSSQL_DB_NAME" = "distinct" }) -ContextLine "CMSTOPOLOGYCTX|db=other|collationAgreement=agree"); Category = "context-assertion" }
-            @{ Label = "oracle disagreement"; Output = (New-BatchOutput -VerdictBySourceKey ([ordered]@{ "DMS_CONFIG_DATABASE_CONNECTION_STRING" = "equal"; "MSSQL_DB_NAME" = "distinct" }) -Corroboration "disagree"); Category = "oracle-disagreement" }
+            @{ Label = "context assertion"; Output = (New-BatchOutput -VerdictBySourceKey ([ordered]@{ "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" = "equal"; "MSSQL_DB_NAME" = "distinct" }) -ContextLine "CMSTOPOLOGYCTX|db=other|collationAgreement=agree"); Category = "context-assertion" }
+            @{ Label = "oracle disagreement"; Output = (New-BatchOutput -VerdictBySourceKey ([ordered]@{ "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" = "equal"; "MSSQL_DB_NAME" = "distinct" }) -Corroboration "disagree"); Category = "oracle-disagreement" }
         )
         foreach ($shape in $parseShapes) {
             $shapeTransport = New-TransportResult -StandardOutput $shape.Output
@@ -608,25 +608,25 @@ Describe "Assert-MssqlTopologyPhysicalConsistency boundary" {
 
     It "resolves candidates with ambient Compose precedence - the checked names are what the stack will receive" {
         # Ambient MSSQL_DB_NAME moves the running datastore, so in shared mode it moves the
-        # EXPECTED name; ambient DMS_CONFIG_DATABASE_NAME is a first-class candidate even when
+        # EXPECTED name; ambient CONFIGURATION_SERVICE_DATABASE_NAME is a first-class candidate even when
         # the file never declares the seam.
         $ambientDatastore = [char]0x00E9 + "dfi_ambient_datastore"
         $ambientSeam = [char]0x00E9 + "dfi_ambient_seam"
-        $happy = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "DMS_CONFIG_DATABASE_NAME" = "equal"; "DMS_CONFIG_DATABASE_CONNECTION_STRING" = "equal" })
+        $happy = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "CONFIGURATION_SERVICE_DATABASE_NAME" = "equal"; "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" = "equal" })
         Mock Invoke-NativeCommandWithInput -ModuleName env-utility -MockWith {
             $script:capturedInputText = $InputText
             New-TransportResult -StandardOutput $happy
         }
 
         $env:MSSQL_DB_NAME = $ambientDatastore
-        $env:DMS_CONFIG_DATABASE_NAME = $ambientSeam
+        $env:CONFIGURATION_SERVICE_DATABASE_NAME = $ambientSeam
         $envFile = New-TopologyEnvFile -FileName "shared-ambient.env" -Marker "false" -DatastoreName "edfi_file_value" `
             -ConnectionString "Server=dms-mssql,1433;Database=edfi_file_value;User Id=sa;Password=pw;TrustServerCertificate=true;"
         { Assert-MssqlTopologyPhysicalConsistency -EnvironmentFile $envFile -ContainerName "dms-mssql" -SaPassword "pw" } |
             Should -Not -Throw
         $expectedQuery = New-MssqlTopologyConsistencyQuery -ExpectedName $ambientDatastore -Candidate ([ordered]@{
-                "DMS_CONFIG_DATABASE_NAME"              = $ambientSeam
-                "DMS_CONFIG_DATABASE_CONNECTION_STRING" = "edfi_file_value"
+                "CONFIGURATION_SERVICE_DATABASE_NAME"              = $ambientSeam
+                "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" = "edfi_file_value"
             })
         $script:capturedInputText | Should -Be $expectedQuery
     }
@@ -639,11 +639,11 @@ Describe "Assert-MssqlTopologyPhysicalConsistency boundary" {
             if ($blankShape -eq "" -and -not $IsWindows) {
                 continue # a present-empty environment variable cannot exist on Unix
             }
-            [System.Environment]::SetEnvironmentVariable("DMS_CONFIG_DATABASE_NAME", $blankShape)
+            [System.Environment]::SetEnvironmentVariable("CONFIGURATION_SERVICE_DATABASE_NAME", $blankShape)
             $thrown = { Assert-MssqlTopologyPhysicalConsistency -EnvironmentFile $envFile -ContainerName "dms-mssql" -SaPassword "pw" }
             $thrown | Should -Throw "*empty or whitespace-only value*" -Because "ambient shape: [$blankShape]"
-            $thrown | Should -Throw "*'DMS_CONFIG_DATABASE_NAME'*"
-            Remove-Item "Env:\DMS_CONFIG_DATABASE_NAME" -ErrorAction SilentlyContinue
+            $thrown | Should -Throw "*'CONFIGURATION_SERVICE_DATABASE_NAME'*"
+            Remove-Item "Env:\CONFIGURATION_SERVICE_DATABASE_NAME" -ErrorAction SilentlyContinue
         }
         Should -Invoke Invoke-NativeCommandWithInput -ModuleName env-utility -Times 0 -Exactly
     }
@@ -666,7 +666,7 @@ Describe "Assert-MssqlTopologyPhysicalConsistency boundary" {
 
         $noConnectionString = New-TopologyEnvFile -FileName "sep-nocs.env" -Marker "true" -DatastoreName "edfi_datastore" -OmitConnectionString
         { Assert-MssqlTopologyPhysicalConsistency -EnvironmentFile $noConnectionString -ContainerName "dms-mssql" -SaPassword "pw" } |
-            Should -Throw "*DMS_CONFIG_DATABASE_CONNECTION_STRING*"
+            Should -Throw "*CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING*"
 
         $noSegment = New-TopologyEnvFile -FileName "sep-noseg.env" -Marker "true" -DatastoreName "edfi_datastore" `
             -ConnectionString "Server=dms-mssql,1433;User Id=sa;Password=pw;TrustServerCertificate=true;"
@@ -696,7 +696,7 @@ Describe "Assert-MssqlTopologyPhysicalConsistency boundary" {
         $reservedHexDeclaration = "DECLARE @expected nvarchar(max) = CONVERT(nvarchar(max), $(ConvertTo-MssqlUtf16HexLiteral -Value $script:reservedName));"
         foreach ($row in $rows) {
             if ($null -ne $row.Ambient) { $env:DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE = $row.Ambient }
-            $lines = @("MSSQL_DB_NAME=edfi_datastore", "DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=pw;TrustServerCertificate=true;")
+            $lines = @("MSSQL_DB_NAME=edfi_datastore", "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=pw;TrustServerCertificate=true;")
             if ($null -ne $row.Line) { $lines = @($row.Line) + $lines }
             $path = Join-Path $TestDrive ".env.marker-$([Guid]::NewGuid().ToString('N'))"
             [System.IO.File]::WriteAllText($path, (($lines -join "`n") + "`n"), [System.Text.UTF8Encoding]::new($false))
@@ -710,10 +710,10 @@ Describe "Assert-MssqlTopologyPhysicalConsistency boundary" {
 
     It "selects separate semantics from the file marker even when the ambient marker says otherwise" {
         $expectedQuery = New-MssqlTopologyConsistencyQuery -ExpectedName $script:reservedName -Candidate ([ordered]@{
-                "DMS_CONFIG_DATABASE_CONNECTION_STRING" = $script:reservedName
+                "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" = $script:reservedName
                 "MSSQL_DB_NAME"                         = "edfi_datastore"
             })
-        $happy = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "DMS_CONFIG_DATABASE_CONNECTION_STRING" = "equal"; "MSSQL_DB_NAME" = "distinct" })
+        $happy = New-BatchOutput -VerdictBySourceKey ([ordered]@{ "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" = "equal"; "MSSQL_DB_NAME" = "distinct" })
         Mock Invoke-NativeCommandWithInput -ModuleName env-utility -MockWith {
             $script:capturedInputText = $InputText
             New-TransportResult -StandardOutput $happy

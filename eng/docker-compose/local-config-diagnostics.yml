@@ -14,16 +14,16 @@
 # guessing a pid. Suspend mode (the default) is required: /stacks depends on in-process
 # features the monitor can only inject while the runtime waits at startup, so CMS startup
 # blocks until the sidecar is up (hence the depends_on below). Set
-# CMS_DOTNET_DIAGNOSTIC_PORTS to '/diag/cms-monitor.sock,nosuspend' to trade /stacks for
+# CONFIGURATION_SERVICE_DOTNET_DIAGNOSTIC_PORTS to '/diag/cms-monitor.sock,nosuspend' to trade /stacks for
 # startup independence.
 services:
   config:
     environment:
-      DOTNET_EnableDiagnostics: ${CMS_DOTNET_ENABLE_DIAGNOSTICS:-1}
-      DOTNET_DiagnosticPorts: ${CMS_DOTNET_DIAGNOSTIC_PORTS:-/diag/cms-monitor.sock,suspend}
-      TMPDIR: ${CMS_DOTNET_TMPDIR:-/diag}
+      DOTNET_EnableDiagnostics: ${CONFIGURATION_SERVICE_DOTNET_ENABLE_DIAGNOSTICS:-1}
+      DOTNET_DiagnosticPorts: ${CONFIGURATION_SERVICE_DOTNET_DIAGNOSTIC_PORTS:-/diag/cms-monitor.sock,suspend}
+      TMPDIR: ${CONFIGURATION_SERVICE_DOTNET_TMPDIR:-/diag}
     volumes:
-      - ${CMS_DOTNET_DIAGNOSTICS_DIR:-../../.dms-dotnet-diagnostics}:/diag
+      - ${CONFIGURATION_SERVICE_DOTNET_DIAGNOSTICS_DIR:-../../.dms-dotnet-diagnostics}:/diag
     depends_on:
       cms-monitor:
         condition: service_started
@@ -53,9 +53,9 @@ services:
       DotnetMonitor_GlobalCounter__IntervalSeconds: "1"
       DotnetMonitor_Metrics__Providers__0__ProviderName: Npgsql
     ports:
-      - "127.0.0.1:${CMS_MONITOR_PORT:-52323}:52323"
+      - "127.0.0.1:${CONFIGURATION_SERVICE_MONITOR_PORT:-52323}:52323"
     volumes:
-      - ${CMS_DOTNET_DIAGNOSTICS_DIR:-../../.dms-dotnet-diagnostics}:/diag
+      - ${CONFIGURATION_SERVICE_DOTNET_DIAGNOSTICS_DIR:-../../.dms-dotnet-diagnostics}:/diag
     networks:
       - dms
     restart: unless-stopped

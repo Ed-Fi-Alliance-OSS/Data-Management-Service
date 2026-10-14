@@ -34,7 +34,7 @@ Three things must all be true before an identity operation runs.
 3. **An API client holds the identity claim.**
    A client reaches an operation only through a claim set that grants the identity service claim for that operation.
    A client with no data store assignment can hold such a claim set and reaches no resource data.
-   See [CMS client lifecycle](#cms-client-lifecycle).
+   See [Configuration Service client lifecycle](#configuration-service-client-lifecycle).
 
 The provider declares which of the five operations it supports.
 An operation the provider does not advertise answers `404` with `urn:ed-fi:api:identities:operation-not-supported`.
@@ -227,7 +227,7 @@ The tenant check on a multi-tenant host reads one snapshot of tenant names per p
 The 60-second, 5-second, and 30-second values are fixed and have no configuration.
 See [Identity tenant snapshot](./CACHING-STRATEGY.md#9-identity-tenant-snapshot).
 
-## CMS client lifecycle
+## Configuration Service client lifecycle
 
 An API client for identity operations is created, updated, and removed through the Configuration Service like any other.
 A client may be created with no data store assignment, read and updated, have its credential reset, acquire a token, and be deleted.
@@ -275,4 +275,4 @@ See [Cors](./CONFIGURATION.md#cors).
 
 Identity request paths, which can carry a UniqueId or a results token, are redacted before any log sink writes them.
 The redaction is always on, and it does not cover the provider exception detail logged at `Debug`.
-See the `Path` field in [Logging Policy](./LOGGING.md#cms-and-dms-request-log-console-contract).
+See the `Path` field in [Logging Policy](./LOGGING.md#configuration-service-and-dms-request-log-console-contract).

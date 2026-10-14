@@ -98,7 +98,7 @@ $script:RedactionRules = @(
     },
     # Environment-variable-style secrets: any NAME ending in PASSWORD/SECRET/TOKEN/KEY = value.
     # Deliberately not line-anchored: the same NAME=value pair appears mid-line in timestamped and
-    # prefixed diagnostics (`14:02:03 INFO DMS_CONFIG_IDENTITY_CLIENT_SECRET=...`) and with trailing
+    # prefixed diagnostics (`14:02:03 INFO CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET=...`) and with trailing
     # text after the value, neither of which an anchored rule matches. This rule is also what covers
     # underscore-prefixed credential names (`..._CLIENT_SECRET=`): the form-credential rule's \b cannot
     # match a key boundary made of '_', which is a word character. The preceding character is captured

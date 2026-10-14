@@ -137,7 +137,7 @@ cd ~/dms-src/eng/azure-vm/compose
 pwsh ../provision/setup-env.ps1 -PublicHost your-label.eastus.cloudapp.azure.com -LetsEncryptEmail you@org.tld
 ```
 
-`setup-env.ps1` generates secrets into `.env`, gets the Let's Encrypt cert, starts identity + CMS,
+`setup-env.ps1` generates secrets into `.env`, gets the Let's Encrypt cert, starts identity + the Configuration Service,
 and runs bootstrap; it does **not** start the DMS services — stage the ApiSchema workspace and
 provision the relational schema (see [`README.md`](../README.md) "What `setup-env.ps1` does NOT do"),
 then start them with `setup-env.ps1 -StartDms` (or `./up.sh st-dms mt-dms`). (The Let's Encrypt HTTP-01

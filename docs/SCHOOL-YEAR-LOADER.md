@@ -60,7 +60,7 @@ Invoke-SchoolYearLoader -StartYear 2020 -EndYear 2037 -CurrentSchoolYear 2024 -D
 | `EndYear` | int | 2037 | The last school year to load |
 | `CurrentSchoolYear` | int | 0 | The school year to mark as current. If 0, automatically calculated based on current date: if after June, uses next year; otherwise uses current year. |
 | `DmsUrl` | string | "http://localhost:8080" | Ed-Fi API URL |
-| `CmsUrl` | string | "http://localhost:8081" | Configuration Management Service URL |
+| `CmsUrl` | string | "http://localhost:8081" | Configuration Service URL |
 | `ClaimSetName` | string | 'BootstrapDescriptorsandEdOrgs' | Claim set for authentication |
 
 ### Function Parameters
@@ -78,16 +78,16 @@ The `Invoke-SchoolYearLoader` function accepts:
 ## Prerequisites
 
 1. **PowerShell 7 or later** - Required for cross-platform compatibility
-2. **Network Access** - Both DMS and CMS services must be accessible
+2. **Network Access** - Both DMS and the Configuration Service must be accessible
 3. **Running Services**:
-   - Configuration Management Service (CMS) for authentication
+   - Configuration Service for authentication
    - Ed-Fi API (DMS) for data loading
-4. **Authentication** - Valid claim set configured in CMS
+4. **Authentication** - Valid claim set configured in the Configuration Service
 
 ## How It Works
 
-1. **Authentication Setup**: The script connects to the CMS to obtain authentication credentials
-2. **Token Generation**: Uses the CMS to generate a DMS access token
+1. **Authentication Setup**: The script connects to the Configuration Service to obtain authentication credentials
+2. **Token Generation**: Uses the Configuration Service to generate a DMS access token
 3. **Current School Year Calculation**: If `CurrentSchoolYear` is not provided (or set to 0), it automatically calculates based on current date:
    - If current month is after June (July-December): uses next calendar year
    - If current month is June or before (January-June): uses current calendar year
@@ -122,7 +122,7 @@ The template management system imports the `SchoolYear-Loader.psm1` module and c
 The school year loader includes comprehensive error handling:
 
 - **Parameter Validation**: Ensures all years are positive integers and ranges are valid
-- **Service Connectivity**: Checks that both CMS and DMS services are accessible
+- **Service Connectivity**: Checks that both Configuration Service and DMS services are accessible
 - **Authentication**: Validates that tokens can be obtained and are valid
 - **API Errors**: Reports failures for individual school year loads
 - **Detailed Logging**: Provides clear feedback on progress and any issues

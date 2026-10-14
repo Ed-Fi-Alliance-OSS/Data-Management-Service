@@ -11,7 +11,7 @@ experiment condition and waits until CMS answers /health.
 .DESCRIPTION
 Every condition uses the same base compose set the E1/E2 stacks were built from
 (postgresql.yml, local-config.yml, both diagnostics overlays, .env.e2e,
-DMS_CONFIG_LOG_LEVEL=Debug) plus the resource-profile overlay, and differs from
+CONFIGURATION_SERVICE_LOG_LEVEL=Debug) plus the resource-profile overlay, and differs from
 'baseline' by exactly one overlay:
 
   baseline         - no control overlay
@@ -39,7 +39,7 @@ param(
 
     [string] $CmsContainerName = 'ed-fi-api-config-service',
 
-    # Claims directory bind-mounted into CMS (DMS_CONFIG_CLAIMS_MOUNT_SOURCE). A stack
+    # Claims directory bind-mounted into CMS (CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE). A stack
     # provisioned by build-dms.ps1 E2ETest mounts eng/docker-compose/.e2e-claims (extension
     # security metadata the E2E suite needs); pass it so the recompose keeps that mount.
     # Empty keeps local-config.yml's default.
@@ -65,11 +65,11 @@ $commonArguments = $fileArguments + @('--env-file', '.env.e2e', '-p', 'dms-local
 
 if ($PSCmdlet.ShouldProcess("dms-local config$(if ($RecreateDb -or $Condition -eq 'headroom') { ' and db' })", "Recompose as '$Condition' ($ResourceProfile)")) {
     Push-Location $composeDirectory
-    $previousLogLevel = $env:DMS_CONFIG_LOG_LEVEL
-    $previousClaimsMount = $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE
+    $previousLogLevel = $env:CONFIGURATION_SERVICE_LOG_LEVEL
+    $previousClaimsMount = $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE
     try {
-        $env:DMS_CONFIG_LOG_LEVEL = 'Debug'
-        if ($ClaimsMountSource) { $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = (Resolve-Path $ClaimsMountSource).Path }
+        $env:CONFIGURATION_SERVICE_LOG_LEVEL = 'Debug'
+        if ($ClaimsMountSource) { $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE = (Resolve-Path $ClaimsMountSource).Path }
         if ($RecreateDb -or $Condition -eq 'headroom') {
             & docker compose @commonArguments up -d --no-deps --force-recreate db
             if ($LASTEXITCODE -ne 0) { throw "docker compose up db failed ($LASTEXITCODE)." }
@@ -90,8 +90,8 @@ if ($PSCmdlet.ShouldProcess("dms-local config$(if ($RecreateDb -or $Condition -e
         }
     }
     finally {
-        $env:DMS_CONFIG_LOG_LEVEL = $previousLogLevel
-        $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = $previousClaimsMount
+        $env:CONFIGURATION_SERVICE_LOG_LEVEL = $previousLogLevel
+        $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE = $previousClaimsMount
         Pop-Location
     }
 

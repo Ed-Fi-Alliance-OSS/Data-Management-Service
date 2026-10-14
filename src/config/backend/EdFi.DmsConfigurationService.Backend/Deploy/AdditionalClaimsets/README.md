@@ -2,7 +2,7 @@
 
 ## Overview
 
-This directory contains JSON fragment files that extend the base Ed-Fi claims configuration when the DMS Configuration Service is running in hybrid mode. These fragments are automatically discovered and composed with the embedded base claims during service startup to create a complete claims hierarchy.
+This directory contains JSON fragment files that extend the base Ed-Fi claims configuration when the Configuration Service is running in hybrid mode. These fragments are automatically discovered and composed with the embedded base claims during service startup to create a complete claims hierarchy.
 
 ## Fragment Composition Process
 
@@ -93,10 +93,10 @@ For these fragments to be loaded, the Configuration Service must be configured w
 
 ```bash
 # Set claims source to hybrid mode (embedded base + fragments)
-DMS_CONFIG_CLAIMS_SOURCE=Hybrid
+CONFIGURATION_SERVICE_CLAIMS_SOURCE=Hybrid
 
 # Path to this directory (in container)
-DMS_CONFIG_CLAIMS_DIRECTORY=/app/additional-claims
+CONFIGURATION_SERVICE_CLAIMS_DIRECTORY=/app/additional-claims
 ```
 
 ## Usage in Docker
@@ -112,8 +112,8 @@ volumes:
 
 ```yaml
 environment:
-  - DMS_CONFIG_CLAIMS_SOURCE=Hybrid
-  - DMS_CONFIG_CLAIMS_DIRECTORY=/app/additional-claims
+  - CONFIGURATION_SERVICE_CLAIMS_SOURCE=Hybrid
+  - CONFIGURATION_SERVICE_CLAIMS_DIRECTORY=/app/additional-claims
 ```
 
 ## Testing
@@ -146,7 +146,7 @@ Common issues and solutions:
 
 1. **Fragment not loaded**: Ensure file follows `*-claimset.json` pattern
 2. **Invalid composition**: Check fragment JSON structure matches schema
-3. **Missing claim sets**: Verify `DMS_CONFIG_CLAIMS_SOURCE=Hybrid` and `DMS_CONFIG_CLAIMS_DIRECTORY` is correctly set
+3. **Missing claim sets**: Verify `CONFIGURATION_SERVICE_CLAIMS_SOURCE=Hybrid` and `CONFIGURATION_SERVICE_CLAIMS_DIRECTORY` is correctly set
 
 For detailed debugging, check the Configuration Service logs for entries like:
 - "Discovered X fragment files in path"

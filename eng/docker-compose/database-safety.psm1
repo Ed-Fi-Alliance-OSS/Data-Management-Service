@@ -1266,7 +1266,7 @@ function Get-CmsDatabaseTopologyDefaultConnectionString {
     .SYNOPSIS
         Constructs the concrete PostgreSQL connection-string default
         Confirm-CmsDatabaseTopologyAgreement validates against when
-        DMS_CONFIG_DATABASE_CONNECTION_STRING is entirely absent, in exactly the shape the checked-in
+        CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING is entirely absent, in exactly the shape the checked-in
         local-config.yml / published-config.yml nested Compose fallback renders (confirmed against a
         real `docker compose config` invocation - see CmsDatabaseTopology.Tests.ps1's Compose-rendering
         oracle).
@@ -1492,7 +1492,7 @@ function Assert-E2EDatabaseIsDedicated {
 
     foreach ($connectionStringKey in @(
             "DATABASE_CONNECTION_STRING_ADMIN",
-            "DMS_CONFIG_DATABASE_CONNECTION_STRING"
+            "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"
         )) {
         if (-not (Test-ProtectedKeyConfigured -EnvironmentValues $EnvironmentValues -Name $connectionStringKey)) {
             continue
