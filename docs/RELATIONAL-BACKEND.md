@@ -188,8 +188,9 @@ carry that column, which it stages but does not copy. A full Northridge reload o
 republication is not a DMS-1404 closure gate.
 
 **`dms.Document.CreatedAt` removal (DMS-1403).** Freshly provisioned schemas no longer have
-`dms.Document.CreatedAt` on either engine. The column was never read, and it is removed without
-a replacement creation-time capability. `RelationalMappingVersion` stays `v3`, and generated
+`dms.Document.CreatedAt` on either engine. The DMS API data path did not use this column;
+removing it does not change API fields, ETags, change queries, or authorization decisions. It
+is removed without a replacement creation-time capability. `RelationalMappingVersion` stays `v3`, and generated
 DDL is not a hash input, so `EffectiveSchemaHash` is unchanged. A matching hash and successful
 startup validation therefore cannot prove that a database no longer has the column. Verify the
 catalog instead. The first query must return at least one row, which proves the table exists.

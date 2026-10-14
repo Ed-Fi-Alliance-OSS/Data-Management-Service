@@ -142,9 +142,9 @@ Notes:
   - `ContentVersion` / `ContentLastModifiedAt`: bump when the document's full resource-state representation changes (local write, or cascaded update to reference-identity storage columns and any dependent generated aliases).
   - Identity-projection changes that alter the stored representation are reflected through the same content stamps.
   - API `_lastModifiedDate` and per-item `ChangeVersion` are served from these stored stamps. `_lastModifiedDate` uses the existing DMS whole-second UTC `yyyy-MM-ddTHH:mm:ssZ` formatter, discarding fractional seconds without rounding. API `_etag` is composed from `ContentVersion` plus a representation `variantKey` (schema epoch, format, profile code, link flag, and content-coding code); the document body is not hashed for etag construction.
-- `dms.Document` has no creation-time column. The former `CreatedAt` was never read and was
-  removed without replacement (DMS-1403); no API field, ETag, change query, or ownership
-  decision depended on it.
+- `dms.Document` has no creation-time column. The former `CreatedAt` was removed without
+  replacement (DMS-1403). The DMS API data path did not use this column; removing it does not
+  change API fields, ETags, change queries, or authorization decisions.
 - Time semantics: store timestamps as UTC instants at provider precision. In PostgreSQL, use `timestamp with time zone`; in SQL Server, use `datetime2` with UTC writers (e.g., `sysutcdatetime()`). Public `_lastModifiedDate` formatting is the whole-second UTC representation defined above.
 - Authorization is addressed separately in [auth.md](auth.md).
 
