@@ -8780,30 +8780,6 @@ public class Given_Default_Relational_Write_Executor
                         identityColumns.Select(columnModel => columnModel.ColumnName).ToArray(),
                         new TriggerKindParameters.DocumentStamping()
                     ),
-                    new DbTriggerInfo(
-                        new DbTriggerName("TR_School_ReferentialIdentity"),
-                        resourceModel.Root.Table,
-                        [new DbColumnName("DocumentId")],
-                        identityColumns.Select(columnModel => columnModel.ColumnName).ToArray(),
-                        new TriggerKindParameters.ReferentialIdentityMaintenance(
-                            resourceKey.ResourceKeyId,
-                            resource.ProjectName,
-                            resource.ResourceName,
-                            identityColumns
-                                .Select(columnModel => new IdentityElementMapping(
-                                    columnModel.ColumnName,
-                                    columnModel.SourceJsonPath?.Canonical
-                                        ?? throw new InvalidOperationException(
-                                            "Expected a root identity source path."
-                                        ),
-                                    columnModel.ScalarType
-                                        ?? throw new InvalidOperationException(
-                                            "Expected a root identity scalar type."
-                                        )
-                                ))
-                                .ToArray()
-                        )
-                    ),
                 ]
             ),
             WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>
@@ -8825,7 +8801,32 @@ public class Given_Default_Relational_Write_Executor
                 QualifiedResourceName,
                 IReadOnlyList<ResolvedSecurableElementPath>
             >()
-        );
+        )
+        {
+            OwnNaturalKeyProbesByResource = new Dictionary<QualifiedResourceName, OwnNaturalKeyProbe>
+            {
+                [resource] = new(
+                    resource,
+                    resourceModel.Root.Table,
+                    identityColumns
+                        .Select(columnModel => new NaturalKeyProbeKeyColumn(
+                            columnModel.SourceJsonPath
+                                ?? throw new InvalidOperationException(
+                                    "Expected a root identity source path."
+                                ),
+                            columnModel.ColumnName,
+                            new NaturalKeyProbeKeyBinding.Scalar(
+                                columnModel.ScalarType
+                                    ?? throw new InvalidOperationException(
+                                        "Expected a root identity scalar type."
+                                    )
+                            )
+                        ))
+                        .ToArray(),
+                    new DbColumnName("DocumentId")
+                ),
+            },
+        };
     }
 
     internal static ResourceReadPlan CreateReadPlan(

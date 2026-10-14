@@ -133,18 +133,18 @@ public class Given_Relational_Write_Constraint_Resolver
     }
 
     [Test]
-    public void It_preserves_the_missing_trigger_metadata_diagnostic_when_identity_trigger_inventory_is_missing()
+    public void It_reports_a_missing_own_natural_key_probe()
     {
         var fixture = CreateFixture();
-        var mappingSetWithoutReferentialIdentityTrigger = fixture.ReferenceResolverRequest.MappingSet with
+        var mappingSetWithoutProbe = fixture.ReferenceResolverRequest.MappingSet with
         {
-            Model = fixture.ReferenceResolverRequest.MappingSet.Model with { TriggersInCreateOrder = [] },
+            OwnNaturalKeyProbesByResource = new Dictionary<QualifiedResourceName, OwnNaturalKeyProbe>(),
         };
         var request = new RelationalWriteConstraintResolutionRequest(
             fixture.WritePlan,
             fixture.ReferenceResolverRequest with
             {
-                MappingSet = mappingSetWithoutReferentialIdentityTrigger,
+                MappingSet = mappingSetWithoutProbe,
             },
             new RelationalWriteExceptionClassification.UniqueConstraintViolation(
                 fixture.RootNaturalKeyConstraintName
@@ -156,7 +156,7 @@ public class Given_Relational_Write_Constraint_Resolver
         act.Should()
             .Throw<InvalidOperationException>()
             .WithMessage(
-                "Mapping set 'schema-hash/Pgsql/v1' is missing referential-identity trigger metadata for resource 'Ed-Fi.Section'."
+                "Mapping set 'schema-hash/Pgsql/v1' is missing the own natural-key probe for resource 'Ed-Fi.Section'."
             );
     }
 
@@ -607,31 +607,7 @@ public class Given_Relational_Write_Constraint_Resolver
                 [],
                 [],
                 [],
-                [
-                    new DbTriggerInfo(
-                        new DbTriggerName("TR_Section_ReferentialIdentity"),
-                        sectionRootTable.Table,
-                        [new DbColumnName("DocumentId")],
-                        [new DbColumnName("SchoolReference_SchoolId"), new DbColumnName("SectionIdentifier")],
-                        new TriggerKindParameters.ReferentialIdentityMaintenance(
-                            sectionKey.ResourceKeyId,
-                            SectionResource.ProjectName,
-                            SectionResource.ResourceName,
-                            [
-                                new IdentityElementMapping(
-                                    new DbColumnName("SchoolReference_SchoolId"),
-                                    "$.schoolReference.schoolId",
-                                    new RelationalScalarType(ScalarKind.Int32)
-                                ),
-                                new IdentityElementMapping(
-                                    new DbColumnName("SectionIdentifier"),
-                                    "$.sectionIdentifier",
-                                    new RelationalScalarType(ScalarKind.String, 50)
-                                ),
-                            ]
-                        )
-                    ),
-                ]
+                []
             ),
             new Dictionary<QualifiedResourceName, ResourceWritePlan> { [SectionResource] = writePlan },
             new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
@@ -648,7 +624,34 @@ public class Given_Relational_Write_Constraint_Resolver
                 [descriptorKey.ResourceKeyId] = descriptorKey,
             },
             new Dictionary<QualifiedResourceName, IReadOnlyList<ResolvedSecurableElementPath>>()
-        );
+        )
+        {
+            OwnNaturalKeyProbesByResource = new Dictionary<QualifiedResourceName, OwnNaturalKeyProbe>
+            {
+                [SectionResource] = new(
+                    SectionResource,
+                    sectionRootTable.Table,
+                    [
+                        new NaturalKeyProbeKeyColumn(
+                            documentReferenceBinding.IdentityBindings[0].ReferenceJsonPath,
+                            documentReferenceBinding.FkColumn,
+                            new NaturalKeyProbeKeyBinding.DocumentReference(0)
+                        ),
+                        new NaturalKeyProbeKeyColumn(
+                            new JsonPathExpression(
+                                "$.sectionIdentifier",
+                                [new JsonPathSegment.Property("sectionIdentifier")]
+                            ),
+                            new DbColumnName("SectionIdentifier"),
+                            new NaturalKeyProbeKeyBinding.Scalar(
+                                new RelationalScalarType(ScalarKind.String, 50)
+                            )
+                        ),
+                    ],
+                    new DbColumnName("DocumentId")
+                ),
+            },
+        };
 
         return new ResolverFixture(
             writePlan,
