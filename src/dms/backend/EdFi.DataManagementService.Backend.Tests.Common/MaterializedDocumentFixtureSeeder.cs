@@ -185,8 +185,7 @@ public sealed class MaterializedDocumentFixtureSeeder(
                     {_dialect.Quote("ContentVersion")} bigint NOT NULL,
                     {_dialect.Quote(
                         "ContentLastModifiedAt"
-                    )} {_dialect.TimestampWithOffsetColumnType} NOT NULL,
-                    {_dialect.Quote("CreatedAt")} {_dialect.TimestampWithOffsetColumnType} NOT NULL
+                    )} {_dialect.TimestampWithOffsetColumnType} NOT NULL
                     """
                 ),
                 []
@@ -331,7 +330,6 @@ public sealed class MaterializedDocumentFixtureSeeder(
                             "CreatedByOwnershipTokenId",
                             "ContentVersion",
                             "ContentLastModifiedAt",
-                            "CreatedAt",
                         ],
                         [
                             parameters[0].Name,
@@ -339,7 +337,6 @@ public sealed class MaterializedDocumentFixtureSeeder(
                             parameters[2].Name,
                             "NULL",
                             parameters[3].Name,
-                            parameters[4].Name,
                             parameters[4].Name,
                         ],
                         useExplicitIdentityInsert: !_options.CreateSchemasAndTables

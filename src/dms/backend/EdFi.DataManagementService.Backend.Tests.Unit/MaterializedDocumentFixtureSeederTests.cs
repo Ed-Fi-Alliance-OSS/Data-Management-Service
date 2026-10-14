@@ -85,7 +85,7 @@ public class Given_MaterializedDocumentFixtureSeeder
         documentInsert
             .CommandText.Should()
             .Be(
-                "INSERT INTO \"dms\".\"Document\" (\"DocumentId\", \"DocumentUuid\", \"ResourceKeyId\", \"CreatedByOwnershipTokenId\", \"ContentVersion\", \"ContentLastModifiedAt\", \"CreatedAt\") VALUES (@p0, @p1, @p2, NULL, @p3, @p4, @p4)"
+                "INSERT INTO \"dms\".\"Document\" (\"DocumentId\", \"DocumentUuid\", \"ResourceKeyId\", \"CreatedByOwnershipTokenId\", \"ContentVersion\", \"ContentLastModifiedAt\") VALUES (@p0, @p1, @p2, NULL, @p3, @p4)"
             );
         documentInsert.Parameters.Should().Contain(parameter => Equals(parameter.Value, 970101L));
         documentInsert
@@ -143,7 +143,7 @@ public class Given_MaterializedDocumentFixtureSeeder
         documentInsert
             .CommandText.Should()
             .Be(
-                "INSERT INTO [dms].[Document] ([DocumentId], [DocumentUuid], [ResourceKeyId], [CreatedByOwnershipTokenId], [ContentVersion], [ContentLastModifiedAt], [CreatedAt]) VALUES (@p0, @p1, @p2, NULL, @p3, @p4, @p4)"
+                "INSERT INTO [dms].[Document] ([DocumentId], [DocumentUuid], [ResourceKeyId], [CreatedByOwnershipTokenId], [ContentVersion], [ContentLastModifiedAt]) VALUES (@p0, @p1, @p2, NULL, @p3, @p4)"
             );
 
         var descriptorInsert = commands.Single(command => command.DescriptorKey is not null);
