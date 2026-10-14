@@ -58,7 +58,7 @@ public static class RelationalModelSetPasses
             new MssqlForeignKeyPruningPass(),
             new ApplyConstraintDialectHashingPass(),
             new ValidateForeignKeyStorageInvariantPass(),
-            // Synthesize the change-version mirror columns on resource roots before index/trigger
+            // Synthesize the version mirror and authoritative timestamp on resource roots before index/trigger
             // inventory derivation, so root content-version indexes and the descriptor composite index
             // are produced and the columns participate in dialect shortening and canonical ordering.
             new DeriveContentVersionMirrorPass(),

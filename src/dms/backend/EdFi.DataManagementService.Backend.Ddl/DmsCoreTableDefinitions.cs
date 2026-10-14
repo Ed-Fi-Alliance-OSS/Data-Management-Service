@@ -42,13 +42,6 @@ internal static class DmsCoreTableDefinitions
                     SequenceDefault(dialect)
                 ),
                 new(
-                    Col("ContentLastModifiedAt"),
-                    DateTimeType(dialect),
-                    IsNullable: false,
-                    "DF_Document_ContentLastModifiedAt",
-                    dialect.CurrentTimestampDefaultExpression
-                ),
-                new(
                     Col("CreatedAt"),
                     DateTimeType(dialect),
                     IsNullable: false,

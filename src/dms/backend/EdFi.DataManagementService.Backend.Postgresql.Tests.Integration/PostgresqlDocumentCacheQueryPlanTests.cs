@@ -32,7 +32,6 @@ public class Given_A_Postgresql_DocumentCacheQueryPlan_Evidence
 
     private static readonly QualifiedResourceName PersonResource = new("Ed-Fi", "Person");
     private static readonly DateTimeOffset FirstEnqueuedAt = new(2026, 8, 1, 12, 0, 0, TimeSpan.Zero);
-    private static readonly DateTimeOffset LastModifiedAt = new(2026, 8, 1, 12, 1, 0, TimeSpan.Zero);
     private static readonly DocumentCachePhysicalSourceFingerprint Fingerprint = new(
         "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     );
@@ -201,14 +200,12 @@ public class Given_A_Postgresql_DocumentCacheQueryPlan_Evidence
             INSERT INTO "dms"."Document" (
                 "DocumentUuid",
                 "ResourceKeyId",
-                "ContentVersion",
-                "ContentLastModifiedAt"
+                "ContentVersion"
             )
             SELECT
                 ('00000000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
                 @resourceKeyId,
-                series,
-                @lastModifiedAt
+                series
             FROM generate_series(1, @documentCount) AS series;
 
             INSERT INTO "dms"."DocumentProjectionWork" (
@@ -231,7 +228,6 @@ public class Given_A_Postgresql_DocumentCacheQueryPlan_Evidence
             new NpgsqlParameter("resourceKeyId", NpgsqlDbType.Smallint) { Value = resourceKeyId },
             new NpgsqlParameter("documentCount", NpgsqlDbType.Integer) { Value = ScaleDocumentCount },
             new NpgsqlParameter("workRowCount", NpgsqlDbType.Integer) { Value = ScaleWorkRowCount },
-            new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz) { Value = LastModifiedAt },
             new NpgsqlParameter("firstEnqueuedAt", NpgsqlDbType.TimestampTz) { Value = FirstEnqueuedAt }
         );
     }

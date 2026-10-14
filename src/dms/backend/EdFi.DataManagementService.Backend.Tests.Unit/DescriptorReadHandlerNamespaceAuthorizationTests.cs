@@ -119,7 +119,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         // The descriptor read has already materialized the row by the time the check runs, so the membership
         // query is bound to that row's DocumentId rather than to a re-resolved target.
         List<CustomViewAuthorizationExecutionRequest> capturedRequests = [];
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(CreateDescriptorRow(documentId: 101L)),
             ]),
@@ -148,7 +148,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     [Test]
     public async Task It_returns_a_custom_view_403_for_a_descriptor_get_by_id_the_view_excludes()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(CreateDescriptorRow()),
             ]),
@@ -175,7 +175,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     {
         // Both are AND filters executing in CMS-configured order and the first failure is reported. The
         // namespace value here would also fail, so only ordering can produce the custom-view answer.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
                     CreateDescriptorRow(ns: "uri://other.org/SchoolTypeDescriptor")
@@ -203,7 +203,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     {
         // The mirror of the previous case: the custom view would also deny, so a namespace answer proves the
         // later-configured view did not run first.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
                     CreateDescriptorRow(ns: "uri://other.org/SchoolTypeDescriptor")
@@ -234,7 +234,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     [Test]
     public async Task It_returns_not_exists_for_a_descriptor_get_by_id_whose_row_was_deleted_before_the_check()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(CreateDescriptorRow()),
             ]),
@@ -254,7 +254,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     [Test]
     public async Task It_returns_security_configuration_500_when_a_descriptor_get_by_id_custom_view_reports_an_unmappable_payload()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(CreateDescriptorRow()),
             ]),
@@ -282,7 +282,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     {
         // The namespace 403 resolves before any row is fetched, but a custom view configured ahead of it still
         // executes first, so a missing or non-conforming view has to keep its own 500.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
         var sut = CreateSut(commandExecutor);
@@ -311,7 +311,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     {
         // The run would have aborted at the namespace position, so a view configured after it never executes
         // and must not be probed either.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateSut(commandExecutor);
 
         var result = await sut.HandleGetByIdAsync(
@@ -334,7 +334,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     {
         // An unrecognized strategy is a 500 from the relationship classifier. A custom view configured ahead of
         // it executes first, so its own configuration failure must not be masked.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
         var sut = CreateSut(commandExecutor);
@@ -365,7 +365,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         // it executes first, so a missing or non-conforming view has to keep its own 500 rather than being
         // hidden by the 501. The one scripted execution is the validation probe; a row fetch never happens on
         // this path.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
         var sut = CreateSut(commandExecutor);
@@ -398,7 +398,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         string authorizationStrategyName
     )
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateSut(commandExecutor);
 
         var result = await sut.HandleGetByIdAsync(
@@ -424,7 +424,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     public async Task It_returns_security_configuration_for_descriptor_get_by_id_with_an_unknown_strategy_without_executing_sql()
     {
         const string unknownStrategyName = "UnknownDescriptorStrategy";
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateSut(commandExecutor);
 
         var result = await sut.HandleGetByIdAsync(
@@ -450,7 +450,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     [Test]
     public async Task It_returns_namespace_403_for_descriptor_get_by_id_without_executing_sql_when_the_client_has_no_prefixes()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateSut(commandExecutor);
 
         var result = await sut.HandleGetByIdAsync(
@@ -471,7 +471,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         // An empty namespace prefix cannot be parameterized into a LIKE predicate. Rather than escaping as
         // an uncontrolled 500 from the parameterization factory, it fails closed as a controlled
         // security-configuration result before any SQL roundtrip.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateSut(commandExecutor);
 
         var result = await sut.HandleGetByIdAsync(
@@ -495,7 +495,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     [Test]
     public async Task It_returns_namespace_403_for_descriptor_get_by_id_when_the_stored_namespace_does_not_match_a_prefix()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
                     CreateDescriptorRow(ns: "uri://other.org/SchoolTypeDescriptor")
@@ -522,7 +522,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         // StoredDocument reads are internal read-modify-write fetches that bypass per-record
         // authorization, mirroring the generic single-record path. A stored namespace that an
         // external response would reject with a 403 must still be returned for a StoredDocument read.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
                     CreateDescriptorRow(ns: "uri://other.org/SchoolTypeDescriptor")
@@ -545,7 +545,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     [Test]
     public async Task It_returns_get_success_when_the_stored_descriptor_namespace_matches_a_configured_prefix()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
                     CreateDescriptorRow(ns: "uri://ed-fi.org/SchoolTypeDescriptor")
@@ -571,7 +571,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         // column uses, so the descriptor GET-many and write paths (SQL LIKE) reject a stored namespace
         // that only case-differs from a configured prefix. The single-record GET-by-id in-memory check
         // must reject the same value so a descriptor cannot be read by id that the other paths exclude.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
                     CreateDescriptorRow(ns: "uri://ED-FI.ORG/SchoolTypeDescriptor")
@@ -599,7 +599,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         // SQL Server LIKE is case-insensitive under the default collation the Namespace column inherits,
         // so the descriptor GET-many and write paths accept a stored namespace that case-differs from a
         // configured prefix. The single-record GET-by-id in-memory check must accept the same value.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
                     CreateDescriptorRow(ns: "uri://ED-FI.ORG/SchoolTypeDescriptor")
@@ -625,7 +625,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         // An existing descriptor row whose Namespace is empty is not "not found": it fails closed as a
         // 403 with StoredNamespaceUninitialized rather than a 404, so a caller cannot tell an
         // unauthorized uninitialized row apart from a missing one.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(CreateDescriptorRow(ns: "")),
             ]),
@@ -653,7 +653,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         // StoredNamespaceUninitialized case. The row reader exposes the null and the handler
         // emits a 403 with that failure kind rather than letting the row-reader invariant mask it
         // as a 500. The empty-string sibling case (covered above) maps to the same outcome.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(CreateDescriptorRow(ns: null)),
             ]),
@@ -677,7 +677,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     [Test]
     public async Task It_returns_not_exists_when_the_target_row_is_missing_under_namespace_authorization()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
         var sut = CreateSut(commandExecutor);
@@ -697,7 +697,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         string authorizationStrategyName
     )
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateSut(commandExecutor);
 
         var result = await sut.HandleQueryAsync(
@@ -729,7 +729,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         bool totalCount
     )
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateSut(commandExecutor);
 
         var result = await sut.HandleQueryAsync(
@@ -755,7 +755,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     [Test]
     public async Task It_fails_a_descriptor_query_at_the_ownership_token_cap_without_executing_sql()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateSut(commandExecutor);
 
         var result = await sut.HandleQueryAsync(
@@ -802,7 +802,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         string expectedOwnershipPredicate
     )
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor(
+        var commandExecutor = new DescriptorReadCommandExecutor(
             [
                 new InMemoryRelationalCommandExecution([
                     InMemoryRelationalResultSet.Create(new Dictionary<string, object?> { ["count"] = 1L }),
@@ -865,7 +865,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     [Test]
     public async Task It_counts_ownership_tokens_in_the_mssql_descriptor_query_parameter_budget()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([], SqlDialect.Mssql);
+        var commandExecutor = new DescriptorReadCommandExecutor([], SqlDialect.Mssql);
         var sut = CreateSut(commandExecutor);
         string[] namespacePrefixes =
         [
@@ -904,7 +904,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     public async Task It_returns_security_configuration_for_descriptor_query_with_an_unknown_strategy_without_executing_sql()
     {
         const string unknownStrategyName = "UnknownDescriptorStrategy";
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateSut(commandExecutor);
 
         var result = await sut.HandleQueryAsync(
@@ -930,7 +930,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     [Test]
     public async Task It_returns_namespace_403_for_descriptor_query_without_executing_sql_when_the_client_has_no_prefixes()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateSut(commandExecutor);
 
         var result = await sut.HandleQueryAsync(
@@ -954,7 +954,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         // NamespaceBased is configured first, so its no-prefixes 403 is the terminal even though a
         // later strategy is a security-configuration failure (unrecognized, or a custom-view name
         // whose basis resource does not resolve).
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateSut(commandExecutor);
 
         var result = await sut.HandleQueryAsync(
@@ -980,7 +980,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     [Test]
     public async Task It_emits_a_pgsql_descriptor_namespace_filter_and_binds_the_prefix_array_when_querying_with_namespace_authorization()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
                     CreateDescriptorRow(ns: "uri://ed-fi.org/SchoolTypeDescriptor")
@@ -1015,7 +1015,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     [Test]
     public async Task It_emits_a_mssql_descriptor_namespace_filter_and_binds_scalar_prefix_parameters_when_querying_with_namespace_authorization()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
                     CreateDescriptorRow(ns: "uri://ed-fi.org/SchoolTypeDescriptor")
@@ -1057,7 +1057,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     [Test]
     public async Task It_emits_the_descriptor_namespace_filter_in_the_total_count_sql_too()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(new Dictionary<string, object?> { ["count"] = 1L }),
                 InMemoryRelationalResultSet.Create(
@@ -1093,7 +1093,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         // page. Returning a row that the SQL predicate would have excluded proves the handler does
         // no second-pass namespace check after fetch (a regression here would re-introduce the
         // pagination-breaking C# filter the spec rules out).
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
                     CreateDescriptorRow(ns: "uri://other.org/SchoolTypeDescriptor")
@@ -1116,7 +1116,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     [Test]
     public async Task It_returns_security_configuration_500_for_descriptor_query_without_executing_sql_when_mssql_prefix_cap_is_exceeded()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateSut(commandExecutor);
         var prefixes = Enumerable
             .Range(0, NamespacePrefixLimitExceededException.MssqlScalarParameterLimit)
@@ -1138,7 +1138,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     [Test]
     public async Task It_returns_an_empty_query_page_when_the_sql_predicate_returns_no_rows()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
         var sut = CreateSut(commandExecutor);
@@ -1177,7 +1177,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     [Test]
     public async Task It_returns_namespace_403_for_descriptor_get_by_id_with_ownership_when_the_client_has_no_prefixes()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateSut(commandExecutor);
 
         var result = await sut.HandleGetByIdAsync(
@@ -1204,7 +1204,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     public async Task It_authorizes_a_descriptor_get_by_id_the_caller_owns()
     {
         List<OwnershipAuthorizationExecutionRequest> ownershipRequests = [];
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(CreateDescriptorRow(documentId: 101L)),
             ]),
@@ -1248,7 +1248,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
             0,
             AuthorizationStrategyNameConstants.OwnershipBased
         );
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(CreateDescriptorRow()),
             ]),
@@ -1282,7 +1282,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     [Test]
     public async Task It_returns_not_exists_for_a_missing_descriptor_before_the_ownership_check()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
         var sut = CreateSut(commandExecutor);
@@ -1301,7 +1301,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     [Test]
     public async Task It_returns_not_exists_for_a_descriptor_deleted_before_the_ownership_check()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(CreateDescriptorRow()),
             ]),
@@ -1327,7 +1327,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     [Test]
     public async Task It_returns_security_configuration_500_when_the_descriptor_ownership_check_reports_an_unmappable_payload()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(CreateDescriptorRow()),
             ]),
@@ -1361,7 +1361,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     [Test]
     public async Task It_reports_a_namespace_denial_ahead_of_ownership_configured_before_it()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
                     CreateDescriptorRow(ns: "uri://other.org/SchoolTypeDescriptor")
@@ -1391,7 +1391,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     [Test]
     public async Task It_reports_a_custom_view_denial_ahead_of_ownership_configured_before_it()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(CreateDescriptorRow()),
             ]),
@@ -1456,7 +1456,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
                     new OwnershipAuthorizationExecutionResult.NotAuthorized(denial)
                 )
             );
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(CreateDescriptorRow()),
             ]),
@@ -1486,7 +1486,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     public async Task It_runs_one_descriptor_ownership_check_at_the_earliest_of_duplicate_configurations()
     {
         List<OwnershipAuthorizationExecutionRequest> ownershipRequests = [];
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(CreateDescriptorRow()),
             ]),
@@ -1527,7 +1527,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     [Test]
     public async Task It_fails_closed_for_a_descriptor_get_by_id_over_the_ownership_token_cap_without_executing_sql()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateSut(commandExecutor);
 
         var result = await sut.HandleGetByIdAsync(
@@ -1563,7 +1563,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     [Test]
     public async Task It_validates_a_descriptor_get_by_id_custom_view_configured_after_ownership_before_the_token_cap()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
         var sut = CreateSut(commandExecutor);
@@ -1591,7 +1591,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     [Test]
     public async Task It_does_not_run_the_ownership_check_for_a_stored_document_descriptor_read()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(CreateDescriptorRow()),
             ]),
@@ -1730,7 +1730,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         [.. Enumerable.Range(1, count).Select(static tokenId => (short)tokenId)];
 
     private static DescriptorReadHandler CreateSut(
-        InMemoryRelationalCommandExecutor commandExecutor,
+        DescriptorReadCommandExecutor commandExecutor,
         ICustomViewAuthorizationExecutor? customViewAuthorizationExecutor = null,
         IOwnershipAuthorizationExecutor? ownershipAuthorizationExecutor = null
     ) =>

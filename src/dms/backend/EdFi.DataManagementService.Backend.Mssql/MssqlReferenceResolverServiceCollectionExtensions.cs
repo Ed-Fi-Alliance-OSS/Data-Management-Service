@@ -191,12 +191,11 @@ internal sealed class MssqlDocumentHydrator : IDocumentHydrator
         await using var leased = await _openConnectionAsync(ct).ConfigureAwait(false);
         DbConnection connection = leased.Connection;
 
-        return await HydrationExecutor.ExecuteAsync(
+        return await ConsistentHydrationExecutor.ExecuteAsync(
             connection,
             plan,
             keyset,
             SqlDialect.Mssql,
-            transaction: null,
             executionOptions,
             ct
         );

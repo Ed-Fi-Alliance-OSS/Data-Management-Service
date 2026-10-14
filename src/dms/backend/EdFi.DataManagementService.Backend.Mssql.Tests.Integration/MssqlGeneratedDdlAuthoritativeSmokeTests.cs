@@ -33,6 +33,7 @@ internal sealed record AuthoritativeSampleSmokeSeedData(
 
 internal sealed record ExecutedPlanStatement(int ParentObjectId, string StatementText);
 
+/// <summary>Document version paired with the owning resource timestamp.</summary>
 internal sealed record DocumentStampState(long ContentVersion, DateTimeOffset ContentLastModifiedAt);
 
 internal sealed record CourseOfferingSessionReferenceState(
@@ -675,7 +676,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         // The @stamped pre-population sits outside the guard precisely so a root insert still carries
         // the document's existing stamp into the mirror. If the guard ever swallowed it, the mirror
         // would keep its DEFAULT 0 sentinel and this would fail.
-        await AssertRootMirrorMatchesDocumentAsync("edfi", "Contact", documentId);
+        await AssertRootVersionMatchesDocumentAsync("edfi", "Contact", documentId);
 
         // Control arm. The same statement is captured when the guard admits real work, so its
         // absence above is "it did not execute", not "it is not visible to this capture".
@@ -761,7 +762,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         // The @stamped pre-population sits outside the guard precisely so a descriptor insert still
         // carries the document's existing stamp into the mirror. If the guard ever swallowed it, the
         // mirror would keep its DEFAULT 0 sentinel and this would fail.
-        await AssertRootMirrorMatchesDocumentAsync("dms", "Descriptor", documentId);
+        await AssertRootVersionMatchesDocumentAsync("dms", "Descriptor", documentId);
 
         // Control arm. The same statement is captured when the guard admits real work, so its
         // absence above is "it did not execute", not "it is not visible to this capture".
@@ -859,7 +860,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
             // The FORCESEEK-hinted mirror update has to land on every row of the workset, not only
             // on whichever row a single-row plan would have found.
-            await AssertRootMirrorMatchesDocumentAsync("edfi", "Contact", documentId);
+            await AssertRootVersionMatchesDocumentAsync("edfi", "Contact", documentId);
             contentVersions.Add(after.ContentVersion);
         }
 
@@ -876,7 +877,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     {
         var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
         var beforeMirror = await GetRootMirrorStampStateAsync("edfi", "Contact", _seedData.ContactDocumentId);
-        AssertMirrorContentMatchesDocument(beforeMirror, before);
+        AssertRootVersionMatchesDocument(beforeMirror, before);
 
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
@@ -895,7 +896,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         after.Should().Be(before);
         afterMirror.Should().Be(beforeMirror);
-        AssertMirrorContentMatchesDocument(afterMirror, after);
+        AssertRootVersionMatchesDocument(afterMirror, after);
     }
 
     [Test]
@@ -927,7 +928,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     {
         var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
         var beforeMirror = await GetRootMirrorStampStateAsync("edfi", "Contact", _seedData.ContactDocumentId);
-        AssertMirrorContentMatchesDocument(beforeMirror, before);
+        AssertRootVersionMatchesDocument(beforeMirror, before);
 
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
@@ -946,7 +947,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         after.Should().Be(before);
         afterMirror.Should().Be(beforeMirror);
-        AssertMirrorContentMatchesDocument(afterMirror, after);
+        AssertRootVersionMatchesDocument(afterMirror, after);
     }
 
     [Test]
@@ -1009,7 +1010,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     {
         var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
         var beforeMirror = await GetRootMirrorStampStateAsync("edfi", "Contact", _seedData.ContactDocumentId);
-        AssertMirrorContentMatchesDocument(beforeMirror, before);
+        AssertRootVersionMatchesDocument(beforeMirror, before);
 
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
@@ -1026,7 +1027,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         after.Should().Be(before);
         afterMirror.Should().Be(beforeMirror);
-        AssertMirrorContentMatchesDocument(afterMirror, after);
+        AssertRootVersionMatchesDocument(afterMirror, after);
     }
 
     [Test]
@@ -1281,9 +1282,9 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         // Survey's identity is Namespace + SurveyIdentifier only; Session_SessionName is a reference
         // field, not part of Survey's identity. The cascade still changes its stored representation.
 
-        AssertMirrorContentMatchesDocument(afterSessionMirror, afterSession);
-        AssertMirrorContentMatchesDocument(afterCourseOfferingMirror, afterCourseOffering);
-        AssertMirrorContentMatchesDocument(afterSurveyMirror, afterSurvey);
+        AssertRootVersionMatchesDocument(afterSessionMirror, afterSession);
+        AssertRootVersionMatchesDocument(afterCourseOfferingMirror, afterCourseOffering);
+        AssertRootVersionMatchesDocument(afterSurveyMirror, afterSurvey);
 
         // The renamed Session and the cascade-updated CourseOffering each insert
         // exactly one key-change row. Survey's session reference is NOT part of its
@@ -1469,7 +1470,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             "CourseOffering",
             _seedData.CourseOfferingDocumentId
         );
-        AssertMirrorContentMatchesDocument(beforeMirror, beforeStamps);
+        AssertRootVersionMatchesDocument(beforeMirror, beforeStamps);
         var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(
             _seedData.CourseOfferingDocumentId
         );
@@ -1512,7 +1513,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         afterStamps.Should().Be(beforeStamps);
         afterMirror.Should().Be(beforeMirror);
-        AssertMirrorContentMatchesDocument(afterMirror, afterStamps);
+        AssertRootVersionMatchesDocument(afterMirror, afterStamps);
         afterRiRows.Should().Equal(beforeRiRows);
         afterTrackedRows.Should().Be(beforeTrackedRows);
         auditOps.Should().Be(0);
@@ -1626,7 +1627,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             Guid.Parse("abababab-abab-abab-abab-abababababab"),
             busResourceKeyId
         );
-        var beforeInsert = await GetDocumentStampStateAsync(busDocumentId);
+        var beforeInsertVersion = await GetDocumentVersionAsync(busDocumentId);
         var beforeInsertMaxChangeVersion = await ReadMaxChangeVersionAsync();
         var initialBusId = $"BUS-{busDocumentId}-001";
         var updatedBusId = $"BUS-{busDocumentId}-002";
@@ -1636,9 +1637,9 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         var afterInsert = await GetDocumentStampStateAsync(busDocumentId);
         var afterInsertMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        afterInsert.Should().Be(beforeInsert);
+        afterInsert.ContentVersion.Should().Be(beforeInsertVersion);
         afterInsertMaxChangeVersion.Should().Be(beforeInsertMaxChangeVersion);
-        await AssertRootMirrorMatchesDocumentAsync("sample", "Bus", busDocumentId);
+        await AssertRootVersionMatchesDocumentAsync("sample", "Bus", busDocumentId);
 
         await DelayForDistinctTimestampsAsync();
         var updateRowsAffected = await _database.ExecuteNonQueryAsync(
@@ -1655,7 +1656,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var afterUpdate = await GetDocumentStampStateAsync(busDocumentId);
         afterUpdate.ContentVersion.Should().BeGreaterThan(afterInsert.ContentVersion);
         afterUpdate.ContentLastModifiedAt.Should().BeAfter(afterInsert.ContentLastModifiedAt);
-        await AssertRootMirrorMatchesDocumentAsync("sample", "Bus", busDocumentId);
+        await AssertRootVersionMatchesDocumentAsync("sample", "Bus", busDocumentId);
 
         var beforeNoOpMirror = await GetRootMirrorStampStateAsync("sample", "Bus", busDocumentId);
 
@@ -1674,7 +1675,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var afterNoOpMirror = await GetRootMirrorStampStateAsync("sample", "Bus", busDocumentId);
         afterNoOp.Should().Be(afterUpdate);
         afterNoOpMirror.Should().Be(beforeNoOpMirror);
-        AssertMirrorContentMatchesDocument(afterNoOpMirror, afterNoOp);
+        AssertRootVersionMatchesDocument(afterNoOpMirror, afterNoOp);
     }
 
     [Test]
@@ -1689,10 +1690,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
 
         var afterMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        var documentStamps = await GetDocumentStampStateAsync(documentId);
+        var documentVersion = await GetDocumentVersionAsync(documentId);
 
         afterMaxChangeVersion.Should().Be(beforeMaxChangeVersion + 1);
-        documentStamps.ContentVersion.Should().Be(afterMaxChangeVersion);
+        documentVersion.Should().Be(afterMaxChangeVersion);
     }
 
     [Test]
@@ -1712,7 +1713,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var trackedChangeRowsBefore = await CountRowsAsync(
             "SELECT COUNT(*) FROM [tracked_changes_sample].[Bus];"
         );
-        AssertMirrorContentMatchesDocument(beforeMirror, beforeDocument);
+        AssertRootVersionMatchesDocument(beforeMirror, beforeDocument);
 
         await DelayForDistinctTimestampsAsync();
         var rowsAffected = await _database.ExecuteNonQueryAsync(
@@ -2464,9 +2465,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         resourceRowsAffected.Should().Be(1);
 
         (await CountDocumentRowsAsync(seed.AssociationDocumentId)).Should().Be(1);
-        var afterResourceDelete = await GetDocumentStampStateAsync(seed.AssociationDocumentId);
-        afterResourceDelete.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
-        afterResourceDelete.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
+        var afterResourceDeleteVersion = await GetDocumentVersionAsync(seed.AssociationDocumentId);
+        afterResourceDeleteVersion.Should().BeGreaterThan(before.ContentVersion);
 
         (
             await CountTrackedChangeRowsAsync(
@@ -2488,7 +2488,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             CultureInfo.InvariantCulture
         );
 
-        tombstoneChangeVersion.Should().Be(afterResourceDelete.ContentVersion);
+        tombstoneChangeVersion.Should().Be(afterResourceDeleteVersion);
         trackedRow["Id"].Should().Be(seed.AssociationDocumentUuid);
         Convert
             .ToInt64(
@@ -2560,9 +2560,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         resourceRowsAffected.Should().Be(1);
 
         (await CountDocumentRowsAsync(descriptorDocumentId)).Should().Be(1);
-        var afterResourceDelete = await GetDocumentStampStateAsync(descriptorDocumentId);
-        afterResourceDelete.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
-        afterResourceDelete.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
+        var afterResourceDeleteVersion = await GetDocumentVersionAsync(descriptorDocumentId);
+        afterResourceDeleteVersion.Should().BeGreaterThan(before.ContentVersion);
 
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "Descriptor", descriptorDocumentUuid))
             .Should()
@@ -2578,7 +2577,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             CultureInfo.InvariantCulture
         );
 
-        tombstoneChangeVersion.Should().Be(afterResourceDelete.ContentVersion);
+        tombstoneChangeVersion.Should().Be(afterResourceDeleteVersion);
         trackedRow["Id"].Should().Be(descriptorDocumentUuid);
         trackedRow["ResourceKeyId"].Should().Be(termDescriptorResourceKeyId);
         trackedRow["OldNamespace"].Should().Be(DescriptorNamespace);
@@ -2628,9 +2627,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         resourceRowsAffected.Should().Be(1);
 
         (await CountDocumentRowsAsync(schoolDocumentId)).Should().Be(1);
-        var afterResourceDelete = await GetDocumentStampStateAsync(schoolDocumentId);
-        afterResourceDelete.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
-        afterResourceDelete.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
+        var afterResourceDeleteVersion = await GetDocumentVersionAsync(schoolDocumentId);
+        afterResourceDeleteVersion.Should().BeGreaterThan(before.ContentVersion);
 
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
             .Should()
@@ -2646,7 +2644,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             CultureInfo.InvariantCulture
         );
 
-        tombstoneChangeVersion.Should().Be(afterResourceDelete.ContentVersion);
+        tombstoneChangeVersion.Should().Be(afterResourceDeleteVersion);
         trackedRow["Id"].Should().Be(schoolDocumentUuid);
         Convert.ToInt64(trackedRow["OldSchoolId"], CultureInfo.InvariantCulture).Should().Be(FreshSchoolId);
         AssertAllNewColumnsAreNull(trackedRow);
@@ -2856,8 +2854,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         (await CountDocumentRowsAsync(associationDocumentId))
             .Should()
             .Be(1);
-        var afterResourceDelete = await GetDocumentStampStateAsync(associationDocumentId);
-        afterResourceDelete.ContentVersion.Should().Be(tombstoneChangeVersion);
+        var afterResourceDeleteVersion = await GetDocumentVersionAsync(associationDocumentId);
+        afterResourceDeleteVersion.Should().Be(tombstoneChangeVersion);
         await AssertMaxTrackedChangeVersionAsync(
             "tracked_changes_edfi",
             "StudentEducationOrganizationAssociation",
@@ -3002,8 +3000,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         (await CountDocumentRowsAsync(schoolDocumentId))
             .Should()
             .Be(1);
-        var afterResourceDelete = await GetDocumentStampStateAsync(schoolDocumentId);
-        afterResourceDelete.ContentVersion.Should().Be(tombstoneChangeVersion);
+        var afterResourceDeleteVersion = await GetDocumentVersionAsync(schoolDocumentId);
+        afterResourceDeleteVersion.Should().Be(tombstoneChangeVersion);
         await AssertMaxTrackedChangeVersionAsync(
             "tracked_changes_edfi",
             "School",
@@ -4437,12 +4435,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
     private async Task<DocumentStampState> GetDocumentStampStateAsync(long documentId)
     {
-        var row = (
+        var document = (
             await _database.QueryRowsAsync(
                 """
-                SELECT
-                    [ContentVersion],
-                    [ContentLastModifiedAt]
+                SELECT [ContentVersion], [ResourceKeyId]
                 FROM [dms].[Document]
                 WHERE [DocumentId] = @documentId;
                 """,
@@ -4450,11 +4446,34 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             )
         ).Single();
 
+        var resourceKeyId = Convert.ToInt16(document["ResourceKeyId"], CultureInfo.InvariantCulture);
+        var rootTable = _fixture
+            .ModelSet.ConcreteResourcesInNameOrder.Single(resource =>
+                resource.ResourceKey.ResourceKeyId == resourceKeyId
+            )
+            .RelationalModel.Root.Table;
+        var owner = (
+            await _database.QueryRowsAsync(
+                $"""
+                SELECT [ContentLastModifiedAt]
+                FROM [{rootTable.Schema.Value}].[{rootTable.Name}]
+                WHERE [DocumentId] = @documentId;
+                """,
+                new SqlParameter("@documentId", documentId)
+            )
+        ).Single();
+
         return new(
-            Convert.ToInt64(row["ContentVersion"], CultureInfo.InvariantCulture),
-            ReadDateTimeOffset(row["ContentLastModifiedAt"])
+            Convert.ToInt64(document["ContentVersion"], CultureInfo.InvariantCulture),
+            ReadDateTimeOffset(owner["ContentLastModifiedAt"])
         );
     }
+
+    private async Task<long> GetDocumentVersionAsync(long documentId) =>
+        await _database.ExecuteScalarAsync<long>(
+            """SELECT [ContentVersion] FROM [dms].[Document] WHERE [DocumentId] = @documentId;""",
+            new SqlParameter("@documentId", documentId)
+        );
 
     private async Task<DocumentStampState> GetRootMirrorStampStateAsync(
         string schemaName,
@@ -4481,7 +4500,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
     }
 
-    private async Task AssertRootMirrorMatchesDocumentAsync(
+    private async Task AssertRootVersionMatchesDocumentAsync(
         string schemaName,
         string tableName,
         long documentId
@@ -4490,16 +4509,15 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var document = await GetDocumentStampStateAsync(documentId);
         var mirror = await GetRootMirrorStampStateAsync(schemaName, tableName, documentId);
 
-        AssertMirrorContentMatchesDocument(mirror, document);
+        AssertRootVersionMatchesDocument(mirror, document);
     }
 
-    private static void AssertMirrorContentMatchesDocument(
+    private static void AssertRootVersionMatchesDocument(
         DocumentStampState mirror,
         DocumentStampState document
     )
     {
         mirror.ContentVersion.Should().Be(document.ContentVersion);
-        mirror.ContentLastModifiedAt.Should().Be(document.ContentLastModifiedAt);
     }
 
     private async Task<IReadOnlyList<ReferentialIdentityRow>> GetReferentialIdentityRowsForDocumentAsync(

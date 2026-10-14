@@ -291,9 +291,9 @@ This section owns offline preview, execution and verification.
 
 Use representation restamp only for an offline correction that changes composed API or
 stream representation bytes without changing domain fields, keys, or deletion history.
-The operation advances the existing canonical `ContentVersion` and
-`ContentLastModifiedAt` values and their root or descriptor mirrors. It does not add an
-ETag algorithm, Change Query event type, projection epoch, or Kafka ordering field.
+The operation advances `dms.Document.ContentVersion`, copies that version to the root
+or descriptor row, and regenerates `ContentLastModifiedAt` on that row. It does not add
+an ETag algorithm, Change Query event type, projection epoch, or Kafka ordering field.
 
 ### Offline prerequisites
 

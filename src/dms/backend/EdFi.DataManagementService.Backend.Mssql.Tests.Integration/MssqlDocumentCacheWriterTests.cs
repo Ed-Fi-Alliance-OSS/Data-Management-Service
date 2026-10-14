@@ -1868,8 +1868,7 @@ public class Given_A_Mssql_DocumentCacheWriter
         command.Transaction = transaction;
         command.CommandText = """
             UPDATE [dms].[Document]
-            SET [ContentVersion] = @contentVersion,
-                [ContentLastModifiedAt] = @lastModifiedAt
+            SET [ContentVersion] = @contentVersion
             WHERE [DocumentId] = @documentId;
 
             UPDATE [dms].[DocumentProjectionWork]
@@ -1879,12 +1878,6 @@ public class Given_A_Mssql_DocumentCacheWriter
         command.Parameters.Add(new SqlParameter("@documentId", SqlDbType.BigInt) { Value = documentId });
         command.Parameters.Add(
             new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion }
-        );
-        command.Parameters.Add(
-            new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2)
-            {
-                Value = new DateTime(2026, 7, 31, 12, 5, 0, DateTimeKind.Utc),
-            }
         );
 
         await command.ExecuteNonQueryAsync();
@@ -1907,18 +1900,11 @@ public class Given_A_Mssql_DocumentCacheWriter
                 SET LOCK_TIMEOUT 100;
 
                 UPDATE [dms].[Document]
-                SET [ContentVersion] = @contentVersion,
-                    [ContentLastModifiedAt] = @lastModifiedAt
+                SET [ContentVersion] = @contentVersion
                 WHERE [DocumentId] = @documentId;
                 """;
             command.Parameters.Add(
                 new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion }
-            );
-            command.Parameters.Add(
-                new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2)
-                {
-                    Value = new DateTime(2026, 7, 31, 12, 10, 0, DateTimeKind.Utc),
-                }
             );
             command.Parameters.Add(new SqlParameter("@documentId", SqlDbType.BigInt) { Value = documentId });
 
@@ -1943,15 +1929,13 @@ public class Given_A_Mssql_DocumentCacheWriter
             INSERT INTO [dms].[Document] (
                 [DocumentUuid],
                 [ResourceKeyId],
-                [ContentVersion],
-                [ContentLastModifiedAt]
+                [ContentVersion]
             )
             OUTPUT INSERTED.[DocumentId] INTO @insertedDocument
             VALUES (
                 @documentUuid,
                 @resourceKeyId,
-                @contentVersion,
-                @lastModifiedAt
+                @contentVersion
             );
 
             SELECT [DocumentId]
@@ -1959,8 +1943,7 @@ public class Given_A_Mssql_DocumentCacheWriter
             """,
             new SqlParameter("@documentUuid", SqlDbType.UniqueIdentifier) { Value = documentUuid },
             new SqlParameter("@resourceKeyId", SqlDbType.SmallInt) { Value = resourceKeyId },
-            new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion },
-            new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = LastModifiedAt.UtcDateTime }
+            new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion }
         );
 
         return new SourceDocument(Convert.ToInt64(rows.Single()["DocumentId"]), documentUuid, contentVersion);

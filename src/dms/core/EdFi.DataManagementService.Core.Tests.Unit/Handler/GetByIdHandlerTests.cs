@@ -880,6 +880,7 @@ public class GetByIdHandlerTests
         public void It_has_the_correct_response()
         {
             requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+            requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
 
             var expected = $$"""
 {

@@ -557,7 +557,7 @@ internal static class CompactDescriptorHistoryScenario
     {
         await using DbCommand command = Command(
             harness,
-            "SELECT descriptor.\"DescriptorId\", descriptor.\"DocumentId\", descriptor.\"ResourceKeyId\", document.\"ContentVersion\", document.\"ContentLastModifiedAt\", descriptor.\"Namespace\", descriptor.\"CodeValue\", descriptor.\"ContentVersion\", descriptor.\"ContentLastModifiedAt\" FROM \"dms\".\"Descriptor\" descriptor JOIN \"dms\".\"Document\" document ON document.\"DocumentId\" = descriptor.\"DocumentId\" WHERE document.\"DocumentUuid\" = @uuid",
+            "SELECT descriptor.\"DescriptorId\", descriptor.\"DocumentId\", descriptor.\"ResourceKeyId\", document.\"ContentVersion\", descriptor.\"ContentLastModifiedAt\", descriptor.\"Namespace\", descriptor.\"CodeValue\", descriptor.\"ContentVersion\" FROM \"dms\".\"Descriptor\" descriptor JOIN \"dms\".\"Document\" document ON document.\"DocumentId\" = descriptor.\"DocumentId\" WHERE document.\"DocumentUuid\" = @uuid",
             ("@uuid", Uuid(path))
         );
         await using DbDataReader reader = await command.ExecuteReaderAsync();
@@ -569,7 +569,6 @@ internal static class CompactDescriptorHistoryScenario
         reader.GetString(5).Should().Be(ns);
         reader.GetString(6).Should().Be(code);
         reader.GetInt64(7).Should().Be(reader.GetInt64(3));
-        reader.GetValue(8).Should().Be(reader.GetValue(4));
         return new(
             path,
             endpoint,

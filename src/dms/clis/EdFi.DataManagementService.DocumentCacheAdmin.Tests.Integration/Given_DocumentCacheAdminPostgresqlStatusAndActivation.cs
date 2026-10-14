@@ -458,7 +458,10 @@ public sealed class Given_DocumentCacheAdminPostgresqlActivateNewEmpty
         await using DocumentCacheAdminCliTarget target =
             await DocumentCacheAdminCliTarget.CreatePostgresqlAsync();
         DocumentCacheAdminCliSeededDocument document =
-            await target.State.InsertPostgresqlCanonicalDocumentAsync(contentVersion: 30);
+            await target.State.InsertPostgresqlDescriptorDocumentAsync(
+                "GuardedActivation",
+                contentVersion: 30
+            );
         await target.State.InsertPostgresqlDocumentCacheAsync(document);
         await target.State.InsertPostgresqlProjectionWorkAsync(document);
 

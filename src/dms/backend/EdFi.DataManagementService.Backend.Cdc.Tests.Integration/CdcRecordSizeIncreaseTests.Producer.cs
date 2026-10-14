@@ -227,8 +227,8 @@ public sealed partial class Given_Cdc_Controller_Record_Size_Increase
         command.Transaction = transaction;
         command.CommandText =
             provider == CdcProvider.Postgresql
-                ? "INSERT INTO dms.\"Document\" (\"DocumentId\", \"DocumentUuid\", \"ResourceKeyId\", \"ContentLastModifiedAt\") OVERRIDING SYSTEM VALUE SELECT 970301, @uuid, \"ResourceKeyId\", @modified FROM dms.\"ResourceKey\" LIMIT 1;"
-                : "SET IDENTITY_INSERT dms.Document ON; INSERT INTO dms.Document (DocumentId, DocumentUuid, ResourceKeyId, ContentLastModifiedAt) SELECT TOP (1) 970301, @uuid, ResourceKeyId, @modified FROM dms.ResourceKey; SET IDENTITY_INSERT dms.Document OFF;";
+                ? "INSERT INTO dms.\"Document\" (\"DocumentId\", \"DocumentUuid\", \"ResourceKeyId\") OVERRIDING SYSTEM VALUE SELECT 970301, @uuid, \"ResourceKeyId\" FROM dms.\"ResourceKey\" LIMIT 1;"
+                : "SET IDENTITY_INSERT dms.Document ON; INSERT INTO dms.Document (DocumentId, DocumentUuid, ResourceKeyId) SELECT TOP (1) 970301, @uuid, ResourceKeyId FROM dms.ResourceKey; SET IDENTITY_INSERT dms.Document OFF;";
         Add("uuid", row["documentUuid"]!.GetValue<Guid>(), DbType.Guid);
         Add(
             "modified",
@@ -239,7 +239,7 @@ public sealed partial class Given_Cdc_Controller_Record_Size_Increase
         );
         await command.ExecuteNonQueryAsync(Token);
         command.CommandText =
-            "INSERT INTO dms.\"DocumentCache\" (\"DocumentId\", \"DocumentUuid\", \"ProjectName\", \"ResourceName\", \"ResourceVersion\", \"ContentVersion\", \"StreamEtag\", \"LastModifiedAt\", \"DocumentJson\") SELECT \"DocumentId\", \"DocumentUuid\", @project, @resource, @version, \"ContentVersion\", @etag, \"ContentLastModifiedAt\", @json FROM dms.\"Document\" WHERE \"DocumentId\" = 970301";
+            "INSERT INTO dms.\"DocumentCache\" (\"DocumentId\", \"DocumentUuid\", \"ProjectName\", \"ResourceName\", \"ResourceVersion\", \"ContentVersion\", \"StreamEtag\", \"LastModifiedAt\", \"DocumentJson\") SELECT \"DocumentId\", \"DocumentUuid\", @project, @resource, @version, \"ContentVersion\", @etag, @modified, @json FROM dms.\"Document\" WHERE \"DocumentId\" = 970301";
         Add("project", row["projectName"]!.GetValue<string>(), DbType.String);
         Add("resource", row["resourceName"]!.GetValue<string>(), DbType.String);
         Add("version", row["resourceVersion"]!.GetValue<string>(), DbType.String);

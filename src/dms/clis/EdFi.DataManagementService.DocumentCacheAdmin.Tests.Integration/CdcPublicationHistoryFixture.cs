@@ -325,19 +325,30 @@ internal sealed class CdcPublicationHistoryFixture(bool mssql) : IAsyncDisposabl
         string json = """{"seeded":true}""";
         await ExecuteAsync(
             $"""
-            INSERT INTO dms."Document" ("DocumentUuid","ResourceKeyId","ContentVersion","ContentLastModifiedAt")
-            SELECT {uuid},"ResourceKeyId",10,{now} FROM dms."ResourceKey" WHERE "ProjectName"='Ed-Fi' AND "ResourceName"='SchoolTypeDescriptor';
+            INSERT INTO dms."Document" ("DocumentUuid","ResourceKeyId","ContentVersion")
+            SELECT {uuid},"ResourceKeyId",10 FROM dms."ResourceKey" WHERE "ProjectName"='Ed-Fi' AND "ResourceName"='SchoolTypeDescriptor';
             INSERT INTO dms."Descriptor" ("DocumentId","ResourceKeyId","Namespace","CodeValue","ShortDescription","ContentVersion","ContentLastModifiedAt")
             SELECT "DocumentId","ResourceKeyId",'uri://ed-fi.org/SchoolTypeDescriptor','History','History',"ContentVersion",{now} FROM dms."Document";
             DELETE FROM dms."DocumentProjectionWork";
             INSERT INTO dms."DocumentProjectionWork" ("DocumentId","RequiredContentVersion","FirstEnqueuedAt","LastEnqueuedAt")
             SELECT "DocumentId","ContentVersion",{now},{now} FROM dms."Document";
             INSERT INTO dms."DocumentCache" ("DocumentId","DocumentUuid","ProjectName","ResourceName","ResourceVersion","ContentVersion","StreamEtag","LastModifiedAt","DocumentJson","ComputedAt")
-            SELECT d."DocumentId",d."DocumentUuid",r."ProjectName",r."ResourceName",r."ResourceVersion",d."ContentVersion"+1,'history-etag',d."ContentLastModifiedAt",'{json}',{now}
-            FROM dms."Document" d JOIN dms."ResourceKey" r ON r."ResourceKeyId"=d."ResourceKeyId";
+            SELECT d."DocumentId",d."DocumentUuid",r."ProjectName",r."ResourceName",r."ResourceVersion",d."ContentVersion"+1,'history-etag',descriptor."ContentLastModifiedAt",'{json}',{now}
+            FROM dms."Document" d JOIN dms."ResourceKey" r ON r."ResourceKeyId"=d."ResourceKeyId"
+            JOIN dms."Descriptor" descriptor ON descriptor."DocumentId"=d."DocumentId";
             """
         );
     }
+
+    public Task<string> ReadAuthoritativeStampsAsync() =>
+        QueryAsync(
+            """
+            SELECT d."DocumentId", descriptor."DescriptorId", d."ContentVersion",
+                   descriptor."ContentVersion", descriptor."ContentLastModifiedAt"
+            FROM dms."Document" d JOIN dms."Descriptor" descriptor ON descriptor."DocumentId" = d."DocumentId"
+            ORDER BY d."DocumentId";
+            """
+        );
 
     public string StateFilesSnapshot()
     {

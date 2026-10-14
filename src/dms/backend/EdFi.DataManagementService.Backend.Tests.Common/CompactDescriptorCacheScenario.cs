@@ -184,8 +184,8 @@ internal static class CompactDescriptorCacheScenario
             await using DbCommand command = connection.CreateCommand();
             command.CommandText = $"""
                 SELECT descriptor.{Q("DescriptorId")}, document.{Q("DocumentId")},
-                       document.{Q("ContentVersion")}, document.{Q("ContentLastModifiedAt")},
-                       descriptor.{Q("ContentVersion")}, descriptor.{Q("ContentLastModifiedAt")}
+                       document.{Q("ContentVersion")}, descriptor.{Q("ContentLastModifiedAt")},
+                       descriptor.{Q("ContentVersion")}
                 FROM {Table("Document")} document
                 JOIN {Table("Descriptor")} descriptor ON descriptor.{Q("DocumentId")} = document.{Q(
                     "DocumentId"
@@ -202,7 +202,6 @@ internal static class CompactDescriptorCacheScenario
                 reader.GetDateTime(3)
             );
             reader.GetInt64(4).Should().Be(stored.Version);
-            reader.GetDateTime(5).Should().Be(stored.At);
             return stored;
         }
 

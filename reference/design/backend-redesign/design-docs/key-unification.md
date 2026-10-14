@@ -1177,7 +1177,8 @@ Implications when descriptor identity parts participate in key unification:
 - Hydration and RI witnesses join the canonical/alias compact value to `dms.Descriptor.DescriptorId`
   and reconstruct the whole original-case URI before each consumer's existing transformation.
   History snapshots keep namespace/code values; authorization-view membership bridges to the descriptor's
-  owning `DocumentId`. Document metadata, locks, cache work, and both document stamps remain document-owned.
+  owning `DocumentId`. Document metadata, locks, version checks and cache work remain document-keyed;
+  authoritative timestamps reside on the root/descriptor and join through that document association.
 
 ## Canonical Column Selection and Naming
 
@@ -1892,7 +1893,9 @@ Implementation guidance (dialect-neutral semantics):
 
 - Fire on `INSERT`, `UPDATE`, and `DELETE` for each schema-derived table (as described in `update-tracking.md`).
 - Compute `affectedDocumentIds` from `inserted ∪ deleted` (dedupe).
-- Always bump **Content** stamps for `affectedDocumentIds` (representation changed).
+- On representation changes, advance `dms.Document.ContentVersion`, copy it to the owner and
+  generate the authoritative root/descriptor timestamp in the same transaction. Root/descriptor
+  inserts reuse the document default version; no-op/stamp-only updates preserve stamps.
 - Record key-change rows for documents whose persisted identity projection values differ between `inserted` and
   `deleted` under the ODS-compatible canonical storage semantics described in
   [change-queries.md](change-queries.md). This key-change workset is intentionally separate from the

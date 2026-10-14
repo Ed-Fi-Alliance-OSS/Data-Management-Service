@@ -522,7 +522,7 @@ public static partial class ParityScenarioCatalog
         // ProfileUnchangedWriteGuardedNoOp + variants
         Profile(
             "ProfileUnchangedWriteGuardedNoOp",
-            "An unchanged profiled PUT is a guarded no-op that changes no rowsets or stamps: the root row (including its replicated content stamps), every document stamp (ContentVersion, ContentLastModifiedAt, CreatedAt), and the engine's max ChangeVersion allocation all stay unchanged.",
+            "An unchanged profiled PUT is a guarded no-op that changes no rowsets or stamps: the root row (including its authoritative timestamp and ContentVersion mirror), document ContentVersion and CreatedAt, and the engine's max ChangeVersion allocation all stay unchanged.",
             "ProfileGuardedNoOpTests",
             "Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Root_Only_Shape",
             "Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Root_Only_Shape",
@@ -552,7 +552,7 @@ public static partial class ParityScenarioCatalog
         ),
         Profile(
             "ProfileUnchangedWriteGuardedNoOp/RootOnlyPostAsUpdate",
-            "An unchanged profiled POST-as-update is a guarded no-op that keeps the existing document uuid, does not insert the incoming uuid, and preserves the rowset (root row including its replicated content stamps), ContentVersion, ContentLastModifiedAt, and CreatedAt with no ChangeVersion allocation.",
+            "An unchanged profiled POST-as-update is a guarded no-op that keeps the existing document uuid, does not insert the incoming uuid, and preserves the rowset (root row including its authoritative timestamp and ContentVersion mirror), document ContentVersion and CreatedAt with no ChangeVersion allocation.",
             "ProfileGuardedNoOpTests",
             "Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Post_As_Update_With_Root_Only_Shape",
             "Given_A_Mssql_Relational_Profile_Guarded_No_Op_Post_As_Update_With_Root_Only_Shape",
