@@ -149,8 +149,7 @@ internal static class MssqlDescriptorProjectionPipelineFixture
                 [DocumentUuid] uniqueidentifier NOT NULL,
                 [ResourceKeyId] smallint NOT NULL DEFAULT 0,
                 [ContentVersion] bigint NOT NULL DEFAULT 1,
-                [ContentLastModifiedAt] datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                [CreatedAt] datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
+                [ContentLastModifiedAt] datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
             );
 
             CREATE TABLE [dms].[Descriptor] (

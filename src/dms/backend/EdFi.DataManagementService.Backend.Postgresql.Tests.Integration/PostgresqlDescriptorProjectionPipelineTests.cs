@@ -149,8 +149,7 @@ internal static class DescriptorProjectionPipelineFixture
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "CreatedAt" timestamptz NOT NULL DEFAULT now()
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE IF NOT EXISTS dms."Descriptor" (

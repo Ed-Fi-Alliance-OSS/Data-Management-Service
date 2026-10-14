@@ -50,8 +50,7 @@ public class Given_A_Page_With_Multiple_Documents
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "CreatedAt" timestamptz NOT NULL DEFAULT now()
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE hydtest."School" (
@@ -313,8 +312,7 @@ public class Given_A_Postgresql_Selected_Page_Keyset_With_Nonascending_DocumentI
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "CreatedAt" timestamptz NOT NULL DEFAULT now()
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE hydselected."School" (
@@ -430,8 +428,7 @@ public class Given_A_Single_DocumentId_Keyset
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "CreatedAt" timestamptz NOT NULL DEFAULT now()
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE hydsingle."School" (
@@ -596,8 +593,7 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "CreatedAt" timestamptz NOT NULL DEFAULT now()
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE IF NOT EXISTS dms."Descriptor" (
@@ -1068,8 +1064,7 @@ public class Given_A_Query_With_TotalCount_Requested
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "CreatedAt" timestamptz NOT NULL DEFAULT now()
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE hydcount."School" (
@@ -1206,8 +1201,7 @@ public class Given_A_Reference_Bearing_Resource
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "CreatedAt" timestamptz NOT NULL DEFAULT now()
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE hydref."StudentSchoolAssociation" (
@@ -1417,8 +1411,7 @@ public class Given_Two_Postgresql_Hydration_Batches_On_The_Same_Transaction
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "CreatedAt" timestamptz NOT NULL DEFAULT now()
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE hydreuse."School" (
@@ -1604,8 +1597,7 @@ public class Given_A_Pgsql_Query_Keyset_That_Returns_Its_Selected_Ids
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "CreatedAt" timestamptz NOT NULL DEFAULT now()
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE hydselected."School" (

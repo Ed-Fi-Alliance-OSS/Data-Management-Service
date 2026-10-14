@@ -50,8 +50,7 @@ public class Given_Postgresql_DocumentCacheSourceMetadataReader
                     "ResourceKeyId" smallint NOT NULL,
                     "CreatedByOwnershipTokenId" smallint NULL,
                     "ContentVersion" bigint NOT NULL,
-                    "ContentLastModifiedAt" timestamptz NOT NULL,
-                    "CreatedAt" timestamptz NOT NULL
+                    "ContentLastModifiedAt" timestamptz NOT NULL
                 );
 
                 INSERT INTO dms."Document" (
@@ -60,8 +59,7 @@ public class Given_Postgresql_DocumentCacheSourceMetadataReader
                     "ResourceKeyId",
                     "CreatedByOwnershipTokenId",
                     "ContentVersion",
-                    "ContentLastModifiedAt",
-                    "CreatedAt"
+                    "ContentLastModifiedAt"
                 )
                 VALUES (
                     970001,
@@ -69,7 +67,6 @@ public class Given_Postgresql_DocumentCacheSourceMetadataReader
                     11,
                     NULL,
                     222,
-                    '2026-07-30T14:15:16Z',
                     '2026-07-30T14:15:16Z'
                 );
                 """

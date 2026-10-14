@@ -57,8 +57,7 @@ public class Given_Mssql_DocumentCacheMaterializer_Coherence
                 [ResourceKeyId] smallint NOT NULL,
                 [CreatedByOwnershipTokenId] smallint NULL,
                 [ContentVersion] bigint NOT NULL,
-                [ContentLastModifiedAt] datetimeoffset NOT NULL,
-                [CreatedAt] datetimeoffset NOT NULL
+                [ContentLastModifiedAt] datetimeoffset NOT NULL
             );
 
             INSERT INTO [dms].[Document] (
@@ -67,8 +66,7 @@ public class Given_Mssql_DocumentCacheMaterializer_Coherence
                 [ResourceKeyId],
                 [CreatedByOwnershipTokenId],
                 [ContentVersion],
-                [ContentLastModifiedAt],
-                [CreatedAt]
+                [ContentLastModifiedAt]
             )
             VALUES (
                 980101,
@@ -76,7 +74,6 @@ public class Given_Mssql_DocumentCacheMaterializer_Coherence
                 11,
                 NULL,
                 222,
-                '2026-07-30T14:15:16+00:00',
                 '2026-07-30T14:15:16+00:00'
             );
             """

@@ -105,6 +105,13 @@ list 2.5), by exact full name. Step 2.5's recorded evidence already satisfies th
 missing column, which shows the readers' consumers now match the six-column schema. No rerun was
 needed.
 
+Found while implementing step 2.6 (approved 2026-10-13): `ReadDocumentRowAsync` in
+`PostgresqlDescriptorReadTestSupport` and `MssqlDescriptorReadTestSupport` is also called by
+`Given_A_Postgresql_DescriptorRead_Get_Request` and `Given_A_Mssql_DescriptorRead_Get_Request`.
+List 2.6 now requires both by exact full name in their own projects (§8.4 list 2.6). Step 2.6's
+recorded evidence already satisfies the added gates (7 of 7 passed on each engine). With the step
+files reverted, 2 tests failed per engine on the missing column. No rerun was needed.
+
 ---
 
 ## 1. Problem, proposed decision, alternatives, assumptions, open questions
@@ -1215,6 +1222,12 @@ verified by `rg -l`; corrected in review 3)**
   `Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture`,
   `Given_A_Postgresql_DescriptorRead_Test_Support`.
 - MSSQL: `Given_A_Mssql_DescriptorRead_Test_Support`.
+- Descriptor-read support consumers (added after the step 2.6 review). The changed
+  `ReadDocumentRowAsync` helpers are also called by the GET-request fixtures. Each is required by
+  exact full name in its own project, with the same discovery and `Get-TrxFixtureCounts` check
+  (`$R\fixtures\2.6-supp-pg.txt` / `2.6-supp-mssql.txt`):
+  - PG: `$PGNS.Given_A_Postgresql_DescriptorRead_Get_Request`.
+  - MSSQL: `$MSNS.Given_A_Mssql_DescriptorRead_Get_Request`.
 
 **2.7 (test-local mirror tables)**
 - PG: `Given_A_Page_With_Multiple_Documents`, `Given_A_Postgresql_Selected_Page_Keyset_With_Nonascending_DocumentIds`,
