@@ -3317,9 +3317,12 @@ public class ApiClientModuleTests
         [TearDown]
         public void TearDownResponse() => _updateResponse?.Dispose();
 
-        protected async Task ActUpdateAsync(int applicationId = 1)
+        protected async Task ActUpdateAsync(
+            int applicationId = 1,
+            Action<IServiceCollection>? configureServices = null
+        )
         {
-            using var client = SetUpClient();
+            using var client = SetUpClient(configureServices: configureServices);
             _updateResponse = await client.PutAsync(
                 "/v3/apiClients/1",
                 new StringContent(
@@ -4277,6 +4280,65 @@ public class ApiClientModuleTests
 
         [Test]
         public void It_deletes_nothing() => _deletedClientIds.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// The provider rollback reported a UUID that another ApiClient row already holds, so the
+    /// guarded synchronization refused it. That provider client belongs to the other row: nothing
+    /// is deleted, no reference check runs, the inconsistency is reported at Error, and the
+    /// request ends in a sanitized server error with the aggregate lock released.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_failed_api_client_update_whose_rollback_uuid_is_held_by_another_client
+        : CompensationSyncTestBase
+    {
+        private RecordingLockManager _recordingLockManager = null!;
+        private TestLogger<ApiClientModule> _moduleLogger = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            // The fixture instance, and so its fakes, outlives each test, so the recorded calls
+            // below must cover only this test's request.
+            Fake.ClearRecordedCalls(_apiClientRepository);
+            _recordingLockManager = new RecordingLockManager();
+            _lockManager = _recordingLockManager;
+            _moduleLogger = new TestLogger<ApiClientModule>();
+
+            ArrangeSyncResult(new ApiClientUuidSyncResult.FailureNewUuidInUse());
+
+            await ActUpdateAsync(configureServices: collection =>
+                collection.AddSingleton<ILogger<ApiClientModule>>(_moduleLogger)
+            );
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, _rollbackUuid.ToString());
+
+        [Test]
+        public void It_deletes_nothing() => _deletedClientIds.Should().BeEmpty();
+
+        [Test]
+        public void It_runs_no_reference_check() =>
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_reports_the_held_rollback_uuid_at_error() =>
+            _moduleLogger
+                .Entries.Where(entry => entry.Level == LogLevel.Error)
+                .Select(entry => $"{entry.State}")
+                .Should()
+                .ContainSingle(entry =>
+                    entry.Contains("already held by another API client")
+                    && entry.Contains("nothing was deleted")
+                    && entry.Contains(_rollbackUuid.ToString())
+                );
+
+        [Test]
+        public void It_releases_every_lock() =>
+            _recordingLockManager.Handles.Should().OnlyContain(handle => handle.Disposed);
     }
 
     [TestFixture]
@@ -6551,5 +6613,100 @@ public class ApiClientModuleTests
         [Test]
         public async Task It_returns_a_sanitized_internal_server_error() =>
             await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
+    }
+
+    /// <summary>
+    /// The provider reported a replacement UUID that another ApiClient row already holds, so the
+    /// repository refused the update (D-7). Compensating would call UpdateClientAsync against that
+    /// UUID and mutate the other client's provider object, so after exactly one provider call the
+    /// module attempts no rollback, synchronization, reference check, deletion or outcome
+    /// resolution; it reports the inconsistency at Error and answers a sanitized server error.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_update_whose_provider_uuid_is_held_by_another_client
+        : CompensationSyncTestBase
+    {
+        private RecordingLockManager _recordingLockManager = null!;
+        private TestLogger<ApiClientModule> _moduleLogger = null!;
+        private List<string> _providerUpdateUuids = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            // The fixture instance, and so its fakes, outlives each test, so the recorded calls
+            // below must cover only this test's request.
+            Fake.ClearRecordedCalls(_apiClientRepository);
+            _recordingLockManager = new RecordingLockManager();
+            _lockManager = _recordingLockManager;
+            _moduleLogger = new TestLogger<ApiClientModule>();
+            _providerUpdateUuids = [];
+
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Invokes(call => _providerUpdateUuids.Add(call.GetArgument<string>(0)!))
+                .ReturnsNextFromSequence(
+                    new ClientUpdateResult.Success(_updatedUuid),
+                    new ClientUpdateResult.Success(_rollbackUuid)
+                );
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Returns(new ApiClientUpdateResult.FailureDuplicateClientUuid());
+
+            await ActUpdateAsync(configureServices: collection =>
+                collection.AddSingleton<ILogger<ApiClientModule>>(_moduleLogger)
+            );
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, _updatedUuid.ToString());
+
+        [Test]
+        public void It_updates_the_provider_once_and_never_rolls_it_back() =>
+            _providerUpdateUuids.Should().Equal(_existingUuid.ToString());
+
+        [Test]
+        public void It_synchronizes_no_uuid() =>
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(A<int>.Ignored, A<Guid>.Ignored, A<Guid>.Ignored)
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_runs_no_reference_check() =>
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_deletes_no_provider_client() => _deletedClientIds.Should().BeEmpty();
+
+        [Test]
+        public void It_does_not_resolve_the_outcome() =>
+            A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<int>.Ignored))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_reports_the_held_uuid_at_error_without_compensation() =>
+            _moduleLogger
+                .Entries.Where(entry => entry.Level == LogLevel.Error)
+                .Select(entry => $"{entry.State}")
+                .Should()
+                .ContainSingle(entry =>
+                    entry.Contains("already held by another API client")
+                    && entry.Contains("no compensation attempted")
+                    && entry.Contains(_updatedUuid.ToString())
+                );
+
+        [Test]
+        public void It_releases_every_lock() =>
+            _recordingLockManager.Handles.Should().OnlyContain(handle => handle.Disposed);
     }
 }

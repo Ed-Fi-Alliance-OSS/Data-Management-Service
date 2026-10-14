@@ -732,6 +732,16 @@ public class ApplicationModule : IEndpointModule
                                             id
                                         );
                                         return false;
+                                    case ApiClientUuidSyncResult.FailureNewUuidInUse:
+                                        // The rollback UUID the provider reported is already held by
+                                        // another ApiClient row: a provider inconsistency. That provider
+                                        // client belongs to the other row, so it is not deleted.
+                                        logger.LogError(
+                                            "The rollback client UUID {ClientUuid} for Application {Id} is already held by another API client; stored client state is inconsistent; nothing was deleted",
+                                            rollbackSuccess.ClientUuid,
+                                            id
+                                        );
+                                        return false;
                                     case ApiClientUuidSyncResult.FailureUnknown syncFailure:
                                         logger.LogError(
                                             "Failed to persist the rolled-back client UUID for Application {Id}: {Message}; stored client state is inconsistent",
@@ -949,6 +959,18 @@ public class ApplicationModule : IEndpointModule
                                         "Application not found",
                                         httpContext.TraceIdentifier
                                     );
+                                case ApplicationUpdateResult.FailureDuplicateClientUuid:
+                                    // The provider reported a replacement UUID that another ApiClient
+                                    // row already holds: a provider inconsistency. Compensating would
+                                    // call UpdateClientAsync on that UUID, mutating the other row's
+                                    // provider object, so no compensation, synchronization, deletion
+                                    // or outcome resolution is attempted.
+                                    logger.LogError(
+                                        "The identity provider reported a client UUID {ClientUuid} already held by another API client for Application {Id}; stored client state is inconsistent; no compensation attempted",
+                                        updateSuccess.ClientUuid,
+                                        id
+                                    );
+                                    return FailureResults.Unknown(httpContext.TraceIdentifier);
                                 case ApplicationUpdateResult.FailureUnknown updateFailure:
                                     logger.LogError(
                                         "Repository update failed for Application {Id}: {Message}",
