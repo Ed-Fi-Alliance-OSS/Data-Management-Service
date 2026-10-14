@@ -125,7 +125,8 @@ internal sealed class RelationalWriteConstraintResolver : IRelationalWriteConstr
     }
 
     // The own-key probe lists the root natural-key constraint columns as emitted, in semantic identity
-    // order. Key-unified paths share a column, so duplicates collapse to the first occurrence.
+    // order. Every identity part supplied by the same document reference binds that reference's
+    // ..._DocumentId, so duplicates collapse to the first occurrence.
     private static IReadOnlyList<DbColumnName> GetRootNaturalKeyColumnsOrThrow(
         RelationalWriteConstraintResolutionRequest request
     ) =>
