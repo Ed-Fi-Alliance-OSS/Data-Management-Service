@@ -228,10 +228,7 @@ public static class AspNetCoreFrontend
                         propertyNamesStack.Pop();
                     }
 
-                    if (pathStack.Count > 0 && !pathStack.Peek().IsArray)
-                    {
-                        pathStack.Pop();
-                    }
+                    CompleteValue(pathStack);
                     break;
 
                 case JsonTokenType.StartArray:
@@ -244,10 +241,7 @@ public static class AspNetCoreFrontend
                         pathStack.Pop();
                     }
 
-                    if (pathStack.Count > 0 && !pathStack.Peek().IsArray)
-                    {
-                        pathStack.Pop();
-                    }
+                    CompleteValue(pathStack);
                     break;
 
                 case JsonTokenType.PropertyName:
@@ -272,31 +266,30 @@ public static class AspNetCoreFrontend
                 case JsonTokenType.True:
                 case JsonTokenType.False:
                 case JsonTokenType.Null:
-                    if (pathStack.Count > 0 && !pathStack.Peek().IsArray)
-                    {
-                        pathStack.Pop();
-                    }
-
-                    if (pathStack.Count > 0 && pathStack.Peek().IsArray)
-                    {
-                        var arraySegment = pathStack.Pop();
-                        pathStack.Push(arraySegment with { ArrayIndex = arraySegment.ArrayIndex + 1 });
-                    }
+                    CompleteValue(pathStack);
                     break;
-            }
-
-            if (
-                (reader.TokenType == JsonTokenType.EndObject || reader.TokenType == JsonTokenType.EndArray)
-                && pathStack.Count > 0
-                && pathStack.Peek().IsArray
-            )
-            {
-                var arraySegment = pathStack.Pop();
-                pathStack.Push(arraySegment with { ArrayIndex = arraySegment.ArrayIndex + 1 });
             }
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Records that a value just finished. A value that belongs to a property pops that property's
+    /// segment; only a value that is itself an array element advances the array index.
+    /// </summary>
+    private static void CompleteValue(Stack<JsonPathSegment> pathStack)
+    {
+        if (pathStack.Count == 0)
+        {
+            return;
+        }
+
+        var segment = pathStack.Pop();
+        if (segment.IsArray)
+        {
+            pathStack.Push(segment with { ArrayIndex = segment.ArrayIndex + 1 });
+        }
     }
 
     private static string BuildJsonPath(Stack<JsonPathSegment> pathStack, string duplicatePropertyName)

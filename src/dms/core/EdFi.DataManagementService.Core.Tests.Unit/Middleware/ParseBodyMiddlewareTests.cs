@@ -354,4 +354,237 @@ public class ParseBodyMiddlewareTests
             requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
+
+    /// <summary>
+    /// Builds a request the way each parse path does: the frontend hands over a node parsed from UTF-8
+    /// bytes and no raw body, while the Core path gets only the raw body text.
+    /// </summary>
+    internal static RequestInfo RequestFor(
+        string body,
+        bool frontendParsed,
+        string? duplicatePropertyPath = null
+    ) =>
+        new(
+            new FrontendRequest(
+                Path: "ed-fi/schools",
+                Body: frontendParsed ? null : body,
+                Form: null,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: [],
+                ParsedBody: frontendParsed ? JsonNode.Parse(System.Text.Encoding.UTF8.GetBytes(body)) : null,
+                DuplicatePropertyPath: duplicatePropertyPath
+            ),
+            RequestMethod.POST,
+            No.ServiceProvider
+        );
+
+    [TestFixture("""{"name":"\uD800"}""", "$.name", true)]
+    [TestFixture("""{"name":"\uD800"}""", "$.name", false)]
+    [TestFixture("""{"name":"\uDC00"}""", "$.name", true)]
+    [TestFixture("""{"name":"\uDC00"}""", "$.name", false)]
+    [TestFixture("""{"name":"\uD800A"}""", "$.name", true)]
+    [TestFixture("""{"name":"\uD800A"}""", "$.name", false)]
+    [TestFixture("""{"address":{"city":"\uD800"}}""", "$.address.city", true)]
+    [TestFixture("""{"address":{"city":"\uD800"}}""", "$.address.city", false)]
+    [TestFixture("""{"addresses":[{"city":"ok"},{"city":"\uD800"}]}""", "$.addresses[1].city", true)]
+    [TestFixture("""{"addresses":[{"city":"ok"},{"city":"\uD800"}]}""", "$.addresses[1].city", false)]
+    [TestFixture("""{"first":"\uD800","second":"\uDC00"}""", "$.first", true)]
+    [TestFixture("""{"first":"\uD800","second":"\uDC00"}""", "$.first", false)]
+    [Parallelizable]
+    public class Given_A_Body_With_An_Unpaired_Surrogate_String_Value(
+        string body,
+        string expectedPath,
+        bool frontendParsed
+    ) : ParseBodyMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private bool _nextWasCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = RequestFor(body, frontendParsed);
+            await Middleware()
+                .Execute(
+                    _requestInfo,
+                    () =>
+                    {
+                        _nextWasCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+        }
+
+        [Test]
+        public void It_returns_the_malformed_body_400()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo.FrontendResponse.Body!["validationErrors"]!["$."]!
+                .AsArray()
+                .Should()
+                .ContainSingle();
+        }
+
+        [Test]
+        public void It_names_the_first_offending_string()
+        {
+            var message = _requestInfo.FrontendResponse.Body!["validationErrors"]!["$."]![
+                0
+            ]!.GetValue<string>();
+            message.Should().EndWith($" Path: {expectedPath}");
+        }
+
+        [Test]
+        public void It_does_not_continue_the_pipeline()
+        {
+            _nextWasCalled.Should().BeFalse();
+        }
+    }
+
+    [TestFixture("""{"outer":{"\uD800":1}}""", "$.outer")]
+    [TestFixture("""{"\uD800":1}""", "$")]
+    [TestFixture("""{"items":[{"id":1,"\uD800":1}]}""", "$.items[0]")]
+    [TestFixture("""{"items":[{"ref":{"a":1},"\uD800":1}]}""", "$.items[0]")]
+    [TestFixture("""{"items":[{"id":1},{"id":2,"\uD800":1}]}""", "$.items[1]")]
+    // The malformed name comes before a duplicate key in its parent, so walking the parent first would
+    // throw ArgumentException instead.
+    [TestFixture("""{"outer":{"\uD800":1},"x":1,"x":2}""", "$.outer")]
+    [Parallelizable]
+    public class Given_A_Core_Parsed_Body_With_A_Malformed_Property_Name(string body, string expectedPath)
+        : ParseBodyMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private bool _nextWasCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = RequestFor(body, frontendParsed: false);
+            await Middleware()
+                .Execute(
+                    _requestInfo,
+                    () =>
+                    {
+                        _nextWasCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+        }
+
+        [Test]
+        public void It_returns_the_malformed_body_400_naming_the_containing_object()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo.FrontendResponse.Body!["validationErrors"]!["$."]![0]!
+                .GetValue<string>()
+                .Should()
+                .EndWith($" Path: {expectedPath}");
+        }
+
+        [Test]
+        public void It_does_not_continue_the_pipeline()
+        {
+            _nextWasCalled.Should().BeFalse();
+        }
+    }
+
+    [TestFixture(true)]
+    [TestFixture(false)]
+    [Parallelizable]
+    public class Given_A_Body_With_Valid_Surrogate_Pairs_And_Non_Ascii_Text(bool frontendParsed)
+        : ParseBodyMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private bool _nextWasCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = RequestFor(
+                """{"name":"😀","city":"École","tags":["Ünïcødé","é"]}""",
+                frontendParsed
+            );
+            await Middleware()
+                .Execute(
+                    _requestInfo,
+                    () =>
+                    {
+                        _nextWasCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+        }
+
+        [Test]
+        public void It_continues_the_pipeline()
+        {
+            _nextWasCalled.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_does_not_set_an_error_response()
+        {
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    /// <summary>
+    /// Duplicate detection runs after this step, and enumerating an object with a duplicate key throws, so
+    /// a body with a duplicate must reach DuplicatePropertiesMiddleware untouched and get its 400.
+    /// </summary>
+    [TestFixture("""{"a":1,"a":2}""", "$.a", true)]
+    [TestFixture("""{"a":1,"a":2}""", "$.a", false)]
+    [TestFixture("""{"outer":{"a":1,"a":2}}""", "$.outer.a", true)]
+    [TestFixture("""{"outer":{"a":1,"a":2}}""", "$.outer.a", false)]
+    [TestFixture("""{"a":"\uD800","a":2}""", "$.a", true)]
+    [TestFixture("""{"a":"\uD800","a":2}""", "$.a", false)]
+    [Parallelizable]
+    public class Given_A_Body_With_A_Duplicate_Property_Followed_By_Duplicate_Detection(
+        string body,
+        string duplicatePath,
+        bool frontendParsed
+    ) : ParseBodyMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private bool _nextWasCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // The frontend reports the duplicate it found while reading the bytes.
+            _requestInfo = RequestFor(body, frontendParsed, frontendParsed ? duplicatePath : null);
+            var duplicateDetection = DuplicatePropertiesMiddlewareTest.Middleware();
+            await Middleware()
+                .Execute(
+                    _requestInfo,
+                    () =>
+                        duplicateDetection.Execute(
+                            _requestInfo,
+                            () =>
+                            {
+                                _nextWasCalled = true;
+                                return Task.CompletedTask;
+                            }
+                        )
+                );
+        }
+
+        [Test]
+        public void It_returns_the_duplicate_property_400_at_its_path()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo.FrontendResponse.Body!["validationErrors"]![duplicatePath]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be("An item with the same key has already been added.");
+        }
+
+        [Test]
+        public void It_does_not_continue_the_pipeline()
+        {
+            _nextWasCalled.Should().BeFalse();
+        }
+    }
 }

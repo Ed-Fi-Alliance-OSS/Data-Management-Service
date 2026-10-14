@@ -119,7 +119,89 @@ namespace EdFi.DataManagementService.Core.Middleware
                 }
             }
 
+            // The parser accepts unpaired-surrogate escapes such as \uD800 and defers the failure to
+            // the first read of that string, which would otherwise surface later as a 5xx. Reading every
+            // property name and string value now turns it into the malformed-body 400. A body with a
+            // duplicate property is left to DuplicatePropertiesMiddleware: enumerating its object would
+            // throw, and that step already answers it with a path-attributed 400.
+            try
+            {
+                string? duplicatePropertyPath = requestInfo.FrontendRequest.DuplicatePropertyPath;
+                if (
+                    duplicatePropertyPath == null
+                    && requestInfo.FrontendRequest.ParsedBody == null
+                    && requestInfo.FrontendRequest.Body != null
+                )
+                {
+                    duplicatePropertyPath = DuplicatePropertiesMiddleware.FindDuplicatePropertyPath(
+                        requestInfo.FrontendRequest.Body
+                    );
+                }
+
+                if (duplicatePropertyPath == null)
+                {
+                    MaterializeStrings(requestInfo.ParsedBody);
+                }
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogDebug(
+                    ex,
+                    "The request body contains a malformed string - {TraceId}",
+                    requestInfo.FrontendRequest.TraceId.Value
+                );
+
+                SetValidationErrorResponse(requestInfo, ex.Message);
+
+                return;
+            }
+
             await next();
+        }
+
+        /// <summary>
+        /// Reads every property name and string value, so a malformed one throws here with its path.
+        /// </summary>
+        private static void MaterializeStrings(JsonNode? node)
+        {
+            switch (node)
+            {
+                case JsonObject jsonObject:
+                    List<KeyValuePair<string, JsonNode?>> properties;
+                    try
+                    {
+                        properties = [.. jsonObject];
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        throw new InvalidOperationException($"{ex.Message} Path: {jsonObject.GetPath()}", ex);
+                    }
+
+                    foreach (var property in properties)
+                    {
+                        MaterializeStrings(property.Value);
+                    }
+                    break;
+
+                case JsonArray jsonArray:
+                    foreach (var item in jsonArray)
+                    {
+                        MaterializeStrings(item);
+                    }
+                    break;
+
+                case JsonValue jsonValue
+                    when jsonValue.GetValueKind() == System.Text.Json.JsonValueKind.String:
+                    try
+                    {
+                        _ = jsonValue.GetValue<string>();
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        throw new InvalidOperationException($"{ex.Message} Path: {jsonValue.GetPath()}", ex);
+                    }
+                    break;
+            }
         }
     }
 }
