@@ -96,6 +96,15 @@ fixtures by exact name in their own projects, and step 2.2 states that its catal
 the obsolete method references. Step 2.2's recorded evidence already passes the added gates
 (1, 1, 24, and 3 passed; no rerun).
 
+Found while implementing step 2.5 (approved 2026-10-13): the ten list-2.5 query-authorization
+fixtures never call the authorization side-effect readers, so they pass with or without the
+change. They stay in list 2.5 as regression coverage for the edited files. List 2.5 now also
+requires the five PostgreSQL and six SQL Server fixtures that do exercise those readers (§8.4
+list 2.5), by exact full name. Step 2.5's recorded evidence already satisfies the added gates
+(71 of 71 and 96 of 96 passed). With the step files reverted, 52 and 70 tests failed on the
+missing column, which shows the readers' consumers now match the six-column schema. No rerun was
+needed.
+
 ---
 
 ## 1. Problem, proposed decision, alternatives, assumptions, open questions
@@ -1184,6 +1193,21 @@ verified by `rg -l`; corrected in review 3)**
   `Given_A_Postgresql_Relational_Query_Authorization_With_A_Duplicate_People_Auth_Pair`,
   `Given_A_Postgresql_Relational_Query_Authorization_With_Anchored_Person_Pathways`.
 - MSSQL: the same five names with `Mssql` in place of `Postgresql`.
+- Side-effect reader consumers (added after the step 2.5 review). The fixtures above never reach
+  the changed `ReadDocumentStateAsync` readers; these do, through the shared test context's
+  `Read*SideEffectStateAsync`. Each is required by exact full name, with the same discovery and
+  `Get-TrxFixtureCounts` check (`$R\fixtures\2.5-supp-pg.txt` / `2.5-supp-mssql.txt`):
+  - PG: `$PGNS.Given_A_Postgresql_Descriptor_Write_With_Ownership_Authorization`,
+    `$PGNS.Given_A_Postgresql_Post_With_Distinct_Create_And_Update_Authorization`,
+    `$PGNS.Given_A_PostgresqlRelationalPutAuthorizationTests_With_A_Synthetic_EdOrg_Fixture`,
+    `$PGNS.Given_A_PostgresqlRelationalPostAsUpdateAuthorizationTests_With_A_Synthetic_EdOrg_Fixture`,
+    `$PGNS.Given_A_PostgresqlRelationalPutAuthorizationTests_With_A_Synthetic_People_Fixture`.
+  - MSSQL: `$MSNS.Given_A_Mssql_Descriptor_Write_With_Ownership_Authorization`,
+    `$MSNS.Given_A_Mssql_Relational_Namespace_Write_Authorization_With_A_Synthetic_Namespace_Fixture`,
+    `$MSNS.Given_A_Mssql_Post_With_Distinct_Create_And_Update_Authorization`,
+    `$MSNS.Given_A_MssqlRelationalPutAuthorizationTests_With_A_Synthetic_EdOrg_Fixture`,
+    `$MSNS.Given_A_MssqlRelationalPutAuthorizationTests_With_A_Synthetic_People_Fixture`,
+    `$MSNS.Given_A_MssqlRelationalPostAsUpdateAuthorizationTests_With_A_Synthetic_EdOrg_Fixture`.
 
 **2.6 (rollback snapshot + descriptor read)**
 - PG: `Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sample_StudentSchoolAssociation_Fixture`,

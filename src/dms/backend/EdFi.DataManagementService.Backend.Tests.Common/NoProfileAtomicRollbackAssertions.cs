@@ -129,8 +129,7 @@ public static class NoProfileAtomicRollbackAssertions
         Guid DocumentUuid,
         short ResourceKeyId,
         long ContentVersion,
-        DateTimeOffset ContentLastModifiedAt,
-        DateTimeOffset CreatedAt
+        DateTimeOffset ContentLastModifiedAt
     );
 
     public sealed record RejectedWriteReferentialIdentityRow(

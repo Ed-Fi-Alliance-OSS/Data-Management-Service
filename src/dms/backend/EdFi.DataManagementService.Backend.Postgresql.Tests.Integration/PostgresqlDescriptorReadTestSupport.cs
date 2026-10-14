@@ -121,8 +121,7 @@ internal static class PostgresqlDescriptorReadTestSupport
                 "DocumentUuid",
                 "ResourceKeyId",
                 "ContentVersion",
-                "ContentLastModifiedAt",
-                "CreatedAt"
+                "ContentLastModifiedAt"
             FROM "dms"."Document"
             WHERE "DocumentId" = @documentId;
             """,
