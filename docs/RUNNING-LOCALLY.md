@@ -163,6 +163,47 @@ dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration --filter 
 Tests whose dialect is unconfigured cleanly `Assert.Ignore`, so partial
 local setups still produce a useful test run.
 
+## MSSQL backend integration provisioning diagnostics
+
+The backend MSSQL integration project creates real SQL Server databases during
+fixture setup. These tests use `ConnectionStrings__MssqlAdmin` as described
+above; they are separate from the API-level integration project and from the
+Docker-stack E2E suite.
+
+Run the backend project without a fixture or category filter to see the same
+setup failures that occur in an unfiltered test host:
+
+```powershell
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj
+```
+
+Generated-DDL admission is unlimited when
+`MSSQL_GENERATED_DDL_PROVISION_MAX_CONCURRENCY` is unset or blank. To cap the
+number of admitted provisioning operations in a new test process, set a
+positive integer before starting it:
+
+```powershell
+$env:MSSQL_GENERATED_DDL_PROVISION_MAX_CONCURRENCY = '1'
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj
+```
+
+The setting is captured lazily once per process, so change it and restart the
+test process to apply a different value. It only coordinates tests inside that
+process; it does not limit other processes or SQL Server activity. The existing
+300-second generated-DDL command timeout remains unchanged. A timeout message
+reports process-wide admitted-operation samples at batch start and timeout,
+including the failing operation and excluding queued entrants. Those samples
+are not executing-query counts and do not prove an engine wait. The message
+labels the cause as suspected provisioning contention. If the effective limit
+is already 1, investigate other processes and server waits; reducing it further
+cannot help.
+
+Optional per-fixture CSV timing output can be enabled with
+`MSSQL_FIXTURE_TIMINGS_PATH`. Output failures are best-effort and do not replace
+test failures or interrupt cleanup. Use the existing MSSQL shard categories as
+a fallback when isolating a failure; a filtered run does not replace the
+unfiltered host check.
+
 ## Running Unit Tests and Generate Code Coverage Report
 
 > [!NOTE]
