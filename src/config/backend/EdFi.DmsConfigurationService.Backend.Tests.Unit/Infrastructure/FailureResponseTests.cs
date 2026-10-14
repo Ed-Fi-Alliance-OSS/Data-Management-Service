@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Reflection;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using FluentAssertions;
@@ -493,5 +494,162 @@ public class FailureResponseTests
 
         [Test]
         public void It_still_has_status_429() => _result["status"]?.GetValue<int>().Should().Be(429);
+    }
+
+    [TestFixture]
+    public class Given_each_failure_factory
+    {
+        // One case per public factory, pinning its exact type, status and title. Members are read
+        // with a null-forgiving indexer, so a missing member fails the test instead of skipping the
+        // assertion the way a null-conditional read would.
+        public sealed record FactoryCase(
+            string Name,
+            Func<JsonNode> Invoke,
+            string ExpectedType,
+            int ExpectedStatus,
+            string ExpectedTitle
+        );
+
+        private static readonly FactoryCase[] _factoryCases =
+        [
+            new(
+                nameof(FailureResponse.ForUnauthorized),
+                () => FailureResponse.ForUnauthorized("Unauthorized", "Access denied", CorrelationId),
+                "urn:ed-fi:api:security:authentication",
+                401,
+                "Unauthorized"
+            ),
+            new(
+                nameof(FailureResponse.ForTooManyTokens),
+                () => FailureResponse.ForTooManyTokens(5, CorrelationId),
+                "urn:ed-fi:api:security:authentication:too-many-tokens",
+                429,
+                "Too Many Tokens"
+            ),
+            new(
+                nameof(FailureResponse.ForForbidden),
+                () => FailureResponse.ForForbidden("Forbidden", "Access forbidden", CorrelationId),
+                "urn:ed-fi:api:security:authorization",
+                403,
+                "Forbidden"
+            ),
+            new(
+                nameof(FailureResponse.ForBadRequest),
+                () => FailureResponse.ForBadRequest("Bad request", CorrelationId),
+                "urn:ed-fi:api:bad-request",
+                400,
+                "Bad Request"
+            ),
+            new(
+                nameof(FailureResponse.ForNotFound),
+                () => FailureResponse.ForNotFound("Not found", CorrelationId),
+                "urn:ed-fi:api:not-found",
+                404,
+                "Not Found"
+            ),
+            new(
+                nameof(FailureResponse.ForMethodNotAllowed),
+                () => FailureResponse.ForMethodNotAllowed(CorrelationId),
+                "urn:ed-fi:api:method-not-allowed",
+                405,
+                "Method Not Allowed"
+            ),
+            new(
+                nameof(FailureResponse.ForUnsupportedMediaType),
+                () => FailureResponse.ForUnsupportedMediaType(CorrelationId),
+                "urn:ed-fi:api:unsupported-media-type",
+                415,
+                "Unsupported Media Type"
+            ),
+            new(
+                nameof(FailureResponse.ForUnclassifiedStatus),
+                () => FailureResponse.ForUnclassifiedStatus(413, "Payload Too Large", CorrelationId),
+                "about:blank",
+                413,
+                "Payload Too Large"
+            ),
+            new(
+                nameof(FailureResponse.ForConflict),
+                () => FailureResponse.ForConflict("Conflict", CorrelationId),
+                "urn:ed-fi:api:conflict",
+                409,
+                "Conflict"
+            ),
+            new(
+                nameof(FailureResponse.ForDependentItemExists),
+                () => FailureResponse.ForDependentItemExists("Dependent item exists", CorrelationId),
+                "urn:ed-fi:api:conflict:dependent-item-exists",
+                409,
+                "Dependent Item Exists"
+            ),
+            new(
+                nameof(FailureResponse.ForUnresolvedReference),
+                () => FailureResponse.ForUnresolvedReference("Unresolved reference", CorrelationId),
+                "urn:ed-fi:api:conflict:unresolved-reference",
+                409,
+                "Unresolved Reference"
+            ),
+            new(
+                nameof(FailureResponse.ForDataValidation),
+                () => FailureResponse.ForDataValidation([new("Property1", "Error1")], CorrelationId),
+                "urn:ed-fi:api:bad-request:data",
+                400,
+                "Data Validation Failed"
+            ),
+            new(
+                nameof(FailureResponse.ForParameterValidation),
+                () =>
+                    FailureResponse.ForParameterValidation(
+                        ["'limit' must be greater than 0."],
+                        CorrelationId
+                    ),
+                "urn:ed-fi:api:bad-request:parameter",
+                400,
+                "Parameter Validation Failed"
+            ),
+            new(
+                nameof(FailureResponse.ForBadGateway),
+                () => FailureResponse.ForBadGateway("Bad gateway", CorrelationId),
+                "urn:ed-fi:api:bad-gateway",
+                502,
+                "Bad Gateway"
+            ),
+            new(
+                nameof(FailureResponse.ForUnknown),
+                () => FailureResponse.ForUnknown(CorrelationId),
+                "urn:ed-fi:api:internal-server-error",
+                500,
+                "Internal Server Error"
+            ),
+        ];
+
+        private static IEnumerable<TestCaseData> FactoryCases() =>
+            _factoryCases.Select(factoryCase =>
+                new TestCaseData(factoryCase).SetArgDisplayNames(factoryCase.Name)
+            );
+
+        [TestCaseSource(nameof(FactoryCases))]
+        public void It_has_the_exact_type(FactoryCase factoryCase) =>
+            factoryCase.Invoke()["type"]!.GetValue<string>().Should().Be(factoryCase.ExpectedType);
+
+        [TestCaseSource(nameof(FactoryCases))]
+        public void It_has_the_expected_status(FactoryCase factoryCase) =>
+            factoryCase.Invoke()["status"]!.GetValue<int>().Should().Be(factoryCase.ExpectedStatus);
+
+        [TestCaseSource(nameof(FactoryCases))]
+        public void It_has_the_expected_title(FactoryCase factoryCase) =>
+            factoryCase.Invoke()["title"]!.GetValue<string>().Should().Be(factoryCase.ExpectedTitle);
+
+        // A factory-inventory guard: a newly added public factory fails here until it has a case
+        // above. It proves every public factory is classified, not that every Configuration Service
+        // emitter routes through the factories.
+        [Test]
+        public void It_classifies_every_public_factory() =>
+            typeof(FailureResponse)
+                .GetMethods(BindingFlags.Public | BindingFlags.Static)
+                .Where(method => typeof(JsonNode).IsAssignableFrom(method.ReturnType))
+                .Select(method => method.Name)
+                .Should()
+                .BeEquivalentTo(_factoryCases.Select(factoryCase => factoryCase.Name));
     }
 }
