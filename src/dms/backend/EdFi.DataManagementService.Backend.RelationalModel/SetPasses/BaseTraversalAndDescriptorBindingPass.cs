@@ -111,6 +111,7 @@ public sealed class BaseTraversalAndDescriptorBindingPass : IRelationalModelSetP
                     SecurableElements = securableElements,
                     QueryFieldMappingsByQueryField = queryFieldMappings,
                     SuperclassResource = superclassResource,
+                    IdentityJsonPaths = builderContext.IdentityJsonPaths,
                 }
             );
             context.RegisterExtensionSitesForResource(resourceKey, result.ExtensionSites);
