@@ -70,8 +70,9 @@ within a type, so case variants of one URI cannot coexist on either engine:
   `UriLowered AS LOWER(([Namespace] + N'#' + [CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS)`
   and indexes `(UriLowered, ResourceKeyId)`.
 
-Descriptor writes and descriptor references whose values contain the NUL character or an
-unpaired surrogate are rejected with HTTP 400 at the offending field path.
+Descriptor writes and descriptor references whose values contain the NUL character are rejected
+with HTTP 400 keyed by the offending field path. An unpaired-surrogate escape in any request-body
+string is rejected at body parse with the malformed-body 400, whose message names the path.
 The current runtime still calculates and maintains RI: its existing descriptor join returns
 both IDs in one lookup, and URI witnesses and original-case responses reconstruct the whole
 string. Lowered-URI natural-key probes, RI removal, query-side descriptor validation, new equality

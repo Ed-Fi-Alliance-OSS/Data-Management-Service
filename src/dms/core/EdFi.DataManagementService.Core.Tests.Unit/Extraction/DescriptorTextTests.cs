@@ -69,15 +69,5 @@ public class DescriptorTextTests
             var exception = act.Should().Throw<InvalidOperationException>().Which;
             exception.Message.Should().NotContain("SECRET");
         }
-
-        [Test]
-        public void It_has_a_client_message_that_names_the_rule()
-        {
-            DescriptorText
-                .InvalidValueMessage.Should()
-                .Be(
-                    "Descriptor values must not contain the NUL character (U+0000) or unpaired surrogate characters."
-                );
-        }
     }
 }
