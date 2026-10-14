@@ -120,8 +120,10 @@ namespace EdFi.DataManagementService.Core.Middleware
             }
 
             // The parser accepts unpaired-surrogate escapes such as \uD800 and defers the failure to
-            // the first read of that string, which would otherwise surface later as a 5xx. Reading every
-            // property name and string value now turns it into the malformed-body 400. A body with a
+            // the first read of that string, which would otherwise surface later as a 5xx. The
+            // duplicate-property scan reads every property name (the frontend's, or the one below for a
+            // body parsed here), and the walk reads every string value, so either failure becomes the
+            // malformed-body 400. A body with a
             // duplicate property is left to DuplicatePropertiesMiddleware: enumerating its object would
             // throw, and that step already answers it with a path-attributed 400.
             try
@@ -160,24 +162,15 @@ namespace EdFi.DataManagementService.Core.Middleware
         }
 
         /// <summary>
-        /// Reads every property name and string value, so a malformed one throws here with its path.
+        /// Reads every string value, so a malformed one throws here with its path. Property names were
+        /// already read by the duplicate-property scan, which rejects a malformed one first.
         /// </summary>
         private static void MaterializeStrings(JsonNode? node)
         {
             switch (node)
             {
                 case JsonObject jsonObject:
-                    List<KeyValuePair<string, JsonNode?>> properties;
-                    try
-                    {
-                        properties = [.. jsonObject];
-                    }
-                    catch (InvalidOperationException ex)
-                    {
-                        throw new InvalidOperationException($"{ex.Message} Path: {jsonObject.GetPath()}", ex);
-                    }
-
-                    foreach (var property in properties)
+                    foreach (var property in jsonObject)
                     {
                         MaterializeStrings(property.Value);
                     }

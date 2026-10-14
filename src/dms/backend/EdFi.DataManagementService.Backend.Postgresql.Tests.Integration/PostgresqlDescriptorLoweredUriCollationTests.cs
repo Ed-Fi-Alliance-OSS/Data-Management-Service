@@ -130,15 +130,20 @@ public class Given_A_Postgresql_Descriptor_Lowered_Uri_Index_On_Default_And_C_Lo
         upgradeGuide.Should().Contain(definitions[0] + ";");
     }
 
-    [Test]
-    public async Task It_rejects_a_non_ascii_case_variant_under_one_resource_key_on_both_databases()
+    [TestCase("École", "école")]
+    [TestCase("ÀÉÎÕÜ", "àéîõü")]
+    [TestCase("ΑΒΓΣ", "αβγσ")]
+    public async Task It_rejects_a_non_ascii_case_variant_under_one_resource_key_on_both_databases(
+        string codeValue,
+        string caseVariant
+    )
     {
         foreach (var database in Databases)
         {
             var resourceKeyId = await MinimalResourceKeyIdAsync(database);
-            await InsertDescriptorAsync(database, resourceKeyId, "École");
+            await InsertDescriptorAsync(database, resourceKeyId, codeValue);
 
-            var act = async () => await InsertDescriptorAsync(database, resourceKeyId, "école");
+            var act = async () => await InsertDescriptorAsync(database, resourceKeyId, caseVariant);
 
             var exception = (await act.Should().ThrowAsync<PostgresException>()).Which;
             exception.SqlState.Should().Be(PostgresErrorCodes.UniqueViolation);
@@ -158,30 +163,6 @@ public class Given_A_Postgresql_Descriptor_Lowered_Uri_Index_On_Default_And_C_Lo
                 .Should()
                 .Be(2L);
         }
-    }
-
-    [TestCase("uri://ed-fi.org/SexDescriptor", "ABC")]
-    [TestCase("uri://ed-fi.org/SexDescriptor", "ÀÉÎÕÜ")]
-    [TestCase("uri://ed-fi.org/SexDescriptor", "ΑΒΓΣ")]
-    public async Task It_folds_the_pinned_expression_identically_on_both_databases(
-        string ns,
-        string codeValue
-    )
-    {
-        var folded = new List<string>();
-        foreach (var database in Databases)
-        {
-            folded.Add(
-                await database.ExecuteScalarAsync<string>(
-                    """SELECT lower((@ns || '#' || @codeValue) COLLATE "pg_c_utf8");""",
-                    new NpgsqlParameter("ns", ns),
-                    new NpgsqlParameter("codeValue", codeValue)
-                )
-            );
-        }
-
-        folded.Distinct().Should().ContainSingle();
-        folded[0].Should().Be((ns + "#" + codeValue).ToLowerInvariant());
     }
 
     private static Task<short> MinimalResourceKeyIdAsync(PostgresqlGeneratedDdlTestDatabase database) =>
