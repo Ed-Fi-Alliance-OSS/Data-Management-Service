@@ -150,7 +150,7 @@ public class Given_Consistent_Hydration(SqlDialect dialect, bool fastPath)
     public async Task It_bounds_retries_without_returning_an_unstable_representation()
     {
         Func<Task> act = async () => await ExecuteAsync(attempt => Reader(attempt, attempt + 1));
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*stable representation*");
+        await act.Should().ThrowAsync<HydrationConsistencyException>().WithMessage("*stable representation*");
         _commands.Should().HaveCount(3);
     }
 

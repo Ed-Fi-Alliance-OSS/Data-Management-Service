@@ -116,9 +116,7 @@ public static class ConsistentHydrationExecutor
             }
         }
 
-        throw new InvalidOperationException(
-            "Relational hydration could not read a stable representation after concurrent writes."
-        );
+        throw new HydrationConsistencyException();
     }
 
     private static async Task<Dictionary<long, long>> ReadVersionsAsync(
