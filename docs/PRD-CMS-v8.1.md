@@ -11,11 +11,17 @@
 CMS v8.1 implements the core Ed-Fi Management API v3 administrative control
 plane, in parity with ODS Admin API v2.4.
 
+> [!NOTE]
+> Any requirement listed as "SHOULD" instead of "MUST" or "SHALL" may
+> end up being deferred to the next release. This PRD should be edited
+> once the 8.1 release reaches code complete, with deferred "SHOULD"
+> items becoming "MUST" items in the 8.2 release PRD.
+
 ### 1.1 Jobs to Be Done
 
 #### JTBD 11: Database Instance Provisioning
 
-**Personas**: Platform Host System Administrator, Operator
+**Personas**: Platform Host System Administrator
 
 **When** onboarding a new district or standing up a new environment, \
 **I want** to request creation of a new data store from an approved database
@@ -33,7 +39,7 @@ connection string, and schema provisioning is a separate host-run tooling step
 
 #### JTBD 12: Education Organization Synchronization
 
-**Personas**: Platform Host System Administrator, Operator
+**Personas**: Platform Host System Administrator
 
 **When** a data store's education organization structure changes, \
 **I want** CMS to keep an up-to-date, queryable copy of each data store's
