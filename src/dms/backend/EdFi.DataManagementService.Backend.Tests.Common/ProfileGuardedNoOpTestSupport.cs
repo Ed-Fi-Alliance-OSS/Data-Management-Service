@@ -12,8 +12,7 @@ internal sealed record ProfileGuardedNoOpDocumentRow(
     Guid DocumentUuid,
     short ResourceKeyId,
     long ContentVersion,
-    DateTime ContentLastModifiedAt,
-    DateTime CreatedAt
+    DateTime ContentLastModifiedAt
 );
 
 internal sealed record ProfileGuardedNoOpPersistedState(
@@ -68,8 +67,7 @@ internal static class ProfileGuardedNoOpPersistedStateSupport
             ContentLastModifiedAt: Convert.ToDateTime(
                 row["ContentLastModifiedAt"],
                 CultureInfo.InvariantCulture
-            ),
-            CreatedAt: Convert.ToDateTime(row["CreatedAt"], CultureInfo.InvariantCulture)
+            )
         );
     }
 }

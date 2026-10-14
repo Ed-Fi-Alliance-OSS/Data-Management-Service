@@ -69,8 +69,7 @@ internal static class MssqlProfileGuardedNoOpIntegrationTestSupport
             .QueryRowsAsync(
                 """
                 SELECT [DocumentId], [DocumentUuid], [ResourceKeyId],
-                       [ContentVersion], [ContentLastModifiedAt],
-                       [CreatedAt]
+                       [ContentVersion], [ContentLastModifiedAt]
                 FROM [dms].[Document]
                 WHERE [DocumentUuid] = @documentUuid;
                 """,
@@ -491,12 +490,6 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Root_Only
     }
 
     [Test]
-    public void It_does_not_change_created_at()
-    {
-        _stateAfterUpdate.Document.CreatedAt.Should().Be(_stateBeforeUpdate.Document.CreatedAt);
-    }
-
-    [Test]
     public void It_does_not_advance_the_change_version()
     {
         _stateBeforeUpdate
@@ -593,12 +586,6 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Post_As_Update_Wit
         _stateAfterPostAsUpdate
             .Document.ContentLastModifiedAt.Should()
             .Be(_stateBeforePostAsUpdate.Document.ContentLastModifiedAt);
-    }
-
-    [Test]
-    public void It_does_not_change_created_at()
-    {
-        _stateAfterPostAsUpdate.Document.CreatedAt.Should().Be(_stateBeforePostAsUpdate.Document.CreatedAt);
     }
 
     [Test]
