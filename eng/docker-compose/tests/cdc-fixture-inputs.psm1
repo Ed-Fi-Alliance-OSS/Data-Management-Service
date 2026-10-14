@@ -39,7 +39,7 @@ function New-CdcFixtureInput {
     if ($LargeWorker) { $fixtureValues.CDC_WORKER_HEAP_MIB = '1024' }
     if ($SqlServer) {
         $fixtureValues.MSSQL_SA_PASSWORD = $password; $fixtureValues.MSSQL_PORT = '1435'
-        $fixtureValues.DMS_DATASTORE = 'mssql'; $fixtureValues.DMS_CONFIG_DATASTORE = 'mssql'
+        $fixtureValues.DMS_DATASTORE = 'mssql'; $fixtureValues.CONFIGURATION_SERVICE_DATASTORE = 'mssql'
     }
     foreach ($name in $AdditionalValues.Keys) { $fixtureValues[$name] = $AdditionalValues[$name] }
     foreach ($pair in $fixtureValues.GetEnumerator()) {
@@ -57,10 +57,10 @@ function New-CdcFixtureInput {
     $statePath = Join-Path $local "$stateName$suffix"
     $base = Get-Content (Join-Path $Repo 'src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/appsettings.json') -Raw | ConvertFrom-Json -AsHashtable
     $base.ConfigurationServiceSettings.BaseUrl = 'http://127.0.0.1:8081'
-    $base.ConfigurationServiceSettings.ClientId = $values.CONFIG_SERVICE_CLIENT_ID
-    $base.ConfigurationServiceSettings.ClientSecret = $values.CONFIG_SERVICE_CLIENT_SECRET
-    $base.ConfigurationServiceSettings.Scope = $values.CONFIG_SERVICE_CLIENT_SCOPE
-    $base.ConfigurationServiceSettings.EncryptionKey = $values.DMS_CONFIG_DATABASE_ENCRYPTION_KEY
+    $base.ConfigurationServiceSettings.ClientId = $values.DMS_CONFIGURATION_SERVICE_CLIENT_ID
+    $base.ConfigurationServiceSettings.ClientSecret = $values.DMS_CONFIGURATION_SERVICE_CLIENT_SECRET
+    $base.ConfigurationServiceSettings.Scope = $values.DMS_CONFIGURATION_SERVICE_CLIENT_SCOPE
+    $base.ConfigurationServiceSettings.EncryptionKey = $values.CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY
     $base.AppSettings.AuthenticationService = 'http://127.0.0.1:8081/connect/token'
     $base.JwtAuthentication.Authority = 'http://127.0.0.1:8081'
     $base.JwtAuthentication.MetadataAddress = 'http://127.0.0.1:8081/.well-known/openid-configuration'

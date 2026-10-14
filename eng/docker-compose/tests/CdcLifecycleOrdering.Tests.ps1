@@ -869,7 +869,7 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
         $project = "dms-$flavor"
         Remove-Item (Join-Path $script:root '.cdc-deployments') -Recurse -Force
         @('DMS_HTTP_PORTS=8080', 'POSTGRES_PASSWORD=fixture-password', 'POSTGRES_DB_NAME=fixture',
-            'CONFIG_SERVICE_CLIENT_SECRET=fixture-secret', 'DMS_CONFIG_IDENTITY_CLIENT_SECRET=fixture-secret') |
+            'DMS_CONFIGURATION_SERVICE_CLIENT_SECRET=fixture-secret', 'CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET=fixture-secret') |
             Set-Content (Join-Path $script:root '.env.custom')
         Register-CdcDeploymentHandoff (New-TestHandoff -id 42 -project $project -provider $provider) (Join-Path $script:root 'custom-state-42')
         $script:live = @('connector-42')

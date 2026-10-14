@@ -55,7 +55,7 @@ COPY --from=parentdir plugins/EdFi.Api.Plugins.Hosting/*.csproj plugins/EdFi.Api
 
 WORKDIR /source/config
 
-COPY Directory.Build.props ./
+COPY Directory.Build.props Directory.Build.targets ./
 
 COPY frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/*.csproj frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/packages.lock.json ./frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/
 COPY backend/EdFi.DmsConfigurationService.Backend/*.csproj backend/EdFi.DmsConfigurationService.Backend/packages.lock.json ./backend/EdFi.DmsConfigurationService.Backend/
@@ -111,7 +111,7 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0.3-alpine3.23@sha256:258b939d6d684ff05a
 
 # Install OpenSSL on the 3.5 line and runtime helpers; ICU because
 # Microsoft.Data.SqlClient does not support globalization-invariant mode
-RUN apk add --no-cache openssl=~3.5 bash=~5 postgresql16-client=~16 icu-libs=~76 icu-data-full=~76
+RUN apk add --no-cache openssl=~3.5 bash=~5 postgresql18-client=~18 icu-libs=~76 icu-data-full=~76
 
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 

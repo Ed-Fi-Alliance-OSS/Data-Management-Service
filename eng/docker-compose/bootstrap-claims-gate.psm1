@@ -196,9 +196,9 @@ function Resolve-ClaimsGateTokenUrl {
         }
         default {
             # self-contained
-            $port = if ($null -ne $EnvValues -and $EnvValues.ContainsKey("DMS_CONFIG_ASPNETCORE_HTTP_PORTS") -and
-                        -not [string]::IsNullOrWhiteSpace([string]$EnvValues["DMS_CONFIG_ASPNETCORE_HTTP_PORTS"])) {
-                [string]$EnvValues["DMS_CONFIG_ASPNETCORE_HTTP_PORTS"]
+            $port = if ($null -ne $EnvValues -and $EnvValues.ContainsKey("CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS") -and
+                        -not [string]::IsNullOrWhiteSpace([string]$EnvValues["CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS"])) {
+                [string]$EnvValues["CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS"]
             }
             else { "8081" }
             return "http://localhost:$port/connect/token"
@@ -515,7 +515,7 @@ function Test-CmsClaimsReady {
 
     .PARAMETER EnvironmentFile
     Path to the .env file used to resolve CMS base URL, identity provider settings, and the
-    CONFIG_SERVICE_TENANT tenant scope sent as the Tenant header on multi-tenant CMS calls.
+    DMS_CONFIGURATION_SERVICE_TENANT tenant scope sent as the Tenant header on multi-tenant CMS calls.
     Resolved via Resolve-LocalSettingsEnvironmentFile (env-utility.psm1) when the sibling
     module is present. Ignored when -CmsBaseUrl and -AccessToken are both supplied.
 
@@ -607,12 +607,12 @@ function Test-CmsClaimsReady {
     }
 
     # Resolve tenant scope for multi-tenant CMS routing. Mirrors configure-local-data-store.ps1:
-    # CONFIG_SERVICE_TENANT from the env file, forwarded as the Tenant header only when non-empty
+    # DMS_CONFIGURATION_SERVICE_TENANT from the env file, forwarded as the Tenant header only when non-empty
     # (the same pattern every CMS Admin API call in Dms-Management.psm1 uses). Without it the
     # gate's /v3/authorizationMetadata request fails tenant resolution in multi-tenant CMS mode.
     $resolvedTenant = ""
-    if ($null -ne $envValues -and $envValues.ContainsKey("CONFIG_SERVICE_TENANT")) {
-        $resolvedTenant = ([string]$envValues["CONFIG_SERVICE_TENANT"]).Trim()
+    if ($null -ne $envValues -and $envValues.ContainsKey("DMS_CONFIGURATION_SERVICE_TENANT")) {
+        $resolvedTenant = ([string]$envValues["DMS_CONFIGURATION_SERVICE_TENANT"]).Trim()
     }
 
     # Acquire bearer token (skip when pre-obtained token was supplied by the caller).

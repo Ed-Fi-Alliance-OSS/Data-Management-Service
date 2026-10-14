@@ -171,16 +171,12 @@ internal interface IPlanSqlDialect
     /// <param name="column">The compared column.</param>
     /// <param name="operatorToken">The SQL operator token.</param>
     /// <param name="parameterName">The bare SQL parameter name.</param>
-    /// <param name="scalarKind">
-    /// Optional scalar-kind metadata for the compared value, used for provider-specific text-comparison behavior.
-    /// </param>
     void AppendComparisonSql(
         SqlWriter writer,
         string tableAlias,
         DbColumnName column,
         string operatorToken,
-        string parameterName,
-        ScalarKind? scalarKind
+        string parameterName
     );
 }
 

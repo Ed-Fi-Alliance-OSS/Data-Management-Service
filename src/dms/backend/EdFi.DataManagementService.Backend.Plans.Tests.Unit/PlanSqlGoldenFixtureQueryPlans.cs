@@ -78,8 +78,7 @@ internal static class PlanSqlGoldenFixtureQueryPlans
                 new QueryValuePredicate(
                     new DbColumnName("Student_StudentUniqueId"),
                     QueryComparisonOperator.Equal,
-                    "studentUniqueId",
-                    ScalarKind.String
+                    "studentUniqueId"
                 ),
             ],
             UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>
@@ -147,14 +146,12 @@ internal static class PlanSqlGoldenFixtureQueryPlans
                 new QueryValuePredicate(
                     new DbColumnName("Namespace"),
                     QueryComparisonOperator.Equal,
-                    "namespace",
-                    ScalarKind.String
+                    "namespace"
                 ),
                 new QueryValuePredicate(
                     new DbColumnName("EffectiveEndDate"),
                     QueryComparisonOperator.Equal,
-                    "effectiveEndDate",
-                    ScalarKind.Date
+                    "effectiveEndDate"
                 ),
             ],
             UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),

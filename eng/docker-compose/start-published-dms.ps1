@@ -115,7 +115,7 @@ param (
     $RemoveBootstrap,
 
     # Transitional non-bootstrap helper: when no bootstrap manifest is present,
-    # passing this switch sets DMS_CONFIG_CLAIMS_SOURCE=Hybrid and DMS_CONFIG_CLAIMS_DIRECTORY=/app/additional-claims
+    # passing this switch sets CONFIGURATION_SERVICE_CLAIMS_SOURCE=Hybrid and CONFIGURATION_SERVICE_CLAIMS_DIRECTORY=/app/additional-claims
     # and stages the AdditionalClaimsets fragments plus the test-owned E2E fragments into
     # eng/docker-compose/.e2e-claims, which published-config.yml mounts at /app/additional-claims. Extension
     # claimset fragments (e.g. Sample, Homograph) and the E2E claim sets are therefore both loaded.
@@ -134,7 +134,7 @@ param (
     # Service (CMS SQL Server backend), and the self-contained OpenIddict identity stores -
     # no PostgreSQL container runs. The relational backend has no Debezium CDC (Kafka is
     # PostgreSQL-only and omitted). The .env.mssql overlay (DMS_DATASTORE=mssql,
-    # DMS_CONFIG_DATASTORE=mssql, the MSSQL_* keys, and the SQL Server connection strings)
+    # CONFIGURATION_SERVICE_DATASTORE=mssql, the MSSQL_* keys, and the SQL Server connection strings)
     # is composed automatically onto -EnvironmentFile. See mssql.yml and
     # Resolve-DatabaseEngineEnvironmentFile.
     [ValidateSet("postgresql", "mssql")]
@@ -190,6 +190,9 @@ if (-not [System.IO.Path]::IsPathRooted($EnvironmentFile)) {
         $EnvironmentFile = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $EnvironmentFile))
     }
 }
+# Warn about retired variable names before any phase can fail on a missing replacement. The derived
+# files composed below add only tracked overlays, so the setup-openiddict.ps1 calls skip their own scan.
+Write-LegacyEnvironmentVariableWarning -EnvironmentFile $EnvironmentFile
 if (-not $databaseOnlyStartup) {
     $bootstrapEnvSnapshot = Get-BootstrapEnvSnapshot
 }
@@ -239,7 +242,7 @@ if ($cmsParticipates) {
     # across PostgreSQL and SQL Server. The profile files and both .yml inline fallbacks carry the
     # topology seam in their database segment; the fallbacks' host, port, and credentials stay
     # PostgreSQL-shaped because Compose interpolation cannot branch on the engine, which is why an
-    # MSSQL run must supply DMS_CONFIG_DATABASE_CONNECTION_STRING explicitly (the .env.mssql overlay
+    # MSSQL run must supply CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING explicitly (the .env.mssql overlay
     # always does).
     $EnvironmentFile = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $EnvironmentFile -DatabaseEngine $DatabaseEngine -SeparateConfigDatabase:$SeparateConfigDatabase -DockerComposeRoot $PSScriptRoot
     Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $EnvironmentFile -DatabaseEngine $DatabaseEngine
@@ -262,26 +265,26 @@ if (-not $databaseOnlyStartup) {
     $identityClientSecrets = Resolve-IdentityClientSecretConfiguration -EnvValues $envValues
     $cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues
     $dmsUrl = Resolve-DockerLocalDmsBaseUrl -EnvValues $envValues
-    $env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
+    $env:CONFIGURATION_SERVICE_IDENTITY_PROVIDER=$IdentityProvider
     Write-Output "Identity Provider $IdentityProvider"
     if($IdentityProvider -eq "keycloak")
     {
         # A .env seeded before this key existed would otherwise hand the Configuration Service
-        # DMS's public issuer through the env file's DMS_CONFIG_IDENTITY_AUTHORITY fallback.
+        # DMS's public issuer through the env file's CONFIGURATION_SERVICE_IDENTITY_AUTHORITY fallback.
         # Teardown starts no Configuration Service, so it must not be blocked on the key.
-        if (-not $d -and [string]::IsNullOrWhiteSpace($envValues.KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY)) {
-            throw "KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY is missing in '$EnvironmentFile'. Add KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY=http://dms-keycloak:8080/realms/edfi and set KEYCLOAK_DMS_JWT_AUTHORITY=http://localhost:8045/realms/edfi (see .env.example)."
+        if (-not $d -and [string]::IsNullOrWhiteSpace($envValues.KEYCLOAK_CONFIGURATION_SERVICE_IDENTITY_AUTHORITY)) {
+            throw "KEYCLOAK_CONFIGURATION_SERVICE_IDENTITY_AUTHORITY is missing in '$EnvironmentFile'. Add KEYCLOAK_CONFIGURATION_SERVICE_IDENTITY_AUTHORITY=http://dms-keycloak:8080/realms/edfi and set KEYCLOAK_DMS_JWT_AUTHORITY=http://localhost:8045/realms/edfi (see .env.example)."
         }
         $env:OAUTH_TOKEN_ENDPOINT = $envValues.KEYCLOAK_OAUTH_TOKEN_ENDPOINT
         $env:DMS_JWT_AUTHORITY = $envValues.KEYCLOAK_DMS_JWT_AUTHORITY
         $env:DMS_JWT_METADATA_ADDRESS = $envValues.KEYCLOAK_DMS_JWT_METADATA_ADDRESS
-        $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY
+        $env:CONFIGURATION_SERVICE_IDENTITY_AUTHORITY = $envValues.KEYCLOAK_CONFIGURATION_SERVICE_IDENTITY_AUTHORITY
     }
     elseif ($IdentityProvider -eq "self-contained") {
         $env:OAUTH_TOKEN_ENDPOINT = $envValues.SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT
         $env:DMS_JWT_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
         $env:DMS_JWT_METADATA_ADDRESS = $envValues.SELF_CONTAINED_DMS_JWT_METADATA_ADDRESS
-        $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
+        $env:CONFIGURATION_SERVICE_IDENTITY_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
     }
 }
 Write-Output "Database Engine $DatabaseEngine"
@@ -376,10 +379,10 @@ if (-not $d) {
 
     # Resolved once with Compose precedence and reused by the data-store creation below, so the
     # tenant/multi-tenancy decision matches what the CMS container received.
-    $multiTenancyEnabled = (Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "DMS_CONFIG_MULTI_TENANCY") -eq "true"
-    $configServiceTenant = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "CONFIG_SERVICE_TENANT"
+    $multiTenancyEnabled = (Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "CONFIGURATION_SERVICE_MULTI_TENANCY") -eq "true"
+    $configServiceTenant = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "DMS_CONFIGURATION_SERVICE_TENANT"
     if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange) -and $multiTenancyEnabled -and [string]::IsNullOrWhiteSpace($configServiceTenant)) {
-        throw "Parameter -SchoolYearRange requires CONFIG_SERVICE_TENANT to be set in the environment file when DMS_CONFIG_MULTI_TENANCY=true (the Configuration Service requires the Tenant header)."
+        throw "Parameter -SchoolYearRange requires DMS_CONFIGURATION_SERVICE_TENANT to be set in the environment file when CONFIGURATION_SERVICE_MULTI_TENANCY=true (the Configuration Service requires the Tenant header)."
     }
 }
 $usePostgresqlTmpfs = [string]::Equals(
@@ -701,16 +704,16 @@ else {
     }
 
     # The two role names CMS enforces are supported overrides: published-config.yml maps
-    # IdentitySettings:ConfigServiceRole / :ClientRole from DMS_CONFIG_IDENTITY_SERVICE_ROLE /
-    # DMS_CONFIG_IDENTITY_CLIENT_ROLE, and BOTH identity setup scripts -- setup-keycloak.ps1 and
+    # IdentitySettings:ConfigServiceRole / :ClientRole from CONFIGURATION_SERVICE_IDENTITY_SERVICE_ROLE /
+    # CONFIGURATION_SERVICE_IDENTITY_CLIENT_ROLE, and BOTH identity setup scripts -- setup-keycloak.ps1 and
     # setup-openiddict.ps1 -InsertData -- fall back to their own cms-client / dms-client defaults when
     # the parameters are omitted. Resolved once, above the provider branch, so neither provider
     # registers clients against a role the configured CMS does not require: that registration
     # succeeds and tokens mint, and the failure surfaces later as DMS unable to read claim sets. The
     # defaults are the compose file's own fallbacks, so an unset override resolves exactly as before.
     $identityRoleParams = @{
-        ConfigServiceRole = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "DMS_CONFIG_IDENTITY_SERVICE_ROLE" -DefaultValue "cms-client"
-        DmsClientRole     = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "DMS_CONFIG_IDENTITY_CLIENT_ROLE" -DefaultValue "dms-client"
+        ConfigServiceRole = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "CONFIGURATION_SERVICE_IDENTITY_SERVICE_ROLE" -DefaultValue "cms-client"
+        DmsClientRole     = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "CONFIGURATION_SERVICE_IDENTITY_CLIENT_ROLE" -DefaultValue "dms-client"
     }
 
     if($IdentityProvider -eq "keycloak")
@@ -777,7 +780,7 @@ else {
     }
 
     # Engine-aware database parameters for the setup-openiddict.ps1 calls below. On both engines the
-    # OpenIddict stores live in whichever database CMS itself targets - DMS_CONFIG_DATABASE_NAME,
+    # OpenIddict stores live in whichever database CMS itself targets - CONFIGURATION_SERVICE_DATABASE_NAME,
     # the CMS database topology seam (DMS-1270): the shared DMS datastore database by default, or
     # the dedicated edfi_configurationservice database when -SeparateConfigDatabase redirects CMS
     # there. -InitDb creates that database (and the dmscs schema) when missing, ahead of the CMS
@@ -785,7 +788,7 @@ else {
     # from the same seam either way, so the two modes stay symmetric across engines.
     $identityDbParams =
         if ($DatabaseEngine -eq "mssql") {
-            @{ DbType = "MSSQL"; DbUser = "sa"; DbPort = "ENV:MSSQL_PORT"; DbName = "ENV:DMS_CONFIG_DATABASE_NAME" }
+            @{ DbType = "MSSQL"; DbUser = "sa"; DbPort = "ENV:MSSQL_PORT"; DbName = "ENV:CONFIGURATION_SERVICE_DATABASE_NAME" }
         }
         else {
             # POSTGRES_USER is a supported override - postgresql.yml passes ${POSTGRES_USER:-postgres}
@@ -797,7 +800,7 @@ else {
             # default the compose file falls back to, so an unset override resolves exactly as before.
             @{
                 DbUser = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
-                DbName = "ENV:DMS_CONFIG_DATABASE_NAME"
+                DbName = "ENV:CONFIGURATION_SERVICE_DATABASE_NAME"
             }
         }
 
@@ -807,7 +810,7 @@ else {
         if($IdentityProvider -eq "self-contained")
         {
             Write-Output "Init db public and private keys for OpenIddict..."
-            ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile @identityDbParams
+            ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile -SkipLegacyEnvironmentVariableWarning @identityDbParams
         }
 
         Write-Output "Starting Configuration Service..."
@@ -822,9 +825,9 @@ else {
         if($IdentityProvider -eq "self-contained")
         {
             Write-Output "Starting self-contained initialization script..."
-            ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile @identityDbParams
-            ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile @identityDbParams
-            ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile @identityDbParams
+            ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile -SkipLegacyEnvironmentVariableWarning @identityDbParams
+            ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile -SkipLegacyEnvironmentVariableWarning @identityDbParams
+            ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile -SkipLegacyEnvironmentVariableWarning @identityDbParams
         }
 
         if ($CdcKafkaInfrastructure) {
@@ -887,7 +890,7 @@ else {
     if($IdentityProvider -eq "self-contained")
     {
         Write-Output "Init db public and private keys for OpenIddict..."
-        ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile @identityDbParams
+        ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile -SkipLegacyEnvironmentVariableWarning @identityDbParams
     }
 
     if ($bootstrapManifestPresent) {
@@ -910,13 +913,13 @@ else {
     {
         Write-Output "Starting self-contained initialization script..."
         # Create client with default edfi_admin_api/full_access scope
-        ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile @identityDbParams
+        ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile -SkipLegacyEnvironmentVariableWarning @identityDbParams
 
         # Create client with edfi_admin_api/readonly_access scope
-        ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile @identityDbParams
+        ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile -SkipLegacyEnvironmentVariableWarning @identityDbParams
 
         # Create client with edfi_admin_api/authMetadata_readonly_access scope
-        ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile @identityDbParams
+        ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile -SkipLegacyEnvironmentVariableWarning @identityDbParams
     }
 
     if($AddSmokeTestCredentials)

@@ -262,7 +262,7 @@ public abstract class CompactDescriptorSchemaTests
     [TestCase("uri://case", "A#B", false)]
     [TestCase("uri://Case", "A#B ", false)]
     [TestCase("uri://Case ", "A#B", true)]
-    public async Task It_retains_former_uri_collation_verdicts_and_internal_pre_delimiter_spaces(
+    public async Task It_applies_provider_uri_collation_verdicts_and_internal_pre_delimiter_spaces(
         string ns,
         string code,
         bool alwaysDistinct
@@ -272,7 +272,7 @@ public abstract class CompactDescriptorSchemaTests
         await ExecuteAsync(
             IsPgsql
                 ? "CREATE TEMP TABLE former_uri (uri varchar(306) NOT NULL UNIQUE); INSERT INTO former_uri VALUES ('uri://Case#A#B');"
-                : "CREATE TABLE #former_uri (uri nvarchar(306) NOT NULL UNIQUE); INSERT INTO #former_uri VALUES (N'uri://Case#A#B');"
+                : "CREATE TABLE #former_uri (uri nvarchar(306) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL UNIQUE); INSERT INTO #former_uri VALUES (N'uri://Case#A#B');"
         );
         var equal = Convert.ToInt32(
             (
@@ -314,6 +314,7 @@ public abstract class CompactDescriptorSchemaTests
     [TestCase("missing_uri_index")]
     [TestCase("wrong_uri_expression")]
     [TestCase("history_live_fk")]
+    [TestCase("unpinned_identity_collation")]
     public async Task It_rejects_missing_or_stale_physical_features_even_with_the_same_v3_fingerprint(
         string mutation
     )

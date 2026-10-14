@@ -150,12 +150,12 @@ IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id IN (@relation, OBJECT_ID(N'
     THROW 51000, 'Compact descriptor baseline: obsolete descriptor storage/index remains', 1;
 IF NOT EXISTS (SELECT 1 FROM sys.computed_columns WHERE object_id = @relation AND name = N'Uri'
     AND is_persisted = 0 AND system_type_id = 231 AND max_length = 612
-    AND collation_name = CONVERT(sysname, DATABASEPROPERTYEX(DB_NAME(), 'Collation'))
+    AND collation_name = N'SQL_Latin1_General_CP1_CI_AS'
     AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(definition, N'(', N''), N')', N''), N'[', N''), N']', N''), N' ', N'') COLLATE Latin1_General_100_BIN2 = N'Namespace+N''#''+CodeValue')
-    THROW 51000, 'Compact descriptor baseline: Uri must be non-persisted, unlowered, nvarchar(306), with former collation', 1;
+    THROW 51000, 'Compact descriptor baseline: Uri must be non-persisted, unlowered, nvarchar(306), with the DMS identity collation', 1;
 IF (SELECT COUNT(*) FROM sys.columns WHERE object_id = @relation AND name IN (N'Namespace', N'CodeValue')
-    AND collation_name = CONVERT(sysname, DATABASEPROPERTYEX(DB_NAME(), 'Collation'))) <> 2
-    THROW 51000, 'Compact descriptor baseline: URI component collation changed', 1;
+    AND collation_name = N'SQL_Latin1_General_CP1_CI_AS') <> 2
+    THROW 51000, 'Compact descriptor baseline: URI components must carry the DMS identity collation', 1;
 SET @index = NULL;
 SELECT @index = index_id FROM sys.indexes WHERE object_id = @relation AND name = N'UX_Descriptor_ResourceKeyId_Uri' AND is_unique = 1 AND is_disabled = 0 AND has_filter = 0;
 SELECT @actual = STRING_AGG(CONVERT(nvarchar(max), c.name), N',') WITHIN GROUP (ORDER BY k.key_ordinal)

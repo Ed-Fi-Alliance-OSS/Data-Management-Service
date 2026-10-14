@@ -70,7 +70,7 @@ $tagPattern = '^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}\z'
 # publication produced no version-specific tag to pin.
 $releasePattern = '^dms-pre-[0-9A-Za-z][0-9A-Za-z.+-]*\z'
 
-# An env-safe single-line label. This one is written as DMS_CONFIG_DATA_STANDARD_VERSION.
+# An env-safe single-line label. This one is written as CONFIGURATION_SERVICE_DATA_STANDARD_VERSION.
 $dataStandardPattern = '^[A-Za-z0-9._-]+\z'
 
 # A package id as NuGet writes it, single line.

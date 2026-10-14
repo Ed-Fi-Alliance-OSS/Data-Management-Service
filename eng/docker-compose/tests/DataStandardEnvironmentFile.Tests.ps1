@@ -48,7 +48,7 @@ LOG_LEVEL=Warning
 
     It "replaces the multi-line SCHEMA_PACKAGES block with the overlay value" {
         Set-Content -LiteralPath $script:overlayPath -Value @"
-DMS_CONFIG_DATA_STANDARD_VERSION=6.1
+CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=6.1
 DATABASE_TEMPLATE_PACKAGE=EdFi.Api.Populated.Template.PostgreSql.6.1.0
 SCHEMA_PACKAGES='[{"version":"2.0.0","name":"EdFi.DataStandard61.ApiSchema"}]'
 "@
@@ -66,7 +66,7 @@ SCHEMA_PACKAGES='[{"version":"2.0.0","name":"EdFi.DataStandard61.ApiSchema"}]'
 
     It "overrides scalar keys and adds new keys from the overlay" {
         Set-Content -LiteralPath $script:overlayPath -Value @"
-DMS_CONFIG_DATA_STANDARD_VERSION=6.1
+CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=6.1
 DATABASE_TEMPLATE_PACKAGE=EdFi.Api.Populated.Template.PostgreSql.6.1.0
 SCHEMA_PACKAGES='[{"version":"2.0.0","name":"EdFi.DataStandard61.ApiSchema"}]'
 "@
@@ -75,7 +75,7 @@ SCHEMA_PACKAGES='[{"version":"2.0.0","name":"EdFi.DataStandard61.ApiSchema"}]'
         $values = ReadValuesFromEnvFile $script:targetPath
 
         $values["DATABASE_TEMPLATE_PACKAGE"] | Should -Be "EdFi.Api.Populated.Template.PostgreSql.6.1.0"
-        $values["DMS_CONFIG_DATA_STANDARD_VERSION"] | Should -Be "6.1"
+        $values["CONFIGURATION_SERVICE_DATA_STANDARD_VERSION"] | Should -Be "6.1"
     }
 
     It "preserves unrelated base lines and comments" {
@@ -127,7 +127,7 @@ Describe "Resolve-DataStandardEnvironmentFile" {
         New-Item -ItemType Directory -Path $script:composeRoot -Force | Out-Null
         $script:basePath = Join-Path $script:work ".env.base"
         Set-Content -LiteralPath $script:basePath -Value "DATABASE_TEMPLATE_PACKAGE=EdFi.Api.Populated.Template.PostgreSql.5.2.0`nLOG_LEVEL=Warning`n" -NoNewline
-        Set-Content -LiteralPath (Join-Path $script:composeRoot ".env.ds61") -Value "DMS_CONFIG_DATA_STANDARD_VERSION=6.1`nDATABASE_TEMPLATE_PACKAGE=EdFi.Api.Populated.Template.PostgreSql.6.1.0`n" -NoNewline
+        Set-Content -LiteralPath (Join-Path $script:composeRoot ".env.ds61") -Value "CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=6.1`nDATABASE_TEMPLATE_PACKAGE=EdFi.Api.Populated.Template.PostgreSql.6.1.0`n" -NoNewline
     }
 
     AfterEach {
@@ -145,7 +145,7 @@ Describe "Resolve-DataStandardEnvironmentFile" {
         $result = Resolve-DataStandardEnvironmentFile -DataStandardVersion "6.1" -BaseEnvironmentFile $script:basePath -DockerComposeRoot $script:composeRoot
         $result | Should -Not -Be $script:basePath
         $values = ReadValuesFromEnvFile $result
-        $values["DMS_CONFIG_DATA_STANDARD_VERSION"] | Should -Be "6.1"
+        $values["CONFIGURATION_SERVICE_DATA_STANDARD_VERSION"] | Should -Be "6.1"
         $values["DATABASE_TEMPLATE_PACKAGE"] | Should -Be "EdFi.Api.Populated.Template.PostgreSql.6.1.0"
     }
 
@@ -158,13 +158,13 @@ Describe "Resolve-DataStandardEnvironmentFile" {
         # The bootstrap wrapper passes -OverlayPrefix ".env.bootstrap" to select the
         # local-bootstrap surfaces; the derived file name carries the prefix segment so both
         # derivations coexist under .derived/.
-        Set-Content -LiteralPath (Join-Path $script:composeRoot ".env.bootstrap.ds61") -Value "DMS_CONFIG_DATA_STANDARD_VERSION=6.1`nSCHEMA_PACKAGES='[]'`n" -NoNewline
+        Set-Content -LiteralPath (Join-Path $script:composeRoot ".env.bootstrap.ds61") -Value "CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=6.1`nSCHEMA_PACKAGES='[]'`n" -NoNewline
 
         $result = Resolve-DataStandardEnvironmentFile -DataStandardVersion "6.1" -BaseEnvironmentFile $script:basePath -DockerComposeRoot $script:composeRoot -OverlayPrefix ".env.bootstrap"
 
         [System.IO.Path]::GetFileName($result) | Should -Be ".env.base.bootstrap.ds61"
         $values = ReadValuesFromEnvFile $result
-        $values["DMS_CONFIG_DATA_STANDARD_VERSION"] | Should -Be "6.1"
+        $values["CONFIGURATION_SERVICE_DATA_STANDARD_VERSION"] | Should -Be "6.1"
     }
 
     It "fails fast when the prefixed overlay is missing without falling back to the shared overlay" {

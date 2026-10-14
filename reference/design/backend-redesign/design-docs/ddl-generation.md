@@ -234,9 +234,10 @@ CREATE UNIQUE INDEX [UX_Descriptor_ResourceKeyId_Uri]
     ON [dms].[Descriptor] ([ResourceKeyId], [Uri]);
 ```
 
-These expressions compare the unlowered whole URI under the former stored URI's
-database-default provider collation. They do not introduce `UriLowered`, lowered component
-columns, component-wise uniqueness, or a new identity collation. Descriptor discriminator
+These expressions compare the unlowered whole URI. On SQL Server the computed `Uri` inherits the
+DMS identity collation (`SQL_Latin1_General_CP1_CI_AS`) emitted on `Namespace` and `CodeValue`;
+PostgreSQL uses the database-default collation. They do not introduce `UriLowered`, lowered
+component columns, or component-wise uniqueness. Descriptor discriminator
 storage and its obsolete content-version index are removed. Abstract identity discriminator
 columns, literals, union-view output and authorization remain unchanged.
 
@@ -252,8 +253,8 @@ provisioning-only settings do not survive onto runtime connections.
 The current DDL retains `dms.ReferentialIdentity`, RI maintenance triggers/functions,
 PostgreSQL `dms.uuidv5()` and its `pgcrypto` dependency. Stored descriptor witness joins use
 `DescriptorId` and reconstruct the whole URI before existing hashing transformations;
-document-level RI maintenance uses the owning `DocumentId`. The pinned collations,
-lowered-URI probes, validation/platform changes and RI removal described in
+document-level RI maintenance uses the owning `DocumentId`. The lowered-URI probes,
+validation/platform changes and RI removal described in
 [natural-key-resolution.md](natural-key-resolution.md) belong to later stories.
 
 `IX_Descriptor_ResourceKeyId_DocumentId` remains core-owned;

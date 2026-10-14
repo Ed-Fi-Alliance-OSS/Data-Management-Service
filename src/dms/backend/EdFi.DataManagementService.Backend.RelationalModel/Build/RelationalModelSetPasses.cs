@@ -47,6 +47,10 @@ public static class RelationalModelSetPasses
             .. collectionSemanticIdentityValidationPasses,
             new ArrayUniquenessConstraintPass(),
             new StableCollectionConstraintPass(),
+            // Identity-text role derivation reads root identity, reference identity bindings and
+            // collection semantic identity, so it runs after every identity-producing pass and before
+            // tracked-change derivation and dialect shortening, which carry the flag forward.
+            new ApplySqlServerIdentityCollationPass(),
             new DescriptorForeignKeyConstraintPass(),
             // SQL Server FK pruning assigns final reference-FK ON UPDATE actions and must run
             // after all FK-producing passes and before constraint hashing, because the

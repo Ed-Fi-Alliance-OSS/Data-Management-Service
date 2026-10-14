@@ -110,22 +110,14 @@ targets 18.
   `reference/design/backend-redesign/epics/14-authorization/22-namespace-auth-index-prefix-like.md`,
   the pin reference moves and the measured figure keeps its 16.8 provenance. Image tags and
   commands elsewhere in that inventory file still move.
-- Update the `CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE` GitHub repository variable, which is outside
-  the source tree and currently holds `postgres:16@sha256:e17e8606…`. The CDC connector-template
-  smoke lane in `.github/workflows/on-dms-pullrequest.yml`, the CDC lanes in
-  `.github/workflows/nightly-cdc-qualification.yml`, `eng/ci/prepare-cdc-api-e2e.ps1`,
-  `eng/docker-compose/tests/RunbookSetup.Live.Tests.ps1`, and the
-  `CdcConnectorTemplatePinnedImageFixture` take their PostgreSQL image from it with no in-repo
-  fallback (`eng/ci/Invoke-CdcQualification.ps1` requires it and pulls or inspects the image it
-  names, but starts no container from it), so every in-repo check can pass while CDC still runs on
-  16 (the pull-request workflow's CDC lane is dispatch-only, so the pull request itself gives no
-  evidence for the variable). This is a manual step: a repository administrator sets the variable to
-  a digest-pinned PostgreSQL 18 image, and a second person verifies the new value (for example with
-  `gh variable get CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE`) and records the verification in the pull
-  request. No automated test checks the version. Make the change right after this story merges and
-  before the next scheduled run of `.github/workflows/nightly-cdc-qualification.yml`, which reads
-  the variable on every run; set earlier it breaks the nightly on `main`'s pre-18 layout, left later
-  it fails the new version guard. Confirm with a `workflow_dispatch` run of that workflow.
+- Keep the CDC PostgreSQL image aligned with the checked-in Compose default. The CDC connector-template
+  smoke lane in `.github/workflows/on-dms-pullrequest.yml` and the live lanes in
+  `.github/workflows/nightly-cdc-qualification.yml` use `eng/ci/Get-CdcQualificationPostgresqlImage.ps1`
+  to set `CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE` before pulls or container startup. The script rejects
+  missing or malformed digest pins and versions below 18. The workflows do not read the GitHub
+  PostgreSQL image variable, so an obsolete external value cannot override the branch's pin.
+  Direct local qualification still requires the environment variable; set it from the same script.
+  Confirm the checked-in pin with a `workflow_dispatch` run of the nightly workflow.
 - Handle the official `postgres:18` image's data-directory change. From 18 the image sets
   `PGDATA=/var/lib/postgresql/18/docker` and declares its `VOLUME` at `/var/lib/postgresql`, so
   anything that mounts or reads `/var/lib/postgresql/data` no longer reaches the cluster. Move each
@@ -186,16 +178,15 @@ targets 18.
 ## Acceptance Criteria
 
 - Every PostgreSQL lane whose image is pinned in the repository runs on PostgreSQL 18 or later (the
-  CDC lanes follow the repository variable, covered below); no `postgres:16*` or `postgres:17*` image,
+  CDC lanes follow the checked-in Compose default, covered below); no `postgres:16*` or `postgres:17*` image,
   `postgresql16-client` or `postgresql17-client` package, pinned 16.8 digest, or matching fixture
   string remains in workflows, actions, compose files, Dockerfiles (including the `Nuget.Dockerfile`
   variants), CDC qualification and runbook tests, the performance harness and its evidence scripts,
   operator runbooks, design docs that describe the current pin, or test fixtures. Historical
   records are exempt as described above.
-- After the merge, a repository administrator has manually set the
-  `CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE` repository variable to a digest-pinned PostgreSQL 18
-  image, a second person has manually verified the value, and a `workflow_dispatch` run of
-  `nightly-cdc-qualification.yml` with the new value has passed; all three are recorded on the
+- After the merge, the checked-in PostgreSQL image has been verified with
+  `eng/ci/Get-CdcQualificationPostgresqlImage.ps1`, and a `workflow_dispatch` run of
+  `nightly-cdc-qualification.yml` with that pin has passed. Record the pin and run on the
   merged pull request as closure evidence rather than as a merge gate.
 - `docs/OPERATIONS.md` states the DMS PostgreSQL 18 + UTF-8 requirement alongside the Configuration
   Service's own floor, that a server shared by both must meet the DMS floor, and that a PostgreSQL
@@ -242,3 +233,26 @@ targets 18.
   upgrade fixtures are not part of this story; the index arrives with DMS-1448.
 - The upgrade playbook documents expected cross-engine Unicode differences as per-engine verdicts,
   never as parity; the executable pins are DMS-1455 acceptance criteria.
+
+## Post-Merge Closure Checklist
+
+These steps happen after the pull request merges. Record each result on the merged pull request.
+They are closure evidence, not merge gates.
+
+1. Run `eng/ci/Get-CdcQualificationPostgresqlImage.ps1` on the merged revision and record the
+   returned digest-pinned PostgreSQL 18 or later image. The workflows resolve this same checked-in
+   Compose default before pulls or startup; no GitHub PostgreSQL image variable update is needed.
+2. Verify the resolved PostgreSQL digest in the qualification run's `runtime-inputs.json` artifact.
+3. A `workflow_dispatch` run of `nightly-cdc-qualification.yml` on `main` with the checked-in pin
+   passes. Record its link.
+4. The first `main` runs of `.github/workflows/EdFi.Api.Minimal.Template.PostgreSQL.yml` and
+   `.github/workflows/EdFi.Api.Populated.Template.PostgreSQL.yml` after the merge publish template
+   packages built on PostgreSQL 18. Record their links.
+5. The first scheduled run of `.github/workflows/scheduled-smoke-test.yml` after the merge passes.
+   Record its link.
+
+Before the merge, the pull request itself carries the pull-request runs of the two template
+workflows and the smoke test (build and restore on PostgreSQL 18, no publishing), and the manual
+compose check that `eng/docker-compose/postgresql-init.sh` took effect on PostgreSQL 18:
+`SHOW wal_level` returns `logical`, and `pg_hba_file_rules` contains the replication entry for
+`kafka-postgresql-source`.

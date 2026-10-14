@@ -87,10 +87,10 @@ POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
 MSSQL_PORT=15433
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
             return [pscustomobject]@{
@@ -717,13 +717,13 @@ exit $ExitCode
             . $script:repo.ProvisionScript
 
             { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString "AAAAAAAAAAAAAAAAAAAAAA==" -EnvValues @{} } |
-                Should -Throw -ExpectedMessage "*DMS_CONFIG_DATABASE_ENCRYPTION_KEY is not set*"
+                Should -Throw -ExpectedMessage "*CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY is not set*"
         }
 
         It "rejects an encrypted connection string payload that is not valid base64" {
             . $script:repo.ProvisionScript
 
-            $envValues = @{ DMS_CONFIG_DATABASE_ENCRYPTION_KEY = "TestEncryptionKey123456789012345678901234567890" }
+            $envValues = @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = "TestEncryptionKey123456789012345678901234567890" }
             { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString "@@@@" -EnvValues $envValues } |
                 Should -Throw -ExpectedMessage "*not valid CMS encrypted base64*"
         }
@@ -731,7 +731,7 @@ exit $ExitCode
         It "rejects an encrypted connection string payload too short to contain an IV" {
             . $script:repo.ProvisionScript
 
-            $envValues = @{ DMS_CONFIG_DATABASE_ENCRYPTION_KEY = "TestEncryptionKey123456789012345678901234567890" }
+            $envValues = @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = "TestEncryptionKey123456789012345678901234567890" }
             $shortPayload = [Convert]::ToBase64String([byte[]]::new(8))
             { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $shortPayload -EnvValues $envValues } |
                 Should -Throw -ExpectedMessage "*payload is invalid*"
@@ -740,7 +740,7 @@ exit $ExitCode
         It "rejects an encrypted connection string that cannot be decrypted with the configured key" {
             . $script:repo.ProvisionScript
 
-            $envValues = @{ DMS_CONFIG_DATABASE_ENCRYPTION_KEY = "TestEncryptionKey123456789012345678901234567890" }
+            $envValues = @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = "TestEncryptionKey123456789012345678901234567890" }
             # 16-byte IV plus a 17-byte ciphertext is not a whole AES block, so PKCS7 decryption
             # fails deterministically rather than relying on a wrong-key padding collision.
             $undecryptable = [Convert]::ToBase64String([byte[]]::new(33))
@@ -1108,7 +1108,7 @@ exit $ExitCode
             $envFile = Join-Path $script:repo.DockerComposeRoot "env-with-tenant.env"
             Get-Content -LiteralPath $script:repo.EnvFile |
                 Set-Content -LiteralPath $envFile -Encoding utf8
-            Add-Content -LiteralPath $envFile -Value "CONFIG_SERVICE_TENANT=tenant-a"
+            Add-Content -LiteralPath $envFile -Value "DMS_CONFIGURATION_SERVICE_TENANT=tenant-a"
 
             $capturePath = Join-Path $script:repo.RepoRoot "smoke-capture.txt"
             $smokeModuleDir = Join-Path $script:repo.RepoRoot "eng/smoke_test/modules"
@@ -1955,13 +1955,13 @@ POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
 MSSQL_PORT=15433
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-CONFIG_SERVICE_CLIENT_ID=CMSReadOnlyAccess
-CONFIG_SERVICE_CLIENT_SCOPE=edfi_admin_api/readonly_access
-CONFIG_SERVICE_CLIENT_SECRET=my-ro-secret
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+DMS_CONFIGURATION_SERVICE_CLIENT_ID=CMSReadOnlyAccess
+DMS_CONFIGURATION_SERVICE_CLIENT_SCOPE=edfi_admin_api/readonly_access
+DMS_CONFIGURATION_SERVICE_CLIENT_SECRET=my-ro-secret
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
             . $script:repo.ConfigureScript
@@ -2243,14 +2243,14 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 POSTGRES_PASSWORD=isolated-pass
 POSTGRES_DB_NAME=isolated_db
 POSTGRES_PORT=5544
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-CONFIG_SERVICE_TENANT=isolated-tenant
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+DMS_CONFIGURATION_SERVICE_TENANT=isolated-tenant
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $isolatedEnvFile -Encoding utf8
 
-            $env:CONFIG_SERVICE_TENANT = "process-tenant"
+            $env:DMS_CONFIGURATION_SERVICE_TENANT = "process-tenant"
             try {
                 . $script:repo.ConfigureScript
 
@@ -2271,7 +2271,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 $result.Tenant | Should -Be "process-tenant"
             }
             finally {
-                $env:CONFIG_SERVICE_TENANT = $null
+                $env:DMS_CONFIGURATION_SERVICE_TENANT = $null
             }
         }
 
@@ -2281,14 +2281,14 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 POSTGRES_PASSWORD=isolated-pass
 POSTGRES_DB_NAME=isolated_db
 POSTGRES_PORT=5544
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-CONFIG_SERVICE_TENANT=isolated-tenant
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+DMS_CONFIGURATION_SERVICE_TENANT=isolated-tenant
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $isolatedEnvFile -Encoding utf8
 
-            Remove-Item Env:CONFIG_SERVICE_TENANT -ErrorAction SilentlyContinue
+            Remove-Item Env:DMS_CONFIGURATION_SERVICE_TENANT -ErrorAction SilentlyContinue
             . $script:repo.ConfigureScript
 
             function Add-CmsClient { }
@@ -2316,10 +2316,10 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             $isolatedEnvFile = Join-Path $script:repo.DockerComposeRoot "env-mssql-ambient.env"
             @"
 POSTGRES_PASSWORD=isolated-pass
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $isolatedEnvFile -Encoding utf8
 
             $ambientPassword = 'Amb;ient "P@ss,word''=1 $x'
@@ -2364,10 +2364,10 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 POSTGRES_PASSWORD=isolated-pass
 POSTGRES_DB_NAME=isolated_db
 POSTGRES_PORT=9876
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $isolatedEnvFile -Encoding utf8
 
             $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
@@ -2414,10 +2414,10 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 POSTGRES_PASSWORD=isolated-pass
 POSTGRES_DB_NAME=isolated_db
 POSTGRES_PORT=9876
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $isolatedEnvFile -Encoding utf8
 
             $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args-file-only.txt"
@@ -2631,7 +2631,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             . $script:repo.ConfigureScript
 
             $result = Resolve-CmsReadOnlyAccessFromEnv -EnvValues @{
-                CONFIG_SERVICE_CLIENT_SECRET = "explicit-secret"
+                DMS_CONFIGURATION_SERVICE_CLIENT_SECRET = "explicit-secret"
             }
 
             $result | Should -Not -BeNullOrEmpty
@@ -2660,7 +2660,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             $result.PSObject.Properties.Name | Should -Not -Contain "CMSReadOnlyAccess"
         }
 
-        It "Get-ProvisionCmsReadOnlyAccessGuidance returns empty when no CONFIG_SERVICE_CLIENT_* keys are present" {
+        It "Get-ProvisionCmsReadOnlyAccessGuidance returns empty when no DMS_CONFIGURATION_SERVICE_CLIENT_* keys are present" {
             . $script:repo.ProvisionScript
 
             $lines = Get-ProvisionCmsReadOnlyAccessGuidance -EnvValues @{
@@ -2674,7 +2674,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             . $script:repo.ProvisionScript
 
             $lines = Get-ProvisionCmsReadOnlyAccessGuidance -EnvValues @{
-                CONFIG_SERVICE_CLIENT_SECRET = "explicit-secret"
+                DMS_CONFIGURATION_SERVICE_CLIENT_SECRET = "explicit-secret"
             }
 
             ($lines -join "`n") | Should -Match "ConfigurationServiceSettings__ClientId = CMSReadOnlyAccess"
@@ -2900,10 +2900,10 @@ POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
 MSSQL_PORT=15433
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 DMS_BOOTSTRAP_ADMIN_CLIENT_ID=configure-side-admin
 DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=configure-side-secret
 "@ | Set-Content -LiteralPath $overrideEnvFile -Encoding utf8
@@ -2952,10 +2952,10 @@ POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
 MSSQL_PORT=15433
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 DMS_BOOTSTRAP_ADMIN_CLIENT_ID=provision-side-admin
 DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=provision-side-secret
 "@ | Set-Content -LiteralPath $overrideEnvFile -Encoding utf8
@@ -3002,10 +3002,10 @@ POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
 MSSQL_PORT=15433
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
 "@ | Set-Content -LiteralPath $overrideEnvFile -Encoding utf8
 
@@ -3159,10 +3159,10 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
 POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
                 # These stubs only record calls. Mismatch tests assert that neither schema
@@ -3476,11 +3476,11 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
             {
                 Assert-E2EDatabaseIsDedicated `
                     -EnvironmentValues @{
-                        DMS_CONFIG_DATABASE_CONNECTION_STRING = '"Server=dms-mssql,1433;Initial Catalog=shared"'
+                        CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING = '"Server=dms-mssql,1433;Initial Catalog=shared"'
                     } `
                     -EnvironmentFilePath ".env.e2e" `
                     -E2EDatabaseName "shared"
-            } | Should -Throw "*DMS_CONFIG_DATABASE_CONNECTION_STRING*"
+            } | Should -Throw "*CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING*"
         }
 
         It "rejects a Compose-quoted database-name key that matches the E2E database" {
@@ -3536,7 +3536,7 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
             {
                 Assert-E2EDatabaseIsDedicated `
                     -EnvironmentValues @{
-                        DMS_CONFIG_DATABASE_CONNECTION_STRING = "Server=dms-mssql,1433;User ID=sa;Password=p;"
+                        CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING = "Server=dms-mssql,1433;User ID=sa;Password=p;"
                     } `
                     -EnvironmentFilePath ".env.e2e" `
                     -E2EDatabaseName "shared"
@@ -3661,7 +3661,7 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
 
         It "fails closed when the protected <Key> connection string is explicitly present but blank" -ForEach @(
             @{ Key = "DATABASE_CONNECTION_STRING_ADMIN" }
-            @{ Key = "DMS_CONFIG_DATABASE_CONNECTION_STRING" }
+            @{ Key = "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" }
         ) {
             {
                 Assert-E2EDatabaseIsDedicated `
@@ -3682,7 +3682,7 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
 
         It "fails closed when a direct ambient <Key> override targets the reset database" -ForEach @(
             @{ Key = "DATABASE_CONNECTION_STRING_ADMIN" }
-            @{ Key = "DMS_CONFIG_DATABASE_CONNECTION_STRING" }
+            @{ Key = "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" }
         ) {
             $priorExists = Test-Path "Env:$Key"
             $priorValue = [System.Environment]::GetEnvironmentVariable($Key)
@@ -3756,15 +3756,15 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
                 $path = Join-Path $script:repo.DockerComposeRoot "env-separate-topology-$([Guid]::NewGuid().ToString('N')).env"
                 @"
 POSTGRES_PASSWORD=isolated-pass
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 MSSQL_SA_PASSWORD=abcdefgh1!
 MSSQL_DB_NAME=edfi_datamanagementservice
 DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=$CmsDatabaseName;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
+CONFIGURATION_SERVICE_DATASTORE=mssql
+CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=$CmsDatabaseName;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
 "@ | Set-Content -LiteralPath $path -Encoding utf8
                 return $path
             }
@@ -3786,16 +3786,16 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=$CmsDatabas
             $envFile = Join-Path $script:repo.DockerComposeRoot "env-export-dependency-$([Guid]::NewGuid().ToString('N')).env"
             @"
 POSTGRES_PASSWORD=isolated-pass
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 MSSQL_SA_PASSWORD=abcdefgh1!
 MSSQL_DB_NAME=edfi_datamanagementservice
 DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
+CONFIGURATION_SERVICE_DATASTORE=mssql
 export CMS_DB_OVERRIDE_XYZ=edfi_configurationservice
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_OVERRIDE_XYZ};User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
+CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_OVERRIDE_XYZ};User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
             $result = Invoke-ConfigureLocalDataStore -EnvironmentFile $envFile -DatabaseEngine mssql -NoDataStore
@@ -3828,16 +3828,16 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_O
                 $envFile = Join-Path $script:repo.DockerComposeRoot "env-provision-export-dep-$([Guid]::NewGuid().ToString('N')).env"
                 @"
 POSTGRES_PASSWORD=isolated-pass
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 MSSQL_SA_PASSWORD=abcdefgh1!
 MSSQL_DB_NAME=edfi_datamanagementservice
 DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
+CONFIGURATION_SERVICE_DATASTORE=mssql
 export CMS_DB_OVERRIDE_XYZ=edfi_configurationservice
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_OVERRIDE_XYZ};User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
+CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_OVERRIDE_XYZ};User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
                 { Invoke-ProvisionDmsSchema -EnvironmentFile $envFile -DataStoreId @(98) -DatabaseEngine mssql } |
@@ -4017,15 +4017,15 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_O
                 $path = Join-Path $script:repo.DockerComposeRoot "env-guard-mssql-$([Guid]::NewGuid().ToString('N')).env"
                 @"
 POSTGRES_PASSWORD=isolated-pass
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 MSSQL_SA_PASSWORD=abcdefgh1!
 MSSQL_DB_NAME=$DatastoreName
 DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
+CONFIGURATION_SERVICE_DATASTORE=mssql
+CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
 "@ | Set-Content -LiteralPath $path -Encoding utf8
                 return $path
             }
@@ -4038,10 +4038,10 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
 POSTGRES_PASSWORD=isolated-pass
 POSTGRES_DB_NAME=$DatastoreName
 POSTGRES_PORT=5544
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $path -Encoding utf8
                 return $path
             }
@@ -4381,10 +4381,10 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 POSTGRES_PASSWORD=isolated-pass
 POSTGRES_DB_NAME=$DatastoreName
 POSTGRES_PORT=5544
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $path -Encoding utf8
                 return $path
             }
@@ -4405,12 +4405,12 @@ MSSQL_PORT=$MssqlPort
 MSSQL_SA_PASSWORD=abcdefgh1!
 MSSQL_DB_NAME=$DatastoreName
 DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_DATASTORE=mssql
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
 "@ | Set-Content -LiteralPath $path -Encoding utf8
                 return $path
             }
@@ -5780,12 +5780,12 @@ MSSQL_PORT=$($script:canonicalMssqlPort)
 MSSQL_SA_PASSWORD=abcdefgh1!
 MSSQL_DB_NAME=$DatastoreName
 DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_DATASTORE=mssql
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
 "@ | Set-Content -LiteralPath $path -Encoding utf8
                 return $path
             }
@@ -6325,10 +6325,10 @@ if (Test-Path -LiteralPath $ChildCapturePath) {
 POSTGRES_PASSWORD=isolated-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
                 $invoke = { Invoke-ProvisionDmsSchema `
@@ -6531,10 +6531,10 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 POSTGRES_PASSWORD=isolated-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
                 $invoke = { Invoke-ProvisionDmsSchema `
@@ -6583,10 +6583,10 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 POSTGRES_PASSWORD=isolated-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
                 { Invoke-ProvisionDmsSchema `

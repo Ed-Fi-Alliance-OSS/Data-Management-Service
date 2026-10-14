@@ -13,6 +13,7 @@ Describe "Azure VM lifecycle safety" {
         $script:upSource = Join-Path $script:azureVmRoot "compose/up.sh"
         $script:updateSource = Join-Path $script:azureVmRoot "compose/update.sh"
         $script:recordKeycloakImageSource = Join-Path $script:azureVmRoot "compose/record-keycloak-image.sh"
+        $script:legacyEnvWarningSource = Join-Path $script:azureVmRoot "compose/legacy-env-warning.sh"
     }
 
     BeforeEach {
@@ -28,6 +29,7 @@ Describe "Azure VM lifecycle safety" {
         Copy-Item -LiteralPath $script:upSource -Destination (Join-Path $script:composeRoot "up.sh")
         Copy-Item -LiteralPath $script:updateSource -Destination (Join-Path $script:composeRoot "update.sh")
         Copy-Item -LiteralPath $script:recordKeycloakImageSource -Destination (Join-Path $script:composeRoot "record-keycloak-image.sh")
+        Copy-Item -LiteralPath $script:legacyEnvWarningSource -Destination (Join-Path $script:composeRoot "legacy-env-warning.sh")
         Set-Content -LiteralPath (Join-Path $script:composeRoot ".env") -Value "PUBLIC_HOST=test.example" -NoNewline
         Set-Content -LiteralPath (Join-Path $script:composeRoot ".bootstrap/ApiSchema/core.json") -Value "{}" -NoNewline
         Set-Content -LiteralPath (Join-Path $script:composeRoot "ssl/server.crt") -Value "test" -NoNewline
@@ -52,7 +54,25 @@ configured="${DOCKER_CONFIGURED_KEYCLOAK:-quay.io/keycloak/keycloak:26.7}"
 deployed="${DOCKER_DEPLOYED_KEYCLOAK:-quay.io/keycloak/keycloak:26.7}"
 
 if [ "${1:-}" = "compose" ] && [[ "$*" == *" config --images"* ]]; then
-  printf '%s\n' "$configured"
+  printf '%s\n' "$configured" "${DOCKER_CONFIGURED_POSTGRES-postgres:18.6-alpine}"
+  exit 0
+fi
+# The PostgreSQL volume is modeled as a directory: present when it exists, holding whatever files a
+# test puts in it. Listing or reading it fails on demand.
+if [ "${1:-}" = "volume" ] && [ "${2:-}" = "ls" ]; then
+  [ "${DOCKER_VOLUME_LS_FAIL:-0}" = "1" ] && exit 1
+  if [ -d "$state/postgres-volume" ]; then printf '%s\n' dms-security-review_dms-sec-postgres; fi
+  if [ -f "$state/keycloak-volume" ]; then printf '%s\n' dms-security-review_dms-sec-keycloak; fi
+  exit 0
+fi
+if [ "${1:-}" = "run" ] && [[ "$*" == *"dms-security-review_dms-sec-postgres:/volume:ro"* ]]; then
+  [ "${DOCKER_RUN_FAIL:-0}" = "1" ] && exit 125
+  # Answers the guard's probe the way its helper script does: "legacy <first line>" or "absent".
+  if [ -e "$state/postgres-volume/PG_VERSION" ]; then
+    printf 'legacy %s\n' "$(head -n1 "$state/postgres-volume/PG_VERSION")"
+  else
+    printf 'absent\n'
+  fi
   exit 0
 fi
 if [ "${1:-}" = "inspect" ] && [[ "$*" == *"dms-sec-keycloak"* ]]; then
@@ -118,7 +138,10 @@ esac
                 "CURL_READY",
                 "DMS_STARTUP_TIMEOUT_SECONDS",
                 "DMS_STARTUP_POLL_SECONDS",
-                "SKIP_GIT"
+                "SKIP_GIT",
+                "DOCKER_CONFIGURED_POSTGRES",
+                "DOCKER_VOLUME_LS_FAIL",
+                "DOCKER_RUN_FAIL"
             )) {
             Remove-Item "Env:$name" -ErrorAction SilentlyContinue
         }
@@ -260,6 +283,32 @@ exit 17
         Get-Content -LiteralPath $script:dockerLog -Raw | Should -Not -Match "up -d st-dms mt-dms"
     }
 
+    It "warns about a retired variable name in .env and still starts the stack" {
+        Add-Content -LiteralPath (Join-Path $script:composeRoot ".env") -Value "`nDMS_CONFIG_CLAIMS_SOURCE=SENTINEL-DO-NOT-LEAK"
+
+        $output = & bash (Join-Path $script:composeRoot "up.sh") 2>&1
+
+        $LASTEXITCODE | Should -Be 0
+        $text = $output | Out-String
+        $text | Should -Match "WARNING: Environment variable 'DMS_CONFIG_CLAIMS_SOURCE' in '\.env' is no longer read\. Rename it to 'CONFIGURATION_SERVICE_CLAIMS_SOURCE'\."
+        $text | Should -Not -Match "SENTINEL-DO-NOT-LEAK"
+    }
+
+    It "warns about a retired variable name before update.sh calls Docker" {
+        Add-Content -LiteralPath (Join-Path $script:composeRoot ".env") -Value "`nDMS_CONFIG_DATABASE_ENCRYPTION_KEY=SENTINEL-DO-NOT-LEAK"
+        $env:SKIP_GIT = "1"
+        # The first Docker call fails, so a warning in the output can only come from before it.
+        $env:DOCKER_VOLUME_LS_FAIL = "1"
+
+        $output = & bash (Join-Path $script:composeRoot "update.sh") 2>&1
+
+        $LASTEXITCODE | Should -Be 1
+        $text = $output | Out-String
+        $text | Should -Match "WARNING: Environment variable 'DMS_CONFIG_DATABASE_ENCRYPTION_KEY' in '\.env' is no longer read\. Rename it to 'CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY'\."
+        $text | Should -Match "cannot list Docker volumes"
+        $text | Should -Not -Match "SENTINEL-DO-NOT-LEAK"
+    }
+
     It "supports the first update after a plain down with the same Keycloak pin" {
         & bash (Join-Path $script:composeRoot "up.sh") 2>&1 | Out-Null
         $LASTEXITCODE | Should -Be 0
@@ -309,6 +358,115 @@ exit 17
         $LASTEXITCODE | Should -Be 1
         $output | Out-String | Should -Match "changes the Keycloak image"
         Get-Content -LiteralPath $script:dockerLog -Raw | Should -Not -Match "compose .* pull"
+    }
+
+    Context "PostgreSQL volume layout" {
+        BeforeEach {
+            $script:postgresVolume = Join-Path $script:dockerState "postgres-volume"
+            $env:SKIP_GIT = "1"
+        }
+
+        It "refuses a pre-18 cluster at the volume root before pulling or recreating anything" {
+            New-Item -ItemType Directory -Path $script:postgresVolume -Force | Out-Null
+            $pgVersion = Join-Path $script:postgresVolume "PG_VERSION"
+            Set-Content -LiteralPath $pgVersion -Value "16`n" -NoNewline
+
+            $output = & bash (Join-Path $script:composeRoot "update.sh") 2>&1
+
+            $LASTEXITCODE | Should -Be 1
+            $text = $output | Out-String
+            $text | Should -Match "holds a PostgreSQL 16 cluster"
+            $text | Should -Match "No deployment images were refreshed, no containers were recreated"
+            $text | Should -Match "REDEPLOY\.md"
+            $text | Should -Match "Removing the volume does not keep the keys"
+            $calls = Get-Content -LiteralPath $script:dockerLog -Raw
+            $calls | Should -Match "run --rm --network none --volume dms-security-review_dms-sec-postgres:/volume:ro"
+            $calls | Should -Not -Match "compose .* pull"
+            $calls | Should -Not -Match "compose .* up "
+            $calls | Should -Not -Match "compose .* restart"
+            Get-Content -LiteralPath $pgVersion -Raw | Should -Be "16`n"
+        }
+
+        It "refuses an empty root PG_VERSION as the old layout" {
+            New-Item -ItemType Directory -Path $script:postgresVolume -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $script:postgresVolume "PG_VERSION") -Value "" -NoNewline
+
+            $output = & bash (Join-Path $script:composeRoot "update.sh") 2>&1
+
+            $LASTEXITCODE | Should -Be 1
+            $output | Out-String | Should -Match "holds a PostgreSQL \(unknown version\) cluster"
+            Get-Content -LiteralPath $script:dockerLog -Raw | Should -Not -Match "compose .* (pull|up |restart)"
+        }
+
+        It "refuses a pre-18 cluster after a plain down removed the PostgreSQL container" {
+            & bash (Join-Path $script:composeRoot "up.sh") 2>&1 | Out-Null
+            $LASTEXITCODE | Should -Be 0
+            & bash (Join-Path $script:composeRoot "down.sh") 2>&1 | Out-Null
+            $LASTEXITCODE | Should -Be 0
+            New-Item -ItemType Directory -Path $script:postgresVolume -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $script:postgresVolume "PG_VERSION") -Value "16`n" -NoNewline
+            Set-Content -LiteralPath $script:dockerLog -Value "" -NoNewline
+
+            $output = & bash (Join-Path $script:composeRoot "update.sh") 2>&1
+
+            $LASTEXITCODE | Should -Be 1
+            $output | Out-String | Should -Match "holds a PostgreSQL 16 cluster"
+            Get-Content -LiteralPath $script:dockerLog -Raw | Should -Not -Match "compose .* pull"
+        }
+
+        It "updates a volume already in the PostgreSQL 18 layout" {
+            # The current image keeps its cluster in a versioned subdirectory, never at the volume root.
+            $cluster = Join-Path $script:postgresVolume "versioned-pgdata"
+            New-Item -ItemType Directory -Path $cluster -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $cluster "PG_VERSION") -Value "18`n" -NoNewline
+
+            $output = & bash (Join-Path $script:composeRoot "update.sh") 2>&1
+
+            $LASTEXITCODE | Should -Be 0 -Because ($output | Out-String)
+            $output | Out-String | Should -Match "Update complete"
+            Get-Content -LiteralPath $script:dockerLog -Raw | Should -Match "compose .* pull"
+        }
+
+        It "does not inspect or block when the PostgreSQL volume does not exist" {
+            $output = & bash (Join-Path $script:composeRoot "update.sh") 2>&1
+
+            $LASTEXITCODE | Should -Be 0 -Because ($output | Out-String)
+            $calls = Get-Content -LiteralPath $script:dockerLog -Raw
+            $calls | Should -Not -Match "(?m)^run "
+            $calls | Should -Match "compose .* pull"
+        }
+
+        It "fails closed when Docker volumes cannot be listed" {
+            $env:DOCKER_VOLUME_LS_FAIL = "1"
+
+            $output = & bash (Join-Path $script:composeRoot "update.sh") 2>&1
+
+            $LASTEXITCODE | Should -Be 1
+            $output | Out-String | Should -Match "cannot list Docker volumes"
+            Get-Content -LiteralPath $script:dockerLog -Raw | Should -Not -Match "compose .* pull"
+        }
+
+        It "fails closed when the PostgreSQL volume cannot be read" {
+            New-Item -ItemType Directory -Path $script:postgresVolume -Force | Out-Null
+            $env:DOCKER_RUN_FAIL = "1"
+
+            $output = & bash (Join-Path $script:composeRoot "update.sh") 2>&1
+
+            $LASTEXITCODE | Should -Be 1
+            $output | Out-String | Should -Match "cannot read the layout of the PostgreSQL volume"
+            Get-Content -LiteralPath $script:dockerLog -Raw | Should -Not -Match "compose .* pull"
+        }
+
+        It "fails closed when the configuration names no PostgreSQL image to inspect with" {
+            New-Item -ItemType Directory -Path $script:postgresVolume -Force | Out-Null
+            $env:DOCKER_CONFIGURED_POSTGRES = ""
+
+            $output = & bash (Join-Path $script:composeRoot "update.sh") 2>&1
+
+            $LASTEXITCODE | Should -Be 1
+            $output | Out-String | Should -Match "cannot read the layout of the PostgreSQL volume"
+            Get-Content -LiteralPath $script:dockerLog -Raw | Should -Not -Match "(?m)^run "
+        }
     }
 
     It "drops Keycloak with application state during reset" {
@@ -461,11 +619,11 @@ Describe "Azure VM Data Standard selection" {
         $script:composeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../azure-vm/compose"))
     }
 
-    It "passes DMS_CONFIG_DATA_STANDARD_VERSION to both config services, defaulting to 5.2" {
+    It "passes CONFIGURATION_SERVICE_DATA_STANDARD_VERSION to both config services, defaulting to 5.2" {
         $compose = Get-Content -LiteralPath (Join-Path $script:composeRoot "docker-compose.yml") -Raw
 
         $sharedEnvironment = [regex]::Match($compose, '(?ms)^x-cms-common-env: &cms-common-env\s*\n(.*?)(?=^\S)').Groups[1].Value
-        $sharedEnvironment | Should -Match 'ClaimsOptions__DataStandardVersion:\s*"\$\{DMS_CONFIG_DATA_STANDARD_VERSION:-5\.2\}"'
+        $sharedEnvironment | Should -Match 'ClaimsOptions__DataStandardVersion:\s*"\$\{CONFIGURATION_SERVICE_DATA_STANDARD_VERSION:-5\.2\}"'
         foreach ($service in @("st-config", "mt-config")) {
             $serviceBlock = [regex]::Match($compose, "(?ms)^  ${service}:\s*\n(.*?)(?=^  \S)").Groups[1].Value
             $serviceBlock | Should -Match '<<: \*cms-common-env' -Because "$service must inherit the shared claims settings"
@@ -474,7 +632,7 @@ Describe "Azure VM Data Standard selection" {
 
     It "declares the Data Standard 5.2 default in .env.example" {
         Get-Content -LiteralPath (Join-Path $script:composeRoot ".env.example") -Raw |
-            Should -Match '(?m)^DMS_CONFIG_DATA_STANDARD_VERSION=5\.2\r?$'
+            Should -Match '(?m)^CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=5\.2\r?$'
     }
 }
 

@@ -103,6 +103,7 @@ This story covers serving descriptor resources themselves (distinct from descrip
 
 7. Use case-sensitive/ordinal value matching. Query parameter names can remain case-insensitive, but descriptor string values should behave like the current relational query compiler, not legacy
     case-insensitive value matching.
+    Superseded by [natural-key-resolution.md §Query-time string filters](../../design-docs/natural-key-resolution.md#query-time-string-filters-fieldvalue) (DMS-1443): SQL Server string `=` filters follow the column collation.
 
 8. Fail closed for interim auth. Allow only no strategies or NoFurtherAuthorizationRequired; otherwise return 501/not implemented for descriptor GET/query until SQL-layer auth lands. Descriptor
     namespace auth can later be implemented directly against dms.Descriptor.Namespace.

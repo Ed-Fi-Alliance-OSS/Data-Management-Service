@@ -200,8 +200,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                 new DbColumnName(DocumentUuidColumnName),
                 null,
                 predicate.Operator,
-                predicate.ParameterName,
-                predicate.ScalarKind
+                predicate.ParameterName
             );
         }
 
@@ -220,8 +219,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                 originalColumn,
                 null,
                 predicate.Operator,
-                predicate.ParameterName,
-                predicate.ScalarKind
+                predicate.ParameterName
             );
         }
 
@@ -231,8 +229,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             mapping.CanonicalColumn,
             mapping.PresenceColumn,
             predicate.Operator,
-            predicate.ParameterName,
-            predicate.ScalarKind
+            predicate.ParameterName
         );
     }
 
@@ -924,8 +921,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             _rootAlias,
             new DbColumnName(ResolveOrderingColumnName(cursor)),
             operatorToken,
-            parameterName,
-            ScalarKind.Int64
+            parameterName
         );
     }
 
@@ -1597,8 +1593,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             GetTargetAlias(predicate.Target),
             predicate.CanonicalColumn,
             predicate.Operator,
-            predicate.ParameterName,
-            predicate.ScalarKind
+            predicate.ParameterName
         );
     }
 
@@ -1610,8 +1605,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         string tableAlias,
         DbColumnName column,
         QueryComparisonOperator @operator,
-        string parameterName,
-        ScalarKind? scalarKind
+        string parameterName
     )
     {
         _planSqlDialect.AppendComparisonSql(
@@ -1619,8 +1613,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             tableAlias,
             column,
             ToSqlOperator(@operator),
-            parameterName,
-            scalarKind
+            parameterName
         );
     }
 
@@ -1887,14 +1880,12 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// <param name="PresenceColumn">An optional presence gate column that must be <c>IS NOT NULL</c>.</param>
     /// <param name="Operator">The comparison operator.</param>
     /// <param name="ParameterName">The bare SQL parameter name that supplies the value.</param>
-    /// <param name="ScalarKind">Optional scalar-kind metadata for provider-specific comparison behavior.</param>
     private readonly record struct RewrittenPredicate(
         QueryPredicateTarget Target,
         DbColumnName OriginalColumn,
         DbColumnName CanonicalColumn,
         DbColumnName? PresenceColumn,
         QueryComparisonOperator Operator,
-        string ParameterName,
-        ScalarKind? ScalarKind
+        string ParameterName
     );
 }

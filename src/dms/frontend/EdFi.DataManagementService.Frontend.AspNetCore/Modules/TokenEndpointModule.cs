@@ -41,6 +41,7 @@ public class TokenEndpointModule : IEndpointModule
             .MapPost($"{routePattern}/oauth/token", HandleJsonData)
             .Accepts<TokenRequest>(contentType: "application/json")
             .DisableAntiforgery();
+        endpoints.MapMethodNotAllowed($"{routePattern}/oauth/token", HttpMethods.Post);
     }
 
     internal static async Task HandleFormData(

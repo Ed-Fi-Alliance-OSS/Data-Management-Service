@@ -9,7 +9,7 @@ LABEL maintainer="Ed-Fi Alliance, LLC and Contributors <techsupport@ed-fi.org>"
 
 # ICU because Microsoft.Data.SqlClient (the MSSQL backend) does not support
 # globalization-invariant mode, which the Alpine base image enables by default.
-RUN apk --no-cache add postgresql16-client icu-libs=~76 icu-data-full=~76
+RUN apk --no-cache add postgresql18-client icu-libs=~76 icu-data-full=~76
 
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 

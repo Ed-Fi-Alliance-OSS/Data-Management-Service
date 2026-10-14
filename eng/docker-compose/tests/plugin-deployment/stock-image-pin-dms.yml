@@ -15,7 +15,7 @@
 # harness before Compose is reached; what belongs here is a version-specific tag and a digest.
 #
 # The Configuration Service is not pinned here. It has its own whole-reference variable,
-# DMS_CONFIG_DOCKER_IMAGE in published-config.yml, because the two services shared DMS_IMAGE_TAG and
+# CONFIGURATION_SERVICE_DOCKER_IMAGE in published-config.yml, because the two services shared DMS_IMAGE_TAG and
 # a digest is meaningful only against the repository it was published under.
 #
 # It also turns the DMS restart policy off. published-dms.yml carries restart: unless-stopped, which

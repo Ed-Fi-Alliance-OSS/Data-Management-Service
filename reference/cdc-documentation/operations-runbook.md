@@ -40,7 +40,7 @@ Each procedure uses the same record of verified implementation details:
 
 | Field | Required content |
 | --- | --- |
-| Target/generation | CMS-selected target, provider, physical-source and binding-generation scope; shared-worker inventory when relevant. |
+| Target/generation | Selected Configuration Service target, provider, physical-source and binding-generation scope; shared-worker inventory when relevant. |
 | Authority/offline window | Required deployment/database/consumer authority, writer/seed exclusion or offline fence, who maintains it and when it may end; explicitly state when no offline window is required. |
 | Retained inputs | Exact settings/state paths, schema inputs, receipts, acknowledgements and incident records; distinguish supplied inputs from controller-emitted state. |
 | Invocation | Ordered marked commands/configuration, working directory, prerequisites and every substitution's source. |
@@ -89,7 +89,7 @@ binds the exact selected `pwsh` invocation against the shipped parameter block;
 it does not execute surrounding prose or wrapper infrastructure. Declared fixture
 substitutions map `./.local/cdc/` beneath an owned temporary root and the selected
 `.env`/`.env.e2e` to fixture environment paths. Existing wrapper seams supply the
-CMS-selected target `42`, schema/provisioning receipts and provider admission results;
+selected Configuration Service target `42`, schema/provisioning receipts and provider admission results;
 the lifecycle fixture supplies its retained peer inventory/custom roots. Provider tokens,
 settings/state basenames, database selection, switches and test filter remain the marked
 inputs. These checks prove binding/forwarding and failure ordering, not live readiness.
@@ -134,8 +134,8 @@ owns configuration and command definitions; the examples below assemble one depl
 
 | Record | Value |
 | --- | --- |
-| Target/generation | Default tenant, PostgreSQL, one CMS-selected data store; example `1`, `datastore-1`, generation `1`, dedicated new `edfi_cdc`. The controller obtains physical-source identity from managed provisioning, not these settings. |
-| Authority/offline window | Deployment owner controls Docker, CMS, setup credentials and all writers/seed processes. Keep every DMS/IDE writer and seed process stopped until the wrapper accepts the matching writer-publication receipt. |
+| Target/generation | Default tenant, PostgreSQL, one selected Configuration Service data store; example `1`, `datastore-1`, generation `1`, dedicated new `edfi_cdc`. The controller obtains physical-source identity from managed provisioning, not these settings. |
+| Authority/offline window | Deployment owner controls Docker, the Configuration Service, setup credentials and all writers/seed processes. Keep every DMS/IDE writer and seed process stopped until the wrapper accepts the matching writer-publication receipt. |
 | Retained inputs | Protected full input settings and effective environment; staged schemas; original absolute state root; emitted `.bootstrap/cdc-runtime` settings/Compose override and `.cdc-deployments` inventory. Retain controller receipts, history, journals and `broker-size.json`. |
 | Invocation | `cdc-pg-infrastructure`, `cdc-pg-connector-role`, `cdc-pg-settings`, then exactly one of `cdc-pg-bootstrap-local` / `cdc-pg-bootstrap-published`; observe with `cdc-pg-status` / `cdc-pg-watch`. All commands start at repository root. |
 | JSON/exit status | Wrapper progress is text; its internal `enable` must return exit `0`, `operation: "enable"`, `succeeded: true`, `exitCode: 0`, matching `data.workflowId` and non-default `data.authorizedAt`. Observation fields/codes are described below. |
@@ -149,10 +149,10 @@ and the matching `api-schema-tools` build/package (see [tool preparation](../../
 On Linux, check `systemctl status docker --no-pager`; start the service if necessary
 and verify `docker ps` succeeds in the session. The scripts enforce Linux ownership
 checks. Reserve the `dms` network, selected project and container names exclusively;
-no unrelated containers on the CMS/database network and no DMS/IDE writers are allowed.
+no unrelated containers on the Configuration Service/database network and no DMS/IDE writers are allowed.
 
 Use the pinned PostgreSQL image in [postgresql.yml](../../eng/docker-compose/postgresql.yml)
-(`postgres:16.8-alpine`, including its digest), the broker in
+(`postgres:18.6-alpine`, including its digest), the broker in
 [kafka-broker.yml](../../eng/docker-compose/kafka-broker.yml), and the qualified worker
 in [kafka-cdc.yml](../../eng/docker-compose/kafka-cdc.yml). The worker digest is checked
 against shipped qualification; an arbitrary `CDC_CONNECT_IMAGE` is not supported.
@@ -160,7 +160,7 @@ Image/telemetry qualification is owned by [pinned runtime](../design/backend-red
 and [local telemetry](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-and-ci-connector-telemetry).
 
 Prepare an owner-only environment file from [`.env.example`](../../eng/docker-compose/.env.example)
-as `eng/docker-compose/.env`. Resolve its database, CMS and identity credentials
+as `eng/docker-compose/.env`. Resolve its database, Configuration Service and identity credentials
 before starting; retain that file. Supply `CDC_DATABASE_PASSWORD` through that
 protected environment file or the worker's process environment, with the same secret
 as the restricted login created below. Never paste secrets into command arguments,
@@ -169,20 +169,20 @@ transcripts, evidence or source control. Keep environment/settings directories m
 file. Remove any `DMS_CDC__*` overrides before using either wrapper.
 
 The concrete endpoints below assume `POSTGRES_PORT=5432`,
-`DMS_CONFIG_ASPNETCORE_HTTP_PORTS=8081`, `CONNECT_SOURCE_PORT=8083`,
+`CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=8081`, `CONNECT_SOURCE_PORT=8083`,
 `CDC_METRICS_PORT=9404`, `KAFKA_PORT=9092`, worker key `local-worker`, offset topic
 `dms-connect-offsets`, and worker heap `512` MiB. If changing these, change every
 corresponding setting together. Lifecycle qualification uses `CDC_WORKER_HEAP_MIB=1024`
 and `Cdc.Worker.HeapBytes=1073741824` from initial creation for cold plugin-scan
 headroom. Do not change a retained worker policy to retry a failed operation.
 Leave multitenancy disabled and route qualifiers
-empty. Use `-SeparateConfigDatabase`; shared CMS/DMS database topology is rejected.
+empty. Use `-SeparateConfigDatabase`; shared Configuration Service/DMS database topology is rejected.
 The new `edfi_cdc` database must not exist and must differ from `POSTGRES_DB_NAME`
-and the reserved CMS/system databases. Do not create it manually: the wrapper's
+and the reserved Configuration Service/system databases. Do not create it manually: the wrapper's
 managed CREATE supplies the original receipt and initial-workflow purpose.
 
 PowerShell, repository root; initial infrastructure only, before settings preparation.
-This creates/starts owned database/CMS infrastructure; it does not admit writers.
+This creates/starts owned database and Configuration Service infrastructure; it does not admit writers.
 For the published alternative, perform this preparation in a separate fresh workspace
 using the published start script, never over an existing local deployment.
 
@@ -228,21 +228,21 @@ if ($LASTEXITCODE -ne 0) { throw 'Connector role preparation failed; retain infr
 
 ### Select the target and prepare complete settings
 
-For this example, require a **brand-new CMS database**, no prior data-store inserts
-(including deleted rows), and no concurrent CMS configuration. Its first registration
+For this example, require a **brand-new Configuration Service database**, no prior data-store inserts
+(including deleted rows), and no concurrent Configuration Service configuration. Its first registration
 has ID `1` under the [shipped identity seed](../../src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts/0021_Create_DataStore_Table.sql).
-The wrapper's configure phase obtains the authoritative ID from the CMS
+The wrapper's configure phase obtains the authoritative ID from the Configuration Service
 `POST /v3/dataStores` response (`SelectedDataStoreIds` in
 [configure-local-data-store.ps1](../../eng/docker-compose/configure-local-data-store.ps1));
 it checks that ID against both settings entries **before** provisioning. After
-registration, the CMS owner can inspect authenticated `GET /v3/dataStores` and select
+registration, the Configuration Service owner can inspect authenticated `GET /v3/dataStores` and select
 the route-unqualified entry for this database, checking its `id`, provider and
 connection destination privately. Do not publish connection strings.
 
 `1` is a declared fresh-fixture expectation, not a general ID-discovery algorithm.
 Do not run configure separately to discover an ID and then rerun bootstrap:
 configure inserts another registration. An empty list after deletions does not prove
-the next ID. For an existing CMS whose selected ID cannot be established in advance,
+the next ID. For an existing Configuration Service whose selected ID cannot be established in advance,
 stop before this example and resolve deployment selection with the wrapper owner
 [DMS-1323](../design/backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md);
 do not guess, add `-NoDataStore`, or use SQL to reset the identity. A mismatch rejects
@@ -251,10 +251,10 @@ before schema/CDC effects; preserve the registration and diagnostics for that ha
 Start with a **complete normal DMS settings file**, prepared from
 [frontend appsettings.json](../../src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/appsettings.json)
 plus this deployment's normal overrides. Store it privately at
-`.local/cdc/dms-base.json`. Populate CMS `BaseUrl` (`http://127.0.0.1:8081`),
-`ClientId`, `ClientSecret`, `Scope` and `EncryptionKey` with the effective CMS
-registration/environment values (`CONFIG_SERVICE_CLIENT_*` and
-`DMS_CONFIG_DATABASE_ENCRYPTION_KEY`); configure normal authentication/JWT and other
+`.local/cdc/dms-base.json`. Populate Configuration Service `BaseUrl` (`http://127.0.0.1:8081`),
+`ClientId`, `ClientSecret`, `Scope` and `EncryptionKey` with the effective Configuration Service
+registration/environment values (`DMS_CONFIGURATION_SERVICE_CLIENT_*` and
+`CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY`); configure normal authentication/JWT and other
 host settings for the same identity provider. Preserve normal projector options.
 A copied default file with empty secrets is not ready to use. Schema package inputs
 must match the eventual DMS host, including extensions. Local bootstrap selects its
@@ -274,7 +274,7 @@ not the connector role. Do not print the resulting object.
 | --- | --- | --- |
 | `.local/cdc/dms-base.json`, `.local/cdc/postgresql.json` | Complete private normal settings; new output file | Fixture full DMS settings/output |
 | `.local/cdc/state-pg`, repository root | Original managed state root and checkout | Owned fixture paths; never fabricated receipts |
-| `1`, `datastore-1`, `local`, generation `1` | Fresh CMS expectation and chosen initial deployment identity | Fixture's actual selected target/identity |
+| `1`, `datastore-1`, `local`, generation `1` | Fresh Configuration Service expectation and chosen initial deployment identity | Fixture's actual selected target/identity |
 | `edfi_cdc`, `postgres`, `cdc_reader`, masked setup connection | Dedicated new database, setup/connector identities above | Matching owned database and principals |
 | Endpoints, worker values, `./eng/docker-compose/.env` | Selected Compose values above | Matching fixture host/container endpoints, environment and worker |
 | `5000`, `10000000` | Example lag policy (ms) and record ceiling (bytes), not capacity qualification | Fixture policy supported by the controller |
@@ -347,11 +347,11 @@ and must not be passed directly to the CLI. Bootstrap snapshots it to owner-only
 `eng/docker-compose/.bootstrap/cdc-runtime/bootstrap-*.settings.json`, replacing
 `Cdc.Schemas`, `Cdc.Compose`, `AppSettings.UseApiSchemaPath` and `ApiSchemaPath`
 with staged paths and the selected environment/project. The matching DMS Compose
-override carries DocumentCache settings and CMS credentials, translating the CMS
-URL to the container address. Only known CMS database addresses are translated to
+override carries DocumentCache settings and Configuration Service credentials, translating the Configuration Service
+URL to the container address. Only known Configuration Service database addresses are translated to
 published loopback ports for the host-side projection runtime.
 
-The setup connection and CMS endpoint are **host-reachable**. Connector
+The setup connection and Configuration Service endpoint are **host-reachable**. Connector
 `database.hostname` and `KafkaBootstrapServers` are **worker-reachable** container
 addresses. The single-quoted `${env:CDC_DATABASE_PASSWORD}` is resolved by the
 worker's enabled EnvVarConfigProvider; it is not a PowerShell substitution or a
@@ -400,7 +400,7 @@ if ($LASTEXITCODE -ne 0) { throw 'CDC bootstrap failed; retain state and keep wr
 <!-- /cdc-snippet: cdc-pg-bootstrap-published -->
 
 Local `-InfraOnly` completes CDC admission but leaves DMS offline; published bootstrap
-has no `-InfraOnly` parameter. For an IDE continuation use the same target, CMS and
+has no `-InfraOnly` parameter. For an IDE continuation use the same target, Configuration Service and
 staged schema settings only after admission. `-DmsBaseUrl`, `-NoDataStore`, route-qualified
 and multiple targets are rejected for initial CDC bootstrap. Optional `-LoadSeedData`
 uses the wrapper's normal seed inputs and runs only after admission and DMS startup;
@@ -486,14 +486,14 @@ is not gated by CDC status; see [readiness scope](../design/backend-redesign/des
 Use the same
 [owned local profile](README.md#supported-deployment), Linux/Docker/toolchain,
 private-file protections, writer/seed exclusion, complete normal DMS settings and
-CMS-selection rules in [shared preparation](#prepare-the-owned-deployment). Follow
+Configuration Service selection rules in [shared preparation](#prepare-the-owned-deployment). Follow
 the [SQL Server contract](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server)
 and [initial-admission owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence).
 
 | Record | Value |
 | --- | --- |
-| Target/generation | Default tenant, SQL Server, fresh CMS-selected target `1` / `datastore-1`, generation `1`, dedicated new `edfi_cdc`. The original managed CREATE supplies source identity and receipt. |
-| Authority/offline window | Deployment owner controls the entire local server/network, CMS and all writers; setup administrator `sa` has database creation, CDC, principal-metadata and owned-local server prerequisite authority. Keep every writer/seed offline until matching writer-publication authorization. Connector login has no such authority. |
+| Target/generation | Default tenant, SQL Server, fresh selected Configuration Service target `1` / `datastore-1`, generation `1`, dedicated new `edfi_cdc`. The original managed CREATE supplies source identity and receipt. |
+| Authority/offline window | Deployment owner controls the entire local server/network, Configuration Service and all writers; setup administrator `sa` has database creation, CDC, principal-metadata and owned-local server prerequisite authority. Keep every writer/seed offline until matching writer-publication authorization. Connector login has no such authority. |
 | Retained inputs | Full `.local/cdc/sqlserver.json`, protected base/effective environment, matching staged core/extensions, original `.local/cdc/state-sqlserver`, emitted `.bootstrap/cdc-runtime` settings/Compose override, `.cdc-deployments` inventory and `broker-size.json`. Retain these after failure too. |
 | Invocation | `cdc-sqlserver-infrastructure`, deployment-owned restricted login preparation, `cdc-sqlserver-settings`, exactly one of `cdc-sqlserver-bootstrap-local` / `cdc-sqlserver-bootstrap-published`, then `cdc-sqlserver-status` / `cdc-sqlserver-watch`. Repository root throughout. |
 | JSON/exit status | Wrapper progress is text. Internal `enable` requires exit `0`, `operation: "enable"`, `succeeded: true`, `exitCode: 0`, matching `data.workflowId`, non-default `data.authorizedAt`. Status/watch use the shared observation envelope/codes below. |
@@ -514,18 +514,18 @@ A successful SQL connection or container/HTTP health check does not prove Agent,
 projection prerequisites, capture progress or CDC readiness.
 
 Prepare the protected `eng/docker-compose/.env` with `DMS_DATASTORE=mssql`,
-`DMS_CONFIG_DATASTORE=mssql`, effective `MSSQL_PORT=1435`,
+`CONFIGURATION_SERVICE_DATASTORE=mssql`, effective `MSSQL_PORT=1435`,
 `MSSQL_DB_NAME=edfi_datamanagementservice` and a private `MSSQL_SA_PASSWORD`, plus
-normal CMS/identity settings and the connector's `CDC_DATABASE_PASSWORD`.
+normal Configuration Service/identity settings and the connector's `CDC_DATABASE_PASSWORD`.
 The shipped [engine resolver](../../eng/docker-compose/env-utility.psm1) applies
 [.env.mssql](../../eng/docker-compose/.env.mssql), preserving nonblank custom MSSQL
 credentials/names/ports **when the base file declares MSSQL** and producing an effective file under `.derived` when needed.
 Reconcile ambient overrides before preparation. Retain base and effective files;
-all phases must use the same resolved values. SQL Server hosts CMS too; use
-`-SeparateConfigDatabase` so the dedicated CMS database differs from the new CDC
-source. `edfi_cdc` must not exist or alias any infrastructure/CMS/system database.
-Keep the fresh CMS/no-prior-inserts condition for the example ID `1`; the shared
-CMS selection instructions explain authenticated inspection and rejection before
+all phases must use the same resolved values. SQL Server hosts Configuration Service too; use
+`-SeparateConfigDatabase` so the dedicated Configuration Service database differs from the new CDC
+source. `edfi_cdc` must not exist or alias any infrastructure, Configuration Service, or system database.
+Keep the fresh Configuration Service/no-prior-inserts condition for the example ID `1`; the shared
+Configuration Service selection instructions explain authenticated inspection and rejection before
 provisioning. Do not pre-register a store just to discover an ID.
 
 PowerShell, repository root; starts owned infrastructure with DMS excluded. Requires
@@ -562,8 +562,8 @@ No operator pause or callback between provisioning and admission is required.
 ### Prepare complete SQL Server settings
 
 Prepare `.local/cdc/dms-base.json` with full normal DMS settings and this deployment's
-CMS client credentials, encryption key, authentication and projector options, as in
-shared preparation. CMS is host-reachable at `http://127.0.0.1:8081` in this example.
+Configuration Service client credentials, encryption key, authentication and projector options, as in
+shared preparation. The Configuration Service is host-reachable at `http://127.0.0.1:8081` in this example.
 The settings construction below retains those normal settings; it is not a partial
 `Cdc` file. Local and published examples both select Data Standard `5.2`; stage the
 same core/extensions that the eventual DMS host uses.
@@ -581,7 +581,7 @@ observations; expiry never supplies publication authority.
 | Literal/input | Operator source | Permitted fixture replacement |
 | --- | --- | --- |
 | `.local/cdc/dms-base.json`, `.local/cdc/sqlserver.json`, `.local/cdc/state-sqlserver` | Complete private normal settings, new wrapper input and original state root | Owned fixture full settings/paths; never fabricated receipts |
-| `1`, `datastore-1`, `local`, generation `1` | Fresh CMS expectation and initial deployment identity | Actual selected fixture identity in both target settings |
+| `1`, `datastore-1`, `local`, generation `1` | Fresh Configuration Service expectation and initial deployment identity | Actual selected fixture identity in both target settings |
 | `edfi_cdc`, `sa`, `cdc_reader`, masked connection | Dedicated new database, setup administrator and prepared same-name login/user | Matching owned database/principals/host port |
 | Endpoints, worker values, environment path | Same local profile as shared preparation; host SQL port `1435`, worker `dms-mssql:1433` | Matching host/container fixture endpoints and environment |
 | `5000`, `10000000`, timing values | Example lag policy (ms), record ceiling (bytes), bounded timeouts (ms); no scale claim | Supported fixture policy/budgets |
@@ -699,7 +699,7 @@ if ($LASTEXITCODE -ne 0) { throw 'CDC bootstrap failed; retain state and keep wr
 <!-- /cdc-snippet: cdc-sqlserver-bootstrap-published -->
 
 Local `-InfraOnly` completes admission and leaves DMS offline; published bootstrap
-has no `-InfraOnly`. An IDE continuation must use the same CMS target/staged schema
+has no `-InfraOnly`. An IDE continuation must use the same Configuration Service target/staged schema
 and wait for writer authorization. Optional `-LoadSeedData` runs only after admission
 and DMS startup. The shared exclusions (`-NoDataStore`, `-DmsBaseUrl`, route-qualified
 or multiple targets) also apply here.
@@ -766,7 +766,7 @@ This is the DMS E2E suite, not Instance Management E2E.
 
 | Record | Value |
 | --- | --- |
-| Target/generation | One fresh CMS-selected target for `E2E_DATABASE_NAME`; default `edfi_datamanagementservice_e2e`. Separate `E2E_SNAPSHOT_DATABASE_NAME` is not the CDC source. |
+| Target/generation | One fresh selected Configuration Service target for `E2E_DATABASE_NAME`; default `edfi_datamanagementservice_e2e`. Separate `E2E_SNAPSHOT_DATABASE_NAME` is not the CDC source. |
 | Authority/offline window | Same exclusive deployment and initial writer/seed exclusion as the selected provider setup; test processes start only after controller admission and DMS startup. |
 | Retained inputs | Full E2E DMS/CDC settings, original state root, base/effective environment and overlays, E2E core/extensions, emitted settings/receipts/inventory; temporary CDC diagnostics on failure. |
 | Invocation | PostgreSQL: `cdc-pg-e2e-setup` then optional `cdc-pg-e2e-test`, **or** `cdc-pg-e2e-build` on a separate fresh workspace. SQL Server: `cdc-sqlserver-e2e-setup` or `cdc-sqlserver-e2e-build` with the SQL Server variant below. |
@@ -788,23 +788,23 @@ Use a fresh owned stack/workspace, not the already admitted `edfi_cdc` example. 
 the [SQL Server variant](#sql-server-e2e-variant) for that provider. Complete the selected
 provider's infrastructure/login preparation before the E2E entry point. Neither E2E wrapper
 creates the restricted connector login for you. The initial ID `1` assumption requires
-the same brand-new CMS/no-prior-inserts condition; actual selected ID is checked before
+the same brand-new Configuration Service/no-prior-inserts condition; actual selected ID is checked before
 provisioning. Keep DMS and test processes offline during preparation.
 
 | Input | E2E value/source | Permitted fixture replacement |
 | --- | --- | --- |
-| Environment | Absolute path to protected `eng/docker-compose/.env.e2e`; review its CMS credentials, database ports, identity settings and worker secret | Owned E2E environment |
-| Infrastructure startup | Add `-AddExtensionSecurityMetadata` to the provider's `start-local-dms.ps1 -InfraOnly` invocation before the first CMS startup | Same switch for both providers |
+| Environment | Absolute path to protected `eng/docker-compose/.env.e2e`; review its Configuration Service credentials, database ports, identity settings and worker secret | Owned E2E environment |
+| Infrastructure startup | Add `-AddExtensionSecurityMetadata` to the provider's `start-local-dms.ps1 -InfraOnly` invocation before the first Configuration Service startup | Same switch for both providers |
 | Primary database | Effective `E2E_DATABASE_NAME`; default `edfi_datamanagementservice_e2e`. Set both `Cdc.SetupConnectionString` database and `ProviderConnectionProperties.database.dbname` to it | Fixture's dedicated new primary |
-| Snapshot | Effective `E2E_SNAPSHOT_DATABASE_NAME`; must differ from primary and reserved infrastructure/CMS databases | Fixture's dedicated snapshot |
-| Target/identity | Same CMS-selected ID in `DocumentCache.Targets` and `Cdc.DataStoreId`; example `1`/`datastore-1`, generation `1` | Actual fixture target/identity |
+| Snapshot | Effective `E2E_SNAPSHOT_DATABASE_NAME`; must differ from primary and reserved infrastructure and Configuration Service databases | Fixture's dedicated snapshot |
+| Target/identity | Same selected Configuration Service ID in `DocumentCache.Targets` and `Cdc.DataStoreId`; example `1`/`datastore-1`, generation `1` | Actual fixture target/identity |
 | Settings/state | Write the complete merged settings as `.local/cdc/postgresql-e2e.json`; use original `.local/cdc/state-pg-e2e` from first provisioning | Owned fixture paths |
 | Schemas | Selected E2E environment's `SCHEMA_PACKAGES`, including Sample/Homograph test extensions; staged identically for primary, snapshot and runtime | Matching fixture core/extensions |
-| Endpoints/principals | Effective E2E host ports, container endpoints, CMS credentials, setup principal and existing `cdc_reader` | Matching fixture values |
+| Endpoints/principals | Effective E2E host ports, container endpoints, Configuration Service credentials, setup principal and existing `cdc_reader` | Matching fixture values |
 
 The infrastructure switch stages extension and test-owned E2E claim fragments before
-CMS initializes its claims tables. The later E2E wrapper also stages these fragments,
-but CMS skips initial claims loading when those tables are already populated; a
+the Configuration Service initializes its claims tables. The later E2E wrapper also stages these fragments,
+but the Configuration Service skips initial claims loading when those tables are already populated; a
 restart cannot supply claim sets omitted at first startup. Apply this switch during
 the fresh infrastructure preparation for both PostgreSQL and SQL Server.
 
@@ -813,7 +813,7 @@ this E2E deployment, the settings/state/environment paths with this table's path
 and **both** database references (including the masked prompt input) with the E2E
 primary. Do not reuse the local example's staged schema paths. The E2E wrapper uses
 its environment-file schema authority and fills `Cdc.Schemas` with the staged E2E
-core/extensions. It uses separate CMS topology, managed provisioning for the primary,
+core/extensions. It uses separate Configuration Service topology, managed provisioning for the primary,
 and the legacy reset provisioner only for the distinct snapshot before admission.
 
 Supply absolute environment paths as below to avoid caller-directory ambiguity.
@@ -823,14 +823,14 @@ the build entry point has its own resolver. Direct setup applies an optional
 `-EnvironmentOverlayFile` first, then Data Standard, then engine. PostgreSQL's engine
 step is a no-op. The examples omit overlays to retain the E2E file's test extensions.
 If selecting an overlay, inspect its effective package list before starting; the same
-resolved file must select CMS registration, primary/snapshot provisioning and testing.
+resolved file must select Configuration Service registration, primary/snapshot provisioning and testing.
 
 Schema guards suppress ambient `USE_API_SCHEMA_PATH`, `API_SCHEMA_PATH` and
 `SCHEMA_PACKAGES` during these phases; other Compose-resolved settings, including
 `E2E_DATABASE_NAME`, can still be overridden by the process environment. Reconcile
 those before preparing the settings. The build path derives test-process settings
 from that effective environment; direct `dotnet test` needs matching database,
-provider, ports, credentials, API/CMS URLs and container selection from
+provider, ports, credentials, API and Configuration Service URLs and container selection from
 [E2E appsettings](../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/appsettings.json).
 See the shipped [E2E handoff](../../eng/docker-compose/e2e-cdc.psm1).
 
@@ -907,7 +907,7 @@ before preparing another one. Do not bypass that guard by deleting `.bootstrap` 
 ### SQL Server E2E variant
 
 Use a **fresh owned workspace**, with the [common E2E requirements](#prepare-the-e2e-variant)
-for primary/snapshot isolation, schemas, CMS selection, environment resolution and
+for primary/snapshot isolation, schemas, Configuration Service selection, environment resolution and
 retained state. Apply [SQL Server preparation](#sql-server-setup) using every
 substitution below. Infrastructure and the restricted login must exist first; the
 primary database and its database user must not. The provider creates the primary
@@ -916,13 +916,13 @@ and must not be used to insert a manual primary-user creation step.
 
 | Input in SQL Server preparation | E2E value/source | Permitted fixture replacement |
 | --- | --- | --- |
-| `./eng/docker-compose/.env` everywhere, including infrastructure and `Cdc.Compose.EnvironmentFile` | Protected `./eng/docker-compose/.env.e2e`, with effective MSSQL/CMS/worker credentials and `MSSQL_PORT` | Owned E2E environment with matching effective endpoints/secrets |
-| Infrastructure startup | Add `-AddExtensionSecurityMetadata` to `start-local-dms.ps1 -InfraOnly` before the first CMS startup, as in the common E2E requirements | Same shipped switch |
-| Complete base settings | Full normal DMS settings for this E2E deployment, including CMS credentials and self-contained identity | Fixture complete normal settings, not a standalone `Cdc` fragment |
+| `./eng/docker-compose/.env` everywhere, including infrastructure and `Cdc.Compose.EnvironmentFile` | Protected `./eng/docker-compose/.env.e2e`, with effective MSSQL, Configuration Service, and worker credentials and `MSSQL_PORT` | Owned E2E environment with matching effective endpoints/secrets |
+| Infrastructure startup | Add `-AddExtensionSecurityMetadata` to `start-local-dms.ps1 -InfraOnly` before the first Configuration Service startup, as in the common E2E requirements | Same shipped switch |
+| Complete base settings | Full normal DMS settings for this E2E deployment, including Configuration Service credentials and self-contained identity | Fixture complete normal settings, not a standalone `Cdc` fragment |
 | `.local/cdc/sqlserver.json`, `.local/cdc/state-sqlserver` | `.local/cdc/sqlserver-e2e.json`, original `.local/cdc/state-sqlserver-e2e` | Owned fixture settings/state roots |
-| `edfi_cdc` in masked setup connection and `database.names` | Effective `E2E_DATABASE_NAME`, default `edfi_datamanagementservice_e2e` | Same dedicated primary in CMS registration, provisioner, connector and tests |
-| Snapshot | Effective `E2E_SNAPSHOT_DATABASE_NAME`, default `edfi_datamanagementservice_e2e_snapshot`; distinct from primary/CMS/system databases | Fixture snapshot; never the CDC target |
-| `1` / `datastore-1`, generation `1` | Fresh CMS-selected identity in `DocumentCache.Targets` and `Cdc.DataStoreId` | Actual selected fixture identity; same fresh-CMS rules |
+| `edfi_cdc` in masked setup connection and `database.names` | Effective `E2E_DATABASE_NAME`, default `edfi_datamanagementservice_e2e` | Same dedicated primary in Configuration Service registration, provisioner, connector and tests |
+| Snapshot | Effective `E2E_SNAPSHOT_DATABASE_NAME`, default `edfi_datamanagementservice_e2e_snapshot`; distinct from primary, Configuration Service, and system databases | Fixture snapshot; never the CDC target |
+| `1` / `datastore-1`, generation `1` | Fresh selected Configuration Service identity in `DocumentCache.Targets` and `Cdc.DataStoreId` | Actual selected fixture identity; same fresh-CMS rules |
 | Host port `1435`, worker `dms-mssql:1433`, setup `sa`, connector `cdc_reader` | Effective SQL Server environment and existing restricted login; both connector-principal settings match | Same owned fixture server and principal |
 | `5.2` local bootstrap overlay | Omitted in the E2E commands: effective E2E `SCHEMA_PACKAGES` with Sample/Homograph extensions owns primary/snapshot/runtime schemas | Matching E2E core/extensions; inspect optional overlays before use |
 
@@ -934,13 +934,13 @@ and the worker's internal `1433` in connector properties.
 
 Both entry points use the shipped `.env.mssql` composition after any Data Standard
 overlay; build additionally applies its optional `-EnvironmentOverlayFile` first.
-Set `DMS_DATASTORE=mssql` and `DMS_CONFIG_DATASTORE=mssql` in the base E2E
+Set `DMS_DATASTORE=mssql` and `CONFIGURATION_SERVICE_DATASTORE=mssql` in the base E2E
 environment before infrastructure preparation. The resolver preserves custom nonblank
 MSSQL credentials/ports/names only when the base file declares MSSQL, replaces
 PostgreSQL-shaped database connection strings and forces both datastore tokens to
 `mssql`. Ambient values still take precedence in Compose: clear stale PostgreSQL
 connection-string overrides before starting. Use the wrapper's retained effective
-file, staged E2E schemas and selected CMS target together. Do not apply the local
+file, staged E2E schemas and selected Configuration Service target together. Do not apply the local
 `5.2` overlay if it would replace required test extensions.
 
 PowerShell, repository root; direct setup alternative after SQL Server E2E preparation
@@ -963,7 +963,7 @@ with the same effective primary database, and first configure the test process f
 SQL Server: `AppSettings__DatabaseEngine=mssql`, host-side
 `AppSettings__DataStoreAdminConnectionString`, container-side
 `AppSettings__DataStoreConnectionString` and `AppSettings__DataStoreSnapshotConnectionString`,
-plus matching API/CMS URLs, credentials and container selection. Supply connection
+plus matching API and Configuration Service URLs, credentials and container selection. Supply connection
 strings privately, never as shell arguments. The default E2E appsettings is PostgreSQL
 and cannot be used unchanged. Preserve `Given_CdcE2ESetup` as the smoke filter and
 clear unsupported `NODE_OPTIONS`; this procedure does not qualify reset-based message
@@ -1070,8 +1070,8 @@ already authorized writer publication.
 
 | Record | Value |
 | --- | --- |
-| Target/generation | Same controller-proven new physical database, CMS-selected target and unfinished initial generation. No previously admitted or replacement source. |
-| Authority/offline window | Original deployment owner retains exclusive writer/seed exclusion throughout retry. CMS, database, Kafka and worker dependencies must be reachable with the original authority. |
+| Target/generation | Same controller-proven new physical database, selected Configuration Service target and unfinished initial generation. No previously admitted or replacement source. |
+| Authority/offline window | Original deployment owner retains exclusive writer/seed exclusion throughout retry. The Configuration Service, database, Kafka and worker dependencies must be reachable with the original authority. |
 | Retained inputs | Original state, managed provisioning receipt/history, exact emitted runtime settings and referenced schemas/environment. Keep settings overrides consistent with the original target. |
 | Invocation | `cdc-enable-retry`; the controller classifies and reconciles its journal. Do not rerun independent provisioning or construct stage receipts. |
 | JSON/exit status | Completion requires process exit `0`, `operation: "enable"`, `succeeded: true`, `exitCode: 0`, `data.workflowId` matching the original workflow and non-default `data.authorizedAt`. Failure may omit `data`, `binding` and `deploymentProfile`. |
@@ -1216,7 +1216,7 @@ manufacture a mismatch. Fixture substitutions may select only disposable fixture
 state already damaged by the existing test's fault seam; operators do not perform
 those mutations. A source-mismatch fixture may supply a private copy of the same
 settings with its setup connection selecting an independent fixture-owned empty or
-populated database. The original settings, CMS selection, binding and source remain
+populated database. The original settings, Configuration Service selection, binding and source remain
 unchanged; this is a deliberate invalid-selection test, not a replacement procedure.
 See the private path substitution table in `cdc-validate`.
 
@@ -1239,7 +1239,7 @@ that a service is absent. Use the original private inventory and incident contex
 | Normally absent incident file in an otherwise intact workflow | No file needs to be created. Missing required binding/journal/source history is a different condition. Absence cannot rebut a report that an incident was deleted. |
 | Suspected incident-history deletion or state rollback | Preserve the report and withhold validation/restart authorization even if the CLI appears healthy. The controller fixtures exercise `IncidentHistoryDeletion` and `StateRollback` integrity reports; these are adapter inputs, not CLI flags or automatic rollback detectors. Escalate; no stale-backup restoration procedure exists. |
 | Retained terminal incident or `data.continuity: "Lost"` | Keep the generation terminal. Use governed observation/containment and escalate. Recreated provider artifacts, changed offsets, snapshots or later health cannot clear it. |
-| Empty **or populated** different physical source; validation/lifecycle rejection | Preserve both source and original binding evidence. No identity rotation, replacement capture, CMS cutover or rebinding is authorized. Empty tables do not establish initial eligibility for the old target. |
+| Empty **or populated** different physical source; validation/lifecycle rejection | Preserve both source and original binding evidence. No identity rotation, replacement capture, Configuration Service cutover or rebinding is authorized. Empty tables do not establish initial eligibility for the old target. |
 | Live provider/Connect/Kafka evidence unavailable; `Unknown` when classification is available | Restore observation access to the same intact services and reobserve within a bounded attempt. Do not claim zero lag, absence, healthy continuity or successful shutdown. |
 | Status reports `incidentPersistence: "Failed"` or `containment: "Failed"` | Preserve every diagnostic and escalate the failed dimension. `containment: "Stopped"` can verify connector stop even when incident persistence failed; it does not establish durable incident protection. Successful persistence does not imply the connector stopped. A failed stop/readback leaves containment unverified. |
 
@@ -1347,7 +1347,7 @@ pwsh eng/docker-compose/bootstrap-local-dms.ps1
 <!-- /cdc-snippet: cdc-managed-start -->
 
 The wrapper requires `Stopped` and no running worker, consumes that checkpoint by
-writing `Transition`, restores database/CMS infrastructure, then invokes
+writing `Transition`, restores database and Configuration Service infrastructure, then invokes
 `cdc start-worker`. This narrower building block exposes worker REST after verified
 shutdown and observational shared-offset-store checks; it neither resumes connectors
 nor supplies complete shared-worker shutdown authority. Use the wrapper for the
@@ -1485,7 +1485,7 @@ between processes. Durable incomplete-stop intent can still establish
 `NativeRecovery`. Neither value changes the uncertified interval.
 
 The provider recovery fixture substitutes complete private settings and its
-original state root for the two declared paths. It reuses the packaged-test CMS
+original state root for the two declared paths. It reuses the packaged-test Configuration Service
 endpoint and runtime-compatible schema workspace while observing live provider,
 broker, worker, offsets and telemetry. The standalone observer does not start its
 projector, so its projection health remains unavailable; it cannot borrow readiness
@@ -1532,9 +1532,9 @@ and [cache-ahead recovery owner](../design/backend-redesign/design-docs/cdc/0001
 
 | Record | Value |
 | --- | --- |
-| Target/generation | One CMS-selected normalized `(tenantKey, dataStoreId)` and its current opaque physical-source fingerprint. Source publication history follows the original creation identity across binding retirement; the administrative result's `targetGeneration` is a projection execution generation, not a CDC binding generation. |
+| Target/generation | One selected Configuration Service normalized `(tenantKey, dataStoreId)` and its current opaque physical-source fingerprint. Source publication history follows the original creation identity across binding retirement; the administrative result's `targetGeneration` is a projection execution generation, not a CDC binding generation. |
 | Authority/offline window | Deployment/database authority for the E18 operation. For each of the three internal-only commands, close admission and drain every canonical, projector, direct-fill, bulk, external and administrative writer before asserting `closedAndDrained`; retain the fence through completion or incident reconciliation. Connector stop alone does not supply this fence. |
-| Retained inputs | Full DocumentCacheAdmin settings, matching schemas/CMS target, current fingerprint and projection status, plus the original protected controller root, CREATE receipt, workflow and source history from [state preservation](#deployment-state). Keep sanitized command results and incident evidence. |
+| Retained inputs | Full DocumentCacheAdmin settings, matching schemas and Configuration Service target, current fingerprint and projection status, plus the original protected controller root, CREATE receipt, workflow and source history from [state preservation](#deployment-state). Keep sanitized command results and incident evidence. |
 | Invocation | Choose the E18 procedure below, configure its production history reader, then select exactly one operation for `cdc-history-internal-only`. `cdc-history-rejected` illustrates that same request against retained rejecting evidence in an owned qualification fixture; it is not a production health probe. |
 | JSON/exit status | DocumentCacheAdmin `--json` emits one shared result document on stdout, diagnostics on stderr. Completion: exit `0`, `status: "completed"`, `classification: "succeeded"`. History rejection: exit `10`, `status: "rejectedNoMutation"`, `classification: "downstreamHistoryPresentOrUnknown"`, `mutated: false`. This is not the SchemaTools CDC envelope or exit-code scheme. |
 | Postcondition | Accepted activation/recovery finishes in `Tracking` with a clear latch; deactivation finishes in `Disabled`. Verify the E18 operation's own status postconditions. Neither history admission nor projection completion grants CDC readiness, a replacement baseline, or consumer correctness. |
@@ -1595,7 +1595,7 @@ enablement merely because it has `internalOnly` history; use the
 
 PowerShell, repository root. Prepare the matching packaged `dms-document-cache`
 tool using its [installation instructions](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#installation).
-Supply complete normal settings including CMS credentials/endpoint, schema workspace,
+Supply complete normal settings including Configuration Service credentials/endpoint, schema workspace,
 provider and selected projection target, with the history configuration above;
 keep secrets in protected settings/environment, never command-line arguments.
 Account for normal environment overrides; this tool does not use SchemaTools'
@@ -1618,8 +1618,8 @@ inject faults or execute a destructive request merely to discover history.
 | `$HistoryCommand`, `$HistoryConfirmation` | Matching pair from the alternatives above after selecting the E18 procedure | All three matching pairs from `CdcPublicationHistoryFixture.Arguments`, each independently prepared |
 | `$HistorySettings` | Absolute path to complete protected Admin settings pointing at original `Cdc:PublicationHistory` state/deployment | Fixture's complete settings with original disposable root and deployment `history`; rejection cases may select the explicit fixture-owned evidence faults |
 | `$HistoryEnvironment` | Matching normal settings environment name | Packaged harness environment |
-| `$HistoryProvider` | `postgresql` or `sqlserver` for the same CMS database | Fixture provider; `sqlserver` is the Admin CLI token even when application settings use `mssql` |
-| `$HistoryTenant`, `$HistoryDataStoreId` | Normalized tenant and CMS-selected numeric ID for the source | Default tenant `''` and `1` in the packaged fixtures |
+| `$HistoryProvider` | `postgresql` or `sqlserver` for the same Configuration Service database | Fixture provider; `sqlserver` is the Admin CLI token even when application settings use `mssql` |
+| `$HistoryTenant`, `$HistoryDataStoreId` | Normalized tenant and selected Configuration Service numeric ID for the source | Default tenant `''` and `1` in the packaged fixtures |
 | `$HistoryFingerprint` | Current opaque fingerprint from that target's projection status, matched to retained managed source identity; never invent it | Fixture's provider-read fingerprint, equal to its creation receipt |
 | `$HistoryTimeoutSeconds` | Finite command timeout chosen for the E18 operation/workload | `60` as in the packaged fixture |
 
@@ -1708,7 +1708,7 @@ they neither repair provider artifacts nor establish consumer correctness.
 
 | Record | Value |
 | --- | --- |
-| Target/generation | Select the CMS target, physical-source fingerprint and binding generation from the original retained settings/state. Match provider queries to that database and artifact; worker and storage observations can also affect peer bindings. |
+| Target/generation | Select the Configuration Service target, physical-source fingerprint and binding generation from the original retained settings/state. Match provider queries to that database and artifact; worker and storage observations can also affect peer bindings. |
 | Authority/offline window | Controller authority includes original state-root write/lock access and connector stop/read-back. Provider inspections use a separate DBA/monitoring identity with catalog/DMV access; never enlarge the restricted connector principal for monitoring. Ordinary inspection needs no offline window. Preserve any existing writer fence; containment or prerequisite correction follows its linked procedure. |
 | Retained inputs | Original settings/state plus timestamped status stdout, watch stderr, projection status and private provider/exporter observations. Retain exit status and missing/denied evidence as well as successes; sanitize physical identifiers before sharing. |
 | Invocation | `cdc-status`, `cdc-watch`, `cdc-telemetry-inspect`, `cdc-pg-retention-inspect`, `cdc-provider-disk-inspect`, `cdc-sqlserver-retention-inspect` below. Projection status invocation remains in the [E18 command reference](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md). |
@@ -2099,7 +2099,7 @@ as the acceptance boundaries. Each consumer owner supplies evidence for its own 
 
 | Record | Value |
 | --- | --- |
-| Target/generation | Original CMS target, physical source, binding generation and public topic; inventory peer bindings, shared worker topics, actual deployment principals and every independent consumer namespace/group. Qualification fixtures create separate synthetic targets; they do not attest this inventory. |
+| Target/generation | Original Configuration Service target, physical source, binding generation and public topic; inventory peer bindings, shared worker topics, actual deployment principals and every independent consumer namespace/group. Qualification fixtures create separate synthetic targets; they do not attest this inventory. |
 | Authority/offline window | Deployment security/database/platform owners inspect effective permissions and policy; consumer owners inspect their durable state. Observation requires no new writer-offline window. Keep existing incident fences. Qualification commands below mutate and destroy only their disposable fixture resources; never point fault probes at a live deployment. |
 | Retained inputs | Original settings/state and artifact inventory, timestamped policy/access observations, principal/group inventory, consumer barriers/checkpoints and capacity results. Keep credential material and physical names private; share only sanitized evidence with profile/image, case IDs and actual results. |
 | Invocation | `cdc-topic-policy-inspect` for current local controller observations; `cdc-access-inspect` for separate secured/local Kafka qualification; `cdc-consumer-evidence` for the existing DMS-1324 provider/message lane. Complete all owner checklists below; these commands alone are insufficient. |

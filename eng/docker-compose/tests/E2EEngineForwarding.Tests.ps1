@@ -44,7 +44,7 @@ Describe "E2E engine resolution and connection-string forwarding (DMS-1284)" {
             $script:basePath = Join-Path $script:work ".env.base"
             Set-Content -LiteralPath $script:basePath -NoNewline -Value @"
 DMS_DATASTORE=postgresql
-DMS_CONFIG_DATASTORE=postgresql
+CONFIGURATION_SERVICE_DATASTORE=postgresql
 DATA_STANDARD_MARKER=ds61
 E2E_DATABASE_NAME=edfi_datamanagementservice_e2e
 E2E_SNAPSHOT_DATABASE_NAME=edfi_datamanagementservice_e2e_snapshot
@@ -59,8 +59,8 @@ MSSQL_DB_NAME=edfi_datamanagementservice
 MSSQL_PORT=1435
 DMS_DATASTORE=mssql
 DATABASE_CONNECTION_STRING_ADMIN=Server=dms-mssql;Database=`${MSSQL_DB_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
-DMS_CONFIG_DATASTORE=mssql
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${MSSQL_DB_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+CONFIGURATION_SERVICE_DATASTORE=mssql
+CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${MSSQL_DB_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
 "@
         }
 
@@ -393,5 +393,39 @@ Describe "DocumentCache hosted E2E environment isolation" {
                 Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
             }
         }
+    }
+}
+
+Describe "E2E engine-category lane filters normalize and keep their TRX suffix (DMS-1443)" {
+    BeforeAll {
+        function Get-BuildScriptFunctionText {
+            param([Parameter(Mandatory)] [string] $ScriptPath, [Parameter(Mandatory)] [string] $FunctionName)
+            $parseErrors = $null
+            $tokens = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
+            $functionAst = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $FunctionName }, $true) | Select-Object -First 1
+            if ($null -eq $functionAst) { throw "Function '$FunctionName' was not found in '$ScriptPath'." }
+            return $functionAst.Extent.Text
+        }
+
+        $buildScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../build-dms.ps1"))
+        . ([scriptblock]::Create((Get-BuildScriptFunctionText -ScriptPath $buildScript -FunctionName "ConvertTo-NormalizedTestFilter")))
+        . ([scriptblock]::Create((Get-BuildScriptFunctionText -ScriptPath $buildScript -FunctionName "Get-E2ETestResultSuffix")))
+    }
+
+    It "strips every @ inside the <Lane> lane's grouped filter" -ForEach @(
+        @{ Lane = "PostgreSQL shard"; Filter = "(Category=@e2e-ci-shard-3)&(Category!=@MssqlOnly)"; Expected = "(Category=e2e-ci-shard-3)&(Category!=MssqlOnly)" }
+        @{ Lane = "SQL Server"; Filter = "(Category=@MssqlRepresentative|Category=@MssqlOnly)&(Category!=@PostgresqlOnly)"; Expected = "(Category=MssqlRepresentative|Category=MssqlOnly)&(Category!=PostgresqlOnly)" }
+        @{ Lane = "SQL Server DS 6.1"; Filter = "(Category=@StandardVersion-6_1)&(Category!=@PostgresqlOnly)"; Expected = "(Category=StandardVersion-6_1)&(Category!=PostgresqlOnly)" }
+    ) {
+        ConvertTo-NormalizedTestFilter -TestFilter $Filter | Should -BeExactly $Expected
+    }
+
+    It "keeps the shard TRX suffix when the shard filter excludes @MssqlOnly" {
+        Get-E2ETestResultSuffix -TestFilter "(Category=@e2e-ci-shard-3)&(Category!=@MssqlOnly)" | Should -BeExactly "e2e-shard-3"
+    }
+
+    It "writes the filtered TRX for the SQL Server lane filter" {
+        Get-E2ETestResultSuffix -TestFilter "(Category=@MssqlRepresentative|Category=@MssqlOnly)&(Category!=@PostgresqlOnly)" | Should -BeExactly "filtered"
     }
 }

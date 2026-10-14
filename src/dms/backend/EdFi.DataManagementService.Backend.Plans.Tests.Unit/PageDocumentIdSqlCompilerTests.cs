@@ -918,7 +918,7 @@ public class Given_PageDocumentIdSqlCompiler
     }
 
     [Test]
-    public void It_should_apply_explicit_bin2_collation_for_mssql_string_equality_predicates()
+    public void It_should_not_apply_a_query_side_collation_for_mssql_string_equality_predicates()
     {
         var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Mssql);
         var plan = compiler.Compile(
@@ -927,16 +927,46 @@ public class Given_PageDocumentIdSqlCompiler
                     new QueryValuePredicate(
                         new DbColumnName("NameOfInstitution"),
                         QueryComparisonOperator.Equal,
-                        "nameOfInstitution",
-                        ScalarKind.String
+                        "nameOfInstitution"
                     ),
                 ],
-                []
+                [],
+                includeTotalCountSql: true
+            )
+        );
+
+        plan.PageDocumentIdSql.Should().Contain("r.[NameOfInstitution] = @nameOfInstitution");
+        plan.PageDocumentIdSql.Should().NotContain("COLLATE");
+        plan.TotalCountSql.Should().Contain("r.[NameOfInstitution] = @nameOfInstitution");
+        plan.TotalCountSql.Should().NotContain("COLLATE");
+    }
+
+    [Test]
+    public void It_should_not_apply_a_query_side_collation_for_mssql_unified_alias_predicates()
+    {
+        var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Mssql);
+        var plan = compiler.Compile(
+            CreateSpec(
+                [
+                    new QueryValuePredicate(
+                        new DbColumnName("Student_StudentUniqueId"),
+                        QueryComparisonOperator.Equal,
+                        "studentUniqueId"
+                    ),
+                ],
+                [
+                    CreateUnifiedAliasMapping(
+                        new DbColumnName("Student_StudentUniqueId"),
+                        new DbColumnName("StudentUniqueId_Unified"),
+                        new DbColumnName("Student_DocumentId")
+                    ),
+                ]
             )
         );
 
         plan.PageDocumentIdSql.Should()
-            .Contain("r.[NameOfInstitution] COLLATE Latin1_General_100_BIN2 = @nameOfInstitution");
+            .Contain("r.[Student_DocumentId] IS NOT NULL AND r.[StudentUniqueId_Unified] = @studentUniqueId");
+        plan.PageDocumentIdSql.Should().NotContain("COLLATE");
     }
 
     [Test]
