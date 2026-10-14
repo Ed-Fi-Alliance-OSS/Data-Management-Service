@@ -583,8 +583,21 @@ public class Given_SchemaRestamp_Pgsql_Compatible_Transition
                 CancellationToken.None
             );
         (await action.Should().ThrowAsync<SchemaRestampException>())
+            .WithMessage("dms.EffectiveSchema singleton row count must be exactly one.")
             .Which.Failure.Should()
             .Be(SchemaRestampFailure.Validation);
+        var result = SchemaRestampTestHelper.RunRestamp(
+            _connectionString,
+            "pgsql",
+            true,
+            CliTestHelper.GetMinimalSchemaPath(),
+            SchemaRestampTestHelper.ExtensionPath
+        );
+
+        result.ExitCode.Should().Be(1);
+        result.Error.Should().Contain("dms.EffectiveSchema singleton row count must be exactly one.");
+        result.Error.Should().NotContain(_connectionString);
         ProvisionTestHelper.GetDmsTableCount(connection, "pgsql", "EffectiveSchema").Should().Be(0);
+        ProvisionTestHelper.GetDmsTableCount(connection, "pgsql", "SchemaComponent").Should().Be(0);
     }
 }
