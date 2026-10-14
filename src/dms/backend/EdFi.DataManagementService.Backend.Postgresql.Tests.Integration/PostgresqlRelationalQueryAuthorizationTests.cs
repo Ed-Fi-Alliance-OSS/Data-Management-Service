@@ -2311,8 +2311,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                 "DocumentUuid",
                 "ResourceKeyId",
                 "ContentVersion",
-                "ContentLastModifiedAt",
-                "CreatedAt"
+                "ContentLastModifiedAt"
             FROM "dms"."Document"
             WHERE "DocumentUuid" = @documentUuid
               AND "ResourceKeyId" = @resourceKeyId;
@@ -2327,8 +2326,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                 GetRequiredGuid(rows[0], "DocumentUuid"),
                 GetRequiredInt16(rows[0], "ResourceKeyId"),
                 GetRequiredInt64(rows[0], "ContentVersion"),
-                GetRequiredDateTime(rows[0], "ContentLastModifiedAt"),
-                GetRequiredDateTime(rows[0], "CreatedAt")
+                GetRequiredDateTime(rows[0], "ContentLastModifiedAt")
             )
             : throw new InvalidOperationException(
                 $"Expected one AuthorizationRootChildResource document row for '{documentUuid.Value}', but found {rows.Count}."
