@@ -326,17 +326,20 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
         RelationalWriteExecutorRequest request
     )
     {
-        var referentialIdentityParameters = GetReferentialIdentityParametersOrThrow(request);
-        return referentialIdentityParameters
-            .IdentityElements.Select(identityElement =>
+        var ownNaturalKeyProbe = RelationalWriteSupport.GetOwnNaturalKeyProbeOrThrow(
+            request.MappingSet,
+            request.WritePlan.Model.Resource
+        );
+        return ownNaturalKeyProbe
+            .KeyColumns.Select(keyColumn =>
                 TryResolveIdentityValue(
                     request.SelectedBody,
-                    identityElement.IdentityJsonPath,
+                    keyColumn.IdentityJsonPath,
                     out var identityValue
                 )
                     ? new KeyValuePair<string, string>?(
                         new KeyValuePair<string, string>(
-                            GetIdentityElementName(identityElement.IdentityJsonPath),
+                            GetIdentityElementName(keyColumn.IdentityJsonPath),
                             identityValue
                         )
                     )
@@ -346,24 +349,13 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
             .ToArray();
     }
 
-    private static TriggerKindParameters.ReferentialIdentityMaintenance GetReferentialIdentityParametersOrThrow(
-        RelationalWriteExecutorRequest request
-    ) =>
-        RelationalWriteSupport.GetReferentialIdentityParametersOrThrow(
-            request.MappingSet,
-            request.WritePlan.Model.Resource,
-            request.WritePlan.Model.Root.Table
-        );
-
     private static bool TryResolveIdentityValue(
         JsonNode selectedBody,
-        string identityJsonPath,
+        JsonPathExpression identityJsonPath,
         out string identityValue
     )
     {
-        var segments = RelationalJsonPathSupport.GetRestrictedSegments(
-            new JsonPathExpression(identityJsonPath, [])
-        );
+        var segments = RelationalJsonPathSupport.GetRestrictedSegments(identityJsonPath);
         JsonNode? currentNode = selectedBody;
 
         foreach (var segment in segments)
@@ -407,15 +399,13 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
     /// therefore stay distinguishable. A path that is not made only of property segments is reported as
     /// written rather than shortened.
     /// </summary>
-    private static string GetIdentityElementName(string identityJsonPath)
+    private static string GetIdentityElementName(JsonPathExpression identityJsonPath)
     {
-        var segments = RelationalJsonPathSupport.GetRestrictedSegments(
-            new JsonPathExpression(identityJsonPath, [])
-        );
+        var segments = RelationalJsonPathSupport.GetRestrictedSegments(identityJsonPath);
 
         if (segments.Count == 0)
         {
-            return identityJsonPath;
+            return identityJsonPath.Canonical;
         }
 
         var propertyNames = new string[segments.Count];
@@ -424,7 +414,7 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
         {
             if (segments[index] is not JsonPathSegment.Property property)
             {
-                return identityJsonPath;
+                return identityJsonPath.Canonical;
             }
 
             propertyNames[index] = property.Name;
