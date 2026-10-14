@@ -42,6 +42,9 @@ public class Given_Ds52_Identity_Conflicts_Without_Trigger_Metadata(SqlDialect d
     private RelationalWriteExecutorResult? _classPeriodResult;
     private RelationalWriteExecutorResult? _schoolResult;
     private RelationalWriteExecutorResult? _gradeResult;
+    private int _resourcesSwept;
+    private int _ownNaturalKeyProbeCount;
+    private readonly List<string> _naturalKeyClassificationMismatches = [];
 
     [OneTimeSetUp]
     public void OneTimeSetUp()
@@ -51,6 +54,8 @@ public class Given_Ds52_Identity_Conflicts_Without_Trigger_Metadata(SqlDialect d
         {
             Model = compiledMappingSet.Model with { TriggersInCreateOrder = [] },
         };
+
+        SweepRootNaturalKeyClassification(mappingSet);
 
         var classPeriodRequest = CreateRequest(
             mappingSet,
@@ -193,6 +198,66 @@ public class Given_Ds52_Identity_Conflicts_Without_Trigger_Metadata(SqlDialect d
                 new KeyValuePair<string, string>("sessionName", "2021-2022 Fall Semester"),
                 new KeyValuePair<string, string>("studentUniqueId", "604822")
             );
+    }
+
+    // The every-resource check that root natural-key classification depends on: the own-key probe's distinct
+    // columns must equal the emitted UX_<R>_NK columns, in order. It reads no trigger metadata, so it outlives
+    // the DMS-1445 parity guard that DMS-1456 deletes with the RI triggers.
+    [Test]
+    public void It_classifies_every_root_natural_key_constraint_as_a_root_natural_key_conflict()
+    {
+        _resourcesSwept.Should().BePositive().And.Be(_ownNaturalKeyProbeCount);
+        _naturalKeyClassificationMismatches.Should().BeEmpty();
+    }
+
+    private void SweepRootNaturalKeyClassification(MappingSet mappingSet)
+    {
+        var resolver = new RelationalWriteConstraintResolver();
+        var relationalResources = mappingSet
+            .Model.ConcreteResourcesInNameOrder.Where(resource =>
+                resource.StorageKind is ResourceStorageKind.RelationalTables
+            )
+            .Select(resource => resource.RelationalModel.Resource)
+            .ToArray();
+
+        foreach (var resource in relationalResources)
+        {
+            var writePlan = mappingSet.WritePlansByResource[resource];
+            var referenceResolutionRequest = new ReferenceResolverRequest(
+                mappingSet,
+                resource,
+                [],
+                DescriptorReferences: []
+            );
+            string[] naturalKeyConstraints =
+            [
+                .. writePlan
+                    .Model.Root.Constraints.OfType<TableConstraint.Unique>()
+                    .Where(unique =>
+                        resolver.Resolve(
+                            new RelationalWriteConstraintResolutionRequest(
+                                writePlan,
+                                referenceResolutionRequest,
+                                new RelationalWriteExceptionClassification.UniqueConstraintViolation(
+                                    unique.Name
+                                )
+                            )
+                        ) is RelationalWriteConstraintResolution.RootNaturalKeyUnique
+                    )
+                    .Select(unique => unique.Name),
+            ];
+
+            if (naturalKeyConstraints.Length != 1)
+            {
+                _naturalKeyClassificationMismatches.Add(
+                    $"{resource.ProjectName}.{resource.ResourceName}: "
+                        + $"[{string.Join(", ", naturalKeyConstraints)}]"
+                );
+            }
+        }
+
+        _resourcesSwept = relationalResources.Length;
+        _ownNaturalKeyProbeCount = mappingSet.OwnNaturalKeyProbesByResource.Count;
     }
 
     private static RelationalWriteConstraintResolution Resolve(
