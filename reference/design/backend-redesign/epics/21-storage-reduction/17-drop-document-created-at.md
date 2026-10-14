@@ -17,8 +17,10 @@ this plan stages files explicitly and never includes that file.
 
 Sibling state on 2026-10-12: DMS-1404 (compact descriptor IDs) is **Done**, merged as PR #1343 on
 2026-10-09 and already in this branch's base. DMS-1401 (drop `ContentLastModifiedAt`) is **In
-Progress** in Jira with no branch, worktree, or PR in this repository yet. DMS-1398 (the spike) is
-Done. DMS-1402 (epic) is Open.
+Progress** in Jira. On 2026-10-12 it had no branch, worktree, or PR in this repository. **Corrected
+2026-10-14:** DMS-1401 is now PR #1356 (branch `DMS-1401`, head `171094676` on 2026-10-14, opened
+2026-10-13, not merged). It overlaps this story in most files and has semantic conflicts with it
+(§7.6). DMS-1398 (the spike) is Done. DMS-1402 (epic) is Open.
 
 ## 0. Review dispositions
 
@@ -169,6 +171,18 @@ also covers `eng/northridge/README.md`, whose copy-forward wording step 4.1 alre
 5.1 does not edit that file again; `EPIC.md` was done in 0.2. The sentence that the template
 verifier rejects older packages moves from 5.1 to 5.3, the step that adds the check.
 
+Found while preparing step 5.2 (coordination approach approved 2026-10-14): DMS-1401 is now
+PR #1356, opened 2026-10-13. This spec had said it had no branch or PR (header, §1.4 A4, §7.6),
+and §6 step 5.3 assumed DMS-1401 would add `ContentLastModifiedAt` to this story's
+`-ForbiddenColumns`. Neither holds. #1356 ships its own template catalog assertion, and its
+Northridge tool requires and reads `CreatedAt`. The header, A4, step 5.2, the step 5.3 design
+note, §7.6, and §10 are corrected. §7.6 now names four semantic conflicts. It also sets the
+integration rules: consolidation preferred, two deliberate checks acceptable, DMS-1401's
+validations preserved, combined-tree rejection evidence for either removed column, and diff-shape
+gates measured against the integration base. The full PAC recheck is retained. Step 5.3 is
+implemented as designed, without importing or waiting for #1356. This is a spec correction only,
+with no code change.
+
 ---
 
 ## 1. Problem, proposed decision, alternatives, assumptions, open questions
@@ -218,8 +232,10 @@ spec is not a prerequisite for any of them.
   and `EffectiveSchemaHash` does not change, so **DMS startup validation** cannot detect an old
   physical schema (§7.3). CDC setup/validation **can** and does fail closed on it (§7.4), and
   there is no supported path to move an established CDC deployment onto the new shape (§7.4 c).
-- A4. DMS-1401 will land on the same files. Whichever story merges second re-checks every PAC and
-  regenerates its evidence (§7.6). This story does not wait for DMS-1401 and does not assume it.
+- A4. DMS-1401 (PR #1356, open on 2026-10-14) changes the same files and has semantic conflicts
+  with this story that a clean textual merge would hide (§7.6). Whichever story merges second
+  re-checks every PAC and regenerates its evidence against the combined tree (§7.6). This story
+  does not wait for DMS-1401, does not import its changes, and does not assume its design.
 - A5. The branch contains DMS-1404, so every fixture and tool in scope is on the compact-descriptor
   baseline. No legacy-descriptor mode is maintained.
 
@@ -897,9 +913,11 @@ holds an exception fails the gate.
 
 **5.2 Coordination record with DMS-1401 and release (no files).** In the PR description and in
 the drafted Jira text: both stories edit `DmsCoreTableDefinitions.Document`, the 36 DDL goldens,
-the two catalog manifests, the seeder, the snapshot records, `Get-StampDistribution`, and the
-verifier's forbidden-column list; the second to merge re-checks every PAC and regenerates
-evidence (§7.6). The release handoff (§7.5) includes the established-CDC limitation verbatim.
+the two catalog manifests, the seeder, the snapshot records, `Get-StampDistribution`, the
+Northridge required-column check, CDC expectations, and the template verifier's `dms.Document`
+assertion. The semantic conflicts are named (§7.6). The second to merge re-checks every PAC and
+regenerates evidence (§7.6). The release handoff (§7.5) includes the established-CDC limitation
+verbatim.
 
 **5.3 Template restore verifier: fail-closed `dms.Document` column-shape assertion (mandatory).**
 - Design:
@@ -921,8 +939,10 @@ evidence (§7.6). The release handoff (§7.5) includes the established-CDC limit
     **before** the serveability probe (after the schema-set check, line 170 neighbourhood),
     unconditionally (not behind `-ExpectedModelManifestPath`). Both calls are plain statements
     under `$ErrorActionPreference = "Stop"`, so a throw aborts the script.
-  - `ContentLastModifiedAt` is deliberately **not** in `-RequiredColumns`, so DMS-1401 can add it
-    to `-ForbiddenColumns` without restructuring; merging order does not matter.
+  - `ContentLastModifiedAt` is deliberately **not** in `-RequiredColumns`, so the function stays
+    valid on the combined shape. (Corrected 2026-10-14: the earlier assumption that DMS-1401 would
+    extend `-ForbiddenColumns` is wrong. PR #1356 ships its own unconditional catalog assertion;
+    see §7.6 for how the two are reconciled.) This step neither imports nor waits for #1356.
 - Tests: new `eng/DatabaseTemplates/tests/Template-DocumentShape.Tests.ps1`, registered in the
   `on-dms-pullrequest.yml` Pester lane `paths` array (lines 220-279) next to
   `Template-Management.Tests.ps1`. Function-level cases (a)–(e), each `-ForEach` over
@@ -1102,15 +1122,59 @@ design remain outside this story.
 
 ### 7.6 Coordination with DMS-1401
 
-Same files, independent semantics. Expected overlaps: `DmsCoreTableDefinitions.Document`
-(adjacent entries), all 36 goldens (adjacent lines), the two catalog manifests (adjacent objects,
-ordinals 6 and 7), the seeder, every snapshot record, `Get-StampDistribution`, the verifier's
-forbidden-column list, `data-model.md`, `RELATIONAL-BACKEND.md`. DMS-1401 also changes stamp
-ownership, which the guarded no-op / POST-as-update / Northridge suites assert on. Therefore,
-after DMS-1401 lands (before or after this story), the second story **re-checks every PAC and
-regenerates its evidence**: U1–U3, the §8.4 lists on both engines, I5, P1–P3, and the diff-shape
-gates. This is not a mechanical rebase. Neither story needs the other's runtime change. DMS-1401
-inherits the same §7.4 (c) limitation.
+Same files, independent runtime semantics. Neither story needs the other's runtime change, and
+either may merge first.
+
+**State on 2026-10-14 (corrected; the earlier text assumed no PR existed).** DMS-1401 is PR #1356
+(head `171094676`). 117 of the 121 files this story changes (`205d5e98b..ce92a573a`) are also
+changed by #1356 (`08626c6f0..171094676`). DMS-1401 keeps `CreatedAt` and drops
+`ContentLastModifiedAt`; this story does the reverse. The combined `dms.Document` has five
+columns: `DocumentId`, `DocumentUuid`, `ResourceKeyId`, `CreatedByOwnershipTokenId`,
+`ContentVersion`.
+
+Overlaps:
+- `DmsCoreTableDefinitions.Document`, all 36 goldens and their DDL manifests, and the two catalog
+  manifests.
+- The seeder, every snapshot record, and the test-local mirror tables.
+- The CDC inventory, capture expectations, and connector fixture.
+- `Get-StampDistribution` and the Northridge required-column check.
+- The template verifier's `dms.Document` assertion.
+- `data-model.md` and `RELATIONAL-BACKEND.md`.
+
+**Semantic conflicts that a clean textual merge would hide:**
+1. **Northridge copy-forward.** On #1356 the tool requires `CreatedAt` on the target
+   ("Carry-forward requires retained document metadata CreatedAt") and compares
+   `MIN/MAX("CreatedAt")`. This story does not change that required-column line, so git takes
+   #1356's version without a conflict, and the combined tool would throw on every target
+   provisioned from combined DDL. On `dms.Document`, the combined tool requires only
+   `ContentVersion` and reads neither removed column. It keeps #1356's checks on the
+   authoritative timestamps in resource roots and descriptors.
+2. **Template verifier.** #1356 adds an unconditional SQL catalog assertion
+   (`Assert-AuthoritativeTimestamp.*.sql`, run by `Assert-TemplateSchema.ps1` on the source and
+   restored databases). It forbids `dms.Document.ContentLastModifiedAt`, validates
+   `ContentVersion` and the owner timestamps, and makes `-ExpectedModelManifestPath` mandatory.
+   This story's step 5.3 adds `Assert-DocumentTableShape` for `CreatedAt`; DMS-1401 does not
+   extend it. At integration, consolidating the two into one check is preferred. Two deliberate
+   checks are acceptable if both run at the required points: the source before the restore, and
+   the restored database before the API probe. This story's simpler check must not replace
+   DMS-1401's owner-timestamp, `ContentVersion`, or manifest validations.
+3. **CDC expectations.** Each story pins a different six-column `dms.Document` inventory. The
+   combined tree needs five columns in every inventory, capture-column expectation, and
+   connector fixture. The legacy-column rejection fixtures (E1–E5) use an otherwise valid
+   five-column baseline.
+4. **Stamp ownership.** DMS-1401 moves timestamp ownership to resource roots and descriptors,
+   which the guarded no-op, POST-as-update, rollback, and Northridge suites assert on. This
+   story's surviving `ContentLastModifiedAt` assertions are rewritten or removed to match. They
+   are never just deleted to make the merge compile.
+
+**After DMS-1401 lands (before or after this story), the second story re-checks every PAC and
+regenerates its evidence against the combined tree:** U1–U3, the §8.4 lists on both engines, I5,
+P1–P3, and the diff-shape gates. The diff-shape gates are measured against the integration base,
+`main` with the first story merged. Compared with `205d5e98b`, the combined tree removes two
+`dms.Document` columns, so each golden and manifest loses two lines or objects, not one. The
+combined-tree verifier evidence must show rejection when either removed column is present,
+including when only one of them remains, on both engines and in both the source and the restored
+check. This is not a mechanical rebase. DMS-1401 inherits the same §7.4 (c) limitation.
 
 ---
 
@@ -1430,7 +1494,7 @@ them.
 | Risk | Likelihood | Mitigation |
 |---|---|---|
 | Golden regeneration captures unrelated drift | low | diff-shape gates in 1.1 and 3.3 |
-| DMS-1401 lands concurrently on the same files and on stamp semantics | high (In Progress) | §7.6: re-check every PAC and regenerate evidence; not a mechanical rebase |
+| DMS-1401 lands concurrently on the same files and on stamp semantics | high (PR #1356 open on 2026-10-14) | §7.6: four named semantic conflicts; re-check every PAC and regenerate evidence against the combined tree; not a mechanical rebase |
 | A hidden reader in a plugin or external SQL (custom auth views) | low | PAC-2 grep across `src`, `eng`, `reference`; custom views reference `DocumentId`, not timestamps; changelog entry tells operators |
 | Template built before the change ships as "8.1" and silently keeps the column | medium | 5.3 verifier assertion rejects it by catalog; §7.5 release handoff names the owner and the SHA requirement |
 | Established CDC deployments cannot be upgraded to the new shape | certain for such deployments | disclosed as unsupported (§7.4 c, §7.5 item 2); no workaround documented; release coordination decides |
