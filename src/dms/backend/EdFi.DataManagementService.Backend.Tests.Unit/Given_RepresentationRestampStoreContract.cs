@@ -85,5 +85,5 @@ public class Given_RepresentationRestampStoreContract
         RepresentationRestampOperationAdmission.CanExecute(state).Should().BeFalse();
     }
 
-    private static RepresentationRestampMirrorRoute Route() => new(1, "edfi", "Student");
+    private static RepresentationRestampStampRoute Route() => new(1, "edfi", "Student");
 }

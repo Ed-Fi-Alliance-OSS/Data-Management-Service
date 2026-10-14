@@ -128,8 +128,20 @@ public class Given_A_Provisioned_Postgresql_Database_With_A_ClassPeriod_To_BellS
             CultureInfo.InvariantCulture
         );
 
-        var beforeBellSchedule = await GetChildBindingDocumentStampStateAsync(bellScheduleDocumentId);
-        var beforeClassPeriod = await GetChildBindingDocumentStampStateAsync(classPeriodDocumentId);
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."BellSchedule" SET "ContentLastModifiedAt" = '2000-01-01T00:00:00Z';
+            UPDATE "edfi"."ClassPeriod" SET "ContentLastModifiedAt" = '2000-01-01T00:00:00Z';
+            """
+        );
+        var beforeBellSchedule = await GetChildBindingDocumentStampStateAsync(
+            bellScheduleDocumentId,
+            "BellSchedule"
+        );
+        var beforeClassPeriod = await GetChildBindingDocumentStampStateAsync(
+            classPeriodDocumentId,
+            "ClassPeriod"
+        );
         var bellScheduleKeyChangesBefore = await CountTrackedChangeRowsAsync(
             "tracked_changes_edfi",
             "BellSchedule",
@@ -140,10 +152,6 @@ public class Given_A_Provisioned_Postgresql_Database_With_A_ClassPeriod_To_BellS
             "ClassPeriod",
             classPeriodDocumentUuid
         );
-
-        // Server-side delay so ContentLastModifiedAt (now(), transaction-start time) advances between
-        // the seed transaction and the rename transaction, letting assertions use BeAfter.
-        await DelayForDistinctTimestampsAsync();
 
         // Act — update the upstream ClassPeriod identity column.
         await _database.ExecuteNonQueryAsync(
@@ -199,8 +207,14 @@ public class Given_A_Provisioned_Postgresql_Database_With_A_ClassPeriod_To_BellS
                 "the cascade must update the child row in place, not delete and re-insert it"
             );
 
-        var afterBellSchedule = await GetChildBindingDocumentStampStateAsync(bellScheduleDocumentId);
-        var afterClassPeriod = await GetChildBindingDocumentStampStateAsync(classPeriodDocumentId);
+        var afterBellSchedule = await GetChildBindingDocumentStampStateAsync(
+            bellScheduleDocumentId,
+            "BellSchedule"
+        );
+        var afterClassPeriod = await GetChildBindingDocumentStampStateAsync(
+            classPeriodDocumentId,
+            "ClassPeriod"
+        );
         var afterBellScheduleMirror = await GetRootMirrorStampStateAsync(
             "edfi",
             "BellSchedule",
@@ -222,7 +236,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_A_ClassPeriod_To_BellS
                 "child stamp trigger must fire from the cascade UPDATE and bump the owning root ContentVersion"
             );
         afterBellSchedule.ContentLastModifiedAt.Should().BeAfter(beforeBellSchedule.ContentLastModifiedAt);
-        AssertMirrorContentMatchesDocument(afterBellScheduleMirror, afterBellSchedule);
+        AssertRootVersionMatchesDocument(afterBellScheduleMirror, afterBellSchedule);
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "BellSchedule", bellScheduleDocumentUuid))
             .Should()
             .Be(
@@ -234,7 +248,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_A_ClassPeriod_To_BellS
         // one key-change row.
         afterClassPeriod.ContentVersion.Should().BeGreaterThan(beforeClassPeriod.ContentVersion);
         afterClassPeriod.ContentLastModifiedAt.Should().BeAfter(beforeClassPeriod.ContentLastModifiedAt);
-        AssertMirrorContentMatchesDocument(afterClassPeriodMirror, afterClassPeriod);
+        AssertRootVersionMatchesDocument(afterClassPeriodMirror, afterClassPeriod);
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "ClassPeriod", classPeriodDocumentUuid))
             .Should()
             .Be(
@@ -485,16 +499,18 @@ public class Given_A_Provisioned_Postgresql_Database_With_A_ClassPeriod_To_BellS
         return rows.Single();
     }
 
-    private async Task<DocumentStampState> GetChildBindingDocumentStampStateAsync(long documentId)
+    private async Task<DocumentStampState> GetChildBindingDocumentStampStateAsync(
+        long documentId,
+        string rootTable
+    )
     {
         var row = (
             await _database.QueryRowsAsync(
-                """
-                SELECT
-                    "ContentVersion",
-                    "ContentLastModifiedAt"
-                FROM "dms"."Document"
-                WHERE "DocumentId" = @documentId;
+                $"""
+                SELECT doc."ContentVersion", owner."ContentLastModifiedAt"
+                FROM "dms"."Document" doc
+                JOIN "edfi"."{rootTable}" owner ON owner."DocumentId" = doc."DocumentId"
+                WHERE doc."DocumentId" = @documentId;
                 """,
                 new NpgsqlParameter("documentId", documentId)
             )
@@ -506,8 +522,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_A_ClassPeriod_To_BellS
         );
     }
 
-    // Root tables carry ContentVersion/ContentLastModifiedAt mirror columns that resource change-version
-    // queries filter on; this reads the mirror pair for the owning root row.
+    // Root tables carry the version mirror and authoritative timestamp.
     private async Task<DocumentStampState> GetRootMirrorStampStateAsync(
         string schemaName,
         string tableName,
@@ -533,13 +548,12 @@ public class Given_A_Provisioned_Postgresql_Database_With_A_ClassPeriod_To_BellS
         );
     }
 
-    private static void AssertMirrorContentMatchesDocument(
+    private static void AssertRootVersionMatchesDocument(
         DocumentStampState mirror,
         DocumentStampState document
     )
     {
         mirror.ContentVersion.Should().Be(document.ContentVersion);
-        mirror.ContentLastModifiedAt.Should().Be(document.ContentLastModifiedAt);
     }
 
     // tracked_changes_* rows are keyed by "Id", which holds the DocumentUuid (not DocumentId).
@@ -577,11 +591,6 @@ public class Given_A_Provisioned_Postgresql_Database_With_A_ClassPeriod_To_BellS
         );
 
         return rows.Single();
-    }
-
-    private async Task DelayForDistinctTimestampsAsync()
-    {
-        await _database.ExecuteNonQueryAsync("SELECT pg_sleep(0.05);");
     }
 
     private static DateTimeOffset ReadDateTimeOffset(object? value)

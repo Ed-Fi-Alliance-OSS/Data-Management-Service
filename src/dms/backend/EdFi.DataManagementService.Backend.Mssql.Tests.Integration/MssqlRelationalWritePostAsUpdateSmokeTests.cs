@@ -189,7 +189,6 @@ file static class PostAsUpdateIntegrationTestSupport
                 state.Document.DocumentUuid,
                 state.Document.ResourceKeyId,
                 state.Document.ContentVersion,
-                state.Document.ContentLastModifiedAt,
                 state.Document.CreatedAt
             ),
             new NoProfilePostAsUpdateScenarios.AuthoritativeAcademicRecordSnapshot(
@@ -674,8 +673,7 @@ public class Given_A_Mssql_Relational_Post_As_Update_Immutable_Identity_Change_W
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT [DocumentId], [DocumentUuid], [ResourceKeyId], [ContentVersion],
-                [ContentLastModifiedAt], [CreatedAt]
+            SELECT [DocumentId], [DocumentUuid], [ResourceKeyId], [ContentVersion], [CreatedAt]
             FROM [dms].[Document]
             WHERE [DocumentUuid] = @documentUuid;
             """,
@@ -688,7 +686,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_Immutable_Identity_Change_W
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
                 PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
-                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt"),
                 PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "CreatedAt")
             )
             : throw new InvalidOperationException(
@@ -697,7 +694,7 @@ public class Given_A_Mssql_Relational_Post_As_Update_Immutable_Identity_Change_W
     }
 
     // The rejected-write proof compares the School root row including its replicated
-    // ContentVersion/ContentLastModifiedAt stamps, so this fixture reads the stamp-complete shape.
+    // ContentVersion mirror and authoritative ContentLastModifiedAt, so this fixture reads the complete root shape.
     private async Task<NoProfilePostAsUpdateScenarios.RejectedSchoolSnapshot> ReadSchoolAsync(long documentId)
     {
         var rows = await _database.QueryRowsAsync(
@@ -1610,7 +1607,6 @@ internal sealed record AuthoritativePostAsUpdateDocumentRow(
     Guid DocumentUuid,
     short ResourceKeyId,
     long ContentVersion,
-    DateTimeOffset ContentLastModifiedAt,
     DateTimeOffset CreatedAt
 );
 
@@ -1828,8 +1824,7 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Ds52
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT [DocumentId], [DocumentUuid], [ResourceKeyId], [ContentVersion],
-                [ContentLastModifiedAt], [CreatedAt]
+            SELECT [DocumentId], [DocumentUuid], [ResourceKeyId], [ContentVersion], [CreatedAt]
             FROM [dms].[Document]
             WHERE [DocumentUuid] = @documentUuid;
             """,
@@ -1842,7 +1837,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Ds52
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
                 PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
-                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt"),
                 PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "CreatedAt")
             )
             : throw new InvalidOperationException(
@@ -3283,8 +3277,7 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT [DocumentId], [DocumentUuid], [ResourceKeyId], [ContentVersion],
-                [ContentLastModifiedAt], [CreatedAt]
+            SELECT [DocumentId], [DocumentUuid], [ResourceKeyId], [ContentVersion], [CreatedAt]
             FROM [dms].[Document]
             WHERE [DocumentUuid] = @documentUuid;
             """,
@@ -3297,7 +3290,6 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
                 PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
-                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt"),
                 PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "CreatedAt")
             )
             : throw new InvalidOperationException(
@@ -5032,8 +5024,7 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT [DocumentId], [DocumentUuid], [ResourceKeyId], [ContentVersion],
-                [ContentLastModifiedAt], [CreatedAt]
+            SELECT [DocumentId], [DocumentUuid], [ResourceKeyId], [ContentVersion], [CreatedAt]
             FROM [dms].[Document]
             WHERE [DocumentUuid] = @documentUuid;
             """,
@@ -5046,7 +5037,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
                 PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
-                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt"),
                 PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "CreatedAt")
             )
             : throw new InvalidOperationException(

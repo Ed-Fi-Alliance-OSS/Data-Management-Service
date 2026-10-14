@@ -739,12 +739,12 @@ Describe "Copy-NorthridgeDataForward.ps1 stamp distributions cover every sampled
     BeforeAll {
         . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:copyScript -FunctionName "ConvertTo-StampDistributionMap")))
         $script:stampTable = @("dms.Document", "edfi.Student", "edfi.School")
-        # A count, then min|max for ContentVersion, ContentLastModifiedAt and CreatedAt on dms.Document;
-        # the sampled tables carry the first two pairs only.
+        # Document carries count and version/creation extrema; owners carry count, version/timestamp
+        # extrema and an owner-keyed tuple checksum.
         $script:stampRow = @(
-            "dms.Document|3|1|9|a|b|a|b",
-            "edfi.School|2|1|9|a|b",
-            "edfi.Student|5|1|9|a|b"
+            "dms.Document|3|1|9|a|b",
+            "edfi.School|2|1|9|a|b|school-hash",
+            "edfi.Student|5|1|9|a|b|student-hash"
         )
     }
 
@@ -752,8 +752,8 @@ Describe "Copy-NorthridgeDataForward.ps1 stamp distributions cover every sampled
         $map = ConvertTo-StampDistributionMap -Row ($script:stampRow + "") -ExpectedTable $script:stampTable
         $map.Count | Should -Be 3
         $map.Comparer | Should -Be ([System.StringComparer]::Ordinal)
-        $map["edfi.Student"] | Should -Be "5|1|9|a|b"
-        $map["dms.Document"] | Should -Be "3|1|9|a|b|a|b"
+        $map["edfi.Student"] | Should -Be "5|1|9|a|b|student-hash"
+        $map["dms.Document"] | Should -Be "3|1|9|a|b"
     }
 
     It "refuses a row without a separator rather than dropping it" {
@@ -884,7 +884,6 @@ Describe "Copy-NorthridgeDataForward.ps1 inserts dms.Document by the columns the
             'ResourceKeyId|NO|NO|NO|NEVER',
             'CreatedByOwnershipTokenId|YES|NO|NO|NEVER',
             'ContentVersion|NO|YES|NO|NEVER',
-            'ContentLastModifiedAt|NO|YES|NO|NEVER',
             'CreatedAt|NO|YES|NO|NEVER'
         )
     }
@@ -898,16 +897,17 @@ Describe "Copy-NorthridgeDataForward.ps1 inserts dms.Document by the columns the
         { Get-CopyHeaderColumn -HeaderLine 'COPY dms."Document" ("A", B C) FROM stdin;' -QualifiedTable "dms.Document" } | Should -Throw "*not an identifier*"
     }
 
-    It "does not send IdentityVersion or IdentityLastModifiedAt to a target that no longer has them" {
+    It "omits legacy content and identity timestamps from the current Document insert" {
         # The false pass: pg_restore --data-only replayed the archive's own COPY column list into the
         # target, which succeeded only because the published source predates those columns being
         # dropped; the next refresh from a newer dump fails the COPY under --exit-on-error.
         $plan = Resolve-StagedInsertColumn -SourceColumn (Get-CopyHeaderColumn -HeaderLine $script:sourceHeader -QualifiedTable "dms.Document") `
             -TargetColumn (ConvertTo-TargetColumnList -Row $script:targetRow -QualifiedTable "dms.Document") -QualifiedTable "dms.Document"
-        $plan.Insert | Should -Be @("DocumentId", "DocumentUuid", "ResourceKeyId", "CreatedByOwnershipTokenId", "ContentVersion", "ContentLastModifiedAt", "CreatedAt")
+        $plan.Insert | Should -Be @("DocumentId", "DocumentUuid", "ResourceKeyId", "CreatedByOwnershipTokenId", "ContentVersion", "CreatedAt")
         $plan.Insert | Should -Not -Contain "IdentityVersion"
         $plan.Insert | Should -Not -Contain "IdentityLastModifiedAt"
-        $plan.SourceOnly | Should -Be @("IdentityVersion", "IdentityLastModifiedAt") -Because "they are staged as text and go no further"
+        $plan.Insert | Should -Not -Contain "ContentLastModifiedAt"
+        $plan.SourceOnly | Should -Be @("IdentityVersion", "ContentLastModifiedAt", "IdentityLastModifiedAt") -Because "they are staged as text and go no further"
         $plan.OverridingSystemValue | Should -BeTrue -Because "DocumentId is GENERATED ALWAYS AS IDENTITY and the archive's values must survive the insert"
     }
 

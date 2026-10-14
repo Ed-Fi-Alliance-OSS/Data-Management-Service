@@ -1815,8 +1815,7 @@ public class Given_A_Postgresql_DocumentCacheWriter
         command.Transaction = transaction;
         command.CommandText = """
             UPDATE "dms"."Document"
-            SET "ContentVersion" = @contentVersion,
-                "ContentLastModifiedAt" = @lastModifiedAt
+            SET "ContentVersion" = @contentVersion
             WHERE "DocumentId" = @documentId;
 
             UPDATE "dms"."DocumentProjectionWork"
@@ -1826,12 +1825,6 @@ public class Given_A_Postgresql_DocumentCacheWriter
         command.Parameters.Add(new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = documentId });
         command.Parameters.Add(
             new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion }
-        );
-        command.Parameters.Add(
-            new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz)
-            {
-                Value = new DateTimeOffset(2026, 7, 31, 12, 5, 0, TimeSpan.Zero),
-            }
         );
 
         await command.ExecuteNonQueryAsync();
@@ -1854,18 +1847,11 @@ public class Given_A_Postgresql_DocumentCacheWriter
                 SET LOCAL lock_timeout = '100ms';
 
                 UPDATE "dms"."Document"
-                SET "ContentVersion" = @contentVersion,
-                    "ContentLastModifiedAt" = @lastModifiedAt
+                SET "ContentVersion" = @contentVersion
                 WHERE "DocumentId" = @documentId;
                 """;
             command.Parameters.Add(
                 new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion }
-            );
-            command.Parameters.Add(
-                new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz)
-                {
-                    Value = new DateTimeOffset(2026, 7, 31, 12, 10, 0, TimeSpan.Zero),
-                }
             );
             command.Parameters.Add(
                 new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = documentId }
@@ -1890,24 +1876,18 @@ public class Given_A_Postgresql_DocumentCacheWriter
             INSERT INTO "dms"."Document" (
                 "DocumentUuid",
                 "ResourceKeyId",
-                "ContentVersion",
-                "ContentLastModifiedAt"
+                "ContentVersion"
             )
             VALUES (
                 @documentUuid,
                 @resourceKeyId,
-                @contentVersion,
-                @lastModifiedAt
+                @contentVersion
             )
             RETURNING "DocumentId";
             """,
             new NpgsqlParameter("documentUuid", NpgsqlDbType.Uuid) { Value = documentUuid },
             new NpgsqlParameter("resourceKeyId", NpgsqlDbType.Smallint) { Value = resourceKeyId },
-            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion },
-            new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz)
-            {
-                Value = new DateTimeOffset(2026, 7, 31, 12, 0, 0, TimeSpan.Zero),
-            }
+            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion }
         );
 
         return new SourceDocument(Convert.ToInt64(rows.Single()["DocumentId"]), documentUuid, contentVersion);

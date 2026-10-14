@@ -1090,7 +1090,7 @@ public sealed class CoreDdlEmitter
     /// <summary>
     /// Emits core triggers: the dialect-specific descriptor stamping trigger on
     /// <c>dms.Descriptor</c>. The descriptor stamping trigger bumps
-    /// <c>dms.Document.ContentVersion</c> / <c>ContentLastModifiedAt</c> on real value
+    /// <c>dms.Document.ContentVersion</c> and the descriptor timestamp on real value
     /// changes to a descriptor row, with a DB-level no-op guard that short-circuits
     /// when no stored descriptor column actually changed.
     /// </summary>
@@ -1621,10 +1621,10 @@ public sealed class CoreDdlEmitter
     /// <summary>
     /// Emits the PostgreSQL descriptor stamping trigger function and trigger.
     /// On INSERT, DELETE, or a real value change to any stored column of <c>dms.Descriptor</c>,
-    /// bumps <c>dms.Document.ContentVersion</c> and <c>ContentLastModifiedAt</c> on
-    /// the owning document row, then mirrors those captured stamps back to the descriptor
-    /// (INSERT copies the existing document stamp; DELETE stamps the document only, since
-    /// the descriptor row is already gone).
+    /// bumps the owning <c>dms.Document.ContentVersion</c>, copies that version to the
+    /// descriptor, and writes the authoritative timestamp on the descriptor. INSERT copies
+    /// the initial document version; DELETE advances only the document version because the
+    /// descriptor row is gone.
     /// A DB-level no-op guard (<c>IS DISTINCT FROM</c> across every stored column)
     /// short-circuits same-value UPDATEs so unchanged PUTs do not bump the stamps.
     /// Before the guard, INSERT/UPDATE rows are validated so the denormalized
@@ -1706,8 +1706,6 @@ public sealed class CoreDdlEmitter
                     writer.Append(Quote("DocumentId"));
                     writer.Append(", ");
                     writer.Append(Quote("ContentVersion"));
-                    writer.Append(", ");
-                    writer.Append(Quote("ContentLastModifiedAt"));
                     writer.AppendLine();
                     writer.Append("FROM ");
                     writer.AppendLine(documentTable);
@@ -1718,7 +1716,7 @@ public sealed class CoreDdlEmitter
                     writer.AppendLine();
                 }
                 writer.AppendLine(")");
-                EmitPgsqlDescriptorMirrorUpdateFromStamped(writer, descriptorTable);
+                EmitPgsqlDescriptorStampUpdateFromVersion(writer, descriptorTable);
             }
             writer.AppendLine("ELSIF TG_OP = 'UPDATE' THEN");
             using (writer.Indent())
@@ -1732,9 +1730,7 @@ public sealed class CoreDdlEmitter
                     writer.Append(Quote("ContentVersion"));
                     writer.Append(" = nextval('");
                     writer.Append(sequenceName);
-                    writer.Append("'), ");
-                    writer.Append(Quote("ContentLastModifiedAt"));
-                    writer.AppendLine(" = now()");
+                    writer.AppendLine("')");
                     writer.Append("WHERE ");
                     writer.Append(Quote("DocumentId"));
                     writer.Append(" = NEW.");
@@ -1744,12 +1740,10 @@ public sealed class CoreDdlEmitter
                     writer.Append(Quote("DocumentId"));
                     writer.Append(", ");
                     writer.Append(Quote("ContentVersion"));
-                    writer.Append(", ");
-                    writer.Append(Quote("ContentLastModifiedAt"));
                     writer.AppendLine();
                 }
                 writer.AppendLine(")");
-                EmitPgsqlDescriptorMirrorUpdateFromStamped(writer, descriptorTable);
+                EmitPgsqlDescriptorStampUpdateFromVersion(writer, descriptorTable);
             }
             writer.AppendLine("ELSIF TG_OP = 'DELETE' THEN");
             using (writer.Indent())
@@ -1762,9 +1756,7 @@ public sealed class CoreDdlEmitter
                 writer.Append(Quote("ContentVersion"));
                 writer.Append(" = nextval('");
                 writer.Append(sequenceName);
-                writer.Append("'), ");
-                writer.Append(Quote("ContentLastModifiedAt"));
-                writer.AppendLine(" = now()");
+                writer.AppendLine("')");
                 writer.Append("WHERE ");
                 writer.Append(Quote("DocumentId"));
                 writer.Append(" = OLD.");
@@ -1800,7 +1792,7 @@ public sealed class CoreDdlEmitter
         writer.AppendLine();
     }
 
-    private void EmitPgsqlDescriptorMirrorUpdateFromStamped(SqlWriter writer, string descriptorTable)
+    private void EmitPgsqlDescriptorStampUpdateFromVersion(SqlWriter writer, string descriptorTable)
     {
         writer.Append("UPDATE ");
         writer.Append(descriptorTable);
@@ -1811,11 +1803,10 @@ public sealed class CoreDdlEmitter
         writer.Append(Quote("ContentVersion"));
         writer.Append(", ");
         writer.Append(Quote("ContentLastModifiedAt"));
-        writer.Append(" = stamped.");
-        writer.Append(Quote("ContentLastModifiedAt"));
+        writer.Append(" = now()");
         writer.AppendLine();
         writer.AppendLine("FROM stamped");
-        // Captured stamps are keyed by the owning document, not the compact descriptor identity.
+        // The captured version is keyed by the owning document, not the compact descriptor identity.
         writer.Append("WHERE r.");
         writer.Append(Quote("DocumentId"));
         writer.Append(" = stamped.");
@@ -1825,9 +1816,9 @@ public sealed class CoreDdlEmitter
 
     /// <summary>
     /// Emits the SQL Server descriptor stamping trigger. INSERT rows copy the
-    /// <c>dms.Document</c> defaults into the descriptor mirror; UPDATE rows flow
+    /// <c>dms.Document</c> version default and generate a descriptor timestamp; UPDATE rows flow
     /// through the null-safe per-column diff predicates across every stored descriptor
-    /// column, so no-op UPDATEs produce no CTE rows and the downstream stamp/mirror
+    /// column, so no-op UPDATEs produce no CTE rows and the downstream owner stamp
     /// updates stamp nothing. DELETE rows stamp the owning document before it is removed.
     /// Before any stamping, INSERT/UPDATE rows are validated so the denormalized
     /// <c>ResourceKeyId</c> cannot diverge from the owning <c>dms.Document</c> row -
@@ -1887,14 +1878,11 @@ public sealed class CoreDdlEmitter
             using (writer.Indent())
             {
                 writer.AppendLine("[DocumentId] bigint NOT NULL PRIMARY KEY,");
-                writer.AppendLine("[ContentVersion] bigint NOT NULL,");
-                writer.AppendLine("[ContentLastModifiedAt] datetime2(7) NOT NULL");
+                writer.AppendLine("[ContentVersion] bigint NOT NULL");
             }
             writer.AppendLine(");");
-            writer.AppendLine(
-                "INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])"
-            );
-            writer.AppendLine("SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]");
+            writer.AppendLine("INSERT INTO @stamped ([DocumentId], [ContentVersion])");
+            writer.AppendLine("SELECT d.[DocumentId], d.[ContentVersion]");
             writer.Append("FROM ");
             writer.Append(documentTable);
             writer.AppendLine(" d");
@@ -1948,12 +1936,8 @@ public sealed class CoreDdlEmitter
                 writer.Append(Quote("ContentVersion"));
                 writer.Append(" = NEXT VALUE FOR ");
                 writer.Append(sequenceName);
-                writer.Append(", d.");
-                writer.Append(Quote("ContentLastModifiedAt"));
-                writer.AppendLine(" = sysutcdatetime()");
-                writer.AppendLine(
-                    "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped"
-                );
+                writer.AppendLine();
+                writer.AppendLine("OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped");
                 writer.Append("FROM ");
                 writer.Append(documentTable);
                 writer.AppendLine(" d");
@@ -1967,11 +1951,11 @@ public sealed class CoreDdlEmitter
             // Same predicate the resource root shape carries, for the same two reasons. On a pure
             // INSERT both affectedDocs branches require a matching deleted row, so the workset is
             // provably empty while the statement still scans and locks dms.Document to resolve the
-            // join. And the mirror stamp below re-fires this trigger as an UPDATE that sets only
+            // join. And the owner stamp below re-fires this trigger as an UPDATE that sets only
             // ContentVersion/ContentLastModifiedAt, where deleted is non-empty so EXISTS alone
             // cannot exclude it - but no stored column appears in that SET clause. Descriptors have
             // no child collections, so that recursion reaches them only directly, under the
-            // RECURSIVE_TRIGGERS ON configuration the mirror guard below already names.
+            // RECURSIVE_TRIGGERS ON configuration the stamp guard below already names.
             //
             // UPDATE(col) is a performance pre-filter only: it reports that a column appeared in a
             // SET clause, not that its value changed. The null-safe diff inside affectedDocs stays
@@ -1986,7 +1970,7 @@ public sealed class CoreDdlEmitter
                 EmitContentVersionStamp();
             }
             writer.AppendLine("END");
-            // The guard bounds direct recursion: without it the mirror self-UPDATE re-fires
+            // The guard bounds direct recursion: without it the owner self-UPDATE re-fires
             // this trigger even with an empty workset (statement triggers fire on 0 rows),
             // which recurses to the nesting limit on databases with RECURSIVE_TRIGGERS ON.
             writer.AppendLine("IF EXISTS (SELECT 1 FROM @stamped)");
@@ -2001,12 +1985,10 @@ public sealed class CoreDdlEmitter
                 writer.AppendLine(",");
                 writer.Append("    r.");
                 writer.Append(Quote("ContentLastModifiedAt"));
-                writer.Append(" = s.");
-                writer.Append(Quote("ContentLastModifiedAt"));
-                writer.AppendLine();
+                writer.AppendLine(" = sysutcdatetime()");
                 writer.Append("FROM ");
                 writer.Append(descriptorTable);
-                // Same reason as the resource mirror stamp: @stamped is a table variable, so the
+                // Same reason as the resource owner stamp: @stamped is a table variable, so the
                 // cached plan reflects the cardinality of whichever firing compiled it, and a plan
                 // that scans dms.Descriptor takes update locks across rows the transaction never
                 // touched. FORCESEEK forbids that scan; UX_Descriptor_DocumentId supports a seek

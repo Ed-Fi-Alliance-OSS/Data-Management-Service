@@ -270,7 +270,7 @@ internal static class CdcCrudAssertions
     {
         cache.DocumentUuid.Should().Be(source.DocumentUuid);
         cache.ContentVersion.Should().Be(source.ContentVersion);
-        cache.LastModifiedAt.Should().BeCloseTo(source.ContentLastModifiedAt, TimeSpan.FromTicks(10));
+        cache.LastModifiedAt.Should().Be(source.ContentLastModifiedAt);
         cache.ProjectName.Should().Be(source.ProjectName);
         cache.ResourceName.Should().Be(source.ResourceName);
         cache.ResourceVersion.Should().Be(source.ResourceVersion);

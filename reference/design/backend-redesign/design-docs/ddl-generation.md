@@ -47,8 +47,8 @@ The DDL generation utility is responsible for database objects derived from the 
   - schema fingerprinting: `dms.EffectiveSchema`, `dms.SchemaComponent`
 - Project-derived DDL for Change Queries and update tracking (see [change-queries.md](change-queries.md) and [update-tracking.md](update-tracking.md)):
   - per-resource `tracked_changes_<schema>.<resource>` tables and the shared `tracked_changes_edfi.Descriptor`
-  - per-resource `ContentVersion` / `ContentLastModifiedAt` mirror columns on every `StorageKind = RelationalTables` root and on `dms.Descriptor`, with supporting indexes (`IX_<Table>_ContentVersion`, `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId`)
-  - `*_Stamp` triggers on resource tables and `dms.Descriptor` (extended with `DocumentStamping.ChangeTracking` where applicable), which stamp `dms.Document`, mirror onto `MirrorStampTargetTable`, and populate `tracked_changes_*`
+  - per-resource `ContentVersion` mirrors and authoritative `ContentLastModifiedAt` columns on every `StorageKind = RelationalTables` root and on `dms.Descriptor`, with supporting indexes (`IX_<Table>_ContentVersion`, `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId`)
+  - `*_Stamp` triggers on resource tables and `dms.Descriptor` (extended with `DocumentStamping.ChangeTracking` where applicable), which advance `dms.Document.ContentVersion`, copy it and generate the authoritative timestamp on `StampTargetTable`, and populate `tracked_changes_*`
   - ReadChanges authorization views
 - Optional CDC objects:
   - the opt-in physical `dms.CdcHeartbeat` object defined by
@@ -388,7 +388,7 @@ See [key-unification.md](key-unification.md) for the normative rules and dialect
 
 Emit per-table triggers derived from ApiSchema that:
 
-- stamp `dms.Document` content tracking columns on writes to resource root/child/extension tables (see [update-tracking.md](update-tracking.md)),
+- advance `dms.Document.ContentVersion` and maintain root/descriptor stamps on writes to resource root/child/extension tables (see [update-tracking.md](update-tracking.md)),
 - maintain `{schema}.{AbstractResource}Identity` tables from participating concrete root tables.
 
 The DDL generator emits only the surviving derived-maintenance objects: document stamping and abstract identity maintenance. Reference resolution and POST upsert detection use the compiled natural-key probe metadata described in [natural-key-resolution.md](natural-key-resolution.md).
@@ -471,13 +471,14 @@ Checkpoint require a reviewed exact-schema `ExpectedModelManifestPath`; document
 stamps remain intact. An unchanged legacy dump restore is not the conversion.
 
 The [DMS-1404 handoff](../../../../docs/RELATIONAL-BACKEND.md#descriptor-catalog-checks-and-template-handoff)
-retains authoritative `dms.Document.ContentVersion` and `ContentLastModifiedAt` and their
-root/descriptor mirrors. DMS-1401 owns the later timestamp change and planned combined
+historically retained authoritative `dms.Document.ContentVersion` and `ContentLastModifiedAt`
+and their root/descriptor mirrors. The combined DMS-1401 schema retains only the document
+version and makes the root/descriptor timestamp authoritative. DMS-1401 also owns the combined
 Minimal/Populated source/restore matrix on both engines for supported template Data Standards,
 plus affected prerelease consumer pins. Reuse the descriptor catalog assertions before API
 probes and alongside timestamp checks. DMS-1404 closes after its own implementation, fixtures,
 fresh-schema checks, tooling and documentation; shared package gates precede DMS-1401 closure.
-Use fresh DMS-1404 DDL until compatible rebuilt templates pass verification and defer
+Use the combined current DDL until compatible rebuilt templates pass verification and defer
 template-backed deployment. Final release production/publication, promotion and deployment
 pins remain in the v8.1 release workflow. No version upgrade or benchmark is required here.
 

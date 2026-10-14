@@ -70,7 +70,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             .Model.Root.Columns.Select(static column => column.Kind)
             .Should()
             .Contain(ColumnKind.MirroredContentVersion)
-            .And.Contain(ColumnKind.MirroredContentLastModifiedAt);
+            .And.Contain(ColumnKind.AuthoritativeContentLastModifiedAt);
     }
 
     [Test]
@@ -83,7 +83,9 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
 
         rootPlan
             .TableModel.Columns.Where(static column =>
-                column.Kind is ColumnKind.MirroredContentVersion or ColumnKind.MirroredContentLastModifiedAt
+                column.Kind
+                    is ColumnKind.MirroredContentVersion
+                        or ColumnKind.AuthoritativeContentLastModifiedAt
             )
             .Should()
             .BeEmpty();
@@ -126,7 +128,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             },
             new DbColumnModel(
                 ColumnName: new DbColumnName("ContentLastModifiedAt"),
-                Kind: ColumnKind.MirroredContentLastModifiedAt,
+                Kind: ColumnKind.AuthoritativeContentLastModifiedAt,
                 ScalarType: new RelationalScalarType(ScalarKind.DateTime),
                 IsNullable: false,
                 SourceJsonPath: null,

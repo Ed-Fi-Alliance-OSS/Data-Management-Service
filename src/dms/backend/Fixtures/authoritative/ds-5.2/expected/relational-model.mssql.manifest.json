@@ -36304,7 +36304,7 @@
         "DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "dms",
         "name": "Descriptor"
       },
@@ -36357,7 +36357,7 @@
         "School_SchoolId",
         "WeekIdentifier"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "AcademicWeek"
       },
@@ -36416,7 +36416,7 @@
         "RatingTitle",
         "SchoolYear_SchoolYear"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "AccountabilityRating"
       },
@@ -36469,7 +36469,7 @@
         "AssessmentIdentifier",
         "Namespace"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Assessment"
       },
@@ -36491,7 +36491,7 @@
         "Assessment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Assessment"
       }
@@ -36550,7 +36550,7 @@
         "Assessment_Namespace",
         "AssigningEducationOrganization_EducationOrganizationId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "AssessmentAdministration"
       },
@@ -36572,7 +36572,7 @@
         "AssessmentAdministration_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "AssessmentAdministration"
       }
@@ -36637,7 +36637,7 @@
         "AssessmentAdministration_Namespace",
         "ParticipatingEducationOrganization_EducationOrganizationId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "AssessmentAdministrationParticipation"
       },
@@ -36659,7 +36659,7 @@
         "AssessmentAdministrationParticipation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "AssessmentAdministrationParticipation"
       }
@@ -36675,7 +36675,7 @@
         "AssessmentAdministration_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "AssessmentAdministration"
       }
@@ -36691,7 +36691,7 @@
         "Assessment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Assessment"
       }
@@ -36707,7 +36707,7 @@
         "Assessment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Assessment"
       }
@@ -36760,7 +36760,7 @@
         "Assessment_AssessmentIdentifier",
         "Assessment_Namespace"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "AssessmentBatteryPart"
       },
@@ -36782,7 +36782,7 @@
         "AssessmentBatteryPart_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "AssessmentBatteryPart"
       }
@@ -36798,7 +36798,7 @@
         "Assessment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Assessment"
       }
@@ -36851,7 +36851,7 @@
         "Assessment_Namespace",
         "IdentificationCode"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "AssessmentItem"
       },
@@ -36873,7 +36873,7 @@
         "AssessmentItem_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "AssessmentItem"
       }
@@ -36889,7 +36889,7 @@
         "AssessmentItem_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "AssessmentItem"
       }
@@ -36905,7 +36905,7 @@
         "Assessment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Assessment"
       }
@@ -36921,7 +36921,7 @@
         "Assessment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Assessment"
       }
@@ -36937,7 +36937,7 @@
         "Assessment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Assessment"
       }
@@ -36953,7 +36953,7 @@
         "Assessment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Assessment"
       }
@@ -36969,7 +36969,7 @@
         "Assessment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Assessment"
       }
@@ -36985,7 +36985,7 @@
         "Assessment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Assessment"
       }
@@ -37038,7 +37038,7 @@
         "Namespace_Unified",
         "ScoreRangeId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "AssessmentScoreRangeLearningStandard"
       },
@@ -37060,7 +37060,7 @@
         "AssessmentScoreRangeLearningStandard_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "AssessmentScoreRangeLearningStandard"
       }
@@ -37076,7 +37076,7 @@
         "Assessment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Assessment"
       }
@@ -37123,7 +37123,7 @@
         "Code",
         "FiscalYear"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "BalanceSheetDimension"
       },
@@ -37145,7 +37145,7 @@
         "BalanceSheetDimension_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "BalanceSheetDimension"
       }
@@ -37192,7 +37192,7 @@
         "BellScheduleName",
         "School_SchoolId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "BellSchedule"
       },
@@ -37214,7 +37214,7 @@
         "BellSchedule_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "BellSchedule"
       }
@@ -37230,7 +37230,7 @@
         "BellSchedule_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "BellSchedule"
       }
@@ -37246,7 +37246,7 @@
         "BellSchedule_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "BellSchedule"
       }
@@ -37299,7 +37299,7 @@
         "School_SchoolId",
         "SchoolYear_SchoolYear"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Calendar"
       },
@@ -37364,7 +37364,7 @@
         "Calendar_SchoolYear",
         "Date"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CalendarDate"
       },
@@ -37386,7 +37386,7 @@
         "CalendarDate_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CalendarDate"
       }
@@ -37402,7 +37402,7 @@
         "Calendar_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Calendar"
       }
@@ -37455,7 +37455,7 @@
         "EducationOrganization_EducationOrganizationId",
         "FiscalYear_Unified"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ChartOfAccount"
       },
@@ -37477,7 +37477,7 @@
         "ChartOfAccount_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ChartOfAccount"
       }
@@ -37524,7 +37524,7 @@
         "ClassPeriodName",
         "School_SchoolId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ClassPeriod"
       },
@@ -37546,7 +37546,7 @@
         "ClassPeriod_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ClassPeriod"
       }
@@ -37593,7 +37593,7 @@
         "CohortIdentifier",
         "EducationOrganization_EducationOrganizationId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Cohort"
       },
@@ -37615,7 +37615,7 @@
         "Cohort_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Cohort"
       }
@@ -37720,7 +37720,7 @@
       "identity_projection_columns": [
         "CommunityOrganizationId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CommunityOrganization"
       },
@@ -37742,7 +37742,7 @@
         "CommunityOrganization_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CommunityOrganization"
       }
@@ -37758,7 +37758,7 @@
         "CommunityOrganization_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CommunityOrganization"
       }
@@ -37774,7 +37774,7 @@
         "CommunityOrganization_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CommunityOrganization"
       }
@@ -37790,7 +37790,7 @@
         "CommunityOrganization_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CommunityOrganization"
       }
@@ -37806,7 +37806,7 @@
         "CommunityOrganization_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CommunityOrganization"
       }
@@ -37822,7 +37822,7 @@
         "CommunityOrganization_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CommunityOrganization"
       }
@@ -37838,7 +37838,7 @@
         "CommunityOrganization_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CommunityOrganization"
       }
@@ -37854,7 +37854,7 @@
         "CommunityOrganization_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CommunityOrganization"
       }
@@ -37985,7 +37985,7 @@
       "identity_projection_columns": [
         "CommunityProviderId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CommunityProvider"
       },
@@ -38007,7 +38007,7 @@
         "CommunityProvider_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CommunityProvider"
       }
@@ -38023,7 +38023,7 @@
         "CommunityProvider_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CommunityProvider"
       }
@@ -38039,7 +38039,7 @@
         "CommunityProvider_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CommunityProvider"
       }
@@ -38055,7 +38055,7 @@
         "CommunityProvider_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CommunityProvider"
       }
@@ -38071,7 +38071,7 @@
         "CommunityProvider_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CommunityProvider"
       }
@@ -38087,7 +38087,7 @@
         "CommunityProvider_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CommunityProvider"
       }
@@ -38103,7 +38103,7 @@
         "CommunityProvider_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CommunityProvider"
       }
@@ -38119,7 +38119,7 @@
         "CommunityProvider_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CommunityProvider"
       }
@@ -38172,7 +38172,7 @@
         "LicenseIdentifier",
         "LicensingOrganization"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CommunityProviderLicense"
       },
@@ -38232,7 +38232,7 @@
         "Objective",
         "ObjectiveGradeLevelDescriptor_DescriptorId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CompetencyObjective"
       },
@@ -38279,7 +38279,7 @@
       "identity_projection_columns": [
         "ContactUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Contact"
       },
@@ -38301,7 +38301,7 @@
         "Contact_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Contact"
       }
@@ -38317,7 +38317,7 @@
         "Contact_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Contact"
       }
@@ -38333,7 +38333,7 @@
         "Contact_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Contact"
       }
@@ -38349,7 +38349,7 @@
         "Contact_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Contact"
       }
@@ -38365,7 +38365,7 @@
         "Contact_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Contact"
       }
@@ -38381,7 +38381,7 @@
         "Contact_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Contact"
       }
@@ -38397,7 +38397,7 @@
         "Contact_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Contact"
       }
@@ -38413,7 +38413,7 @@
         "Contact_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Contact"
       }
@@ -38429,7 +38429,7 @@
         "Contact_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Contact"
       }
@@ -38476,7 +38476,7 @@
         "CourseCode",
         "EducationOrganization_EducationOrganizationId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Course"
       },
@@ -38498,7 +38498,7 @@
         "Course_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Course"
       }
@@ -38514,7 +38514,7 @@
         "Course_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Course"
       }
@@ -38530,7 +38530,7 @@
         "Course_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Course"
       }
@@ -38546,7 +38546,7 @@
         "Course_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Course"
       }
@@ -38562,7 +38562,7 @@
         "Course_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Course"
       }
@@ -38578,7 +38578,7 @@
         "Course_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Course"
       }
@@ -38641,7 +38641,7 @@
         "Session_SchoolYear",
         "Session_SessionName"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CourseOffering"
       },
@@ -38663,7 +38663,7 @@
         "CourseOffering_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CourseOffering"
       }
@@ -38679,7 +38679,7 @@
         "CourseOffering_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CourseOffering"
       }
@@ -38695,7 +38695,7 @@
         "CourseOffering_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CourseOffering"
       }
@@ -38774,7 +38774,7 @@
         "StudentAcademicRecord_StudentUniqueId",
         "StudentAcademicRecord_TermDescriptor_DescriptorId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CourseTranscript"
       },
@@ -38796,7 +38796,7 @@
         "CourseTranscript_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CourseTranscript"
       }
@@ -38812,7 +38812,7 @@
         "CourseTranscript_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CourseTranscript"
       }
@@ -38828,7 +38828,7 @@
         "CourseTranscript_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CourseTranscript"
       }
@@ -38844,7 +38844,7 @@
         "CourseTranscript_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CourseTranscript"
       }
@@ -38860,7 +38860,7 @@
         "CourseTranscript_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CourseTranscript"
       }
@@ -38876,7 +38876,7 @@
         "CourseTranscript_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CourseTranscript"
       }
@@ -38892,7 +38892,7 @@
         "CourseTranscript_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CourseTranscript"
       }
@@ -38940,7 +38940,7 @@
         "CredentialIdentifier",
         "StateOfIssueStateAbbreviationDescriptor_DescriptorId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Credential"
       },
@@ -38962,7 +38962,7 @@
         "Credential_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Credential"
       }
@@ -38978,7 +38978,7 @@
         "Credential_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Credential"
       }
@@ -38994,7 +38994,7 @@
         "Credential_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Credential"
       }
@@ -39035,7 +39035,7 @@
       "identity_projection_columns": [
         "CrisisEventName"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "CrisisEvent"
       },
@@ -39100,7 +39100,7 @@
         "Namespace",
         "Value"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "DescriptorMapping"
       },
@@ -39122,7 +39122,7 @@
         "DescriptorMapping_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "DescriptorMapping"
       }
@@ -39175,7 +39175,7 @@
         "DisciplineDate",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "DisciplineAction"
       },
@@ -39197,7 +39197,7 @@
         "DisciplineAction_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "DisciplineAction"
       }
@@ -39213,7 +39213,7 @@
         "DisciplineAction_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "DisciplineAction"
       }
@@ -39229,7 +39229,7 @@
         "DisciplineAction_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "DisciplineAction"
       }
@@ -39276,7 +39276,7 @@
         "IncidentIdentifier",
         "School_SchoolId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "DisciplineIncident"
       },
@@ -39298,7 +39298,7 @@
         "DisciplineIncident_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "DisciplineIncident"
       }
@@ -39314,7 +39314,7 @@
         "DisciplineIncident_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "DisciplineIncident"
       }
@@ -39330,7 +39330,7 @@
         "DisciplineIncident_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "DisciplineIncident"
       }
@@ -39371,7 +39371,7 @@
       "identity_projection_columns": [
         "ContentIdentifier"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationContent"
       },
@@ -39393,7 +39393,7 @@
         "EducationContent_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationContent"
       }
@@ -39409,7 +39409,7 @@
         "EducationContent_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationContent"
       }
@@ -39425,7 +39425,7 @@
         "EducationContent_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationContent"
       }
@@ -39441,7 +39441,7 @@
         "EducationContent_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationContent"
       }
@@ -39457,7 +39457,7 @@
         "EducationContent_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationContent"
       }
@@ -39473,7 +39473,7 @@
         "EducationContent_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationContent"
       }
@@ -39489,7 +39489,7 @@
         "EducationContent_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationContent"
       }
@@ -39542,7 +39542,7 @@
         "InterventionPrescriptionInterventionPrescription_EducationOrganizationId",
         "InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationOrganizationInterventionPrescriptionAssociation"
       },
@@ -39653,7 +39653,7 @@
       "identity_projection_columns": [
         "EducationOrganizationNetworkId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationOrganizationNetwork"
       },
@@ -39675,7 +39675,7 @@
         "EducationOrganizationNetwork_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationOrganizationNetwork"
       }
@@ -39691,7 +39691,7 @@
         "EducationOrganizationNetwork_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationOrganizationNetwork"
       }
@@ -39738,7 +39738,7 @@
         "EducationOrganizationNetwork_EducationOrganizationNetworkId",
         "MemberEducationOrganization_EducationOrganizationId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationOrganizationNetworkAssociation"
       },
@@ -39760,7 +39760,7 @@
         "EducationOrganizationNetwork_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationOrganizationNetwork"
       }
@@ -39776,7 +39776,7 @@
         "EducationOrganizationNetwork_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationOrganizationNetwork"
       }
@@ -39792,7 +39792,7 @@
         "EducationOrganizationNetwork_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationOrganizationNetwork"
       }
@@ -39808,7 +39808,7 @@
         "EducationOrganizationNetwork_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationOrganizationNetwork"
       }
@@ -39824,7 +39824,7 @@
         "EducationOrganizationNetwork_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationOrganizationNetwork"
       }
@@ -39840,7 +39840,7 @@
         "EducationOrganizationNetwork_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationOrganizationNetwork"
       }
@@ -39887,7 +39887,7 @@
         "EducationOrganization_EducationOrganizationId",
         "PeerEducationOrganization_EducationOrganizationId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationOrganizationPeerAssociation"
       },
@@ -40024,7 +40024,7 @@
       "identity_projection_columns": [
         "EducationServiceCenterId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationServiceCenter"
       },
@@ -40046,7 +40046,7 @@
         "EducationServiceCenter_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationServiceCenter"
       }
@@ -40062,7 +40062,7 @@
         "EducationServiceCenter_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationServiceCenter"
       }
@@ -40078,7 +40078,7 @@
         "EducationServiceCenter_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationServiceCenter"
       }
@@ -40094,7 +40094,7 @@
         "EducationServiceCenter_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationServiceCenter"
       }
@@ -40110,7 +40110,7 @@
         "EducationServiceCenter_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationServiceCenter"
       }
@@ -40126,7 +40126,7 @@
         "EducationServiceCenter_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationServiceCenter"
       }
@@ -40142,7 +40142,7 @@
         "EducationServiceCenter_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationServiceCenter"
       }
@@ -40158,7 +40158,7 @@
         "EducationServiceCenter_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EducationServiceCenter"
       }
@@ -40244,7 +40244,7 @@
         "ProgramEvaluationElement_ProgramName",
         "ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EvaluationRubricDimension"
       },
@@ -40303,7 +40303,7 @@
         "FeederSchool_SchoolId",
         "School_SchoolId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "FeederSchoolAssociation"
       },
@@ -40356,7 +40356,7 @@
         "Code",
         "FiscalYear"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "FunctionDimension"
       },
@@ -40378,7 +40378,7 @@
         "FunctionDimension_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "FunctionDimension"
       }
@@ -40425,7 +40425,7 @@
         "Code",
         "FiscalYear"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "FundDimension"
       },
@@ -40447,7 +40447,7 @@
         "FundDimension_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "FundDimension"
       }
@@ -40552,7 +40552,7 @@
         "StudentSectionAssociation_SessionName",
         "StudentSectionAssociation_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Grade"
       },
@@ -40574,7 +40574,7 @@
         "Grade_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Grade"
       }
@@ -40621,7 +40621,7 @@
         "GradebookEntryIdentifier",
         "Namespace"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "GradebookEntry"
       },
@@ -40643,7 +40643,7 @@
         "GradebookEntry_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "GradebookEntry"
       }
@@ -40703,7 +40703,7 @@
         "School_SchoolId",
         "SchoolYear_SchoolYear"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "GradingPeriod"
       },
@@ -40763,7 +40763,7 @@
         "GraduationPlanTypeDescriptor_DescriptorId",
         "GraduationSchoolYear_GraduationSchoolYear"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "GraduationPlan"
       },
@@ -40785,7 +40785,7 @@
         "GraduationPlan_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "GraduationPlan"
       }
@@ -40801,7 +40801,7 @@
         "GraduationPlan_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "GraduationPlan"
       }
@@ -40817,7 +40817,7 @@
         "GraduationPlan_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "GraduationPlan"
       }
@@ -40833,7 +40833,7 @@
         "GraduationPlan_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "GraduationPlan"
       }
@@ -40849,7 +40849,7 @@
         "GraduationPlan_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "GraduationPlan"
       }
@@ -40865,7 +40865,7 @@
         "GraduationPlan_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "GraduationPlan"
       }
@@ -40912,7 +40912,7 @@
         "EducationOrganization_EducationOrganizationId",
         "InterventionIdentificationCode"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Intervention"
       },
@@ -40934,7 +40934,7 @@
         "Intervention_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Intervention"
       }
@@ -40950,7 +40950,7 @@
         "Intervention_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Intervention"
       }
@@ -40966,7 +40966,7 @@
         "Intervention_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Intervention"
       }
@@ -40982,7 +40982,7 @@
         "Intervention_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Intervention"
       }
@@ -40998,7 +40998,7 @@
         "Intervention_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Intervention"
       }
@@ -41014,7 +41014,7 @@
         "Intervention_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Intervention"
       }
@@ -41030,7 +41030,7 @@
         "Intervention_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Intervention"
       }
@@ -41046,7 +41046,7 @@
         "Intervention_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Intervention"
       }
@@ -41093,7 +41093,7 @@
         "EducationOrganization_EducationOrganizationId",
         "InterventionPrescriptionIdentificationCode"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "InterventionPrescription"
       },
@@ -41115,7 +41115,7 @@
         "InterventionPrescription_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "InterventionPrescription"
       }
@@ -41131,7 +41131,7 @@
         "InterventionPrescription_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "InterventionPrescription"
       }
@@ -41147,7 +41147,7 @@
         "InterventionPrescription_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "InterventionPrescription"
       }
@@ -41163,7 +41163,7 @@
         "InterventionPrescription_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "InterventionPrescription"
       }
@@ -41179,7 +41179,7 @@
         "InterventionPrescription_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "InterventionPrescription"
       }
@@ -41195,7 +41195,7 @@
         "InterventionPrescription_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "InterventionPrescription"
       }
@@ -41211,7 +41211,7 @@
         "InterventionPrescription_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "InterventionPrescription"
       }
@@ -41227,7 +41227,7 @@
         "Intervention_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Intervention"
       }
@@ -41274,7 +41274,7 @@
         "EducationOrganization_EducationOrganizationId",
         "InterventionStudyIdentificationCode"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "InterventionStudy"
       },
@@ -41296,7 +41296,7 @@
         "InterventionStudy_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "InterventionStudy"
       }
@@ -41312,7 +41312,7 @@
         "InterventionStudy_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "InterventionStudy"
       }
@@ -41328,7 +41328,7 @@
         "InterventionStudy_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "InterventionStudy"
       }
@@ -41344,7 +41344,7 @@
         "InterventionStudy_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "InterventionStudy"
       }
@@ -41360,7 +41360,7 @@
         "InterventionStudy_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "InterventionStudy"
       }
@@ -41376,7 +41376,7 @@
         "InterventionStudy_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "InterventionStudy"
       }
@@ -41392,7 +41392,7 @@
         "InterventionStudy_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "InterventionStudy"
       }
@@ -41408,7 +41408,7 @@
         "InterventionStudy_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "InterventionStudy"
       }
@@ -41424,7 +41424,7 @@
         "Intervention_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Intervention"
       }
@@ -41465,7 +41465,7 @@
       "identity_projection_columns": [
         "LearningStandardId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "LearningStandard"
       },
@@ -41487,7 +41487,7 @@
         "LearningStandard_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "LearningStandard"
       }
@@ -41503,7 +41503,7 @@
         "LearningStandard_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "LearningStandard"
       }
@@ -41556,7 +41556,7 @@
         "SourceLearningStandard_LearningStandardId",
         "TargetLearningStandard_LearningStandardId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "LearningStandardEquivalenceAssociation"
       },
@@ -41578,7 +41578,7 @@
         "LearningStandard_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "LearningStandard"
       }
@@ -41594,7 +41594,7 @@
         "LearningStandard_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "LearningStandard"
       }
@@ -41647,7 +41647,7 @@
         "EducationOrganization_EducationOrganizationId",
         "FiscalYear_Unified"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "LocalAccount"
       },
@@ -41669,7 +41669,7 @@
         "LocalAccount_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "LocalAccount"
       }
@@ -41728,7 +41728,7 @@
         "LocalAccount_EducationOrganizationId",
         "LocalAccount_FiscalYear"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "LocalActual"
       },
@@ -41793,7 +41793,7 @@
         "LocalAccount_EducationOrganizationId",
         "LocalAccount_FiscalYear"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "LocalBudget"
       },
@@ -41864,7 +41864,7 @@
         "LocalAccount_FiscalYear",
         "Staff_StaffUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "LocalContractedStaff"
       },
@@ -42019,7 +42019,7 @@
       "identity_projection_columns": [
         "LocalEducationAgencyId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "LocalEducationAgency"
       },
@@ -42041,7 +42041,7 @@
         "LocalEducationAgency_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "LocalEducationAgency"
       }
@@ -42057,7 +42057,7 @@
         "LocalEducationAgency_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "LocalEducationAgency"
       }
@@ -42073,7 +42073,7 @@
         "LocalEducationAgency_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "LocalEducationAgency"
       }
@@ -42089,7 +42089,7 @@
         "LocalEducationAgency_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "LocalEducationAgency"
       }
@@ -42105,7 +42105,7 @@
         "LocalEducationAgency_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "LocalEducationAgency"
       }
@@ -42121,7 +42121,7 @@
         "LocalEducationAgency_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "LocalEducationAgency"
       }
@@ -42137,7 +42137,7 @@
         "LocalEducationAgency_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "LocalEducationAgency"
       }
@@ -42153,7 +42153,7 @@
         "LocalEducationAgency_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "LocalEducationAgency"
       }
@@ -42169,7 +42169,7 @@
         "LocalEducationAgency_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "LocalEducationAgency"
       }
@@ -42185,7 +42185,7 @@
         "LocalEducationAgency_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "LocalEducationAgency"
       }
@@ -42244,7 +42244,7 @@
         "LocalAccount_EducationOrganizationId",
         "LocalAccount_FiscalYear"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "LocalEncumbrance"
       },
@@ -42315,7 +42315,7 @@
         "LocalAccount_FiscalYear",
         "Staff_StaffUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "LocalPayroll"
       },
@@ -42368,7 +42368,7 @@
         "ClassroomIdentificationCode",
         "School_SchoolId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Location"
       },
@@ -42421,7 +42421,7 @@
         "Code",
         "FiscalYear"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ObjectDimension"
       },
@@ -42443,7 +42443,7 @@
         "ObjectDimension_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ObjectDimension"
       }
@@ -42496,7 +42496,7 @@
         "Namespace_Unified",
         "IdentificationCode"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ObjectiveAssessment"
       },
@@ -42518,7 +42518,7 @@
         "ObjectiveAssessment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ObjectiveAssessment"
       }
@@ -42534,7 +42534,7 @@
         "ObjectiveAssessment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ObjectiveAssessment"
       }
@@ -42550,7 +42550,7 @@
         "ObjectiveAssessment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ObjectiveAssessment"
       }
@@ -42566,7 +42566,7 @@
         "ObjectiveAssessment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ObjectiveAssessment"
       }
@@ -42613,7 +42613,7 @@
         "EducationOrganization_EducationOrganizationId",
         "RequisitionNumber"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "OpenStaffPosition"
       },
@@ -42635,7 +42635,7 @@
         "OpenStaffPosition_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "OpenStaffPosition"
       }
@@ -42651,7 +42651,7 @@
         "OpenStaffPosition_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "OpenStaffPosition"
       }
@@ -42698,7 +42698,7 @@
         "Code",
         "FiscalYear"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "OperationalUnitDimension"
       },
@@ -42720,7 +42720,7 @@
         "OperationalUnitDimension_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "OperationalUnitDimension"
       }
@@ -42851,7 +42851,7 @@
       "identity_projection_columns": [
         "OrganizationDepartmentId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "OrganizationDepartment"
       },
@@ -42873,7 +42873,7 @@
         "OrganizationDepartment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "OrganizationDepartment"
       }
@@ -42889,7 +42889,7 @@
         "OrganizationDepartment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "OrganizationDepartment"
       }
@@ -42905,7 +42905,7 @@
         "OrganizationDepartment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "OrganizationDepartment"
       }
@@ -42921,7 +42921,7 @@
         "OrganizationDepartment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "OrganizationDepartment"
       }
@@ -42937,7 +42937,7 @@
         "OrganizationDepartment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "OrganizationDepartment"
       }
@@ -42953,7 +42953,7 @@
         "OrganizationDepartment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "OrganizationDepartment"
       }
@@ -42969,7 +42969,7 @@
         "OrganizationDepartment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "OrganizationDepartment"
       }
@@ -42985,7 +42985,7 @@
         "OrganizationDepartment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "OrganizationDepartment"
       }
@@ -43033,7 +43033,7 @@
         "PersonId",
         "SourceSystemDescriptor_DescriptorId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Person"
       },
@@ -43093,7 +43093,7 @@
         "PostSecondaryEventCategoryDescriptor_DescriptorId",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "PostSecondaryEvent"
       },
@@ -43204,7 +43204,7 @@
       "identity_projection_columns": [
         "PostSecondaryInstitutionId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "PostSecondaryInstitution"
       },
@@ -43226,7 +43226,7 @@
         "PostSecondaryInstitution_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "PostSecondaryInstitution"
       }
@@ -43242,7 +43242,7 @@
         "PostSecondaryInstitution_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "PostSecondaryInstitution"
       }
@@ -43258,7 +43258,7 @@
         "PostSecondaryInstitution_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "PostSecondaryInstitution"
       }
@@ -43274,7 +43274,7 @@
         "PostSecondaryInstitution_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "PostSecondaryInstitution"
       }
@@ -43290,7 +43290,7 @@
         "PostSecondaryInstitution_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "PostSecondaryInstitution"
       }
@@ -43306,7 +43306,7 @@
         "PostSecondaryInstitution_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "PostSecondaryInstitution"
       }
@@ -43322,7 +43322,7 @@
         "PostSecondaryInstitution_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "PostSecondaryInstitution"
       }
@@ -43338,7 +43338,7 @@
         "PostSecondaryInstitution_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "PostSecondaryInstitution"
       }
@@ -43354,7 +43354,7 @@
         "PostSecondaryInstitution_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "PostSecondaryInstitution"
       }
@@ -43408,7 +43408,7 @@
         "ProgramName",
         "ProgramTypeDescriptor_DescriptorId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Program"
       },
@@ -43430,7 +43430,7 @@
         "Program_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Program"
       }
@@ -43477,7 +43477,7 @@
         "Code",
         "FiscalYear"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ProgramDimension"
       },
@@ -43499,7 +43499,7 @@
         "ProgramDimension_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ProgramDimension"
       }
@@ -43573,7 +43573,7 @@
         "ProgramProgram_ProgramName",
         "ProgramProgram_ProgramTypeDescriptor_DescriptorId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ProgramEvaluation"
       },
@@ -43659,7 +43659,7 @@
         "ProgramName_Unified",
         "ProgramTypeDescriptor_Unified_DescriptorId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ProgramEvaluationElement"
       },
@@ -43681,7 +43681,7 @@
         "ProgramEvaluationElement_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ProgramEvaluationElement"
       }
@@ -43697,7 +43697,7 @@
         "ProgramEvaluation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ProgramEvaluation"
       }
@@ -43777,7 +43777,7 @@
         "ProgramEvaluation_ProgramName",
         "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ProgramEvaluationObjective"
       },
@@ -43799,7 +43799,7 @@
         "ProgramEvaluationObjective_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ProgramEvaluationObjective"
       }
@@ -43815,7 +43815,7 @@
         "Program_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Program"
       }
@@ -43831,7 +43831,7 @@
         "Program_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Program"
       }
@@ -43878,7 +43878,7 @@
         "Code",
         "FiscalYear"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ProjectDimension"
       },
@@ -43900,7 +43900,7 @@
         "ProjectDimension_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ProjectDimension"
       }
@@ -43972,7 +43972,7 @@
         "GradingPeriodGradingPeriod_SchoolYear",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ReportCard"
       },
@@ -43994,7 +43994,7 @@
         "ReportCard_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ReportCard"
       }
@@ -44010,7 +44010,7 @@
         "ReportCard_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ReportCard"
       }
@@ -44026,7 +44026,7 @@
         "ReportCard_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ReportCard"
       }
@@ -44079,7 +44079,7 @@
         "SchoolId_Unified",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "RestraintEvent"
       },
@@ -44101,7 +44101,7 @@
         "RestraintEvent_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "RestraintEvent"
       }
@@ -44117,7 +44117,7 @@
         "RestraintEvent_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "RestraintEvent"
       }
@@ -44248,7 +44248,7 @@
       "identity_projection_columns": [
         "SchoolId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "School"
       },
@@ -44270,7 +44270,7 @@
         "School_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "School"
       }
@@ -44286,7 +44286,7 @@
         "School_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "School"
       }
@@ -44302,7 +44302,7 @@
         "School_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "School"
       }
@@ -44318,7 +44318,7 @@
         "School_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "School"
       }
@@ -44334,7 +44334,7 @@
         "School_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "School"
       }
@@ -44350,7 +44350,7 @@
         "School_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "School"
       }
@@ -44366,7 +44366,7 @@
         "School_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "School"
       }
@@ -44382,7 +44382,7 @@
         "School_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "School"
       }
@@ -44398,7 +44398,7 @@
         "School_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "School"
       }
@@ -44414,7 +44414,7 @@
         "School_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "School"
       }
@@ -44455,7 +44455,7 @@
       "identity_projection_columns": [
         "SchoolYear"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "SchoolYearType"
       },
@@ -44526,7 +44526,7 @@
         "CourseOffering_SessionName",
         "SectionIdentifier"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Section"
       },
@@ -44617,7 +44617,7 @@
         "Section_SectionIdentifier",
         "Section_SessionName"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "SectionAttendanceTakenEvent"
       },
@@ -44639,7 +44639,7 @@
         "Section_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Section"
       }
@@ -44655,7 +44655,7 @@
         "Section_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Section"
       }
@@ -44671,7 +44671,7 @@
         "Section_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Section"
       }
@@ -44687,7 +44687,7 @@
         "Section_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Section"
       }
@@ -44703,7 +44703,7 @@
         "Section_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Section"
       }
@@ -44756,7 +44756,7 @@
         "SchoolYear_SchoolYear",
         "SessionName"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Session"
       },
@@ -44778,7 +44778,7 @@
         "Session_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Session"
       }
@@ -44794,7 +44794,7 @@
         "Session_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Session"
       }
@@ -44841,7 +44841,7 @@
         "Code",
         "FiscalYear"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "SourceDimension"
       },
@@ -44863,7 +44863,7 @@
         "SourceDimension_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "SourceDimension"
       }
@@ -44904,7 +44904,7 @@
       "identity_projection_columns": [
         "StaffUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Staff"
       },
@@ -44964,7 +44964,7 @@
         "EventDate",
         "Staff_StaffUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StaffAbsenceEvent"
       },
@@ -44986,7 +44986,7 @@
         "Staff_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Staff"
       }
@@ -45002,7 +45002,7 @@
         "Staff_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Staff"
       }
@@ -45018,7 +45018,7 @@
         "Staff_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Staff"
       }
@@ -45077,7 +45077,7 @@
         "Cohort_EducationOrganizationId",
         "Staff_StaffUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StaffCohortAssociation"
       },
@@ -45099,7 +45099,7 @@
         "Staff_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Staff"
       }
@@ -45152,7 +45152,7 @@
         "DisciplineIncident_SchoolId",
         "Staff_StaffUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StaffDisciplineIncidentAssociation"
       },
@@ -45174,7 +45174,7 @@
         "StaffDisciplineIncidentAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StaffDisciplineIncidentAssociation"
       }
@@ -45234,7 +45234,7 @@
         "StaffClassificationDescriptor_DescriptorId",
         "StaffUniqueId_Unified"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StaffEducationOrganizationAssignmentAssociation"
       },
@@ -45293,7 +45293,7 @@
         "EducationOrganization_EducationOrganizationId",
         "Staff_StaffUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StaffEducationOrganizationContactAssociation"
       },
@@ -45315,7 +45315,7 @@
         "StaffEducationOrganizationContactAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StaffEducationOrganizationContactAssociation"
       }
@@ -45331,7 +45331,7 @@
         "StaffEducationOrganizationContactAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StaffEducationOrganizationContactAssociation"
       }
@@ -45391,7 +45391,7 @@
         "HireDate",
         "Staff_StaffUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StaffEducationOrganizationEmploymentAssociation"
       },
@@ -45413,7 +45413,7 @@
         "Staff_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Staff"
       }
@@ -45429,7 +45429,7 @@
         "Staff_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Staff"
       }
@@ -45445,7 +45445,7 @@
         "Staff_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Staff"
       }
@@ -45461,7 +45461,7 @@
         "Staff_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Staff"
       }
@@ -45477,7 +45477,7 @@
         "Staff_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Staff"
       }
@@ -45493,7 +45493,7 @@
         "Staff_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Staff"
       }
@@ -45547,7 +45547,7 @@
         "StaffLeaveEventCategoryDescriptor_DescriptorId",
         "Staff_StaffUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StaffLeave"
       },
@@ -45569,7 +45569,7 @@
         "Staff_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Staff"
       }
@@ -45585,7 +45585,7 @@
         "Staff_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Staff"
       }
@@ -45651,7 +45651,7 @@
         "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
         "Staff_StaffUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StaffProgramAssociation"
       },
@@ -45673,7 +45673,7 @@
         "Staff_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Staff"
       }
@@ -45689,7 +45689,7 @@
         "Staff_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Staff"
       }
@@ -45743,7 +45743,7 @@
         "SchoolId_Unified",
         "Staff_StaffUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StaffSchoolAssociation"
       },
@@ -45765,7 +45765,7 @@
         "StaffSchoolAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StaffSchoolAssociation"
       }
@@ -45781,7 +45781,7 @@
         "StaffSchoolAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StaffSchoolAssociation"
       }
@@ -45858,7 +45858,7 @@
         "Section_SessionName",
         "Staff_StaffUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StaffSectionAssociation"
       },
@@ -45880,7 +45880,7 @@
         "Staff_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Staff"
       }
@@ -45896,7 +45896,7 @@
         "Staff_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Staff"
       }
@@ -45912,7 +45912,7 @@
         "Staff_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Staff"
       }
@@ -46017,7 +46017,7 @@
       "identity_projection_columns": [
         "StateEducationAgencyId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StateEducationAgency"
       },
@@ -46039,7 +46039,7 @@
         "StateEducationAgency_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StateEducationAgency"
       }
@@ -46055,7 +46055,7 @@
         "StateEducationAgency_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StateEducationAgency"
       }
@@ -46071,7 +46071,7 @@
         "StateEducationAgency_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StateEducationAgency"
       }
@@ -46087,7 +46087,7 @@
         "StateEducationAgency_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StateEducationAgency"
       }
@@ -46103,7 +46103,7 @@
         "StateEducationAgency_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StateEducationAgency"
       }
@@ -46119,7 +46119,7 @@
         "StateEducationAgency_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StateEducationAgency"
       }
@@ -46135,7 +46135,7 @@
         "StateEducationAgency_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StateEducationAgency"
       }
@@ -46151,7 +46151,7 @@
         "StateEducationAgency_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StateEducationAgency"
       }
@@ -46167,7 +46167,7 @@
         "StateEducationAgency_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StateEducationAgency"
       }
@@ -46183,7 +46183,7 @@
         "StateEducationAgency_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StateEducationAgency"
       }
@@ -46224,7 +46224,7 @@
       "identity_projection_columns": [
         "StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Student"
       },
@@ -46290,7 +46290,7 @@
         "Student_StudentUniqueId",
         "TermDescriptor_DescriptorId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentAcademicRecord"
       },
@@ -46312,7 +46312,7 @@
         "StudentAcademicRecord_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentAcademicRecord"
       }
@@ -46328,7 +46328,7 @@
         "StudentAcademicRecord_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentAcademicRecord"
       }
@@ -46344,7 +46344,7 @@
         "StudentAcademicRecord_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentAcademicRecord"
       }
@@ -46360,7 +46360,7 @@
         "StudentAcademicRecord_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentAcademicRecord"
       }
@@ -46376,7 +46376,7 @@
         "StudentAcademicRecord_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentAcademicRecord"
       }
@@ -46435,7 +46435,7 @@
         "StudentAssessmentIdentifier",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentAssessment"
       },
@@ -46457,7 +46457,7 @@
         "StudentAssessment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentAssessment"
       }
@@ -46529,7 +46529,7 @@
         "StudentAssessment_StudentAssessmentIdentifier",
         "StudentAssessment_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentAssessmentEducationOrganizationAssociation"
       },
@@ -46551,7 +46551,7 @@
         "StudentAssessment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentAssessment"
       }
@@ -46567,7 +46567,7 @@
         "StudentAssessment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentAssessment"
       }
@@ -46638,7 +46638,7 @@
         "StudentEducationOrganizationAssociation_EducationOrganizationId",
         "StudentUniqueId_Unified"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentAssessmentRegistration"
       },
@@ -46660,7 +46660,7 @@
         "StudentAssessmentRegistration_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentAssessmentRegistration"
       }
@@ -46676,7 +46676,7 @@
         "StudentAssessmentRegistration_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentAssessmentRegistration"
       }
@@ -46761,7 +46761,7 @@
         "StudentAssessmentRegistration_EducationOrganizationId",
         "StudentAssessmentRegistration_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentAssessmentRegistrationBatteryPartAssociation"
       },
@@ -46783,7 +46783,7 @@
         "StudentAssessmentRegistrationBatteryPartAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentAssessmentRegistrationBatteryPartAssociation"
       }
@@ -46799,7 +46799,7 @@
         "StudentAssessment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentAssessment"
       }
@@ -46815,7 +46815,7 @@
         "StudentAssessment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentAssessment"
       }
@@ -46831,7 +46831,7 @@
         "StudentAssessment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentAssessment"
       }
@@ -46847,7 +46847,7 @@
         "StudentAssessment_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentAssessment"
       }
@@ -47001,7 +47001,7 @@
         "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentCTEProgramAssociation"
       },
@@ -47023,7 +47023,7 @@
         "StudentCTEProgramAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentCTEProgramAssociation"
       }
@@ -47039,7 +47039,7 @@
         "StudentCTEProgramAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentCTEProgramAssociation"
       }
@@ -47098,7 +47098,7 @@
         "Cohort_EducationOrganizationId",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentCohortAssociation"
       },
@@ -47120,7 +47120,7 @@
         "StudentCohortAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentCohortAssociation"
       }
@@ -47205,7 +47205,7 @@
         "ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentCompetencyObjective"
       },
@@ -47227,7 +47227,7 @@
         "StudentCompetencyObjective_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentCompetencyObjective"
       }
@@ -47243,7 +47243,7 @@
         "StudentCompetencyObjective_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentCompetencyObjective"
       }
@@ -47290,7 +47290,7 @@
         "Contact_ContactUniqueId",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentContactAssociation"
       },
@@ -47356,7 +47356,7 @@
         "DisciplineIncident_SchoolId",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentDisciplineIncidentBehaviorAssociation"
       },
@@ -47378,7 +47378,7 @@
         "StudentDisciplineIncidentBehaviorAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentDisciplineIncidentBehaviorAssociation"
       }
@@ -47394,7 +47394,7 @@
         "StudentDisciplineIncidentBehaviorAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentDisciplineIncidentBehaviorAssociation"
       }
@@ -47447,7 +47447,7 @@
         "DisciplineIncident_SchoolId",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentDisciplineIncidentNonOffenderAssociation"
       },
@@ -47469,7 +47469,7 @@
         "StudentDisciplineIncidentNonOffenderAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentDisciplineIncidentNonOffenderAssociation"
       }
@@ -47516,7 +47516,7 @@
         "EducationOrganization_EducationOrganizationId",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssessmentAccommodation"
       },
@@ -47538,7 +47538,7 @@
         "StudentEducationOrganizationAssessmentAccommodation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssessmentAccommodation"
       }
@@ -47585,7 +47585,7 @@
         "EducationOrganization_EducationOrganizationId",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociation"
       },
@@ -47607,7 +47607,7 @@
         "StudentEducationOrganizationAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociation"
       }
@@ -47623,7 +47623,7 @@
         "StudentEducationOrganizationAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociation"
       }
@@ -47639,7 +47639,7 @@
         "StudentEducationOrganizationAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociation"
       }
@@ -47655,7 +47655,7 @@
         "StudentEducationOrganizationAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociation"
       }
@@ -47671,7 +47671,7 @@
         "StudentEducationOrganizationAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociation"
       }
@@ -47687,7 +47687,7 @@
         "StudentEducationOrganizationAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociation"
       }
@@ -47703,7 +47703,7 @@
         "StudentEducationOrganizationAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociation"
       }
@@ -47719,7 +47719,7 @@
         "StudentEducationOrganizationAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociation"
       }
@@ -47735,7 +47735,7 @@
         "StudentEducationOrganizationAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociation"
       }
@@ -47751,7 +47751,7 @@
         "StudentEducationOrganizationAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociation"
       }
@@ -47767,7 +47767,7 @@
         "StudentEducationOrganizationAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociation"
       }
@@ -47783,7 +47783,7 @@
         "StudentEducationOrganizationAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociation"
       }
@@ -47799,7 +47799,7 @@
         "StudentEducationOrganizationAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociation"
       }
@@ -47815,7 +47815,7 @@
         "StudentEducationOrganizationAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociation"
       }
@@ -47831,7 +47831,7 @@
         "StudentEducationOrganizationAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociation"
       }
@@ -47847,7 +47847,7 @@
         "StudentEducationOrganizationAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociation"
       }
@@ -47863,7 +47863,7 @@
         "StudentEducationOrganizationAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociation"
       }
@@ -47879,7 +47879,7 @@
         "StudentEducationOrganizationAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociation"
       }
@@ -47895,7 +47895,7 @@
         "StudentEducationOrganizationAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociation"
       }
@@ -47955,7 +47955,7 @@
         "ResponsibilityDescriptor_DescriptorId",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationResponsibilityAssociation"
       },
@@ -48014,7 +48014,7 @@
         "GradebookEntry_Namespace",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentGradebookEntry"
       },
@@ -48067,7 +48067,7 @@
         "EducationOrganization_EducationOrganizationId",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentHealth"
       },
@@ -48089,7 +48089,7 @@
         "StudentHealth_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentHealth"
       }
@@ -48105,7 +48105,7 @@
         "StudentHealth_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentHealth"
       }
@@ -48121,7 +48121,7 @@
         "StudentHealth_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentHealth"
       }
@@ -48137,7 +48137,7 @@
         "StudentHealth_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentHealth"
       }
@@ -48291,7 +48291,7 @@
         "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentHomelessProgramAssociation"
       },
@@ -48313,7 +48313,7 @@
         "StudentHomelessProgramAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentHomelessProgramAssociation"
       }
@@ -48329,7 +48329,7 @@
         "StudentHomelessProgramAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentHomelessProgramAssociation"
       }
@@ -48345,7 +48345,7 @@
         "Student_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Student"
       }
@@ -48398,7 +48398,7 @@
         "Intervention_InterventionIdentificationCode",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentInterventionAssociation"
       },
@@ -48420,7 +48420,7 @@
         "StudentInterventionAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentInterventionAssociation"
       }
@@ -48486,7 +48486,7 @@
         "Intervention_InterventionIdentificationCode",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentInterventionAttendanceEvent"
       },
@@ -48646,7 +48646,7 @@
         "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentLanguageInstructionProgramAssociation"
       },
@@ -48668,7 +48668,7 @@
         "StudentLanguageInstructionProgramAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentLanguageInstructionProgramAssociation"
       }
@@ -48684,7 +48684,7 @@
         "StudentLanguageInstructionProgramAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentLanguageInstructionProgramAssociation"
       }
@@ -48700,7 +48700,7 @@
         "StudentLanguageInstructionProgramAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentLanguageInstructionProgramAssociation"
       }
@@ -48854,7 +48854,7 @@
         "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentMigrantEducationProgramAssociation"
       },
@@ -48876,7 +48876,7 @@
         "StudentMigrantEducationProgramAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentMigrantEducationProgramAssociation"
       }
@@ -48892,7 +48892,7 @@
         "StudentMigrantEducationProgramAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentMigrantEducationProgramAssociation"
       }
@@ -49046,7 +49046,7 @@
         "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentNeglectedOrDelinquentProgramAssociation"
       },
@@ -49068,7 +49068,7 @@
         "StudentNeglectedOrDelinquentProgramAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentNeglectedOrDelinquentProgramAssociation"
       }
@@ -49084,7 +49084,7 @@
         "StudentNeglectedOrDelinquentProgramAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentNeglectedOrDelinquentProgramAssociation"
       }
@@ -49100,7 +49100,7 @@
         "Student_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Student"
       }
@@ -49116,7 +49116,7 @@
         "Student_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Student"
       }
@@ -49270,7 +49270,7 @@
         "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentProgramAssociation"
       },
@@ -49292,7 +49292,7 @@
         "StudentProgramAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentProgramAssociation"
       }
@@ -49308,7 +49308,7 @@
         "StudentProgramAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentProgramAssociation"
       }
@@ -49387,7 +49387,7 @@
         "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentProgramAttendanceEvent"
       },
@@ -49479,7 +49479,7 @@
         "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentProgramEvaluation"
       },
@@ -49501,7 +49501,7 @@
         "StudentProgramEvaluation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentProgramEvaluation"
       }
@@ -49517,7 +49517,7 @@
         "StudentProgramEvaluation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentProgramEvaluation"
       }
@@ -49533,7 +49533,7 @@
         "StudentProgramEvaluation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentProgramEvaluation"
       }
@@ -49586,7 +49586,7 @@
         "SchoolId_Unified",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentSchoolAssociation"
       },
@@ -49608,7 +49608,7 @@
         "StudentSchoolAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentSchoolAssociation"
       }
@@ -49624,7 +49624,7 @@
         "StudentSchoolAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentSchoolAssociation"
       }
@@ -49700,7 +49700,7 @@
         "Session_SessionName",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentSchoolAttendanceEvent"
       },
@@ -49860,7 +49860,7 @@
         "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentSchoolFoodServiceProgramAssociation"
       },
@@ -49882,7 +49882,7 @@
         "StudentSchoolFoodServiceProgramAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentSchoolFoodServiceProgramAssociation"
       }
@@ -49898,7 +49898,7 @@
         "StudentSchoolFoodServiceProgramAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentSchoolFoodServiceProgramAssociation"
       }
@@ -50052,7 +50052,7 @@
         "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentSection504ProgramAssociation"
       },
@@ -50074,7 +50074,7 @@
         "StudentSection504ProgramAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentSection504ProgramAssociation"
       }
@@ -50151,7 +50151,7 @@
         "Section_SessionName",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentSectionAssociation"
       },
@@ -50173,7 +50173,7 @@
         "StudentSectionAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentSectionAssociation"
       }
@@ -50257,7 +50257,7 @@
         "Section_SessionName",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentSectionAttendanceEvent"
       },
@@ -50279,7 +50279,7 @@
         "StudentSectionAttendanceEvent_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentSectionAttendanceEvent"
       }
@@ -50433,7 +50433,7 @@
         "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentSpecialEducationProgramAssociation"
       },
@@ -50455,7 +50455,7 @@
         "StudentSpecialEducationProgramAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentSpecialEducationProgramAssociation"
       }
@@ -50471,7 +50471,7 @@
         "StudentSpecialEducationProgramAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentSpecialEducationProgramAssociation"
       }
@@ -50487,7 +50487,7 @@
         "StudentSpecialEducationProgramAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentSpecialEducationProgramAssociation"
       }
@@ -50503,7 +50503,7 @@
         "StudentSpecialEducationProgramAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentSpecialEducationProgramAssociation"
       }
@@ -50519,7 +50519,7 @@
         "StudentSpecialEducationProgramAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentSpecialEducationProgramAssociation"
       }
@@ -50535,7 +50535,7 @@
         "StudentSpecialEducationProgramAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentSpecialEducationProgramAssociation"
       }
@@ -50607,7 +50607,7 @@
         "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentSpecialEducationProgramEligibilityAssociation"
       },
@@ -50767,7 +50767,7 @@
         "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
         "Student_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentTitleIPartAProgramAssociation"
       },
@@ -50789,7 +50789,7 @@
         "StudentTitleIPartAProgramAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentTitleIPartAProgramAssociation"
       }
@@ -50805,7 +50805,7 @@
         "StudentTitleIPartAProgramAssociation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentTitleIPartAProgramAssociation"
       }
@@ -50852,7 +50852,7 @@
         "Student_StudentUniqueId",
         "TransportationEducationOrganization_EducationOrganizationId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentTransportation"
       },
@@ -50874,7 +50874,7 @@
         "StudentTransportation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentTransportation"
       }
@@ -50890,7 +50890,7 @@
         "StudentTransportation_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentTransportation"
       }
@@ -50906,7 +50906,7 @@
         "Student_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Student"
       }
@@ -50953,7 +50953,7 @@
         "Namespace",
         "SurveyIdentifier"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Survey"
       },
@@ -51018,7 +51018,7 @@
         "Survey_Namespace",
         "Survey_SurveyIdentifier"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "SurveyCourseAssociation"
       },
@@ -51090,7 +51090,7 @@
         "Survey_Namespace",
         "Survey_SurveyIdentifier"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "SurveyProgramAssociation"
       },
@@ -51149,7 +51149,7 @@
         "Namespace_Unified",
         "SurveyIdentifier_Unified"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "SurveyQuestion"
       },
@@ -51171,7 +51171,7 @@
         "SurveyQuestion_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "SurveyQuestion"
       }
@@ -51238,7 +51238,7 @@
         "SurveyIdentifier_Unified",
         "SurveyResponse_SurveyResponseIdentifier"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "SurveyQuestionResponse"
       },
@@ -51260,7 +51260,7 @@
         "SurveyQuestion_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "SurveyQuestion"
       }
@@ -51276,7 +51276,7 @@
         "SurveyQuestionResponse_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "SurveyQuestionResponse"
       }
@@ -51292,7 +51292,7 @@
         "SurveyQuestionResponse_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "SurveyQuestionResponse"
       }
@@ -51345,7 +51345,7 @@
         "Survey_SurveyIdentifier",
         "SurveyResponseIdentifier"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "SurveyResponse"
       },
@@ -51410,7 +51410,7 @@
         "SurveyResponse_SurveyIdentifier",
         "SurveyResponse_SurveyResponseIdentifier"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "SurveyResponseEducationOrganizationTargetAssociation"
       },
@@ -51475,7 +51475,7 @@
         "SurveyResponse_SurveyIdentifier",
         "SurveyResponse_SurveyResponseIdentifier"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "SurveyResponseStaffTargetAssociation"
       },
@@ -51497,7 +51497,7 @@
         "SurveyResponse_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "SurveyResponse"
       }
@@ -51550,7 +51550,7 @@
         "Survey_SurveyIdentifier",
         "SurveySectionTitle"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "SurveySection"
       },
@@ -51633,7 +51633,7 @@
         "Survey_Namespace",
         "Survey_SurveyIdentifier"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "SurveySectionAssociation"
       },
@@ -51706,7 +51706,7 @@
         "SurveyResponse_SurveyResponseIdentifier",
         "SurveySection_SurveySectionTitle"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "SurveySectionResponse"
       },
@@ -51777,7 +51777,7 @@
         "SurveySectionResponse_SurveyResponseIdentifier",
         "SurveySectionResponse_SurveySectionTitle"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "SurveySectionResponseEducationOrganizationTargetAssociation"
       },
@@ -51848,7 +51848,7 @@
         "SurveySectionResponse_SurveyResponseIdentifier",
         "SurveySectionResponse_SurveySectionTitle"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "SurveySectionResponseStaffTargetAssociation"
       },
@@ -70854,7 +70854,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -71436,7 +71436,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -72781,7 +72781,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -75414,7 +75414,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -76114,7 +76114,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -76666,7 +76666,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -77507,7 +77507,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -78863,7 +78863,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -80020,7 +80020,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -80665,7 +80665,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -81736,7 +81736,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -82204,7 +82204,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -83110,7 +83110,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -84943,7 +84943,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -85462,7 +85462,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -86578,7 +86578,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -88496,7 +88496,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -90640,7 +90640,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -91180,7 +91180,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -91469,7 +91469,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -94836,7 +94836,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -97199,7 +97199,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -98285,7 +98285,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -100616,7 +100616,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -102105,7 +102105,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -102828,7 +102828,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -104167,7 +104167,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -105586,7 +105586,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -107139,7 +107139,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -109106,7 +109106,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -109405,7 +109405,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -111366,7 +111366,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -111643,7 +111643,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -112067,7 +112067,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -115597,7 +115597,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -116420,7 +116420,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -116882,7 +116882,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -117185,7 +117185,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -117488,7 +117488,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -118987,7 +118987,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -120007,7 +120007,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -120550,7 +120550,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -125173,7 +125173,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -127372,7 +127372,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -128695,7 +128695,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -130888,7 +130888,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -132175,7 +132175,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -133542,7 +133542,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -134083,7 +134083,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -134376,7 +134376,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -134669,7 +134669,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -135037,7 +135037,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -137917,7 +137917,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -138210,7 +138210,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -138749,7 +138749,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -140687,7 +140687,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -141004,7 +141004,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -142447,7 +142447,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -143315,7 +143315,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -143618,7 +143618,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -146499,7 +146499,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -147187,7 +147187,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -147670,7 +147670,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -150846,7 +150846,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -151920,7 +151920,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -152223,7 +152223,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -152808,7 +152808,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -153920,7 +153920,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -155580,7 +155580,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -157935,7 +157935,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -160586,7 +160586,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -161957,7 +161957,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -165468,7 +165468,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -165620,7 +165620,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -167546,7 +167546,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -168958,7 +168958,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -170028,7 +170028,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -171015,7 +171015,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -175240,7 +175240,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -175678,7 +175678,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -175992,7 +175992,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -176416,7 +176416,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -177108,7 +177108,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -178034,7 +178034,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -178819,7 +178819,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -179267,7 +179267,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -179633,7 +179633,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -180481,7 +180481,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -181100,7 +181100,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -183335,7 +183335,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -184862,7 +184862,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -187203,7 +187203,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -189820,7 +189820,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -190258,7 +190258,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -191379,7 +191379,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -191993,7 +191993,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -193096,7 +193096,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -193675,7 +193675,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -194939,7 +194939,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -195313,7 +195313,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -195951,7 +195951,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -196375,7 +196375,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -196786,7 +196786,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -201175,7 +201175,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -201500,7 +201500,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -201987,7 +201987,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -202872,7 +202872,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -203962,7 +203962,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -204656,7 +204656,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -205073,7 +205073,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -206296,7 +206296,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -207287,7 +207287,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -208268,7 +208268,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -209120,7 +209120,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -209661,7 +209661,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -211653,7 +211653,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -213317,7 +213317,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -213887,7 +213887,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -214751,7 +214751,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -215512,7 +215512,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -216441,7 +216441,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -217169,7 +217169,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -219052,7 +219052,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -219772,7 +219772,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -220667,7 +220667,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -221726,7 +221726,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -222406,7 +222406,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -222876,7 +222876,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -223227,7 +223227,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -223986,7 +223986,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -224748,7 +224748,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -225409,7 +225409,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -225708,7 +225708,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -226009,7 +226009,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -226238,7 +226238,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -226601,7 +226601,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -227045,7 +227045,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -227457,7 +227457,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },

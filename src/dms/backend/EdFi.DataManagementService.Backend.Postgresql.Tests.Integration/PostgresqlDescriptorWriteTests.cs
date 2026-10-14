@@ -546,6 +546,7 @@ public class Given_PostgresqlDescriptorWriteHandler
         var insertResult = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest);
         var documentUuid = ((UpsertResult.InsertSuccess)insertResult).NewDocumentUuid;
 
+        await BackdateDescriptorAsync(documentUuid);
         var stampsAfterInsert = await ReadTrackingStampsAsync(documentUuid);
 
         // PUT with changed description
@@ -566,7 +567,7 @@ public class Given_PostgresqlDescriptorWriteHandler
         var stampsAfterUpdate = await ReadTrackingStampsAsync(documentUuid);
 
         stampsAfterUpdate.ContentVersion.Should().BeGreaterThan(stampsAfterInsert.ContentVersion);
-        stampsAfterUpdate.ContentLastModifiedAt.Should().BeOnOrAfter(stampsAfterInsert.ContentLastModifiedAt);
+        stampsAfterUpdate.ContentLastModifiedAt.Should().BeAfter(stampsAfterInsert.ContentLastModifiedAt);
     }
 
     [Test]
@@ -588,6 +589,7 @@ public class Given_PostgresqlDescriptorWriteHandler
         var insertResult = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest);
         var documentUuid = ((UpsertResult.InsertSuccess)insertResult).NewDocumentUuid;
 
+        await BackdateDescriptorAsync(documentUuid);
         var stampsAfterInsert = await ReadTrackingStampsAsync(documentUuid);
 
         // PUT with identical values
@@ -780,20 +782,36 @@ public class Given_PostgresqlDescriptorWriteHandler
 
     // ── Helper methods ──────────────────────────────────────────────────
 
+    private async Task BackdateDescriptorAsync(DocumentUuid documentUuid)
+    {
+        await using var connection = new Npgsql.NpgsqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE dms."Descriptor" descriptor SET "ContentLastModifiedAt" = '2000-01-01T00:00:00Z'
+            FROM dms."Document" doc
+            WHERE descriptor."DocumentId" = doc."DocumentId" AND doc."DocumentUuid" = @uuid;
+            """;
+        command.Parameters.AddWithValue("uuid", documentUuid.Value);
+        await command.ExecuteNonQueryAsync();
+    }
+
     private async Task<DocumentTrackingStamps> ReadTrackingStampsAsync(DocumentUuid documentUuid)
     {
         await using var dataSource = Npgsql.NpgsqlDataSource.Create(_database.ConnectionString);
         await using var connection = await dataSource.OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT "ContentVersion", "ContentLastModifiedAt"
-            FROM dms."Document"
-            WHERE "DocumentUuid" = @documentUuid;
+            SELECT doc."ContentVersion", descriptor."ContentLastModifiedAt", descriptor."ContentVersion"
+            FROM dms."Document" doc
+            JOIN dms."Descriptor" descriptor ON descriptor."DocumentId" = doc."DocumentId"
+            WHERE doc."DocumentUuid" = @documentUuid;
             """;
         command.Parameters.AddWithValue("@documentUuid", documentUuid.Value);
         await using var reader = await command.ExecuteReaderAsync();
         (await reader.ReadAsync()).Should().BeTrue("document should exist");
 
+        reader.GetInt64(2).Should().Be(reader.GetInt64(0));
         return new DocumentTrackingStamps(reader.GetInt64(0), reader.GetDateTime(1));
     }
 

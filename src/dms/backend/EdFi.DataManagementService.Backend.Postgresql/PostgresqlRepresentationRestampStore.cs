@@ -257,12 +257,11 @@ public sealed class PostgresqlRepresentationRestampStore(
         ImmutableArray<long> documentIds = [.. page.Documents.Select(document => document.DocumentId)];
         const string stampSql = """
             UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'),
-                "ContentLastModifiedAt" = now()
+            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
             WHERE "DocumentId" = ANY(@documentIds)
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt";
+            RETURNING "DocumentId", "ContentVersion";
             """;
-        ImmutableArray<RepresentationRestampStamp> stamps = await ReadStampsAsync(
+        ImmutableArray<DocumentVersion> versions = await ReadVersionsAsync(
                 session,
                 new RelationalCommand(
                     stampSql,
@@ -278,8 +277,8 @@ public sealed class PostgresqlRepresentationRestampStore(
             )
             .ConfigureAwait(false);
         if (
-            stamps.Length != page.Count
-            || stamps.Select(stamp => stamp.DocumentId).Distinct().Count() != page.Count
+            versions.Length != page.Count
+            || versions.Select(version => version.DocumentId).Distinct().Count() != page.Count
         )
         {
             throw new InvalidOperationException(
@@ -287,31 +286,40 @@ public sealed class PostgresqlRepresentationRestampStore(
             );
         }
 
-        Dictionary<long, RepresentationRestampStamp> stampsByDocumentId = stamps.ToDictionary(stamp =>
-            stamp.DocumentId
+        Dictionary<long, DocumentVersion> versionsByDocumentId = versions.ToDictionary(version =>
+            version.DocumentId
         );
+        ImmutableArray<RepresentationRestampStamp>.Builder stamps =
+            ImmutableArray.CreateBuilder<RepresentationRestampStamp>();
         foreach (
             IGrouping<
-                RepresentationRestampMirrorRoute,
+                RepresentationRestampStampRoute,
                 RepresentationRestampDocument
-            > group in page.Documents.GroupBy(document => document.MirrorRoute)
+            > group in page.Documents.GroupBy(document => document.StampRoute)
         )
         {
-            ImmutableArray<RepresentationRestampStamp> groupStamps =
+            ImmutableArray<DocumentVersion> groupVersions =
             [
-                .. group.Select(document => stampsByDocumentId[document.DocumentId]),
+                .. group.Select(document => versionsByDocumentId[document.DocumentId]),
             ];
-            int affected = await UpdateMirrorAsync(session, group.Key, groupStamps, cancellationToken)
+            ImmutableArray<RepresentationRestampStamp> groupStamps = await UpdateOwnerAsync(
+                    session,
+                    group.Key,
+                    groupVersions,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
-            if (affected != groupStamps.Length)
+            if (groupStamps.Length != groupVersions.Length)
             {
                 throw new InvalidOperationException(
-                    $"Representation restamp mirror '{group.Key.MirrorStampTargetSchema}.{group.Key.MirrorStampTargetTable}' did not stamp the selected page exactly once."
+                    $"Representation restamp owner '{group.Key.StampTargetSchema}.{group.Key.StampTargetTable}' did not stamp the selected page exactly once."
                 );
             }
+
+            stamps.AddRange(groupStamps);
         }
 
-        return new RepresentationRestampPageCommit(page, stamps);
+        return new RepresentationRestampPageCommit(page, stamps.ToImmutable());
     }
 
     public async Task UpdateProgressAsync(
@@ -610,6 +618,25 @@ public sealed class PostgresqlRepresentationRestampStore(
         return documents.ToImmutable();
     }
 
+    private static async Task<ImmutableArray<DocumentVersion>> ReadVersionsAsync(
+        IRelationalWriteSession session,
+        RelationalCommand relationalCommand,
+        CancellationToken cancellationToken
+    )
+    {
+        await using DbCommand command = session.CreateCommand(relationalCommand);
+        await using DbDataReader reader = await command
+            .ExecuteReaderAsync(cancellationToken)
+            .ConfigureAwait(false);
+        ImmutableArray<DocumentVersion>.Builder versions = ImmutableArray.CreateBuilder<DocumentVersion>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            versions.Add(new DocumentVersion(reader.GetFieldValue<long>(0), reader.GetFieldValue<long>(1)));
+        }
+
+        return versions.ToImmutable();
+    }
+
     private static async Task<ImmutableArray<RepresentationRestampStamp>> ReadStampsAsync(
         IRelationalWriteSession session,
         RelationalCommand relationalCommand,
@@ -636,43 +663,35 @@ public sealed class PostgresqlRepresentationRestampStore(
         return stamps.ToImmutable();
     }
 
-    private static async Task<int> UpdateMirrorAsync(
+    private static async Task<ImmutableArray<RepresentationRestampStamp>> UpdateOwnerAsync(
         IRelationalWriteSession session,
-        RepresentationRestampMirrorRoute route,
-        ImmutableArray<RepresentationRestampStamp> stamps,
+        RepresentationRestampStampRoute route,
+        ImmutableArray<DocumentVersion> versions,
         CancellationToken cancellationToken
     )
     {
         List<RelationalParameter> parameters = [];
         List<string> values = [];
-        for (var index = 0; index < stamps.Length; index++)
+        for (var index = 0; index < versions.Length; index++)
         {
-            RepresentationRestampStamp stamp = stamps[index];
-            values.Add($"(@documentId{index}, @contentVersion{index}, @contentLastModifiedAt{index})");
-            parameters.Add(Parameter($"documentId{index}", stamp.DocumentId, NpgsqlDbType.Bigint));
-            parameters.Add(Parameter($"contentVersion{index}", stamp.ContentVersion, NpgsqlDbType.Bigint));
-            parameters.Add(
-                Parameter(
-                    $"contentLastModifiedAt{index}",
-                    stamp.ContentLastModifiedAt,
-                    NpgsqlDbType.TimestampTz
-                )
-            );
+            DocumentVersion version = versions[index];
+            values.Add($"(@documentId{index}, @contentVersion{index})");
+            parameters.Add(Parameter($"documentId{index}", version.DocumentId, NpgsqlDbType.Bigint));
+            parameters.Add(Parameter($"contentVersion{index}", version.ContentVersion, NpgsqlDbType.Bigint));
         }
 
         string table =
-            QuoteIdentifier(route.MirrorStampTargetSchema)
-            + "."
-            + QuoteIdentifier(route.MirrorStampTargetTable);
+            QuoteIdentifier(route.StampTargetSchema) + "." + QuoteIdentifier(route.StampTargetTable);
         string sql = $$"""
-            UPDATE {{table}} AS mirror
+            UPDATE {{table}} AS owner
             SET "ContentVersion" = stamped."ContentVersion",
-                "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+                "ContentLastModifiedAt" = now()
             FROM (VALUES {{string.Join(", ", values)}})
-                AS stamped("DocumentId", "ContentVersion", "ContentLastModifiedAt")
-            WHERE mirror."DocumentId" = stamped."DocumentId";
+                AS stamped("DocumentId", "ContentVersion")
+            WHERE owner."DocumentId" = stamped."DocumentId"
+            RETURNING owner."DocumentId", owner."ContentVersion", owner."ContentLastModifiedAt";
             """;
-        return await ExecuteNonQueryAsync(session, new RelationalCommand(sql, parameters), cancellationToken)
+        return await ReadStampsAsync(session, new RelationalCommand(sql, parameters), cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -714,10 +733,8 @@ public sealed class PostgresqlRepresentationRestampStore(
         DocumentCacheRepresentationRestampResourceScope scope
     ) => RepresentationRestampStoreHelpers.ResolveResourceKeyId(mappingSet, scope);
 
-    private static RepresentationRestampMirrorRoute ResolveRoute(
-        MappingSet mappingSet,
-        short resourceKeyId
-    ) => RepresentationRestampStoreHelpers.ResolveRoute(mappingSet, resourceKeyId);
+    private static RepresentationRestampStampRoute ResolveRoute(MappingSet mappingSet, short resourceKeyId) =>
+        RepresentationRestampStoreHelpers.ResolveRoute(mappingSet, resourceKeyId);
 
     private static RelationalParameter Parameter(string name, object value, NpgsqlDbType dbType) =>
         new(name, value, parameter => ((Npgsql.NpgsqlParameter)parameter).NpgsqlDbType = dbType);
@@ -749,6 +766,8 @@ public sealed class PostgresqlRepresentationRestampStore(
     }
 
     private static string QuoteIdentifier(string identifier) => '"' + identifier.Replace("\"", "\"\"") + '"';
+
+    private sealed record DocumentVersion(long DocumentId, long ContentVersion);
 
     private sealed record SelectedDocument(long DocumentId, Guid DocumentUuid, short ResourceKeyId);
 }

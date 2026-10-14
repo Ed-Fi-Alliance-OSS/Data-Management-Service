@@ -275,6 +275,7 @@ public class Given_Mssql_DocumentCacheMaterializer_Fixtures
             BEGIN
                 CREATE TABLE [edfi].[School] (
                     [DocumentId] bigint NOT NULL CONSTRAINT [PK_School] PRIMARY KEY,
+                    [ContentLastModifiedAt] datetimeoffset NOT NULL,
                     [SchoolId] int NULL,
                     [NameOfInstitution] varchar(1024) NULL
                 );
@@ -291,7 +292,7 @@ public class Given_Mssql_DocumentCacheMaterializer_Fixtures
         await connection.OpenAsync();
         await using var command = new SqlCommand(
             """
-            UPDATE [dms].[Document]
+            UPDATE [dms].[Descriptor]
             SET [ContentLastModifiedAt] = @lastModifiedAt
             WHERE [DocumentId] = @documentId;
             """,

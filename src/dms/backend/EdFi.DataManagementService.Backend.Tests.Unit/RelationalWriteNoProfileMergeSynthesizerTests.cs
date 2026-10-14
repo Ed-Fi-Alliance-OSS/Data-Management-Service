@@ -734,7 +734,7 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
                 },
                 new DbColumnModel(
                     new DbColumnName("ContentLastModifiedAt"),
-                    ColumnKind.MirroredContentLastModifiedAt,
+                    ColumnKind.AuthoritativeContentLastModifiedAt,
                     new RelationalScalarType(ScalarKind.DateTime),
                     false,
                     null,

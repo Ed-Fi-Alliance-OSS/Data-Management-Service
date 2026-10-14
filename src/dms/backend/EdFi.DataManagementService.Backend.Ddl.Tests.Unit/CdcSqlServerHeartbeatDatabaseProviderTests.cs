@@ -360,7 +360,7 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
                 sql.Contains("@source_name = N'Document'")
                 && sql.Contains("@capture_instance = N'dms_binding_document'")
                 && sql.Contains(
-                    "@captured_column_list = N'[DocumentId], [DocumentUuid], [ResourceKeyId], [CreatedByOwnershipTokenId], [ContentVersion], [ContentLastModifiedAt], [CreatedAt]'"
+                    "@captured_column_list = N'[DocumentId], [DocumentUuid], [ResourceKeyId], [CreatedByOwnershipTokenId], [ContentVersion], [CreatedAt]'"
                 )
             );
         enableCaptureSql

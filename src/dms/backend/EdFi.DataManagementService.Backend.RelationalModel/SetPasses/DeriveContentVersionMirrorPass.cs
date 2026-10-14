@@ -8,17 +8,17 @@ using EdFi.DataManagementService.Backend.RelationalModel.Naming;
 namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 
 /// <summary>
-/// Synthesizes the row-local change-version mirror columns (<c>ContentVersion</c> and
-/// <c>ContentLastModifiedAt</c>) onto the root table of every concrete resource stored as relational tables.
+/// Synthesizes the row-local <c>ContentVersion</c> mirror and authoritative
+/// <c>ContentLastModifiedAt</c> timestamp on the root table of every concrete relational resource.
 /// The columns have no source JSONPath and no target resource; they are maintained only by document-stamping
 /// triggers and are kept out of client-writable projections via <see cref="DbColumnModel.IsWritable"/>.
-/// Descriptor resources (<see cref="ResourceStorageKind.SharedDescriptorTable"/>) are skipped; their mirror
-/// columns live on the shared <c>dms.Descriptor</c> table added by the core DDL pass.
+/// Descriptor resources (<see cref="ResourceStorageKind.SharedDescriptorTable"/>) are skipped; their
+/// version mirror and authoritative timestamp live on the shared <c>dms.Descriptor</c> table.
 /// </summary>
 public sealed class DeriveContentVersionMirrorPass : IRelationalModelSetPass
 {
     /// <summary>
-    /// Appends the mirror columns to each <see cref="ResourceStorageKind.RelationalTables"/> resource root.
+    /// Appends the version mirror and authoritative timestamp to each relational resource root.
     /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
@@ -39,7 +39,7 @@ public sealed class DeriveContentVersionMirrorPass : IRelationalModelSetPass
 
             var model = resource.RelationalModel;
             var root = model.Root;
-            var updatedRoot = root with { Columns = [.. root.Columns, .. BuildMirrorColumns()] };
+            var updatedRoot = root with { Columns = [.. root.Columns, .. BuildBackendStampColumns()] };
 
             var updatedTables = model
                 .TablesInDependencyOrder.Select(table => table.Table.Equals(root.Table) ? updatedRoot : table)
@@ -53,10 +53,10 @@ public sealed class DeriveContentVersionMirrorPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Builds the two synthesized mirror columns. They are stored, non-writable, non-nullable, and carry no
+    /// Builds the synthesized backend-owned stamp columns. They are stored, non-writable, non-nullable, and carry no
     /// source JSONPath or target resource.
     /// </summary>
-    private static DbColumnModel[] BuildMirrorColumns() =>
+    private static DbColumnModel[] BuildBackendStampColumns() =>
         [
             new DbColumnModel(
                 RelationalNameConventions.ContentVersionColumnName,
@@ -71,7 +71,7 @@ public sealed class DeriveContentVersionMirrorPass : IRelationalModelSetPass
             },
             new DbColumnModel(
                 RelationalNameConventions.ContentLastModifiedAtColumnName,
-                ColumnKind.MirroredContentLastModifiedAt,
+                ColumnKind.AuthoritativeContentLastModifiedAt,
                 new RelationalScalarType(ScalarKind.DateTime),
                 IsNullable: false,
                 SourceJsonPath: null,

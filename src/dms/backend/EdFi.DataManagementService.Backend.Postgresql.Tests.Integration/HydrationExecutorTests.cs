@@ -50,12 +50,13 @@ public class Given_A_Page_With_Multiple_Documents
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "CreatedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE hydtest."School" (
                 "DocumentId" bigint PRIMARY KEY,
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "SchoolId" integer NOT NULL
             );
 
@@ -87,10 +88,10 @@ public class Given_A_Page_With_Multiple_Documents
                 (101, 'aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa', 10),
                 (102, 'bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb', 20);
 
-            INSERT INTO hydtest."School" ("DocumentId", "SchoolId")
+            INSERT INTO hydtest."School" ("DocumentId", "SchoolId", "ContentVersion", "ContentLastModifiedAt")
             VALUES
-                (101, 255901),
-                (102, 255902);
+                (101, 255901, 10, '2026-01-02T03:04:05Z'),
+                (102, 255902, 20, '2026-02-03T04:05:06Z');
 
             INSERT INTO hydtest."SchoolAddress" ("CollectionItemId", "School_DocumentId", "Ordinal", "City")
             VALUES
@@ -183,6 +184,14 @@ public class Given_A_Page_With_Multiple_Documents
     {
         _result.DocumentMetadata[0].ContentVersion.Should().Be(10);
         _result.DocumentMetadata[1].ContentVersion.Should().Be(20);
+        _result
+            .DocumentMetadata[0]
+            .ContentLastModifiedAt.Should()
+            .Be(new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero));
+        _result
+            .DocumentMetadata[1]
+            .ContentLastModifiedAt.Should()
+            .Be(new DateTimeOffset(2026, 2, 3, 4, 5, 6, TimeSpan.Zero));
     }
 
     [Test]
@@ -313,12 +322,13 @@ public class Given_A_Postgresql_Selected_Page_Keyset_With_Nonascending_DocumentI
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "CreatedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE hydselected."School" (
                 "DocumentId" bigint PRIMARY KEY,
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "SchoolId" integer NOT NULL
             );
 
@@ -430,12 +440,13 @@ public class Given_A_Single_DocumentId_Keyset
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "CreatedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE hydsingle."School" (
                 "DocumentId" bigint PRIMARY KEY,
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "SchoolId" integer NOT NULL
             );
 
@@ -596,7 +607,6 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "CreatedAt" timestamptz NOT NULL DEFAULT now()
             );
 
@@ -609,11 +619,15 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
                 "ShortDescription" varchar(75) NOT NULL DEFAULT '',
                 "Description" varchar(1024) NULL,
                 "EffectiveBeginDate" date NULL,
-                "EffectiveEndDate" date NULL
+                "EffectiveEndDate" date NULL,
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE hydfastpath."StudentSchoolAssociation" (
                 "DocumentId" bigint PRIMARY KEY,
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "School_DocumentId" bigint NULL,
                 "School_SchoolId" bigint NULL,
                 "EntryGradeLevelDescriptor_DescriptorId" int NULL
@@ -1068,12 +1082,13 @@ public class Given_A_Query_With_TotalCount_Requested
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "CreatedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE hydcount."School" (
                 "DocumentId" bigint PRIMARY KEY,
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "SchoolId" integer NOT NULL
             );
 
@@ -1206,12 +1221,13 @@ public class Given_A_Reference_Bearing_Resource
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "CreatedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE hydref."StudentSchoolAssociation" (
                 "DocumentId" bigint PRIMARY KEY,
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "School_DocumentId" bigint NULL,
                 "School_SchoolId" bigint NULL,
                 "Calendar_DocumentId" bigint NULL,
@@ -1417,12 +1433,13 @@ public class Given_Two_Postgresql_Hydration_Batches_On_The_Same_Transaction
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "CreatedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE hydreuse."School" (
                 "DocumentId" bigint PRIMARY KEY,
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "SchoolId" integer NOT NULL
             );
 
@@ -1604,12 +1621,13 @@ public class Given_A_Pgsql_Query_Keyset_That_Returns_Its_Selected_Ids
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "CreatedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE hydselected."School" (
                 "DocumentId" bigint PRIMARY KEY,
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "SchoolId" integer NOT NULL
             );
 

@@ -113,8 +113,11 @@ public class Given_A_Mssql_DescriptorRead_Get_Request
             SchoolTypeDescriptorResource,
             seed
         );
-        var documentRow = await MssqlDescriptorReadTestSupport.ReadDocumentRowAsync(_database, documentId);
-        var expectedLastModifiedAt = GetRequiredDateTimeOffset(documentRow, "ContentLastModifiedAt");
+        var descriptorRow = await MssqlDescriptorReadTestSupport.ReadDescriptorRowAsync(
+            _database,
+            documentId
+        );
+        var expectedLastModifiedAt = GetRequiredDateTimeOffset(descriptorRow, "ContentLastModifiedAt");
 
         var result = await ExecuteGetByIdAsync(seed.DocumentUuid, "mssql-descriptor-get-external");
 
@@ -254,11 +257,9 @@ public class Given_A_Mssql_DescriptorRead_Get_Request
 
         var failure = result.Should().BeOfType<GetResult.UnknownFailure>().Subject;
         failure.FailureMessage.Should().Contain($"DocumentId {documentId}");
-        // The row reader treats Namespace as nullable so a stored null can flow into the
-        // namespace-authorization stored-namespace-uninitialized 403; CodeValue is the next
-        // required column, so the reader's invariant message names it when the LEFT JOIN
-        // finds no descriptor row.
-        failure.FailureMessage.Should().Contain("dms.Descriptor.CodeValue must not be null.");
+        // The authoritative timestamp is the first required descriptor column read when
+        // the LEFT JOIN finds no owner row; the surviving document remains corruption.
+        failure.FailureMessage.Should().Contain("dms.Descriptor.ContentLastModifiedAt must not be null.");
     }
 
     [Test]
@@ -277,8 +278,11 @@ public class Given_A_Mssql_DescriptorRead_Get_Request
             SchoolTypeDescriptorResource,
             seed
         );
-        var documentRow = await MssqlDescriptorReadTestSupport.ReadDocumentRowAsync(_database, documentId);
-        var expectedLastModifiedAt = GetRequiredDateTimeOffset(documentRow, "ContentLastModifiedAt");
+        var descriptorRow = await MssqlDescriptorReadTestSupport.ReadDescriptorRowAsync(
+            _database,
+            documentId
+        );
+        var expectedLastModifiedAt = GetRequiredDateTimeOffset(descriptorRow, "ContentLastModifiedAt");
 
         var result = await ExecuteGetByIdAsync(seed.DocumentUuid, "mssql-descriptor-get-null-optional");
 

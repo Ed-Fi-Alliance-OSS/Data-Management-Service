@@ -84,6 +84,7 @@ public sealed class Given_CdcPublicationHistory_packaged_administration(bool mss
         {
             await _fixture.PrepareAsync(command);
             string before = await _fixture.SnapshotAsync();
+            string stampsBefore = await _fixture.ReadAuthoritativeStampsAsync();
             JsonObject result = ReadResult(
                 await _fixture.Harness.RunAsync(_fixture.Arguments(command)),
                 command,
@@ -91,6 +92,7 @@ public sealed class Given_CdcPublicationHistory_packaged_administration(bool mss
             );
             result["mutated"]!.GetValue<bool>().Should().BeTrue();
             (await _fixture.SnapshotAsync()).Should().NotBe(before);
+            (await _fixture.ReadAuthoritativeStampsAsync()).Should().Be(stampsBefore);
             (
                 await _fixture.QueryAsync(
                     "SELECT \"ProjectionLifecycleState\",\"CacheAheadRecoveryRequired\" FROM dms.\"DocumentCacheState\""

@@ -15,24 +15,24 @@ internal static class ProjectionMetadataResolver
 {
     /// <summary>
     /// Returns <see langword="true"/> when the column participates in the hydration (read) projection.
-    /// The synthesized change-version mirror columns (<see cref="ColumnKind.MirroredContentVersion"/> and
-    /// <see cref="ColumnKind.MirroredContentLastModifiedAt"/>) are excluded: they are stamp targets
-    /// maintained by triggers and are not read for reconstitution (read response change-version and
-    /// last-modified metadata stays sourced from <c>dms.Document</c>). They remain in the relational model
-    /// for DDL, indexing, and future change-version query planning (DMS-1182).
+    /// The synthesized version mirror and authoritative timestamp columns
+    /// (<see cref="ColumnKind.MirroredContentVersion"/> and
+    /// <see cref="ColumnKind.AuthoritativeContentLastModifiedAt"/>) are excluded from JSON reconstitution.
+    /// Metadata readers select the version from <c>dms.Document</c> and the timestamp from the resource root.
+    /// Both columns remain in the relational model for DDL, indexing, and query planning.
     /// </summary>
     public static bool IsHydrationProjectionColumn(DbColumnModel column)
     {
         ArgumentNullException.ThrowIfNull(column);
 
         return column.Kind
-            is not (ColumnKind.MirroredContentVersion or ColumnKind.MirroredContentLastModifiedAt);
+            is not (ColumnKind.MirroredContentVersion or ColumnKind.AuthoritativeContentLastModifiedAt);
     }
 
     /// <summary>
     /// Returns a table model whose columns are restricted to hydration projection columns, so the read
-    /// SELECT and hydration ordinal maps exclude the change-version mirror columns. Returns the same
-    /// instance when no columns are excluded (only resource root tables carry mirror columns), preserving
+    /// SELECT and hydration ordinal maps exclude backend-owned stamp columns. Returns the same
+    /// instance when no columns are excluded (only resource root tables carry these columns), preserving
     /// reference identity for unaffected tables.
     /// </summary>
     public static DbTableModel ToHydrationProjectionTableModel(DbTableModel tableModel)

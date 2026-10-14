@@ -201,7 +201,7 @@ internal static class ProfileTestDoubles
         };
         var contentLastModifiedAtColumn = Column(
             "ContentLastModifiedAt",
-            ColumnKind.MirroredContentLastModifiedAt,
+            ColumnKind.AuthoritativeContentLastModifiedAt,
             new RelationalScalarType(ScalarKind.DateTime),
             isNullable: false
         ) with
@@ -1776,7 +1776,10 @@ internal static class ProfileTestDoubles
             [
                 .. writeRootModel.Columns.Where(column =>
                     column.Kind
-                        is not (ColumnKind.MirroredContentVersion or ColumnKind.MirroredContentLastModifiedAt)
+                        is not (
+                            ColumnKind.MirroredContentVersion
+                            or ColumnKind.AuthoritativeContentLastModifiedAt
+                        )
                 ),
             ],
         };

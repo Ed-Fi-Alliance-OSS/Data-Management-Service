@@ -104,6 +104,14 @@ public class Given_A_Provisioned_Mssql_Database_With_A_FavoriteProgram_Extension
 
         // Record baseline AFTER seeding: the extension INSERT itself stamps the owning root, so the
         // baseline must be captured post-insert to isolate the cascade-driven bump under test.
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[StudentEducationOrganizationAssociation]
+            SET [ContentLastModifiedAt] = '2000-01-01' WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", rootDocumentId)
+        );
+        var beforeOwner = await QueryOwnerStampAsync(rootDocumentId);
         var initialContentVersion = await QueryDocumentContentVersionAsync(rootDocumentId);
         var bindingRowsBefore = await QueryFavoriteProgramExtensionRowCountAsync(rootDocumentId);
         var bindingAnchorBefore = await QueryFavoriteProgramExtensionAnchorAsync(rootDocumentId);
@@ -149,6 +157,9 @@ public class Given_A_Provisioned_Mssql_Database_With_A_FavoriteProgram_Extension
         // The extension stamp trigger (TR_StudentEducationOrganizationAssociationExtension_Stamp)
         // must fire from the cascade UPDATE and bump the owning root's ContentVersion.
         var finalContentVersion = await QueryDocumentContentVersionAsync(rootDocumentId);
+        var afterOwner = await QueryOwnerStampAsync(rootDocumentId);
+        afterOwner.ContentVersion.Should().Be(finalContentVersion);
+        afterOwner.ContentLastModifiedAt.Should().BeAfter(beforeOwner.ContentLastModifiedAt);
         finalContentVersion
             .Should()
             .BeGreaterThan(
@@ -312,6 +323,21 @@ public class Given_A_Provisioned_Mssql_Database_With_A_FavoriteProgram_Extension
             new SqlParameter("@favoriteProgramName", programName),
             new SqlParameter("@favoriteProgramTypeDescriptorId", ProgramTypeDescriptorId)
         );
+    }
+
+    private async Task<(long ContentVersion, DateTime ContentLastModifiedAt)> QueryOwnerStampAsync(
+        long documentId
+    )
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT [ContentVersion], [ContentLastModifiedAt]
+            FROM [edfi].[StudentEducationOrganizationAssociation] WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", documentId)
+        );
+        var row = rows.Single();
+        return (Convert.ToInt64(row["ContentVersion"]), Convert.ToDateTime(row["ContentLastModifiedAt"]));
     }
 
     private async Task<long> QueryDocumentContentVersionAsync(long documentId)

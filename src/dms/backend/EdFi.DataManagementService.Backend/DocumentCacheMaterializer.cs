@@ -51,6 +51,9 @@ internal sealed class DocumentCacheMaterializer(
             DocumentCacheSourceMetadataReadResult.MissingSource => DocumentCacheMaterializationResult
                 .MissingSource
                 .Instance,
+            DocumentCacheSourceMetadataReadResult.OwnerMissing ownerMissing =>
+                await ClassifyInitialOwnerMissingAsync(boundRequest, ownerMissing.Metadata)
+                    .ConfigureAwait(false),
             DocumentCacheSourceMetadataReadResult.Found
             {
                 Metadata: DocumentCacheResolvedSourceMetadata.OrdinaryResource ordinaryResource,
@@ -65,6 +68,35 @@ internal sealed class DocumentCacheMaterializer(
             ),
             _ => throw new InvalidOperationException(
                 $"DocumentCache source metadata reader returned unsupported result type '{sourceReadResult.GetType().Name}'."
+            ),
+        };
+    }
+
+    private async Task<DocumentCacheMaterializationResult> ClassifyInitialOwnerMissingAsync(
+        DocumentCacheMaterializationRequest request,
+        DocumentCacheCurrentSourceMetadata initial
+    )
+    {
+        var finalReadResult = await _sourceMetadataReader
+            .ReadCurrentAsync(request, request.CancellationToken)
+            .ConfigureAwait(false);
+
+        return finalReadResult switch
+        {
+            DocumentCacheCurrentSourceMetadataReadResult.MissingSource => DocumentCacheMaterializationResult
+                .MissingSource
+                .Instance,
+            DocumentCacheCurrentSourceMetadataReadResult.Found found
+                when !initial.HasSameDocumentMetadata(found.Metadata)
+                    || found.Metadata.ContentLastModifiedAt is not null => DocumentCacheMaterializationResult
+                .SourceChangedDuringHydration
+                .Instance,
+            DocumentCacheCurrentSourceMetadataReadResult.Found => throw BuildOwnerMissingException(
+                request,
+                initial
+            ),
+            _ => throw new InvalidOperationException(
+                $"DocumentCache current source metadata reader returned unsupported result type '{finalReadResult.GetType().Name}'."
             ),
         };
     }
@@ -210,6 +242,14 @@ internal sealed class DocumentCacheMaterializer(
                 .MissingSource
                 .Instance,
             DocumentCacheCurrentSourceMetadataReadResult.Found found
+                when source.HasSameDocumentMetadata(found.Metadata)
+                    && found.Metadata.ContentLastModifiedAt is null =>
+                throw BuildProjectionProcessingException(
+                    request,
+                    source,
+                    DocumentCacheProjectionProcessingFailureReason.StableSourceBodyMissing
+                ),
+            DocumentCacheCurrentSourceMetadataReadResult.Found found
                 when source.HasSameCanonicalMetadata(found.Metadata) => null,
             DocumentCacheCurrentSourceMetadataReadResult.Found => DocumentCacheMaterializationResult
                 .SourceChangedDuringHydration
@@ -218,6 +258,34 @@ internal sealed class DocumentCacheMaterializer(
                 $"DocumentCache current source metadata reader returned unsupported result type '{finalReadResult.GetType().Name}'."
             ),
         };
+    }
+
+    private static DocumentCacheProjectionProcessingException BuildOwnerMissingException(
+        DocumentCacheMaterializationRequest request,
+        DocumentCacheCurrentSourceMetadata source
+    )
+    {
+        request.TargetContext.MappingSet.ResourceKeyById.TryGetValue(
+            source.ResourceKeyId,
+            out var resourceKey
+        );
+
+        return new DocumentCacheProjectionProcessingException(
+            DocumentCacheProjectionProcessingFailureReason.StableSourceBodyMissing,
+            new DocumentCacheMaterializerFailureMetadata(
+                request.TargetContext.TargetKey,
+                request.TargetContext.MappingSet.Key,
+                request.Purpose,
+                source.DocumentId
+            )
+            {
+                SelectedRequiredContentVersion = request.SelectedRequiredContentVersion,
+                ResourceKeyId = source.ResourceKeyId,
+                ProjectName = resourceKey?.Resource.ProjectName,
+                ResourceName = resourceKey?.Resource.ResourceName,
+                ResourceVersion = resourceKey?.ResourceVersion,
+            }
+        );
     }
 
     private static bool HasRootBodyRow(ResourceReadPlan readPlan, HydratedPage hydratedPage, long documentId)

@@ -80,6 +80,14 @@ internal static class DocumentCacheMaterializerCoherenceMappingSet
                     null,
                     null
                 ),
+                new DbColumnModel(
+                    new DbColumnName("ContentLastModifiedAt"),
+                    ColumnKind.AuthoritativeContentLastModifiedAt,
+                    new RelationalScalarType(ScalarKind.DateTime),
+                    false,
+                    null,
+                    null
+                ),
             ],
             []
         )
@@ -104,7 +112,7 @@ internal static class DocumentCacheMaterializerCoherenceMappingSet
                 []
             ),
             KeysetTableConventions.GetKeysetTableContract(dialect),
-            [new TableReadPlan(rootTable, "select DocumentId")],
+            [new TableReadPlan(rootTable with { Columns = [rootTable.Columns[0]] }, "select DocumentId")],
             [],
             []
         );

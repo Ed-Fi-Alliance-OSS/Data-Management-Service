@@ -1308,6 +1308,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
                 ),
         };
         var telemetry = new RecordingReadTelemetry();
+        var writer = new RecordingCacheWriter();
         var sut = CreateCoordinator(
             new RecordingLookupAdapter
             {
@@ -1318,7 +1319,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             },
             CreateRegistry(ExecutionContext()),
             materializer,
-            new RecordingCacheWriter(),
+            writer,
             telemetry
         );
 
@@ -1329,6 +1330,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             )
         );
 
+        writer.Requests.Should().ContainSingle().Which.DocumentId.Should().Be(second.DocumentId);
         result.Should().BeSameAs(fallbackResult);
         materializer.Requests.Select(request => request.DocumentId).Should().Equal(345, 346);
         telemetry.Events.Should().Contain(("directFill", DocumentCacheReadTelemetryLabel.Failed));
