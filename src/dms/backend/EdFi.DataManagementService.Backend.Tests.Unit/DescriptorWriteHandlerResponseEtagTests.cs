@@ -603,15 +603,24 @@ public partial class Given_Descriptor_Write_Response_Etags
                     null,
                     new ColumnStorage.Stored()
                 ),
+                new DbColumnModel(
+                    new DbColumnName("ResourceKeyId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int16),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
             ],
             [
                 new TableConstraint.Unique("UX_Descriptor_DocumentId", [new DbColumnName("DocumentId")]),
                 new TableConstraint.ForeignKey(
-                    "FK_Descriptor_Document",
-                    [new DbColumnName("DocumentId")],
+                    "FK_Descriptor_DocumentResourceKey",
+                    [new DbColumnName("DocumentId"), new DbColumnName("ResourceKeyId")],
                     new DbTableName(new DbSchemaName("dms"), "Document"),
-                    [new DbColumnName("DocumentId")],
-                    OnDelete: ReferentialAction.Cascade
+                    [new DbColumnName("DocumentId"), new DbColumnName("ResourceKeyId")],
+                    OnDelete: ReferentialAction.Restrict
                 ),
             ]
         )
