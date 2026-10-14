@@ -389,6 +389,23 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
                 return Task.FromResult<ApplicationUpdateResult>(new ApplicationUpdateResult.Success());
             });
 
+        // Answers from the shared client state, as the real repository answers from the ApiClient
+        // table: a UUID the provider issued that no workflow persisted is unreferenced, so the
+        // compensation ownership check lets a failed update roll its replacement client back.
+        A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
+            .ReturnsLazily(call =>
+            {
+                Guid clientUuid = call.GetArgument<Guid>(0);
+                lock (_stateLock)
+                {
+                    return Task.FromResult<ApiClientUuidReferenceResult>(
+                        _clients.Values.Any(client => client.ClientUuid == clientUuid)
+                            ? new ApiClientUuidReferenceResult.Referenced()
+                            : new ApiClientUuidReferenceResult.None()
+                    );
+                }
+            });
+
         A.CallTo(() => _apiClientRepository.QueryApiClient(A<ApiClientQuery>.Ignored))
             .ReturnsLazily(call =>
             {
