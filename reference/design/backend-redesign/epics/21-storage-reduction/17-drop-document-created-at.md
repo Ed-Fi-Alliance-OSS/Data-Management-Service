@@ -112,6 +112,15 @@ List 2.6 now requires both by exact full name in their own projects (§8.4 list 
 recorded evidence already satisfies the added gates (7 of 7 passed on each engine). With the step
 files reverted, 2 tests failed per engine on the missing column. No rerun was needed.
 
+Found while verifying Phase 2 (approved 2026-10-13): the Phase 2 and Phase 3 `git grep` gates
+did not name the step 1.1 test cases that must keep naming the column. These are the legacy
+seven-column source-inventory and capture-instance fixtures, and the `CoreDdlEmitterTests`
+assertions that the column and its default are absent. Both gates now list them as permanent
+exceptions E1–E3, scoped to those test cases rather than their files. Phase 3 adds the two 3.2
+legacy-shape fixtures as E4–E5. The Phase 2 gate keeps the step 3.1 CDC files as unfinished
+references, separate from the exceptions. This is a wording change only: Phase 2's recorded
+grep output already matches it, and no rerun was needed.
+
 ---
 
 ## 1. Problem, proposed decision, alternatives, assumptions, open questions
@@ -680,8 +689,21 @@ fixtures on both engines with the §8.4 filter and checks the §8.4 expected lis
 
 **Phase 2 acceptance:** `Backend.Tests.Unit` green; every fixture in §8.4 lists 2.1–2.7 green on
 both engines by exact name; diff review confirms no surviving assertion was loosened (PAC-3);
-`git grep -n CreatedAt -- 'src/dms/backend/*Tests*'` returns only T-C hits **plus the Phase 3 CDC
-files** (`MssqlCdcProviderArtifactsTests`, pinned-image fixture).
+`git grep -n CreatedAt -- 'src/dms/backend/*Tests*'` returns only these hits:
+- T-C hits.
+- **Permanent exceptions**, scoped to these test cases and not to their files. Any other
+  `CreatedAt` hit in the same files fails the gate.
+  - E1: step 1.1's legacy source-inventory fixture `Given_A_Legacy_Seven_Column_Document_Inventory`
+    (`Backend.Ddl.Tests.Unit/CdcSourceInventoryTests.cs`).
+  - E2: step 1.1's legacy capture-instance fixture
+    `Given_An_Existing_Seven_Column_Document_Capture_Instance`
+    (`Backend.Ddl.Tests.Unit/CdcSqlServerHeartbeatDatabaseProviderTests.cs`).
+  - E3: the absence assertions in `It_should_not_emit_document_created_at`
+    (`Backend.Ddl.Tests.Unit/CoreDdlEmitterTests.cs`). They check that neither the column nor its
+    named default is emitted.
+- **Unfinished references**, which step 3.1 removes and which are not exceptions:
+  `MssqlCdcProviderArtifactsTests` and the pinned-image fixture
+  (`CdcConnectorTemplatePinnedImageFixture.cs`, `….MessageContract.cs`).
 
 ### Phase 3 — CDC expectations, CDC rejection evidence, catalog goldens
 
@@ -747,8 +769,15 @@ files** (`MssqlCdcProviderArtifactsTests`, pinned-image fixture).
 
 **Phase 3 acceptance:** both SchemaTools golden fixtures executed and green; CDC inventory/capture
 tests green on both engines; both 3.2 fixtures executed and green by name; catalog queries in
-§7.3 return no row for `CreatedAt`; `git grep -n CreatedAt -- src/dms` returns only §5.7 / T-C
-hits plus the intentional legacy-shape text in the two 3.2 fixtures.
+§7.3 return no row for `CreatedAt`; `git grep -n CreatedAt -- src/dms` returns only these hits:
+- §5.7 / T-C hits.
+- Permanent exceptions E1–E3 (Phase 2 acceptance), scoped to those test cases.
+- The intentional legacy-shape text in the two 3.2 fixtures,
+  `Given_PostgresqlCdcProviderArtifacts_With_A_Legacy_CreatedAt_Column` and
+  `Given_MssqlCdcProviderArtifacts_With_A_Legacy_CreatedAt_Column` (E4 and E5, scoped the same way).
+
+No unfinished references remain after step 3.1. A `CreatedAt` hit anywhere else in a file that
+holds an exception fails the gate.
 
 ### Phase 4 — Northridge copy-forward
 

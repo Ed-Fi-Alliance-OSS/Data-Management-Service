@@ -876,7 +876,6 @@ public class Given_MssqlCdcProviderArtifacts
                 "CreatedByOwnershipTokenId",
                 "ContentVersion",
                 "ContentLastModifiedAt",
-                "CreatedAt",
             ]
         );
         AssertCapture(

@@ -102,7 +102,6 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                 new("CreatedByOwnershipTokenId", "smallint", IsNullable: true),
                 new("ContentVersion", "bigint"),
                 new("ContentLastModifiedAt", "datetime2(7)"),
-                new("CreatedAt", "datetime2(7)"),
             ],
             ["CONSTRAINT [UX_Document_DocumentUuid] UNIQUE ([DocumentUuid])"]
         ),

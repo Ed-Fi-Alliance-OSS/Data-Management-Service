@@ -804,7 +804,6 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
                 "CreatedByOwnershipTokenId",
                 "ContentVersion",
                 "ContentLastModifiedAt",
-                "CreatedAt",
             ]
         );
         AssertCapture(
