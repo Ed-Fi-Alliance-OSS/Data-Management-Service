@@ -2,7 +2,7 @@
 
 > **Status**: Published - describes platform capabilities as implemented in Ed-Fi
 > API v8.0 \
-> **Owner**: Stephen Fuqua \
+> **Owner**: Vinaya Mayya \
 > **Product**: Ed-Fi Configuration Management Service (CMS) \
 > **Repository**: `Ed-Fi-Alliance-OSS/Data-Management-Service` (`src/config`) \
 > **Jira Project**: `DMS`
@@ -353,12 +353,12 @@ External systems and dependencies:
   routes are mapped but are not functional: introspection always reports
   `active: false` and revocation is a no-op.
 - **FR-AUTH-4**: CMS SHALL expose client registration through
-  `POST /connect/register`, gated by `IdentitySettings:AllowRegistration` 
+  `POST /connect/register`, gated by `IdentitySettings:AllowRegistration`
   (default `false`); when registration is disabled, the endpoint SHALL return `403 Forbidden`.
 - **FR-AUTH-5**: A client registered through `POST /connect/register` SHALL
   always be assigned the `edfi_admin_api/full_access` scope and the configured
   `IdentitySettings:ConfigServiceRole` role.
--  **FR-AUTH-6**: CMS SHALL support at least three scopes: full read/write
+- **FR-AUTH-6**: CMS SHALL support at least three scopes: full read/write
   access to all endpoints (`edfi_admin_api/full_access`), read-only access to
   all `GET` endpoints (`edfi_admin_api/readonly_access`), and limited read-only
   access for DMS/internal metadata lookups
@@ -779,8 +779,8 @@ asynchronous job tracking, and rate limiting are deferred to
 - **OUT-2**: CMS does not provision or mutate DMS operational/resource data;
   it manages administrative and security configuration only.
 - **OUT-3**: Resource claims, resource claim actions, and default
-  authorization-strategy assignments are exposed read-only (FR-CLAIM-7). 
-  Replacing this metadata is a deployment/bootstrap concern; 
+  authorization-strategy assignments are exposed read-only (FR-CLAIM-7).
+  Replacing this metadata is a deployment/bootstrap concern;
   the `/management/reload-claims` and `/management/upload-claims`
   endpoints that do so return `404` unless
   `ClaimsOptions:DangerouslyEnableUnrestrictedClaimsLoading` is enabled
@@ -804,6 +804,9 @@ asynchronous job tracking, and rate limiting are deferred to
   consumed by a separate administrative application (e.g., Ed-Fi Admin App).
 - **OUT-9**: Support for third-party OAuth / OpenID Connect (OIDC) identity
   providers *other than* Keycloak.
+- **OUT-10**: When an application has multiple API clients, v8.0 applies updates
+  only to the first API client; other credential sets retain their prior
+  configuration (known limitation to FR-APP-1).
 
 ## 7. Glossary
 

@@ -1,7 +1,7 @@
 # Product Requirements Document: Ed-Fi Configuration Management Service (CMS) v8.1
 
 > **Status**: Planned \
-> **Owner**: Stephen Fuqua \
+> **Owner**: Vinaya Mayya \
 > **Product**: Ed-Fi Configuration Management Service (CMS) \
 > **Repository**: `Ed-Fi-Alliance-OSS/Data-Management-Service` (`src/config`) \
 > **Companion document**: [CMS v8.0 Product Requirements](./PRD-CMS-v8.0.md)
