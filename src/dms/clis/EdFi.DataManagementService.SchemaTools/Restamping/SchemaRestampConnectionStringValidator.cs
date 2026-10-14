@@ -17,12 +17,12 @@ internal static class SchemaRestampConnectionStringValidator
         {
             var namedDatabase = dialect switch
             {
-                SqlDialect.Pgsql => new NpgsqlConnectionStringBuilder(connectionString) is var pg
-                    && pg.ContainsKey("Database")
-                    && !string.IsNullOrWhiteSpace(pg.Database),
-                SqlDialect.Mssql => new SqlConnectionStringBuilder(connectionString) is var ms
-                    && (ms.ContainsKey("Initial Catalog") || ms.ContainsKey("Database"))
-                    && !string.IsNullOrWhiteSpace(ms.InitialCatalog),
+                SqlDialect.Pgsql => !string.IsNullOrWhiteSpace(
+                    new NpgsqlConnectionStringBuilder(connectionString).Database
+                ),
+                SqlDialect.Mssql => !string.IsNullOrWhiteSpace(
+                    new SqlConnectionStringBuilder(connectionString).InitialCatalog
+                ),
                 _ => false,
             };
             if (!namedDatabase)

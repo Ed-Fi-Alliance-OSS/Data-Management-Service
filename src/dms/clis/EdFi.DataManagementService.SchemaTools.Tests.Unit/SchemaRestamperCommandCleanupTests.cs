@@ -16,263 +16,478 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.SchemaTools.Tests.Unit;
 
-[TestFixture]
-public class Given_SchemaRestamper_CommandCleanup
+public abstract class SchemaRestamperCommandCleanupTests
 {
-    [Test]
-    public async Task It_reuses_one_connection_and_transaction_and_locks_metadata_in_order()
+    [TestFixture]
+    public sealed class Given_Invalid_Snapshot : SchemaRestamperCommandCleanupTests
     {
-        var connection = new TimeoutCommandConnection(
-            failNonQuery: false,
-            failRead: false,
-            failDispose: false
-        );
-        var factoryCalls = 0;
-        var target = new EffectiveSchemaInfo("1.0.0", "v3", new string('a', 64), 0, new byte[32], [], []);
-        var service = new SchemaRestamper(
-            NullLogger.Instance,
-            (_, _) =>
-            {
-                factoryCalls++;
-                return connection;
-            }
-        );
+        private TimeoutCommandConnection _connection = null!;
+        private int _factoryCalls;
+        private SchemaRestampException _failure = null!;
 
-        Func<Task> action = () =>
-            service.RestampAsync(
-                SqlDialect.Pgsql,
-                "Host=localhost;Database=sample",
-                41,
-                target,
-                true,
-                CancellationToken.None
+        [SetUp]
+        public async Task Setup()
+        {
+            _connection = new TimeoutCommandConnection(
+                failNonQuery: false,
+                failRead: false,
+                failDispose: false
+            );
+            _factoryCalls = 0;
+            var target = new EffectiveSchemaInfo("1.0.0", "v3", new string('a', 64), 0, new byte[32], [], []);
+            var service = new SchemaRestamper(
+                NullLogger.Instance,
+                (_, _) =>
+                {
+                    _factoryCalls++;
+                    return _connection;
+                }
             );
 
-        (await action.Should().ThrowAsync<SchemaRestampException>())
-            .Which.Failure.Should()
-            .Be(SchemaRestampFailure.Validation);
-        factoryCalls.Should().Be(1);
-        connection.OpenCount.Should().Be(1);
-        connection.BeginTransactionCount.Should().Be(1);
-        connection
-            .Commands.Take(3)
-            .Select(command => command.CommandText)
-            .Should()
-            .Equal(SchemaRestampSql.LockCommands(SqlDialect.Pgsql));
-        connection.Commands.Should().OnlyContain(command => command.CommandTimeout == 41);
-        connection.Commands.Select(command => command.TransactionUsed).Should().NotContainNulls();
-        connection.Commands.Select(command => command.TransactionUsed).Distinct().Should().ContainSingle();
+            Func<Task> action = () =>
+                service.RestampAsync(
+                    SqlDialect.Pgsql,
+                    "Host=localhost;Database=sample",
+                    41,
+                    target,
+                    true,
+                    CancellationToken.None
+                );
+
+            _failure = await CaptureFailureAsync(action);
+        }
+
+        [Test]
+        public void It_rejects_missing_metadata()
+        {
+            _failure.Failure.Should().Be(SchemaRestampFailure.Validation);
+        }
+
+        [Test]
+        public void It_creates_one_connection()
+        {
+            _factoryCalls.Should().Be(1);
+        }
+
+        [Test]
+        public void It_opens_once()
+        {
+            _connection.OpenCount.Should().Be(1);
+        }
+
+        [Test]
+        public void It_begins_one_transaction()
+        {
+            _connection.BeginTransactionCount.Should().Be(1);
+        }
+
+        [Test]
+        public void It_locks_metadata_in_order()
+        {
+            _connection
+                .Commands.Take(3)
+                .Select(command => command.CommandText)
+                .Should()
+                .Equal(SchemaRestampSql.LockCommands(SqlDialect.Pgsql));
+        }
+
+        [Test]
+        public void It_uses_the_requested_command_timeout()
+        {
+            _connection.Commands.Should().OnlyContain(command => command.CommandTimeout == 41);
+        }
+
+        [Test]
+        public void It_uses_a_transaction_for_every_command()
+        {
+            _connection.Commands.Select(command => command.TransactionUsed).Should().NotContainNulls();
+        }
+
+        [Test]
+        public void It_shares_one_transaction()
+        {
+            _connection
+                .Commands.Select(command => command.TransactionUsed)
+                .Distinct()
+                .Should()
+                .ContainSingle();
+        }
     }
 
-    [Test]
-    public async Task It_rolls_back_and_disposes_when_cancelled_during_lock_acquisition()
+    [TestFixture]
+    public sealed class Given_Cancelled_Lock_Acquisition : SchemaRestamperCommandCleanupTests
     {
-        var connection = new TimeoutCommandConnection(
-            failNonQuery: false,
-            failRead: false,
-            failDispose: false,
-            waitForCancellation: true
-        );
-        var target = new EffectiveSchemaInfo("1.0.0", "v3", new string('a', 64), 0, new byte[32], [], []);
-        var service = new SchemaRestamper(NullLogger.Instance, (_, _) => connection);
-        using var cancellation = new CancellationTokenSource();
-        var execution = service.RestampAsync(
-            SqlDialect.Pgsql,
-            "Host=localhost;Database=sample",
-            30,
-            target,
-            true,
-            cancellation.Token
-        );
+        private TimeoutCommandConnection _connection = null!;
+        private SchemaRestampException _failure = null!;
 
-        await connection.CommandStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        await cancellation.CancelAsync();
-        Func<Task> action = () => execution;
-
-        (await action.Should().ThrowAsync<SchemaRestampException>())
-            .Which.Failure.Should()
-            .Be(SchemaRestampFailure.Cancelled);
-        connection.Transaction.RollbackCount.Should().Be(1);
-        connection.Transaction.DisposeCount.Should().Be(1);
-        connection.DisposeCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_reports_an_uncertain_commit_after_exactly_one_commit_attempt()
-    {
-        var connection = new TimeoutCommandConnection(
-            failNonQuery: false,
-            failRead: false,
-            failDispose: false,
-            failCommit: true,
-            provideValidSnapshot: true
-        );
-        var target = new EffectiveSchemaInfo("1.0.0", "v3", new string('a', 64), 0, new byte[32], [], []);
-        var service = new SchemaRestamper(NullLogger.Instance, (_, _) => connection);
-
-        Func<Task> action = () =>
-            service.RestampAsync(
-                SqlDialect.Pgsql,
-                "Host=localhost;Database=sample",
-                30,
-                target,
-                true,
-                CancellationToken.None
+        [SetUp]
+        public async Task Setup()
+        {
+            _connection = new TimeoutCommandConnection(
+                failNonQuery: false,
+                failRead: false,
+                failDispose: false,
+                waitForCancellation: true
             );
-
-        var failure = (await action.Should().ThrowAsync<SchemaRestampException>()).Which;
-        failure
-            .Failure.Should()
-            .Be(
-                SchemaRestampFailure.CommitOutcomeUnknown,
-                $"command sequence: {string.Join(" | ", connection.Commands.Select(command => command.CommandText))}; commits: {connection.Transaction.CommitCount}"
-            );
-        connection.Transaction.CommitCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_finishes_commit_when_cancelled_after_the_commit_phase_starts()
-    {
-        using var cancellation = new CancellationTokenSource();
-        var connection = new TimeoutCommandConnection(
-            failNonQuery: false,
-            failRead: false,
-            failDispose: false,
-            duringCommit: cancellation.Cancel,
-            provideValidSnapshot: true
-        );
-        var target = new EffectiveSchemaInfo("1.0.0", "v3", new string('a', 64), 0, new byte[32], [], []);
-        var service = new SchemaRestamper(NullLogger.Instance, (_, _) => connection);
-
-        var result = await service.RestampAsync(
-            SqlDialect.Pgsql,
-            "Host=localhost;Database=sample",
-            30,
-            target,
-            true,
-            cancellation.Token
-        );
-
-        result.Changed.Should().BeTrue();
-        connection.Transaction.CommitCount.Should().Be(1);
-        connection.Transaction.CommitCancellationToken.Should().Be(CancellationToken.None);
-        connection.Transaction.RollbackCount.Should().Be(0);
-        cancellation.IsCancellationRequested.Should().BeTrue();
-    }
-
-    [Test]
-    public async Task It_can_retry_the_old_stamp_after_an_uncertain_commit()
-    {
-        var connection = new TimeoutCommandConnection(
-            failNonQuery: false,
-            failRead: false,
-            failDispose: false,
-            provideValidSnapshot: true
-        );
-        var target = new EffectiveSchemaInfo("1.0.0", "v3", new string('a', 64), 0, new byte[32], [], []);
-        var service = new SchemaRestamper(NullLogger.Instance, (_, _) => connection);
-
-        var result = await service.RestampAsync(
-            SqlDialect.Pgsql,
-            "Host=localhost;Database=sample",
-            30,
-            target,
-            true,
-            CancellationToken.None
-        );
-
-        result.Changed.Should().BeTrue();
-        result.PreviousHash.Should().Be(new string('b', 64));
-        result.TargetHash.Should().Be(target.EffectiveSchemaHash);
-        connection.Transaction.CommitCount.Should().Be(1);
-    }
-
-    [TestCase(SqlDialect.Pgsql, "Host=localhost;Database=sample")]
-    [TestCase(SqlDialect.Mssql, "Server=localhost;Database=sample")]
-    public async Task It_retries_the_target_stamp_as_a_fully_validated_no_op(
-        SqlDialect dialect,
-        string connectionString
-    )
-    {
-        var targetHash = new string('a', 64);
-        var connection = new TimeoutCommandConnection(
-            failNonQuery: false,
-            failRead: false,
-            failDispose: false,
-            provideValidSnapshot: true,
-            storedHash: targetHash
-        );
-        var target = new EffectiveSchemaInfo("1.0.0", "v3", targetHash, 0, new byte[32], [], []);
-        var service = new SchemaRestamper(NullLogger.Instance, (_, _) => connection);
-
-        var result = await service.RestampAsync(
-            dialect,
-            connectionString,
-            30,
-            target,
-            false,
-            CancellationToken.None
-        );
-
-        result.Changed.Should().BeFalse();
-        connection.ReaderCount.Should().Be(3, "only the three validation snapshots need readers");
-        connection
-            .Commands.Where(command => command.CommandText.StartsWith("DELETE", StringComparison.Ordinal))
-            .Should()
-            .BeEmpty();
-        connection
-            .Commands.Where(command => command.CommandText.StartsWith("UPDATE", StringComparison.Ordinal))
-            .Should()
-            .BeEmpty();
-        connection.Transaction.CommitCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_preserves_the_command_timeout_when_command_disposal_also_fails()
-    {
-        var connection = new TimeoutCommandConnection();
-        var target = new EffectiveSchemaInfo("1.0.0", "v3", new string('a', 64), 0, new byte[32], [], []);
-        var service = new SchemaRestamper(NullLogger.Instance, (_, _) => connection);
-
-        Func<Task> action = () =>
-            service.RestampAsync(
+            var target = new EffectiveSchemaInfo("1.0.0", "v3", new string('a', 64), 0, new byte[32], [], []);
+            var service = new SchemaRestamper(NullLogger.Instance, (_, _) => _connection);
+            using var cancellation = new CancellationTokenSource();
+            var execution = service.RestampAsync(
                 SqlDialect.Pgsql,
                 "Host=localhost;Database=sample",
                 30,
                 target,
                 true,
-                CancellationToken.None
+                cancellation.Token
             );
 
-        (await action.Should().ThrowAsync<SchemaRestampException>())
-            .Which.Failure.Should()
-            .Be(SchemaRestampFailure.Timeout);
+            await _connection.CommandStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            await cancellation.CancelAsync();
+            Func<Task> action = () => execution;
+
+            _failure = await CaptureFailureAsync(action);
+        }
+
+        [Test]
+        public void It_reports_cancellation()
+        {
+            _failure.Failure.Should().Be(SchemaRestampFailure.Cancelled);
+        }
+
+        [Test]
+        public void It_rolls_back_once()
+        {
+            _connection.Transaction.RollbackCount.Should().Be(1);
+        }
+
+        [Test]
+        public void It_disposes_the_transaction()
+        {
+            _connection.Transaction.DisposeCount.Should().Be(1);
+        }
+
+        [Test]
+        public void It_disposes_the_connection()
+        {
+            _connection.DisposeCount.Should().Be(1);
+        }
     }
 
-    [Test]
-    public async Task It_preserves_the_reader_timeout_when_reader_and_command_disposal_fail()
+    [TestFixture]
+    public sealed class Given_Commit_Transport_Failure : SchemaRestamperCommandCleanupTests
     {
-        var connection = new TimeoutCommandConnection(
-            failNonQuery: false,
-            failRead: true,
-            disposeFailureRequiresReader: true
-        );
-        var target = new EffectiveSchemaInfo("1.0.0", "v3", new string('a', 64), 0, new byte[32], [], []);
-        var service = new SchemaRestamper(NullLogger.Instance, (_, _) => connection);
+        private TimeoutCommandConnection _connection = null!;
+        private SchemaRestampException _failure = null!;
 
-        Func<Task> action = () =>
-            service.RestampAsync(
-                SqlDialect.Mssql,
-                "Server=localhost;Database=sample",
+        [SetUp]
+        public async Task Setup()
+        {
+            _connection = new TimeoutCommandConnection(
+                failNonQuery: false,
+                failRead: false,
+                failDispose: false,
+                failCommit: true,
+                provideValidSnapshot: true
+            );
+            var target = new EffectiveSchemaInfo("1.0.0", "v3", new string('a', 64), 0, new byte[32], [], []);
+            var service = new SchemaRestamper(NullLogger.Instance, (_, _) => _connection);
+
+            Func<Task> action = () =>
+                service.RestampAsync(
+                    SqlDialect.Pgsql,
+                    "Host=localhost;Database=sample",
+                    30,
+                    target,
+                    true,
+                    CancellationToken.None
+                );
+
+            _failure = await CaptureFailureAsync(action);
+        }
+
+        [Test]
+        public void It_reports_an_unknown_commit_outcome()
+        {
+            _failure
+                .Failure.Should()
+                .Be(
+                    SchemaRestampFailure.CommitOutcomeUnknown,
+                    $"command sequence: {string.Join(" | ", _connection.Commands.Select(command => command.CommandText))}; commits: {_connection.Transaction.CommitCount}"
+                );
+        }
+
+        [Test]
+        public void It_attempts_commit_once()
+        {
+            _connection.Transaction.CommitCount.Should().Be(1);
+        }
+    }
+
+    [TestFixture]
+    public sealed class Given_Cancellation_During_Commit : SchemaRestamperCommandCleanupTests
+    {
+        private TimeoutCommandConnection _connection = null!;
+        private SchemaRestampResult _result = null!;
+        private bool _cancellationRequested;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            using var cancellation = new CancellationTokenSource();
+            _connection = new TimeoutCommandConnection(
+                failNonQuery: false,
+                failRead: false,
+                failDispose: false,
+                duringCommit: cancellation.Cancel,
+                provideValidSnapshot: true
+            );
+            var target = new EffectiveSchemaInfo("1.0.0", "v3", new string('a', 64), 0, new byte[32], [], []);
+            var service = new SchemaRestamper(NullLogger.Instance, (_, _) => _connection);
+
+            _result = await service.RestampAsync(
+                SqlDialect.Pgsql,
+                "Host=localhost;Database=sample",
                 30,
                 target,
                 true,
+                cancellation.Token
+            );
+            _cancellationRequested = cancellation.IsCancellationRequested;
+        }
+
+        [Test]
+        public void It_reports_the_changed_stamp()
+        {
+            _result.Changed.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_commits_once()
+        {
+            _connection.Transaction.CommitCount.Should().Be(1);
+        }
+
+        [Test]
+        public void It_does_not_cancel_commit()
+        {
+            _connection.Transaction.CommitCancellationToken.Should().Be(CancellationToken.None);
+        }
+
+        [Test]
+        public void It_does_not_roll_back_the_commit()
+        {
+            _connection.Transaction.RollbackCount.Should().Be(0);
+        }
+
+        [Test]
+        public void It_observes_the_cancellation_request()
+        {
+            _cancellationRequested.Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
+    public sealed class Given_Old_Stamp_Retry : SchemaRestamperCommandCleanupTests
+    {
+        private TimeoutCommandConnection _connection = null!;
+        private EffectiveSchemaInfo _target = null!;
+        private SchemaRestampResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _connection = new TimeoutCommandConnection(
+                failNonQuery: false,
+                failRead: false,
+                failDispose: false,
+                provideValidSnapshot: true
+            );
+            _target = new EffectiveSchemaInfo("1.0.0", "v3", new string('a', 64), 0, new byte[32], [], []);
+            var service = new SchemaRestamper(NullLogger.Instance, (_, _) => _connection);
+
+            _result = await service.RestampAsync(
+                SqlDialect.Pgsql,
+                "Host=localhost;Database=sample",
+                30,
+                _target,
+                true,
                 CancellationToken.None
             );
+        }
 
-        (await action.Should().ThrowAsync<SchemaRestampException>())
-            .Which.Failure.Should()
-            .Be(SchemaRestampFailure.Timeout);
+        [Test]
+        public void It_applies_the_transition()
+        {
+            _result.Changed.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_reports_the_old_hash()
+        {
+            _result.PreviousHash.Should().Be(new string('b', 64));
+        }
+
+        [Test]
+        public void It_reports_the_target_hash()
+        {
+            _result.TargetHash.Should().Be(_target.EffectiveSchemaHash);
+        }
+
+        [Test]
+        public void It_commits_once()
+        {
+            _connection.Transaction.CommitCount.Should().Be(1);
+        }
+    }
+
+    [TestFixture(SqlDialect.Pgsql, "Host=localhost;Database=sample")]
+    [TestFixture(SqlDialect.Mssql, "Server=localhost;Database=sample")]
+    public sealed class Given_Target_Stamp_Retry(SqlDialect dialect, string connectionString)
+        : SchemaRestamperCommandCleanupTests
+    {
+        private TimeoutCommandConnection _connection = null!;
+        private SchemaRestampResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var targetHash = new string('a', 64);
+            _connection = new TimeoutCommandConnection(
+                failNonQuery: false,
+                failRead: false,
+                failDispose: false,
+                provideValidSnapshot: true,
+                storedHash: targetHash
+            );
+            var target = new EffectiveSchemaInfo("1.0.0", "v3", targetHash, 0, new byte[32], [], []);
+            var service = new SchemaRestamper(NullLogger.Instance, (_, _) => _connection);
+
+            _result = await service.RestampAsync(
+                dialect,
+                connectionString,
+                30,
+                target,
+                false,
+                CancellationToken.None
+            );
+        }
+
+        [Test]
+        public void It_reports_no_changes()
+        {
+            _result.Changed.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_reads_all_metadata()
+        {
+            _connection.ReaderCount.Should().Be(3, "only the three validation snapshots need readers");
+        }
+
+        [Test]
+        public void It_does_not_delete_rows()
+        {
+            _connection
+                .Commands.Where(command => command.CommandText.StartsWith("DELETE", StringComparison.Ordinal))
+                .Should()
+                .BeEmpty();
+        }
+
+        [Test]
+        public void It_does_not_update_rows()
+        {
+            _connection
+                .Commands.Where(command => command.CommandText.StartsWith("UPDATE", StringComparison.Ordinal))
+                .Should()
+                .BeEmpty();
+        }
+
+        [Test]
+        public void It_finishes_the_transaction()
+        {
+            _connection.Transaction.CommitCount.Should().Be(1);
+        }
+    }
+
+    [TestFixture]
+    public sealed class Given_Command_And_Disposal_Failure : SchemaRestamperCommandCleanupTests
+    {
+        private SchemaRestampException _failure = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var connection = new TimeoutCommandConnection();
+            var target = new EffectiveSchemaInfo("1.0.0", "v3", new string('a', 64), 0, new byte[32], [], []);
+            var service = new SchemaRestamper(NullLogger.Instance, (_, _) => connection);
+
+            Func<Task> action = () =>
+                service.RestampAsync(
+                    SqlDialect.Pgsql,
+                    "Host=localhost;Database=sample",
+                    30,
+                    target,
+                    true,
+                    CancellationToken.None
+                );
+
+            _failure = await CaptureFailureAsync(action);
+        }
+
+        [Test]
+        public void It_preserves_the_primary_timeout()
+        {
+            _failure.Failure.Should().Be(SchemaRestampFailure.Timeout);
+        }
+    }
+
+    [TestFixture]
+    public sealed class Given_Reader_And_Disposal_Failure : SchemaRestamperCommandCleanupTests
+    {
+        private SchemaRestampException _failure = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var connection = new TimeoutCommandConnection(
+                failNonQuery: false,
+                failRead: true,
+                disposeFailureRequiresReader: true
+            );
+            var target = new EffectiveSchemaInfo("1.0.0", "v3", new string('a', 64), 0, new byte[32], [], []);
+            var service = new SchemaRestamper(NullLogger.Instance, (_, _) => connection);
+
+            Func<Task> action = () =>
+                service.RestampAsync(
+                    SqlDialect.Mssql,
+                    "Server=localhost;Database=sample",
+                    30,
+                    target,
+                    true,
+                    CancellationToken.None
+                );
+
+            _failure = await CaptureFailureAsync(action);
+        }
+
+        [Test]
+        public void It_preserves_the_primary_timeout()
+        {
+            _failure.Failure.Should().Be(SchemaRestampFailure.Timeout);
+        }
+    }
+
+    private static async Task<SchemaRestampException> CaptureFailureAsync(Func<Task> action)
+    {
+        try
+        {
+            await action();
+        }
+        catch (SchemaRestampException exception)
+        {
+            return exception;
+        }
+        throw new InvalidOperationException("Expected a re-stamp failure.");
     }
 
     private sealed class TimeoutCommandConnection : DbConnection

@@ -9,6 +9,9 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Fixtures;
 
 [TestFixture]
+[Category("ApiIntegration")]
+[Category("PostgresqlIntegration")]
+[Category("MssqlIntegration")]
 public sealed class Given_SchemaRestampFixturePair
 {
     [Test]

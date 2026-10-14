@@ -216,6 +216,9 @@ internal static class SchemaRestampMigrationScenario
             builder.UseSetting("AppSettings:StartupStatusFilePath", startupPath);
             builder.UseSetting("AppSettings:Datastore", dataStore);
             builder.UseSetting("AppSettings:BypassAuthorization", "true");
+            // This scenario verifies physical migration through relational reconstruction.
+            // A preserved cache entry must not hide an absent target column in the negative case.
+            builder.UseSetting("DataManagement:DocumentCache:ReadAcceleration:Enabled", "false");
             builder.UseSetting("JwtAuthentication:Authority", FakeOidcConfigurationManager.Issuer);
             builder.UseSetting("ConfigurationServiceSettings:BaseUrl", "http://localhost/test-cms");
             builder.UseSetting("ConfigurationServiceSettings:ClientId", "test-cms-client");

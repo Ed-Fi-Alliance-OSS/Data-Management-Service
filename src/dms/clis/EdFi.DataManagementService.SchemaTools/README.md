@@ -227,12 +227,33 @@ uncertain; inspect the database and retry with the same schema inputs while
 services remain offline. A retry from a fully validated old stamp can apply the
 transition; a retry from the target stamp is a no-op.
 
+The connection role needs access to the existing database and schema, `SELECT`
+on `dms.EffectiveSchema`, `dms.ResourceKey`, and `dms.SchemaComponent`, `UPDATE`
+on `dms.EffectiveSchema`, and `DELETE`/`INSERT` on `dms.SchemaComponent`.
+PostgreSQL also requires permission to take `SHARE ROW EXCLUSIVE` table locks
+on all three tables, including the read-only `ResourceKey` check: table
+ownership or one of `MAINTAIN`, `UPDATE`, `DELETE`, or `TRUNCATE` grants permits
+that lock. Prefer `MAINTAIN` on `ResourceKey` where available rather than a data
+mutation grant. These lock privileges are needed even for a no-op or an
+invocation without `--migration-completed`; locks keep validation and mutation
+on the same stable metadata snapshot. See PostgreSQL's
+[LOCK privilege rules](https://www.postgresql.org/docs/18/sql-lock.html#SQL-LOCK-NOTES).
+The separate physical migration and provision steps need their own DDL privileges.
+
 For a changed stamp, keep DMS and workers stopped, apply and validate the
 provider-specific physical migration, run `ddl re-stamp`, run ordinary
 `ddl provision` separately, then restart DMS and workers. Provisioning remains
 create-only and rejects an ordinary mismatched fingerprint. The operation does
 not guarantee rollback of the physical migration and makes no claim about CDC
 continuity. See the [schema fingerprint operations guide](../../../../docs/RELATIONAL-BACKEND.md#re-stamping-after-a-validated-physical-migration).
+
+Re-stamp preserves `dms.DocumentCache` and document versions. If the migration
+changes API document representations, include the supported offline
+[DocumentCacheAdmin representation-restamp procedure](../EdFi.DataManagementService.DocumentCacheAdmin/README.md#representation-restamp)
+in the migration plan before reopening traffic, then validate affected reads.
+Restarting alone does not invalidate stored cache entries. A cache rebuild
+alone does not perform the document-version and publication changes required
+by a representation correction.
 
 ## Determinism guarantee
 

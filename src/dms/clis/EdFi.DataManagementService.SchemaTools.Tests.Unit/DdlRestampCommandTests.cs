@@ -15,18 +15,17 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.SchemaTools.Tests.Unit;
 
-[TestFixture]
-public class Given_SchemaRestamp_Command
+public abstract class DdlRestampCommandTests
 {
-    private const string ConnectionString = "Host=localhost;Database=restamp_target";
-    private IApiSchemaFileLoader _fileLoader = null!;
-    private EffectiveSchemaSetBuilder _schemaSetBuilder = null!;
-    private ISchemaRestamper _restamper = null!;
-    private StringWriter _output = null!;
-    private StringWriter _error = null!;
+    protected const string ConnectionString = "Host=localhost;Database=restamp_target";
+    protected IApiSchemaFileLoader _fileLoader = null!;
+    protected EffectiveSchemaSetBuilder _schemaSetBuilder = null!;
+    protected ISchemaRestamper _restamper = null!;
+    protected StringWriter _output = null!;
+    protected StringWriter _error = null!;
 
     [SetUp]
-    public void Setup()
+    public void Initialize()
     {
         _fileLoader = new ApiSchemaFileLoader(
             new ApiSchemaInputNormalizer(NullLogger<ApiSchemaInputNormalizer>.Instance),
@@ -41,406 +40,616 @@ public class Given_SchemaRestamp_Command
         _error = new StringWriter();
     }
 
-    [Test]
-    public async Task It_reports_a_committed_transition_after_service_success()
+    [TestFixture]
+    public sealed class Given_Committed_Transition : DdlRestampCommandTests
     {
-        A.CallTo(() =>
-                _restamper.RestampAsync(
-                    SqlDialect.Pgsql,
-                    ConnectionString,
-                    300,
-                    A<EffectiveSchemaInfo>._,
-                    true,
-                    A<CancellationToken>._
+        private int _exitCode;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            A.CallTo(() =>
+                    _restamper.RestampAsync(
+                        SqlDialect.Pgsql,
+                        ConnectionString,
+                        300,
+                        A<EffectiveSchemaInfo>._,
+                        true,
+                        A<CancellationToken>._
+                    )
                 )
-            )
-            .Returns(new SchemaRestampResult(true, new string('a', 64), new string('b', 64), 1));
+                .Returns(new SchemaRestampResult(true, new string('a', 64), new string('b', 64), 1));
 
-        var exitCode = await InvokeAsync(
-            CancellationToken.None,
-            "ddl",
-            "re-stamp",
-            "-s",
-            MinimalSchemaPath,
-            "-c",
-            ConnectionString,
-            "-d",
-            "pgsql",
-            "--migration-completed"
-        );
-
-        exitCode.Should().Be(0);
-        _output.ToString().Should().Contain("Effective schema re-stamp committed.");
-        _output.ToString().Should().Contain(new string('b', 64));
-        _output.ToString().Should().Contain("provision");
-        _error.ToString().Should().BeEmpty();
-        A.CallTo(() =>
-                _restamper.RestampAsync(
-                    SqlDialect.Pgsql,
-                    ConnectionString,
-                    300,
-                    A<EffectiveSchemaInfo>._,
-                    true,
-                    A<CancellationToken>._
-                )
-            )
-            .MustHaveHappenedOnceExactly();
-    }
-
-    [TestCase("Host=localhost;Database=restamp_target", "pgsql", SqlDialect.Pgsql)]
-    [TestCase("Server=localhost;Database=restamp_target", "mssql", SqlDialect.Mssql)]
-    [TestCase("Server=localhost;Initial Catalog=restamp_target", "mssql", SqlDialect.Mssql)]
-    public async Task It_reports_a_valid_match_without_confirmation(
-        string connectionString,
-        string dialectName,
-        SqlDialect dialect
-    )
-    {
-        A.CallTo(() =>
-                _restamper.RestampAsync(
-                    dialect,
-                    connectionString,
-                    300,
-                    A<EffectiveSchemaInfo>._,
-                    false,
-                    A<CancellationToken>._
-                )
-            )
-            .Returns(new SchemaRestampResult(false, new string('a', 64), new string('a', 64), 1));
-
-        var exitCode = await InvokeAsync(
-            CancellationToken.None,
-            "ddl",
-            "re-stamp",
-            "--schema",
-            MinimalSchemaPath,
-            "--connection-string",
-            connectionString,
-            "--dialect",
-            dialectName
-        );
-
-        exitCode.Should().Be(0);
-        _output.ToString().Should().Contain("Already stamped; no changes.");
-        _error.ToString().Should().BeEmpty();
-    }
-
-    [Test]
-    public async Task It_passes_the_computed_target_and_confirmation_token_to_the_service()
-    {
-        List<string> targetHashes = [];
-        A.CallTo(() =>
-                _restamper.RestampAsync(
-                    SqlDialect.Pgsql,
-                    ConnectionString,
-                    45,
-                    A<EffectiveSchemaInfo>._,
-                    true,
-                    A<CancellationToken>._
-                )
-            )
-            .ReturnsLazily(
-                (SqlDialect _, string _, int _, EffectiveSchemaInfo target, bool _, CancellationToken _) =>
-                {
-                    targetHashes.Add(target.EffectiveSchemaHash);
-                    return Task.FromResult(
-                        new SchemaRestampResult(
-                            false,
-                            target.EffectiveSchemaHash,
-                            target.EffectiveSchemaHash,
-                            0
-                        )
-                    );
-                }
+            _exitCode = await InvokeAsync(
+                CancellationToken.None,
+                "ddl",
+                "re-stamp",
+                "-s",
+                MinimalSchemaPath,
+                "-c",
+                ConnectionString,
+                "-d",
+                "pgsql",
+                "--migration-completed"
             );
+        }
 
-        var firstExitCode = await InvokeAsync(
-            CancellationToken.None,
-            "ddl",
-            "re-stamp",
-            "--schema",
-            MinimalSchemaPath,
-            "--connection-string",
-            ConnectionString,
-            "--dialect",
-            "pgsql",
-            "--timeout",
-            "45",
-            "--migration-completed"
-        );
-        var secondExitCode = await InvokeAsync(
-            CancellationToken.None,
-            "ddl",
-            "re-stamp",
-            "--schema",
-            MinimalAlternateSchemaPath,
-            "--connection-string",
-            ConnectionString,
-            "--dialect",
-            "pgsql",
-            "--timeout",
-            "45",
-            "--migration-completed"
-        );
+        [Test]
+        public void It_returns_success()
+        {
+            _exitCode.Should().Be(0);
+        }
 
-        firstExitCode.Should().Be(0);
-        secondExitCode.Should().Be(0);
-        targetHashes.Should().HaveCount(2);
-        targetHashes[0].Should().NotBe(targetHashes[1]);
-        A.CallTo(() =>
-                _restamper.RestampAsync(
-                    SqlDialect.Pgsql,
-                    ConnectionString,
-                    45,
-                    A<EffectiveSchemaInfo>._,
-                    true,
-                    A<CancellationToken>._
+        [Test]
+        public void It_reports_the_commit()
+        {
+            _output.ToString().Should().Contain("Effective schema re-stamp committed.");
+        }
+
+        [Test]
+        public void It_prints_the_target_hash()
+        {
+            _output.ToString().Should().Contain(new string('b', 64));
+        }
+
+        [Test]
+        public void It_advises_a_provision_followup()
+        {
+            _output.ToString().Should().Contain("provision");
+        }
+
+        [Test]
+        public void It_writes_no_error()
+        {
+            _error.ToString().Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_invokes_the_service_once()
+        {
+            A.CallTo(() =>
+                    _restamper.RestampAsync(
+                        SqlDialect.Pgsql,
+                        ConnectionString,
+                        300,
+                        A<EffectiveSchemaInfo>._,
+                        true,
+                        A<CancellationToken>._
+                    )
                 )
-            )
-            .MustHaveHappenedTwiceExactly();
+                .MustHaveHappenedOnceExactly();
+        }
     }
 
-    [Test]
-    public async Task It_propagates_cancellation_to_the_service()
+    [TestFixture("Host=localhost;Database=restamp_target", "pgsql", SqlDialect.Pgsql)]
+    [TestFixture("Server=localhost;Database=restamp_target", "mssql", SqlDialect.Mssql)]
+    [TestFixture("Server=localhost;Initial Catalog=restamp_target", "mssql", SqlDialect.Mssql)]
+    public sealed class Given_Matching_Stamp(string connectionString, string dialectName, SqlDialect dialect)
+        : DdlRestampCommandTests
     {
-        var serviceEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var cancellation = new CancellationTokenSource();
-        A.CallTo(() =>
-                _restamper.RestampAsync(
-                    A<SqlDialect>._,
-                    A<string>._,
-                    A<int>._,
-                    A<EffectiveSchemaInfo>._,
-                    A<bool>._,
-                    A<CancellationToken>._
+        private int _exitCode;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            A.CallTo(() =>
+                    _restamper.RestampAsync(
+                        dialect,
+                        connectionString,
+                        300,
+                        A<EffectiveSchemaInfo>._,
+                        false,
+                        A<CancellationToken>._
+                    )
                 )
-            )
-            .ReturnsLazily(
-                (SqlDialect _, string _, int _, EffectiveSchemaInfo _, bool _, CancellationToken token) =>
-                {
-                    serviceEntered.TrySetResult();
-                    var completion = new TaskCompletionSource<SchemaRestampResult>(
-                        TaskCreationOptions.RunContinuationsAsynchronously
-                    );
-                    token.Register(() => completion.TrySetCanceled(token));
-                    return completion.Task;
-                }
+                .Returns(new SchemaRestampResult(false, new string('a', 64), new string('a', 64), 1));
+
+            _exitCode = await InvokeAsync(
+                CancellationToken.None,
+                "ddl",
+                "re-stamp",
+                "--schema",
+                MinimalSchemaPath,
+                "--connection-string",
+                connectionString,
+                "--dialect",
+                dialectName
             );
+        }
 
-        var invocation = InvokeAsync(
-            cancellation.Token,
-            "ddl",
-            "re-stamp",
-            "--schema",
-            MinimalSchemaPath,
-            "--connection-string",
-            ConnectionString,
-            "--dialect",
-            "pgsql"
-        );
-        await serviceEntered.Task;
-        await cancellation.CancelAsync();
-        var exitCode = await invocation;
+        [Test]
+        public void It_returns_success()
+        {
+            _exitCode.Should().Be(0);
+        }
 
-        exitCode.Should().Be(1);
-        _error.ToString().Should().Contain("cancelled");
+        [Test]
+        public void It_reports_no_changes()
+        {
+            _output.ToString().Should().Contain("Already stamped; no changes.");
+        }
+
+        [Test]
+        public void It_writes_no_error()
+        {
+            _error.ToString().Should().BeEmpty();
+        }
     }
 
-    [Test]
-    public async Task It_contains_provider_error_text()
+    [TestFixture]
+    public sealed class Given_Different_Target_Inputs : DdlRestampCommandTests
     {
-        const string secret = "provider-secret-sentinel";
-        A.CallTo(() =>
-                _restamper.RestampAsync(
-                    A<SqlDialect>._,
-                    A<string>._,
-                    A<int>._,
-                    A<EffectiveSchemaInfo>._,
-                    A<bool>._,
-                    A<CancellationToken>._
+        private int _firstExitCode;
+        private int _secondExitCode;
+        private List<string> _targetHashes = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _targetHashes = [];
+            A.CallTo(() =>
+                    _restamper.RestampAsync(
+                        SqlDialect.Pgsql,
+                        ConnectionString,
+                        45,
+                        A<EffectiveSchemaInfo>._,
+                        true,
+                        A<CancellationToken>._
+                    )
                 )
-            )
-            .Throws(new InvalidOperationException(secret));
+                .ReturnsLazily(
+                    (
+                        SqlDialect _,
+                        string _,
+                        int _,
+                        EffectiveSchemaInfo target,
+                        bool _,
+                        CancellationToken _
+                    ) =>
+                    {
+                        _targetHashes.Add(target.EffectiveSchemaHash);
+                        return Task.FromResult(
+                            new SchemaRestampResult(
+                                false,
+                                target.EffectiveSchemaHash,
+                                target.EffectiveSchemaHash,
+                                0
+                            )
+                        );
+                    }
+                );
 
-        var exitCode = await InvokeAsync(
-            CancellationToken.None,
-            "ddl",
-            "re-stamp",
-            "--schema",
-            MinimalSchemaPath,
-            "--connection-string",
-            ConnectionString,
-            "--dialect",
-            "pgsql",
-            "--verbose"
-        );
+            _firstExitCode = await InvokeAsync(
+                CancellationToken.None,
+                "ddl",
+                "re-stamp",
+                "--schema",
+                MinimalSchemaPath,
+                "--connection-string",
+                ConnectionString,
+                "--dialect",
+                "pgsql",
+                "--timeout",
+                "45",
+                "--migration-completed"
+            );
+            _secondExitCode = await InvokeAsync(
+                CancellationToken.None,
+                "ddl",
+                "re-stamp",
+                "--schema",
+                MinimalAlternateSchemaPath,
+                "--connection-string",
+                ConnectionString,
+                "--dialect",
+                "pgsql",
+                "--timeout",
+                "45",
+                "--migration-completed"
+            );
+        }
 
-        exitCode.Should().Be(1);
-        (_output.ToString() + _error.ToString()).Should().NotContain(secret);
-        _error.ToString().Should().Contain("InvalidOperationException");
-    }
+        [Test]
+        public void It_accepts_the_first_target()
+        {
+            _firstExitCode.Should().Be(0);
+        }
 
-    [Test]
-    public async Task It_rejects_nonpositive_timeout_before_the_service()
-    {
-        var exitCode = await InvokeAsync(
-            CancellationToken.None,
-            "ddl",
-            "re-stamp",
-            "--schema",
-            MinimalSchemaPath,
-            "--connection-string",
-            ConnectionString,
-            "--dialect",
-            "pgsql",
-            "--timeout",
-            "0"
-        );
+        [Test]
+        public void It_accepts_the_second_target()
+        {
+            _secondExitCode.Should().Be(0);
+        }
 
-        exitCode.Should().Be(1);
-        _error.ToString().Should().Contain("positive");
-        A.CallTo(() =>
-                _restamper.RestampAsync(
-                    A<SqlDialect>._,
-                    A<string>._,
-                    A<int>._,
-                    A<EffectiveSchemaInfo>._,
-                    A<bool>._,
-                    A<CancellationToken>._
+        [Test]
+        public void It_computes_two_targets()
+        {
+            _targetHashes.Should().HaveCount(2);
+        }
+
+        [Test]
+        public void It_varies_the_hash_with_schema_input()
+        {
+            _targetHashes[0].Should().NotBe(_targetHashes[1]);
+        }
+
+        [Test]
+        public void It_passes_the_timeout_and_confirmation()
+        {
+            A.CallTo(() =>
+                    _restamper.RestampAsync(
+                        SqlDialect.Pgsql,
+                        ConnectionString,
+                        45,
+                        A<EffectiveSchemaInfo>._,
+                        true,
+                        A<CancellationToken>._
+                    )
                 )
-            )
-            .MustNotHaveHappened();
+                .MustHaveHappenedTwiceExactly();
+        }
     }
 
-    [TestCase("Host=localhost", "pgsql")]
-    [TestCase("Host=localhost;Database=", "pgsql")]
-    [TestCase("Host=localhost;Database=restamp_target;invalid", "pgsql")]
-    [TestCase("Server=localhost", "mssql")]
-    [TestCase("Server=localhost;Initial Catalog=", "mssql")]
-    [TestCase("Server=localhost;Database=restamp_target;invalid", "mssql")]
-    public async Task It_rejects_a_missing_or_empty_database_before_the_service(
-        string connectionString,
-        string dialect
-    )
+    [TestFixture]
+    public sealed class Given_Cancelled_Invocation : DdlRestampCommandTests
     {
-        _fileLoader = A.Fake<IApiSchemaFileLoader>();
-        var exitCode = await InvokeAsync(
-            CancellationToken.None,
-            "ddl",
-            "re-stamp",
-            "--schema",
-            MinimalSchemaPath,
-            "--connection-string",
-            connectionString,
-            "--dialect",
-            dialect,
-            "--migration-completed"
-        );
+        private int _exitCode;
 
-        exitCode.Should().Be(1);
-        A.CallTo(() => _fileLoader.Load(A<string>._, A<IReadOnlyList<string>>._)).MustNotHaveHappened();
-        A.CallTo(() =>
-                _restamper.RestampAsync(
-                    A<SqlDialect>._,
-                    A<string>._,
-                    A<int>._,
-                    A<EffectiveSchemaInfo>._,
-                    A<bool>._,
-                    A<CancellationToken>._
+        [SetUp]
+        public async Task Setup()
+        {
+            var serviceEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            using var cancellation = new CancellationTokenSource();
+            A.CallTo(() =>
+                    _restamper.RestampAsync(
+                        A<SqlDialect>._,
+                        A<string>._,
+                        A<int>._,
+                        A<EffectiveSchemaInfo>._,
+                        A<bool>._,
+                        A<CancellationToken>._
+                    )
                 )
-            )
-            .MustNotHaveHappened();
-        (_output.ToString() + _error.ToString()).Should().NotContain("localhost");
+                .ReturnsLazily(
+                    (SqlDialect _, string _, int _, EffectiveSchemaInfo _, bool _, CancellationToken token) =>
+                    {
+                        serviceEntered.TrySetResult();
+                        var completion = new TaskCompletionSource<SchemaRestampResult>(
+                            TaskCreationOptions.RunContinuationsAsynchronously
+                        );
+                        token.Register(() => completion.TrySetCanceled(token));
+                        return completion.Task;
+                    }
+                );
+
+            var invocation = InvokeAsync(
+                cancellation.Token,
+                "ddl",
+                "re-stamp",
+                "--schema",
+                MinimalSchemaPath,
+                "--connection-string",
+                ConnectionString,
+                "--dialect",
+                "pgsql"
+            );
+            await serviceEntered.Task;
+            await cancellation.CancelAsync();
+            _exitCode = await invocation;
+        }
+
+        [Test]
+        public void It_returns_failure()
+        {
+            _exitCode.Should().Be(1);
+        }
+
+        [Test]
+        public void It_reports_cancellation()
+        {
+            _error.ToString().Should().Contain("cancelled");
+        }
     }
 
-    [Test]
-    public async Task It_does_not_echo_values_from_parser_errors()
+    [TestFixture]
+    public sealed class Given_Unexpected_Service_Error : DdlRestampCommandTests
     {
-        const string sentinel = "credential-sentinel";
+        private int _exitCode;
+        private const string secret = "provider-secret-sentinel";
 
-        var exitCode = await InvokeAsync(
-            CancellationToken.None,
-            "ddl",
-            "re-stamp",
-            "--schema",
-            MinimalSchemaPath,
-            "--connection-string",
-            ConnectionString,
-            "--dialect",
-            "pgsql",
-            "--unknown-option",
-            sentinel
-        );
-
-        exitCode.Should().Be(1);
-        (_output.ToString() + _error.ToString()).Should().NotContain(sentinel);
-    }
-
-    [Test]
-    public async Task It_does_not_echo_control_characters_in_schema_paths()
-    {
-        const string hostilePath = "missing\u001b[31m-schema.json";
-
-        var exitCode = await InvokeAsync(
-            CancellationToken.None,
-            "ddl",
-            "re-stamp",
-            "--schema",
-            hostilePath,
-            "--connection-string",
-            ConnectionString,
-            "--dialect",
-            "pgsql"
-        );
-
-        exitCode.Should().Be(1);
-        (_output.ToString() + _error.ToString()).Should().NotContain("\u001b");
-        (_output.ToString() + _error.ToString()).Should().NotContain(hostilePath);
-    }
-
-    [TestCase("--raw-hash")]
-    [TestCase("--create-database")]
-    [TestCase("--force")]
-    [TestCase("--managed-cdc")]
-    public async Task It_rejects_out_of_scope_options(string unsupportedOption)
-    {
-        var exitCode = await InvokeAsync(
-            CancellationToken.None,
-            "ddl",
-            "re-stamp",
-            "--schema",
-            MinimalSchemaPath,
-            "--connection-string",
-            ConnectionString,
-            "--dialect",
-            "pgsql",
-            unsupportedOption
-        );
-
-        exitCode.Should().Be(1);
-        A.CallTo(() =>
-                _restamper.RestampAsync(
-                    A<SqlDialect>._,
-                    A<string>._,
-                    A<int>._,
-                    A<EffectiveSchemaInfo>._,
-                    A<bool>._,
-                    A<CancellationToken>._
+        [SetUp]
+        public async Task Setup()
+        {
+            A.CallTo(() =>
+                    _restamper.RestampAsync(
+                        A<SqlDialect>._,
+                        A<string>._,
+                        A<int>._,
+                        A<EffectiveSchemaInfo>._,
+                        A<bool>._,
+                        A<CancellationToken>._
+                    )
                 )
-            )
-            .MustNotHaveHappened();
+                .Throws(new InvalidOperationException(secret));
+
+            _exitCode = await InvokeAsync(
+                CancellationToken.None,
+                "ddl",
+                "re-stamp",
+                "--schema",
+                MinimalSchemaPath,
+                "--connection-string",
+                ConnectionString,
+                "--dialect",
+                "pgsql",
+                "--verbose"
+            );
+        }
+
+        [Test]
+        public void It_returns_failure()
+        {
+            _exitCode.Should().Be(1);
+        }
+
+        [Test]
+        public void It_redacts_provider_details()
+        {
+            (_output.ToString() + _error.ToString()).Should().NotContain(secret);
+        }
+
+        [Test]
+        public void It_identifies_the_exception_category()
+        {
+            _error.ToString().Should().Contain("InvalidOperationException");
+        }
     }
 
-    private async Task<int> InvokeAsync(CancellationToken cancellationToken, params string[] arguments)
+    [TestFixture]
+    public sealed class Given_Nonpositive_Timeout : DdlRestampCommandTests
     {
-        var command = DdlRestampCommand.Create(
-            NullLogger.Instance,
-            _fileLoader,
-            _schemaSetBuilder,
-            _restamper,
-            _output,
-            _error
-        );
+        private int _exitCode;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _exitCode = await InvokeAsync(
+                CancellationToken.None,
+                "ddl",
+                "re-stamp",
+                "--schema",
+                MinimalSchemaPath,
+                "--connection-string",
+                ConnectionString,
+                "--dialect",
+                "pgsql",
+                "--timeout",
+                "0"
+            );
+        }
+
+        [Test]
+        public void It_returns_failure()
+        {
+            _exitCode.Should().Be(1);
+        }
+
+        [Test]
+        public void It_explains_the_timeout_requirement()
+        {
+            _error.ToString().Should().Contain("positive");
+        }
+
+        [Test]
+        public void It_does_not_invoke_the_service()
+        {
+            A.CallTo(() =>
+                    _restamper.RestampAsync(
+                        A<SqlDialect>._,
+                        A<string>._,
+                        A<int>._,
+                        A<EffectiveSchemaInfo>._,
+                        A<bool>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture("Host=localhost", "pgsql")]
+    [TestFixture("Host=localhost;Database=", "pgsql")]
+    [TestFixture("Host=localhost;Database=restamp_target;invalid", "pgsql")]
+    [TestFixture("Server=localhost", "mssql")]
+    [TestFixture("Server=localhost;Initial Catalog=", "mssql")]
+    [TestFixture("Server=localhost;Database=restamp_target;invalid", "mssql")]
+    public sealed class Given_Invalid_Database_Option(string connectionString, string dialect)
+        : DdlRestampCommandTests
+    {
+        private int _exitCode;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _fileLoader = A.Fake<IApiSchemaFileLoader>();
+            _exitCode = await InvokeAsync(
+                CancellationToken.None,
+                "ddl",
+                "re-stamp",
+                "--schema",
+                MinimalSchemaPath,
+                "--connection-string",
+                connectionString,
+                "--dialect",
+                dialect,
+                "--migration-completed"
+            );
+        }
+
+        [Test]
+        public void It_returns_failure()
+        {
+            _exitCode.Should().Be(1);
+        }
+
+        [Test]
+        public void It_does_not_load_schema_inputs()
+        {
+            A.CallTo(() => _fileLoader.Load(A<string>._, A<IReadOnlyList<string>>._)).MustNotHaveHappened();
+        }
+
+        [Test]
+        public void It_does_not_invoke_the_service()
+        {
+            A.CallTo(() =>
+                    _restamper.RestampAsync(
+                        A<SqlDialect>._,
+                        A<string>._,
+                        A<int>._,
+                        A<EffectiveSchemaInfo>._,
+                        A<bool>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+
+        [Test]
+        public void It_keeps_connection_details_private()
+        {
+            (_output.ToString() + _error.ToString()).Should().NotContain("localhost");
+        }
+    }
+
+    [TestFixture]
+    public sealed class Given_Unknown_Parser_Token : DdlRestampCommandTests
+    {
+        private int _exitCode;
+        private const string sentinel = "credential-sentinel";
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _exitCode = await InvokeAsync(
+                CancellationToken.None,
+                "ddl",
+                "re-stamp",
+                "--schema",
+                MinimalSchemaPath,
+                "--connection-string",
+                ConnectionString,
+                "--dialect",
+                "pgsql",
+                "--unknown-option",
+                sentinel
+            );
+        }
+
+        [Test]
+        public void It_returns_failure()
+        {
+            _exitCode.Should().Be(1);
+        }
+
+        [Test]
+        public void It_keeps_unknown_values_private()
+        {
+            (_output.ToString() + _error.ToString()).Should().NotContain(sentinel);
+        }
+    }
+
+    [TestFixture]
+    public sealed class Given_Hostile_Schema_Path : DdlRestampCommandTests
+    {
+        private int _exitCode;
+        private const string hostilePath = "missing\u001b[31m-schema.json";
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _exitCode = await InvokeAsync(
+                CancellationToken.None,
+                "ddl",
+                "re-stamp",
+                "--schema",
+                hostilePath,
+                "--connection-string",
+                ConnectionString,
+                "--dialect",
+                "pgsql"
+            );
+        }
+
+        [Test]
+        public void It_returns_failure()
+        {
+            _exitCode.Should().Be(1);
+        }
+
+        [Test]
+        public void It_strips_terminal_control_characters()
+        {
+            (_output.ToString() + _error.ToString()).Should().NotContain("\u001b");
+        }
+
+        [Test]
+        public void It_does_not_echo_the_raw_path()
+        {
+            (_output.ToString() + _error.ToString()).Should().NotContain(hostilePath);
+        }
+    }
+
+    [TestFixture("--raw-hash")]
+    [TestFixture("--create-database")]
+    [TestFixture("--force")]
+    [TestFixture("--managed-cdc")]
+    public sealed class Given_Unsupported_Option(string unsupportedOption) : DdlRestampCommandTests
+    {
+        private int _exitCode;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _exitCode = await InvokeAsync(
+                CancellationToken.None,
+                "ddl",
+                "re-stamp",
+                "--schema",
+                MinimalSchemaPath,
+                "--connection-string",
+                ConnectionString,
+                "--dialect",
+                "pgsql",
+                unsupportedOption
+            );
+        }
+
+        [Test]
+        public void It_returns_failure()
+        {
+            _exitCode.Should().Be(1);
+        }
+
+        [Test]
+        public void It_does_not_invoke_the_service()
+        {
+            A.CallTo(() =>
+                    _restamper.RestampAsync(
+                        A<SqlDialect>._,
+                        A<string>._,
+                        A<int>._,
+                        A<EffectiveSchemaInfo>._,
+                        A<bool>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+    }
+
+    protected async Task<int> InvokeAsync(CancellationToken cancellationToken, params string[] arguments)
+    {
+        var command = DdlRestampCommand.Create(_fileLoader, _schemaSetBuilder, _restamper, _output, _error);
         var root = new RootCommand();
         root.Options.Add(new Option<bool>("--verbose") { Recursive = true });
         var ddl = new Command("ddl");
@@ -450,9 +659,9 @@ public class Given_SchemaRestamp_Command
         return await DdlRestampCommand.InvokeAsync(parseResult, _output, _error, cancellationToken);
     }
 
-    private static string MinimalSchemaPath => FindRepositoryFile("minimal-api-schema.json");
+    protected static string MinimalSchemaPath => FindRepositoryFile("minimal-api-schema.json");
 
-    private static string MinimalAlternateSchemaPath => FindRepositoryFile("minimal-api-schema-alt.json");
+    protected static string MinimalAlternateSchemaPath => FindRepositoryFile("minimal-api-schema-alt.json");
 
     private static string FindRepositoryFile(string fileName)
     {
@@ -476,4 +685,135 @@ public class Given_SchemaRestamp_Command
         }
         throw new DirectoryNotFoundException("The schema fixture could not be located.");
     }
+}
+
+[TestFixture("missing", "not found")]
+[TestFixture("unreadable", "could not be read")]
+[TestFixture("json", "Invalid JSON")]
+[TestFixture("project", "missing or malformed")]
+[TestFixture("version", "versions do not match")]
+[TestFixture("collision", "endpoint names collide")]
+public sealed class Given_SchemaRestamp_Input_Failure(string kind, string expectedCategory)
+    : DdlRestampCommandTests
+{
+    private int _exitCode;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        const string path = "schema\u001b[31m.json";
+        const string privateDetail = "private-detail-sentinel";
+        ApiSchemaFileLoadResult result = kind switch
+        {
+            "missing" => new ApiSchemaFileLoadResult.FileNotFoundResult(path),
+            "unreadable" => new ApiSchemaFileLoadResult.FileReadErrorResult(path, privateDetail),
+            "json" => new ApiSchemaFileLoadResult.InvalidJsonResult(path, privateDetail),
+            "project" => new ApiSchemaFileLoadResult.NormalizationFailureResult(
+                new ApiSchemaNormalizationResult.MissingOrMalformedProjectSchemaResult(
+                    privateDetail,
+                    privateDetail
+                )
+            ),
+            "version" => new ApiSchemaFileLoadResult.NormalizationFailureResult(
+                new ApiSchemaNormalizationResult.ApiSchemaVersionMismatchResult(
+                    privateDetail,
+                    privateDetail,
+                    privateDetail
+                )
+            ),
+            _ => new ApiSchemaFileLoadResult.NormalizationFailureResult(
+                new ApiSchemaNormalizationResult.ProjectEndpointNameCollisionResult([
+                    new(privateDetail, [privateDetail]),
+                ])
+            ),
+        };
+        _fileLoader = A.Fake<IApiSchemaFileLoader>();
+        A.CallTo(() => _fileLoader.Load(A<string>._, A<IReadOnlyList<string>>._)).Returns(result);
+        _exitCode = await InvokeAsync(
+            CancellationToken.None,
+            "ddl",
+            "re-stamp",
+            "-s",
+            path,
+            "-c",
+            ConnectionString,
+            "-d",
+            "pgsql",
+            "--verbose"
+        );
+    }
+
+    [Test]
+    public void It_reports_failure() => _exitCode.Should().Be(1);
+
+    [Test]
+    public void It_identifies_the_input_failure_category() =>
+        _error.ToString().Should().Contain(expectedCategory);
+
+    [Test]
+    public void It_sanitizes_paths() => _error.ToString().Should().NotContain("\u001b");
+
+    [Test]
+    public void It_keeps_raw_loader_details_private() =>
+        _error.ToString().Should().NotContain("private-detail-sentinel");
+}
+
+[TestFixture]
+public sealed class Given_SchemaRestamp_Build_Failure : DdlRestampCommandTests
+{
+    private int _exitCode;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        var hashProvider = A.Fake<IEffectiveSchemaHashProvider>();
+        A.CallTo(() => hashProvider.ComputeHash(A<string>._, A<IReadOnlyList<ProjectSchemaMetadata>>._))
+            .Throws(new InvalidOperationException("private-detail-sentinel"));
+        _schemaSetBuilder = new EffectiveSchemaSetBuilder(
+            hashProvider,
+            new ResourceKeySeedProvider(NullLogger<ResourceKeySeedProvider>.Instance)
+        );
+        _exitCode = await InvokeAsync(
+            CancellationToken.None,
+            "ddl",
+            "re-stamp",
+            "-s",
+            MinimalSchemaPath,
+            "-c",
+            ConnectionString,
+            "-d",
+            "pgsql"
+        );
+    }
+
+    [Test]
+    public void It_reports_failure() => _exitCode.Should().Be(1);
+
+    [Test]
+    public void It_names_the_failed_stage() =>
+        _error.ToString().Should().Contain("Target schema metadata could not be built");
+
+    [Test]
+    public void It_keeps_raw_builder_details_private() =>
+        _error.ToString().Should().NotContain("private-detail-sentinel");
+}
+
+[TestFixture]
+public sealed class Given_SchemaRestamp_Missing_Options : DdlRestampCommandTests
+{
+    [SetUp]
+    public async Task Setup() => await InvokeAsync(CancellationToken.None, "ddl", "re-stamp");
+
+    [Test]
+    public void It_names_the_required_schema_option() => _error.ToString().Should().Contain("--schema");
+
+    [Test]
+    public void It_names_the_required_connection_option() =>
+        _error.ToString().Should().Contain("--connection-string");
+
+    [Test]
+    public void It_names_the_required_dialect_option() => _error.ToString().Should().Contain("--dialect");
+
+    [Test]
+    public void It_points_to_help() => _error.ToString().Should().Contain("--help");
 }

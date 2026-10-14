@@ -51,7 +51,7 @@ try
     // via the pre-scan above, before DI/logger construction.
     var verboseOption = new Option<bool>("--verbose", "-v")
     {
-        Description = "Enable verbose (debug-level) logging",
+        Description = "Enable verbose (debug-level) logging (suppressed for ddl re-stamp and cdc)",
         Recursive = true,
     };
     rootCommand.Options.Add(verboseOption);
@@ -64,7 +64,6 @@ try
     ddlCommand.Subcommands.Add(DdlEmitCommand.Create(logger, fileLoader, schemaSetBuilder));
     ddlCommand.Subcommands.Add(DdlProvisionCommand.Create(logger, fileLoader, schemaSetBuilder));
     var restampCommand = DdlRestampCommand.Create(
-        logger,
         fileLoader,
         schemaSetBuilder,
         new SchemaRestamper(logger),

@@ -93,13 +93,14 @@ public static class SchemaRestampValidator
             SeedValidator.ValidateResourceKeysOrThrow(
                 stored.ResourceKeys,
                 target.ResourceKeysInIdOrder,
-                logger
+                logger,
+                includeValues: false
             );
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException exception)
         {
             throw Invalid(
-                "dms.ResourceKey rows differ in ResourceKeyId, ProjectName, ResourceName, or ResourceVersion."
+                $"dms.ResourceKey rows differ in ResourceKeyId, ProjectName, ResourceName, or ResourceVersion.\n{exception.Message}"
             );
         }
 
@@ -108,13 +109,14 @@ public static class SchemaRestampValidator
             SeedValidator.ValidateSchemaComponentsOrThrow(
                 stored.SchemaComponents.Select(component => component.Payload).ToArray(),
                 target.SchemaComponentsInEndpointOrder,
-                logger
+                logger,
+                includeValues: false
             );
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException exception)
         {
             throw Invalid(
-                "dms.SchemaComponent rows differ in ProjectEndpointName, ProjectName, ProjectVersion, or IsExtensionProject."
+                $"dms.SchemaComponent rows differ in ProjectEndpointName, ProjectName, ProjectVersion, or IsExtensionProject.\n{exception.Message}"
             );
         }
     }

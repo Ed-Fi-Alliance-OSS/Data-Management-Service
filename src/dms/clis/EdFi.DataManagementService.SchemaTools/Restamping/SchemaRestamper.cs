@@ -40,12 +40,14 @@ public sealed class SchemaRestamper : ISchemaRestamper
 
         DbConnection connection = null!;
         DbTransaction transaction = null!;
+        var connectionOpened = false;
         var commitAttempted = false;
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
             connection = _connectionFactory(dialect, connectionString);
             await connection.OpenAsync(cancellationToken);
+            connectionOpened = true;
             transaction = await connection.BeginTransactionAsync(cancellationToken);
 
             foreach (var lockSql in SchemaRestampSql.LockCommands(dialect))
@@ -170,7 +172,7 @@ public sealed class SchemaRestamper : ISchemaRestamper
                 throw;
             }
 
-            throw Classify(exception, transaction is null, cancellationToken);
+            throw Classify(exception, !connectionOpened, cancellationToken);
         }
         finally
         {
@@ -206,6 +208,19 @@ public sealed class SchemaRestamper : ISchemaRestamper
         EffectiveSchemaInfo target
     )
     {
+        ValidateConnectionArguments(dialect, connectionString, commandTimeoutSeconds);
+        if (target is null)
+        {
+            throw new SchemaRestampException(SchemaRestampFailure.Validation, "Target schema is required.");
+        }
+    }
+
+    internal static void ValidateConnectionArguments(
+        SqlDialect dialect,
+        string connectionString,
+        int commandTimeoutSeconds
+    )
+    {
         if (dialect is not (SqlDialect.Pgsql or SqlDialect.Mssql))
         {
             throw new SchemaRestampException(SchemaRestampFailure.Validation, "Unsupported SQL dialect.");
@@ -215,13 +230,6 @@ public sealed class SchemaRestamper : ISchemaRestamper
             throw new SchemaRestampException(
                 SchemaRestampFailure.Validation,
                 "Command timeout must be positive."
-            );
-        }
-        if (target is null || string.IsNullOrWhiteSpace(connectionString))
-        {
-            throw new SchemaRestampException(
-                SchemaRestampFailure.Validation,
-                "Target schema and connection string are required."
             );
         }
         SchemaRestampConnectionStringValidator.ValidateOrThrow(connectionString, dialect);
@@ -433,7 +441,7 @@ public sealed class SchemaRestamper : ISchemaRestamper
 
     private static SchemaRestampException Classify(
         Exception exception,
-        bool beforeTransaction,
+        bool beforeConnection,
         CancellationToken cancellationToken
     )
     {
@@ -442,6 +450,25 @@ public sealed class SchemaRestamper : ISchemaRestamper
             return new SchemaRestampException(
                 SchemaRestampFailure.Cancelled,
                 "The re-stamp was cancelled before commit."
+            );
+        }
+        if (
+            exception is TimeoutException
+            || exception is PostgresException { SqlState: "57014" }
+            || exception is NpgsqlException && HasInnerTimeoutException(exception)
+            || exception is SqlException { Number: -2 or 1222 }
+        )
+        {
+            return new SchemaRestampException(
+                SchemaRestampFailure.Timeout,
+                "The re-stamp database command timed out."
+            );
+        }
+        if (beforeConnection)
+        {
+            return new SchemaRestampException(
+                SchemaRestampFailure.Connection,
+                "Could not connect to the target database."
             );
         }
         if (exception is PostgresException pg)
@@ -456,16 +483,8 @@ public sealed class SchemaRestamper : ISchemaRestamper
                     SchemaRestampFailure.PermissionDenied,
                     "The target database denied required re-stamp privileges."
                 ),
-                "57014" => new(SchemaRestampFailure.Timeout, "The re-stamp database command timed out."),
                 _ => new(SchemaRestampFailure.TransactionFailed, "The re-stamp database transaction failed."),
             };
-        }
-        if (exception is NpgsqlException && HasInnerTimeoutException(exception))
-        {
-            return new SchemaRestampException(
-                SchemaRestampFailure.Timeout,
-                "The re-stamp database command timed out."
-            );
         }
         if (exception is SqlException ms)
         {
@@ -479,23 +498,8 @@ public sealed class SchemaRestamper : ISchemaRestamper
                     SchemaRestampFailure.PermissionDenied,
                     "The target database denied required re-stamp privileges."
                 ),
-                -2 or 1222 => new(SchemaRestampFailure.Timeout, "The re-stamp database command timed out."),
                 _ => new(SchemaRestampFailure.TransactionFailed, "The re-stamp database transaction failed."),
             };
-        }
-        if (exception is TimeoutException)
-        {
-            return new SchemaRestampException(
-                SchemaRestampFailure.Timeout,
-                "The re-stamp database command timed out."
-            );
-        }
-        if (beforeTransaction)
-        {
-            return new SchemaRestampException(
-                SchemaRestampFailure.Connection,
-                "Could not connect to the target database."
-            );
         }
         return new SchemaRestampException(
             SchemaRestampFailure.TransactionFailed,

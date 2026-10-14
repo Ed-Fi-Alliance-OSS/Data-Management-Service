@@ -7,14 +7,12 @@ using System.CommandLine;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.SchemaTools.Restamping;
-using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.SchemaTools.Commands;
 
 public static class DdlRestampCommand
 {
     public static Command Create(
-        ILogger logger,
         IApiSchemaFileLoader fileLoader,
         EffectiveSchemaSetBuilder schemaSetBuilder,
         ISchemaRestamper restamper,
@@ -62,7 +60,6 @@ public static class DdlRestampCommand
         command.SetAction(
             (parseResult, cancellationToken) =>
                 ExecuteAsync(
-                    logger,
                     fileLoader,
                     schemaSetBuilder,
                     restamper,
@@ -88,7 +85,9 @@ public static class DdlRestampCommand
     {
         if (parseResult.Errors.Count > 0)
         {
-            await error.WriteLineAsync("Invalid arguments for ddl re-stamp.");
+            await error.WriteLineAsync(
+                "Invalid arguments for ddl re-stamp. Required options: --schema, --connection-string, --dialect. Run 'ddl re-stamp --help' for usage."
+            );
             return 1;
         }
 
@@ -118,7 +117,6 @@ public static class DdlRestampCommand
     }
 
     private static async Task<int> ExecuteAsync(
-        ILogger logger,
         IApiSchemaFileLoader fileLoader,
         EffectiveSchemaSetBuilder schemaSetBuilder,
         ISchemaRestamper restamper,
@@ -132,12 +130,6 @@ public static class DdlRestampCommand
         CancellationToken cancellationToken
     )
     {
-        if (timeout <= 0)
-        {
-            await error.WriteLineAsync("The command timeout must be a positive number of seconds.");
-            return 1;
-        }
-
         var dialect = dialectName switch
         {
             "pgsql" => SqlDialect.Pgsql,
@@ -152,7 +144,8 @@ public static class DdlRestampCommand
 
         try
         {
-            SchemaRestampConnectionStringValidator.ValidateOrThrow(connectionString, dialect.Value);
+            // Fail fast before loading inputs; direct service callers retain the same guard.
+            SchemaRestamper.ValidateConnectionArguments(dialect.Value, connectionString, timeout);
         }
         catch (SchemaRestampException exception)
         {
@@ -171,12 +164,26 @@ public static class DdlRestampCommand
             var loadResult = fileLoader.Load(schemaPaths[0], schemaPaths.Skip(1).ToArray());
             if (loadResult is not ApiSchemaFileLoadResult.SuccessResult success)
             {
-                await error.WriteLineAsync("The schema inputs could not be loaded or normalized.");
-                logger.LogError("Schema re-stamp inputs could not be loaded or normalized.");
-                return 1;
+                return LoadResultErrorHandler.HandleRedacted(loadResult, error);
             }
 
-            var target = schemaSetBuilder.Build(success.NormalizedNodes).EffectiveSchema;
+            EffectiveSchemaInfo target;
+            try
+            {
+                target = schemaSetBuilder.Build(success.NormalizedNodes).EffectiveSchema;
+            }
+            catch (Exception exception)
+                when (exception
+                        is InvalidOperationException
+                            or ArgumentException
+                            or System.Text.Json.JsonException
+                )
+            {
+                await error.WriteLineAsync(
+                    "Target schema metadata could not be built. Check project metadata and resource-key definitions."
+                );
+                return 1;
+            }
             result = await restamper.RestampAsync(
                 dialect.Value,
                 connectionString,

@@ -53,7 +53,7 @@ public sealed class Given_Postgresql_SchemaRestampMigration
         SchemaRestampMigrationScenario.Evidence evidence = await RunAsync(applyPhysicalMigration: false);
         evidence.BeforeStampStatus.Should().Be(HttpStatusCode.ServiceUnavailable);
         evidence.RestampExitCode.Should().Be(0);
-        evidence.ProvisionExitCode.Should().Be(-1, "the physical-shape negative case does not run provision");
+        evidence.ExistingWidgetStatus.Should().Be(HttpStatusCode.InternalServerError);
         evidence.CreateStatus.Should().Be(HttpStatusCode.InternalServerError);
     }
 

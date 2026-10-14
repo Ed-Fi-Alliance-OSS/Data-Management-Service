@@ -389,6 +389,10 @@ compares it to the effective schema it loaded. The check runs in
   with a detail explaining that the database was provisioned for a different effective schema and
   that it **must be reprovisioned with `ddl provision` against a fresh database and the service
   restarted** to clear the cached validation state.
+  Fresh reprovisioning is the default remediation. An independently validated,
+  metadata-compatible physical migration may instead use the bounded
+  [re-stamp procedure](#re-stamping-after-a-validated-physical-migration) below;
+  ordinary provisioning and runtime never update a mismatched stamp automatically.
 
 Immediately after the fingerprint check, each routed resource pipeline runs a second first-use check,
 [`ValidateResourceKeySeedMiddleware`](../src/dms/core/EdFi.DataManagementService.Core/Middleware/ValidateResourceKeySeedMiddleware.cs)
@@ -568,8 +572,9 @@ The environment file lives at [`eng/docker-compose/.env.e2e`](../eng/docker-comp
 
 ## 7. E2E setup/teardown and the "no hot reload" rule
 
-The effective schema is **fixed at provisioning time**. There is no in-place schema migration
-and **no hot reload**: changing any `ApiSchema.json` input changes the effective schema hash, and
+The loaded effective schema has **no hot reload**. Ordinary provisioning does not
+perform in-place migrations; the bounded administrative exception below records
+an independently validated physical migration. Changing any `ApiSchema.json` input changes the effective schema hash, and
 a DMS instance running against a database provisioned for the old hash will fail the first-use
 fingerprint check and return **HTTP 503** (see [§3](#3-schema-fingerprint-validation--how-dms-validates-schema-on-first-use)).
 
@@ -583,7 +588,8 @@ So, after **any** schema change, the developer loop is:
 This is exactly what the test infrastructure does: integration fixtures create a fresh database
 from the generated DDL per run and drop it on teardown, and the E2E setup tears down stale state
 (including removing a stale `.bootstrap` workspace) before starting. Because each run provisions
-cleanly, tests never rely on updating an already-provisioned database in place.
+cleanly, ordinary fixtures do not update an already-provisioned database in place.
+The dedicated schema re-stamp migration fixture exercises the explicit exception.
 
 > [!WARNING]
 > If you change a schema and only restart the service (without reprovisioning), or only
@@ -604,12 +610,32 @@ The operator owns the migration recipe, backup/recovery boundary, physical DDL,
 and post-migration validation. Stop DMS, workers, and other metadata writers;
 apply and validate the physical change; run the command with the target core and
 extension schemas and `--migration-completed`; run ordinary `ddl provision`
-separately; then restart services and verify runtime admission and affected API
+separately; complete any required representation correction described below;
+then restart services and verify runtime admission and affected API
 operations. Provisioning's ordinary hash mismatch guard remains in force. A
 successful metadata update does not certify physical shape, promise automatic
 rollback, or certify CDC continuity. If commit transport fails, treat the result
 as uncertain, inspect the database, and retry with identical inputs while
 services remain stopped. A valid target stamp is a no-op on retry.
+
+The re-stamp role requires `SELECT` on all three metadata tables, `UPDATE` on
+`dms.EffectiveSchema`, and `DELETE`/`INSERT` on `dms.SchemaComponent`, plus
+database/schema access. On PostgreSQL, all three tables are locked in
+`SHARE ROW EXCLUSIVE` mode; ownership or `MAINTAIN`, `UPDATE`, `DELETE`, or
+`TRUNCATE` privilege is required on each table, even `dms.ResourceKey` and even
+for an unconfirmed or matching invocation. Prefer `MAINTAIN` on `ResourceKey`
+where available to avoid granting data mutation. Retain the locks to exclude
+concurrent metadata writers. Physical migration and provisioning require their
+own privileges; see the linked command reference for details.
+
+The command preserves stored `dms.DocumentCache` entries and document versions.
+If the migration changes API document representations, plan and complete the
+supported offline [DocumentCacheAdmin representation-restamp procedure](../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#representation-restamp)
+before reopening traffic and validate affected reads afterward. A process
+restart does not invalidate stored cache entries, and a cache rebuild alone
+does not carry out the document-version/publication changes required by a
+representation correction. Cache lifecycle and CDC compatibility remain separate
+migration responsibilities.
 
 This exception does not change the fresh-database developer loop above, hot
 reload behavior, the release cadence for `RelationalMappingVersion`, or the

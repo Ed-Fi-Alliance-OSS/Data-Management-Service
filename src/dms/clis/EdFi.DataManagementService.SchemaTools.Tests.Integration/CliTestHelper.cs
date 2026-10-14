@@ -14,11 +14,9 @@ public static class CliTestHelper
     public static (int ExitCode, string Output, string Error) RunProcess(
         string fileName,
         IEnumerable<string> arguments,
-        IDictionary<string, string>? environmentVariables = null,
-        TimeSpan? processTimeout = null
+        IDictionary<string, string>? environmentVariables = null
     )
     {
-        TimeSpan effectiveTimeout = processTimeout ?? _processTimeout;
         var startInfo = new ProcessStartInfo
         {
             FileName = fileName,
@@ -45,7 +43,7 @@ public static class CliTestHelper
         var outputTask = process.StandardOutput.ReadToEndAsync();
         var errorTask = process.StandardError.ReadToEndAsync();
 
-        if (!process.WaitForExit((int)effectiveTimeout.TotalMilliseconds))
+        if (!process.WaitForExit((int)_processTimeout.TotalMilliseconds))
         {
             process.Kill(entireProcessTree: true);
             process.WaitForExit(5000);
@@ -53,16 +51,50 @@ public static class CliTestHelper
             var partialOut = outputTask.IsCompleted ? outputTask.Result : "(not captured)";
             var partialErr = errorTask.IsCompleted ? errorTask.Result : "(not captured)";
 
-            Assert.Fail(
-                $"Process '{fileName}' timed out after {effectiveTimeout.TotalSeconds}s."
-                    + $"\nstdout: {partialOut}\nstderr: {partialErr}"
-            );
+            Assert.Fail(FormatTimeoutDiagnostic(fileName, startInfo.ArgumentList, partialOut, partialErr));
         }
 
         var output = outputTask.GetAwaiter().GetResult();
         var error = errorTask.GetAwaiter().GetResult();
 
         return (process.ExitCode, output, error);
+    }
+
+    internal static string FormatTimeoutDiagnostic(
+        string fileName,
+        IEnumerable<string> arguments,
+        string output,
+        string error
+    )
+    {
+        var safeArguments = arguments.ToArray();
+        for (var index = 0; index < safeArguments.Length; index++)
+        {
+            string argument = safeArguments[index];
+            string connectionString = string.Empty;
+            if (argument is "--connection-string" or "-c" && index + 1 < safeArguments.Length)
+            {
+                connectionString = safeArguments[index + 1];
+                safeArguments[index + 1] = "[redacted]";
+            }
+            else if (argument.StartsWith("--connection-string=", StringComparison.Ordinal))
+            {
+                connectionString = argument["--connection-string=".Length..];
+                safeArguments[index] = "--connection-string=[redacted]";
+            }
+            else if (argument.StartsWith("-c=", StringComparison.Ordinal))
+            {
+                connectionString = argument[3..];
+                safeArguments[index] = "-c=[redacted]";
+            }
+            if (connectionString.Length > 0)
+            {
+                output = output.Replace(connectionString, "[redacted]", StringComparison.Ordinal);
+                error = error.Replace(connectionString, "[redacted]", StringComparison.Ordinal);
+            }
+        }
+        return $"Process '{fileName}' timed out after {_processTimeout.TotalSeconds}s."
+            + $"\nArgs: {string.Join(" ", safeArguments)}\nstdout: {output}\nstderr: {error}";
     }
 
     public static string GetExecutablePath()
@@ -110,18 +142,6 @@ public static class CliTestHelper
         }
 
         return RunProcess(exePath, args);
-    }
-
-    public static (int ExitCode, string Output, string Error) RunCliWithTimeout(
-        TimeSpan processTimeout,
-        params string[] args
-    )
-    {
-        var exePath = GetExecutablePath();
-
-        return exePath.EndsWith(".dll")
-            ? RunProcess("dotnet", [exePath, .. args], processTimeout: processTimeout)
-            : RunProcess(exePath, args, processTimeout: processTimeout);
     }
 
     public static string[] GetAuthoritativeSchemaPaths()

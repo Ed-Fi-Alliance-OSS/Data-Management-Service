@@ -275,8 +275,7 @@ public class Given_SchemaRestamp_Compatibility
             .Message.Should()
             .NotContain("secret")
             .And.NotContain("value")
-            .And.NotContain("\r")
-            .And.NotContain("\n");
+            .And.NotContain("secret\r\nvalue");
     }
 
     private void ChangeFingerprint(Func<SchemaRestampFingerprint, SchemaRestampFingerprint> change) =>
@@ -291,4 +290,61 @@ public class Given_SchemaRestamp_Compatibility
         exception.Failure.Should().Be(SchemaRestampFailure.Validation);
         exception.Message.Should().Contain(table).And.Contain(field);
     }
+}
+
+[TestFixture(false, "Missing rows (expected but not in database): [2]")]
+[TestFixture(true, "ResourceKeyId=1: ResourceVersion")]
+public sealed class Given_SchemaRestamp_Row_Diagnostics(bool modified, string expectedDetail)
+{
+    private SchemaRestampException _failure = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        string hash = new('a', 64);
+        var target = new EffectiveSchemaInfo(
+            "1.0.0",
+            "v3",
+            hash,
+            2,
+            new byte[32],
+            [new("ed-fi", "Ed-Fi", "5.1.0", false, new string('b', 64))],
+            [new(1, new("Ed-Fi", "Student"), "5.1.0", false), new(2, new("Ed-Fi", "School"), "5.1.0", false)]
+        );
+        ResourceKeyRow[] resourceKeys = modified
+            ?
+            [
+                new(1, "Ed-Fi", "Student", "private-detail-sentinel\r\n\u001b[31m"),
+                new(2, "Ed-Fi", "School", "5.1.0"),
+            ]
+            : [new(1, "Ed-Fi", "Student", "5.1.0")];
+        var stored = new SchemaRestampSnapshot(
+            [new(1, "1.0.0", hash, 2, new byte[32])],
+            resourceKeys,
+            [new(hash, new("ed-fi", "Ed-Fi", "5.1.0", false))]
+        );
+        try
+        {
+            SchemaRestampValidator.ValidateOrThrow(
+                stored,
+                target,
+                Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance
+            );
+            throw new InvalidOperationException("Expected row validation to fail.");
+        }
+        catch (SchemaRestampException exception)
+        {
+            _failure = exception;
+        }
+    }
+
+    [Test]
+    public void It_identifies_the_differing_row() => _failure.Message.Should().Contain(expectedDetail);
+
+    [Test]
+    public void It_keeps_row_payloads_private() =>
+        _failure.Message.Should().NotContain("private-detail-sentinel");
+
+    [Test]
+    public void It_does_not_emit_terminal_controls() => _failure.Message.Should().NotContain("\u001b");
 }

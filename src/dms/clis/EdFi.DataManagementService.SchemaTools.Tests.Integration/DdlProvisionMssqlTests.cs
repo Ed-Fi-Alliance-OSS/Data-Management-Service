@@ -436,16 +436,12 @@ public class Given_Mssql_Provisioning_Rerun_On_Same_Database
         _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
         var connectionString = MssqlTestDatabaseHelper.BuildConnectionString(_databaseName);
 
-        // The two-minute watchdog interrupted SQL Server's authoritative-schema setup during
-        // migration regression validation. Allow five minutes for both preservation runs on each
-        // provider. Minimal-schema cases keep the two-minute default.
         // First provisioning run
         (_firstExitCode, _, _) = ProvisionTestHelper.RunProvision(
             "mssql",
             connectionString,
             CliTestHelper.GetAuthoritativeSchemaPaths(),
-            createDatabase: true,
-            processTimeout: TimeSpan.FromMinutes(5)
+            createDatabase: true
         );
 
         // Introspect after first run
@@ -466,8 +462,7 @@ public class Given_Mssql_Provisioning_Rerun_On_Same_Database
             "mssql",
             connectionString,
             CliTestHelper.GetAuthoritativeSchemaPaths(),
-            createDatabase: true,
-            processTimeout: TimeSpan.FromMinutes(5)
+            createDatabase: true
         );
 
         // Introspect after second run (rediscover schemas to catch accidental new schemas)
