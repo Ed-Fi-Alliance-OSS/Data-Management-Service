@@ -37,6 +37,28 @@ public class ApiClientTests : DatabaseTest
         new TenantContextProvider()
     );
 
+    /// <summary>
+    /// Records every log entry with its rendered message and attached exception, so a fixture can
+    /// assert what a repository catch logged and that it attached nothing.
+    /// </summary>
+    protected sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        ) => Entries.Add((logLevel, formatter(state, exception), exception));
+    }
+
     [TestFixture]
     public class QueryPagingTests : ApiClientTests
     {
@@ -1359,24 +1381,6 @@ public class ApiClientTests : DatabaseTest
     [TestFixture]
     public class Given_identifier_conflicts_logged_where_the_error_names_the_duplicate_value : ApiClientTests
     {
-        private sealed class CapturingLogger<T> : ILogger<T>
-        {
-            public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];
-
-            public IDisposable? BeginScope<TState>(TState state)
-                where TState : notnull => null;
-
-            public bool IsEnabled(LogLevel logLevel) => true;
-
-            public void Log<TState>(
-                LogLevel logLevel,
-                EventId eventId,
-                TState state,
-                Exception? exception,
-                Func<TState, Exception?, string> formatter
-            ) => Entries.Add((logLevel, formatter(state, exception), exception));
-        }
-
         private readonly string _takenClientId = Guid.NewGuid().ToString();
         private readonly Guid _takenClientUuid = Guid.NewGuid();
         private readonly string _secondClientId = Guid.NewGuid().ToString();
@@ -1622,5 +1626,127 @@ public class ApiClientTests : DatabaseTest
             messages.Count(message => message.Contains("UX_ApiClient_ClientUuid")).Should().Be(6);
             messages.Should().OnlyContain(message => message.Contains("2627"));
         }
+    }
+
+    /// <summary>
+    /// DMS-1529 review correction: a client key is free text of up to 36 characters, so it can spell
+    /// the name of another constraint. SQL Server's unique-violation message ends with the duplicate
+    /// value, so recognition that searched the whole message for a constraint name matched the
+    /// name constraint first, answered <see cref="ApiClientInsertResult.FailureDuplicateName"/> and
+    /// attached the exception. The repeat must be classified by the constraint SQL Server names.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_repeated_key_that_spells_the_name_constraint : ApiClientTests
+    {
+        private const string KeySpellingTheNameConstraint = "UX_ApiClient_ApplicationId_Name";
+        private const string ApplicationName = "DMS1529 Spelled Constraint Application";
+        private const string HolderName = "Holder Of The Spelled Key";
+
+        private CapturingLogger<ApiClientRepository> _logger = null!;
+        private int _applicationId;
+        private int _dataStoreId;
+        private ApiClientInsertResult _repeatKeyWithDistinctName = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _logger = new CapturingLogger<ApiClientRepository>();
+            IApiClientRepository repository = new ApiClientRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                _logger,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+
+            int vendorId = await Given_api_client_inserts_that_repeat_an_identifier.InsertVendor(
+                new TenantContextProvider()
+            );
+            _applicationId = await Given_api_client_inserts_that_repeat_an_identifier.InsertApplication(
+                _applicationRepository,
+                vendorId,
+                ApplicationName
+            );
+            _dataStoreId = await Given_api_client_inserts_that_repeat_an_identifier.InsertDataStore(
+                Connection!
+            );
+
+            (
+                await repository.InsertApiClient(
+                    new ApiClientInsertCommand
+                    {
+                        ApplicationId = _applicationId,
+                        Name = HolderName,
+                        IsApproved = true,
+                        DataStoreIds = [],
+                    },
+                    new ApiClientCommand
+                    {
+                        ClientId = KeySpellingTheNameConstraint,
+                        ClientUuid = Guid.NewGuid(),
+                    }
+                )
+            ).Should().BeOfType<ApiClientInsertResult.Success>();
+
+            // A distinct name, so the only constraint the insert can violate is UX_ApiClient_ClientId.
+            _repeatKeyWithDistinctName = await repository.InsertApiClient(
+                new ApiClientInsertCommand
+                {
+                    ApplicationId = _applicationId,
+                    Name = "Distinct Name For The Spelled Key",
+                    IsApproved = true,
+                    DataStoreIds = [_dataStoreId],
+                },
+                new ApiClientCommand { ClientId = KeySpellingTheNameConstraint, ClientUuid = Guid.NewGuid() }
+            );
+        }
+
+        [Test]
+        public void It_classifies_the_repeat_as_a_duplicate_key_rather_than_a_duplicate_name() =>
+            _repeatKeyWithDistinctName.Should().BeOfType<ApiClientInsertResult.FailureDuplicateClientId>();
+
+        [Test]
+        public async Task It_writes_no_row_for_the_rejected_insert() =>
+            (
+                await Connection!.QueryAsync<string>(
+                    """SELECT Name FROM dmscs.ApiClient WHERE ApplicationId = @ApplicationId ORDER BY Name;""",
+                    new { ApplicationId = _applicationId }
+                )
+            )
+                .Should()
+                .Equal(ApplicationName, HolderName);
+
+        [Test]
+        public async Task It_writes_no_data_store_assignment_for_the_rejected_insert() =>
+            (
+                await Connection!.ExecuteScalarAsync<int>(
+                    """SELECT count(*) FROM dmscs.ApiClientDataStore WHERE DataStoreId = @DataStoreId;""",
+                    new { DataStoreId = _dataStoreId }
+                )
+            )
+                .Should()
+                .Be(0);
+
+        [Test]
+        public void It_logs_one_warning_naming_the_key_constraint_and_error_number()
+        {
+            string[] warnings = _logger
+                .Entries.Where(entry => entry.Level == LogLevel.Warning)
+                .Select(entry => entry.Message)
+                .ToArray();
+            warnings.Should().ContainSingle();
+            warnings[0].Should().Contain("UX_ApiClient_ClientId").And.Contain("2627");
+            _logger.Entries.Should().NotContain(entry => entry.Level == LogLevel.Error);
+        }
+
+        [Test]
+        public void It_attaches_no_exception_to_any_log_entry() =>
+            _logger.Entries.Should().AllSatisfy(entry => entry.Exception.Should().BeNull());
+
+        [Test]
+        public void It_keeps_the_duplicate_value_out_of_the_rendered_messages() =>
+            _logger
+                .Entries.Select(entry => entry.Message)
+                .Should()
+                .OnlyContain(message => !message.Contains(KeySpellingTheNameConstraint));
     }
 }
