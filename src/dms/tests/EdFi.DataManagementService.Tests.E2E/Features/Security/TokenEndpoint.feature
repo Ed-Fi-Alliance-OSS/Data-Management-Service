@@ -63,6 +63,16 @@ Feature: Client credentials at the token endpoint
       Then it should respond with 200
       And the token response carries an access token
 
+    @DMS-1604
+    @e2e-ci-shard-1
+    Scenario: 13 Empty body credential fields with a Basic Authorization header count as omitted
+      When a token request is made with a Basic Authorization header, content type "application/x-www-form-urlencoded" and body
+        """
+        grant_type=client_credentials&client_id=&client_secret=
+        """
+      Then it should respond with 200
+      And the token response carries an access token
+
   Rule: Requests with missing, partial, or non-Basic credentials are rejected as the ODS/API rejects them
 
     @DMS-1604

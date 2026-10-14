@@ -283,9 +283,10 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             }
 
             // RFC 6749 section 2.3 allows one mechanism per request, and the Ed-Fi ODS/API rejects
-            // the combination too. Keyed on the presence of the body fields, whatever their values,
-            // so a partial or empty combination is still mixed.
-            if (bodyCredentials.IsPresent)
+            // the combination too. One non-blank body field is enough, so a partial combination is
+            // still mixed. An empty field counts as omitted (RFC 6749 section 3.2) and a
+            // whitespace-only one as blank, as in the ODS/API, so neither makes the request mixed.
+            if (bodyCredentials.HasNonBlankField)
             {
                 return GenerateProblemDetailResponse(
                     HttpStatusCode.BadRequest,

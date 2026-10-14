@@ -975,12 +975,20 @@ public class TokenEndpointModuleTests
     }
 
     /// <summary>
-    /// An empty body field is still a present one, so the manager can treat it as a second
-    /// mechanism when a Basic header is also supplied.
+    /// RFC 6749 section 3.2: a parameter sent without a value is treated as omitted, so an empty
+    /// body field, form or JSON, reaches the manager as no field at all.
     /// </summary>
     [TestFixture("client_id=&grant_type=client_credentials", "application/x-www-form-urlencoded")]
     [TestFixture("""{"client_id":"","grant_type":"client_credentials"}""", "application/json")]
-    public class Given_An_Empty_Body_Client_Id(string requestContent, string contentType)
+    [TestFixture(
+        "client_id=&client_secret=&grant_type=client_credentials",
+        "application/x-www-form-urlencoded"
+    )]
+    [TestFixture(
+        """{"client_id":"","client_secret":"","grant_type":"client_credentials"}""",
+        "application/json"
+    )]
+    public class Given_Empty_Body_Credential_Fields(string requestContent, string contentType)
         : TokenEndpointModuleTests
     {
         private HttpResponseMessage _response = null!;
@@ -999,13 +1007,9 @@ public class TokenEndpointModuleTests
         }
 
         [Test]
-        public void It_passes_the_empty_client_id_as_present()
+        public void It_passes_the_empty_fields_as_absent()
         {
-            _calls
-                .Should()
-                .ContainSingle()
-                .Which.BodyCredentials.Should()
-                .Be(new TokenRequestCredentials(string.Empty, null));
+            _calls.Should().ContainSingle().Which.BodyCredentials.Should().Be(TokenRequestCredentials.None);
         }
     }
 
@@ -1163,6 +1167,122 @@ public class TokenEndpointModuleTests
                     "Client credentials must be supplied in an Authorization: Basic header or as "
                         + "client_id and client_secret in the request body"
                 );
+        }
+
+        [Test]
+        public void It_sends_nothing_upstream()
+        {
+            _upstreamCalls.Should().BeEmpty();
+        }
+    }
+
+    /// <summary>
+    /// RFC 6749 section 3.2: empty body fields count as omitted, so beside a Basic header they are
+    /// no second mechanism, whichever content type carried them.
+    /// </summary>
+    [TestFixture(
+        "grant_type=client_credentials&client_id=&client_secret=",
+        "application/x-www-form-urlencoded"
+    )]
+    [TestFixture(
+        """{"grant_type":"client_credentials","client_id":"","client_secret":""}""",
+        "application/json"
+    )]
+    public class Given_A_Basic_Authorization_Header_And_Empty_Body_Credentials_Through_The_Real_Manager(
+        string requestContent,
+        string contentType
+    ) : TokenEndpointModuleTests
+    {
+        private HttpResponseMessage _response = null!;
+        private List<UpstreamCall> _upstreamCalls = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            (_response, _upstreamCalls) = SendThroughRealManager(ProxyRequest(requestContent, contentType));
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+        }
+
+        [Test]
+        public void It_responds_with_ok()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public void It_forwards_the_callers_basic_header_verbatim()
+        {
+            string expected =
+                $"Basic {Convert.ToBase64String(Encoding.UTF8.GetBytes("clientId:clientSecret"))}";
+            _upstreamCalls.Should().ContainSingle().Which.Authorization.Should().Be(expected);
+        }
+
+        [Test]
+        public void It_sends_only_the_grant_type_upstream()
+        {
+            _upstreamCalls.Should().ContainSingle().Which.Body.Should().Be("grant_type=client_credentials");
+        }
+    }
+
+    /// <summary>
+    /// With no header, an empty <c>client_secret</c> leaves a partial pair and two empty fields
+    /// leave no credentials, and both get the same <c>401 invalid_request</c> from form and JSON.
+    /// </summary>
+    [TestFixture(
+        "grant_type=client_credentials&client_id=my-client&client_secret=",
+        "application/x-www-form-urlencoded"
+    )]
+    [TestFixture(
+        """{"grant_type":"client_credentials","client_id":"my-client","client_secret":""}""",
+        "application/json"
+    )]
+    [TestFixture(
+        "grant_type=client_credentials&client_id=&client_secret=",
+        "application/x-www-form-urlencoded"
+    )]
+    [TestFixture(
+        """{"grant_type":"client_credentials","client_id":"","client_secret":""}""",
+        "application/json"
+    )]
+    public class Given_No_Authorization_Header_And_Empty_Body_Credentials_Through_The_Real_Manager(
+        string requestContent,
+        string contentType
+    ) : TokenEndpointModuleTests
+    {
+        private HttpResponseMessage _response = null!;
+        private List<UpstreamCall> _upstreamCalls = null!;
+        private JsonNode _body = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            (_response, _upstreamCalls) = SendThroughRealManager(
+                UnauthenticatedRequest(requestContent, contentType)
+            );
+            _body = JsonNode.Parse(_response.Content.ReadAsStringAsync().GetAwaiter().GetResult())!;
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+        }
+
+        [Test]
+        public void It_responds_with_unauthorized()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        [Test]
+        public void It_carries_the_invalid_request_error()
+        {
+            _body["title"]!.GetValue<string>().Should().Be("invalid_request");
         }
 
         [Test]

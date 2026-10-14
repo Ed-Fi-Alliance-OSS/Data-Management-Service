@@ -555,12 +555,13 @@ public class OAuthManagerTests
         }
 
         /// <summary>
-        /// RFC 6749 section 2.3 allows one client authentication mechanism per request. Presence of
-        /// either body field is enough, whatever its value, so a partial or empty combination is still
-        /// mixed.
+        /// RFC 6749 section 2.3 allows one client authentication mechanism per request. One non-blank
+        /// body field is enough, so a partial combination is still mixed, even when the other field
+        /// is empty or whitespace-only.
         /// </summary>
         [TestFixture("my-client", "my-secret")]
-        [TestFixture("", null)]
+        [TestFixture("my-client", "")]
+        [TestFixture("   ", "my-secret")]
         [TestFixture(null, "my-secret")]
         [Parallelizable]
         public class Given_A_Basic_Authorization_Header_And_Body_Credentials(
@@ -596,6 +597,85 @@ public class OAuthManagerTests
             public void Then_Nothing_Is_Sent_Upstream()
             {
                 _upstreamRequest.Should().BeNull();
+            }
+        }
+
+        /// <summary>
+        /// RFC 6749 section 3.2: parameters sent without a value must be treated as if they were
+        /// omitted. An empty body field beside a Basic header is therefore no second mechanism, and
+        /// the request is a plain Basic one. The ODS/API accepts it too.
+        /// </summary>
+        [TestFixture("", null)]
+        [TestFixture(null, "")]
+        [TestFixture("", "")]
+        [Parallelizable]
+        public class Given_A_Basic_Authorization_Header_And_Empty_Body_Fields(
+            string? clientId,
+            string? clientSecret
+        ) : When_Getting_An_Access_Token
+        {
+            private const string AuthHeader = "Basic abc:123";
+
+            [SetUp]
+            public async Task SetUp()
+            {
+                await Act(AuthHeader, new TokenRequestCredentials(clientId, clientSecret));
+            }
+
+            [Test]
+            public void Then_It_Responds_With_Ok()
+            {
+                _response.StatusCode.Should().Be(HttpStatusCode.OK);
+            }
+
+            [Test]
+            public void Then_The_Callers_Header_Is_Forwarded_Verbatim()
+            {
+                UpstreamAuthorization().Should().Be(AuthHeader);
+            }
+
+            [Test]
+            public async Task Then_The_Upstream_Form_Body_Carries_Only_The_Grant_Type()
+            {
+                (await _upstreamRequest!.Content!.ReadAsStringAsync())
+                    .Should()
+                    .Be("grant_type=client_credentials");
+            }
+        }
+
+        /// <summary>
+        /// A whitespace-only value is a value under RFC 6749 section 3.2, but the ODS/API counts a
+        /// body field as a second mechanism only when it is non-blank (<c>IsNullOrWhiteSpace</c>),
+        /// and DMS follows the ODS/API here.
+        /// </summary>
+        [TestFixture("   ", null)]
+        [TestFixture(null, "   ")]
+        [TestFixture("   ", "")]
+        [TestFixture("\t", "   ")]
+        [Parallelizable]
+        public class Given_A_Basic_Authorization_Header_And_Whitespace_Only_Body_Fields(
+            string? clientId,
+            string? clientSecret
+        ) : When_Getting_An_Access_Token
+        {
+            private const string AuthHeader = "Basic abc:123";
+
+            [SetUp]
+            public async Task SetUp()
+            {
+                await Act(AuthHeader, new TokenRequestCredentials(clientId, clientSecret));
+            }
+
+            [Test]
+            public void Then_It_Responds_With_Ok()
+            {
+                _response.StatusCode.Should().Be(HttpStatusCode.OK);
+            }
+
+            [Test]
+            public void Then_The_Callers_Header_Is_Forwarded_Verbatim()
+            {
+                UpstreamAuthorization().Should().Be(AuthHeader);
             }
         }
 
@@ -658,12 +738,18 @@ public class OAuthManagerTests
             }
         }
 
+        /// <summary>
+        /// An empty field is an omitted one (RFC 6749 section 3.2), and a whitespace-only one is
+        /// blank, so either leaves the pair partial or missing, as in the ODS/API.
+        /// </summary>
         [TestFixture("my-client", null)]
         [TestFixture(null, "my-secret")]
         [TestFixture("my-client", "")]
         [TestFixture("", "my-secret")]
+        [TestFixture("", "")]
         [TestFixture("   ", "my-secret")]
         [TestFixture("my-client", "   ")]
+        [TestFixture("   ", "   ")]
         [TestFixture(null, null)]
         [Parallelizable]
         public class Given_Missing_Or_Partial_Body_Credentials_And_No_Authorization_Header(

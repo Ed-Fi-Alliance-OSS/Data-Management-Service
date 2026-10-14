@@ -36,6 +36,10 @@ ODS/API only.
 [RFC 6749 §2.3](https://www.rfc-editor.org/rfc/rfc6749#section-2.3) says a client "MUST NOT use
 more than one authentication method in each request".
 
+[RFC 6749 §3.2](https://www.rfc-editor.org/rfc/rfc6749#section-3.2) says, of the token endpoint,
+"Parameters sent without a value MUST be treated as if they were omitted from the request." It
+also says request parameters "MUST NOT be included more than once".
+
 ### ODS/API behavior
 
 The links below pin ODS/API commit
@@ -45,7 +49,8 @@ The behavior comes from reading that source, not from live testing.
 - The form action delegates to the JSON action, so both content types follow the same rules
   ([L130-L137](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/e453cd2cad8a0653c65453948d3d235aec7c517c/Application/EdFi.Ods.Api/Controllers/TokenController.cs#L130-L137)).
 - A Basic header combined with a non-blank body `client_id` or `client_secret` gets
-  `400 invalid_client`
+  `400 invalid_client`. The test is `string.IsNullOrWhiteSpace`, so an empty or whitespace-only
+  body field beside the header is ignored
   ([L93-L96](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/e453cd2cad8a0653c65453948d3d235aec7c517c/Application/EdFi.Ods.Api/Controllers/TokenController.cs#L93-L96)).
 - A blank or missing `client_id` or `client_secret`, with no Basic header, gets
   `401 invalid_request`, whether one field is missing or both
@@ -141,7 +146,7 @@ error format. No response echoes a credential value.
 | 1 | A form body with `grant_type`, `client_id`, or `client_secret` more than once | `400` | `Bad Request` | `A request parameter was included more than once` |
 | 2 | An `Authorization` header that is present but empty, whatever the body holds | `400` | `Bad Request` | `The Authorization header must not be empty` |
 | 3 | An `Authorization` header that isn't Basic, whatever the body holds | `401` | `invalid_client` | `The Authorization header must use the Basic scheme` |
-| 4 | A Basic header and a body `client_id` or `client_secret`, form or JSON | `400` | `Bad Request` | `Only one client authentication mechanism may be used` |
+| 4 | A Basic header and a non-blank body `client_id` or `client_secret`, form or JSON | `400` | `Bad Request` | `Only one client authentication mechanism may be used` |
 | 5 | No `Authorization` header, and a body `client_id` or `client_secret` that is absent, `null`, empty, or whitespace | `401` | `invalid_request` | `Client credentials must be supplied in an Authorization: Basic header or as client_id and client_secret in the request body` |
 | 6 | No `Authorization` header, and a body `client_id` or `client_secret` longer than 2048 characters | `400` | `Bad Request` | `client_id and client_secret must each be at most 2048 characters` |
 | 7 | A `grant_type` other than `client_credentials`, including a JSON `null` | `400` | `Bad Request` | `Unsupported grant type` |
@@ -162,14 +167,22 @@ Rule 3 matches the ODS/API for a two-part header with another scheme, such as `B
 it isn't client authentication, and body credentials don't rescue the request. The ODS/API answers
 other non-Basic headers with `400`; see [Known limitations](#known-limitations).
 
-Rule 4 is checked on *presence*. A body field counts even when it's empty, so `client_id=` with a
-Basic header is rejected. In that respect it matches the Configuration Service's
-`/connect/revoke`. It's stricter than the ODS/API, which only counts non-blank values.
+Rule 4 counts a body field only when it has a non-blank value. One such field is enough, so a
+partial combination such as `client_id=abc&client_secret=` with a Basic header is still mixed. An
+empty field is treated as omitted, as
+[RFC 6749 §3.2](https://www.rfc-editor.org/rfc/rfc6749#section-3.2) requires, so a Basic header
+with `client_id=&client_secret=` is a plain Basic request and is forwarded as one. The ODS/API
+accepts it too. A whitespace-only value such as `client_id=%20` is a value under the RFC's
+wording, but the ODS/API counts it as blank, so DMS doesn't count it either. Parity with the
+ODS/API wins here. A repeated field, such as `client_id=&client_id=abc`, is still rule 1's `400`,
+whatever its values. The Configuration Service's `/connect/revoke` still counts an empty form
+field as a second mechanism. This decision doesn't change CMS.
 
-A JSON `null` counts as absent. `"client_id": null` binds to the same value as a missing
-`client_id`. So with a Basic header, a `null` field isn't a second mechanism under rule 4, and with
-no header it's a missing credential under rule 5. The ODS/API treats a `null` as blank, so the
-result is the same there.
+A JSON `null` or `""` counts as absent, the same as a missing field. So with a Basic header, such
+a field isn't a second mechanism under rule 4, and with no header it's a missing credential under
+rule 5. The ODS/API treats both as blank, so the result is the same there. DMS applies the
+empty-means-omitted rule in Core, in `TokenRequestCredentials`, so the form and JSON paths can't
+drift apart.
 
 Rule 5 covers a request with no credentials at all as well as a partial pair. A whitespace-only
 value counts as missing, as it does in the ODS/API.
@@ -224,11 +237,12 @@ wrong secret in the body gets the same `401` as a wrong secret in a Basic header
   get a token from DMS without changes.
 - A JSON body with only `grant_type` and a Basic header still works. It's not one of the three
   documented request types, but rejecting it would break current clients.
-- A client that sent a Basic header and also put `client_id` or `client_secret` in the body used to
-  succeed, because DMS ignored the body fields. It now gets `400`. The ODS/API rejects that request
-  too when a body field is non-blank, so a client migrating from the ODS/API already complies
-  unless it sends empty body fields alongside the header, which the ODS/API accepts and DMS
-  rejects.
+- A client that sent a Basic header and also put a non-blank `client_id` or `client_secret` in the
+  body used to succeed, because DMS ignored the body fields. It now gets `400`. The ODS/API rejects
+  that request too, so a client migrating from the ODS/API already complies. Empty or
+  whitespace-only body fields beside the header are still accepted, as in the ODS/API. An empty
+  one is treated as omitted, per
+  [RFC 6749 §3.2](https://www.rfc-editor.org/rfc/rfc6749#section-3.2).
 - A request with no credentials, or with a non-Basic `Authorization` header, used to get
   `400 Malformed Authorization header`. It now gets `401`, with `invalid_request` or
   `invalid_client` as the `title`. That matches the ODS/API except for the non-Basic headers listed
@@ -276,19 +290,24 @@ should carry, and whether it should match the ODS/API, is still open.
 
 - `OAuthManagerTests` (Core) covers each rule, including an empty or whitespace-only header, a
   `Bearer` header with full, partial, or no body credentials, a two-part `Digest` header with full
-  body credentials, a `null` grant type,
+  body credentials, a Basic header with empty or whitespace-only body fields (forwarded) and with
+  one non-blank field beside an empty or blank one (mixed), empty and whitespace-only fields with
+  no header, a `null` grant type,
   and the length cap at 2048 and 2049 characters for each field. A fixture for each adjacent pair
   of rules 3 to 7 makes a reordering of those checks fail. It also covers the
   upstream header and form body, the special-character round trip, and the absence of secrets
   from the log.
-- `TokenEndpointModuleTests` (frontend) covers form and JSON extraction, presence of empty fields,
+- `TokenRequestCredentialsTests` (Core) covers the empty-means-omitted normalization and which
+  values count as a second mechanism.
+- `TokenEndpointModuleTests` (frontend) covers form and JSON extraction, empty form and JSON fields
+  reaching the manager as absent and getting the same answer through the real `OAuthManager`,
   case-insensitive names in both form and JSON, duplicate form parameters (including ones that
   differ only in letter case, and one with a `Bearer` header, which pins rule 1 before rule 3), the
   header-only request types, an empty header reaching the manager as distinct from no header, and
   JSON `null` credential and grant type fields through the real `OAuthManager`. It also covers
   malformed, mistyped, empty, and `null` JSON bodies in `Production` and `Development`: an empty
   `400`, no manager call, and no body content in any log entry at `Trace` level.
-- `Features/Security/TokenEndpoint.feature` (E2E) runs the three request types above and the JSON
-  with Basic request type. It also runs the no-credentials, partial-credentials, `Bearer`,
-  mixed-mechanism, and `null` grant type rejections, and the wrong-secret `401`, against a running
-  stack.
+- `Features/Security/TokenEndpoint.feature` (E2E) runs the three request types above, the JSON
+  with Basic request type, and a Basic header with empty body credential fields. It also runs the
+  no-credentials, partial-credentials, `Bearer`, mixed-mechanism, and `null` grant type
+  rejections, and the wrong-secret `401`, against a running stack.

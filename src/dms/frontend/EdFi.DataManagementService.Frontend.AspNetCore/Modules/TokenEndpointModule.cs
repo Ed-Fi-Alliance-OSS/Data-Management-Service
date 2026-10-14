@@ -73,13 +73,13 @@ public class TokenEndpointModule : IEndpointModule
                 return;
             }
 
-            // A body credential field is null only when absent, so that the manager can tell a
-            // present-but-empty field (still a second authentication mechanism) from no field.
+            // An absent field reads as empty here. TokenRequestCredentials treats an empty field as
+            // omitted, as RFC 6749 section 3.2 requires, so the two need no telling apart.
             tokenRequest = new TokenRequest
             {
                 grant_type = form["grant_type"].ToString(),
-                client_id = form.ContainsKey("client_id") ? form["client_id"].ToString() : null,
-                client_secret = form.ContainsKey("client_secret") ? form["client_secret"].ToString() : null,
+                client_id = form["client_id"].ToString(),
+                client_secret = form["client_secret"].ToString(),
             };
         }
 
@@ -203,12 +203,13 @@ public class TokenRequest
     public string? grant_type { get; set; } = "";
 
     /// <summary>
-    /// <c>null</c> when the body did not carry the field.
+    /// <c>null</c> or empty when the body did not carry a value, which the manager treats alike.
     /// </summary>
     public string? client_id { get; set; }
 
     /// <summary>
-    /// <c>null</c> when the body did not carry the field. Never logged.
+    /// <c>null</c> or empty when the body did not carry a value, which the manager treats alike.
+    /// Never logged.
     /// </summary>
     public string? client_secret { get; set; }
 }

@@ -36,17 +36,65 @@ public class TokenRequestCredentialsTests
         }
     }
 
+    /// <summary>
+    /// An empty or whitespace-only field is no second mechanism; one non-blank field is.
+    /// </summary>
     [TestFixture(null, null, false)]
-    [TestFixture("", null, true)]
-    [TestFixture(null, "", true)]
+    [TestFixture("", null, false)]
+    [TestFixture(null, "", false)]
+    [TestFixture("", "", false)]
+    [TestFixture("   ", "\t", false)]
+    [TestFixture("my-client", null, true)]
+    [TestFixture("", "my-secret", true)]
     [TestFixture("my-client", "my-secret", true)]
     [Parallelizable]
-    public class Given_Body_Fields(string? clientId, string? clientSecret, bool expectedPresent)
+    public class Given_Body_Fields(string? clientId, string? clientSecret, bool expectedNonBlank)
     {
         [Test]
-        public void It_reports_presence_whatever_the_values()
+        public void It_reports_whether_either_field_is_non_blank()
         {
-            new TokenRequestCredentials(clientId, clientSecret).IsPresent.Should().Be(expectedPresent);
+            new TokenRequestCredentials(clientId, clientSecret)
+                .HasNonBlankField.Should()
+                .Be(expectedNonBlank);
+        }
+    }
+
+    /// <summary>
+    /// RFC 6749 section 3.2: a parameter sent without a value is treated as omitted.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Empty_Body_Fields
+    {
+        private readonly TokenRequestCredentials _credentials = new(string.Empty, string.Empty);
+
+        [Test]
+        public void It_holds_them_as_absent()
+        {
+            _credentials.ClientId.Should().BeNull();
+            _credentials.ClientSecret.Should().BeNull();
+        }
+
+        [Test]
+        public void It_equals_a_body_with_no_fields()
+        {
+            _credentials.Should().Be(TokenRequestCredentials.None);
+        }
+    }
+
+    /// <summary>
+    /// A whitespace-only value is a value, and is kept as sent.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Whitespace_Only_Body_Fields
+    {
+        [Test]
+        public void It_keeps_the_values()
+        {
+            var credentials = new TokenRequestCredentials(" ", "\t");
+            credentials.ClientId.Should().Be(" ");
+            credentials.ClientSecret.Should().Be("\t");
         }
     }
 }
