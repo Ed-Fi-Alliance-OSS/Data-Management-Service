@@ -4310,6 +4310,59 @@ public class ApplicationModuleTests
         }
     }
 
+    /// <summary>
+    /// The identity provider refused the generated key as already registered and created nothing,
+    /// so the caller is told to retry with the same 409 the database collision produces, and no
+    /// row, reference check, or deletion follows. Fails against the implementation whose create
+    /// switch let the variant fall through to the 500 default.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_application_insert_whose_provider_reports_the_generated_key_already_registered
+        : IdentifierConflictInsertTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeProviderCreate(new ClientCreateResult.FailureDuplicateClientId());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_duplicate_key_conflict_contract() =>
+            await AssertIdentifierConflictContract(DuplicateClientIdDetail);
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_persists_no_application() => AssertNoDatabaseInsert();
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_runs_no_reference_check() =>
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_records_the_conflict_as_a_warning_with_the_client_id()
+        {
+            LoggedAt(LogLevel.Warning)
+                .Should()
+                .ContainSingle(entry =>
+                    entry.Contains("already registered at the identity provider")
+                    && entry.Contains("no client was created")
+                    && entry.Contains(_createdClientId)
+                );
+            AssertNoRawCharactersLogged();
+        }
+
+        [Test]
+        public void It_logs_nothing_at_error() => LoggedAt(LogLevel.Error).Should().BeEmpty();
+    }
+
     [TestFixture]
     public class Given_a_successful_application_insert : InsertWorkflowTestBase
     {

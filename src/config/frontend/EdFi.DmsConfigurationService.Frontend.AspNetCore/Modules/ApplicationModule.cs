@@ -136,6 +136,14 @@ public class ApplicationModule : IEndpointModule
                     "Identity provider error during client creation",
                     httpContext.TraceIdentifier
                 );
+            case ClientCreateResult.FailureDuplicateClientId:
+                // The provider already holds a client under the generated key and created nothing,
+                // so there is no client to delete and no row is written.
+                logger.LogWarning(
+                    "The generated client key for client {ClientId} is already registered at the identity provider; no client was created and nothing was written",
+                    SanitizeForLog(clientId)
+                );
+                return IdentifierConflict(DuplicateClientIdConflict, httpContext);
             case ClientCreateResult.Success clientSuccess:
                 var repositoryResult = await applicationRepository.InsertApplication(
                     command,

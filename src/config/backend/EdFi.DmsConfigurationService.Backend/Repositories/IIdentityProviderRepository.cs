@@ -45,6 +45,14 @@ public record ClientCreateResult
     public record FailureIdentityProvider(IdentityProviderError IdentityProviderError) : ClientCreateResult();
 
     public record FailureUnknown(string FailureMessage) : ClientCreateResult();
+
+    /// <summary>
+    /// The identity provider already holds a client under the requested key and refused this
+    /// creation without persisting anything, so there is no client to compensate. Reported only
+    /// for the creation call itself; a conflict in any other provisioning phase keeps its
+    /// provider-failure classification.
+    /// </summary>
+    public record FailureDuplicateClientId() : ClientCreateResult();
 }
 
 public record ClientDeleteResult
