@@ -56,6 +56,9 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
             fixture.GeneratedDdl
         );
         _database = _databaseLease.Database;
+
+        // Keep DocumentId far above DescriptorId so no test can pass by confusing the two keys.
+        await _database.ExecuteNonQueryAsync("DBCC CHECKIDENT ('dms.Document', RESEED, 999999);");
     }
 
     [SetUp]
@@ -84,7 +87,8 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
     )
     {
         var documentId = await InsertDocumentAsync();
-        await InsertDescriptorAsync(documentId, shortDescription, codeValue);
+        var descriptorId = await InsertDescriptorAsync(documentId, shortDescription, codeValue);
+        descriptorId.Should().NotBe(documentId, "every seed must have unequal descriptor and document keys");
         await RewindContentLastModifiedAtAsync(documentId);
 
         var stamps = await ReadStampPairAsync(documentId);
@@ -108,7 +112,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
         );
     }
 
-    private async Task InsertDescriptorAsync(
+    private async Task<long> InsertDescriptorAsync(
         long documentId,
         string shortDescription = "Female",
         string codeValue = "Female"
@@ -118,13 +122,14 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
             "SELECT MIN(ResourceKeyId) FROM [dms].[ResourceKey];"
         );
 
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO [dms].[Descriptor]
                 ([DocumentId], [ResourceKeyId], [Namespace], [CodeValue], [ShortDescription], [Description],
                  [EffectiveBeginDate], [EffectiveEndDate])
             VALUES (@documentId, @resourceKeyId, @namespace, @codeValue, @shortDescription, @description,
                     NULL, NULL);
+            SELECT SCOPE_IDENTITY();
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId),
@@ -324,9 +329,9 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
     public async Task It_rejects_a_descriptor_update_whose_resource_key_id_diverges_from_the_document()
     {
         // List paging trusts dms.Descriptor.ResourceKeyId while GET-by-id trusts
-        // dms.Document.ResourceKeyId, and no FK ties the two copies together. The trigger's
-        // equality guard must reject the divergent write before the no-op diff (which
-        // deliberately excludes ResourceKeyId) can short-circuit past it.
+        // dms.Document.ResourceKeyId. The bench key exists in dms.ResourceKey, so only
+        // FK_Descriptor_DocumentResourceKey can reject the divergent write; the trigger's no-op
+        // diff deliberately excludes ResourceKeyId.
         var seed = await SeedAsync();
         await InsertBenchResourceKeyAsync();
 
@@ -341,7 +346,8 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
             );
 
         var exception = (await act.Should().ThrowAsync<SqlException>()).Which;
-        exception.Message.Should().Contain("diverges from the owning dms.Document row");
+        exception.Number.Should().Be(547);
+        exception.Message.Should().Contain("FK_Descriptor_DocumentResourceKey");
 
         var storedResourceKeyId = await _database.ExecuteScalarAsync<short>(
             "SELECT ResourceKeyId FROM [dms].[Descriptor] WHERE DocumentId = @documentId;",
@@ -360,6 +366,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
     [Test]
     public async Task It_rejects_a_descriptor_insert_whose_resource_key_id_diverges_from_the_document()
     {
+        // The bench key exists in dms.ResourceKey, so only FK_Descriptor_DocumentResourceKey can reject.
         var documentId = await InsertDocumentAsync();
         await InsertBenchResourceKeyAsync();
 
@@ -376,7 +383,8 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
             );
 
         var exception = (await act.Should().ThrowAsync<SqlException>()).Which;
-        exception.Message.Should().Contain("diverges from the owning dms.Document row");
+        exception.Number.Should().Be(547);
+        exception.Message.Should().Contain("FK_Descriptor_DocumentResourceKey");
 
         var descriptorRowCount = await _database.ExecuteScalarAsync<int>(
             "SELECT COUNT(*) FROM [dms].[Descriptor] WHERE DocumentId = @documentId;",
@@ -386,31 +394,31 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
     }
 
     [Test]
-    public async Task It_does_not_stamp_document_when_a_resource_key_id_backfill_updates_both_tables()
+    public async Task It_rejects_a_document_resource_key_id_change_while_its_descriptor_references_it()
     {
-        // ResourceKeyId is immutable in production and deliberately excluded from the trigger's
-        // no-op diff so a migration backfill UPDATE of the column cannot bump stamps. The
-        // equality guard requires such a backfill to update dms.Document before dms.Descriptor.
+        // The composite FK also covers the document side, which the former trigger guard never did.
         var seed = await SeedAsync();
         await InsertBenchResourceKeyAsync();
 
-        await _database.ExecuteNonQueryAsync(
-            """
-            UPDATE [dms].[Document]
-            SET [ResourceKeyId] = 32000
-            WHERE DocumentId = @documentId;
-            """,
-            new SqlParameter("@documentId", seed.DocumentId)
-        );
-        await _database.ExecuteNonQueryAsync(
-            """
-            UPDATE [dms].[Descriptor]
-            SET [ResourceKeyId] = 32000
-            WHERE DocumentId = @documentId;
-            """,
-            new SqlParameter("@documentId", seed.DocumentId)
-        );
+        var act = async () =>
+            await _database.ExecuteNonQueryAsync(
+                """
+                UPDATE [dms].[Document]
+                SET [ResourceKeyId] = 32000
+                WHERE DocumentId = @documentId;
+                """,
+                new SqlParameter("@documentId", seed.DocumentId)
+            );
 
+        var exception = (await act.Should().ThrowAsync<SqlException>()).Which;
+        exception.Number.Should().Be(547);
+        exception.Message.Should().Contain("FK_Descriptor_DocumentResourceKey");
+
+        var documentResourceKeyId = await _database.ExecuteScalarAsync<short>(
+            "SELECT ResourceKeyId FROM [dms].[Document] WHERE DocumentId = @documentId;",
+            new SqlParameter("@documentId", seed.DocumentId)
+        );
+        documentResourceKeyId.Should().NotBe((short)32000);
         var after = await ReadStampPairAsync(seed.DocumentId);
         after.Document.ContentVersion.Should().Be(seed.ContentVersion);
         after.Document.ContentLastModifiedAt.Should().Be(seed.ContentLastModifiedAt);
