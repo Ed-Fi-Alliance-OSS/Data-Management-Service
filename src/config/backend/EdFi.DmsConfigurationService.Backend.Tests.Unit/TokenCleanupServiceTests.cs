@@ -38,8 +38,7 @@ public class TokenCleanupServiceTests
             Options.Create(
                 new IdentityOptions
                 {
-                    TokenCleanupEnabled = enabled,
-                    TokenCleanupIntervalMinutes = intervalMinutes,
+                    TokenCleanup = new() { Enabled = enabled, IntervalMinutes = intervalMinutes },
                 }
             ),
             NullLogger<TokenCleanupService>.Instance,

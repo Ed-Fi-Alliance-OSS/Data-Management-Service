@@ -78,23 +78,92 @@ as `CMS_E2E_API_URL`, `CMS_COMPOSE_PROJECT`, and `CMS_POSTGRES_CONTAINER`, now s
 `CONFIGURATION_SERVICE_` (`CMS_CONFIG_CONTAINER` became `CONFIGURATION_SERVICE_CONTAINER`), and
 `SECRETS_E2E_CMS_*` became `SECRETS_E2E_CONFIGURATION_SERVICE_*`.
 
-## Renamed configuration keys
+## Optional features
 
-These settings moved into their feature's own section. The earlier keys are not read, and
-there are no aliases: a deployment that keeps an earlier key gets the default, which leaves the
-feature switched off or loads the bundled ApiSchema workspace instead of a custom one. Rename
-each key in `appsettings.json` overrides and in any environment variables your deployment
-sets. The Docker Compose variables (`DMS_ENABLE_MANAGEMENT_ENDPOINTS`,
-`DMS_ENABLE_IDENTITY_MANAGEMENT`, `USE_API_SCHEMA_PATH`, `API_SCHEMA_PATH`) keep their names;
-the shipped Compose files map them to the new keys.
+### Switch convention
 
-| Earlier key | Current key | Environment variable |
-| --- | --- | --- |
-| `AppSettings:EnableManagementEndpoints` | `AppSettings:ManagementEndpoints:Enabled` | `AppSettings__ManagementEndpoints__Enabled` |
-| `AppSettings:EnableClaimsetReload` | Removed. `AppSettings:ManagementEndpoints:Enabled` now controls both the reload and view operations. Compose no longer reads `DMS_ENABLE_CLAIMSET_RELOAD`. | None |
-| `AppSettings:EnableIdentityManagement` (8.1 pre-release builds only) | `DataManagement:IdentityManagement:Enabled` | `DataManagement__IdentityManagement__Enabled` |
-| `AppSettings:UseApiSchemaPath` | `AppSettings:ApiSchema:UseCustomPath` | `AppSettings__ApiSchema__UseCustomPath` |
-| `AppSettings:ApiSchemaPath` | `AppSettings:ApiSchema:Path` | `AppSettings__ApiSchema__Path` |
+DMS and the Configuration Service turn optional features on and off with these rules:
+
+- **A feature's switch lives in that feature's own section and is named `Enabled`**, for example
+  `DataManagement:IdentityManagement:Enabled`. One block configures the feature, and the
+  environment variable name describes itself
+  (`DataManagement__IdentityManagement__Enabled`). The switch is named `Enabled` even when the
+  feature has no other settings yet, so settings added later do not force a rename.
+- **There is no central `FeatureManagement` section.** Switches are read when the host starts,
+  and changing one takes a restart. They are not runtime feature flags: there is no per-request
+  targeting and no percentage rollout.
+- **There is no separate switch when configuring the feature already opts in.** `Plugins:Allowed`
+  loads nothing while it is empty, and DocumentCache projects nothing while
+  `DataManagement:DocumentCache:Targets` is empty. For these features the configuration is the
+  switch.
+- **Where sections live.** `AppSettings` holds host-wide scalar settings such as `Datastore`,
+  `PathBase`, and `MaximumPageSize`. New feature sections go at the top level or under
+  `DataManagement`. `AppSettings:ManagementEndpoints` stays under `AppSettings` because that
+  subsection already existed.
+- **Settings that change behavior are not features** and keep their names:
+  `AppSettings:BypassTypeCoercion`, `AppSettings:MaskRequestBodyInLogs`,
+  `AppSettings:UseLegacyDocumentIdOrderingForChangeQueries`, `AppSettings:BypassAuthorization`,
+  `AppSettings:ReverseProxy:UseForwardedHeaders`, `IdentitySettings:AllowRegistration`, and
+  `AppSettings:DeployDatabaseOnStartup`.
+
+These existing settings are recorded exceptions and keep their names:
+
+- `AppSettings:MultiTenancy` (DMS and Configuration Service) is a deployment mode rather than an
+  optional feature.
+- `AppSettings:ApiSchema:UseCustomPath` (DMS) selects where the ApiSchema workspace is loaded
+  from; it does not turn a feature on or off.
+- `CacheSettings:DataStoreCacheRefreshEnabled` (DMS, default `true`) sits beside its sibling
+  `DataStoreCacheExpirationSeconds` in [CacheSettings](#cachesettings).
+- `JobSettings:WorkerEnabled`, `JobSettings:SchedulerEnabled`, and `JobSettings:RetentionEnabled`
+  (Configuration Service, each default `true`) switch individual parts of the one background job
+  system, which share the rest of [JobSettings](#jobsettings).
+
+### Optional features overview
+
+"Switch" is a boolean `Enabled` key. "Configured opt-in" means the feature is on only when the
+setting holds a value; there is no boolean to set.
+
+| Feature | Host | Key | Kind | Default | Environment variable |
+| --- | --- | --- | --- | --- | --- |
+| Claimset management endpoints (reload and view) | DMS | `AppSettings:ManagementEndpoints:Enabled` | Switch; also needs a valid `RequiredRole` | `false` | `AppSettings__ManagementEndpoints__Enabled` |
+| Identity management API (`/identity/v2`) | DMS | `DataManagement:IdentityManagement:Enabled` | Switch | `false` | `DataManagement__IdentityManagement__Enabled` |
+| Resource links in responses | DMS | `DataManagement:ResourceLinks:Enabled` | Switch | `true` | `DataManagement__ResourceLinks__Enabled` |
+| DocumentCache projection | DMS | `DataManagement:DocumentCache:Targets` | Configured opt-in | empty | `DataManagement__DocumentCache__Targets__<n>__TenantKey`, `DataManagement__DocumentCache__Targets__<n>__DataStoreId` |
+| DocumentCache read acceleration | DMS | `DataManagement:DocumentCache:ReadAcceleration:Enabled` | Switch; also needs a matching `Targets` entry | `false` | `DataManagement__DocumentCache__ReadAcceleration__Enabled` |
+| Precompiled mapping packs | DMS | `MappingPacks:Enabled` | Switch | `false` | `MappingPacks__Enabled` |
+| OTLP log export | DMS and Configuration Service | `OtlpLogging:Enabled` | Switch | `false` | `OtlpLogging__Enabled` |
+| Plugins | DMS and Configuration Service | `Plugins:Allowed` | Configured opt-in | empty | `Plugins__Allowed` |
+| Expired-token cleanup (self-contained identity only) | Configuration Service | `IdentitySettings:TokenCleanup:Enabled` | Switch | `true` | `IdentitySettings__TokenCleanup__Enabled` |
+
+The shipped Docker Compose files set some of these from their own variables:
+`DMS_ENABLE_MANAGEMENT_ENDPOINTS`, `DMS_ENABLE_IDENTITY_MANAGEMENT`, and
+`CONFIGURATION_SERVICE_IDENTITY_TOKEN_CLEANUP_ENABLED`.
+
+### Renamed configuration keys
+
+8.1 moved these settings into their feature's own section. The earlier keys are not read, and
+there are no aliases: a deployment that still sets only an earlier key gets the current key's
+default, shown in the last column. Rename each key in `appsettings.json` overrides and in any
+environment variables your deployment sets. The Docker Compose variables
+(`DMS_ENABLE_MANAGEMENT_ENDPOINTS`, `DMS_ENABLE_IDENTITY_MANAGEMENT`, `USE_API_SCHEMA_PATH`,
+`API_SCHEMA_PATH`, `CONFIGURATION_SERVICE_IDENTITY_TOKEN_CLEANUP_ENABLED`,
+`CONFIGURATION_SERVICE_IDENTITY_TOKEN_CLEANUP_INTERVAL_MINUTES`) keep their names; the shipped
+Compose files map them to the new keys.
+
+| Earlier key | Current key | Environment variable | With only the earlier key set |
+| --- | --- | --- | --- |
+| `AppSettings:EnableManagementEndpoints` | `AppSettings:ManagementEndpoints:Enabled` | `AppSettings__ManagementEndpoints__Enabled` | Management endpoints are off |
+| `AppSettings:EnableClaimsetReload` | Removed. `AppSettings:ManagementEndpoints:Enabled` now controls both the reload and view operations, and Compose no longer reads `DMS_ENABLE_CLAIMSET_RELOAD`. | None | Ignored; see the note below |
+| `AppSettings:EnableIdentityManagement` (8.1 pre-release builds only) | `DataManagement:IdentityManagement:Enabled` | `DataManagement__IdentityManagement__Enabled` | Identity management is off |
+| `AppSettings:UseApiSchemaPath` | `AppSettings:ApiSchema:UseCustomPath` | `AppSettings__ApiSchema__UseCustomPath` | DMS loads the bundled ApiSchema workspace |
+| `AppSettings:ApiSchemaPath` | `AppSettings:ApiSchema:Path` | `AppSettings__ApiSchema__Path` | No custom path is set |
+| `IdentitySettings:TokenCleanupEnabled` (Configuration Service, 8.1 pre-release builds only) | `IdentitySettings:TokenCleanup:Enabled` | `IdentitySettings__TokenCleanup__Enabled` | Token cleanup stays on |
+| `IdentitySettings:TokenCleanupIntervalMinutes` (Configuration Service, 8.1 pre-release builds only) | `IdentitySettings:TokenCleanup:IntervalMinutes` | `IdentitySettings__TokenCleanup__IntervalMinutes` | The sweep runs every 30 minutes |
+
+With one switch for both claimset operations, a deployment that kept
+`EnableClaimsetReload=false` but sets `AppSettings:ManagementEndpoints:Enabled=true` and a valid
+`AppSettings:ManagementEndpoints:RequiredRole` now exposes reload and view to callers holding
+that role. To keep them unavailable, set `AppSettings:ManagementEndpoints:Enabled=false`.
 
 ## AppSettings
 
@@ -158,6 +227,12 @@ is `false`. See the
 | Parameter | Description |
 | --- | --- |
 | Enabled | When `true`, maps the DMS-owned `/identity/v2/identities` routes and serves the identity OpenAPI document, its metadata listing entry, and the `identity` Discovery URL. When `false`, none of them exist and the identity routes fall through to the catch-all `404`. The operations themselves are performed by an identity provider plugin; with none registered, a request that passes authentication, tenant, client-binding and identity-claim checks answers `404` with `urn:ed-fi:api:identities:operation-not-supported`. With it `true`, CORS also exposes the `Location` response header to the one origin named by `Cors:SwaggerUIOrigin`, which a browser client needs to follow an asynchronous request; see [Cors](#cors). See [Identity Management](./IDENTITY-MANAGEMENT.md) for enabling it, the responses a client sees, and how quickly a change to a client or claim set takes effect. Environment override: `DataManagement__IdentityManagement__Enabled`; the shipped Docker Compose files map it from `DMS_ENABLE_IDENTITY_MANAGEMENT`. Default: `false` |
+
+## DataManagement:ResourceLinks
+
+| Parameter | Description |
+| --- | --- |
+| Enabled | When `true`, a document reference in a response carries a `link` object when the referenced document resolves; a reference that does not resolve, such as one to a document deleted while the response was being read, carries no `link`. When `false`, responses carry no `link` objects. Read at startup; changing it takes a restart. Environment override: `DataManagement__ResourceLinks__Enabled`. Default: `true` |
 
 ## DataManagement:DocumentCache
 
@@ -990,8 +1065,8 @@ relevant environment variables or appsettings to set `IdentityProvider` to
 | `AppSettings.IdentityProvider` | Selects the identity provider                                    | `keycloak`                                           | `self-contained`                              |
 | `IdentitySettings.Authority`        | Identity provider issuer. In self-contained mode, also the base URL for every advertised discovery endpoint: omit `AppSettings.PathBase` from this value, and keep DMS `JwtAuthentication.MetadataAddress` on the same origin (scheme, host, and port). DMS `JwtAuthentication.Authority` must exactly match the issuer. | `http://dms-keycloak:8080/realms/edfi` | `http://ed-fi-api-config:8081` |
 | `IdentitySettings.EncryptionKey`    | Key used for token encryption (self-contained only)              | _(not used)_                                         | `QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz` |
-| `IdentitySettings.TokenCleanupEnabled` | Enables the background sweep that deletes expired OpenIddict access tokens (self-contained only) | _(not used)_                                         | `true`              |
-| `IdentitySettings.TokenCleanupIntervalMinutes` | Interval, in minutes, between expired-token cleanup sweeps (self-contained only)           | _(not used)_                                         | `30`              |
+| `IdentitySettings.TokenCleanup.Enabled` | Enables the background sweep that deletes expired OpenIddict access tokens (self-contained only) | _(not used)_                                         | `true`              |
+| `IdentitySettings.TokenCleanup.IntervalMinutes` | Interval, in minutes, between expired-token cleanup sweeps (self-contained only)           | _(not used)_                                         | `30`              |
 | `IdentitySettings.BearerTokenPerClientLimit` | Maximum number of active (unexpired, unrevoked) access tokens a limited client may hold (self-contained only; default `15`). Exemption requires no live `dmscs.ApiClient` row and a nonempty set of registered scopes consisting only of recognized Configuration Service admin scopes. Ed-Fi API clients remain limited. A grant beyond the limit is rejected with HTTP 429 and a `Too Many Tokens` problem response of type `urn:ed-fi:api:security:authentication:too-many-tokens`; the client should reuse its existing token until it expires. Any value below 1, conventionally `-1`, disables enforcement globally. | _(not used)_ | `15` |
 | `IdentitySettings.ClientSecretHashingIterations` | Number of PBKDF2-SHA256 iterations used to hash and verify client secrets (self-contained only). Must be greater than zero; startup fails otherwise. Default: `210000`. Set in Docker Compose through `CONFIGURATION_SERVICE_IDENTITY_HASHING_ITERATIONS`, which also sets the count `setup-openiddict.ps1` hashes bootstrap client secrets with. | _(not used)_ | `210000` |
 
@@ -1000,7 +1075,7 @@ relevant environment variables or appsettings to set `IdentityProvider` to
 > next grant. Non-API clients, including DMS's Configuration Service credential and the Configuration Service
 > admin/bootstrap clients, are exempt when they have no live `dmscs.ApiClient` row and
 > their nonempty registered scopes consist only of recognized Configuration Service admin scopes.
-> Leave `TokenCleanupEnabled` on as well: a limited client's grant counts its active tokens, and
+> Leave `TokenCleanup:Enabled` on as well: a limited client's grant counts its active tokens, and
 > expired tokens the sweep has not yet removed still sit in the table it counts over, so a
 > deployment that has run with cleanup disabled makes each grant read through that whole backlog.
 

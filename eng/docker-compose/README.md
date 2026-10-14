@@ -1331,7 +1331,7 @@ equivalent setting, because Keycloak owns its own token housekeeping.
 | `CONFIGURATION_SERVICE_IDENTITY_TOKEN_CLEANUP_ENABLED` | `true` | Enables the expired-token cleanup sweep. |
 | `CONFIGURATION_SERVICE_IDENTITY_TOKEN_CLEANUP_INTERVAL_MINUTES` | `30` | Interval, in minutes, between cleanup sweeps. |
 
-These map to `IdentitySettings__TokenCleanupEnabled` and
-`IdentitySettings__TokenCleanupIntervalMinutes` in `local-config.yml` and `published-config.yml`.
+These map to `IdentitySettings__TokenCleanup__Enabled` and
+`IdentitySettings__TokenCleanup__IntervalMinutes` in `local-config.yml` and `published-config.yml`.
 The interval accepts values from 1 to 71,582 minutes; a value outside that range is logged as a
 warning and falls back to the 30-minute default.
