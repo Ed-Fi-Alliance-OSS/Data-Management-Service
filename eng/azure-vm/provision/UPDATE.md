@@ -43,6 +43,21 @@ Commands are labeled **[bash]** (WSL shell) or **[pwsh]** (`pwsh` inside WSL) an
 
    Rename or delete any duplicate through `PUT`/`DELETE /v3/dataStores/{id}` or `/v3/apiClients/{id}` on the current build first.
 
+   Builds from October 2026 also add migration `0036`, which makes the API client key (`ClientId`) and the Keycloak client id (`ClientUuid`) unique across the whole `ApiClient` table.
+   Startup stops with `API client identifier uniqueness upgrade blocked` if two rows share either value.
+   Both queries must return zero rows:
+
+   ```bash
+   for db in edfi_st_config edfi_mt_config; do
+     docker exec dms-sec-postgres psql -U postgres -d "$db" \
+       -c 'SELECT "ClientId", count(*) FROM dmscs."ApiClient" GROUP BY 1 HAVING count(*) > 1;' \
+       -c 'SELECT "ClientUuid", count(*) FROM dmscs."ApiClient" GROUP BY 1 HAVING count(*) > 1;'
+   done
+   ```
+
+   If either returns rows, do not fix them through the API: `DELETE /v3/apiClients/{id}` also deletes the Keycloak client that rows sharing a `ClientUuid` have in common.
+   Stop `st-config` and `mt-config`, follow [Configuration Service database upgrades](../../../docs/OPERATIONS.md#configuration-service-database-upgrades) against that database (enumerate every row, back up, review ownership, delete the reviewed rows directly, re-check), then continue with step 3.
+
 3. Check for claim sets created at runtime.
    Part C's claims reload deletes every claim set that is not system-reserved, in every tenant.
    Applications bound to one keep its name, so their keys still get tokens, but every API request they make answers `500` until the claim set is back.
