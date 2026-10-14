@@ -247,6 +247,23 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
         int commandTimeoutSeconds,
         MssqlProvisioningTimingContext context,
         string? databaseCollation = null
+    ) =>
+        await CreateProvisionedAsync(
+            generatedDdl,
+            commandTimeoutSeconds,
+            context,
+            () => _generatedDdlProvisioningGate.Value,
+            Console.Error,
+            databaseCollation
+        );
+
+    internal static async Task<MssqlGeneratedDdlTestDatabase> CreateProvisionedAsync(
+        string generatedDdl,
+        int commandTimeoutSeconds,
+        MssqlProvisioningTimingContext context,
+        Func<MssqlGeneratedDdlProvisioningGate> resolveProvisioningGate,
+        TextWriter diagnosticWriter,
+        string? databaseCollation = null
     )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(generatedDdl);
@@ -258,11 +275,17 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
 
         try
         {
-            await using var provisionSlot = await _generatedDdlProvisioningGate.Value.AcquireAsync();
+            await using var provisionSlot = await resolveProvisioningGate().AcquireAsync();
 
             database = await CreateEmptyAsync(context, databaseCollation);
             databaseName = database.DatabaseName;
-            await database.ApplyGeneratedDdlAsync(generatedDdl, commandTimeoutSeconds, context);
+            await database.ApplyGeneratedDdlAsync(
+                generatedDdl,
+                commandTimeoutSeconds,
+                context,
+                provisionSlot.CaptureSnapshot,
+                diagnosticWriter
+            );
             return database;
         }
         catch (Exception primaryException)
@@ -332,13 +355,35 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
             callerLineNumber
         );
 
-        await ApplyGeneratedDdlAsync(generatedDdl, commandTimeoutSeconds, context);
+        await ApplyGeneratedDdlAsync(
+            generatedDdl,
+            commandTimeoutSeconds,
+            context,
+            () => MssqlGeneratedDdlProvisioningSnapshot.NotAdmitted,
+            Console.Error
+        );
     }
+
+    internal Task ApplyGeneratedDdlAsync(
+        string generatedDdl,
+        int commandTimeoutSeconds,
+        MssqlProvisioningTimingContext context,
+        TextWriter diagnosticWriter
+    ) =>
+        ApplyGeneratedDdlAsync(
+            generatedDdl,
+            commandTimeoutSeconds,
+            context,
+            () => MssqlGeneratedDdlProvisioningSnapshot.NotAdmitted,
+            diagnosticWriter
+        );
 
     private async Task ApplyGeneratedDdlAsync(
         string generatedDdl,
         int commandTimeoutSeconds,
-        MssqlProvisioningTimingContext context
+        MssqlProvisioningTimingContext context,
+        Func<MssqlGeneratedDdlProvisioningSnapshot> captureProvisioning,
+        TextWriter diagnosticWriter
     )
     {
         var stopwatch = Stopwatch.StartNew();
@@ -362,7 +407,9 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
                         batchIndex + 1,
                         batches.Length,
                         commandTimeoutSeconds,
-                        context
+                        context,
+                        captureProvisioning,
+                        diagnosticWriter
                     );
                 }
 
@@ -753,7 +800,9 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
         int batchOrdinal,
         int batchCount,
         int commandTimeoutSeconds,
-        MssqlProvisioningTimingContext context
+        MssqlProvisioningTimingContext context,
+        Func<MssqlGeneratedDdlProvisioningSnapshot> captureProvisioning,
+        TextWriter diagnosticWriter
     )
     {
         var stopwatch = Stopwatch.StartNew();
@@ -765,7 +814,48 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
             command.Transaction = transaction;
             command.CommandText = batch;
             command.CommandTimeout = commandTimeoutSeconds;
-            await command.ExecuteNonQueryAsync();
+            var provisioningAtStart = captureProvisioning();
+            var batchStopwatch = Stopwatch.StartNew();
+            try
+            {
+                await command.ExecuteNonQueryAsync();
+                batchStopwatch.Stop();
+            }
+            catch (Exception exception)
+                when (MssqlGeneratedDdlProvisioningDiagnostics.IsProvisioningCommandTimeout(
+                        exception,
+                        provisioningAtStart.IsAdmitted
+                    )
+                )
+            {
+                batchStopwatch.Stop();
+                try
+                {
+                    var provisioningAtTimeout = captureProvisioning();
+                    var diagnostic = new MssqlGeneratedDdlTimeoutDiagnostic(
+                        context,
+                        DatabaseName,
+                        batchOrdinal,
+                        batchCount,
+                        commandTimeoutSeconds,
+                        batchStopwatch.Elapsed,
+                        provisioningAtStart.AdmissionWaitElapsed,
+                        provisioningAtTimeout.MaximumConcurrency,
+                        provisioningAtStart.AdmittedCount,
+                        provisioningAtTimeout.AdmittedCount
+                    );
+                    MssqlGeneratedDdlProvisioningDiagnostics.TryWrite(
+                        diagnosticWriter,
+                        () => MssqlGeneratedDdlProvisioningDiagnostics.Format(diagnostic)
+                    );
+                }
+                catch
+                {
+                    // Preparing optional diagnostics cannot replace the provider timeout.
+                }
+
+                throw;
+            }
         }
         catch
         {
