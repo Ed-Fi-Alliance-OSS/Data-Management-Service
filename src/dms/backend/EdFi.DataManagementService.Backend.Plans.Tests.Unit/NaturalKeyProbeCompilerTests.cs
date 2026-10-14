@@ -452,6 +452,7 @@ public class Given_Natural_Key_Probe_Validation
     private Action _validateEmptyTarget = null!;
     private Action _validateEmptyOwnKey = null!;
     private Action _validateOwnKeyBoundToAnotherReferenceSite = null!;
+    private Action _validateOwnKeyBoundPastTheLastReferenceSite = null!;
 
     [OneTimeSetUp]
     public void Setup()
@@ -460,25 +461,18 @@ public class Given_Natural_Key_Probe_Validation
         var targets = mappingSet.NaturalKeyProbeTargets;
         var ownKeys = mappingSet.OwnNaturalKeyProbesByResource;
         var session = targets[NaturalKeyProbeTestSupport.Session];
-        var attendanceEventOwnKey = ownKeys[NaturalKeyProbeTestSupport.StudentSchoolAttendanceEvent];
+        var concreteResources = modelSet.GetConcreteResourceModelsByResource();
+
+        // Built exactly as the compiler builds a referenced resource's probe, so the missing RefKey
+        // is the only possible reason for rejection.
+        var attendanceEventTarget = NaturalKeyProbeCompiler.BuildConcreteTarget(
+            concreteResources[NaturalKeyProbeTestSupport.StudentSchoolAttendanceEvent]
+        );
 
         _validateCompiled = () => NaturalKeyProbeCompiler.Validate(modelSet, targets, ownKeys);
 
         _validateTargetForNeverReferencedResource = () =>
-            NaturalKeyProbeCompiler.Validate(
-                modelSet,
-                WithTarget(
-                    targets,
-                    new NaturalKeyProbeTarget(
-                        NaturalKeyProbeTestSupport.StudentSchoolAttendanceEvent,
-                        NaturalKeyProbeTargetKind.Concrete,
-                        attendanceEventOwnKey.RootTable,
-                        [NaturalKeyProbeTestSupport.Key(attendanceEventOwnKey.KeyColumns, "$.eventDate")],
-                        attendanceEventOwnKey.DocumentIdColumn
-                    )
-                ),
-                ownKeys
-            );
+            NaturalKeyProbeCompiler.Validate(modelSet, WithTarget(targets, attendanceEventTarget), ownKeys);
 
         _validateTargetWithDocumentReferenceKey = () =>
             NaturalKeyProbeCompiler.Validate(
@@ -553,6 +547,32 @@ public class Given_Natural_Key_Probe_Validation
         };
         _validateOwnKeyBoundToAnotherReferenceSite = () =>
             NaturalKeyProbeCompiler.Validate(modelSet, targets, swappedOwnKeys);
+
+        var sessionBindingCount = concreteResources[NaturalKeyProbeTestSupport.Session]
+            .RelationalModel
+            .DocumentReferenceBindings
+            .Count;
+        Dictionary<QualifiedResourceName, OwnNaturalKeyProbe> outOfRangeOwnKeys = new(ownKeys)
+        {
+            [NaturalKeyProbeTestSupport.Session] = sessionOwnKey with
+            {
+                KeyColumns =
+                [
+                    .. sessionOwnKey.KeyColumns.Select(key =>
+                        key.IdentityJsonPath.Canonical == "$.schoolReference.schoolId"
+                            ? key with
+                            {
+                                Binding = new NaturalKeyProbeKeyBinding.DocumentReference(
+                                    sessionBindingCount
+                                ),
+                            }
+                            : key
+                    ),
+                ],
+            },
+        };
+        _validateOwnKeyBoundPastTheLastReferenceSite = () =>
+            NaturalKeyProbeCompiler.Validate(modelSet, targets, outOfRangeOwnKeys);
     }
 
     [Test]
@@ -613,6 +633,15 @@ public class Given_Natural_Key_Probe_Validation
             .Should()
             .Throw<InvalidOperationException>()
             .WithMessage("*'Ed-Fi.Session'*does not supply column*");
+    }
+
+    [Test]
+    public void It_rejects_an_own_key_document_reference_bound_past_the_last_reference_site()
+    {
+        _validateOwnKeyBoundPastTheLastReferenceSite
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*'Ed-Fi.Session'*'$.schoolReference.schoolId'*does not supply column*");
     }
 
     private static Dictionary<QualifiedResourceName, NaturalKeyProbeTarget> WithTarget(

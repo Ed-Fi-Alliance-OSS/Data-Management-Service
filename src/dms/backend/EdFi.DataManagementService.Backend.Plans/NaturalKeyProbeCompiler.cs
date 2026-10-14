@@ -273,7 +273,7 @@ internal static class NaturalKeyProbeCompiler
     /// Builds a concrete reference-target probe. Each identity part binds its storage-resolved column, so
     /// the probe's distinct key columns match <c>UX_&lt;R&gt;_RefKey</c>.
     /// </summary>
-    private static NaturalKeyProbeTarget BuildConcreteTarget(ConcreteResourceModel concreteResource)
+    internal static NaturalKeyProbeTarget BuildConcreteTarget(ConcreteResourceModel concreteResource)
     {
         var resourceModel = concreteResource.RelationalModel;
         var root = resourceModel.Root;
