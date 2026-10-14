@@ -121,7 +121,9 @@ These existing settings are recorded exceptions and keep their names:
 ### Optional features overview
 
 "Switch" is a boolean `Enabled` key. "Configured opt-in" means the feature is on only when the
-setting holds a value; there is no boolean to set.
+setting holds a value; there is no boolean to set. "Retained exception switch" is a boolean that
+keeps its existing name for the reasons listed under [Switch convention](#switch-convention);
+it is not slated for renaming.
 
 | Feature | Host | Key | Kind | Default | Environment variable |
 | --- | --- | --- | --- | --- | --- |
@@ -134,10 +136,16 @@ setting holds a value; there is no boolean to set.
 | OTLP log export | DMS and Configuration Service | `OtlpLogging:Enabled` | Switch | `false` | `OtlpLogging__Enabled` |
 | Plugins | DMS and Configuration Service | `Plugins:Allowed` | Configured opt-in | empty | `Plugins__Allowed` |
 | Expired-token cleanup (self-contained identity only) | Configuration Service | `IdentitySettings:TokenCleanup:Enabled` | Switch | `true` | `IdentitySettings__TokenCleanup__Enabled` |
+| Data store configuration cache refresh | DMS | `CacheSettings:DataStoreCacheRefreshEnabled` | Retained exception switch | `true` | `CacheSettings__DataStoreCacheRefreshEnabled` |
+| Background job worker | Configuration Service | `JobSettings:WorkerEnabled` | Retained exception switch | `true` | `JobSettings__WorkerEnabled` |
+| Recurring job scheduler | Configuration Service | `JobSettings:SchedulerEnabled` | Retained exception switch | `true` | `JobSettings__SchedulerEnabled` |
+| Finished-job retention sweep | Configuration Service | `JobSettings:RetentionEnabled` | Retained exception switch | `true` | `JobSettings__RetentionEnabled` |
 
 The shipped Docker Compose files set some of these from their own variables:
-`DMS_ENABLE_MANAGEMENT_ENDPOINTS`, `DMS_ENABLE_IDENTITY_MANAGEMENT`, and
-`CONFIGURATION_SERVICE_IDENTITY_TOKEN_CLEANUP_ENABLED`.
+`DMS_ENABLE_MANAGEMENT_ENDPOINTS`, `DMS_ENABLE_IDENTITY_MANAGEMENT`,
+`CONFIGURATION_SERVICE_IDENTITY_TOKEN_CLEANUP_ENABLED`,
+`CONFIGURATION_SERVICE_JOBS_WORKER_ENABLED`, `CONFIGURATION_SERVICE_JOBS_SCHEDULER_ENABLED`, and
+`CONFIGURATION_SERVICE_JOBS_RETENTION_ENABLED`.
 
 ### Renamed configuration keys
 
