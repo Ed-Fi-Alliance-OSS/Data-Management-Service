@@ -2178,6 +2178,11 @@ public class ApplicationModuleTests
                 [1]
             );
 
+            // A replacement UUID the provider reports is unreferenced unless a fixture says
+            // otherwise, so compensation against it stays legitimate by default.
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
+                .Returns(new ApiClientUuidReferenceResult.None());
+
             A.CallTo(() =>
                     _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
                 )
@@ -5553,8 +5558,8 @@ public class ApplicationModuleTests
         public void It_deletes_nothing() => _deletedClientIds.Should().BeEmpty();
 
         [Test]
-        public void It_runs_no_reference_check() =>
-            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
+        public void It_runs_no_reference_check_for_the_rollback_uuid() =>
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(_rollbackUuid))
                 .MustNotHaveHappened();
 
         [Test]
@@ -6103,5 +6108,236 @@ public class ApplicationModuleTests
 
         [Test]
         public void It_releases_the_lock() => _recordingLockManager.Handle.Disposed.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Shared arrangement for a repository update that answers the duplicate-application-name
+    /// result while the provider has reported a replacement UUID: the fixture decides what the
+    /// ownership check of that UUID reports.
+    /// </summary>
+    public abstract class DuplicateNameCompensationTestBase : UpdateRollbackTestBase
+    {
+        private TestLogger<ApplicationModule> _moduleLogger = null!;
+        protected Guid _updatedUuid;
+        protected Guid _rollbackUuid;
+        protected List<string> _providerUpdateUuids = null!;
+        protected List<string> _deletedClientIds = null!;
+
+        [SetUp]
+        public void SetUpDuplicateNameDefaults()
+        {
+            // The fixture instance, and so its fakes, outlives each test, so the recorded calls
+            // below must cover only this test's request.
+            Fake.ClearRecordedCalls(_applicationRepository);
+            Fake.ClearRecordedCalls(_apiClientRepository);
+            _moduleLogger = new TestLogger<ApplicationModule>();
+            _updatedUuid = Guid.NewGuid();
+            _rollbackUuid = Guid.NewGuid();
+            _providerUpdateUuids = [];
+            _deletedClientIds = [];
+
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Invokes(call => _providerUpdateUuids.Add(call.GetArgument<string>(0)!))
+                .ReturnsNextFromSequence(
+                    new ClientUpdateResult.Success(_updatedUuid),
+                    new ClientUpdateResult.Success(_rollbackUuid)
+                );
+
+            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>.Ignored))
+                .Invokes(call => _deletedClientIds.Add(call.GetArgument<string>(0)!))
+                .Returns(new ClientDeleteResult.Success());
+
+            A.CallTo(() =>
+                    _applicationRepository.UpdateApplication(
+                        A<ApplicationUpdateCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .Returns(new ApplicationUpdateResult.FailureDuplicateApplication("Test Application"));
+
+            A.CallTo(() =>
+                    _applicationRepository.SyncApplicationApiClientUuid(
+                        A<int>.Ignored,
+                        A<string>.Ignored,
+                        A<Guid>.Ignored,
+                        A<Guid>.Ignored
+                    )
+                )
+                .Returns(new ApiClientUuidSyncResult.Success());
+        }
+
+        protected Task ActDuplicateNameUpdateAsync() =>
+            ActUpdateAsync(collection => collection.AddSingleton<ILogger<ApplicationModule>>(_moduleLogger));
+
+        protected void AssertNoCompensation()
+        {
+            _providerUpdateUuids.Should().Equal(_originalClientUuid.ToString());
+            A.CallTo(() =>
+                    _applicationRepository.SyncApplicationApiClientUuid(
+                        A<int>.Ignored,
+                        A<string>.Ignored,
+                        A<Guid>.Ignored,
+                        A<Guid>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+            _deletedClientIds.Should().BeEmpty();
+        }
+
+        protected void AssertSingleErrorNamingTheReportedUuid(string fragment) =>
+            _moduleLogger
+                .Entries.Where(entry => entry.Level == LogLevel.Error)
+                .Select(entry => $"{entry.State}")
+                .Should()
+                .ContainSingle(entry =>
+                    entry.Contains(fragment)
+                    && entry.Contains("no compensation attempted")
+                    && entry.Contains(_updatedUuid.ToString())
+                );
+    }
+
+    /// <summary>
+    /// The update violated both the application-name and the UUID constraint and the engine
+    /// reported the name one, so the repository answered the duplicate-name result while the
+    /// provider had reported a replacement UUID that another ApiClient row holds. Compensating
+    /// against that UUID would mutate the other client's provider object, so the ownership check
+    /// refuses it: no rollback, synchronization or deletion, the inconsistency reported at Error,
+    /// and a sanitized server error instead of the duplicate-name validation failure.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_application_update_with_a_duplicate_name_whose_provider_uuid_is_held_by_another_client
+        : DuplicateNameCompensationTestBase
+    {
+        private RecordingLockManager _recordingLockManager = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _recordingLockManager = new RecordingLockManager();
+            _lockManager = _recordingLockManager;
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(_updatedUuid))
+                .Returns(new ApiClientUuidReferenceResult.Referenced());
+
+            await ActDuplicateNameUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, _updatedUuid.ToString());
+
+        [Test]
+        public void It_checks_ownership_of_the_reported_uuid_once() =>
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(_updatedUuid))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_neither_rolls_back_nor_synchronizes_nor_deletes() => AssertNoCompensation();
+
+        [Test]
+        public void It_reports_the_held_uuid_at_error_without_compensation() =>
+            AssertSingleErrorNamingTheReportedUuid("already held by another API client");
+
+        [Test]
+        public void It_releases_the_lock() => _recordingLockManager.Handle.Disposed.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Same misleading name failure, but the ownership check of the replacement UUID fails. An
+    /// unknown ownership outcome never authorizes compensation: nothing is rolled back,
+    /// synchronized or deleted, the failure is reported at Error in sanitized form, and the request
+    /// ends in a sanitized server error.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_application_update_with_a_duplicate_name_whose_ownership_check_fails
+        : DuplicateNameCompensationTestBase
+    {
+        private const string Sentinel = "SENTINEL_APPLICATION_OWNERSHIP_CHECK_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(_updatedUuid))
+                .Returns(new ApiClientUuidReferenceResult.FailureUnknown(Sentinel));
+
+            await ActDuplicateNameUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
+
+        [Test]
+        public void It_neither_rolls_back_nor_synchronizes_nor_deletes() => AssertNoCompensation();
+
+        [Test]
+        public void It_reports_the_unverified_uuid_at_error_without_compensation() =>
+            AssertSingleErrorNamingTheReportedUuid("Could not verify");
+    }
+
+    /// <summary>
+    /// The provider updated the client in place and reported the stored UUID unchanged, so the
+    /// rollback addresses this application's own client: no ownership check is needed and the
+    /// duplicate-name failure is compensated as before.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_application_update_with_a_duplicate_name_whose_provider_preserves_the_uuid
+        : DuplicateNameCompensationTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Invokes(call => _providerUpdateUuids.Add(call.GetArgument<string>(0)!))
+                .Returns(new ClientUpdateResult.Success(_originalClientUuid));
+            A.CallTo(() =>
+                    _applicationRepository.SyncApplicationApiClientUuid(
+                        A<int>.Ignored,
+                        A<string>.Ignored,
+                        A<Guid>.Ignored,
+                        A<Guid>.Ignored
+                    )
+                )
+                .Returns(new ApiClientUuidSyncResult.AlreadyApplied());
+
+            await ActDuplicateNameUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_the_duplicate_name_validation_failure() =>
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        [Test]
+        public void It_runs_no_ownership_check_for_the_unchanged_uuid() =>
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_rolls_the_provider_back_against_the_stored_uuid() =>
+            _providerUpdateUuids
+                .Should()
+                .Equal(_originalClientUuid.ToString(), _originalClientUuid.ToString());
+
+        [Test]
+        public void It_deletes_nothing() => _deletedClientIds.Should().BeEmpty();
     }
 }

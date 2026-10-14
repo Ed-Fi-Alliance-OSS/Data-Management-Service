@@ -29,21 +29,10 @@ Commands are labeled **[bash]** (WSL shell) or **[pwsh]** (`pwsh` inside WSL) an
      --data-urlencode "client_id=$ADMIN_ID" --data-urlencode "client_secret=$ADMIN_SECRET"   # expect 200
    ```
 
-2. Builds from October 2026 add Configuration Service migration `0035`, which makes data store names unique per tenant and API client names unique per application.
-   Startup stops with `Name uniqueness upgrade blocked` if the database already has duplicates.
-   Check before updating; every query must return zero rows:
+2. Builds from October 2026 add Configuration Service migrations `0035` and `0036`, and each stops startup when the database holds duplicates it would make invalid.
+   Check for both before updating, identifiers first: the name cleanup below uses the API, and the API must not touch a row that shares an identifier.
 
-   ```bash
-   for db in edfi_st_config edfi_mt_config; do
-     docker exec dms-sec-postgres psql -U postgres -d "$db" \
-       -c 'SELECT "TenantId", "Name", count(*) FROM dmscs."DataStore" GROUP BY 1, 2 HAVING count(*) > 1;' \
-       -c 'SELECT "ApplicationId", "Name", count(*) FROM dmscs."ApiClient" GROUP BY 1, 2 HAVING count(*) > 1;'
-   done
-   ```
-
-   Rename or delete any duplicate through `PUT`/`DELETE /v3/dataStores/{id}` or `/v3/apiClients/{id}` on the current build first.
-
-   Builds from October 2026 also add migration `0036`, which makes the API client key (`ClientId`) and the Keycloak client id (`ClientUuid`) unique across the whole `ApiClient` table.
+   Migration `0036` makes the API client key (`ClientId`) and the Keycloak client id (`ClientUuid`) unique across the whole `ApiClient` table.
    Startup stops with `API client identifier uniqueness upgrade blocked` if two rows share either value.
    Both queries must return zero rows:
 
@@ -56,7 +45,23 @@ Commands are labeled **[bash]** (WSL shell) or **[pwsh]** (`pwsh` inside WSL) an
    ```
 
    If either returns rows, do not fix them through the API: `DELETE /v3/apiClients/{id}` also deletes the Keycloak client that rows sharing a `ClientUuid` have in common.
-   Stop `st-config` and `mt-config`, follow [Configuration Service database upgrades](../../../docs/OPERATIONS.md#configuration-service-database-upgrades) against that database (enumerate every row, back up, review ownership, delete the reviewed rows directly, re-check), then continue with step 3.
+   Stop `st-config` and `mt-config`, follow [Configuration Service database upgrades](../../../docs/OPERATIONS.md#configuration-service-database-upgrades) against that database (enumerate every row, back up, review ownership, delete the reviewed rows directly, re-check), and only then go on to the name check.
+
+   Migration `0035` makes data store names unique per tenant and API client names unique per application.
+   Startup stops with `Name uniqueness upgrade blocked` if the database already has duplicates.
+   Every query must return zero rows:
+
+   ```bash
+   for db in edfi_st_config edfi_mt_config; do
+     docker exec dms-sec-postgres psql -U postgres -d "$db" \
+       -c 'SELECT "TenantId", "Name", count(*) FROM dmscs."DataStore" GROUP BY 1, 2 HAVING count(*) > 1;' \
+       -c 'SELECT "ApplicationId", "Name", count(*) FROM dmscs."ApiClient" GROUP BY 1, 2 HAVING count(*) > 1;'
+   done
+   ```
+
+   Rename or delete any duplicate through `PUT`/`DELETE /v3/dataStores/{id}` or `/v3/apiClients/{id}` on the current build first, but only once the identifier check above is clean.
+   An API client that shares a name and also a `ClientId` or `ClientUuid` with another row belongs to the procedure above; deleting it through the API would delete the Keycloak client the surviving row uses.
+   Then continue with step 3.
 
 3. Check for claim sets created at runtime.
    Part C's claims reload deletes every claim set that is not system-reserved, in every tenant.

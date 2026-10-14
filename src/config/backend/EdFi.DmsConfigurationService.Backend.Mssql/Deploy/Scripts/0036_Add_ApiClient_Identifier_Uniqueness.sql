@@ -28,9 +28,9 @@
 -- preflight and the constraints. XACT_ABORT dooms the transaction on any statement error and the
 -- CATCH block rolls it back explicitly and rethrows, so a failure of the second addition undoes the
 -- first. The existence guards make a retry converge and leave a constraint that already exists
--- untouched. The whole script is a single batch with no GO. The new constraint names do not
--- contain, and are not contained in, any existing constraint name, because the repositories match
--- unique-violation messages by substring.
+-- untouched. The whole script is a single batch with no GO. The repositories identify a violated
+-- constraint by reading the quoted name out of the SQL Server error message and comparing it whole,
+-- so the new constraint names only have to differ from every existing constraint name.
 SET XACT_ABORT ON;
 BEGIN TRY
     BEGIN TRANSACTION;

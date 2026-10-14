@@ -3244,6 +3244,11 @@ public class ApiClientModuleTests
         {
             _existingUuid = Guid.NewGuid();
 
+            // A replacement UUID the provider reports is unreferenced unless a fixture says
+            // otherwise, so compensation against it stays legitimate by default.
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
+                .Returns(new ApiClientUuidReferenceResult.None());
+
             A.CallTo(() => _apiClientRepository.GetApiClientById(A<int>.Ignored))
                 .Returns(
                     new ApiClientGetResult.Success(
@@ -4205,6 +4210,11 @@ public class ApiClientModuleTests
 
         [Test]
         public void It_deletes_no_provider_client() => _deletedClientIds.Should().BeEmpty();
+
+        [Test]
+        public void It_runs_no_ownership_check_for_the_unchanged_uuid() =>
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
+                .MustNotHaveHappened();
     }
 
     [TestFixture]
@@ -4320,8 +4330,8 @@ public class ApiClientModuleTests
         public void It_deletes_nothing() => _deletedClientIds.Should().BeEmpty();
 
         [Test]
-        public void It_runs_no_reference_check() =>
-            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
+        public void It_runs_no_reference_check_for_the_rollback_uuid() =>
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(_rollbackUuid))
                 .MustNotHaveHappened();
 
         [Test]
@@ -6761,5 +6771,194 @@ public class ApiClientModuleTests
         [Test]
         public void It_releases_every_lock() =>
             _recordingLockManager.Handles.Should().OnlyContain(handle => handle.Disposed);
+    }
+
+    /// <summary>
+    /// The update violated both the name and the UUID constraint and the engine reported the name
+    /// one, so the repository answered FailureDuplicateName while the provider had reported a
+    /// replacement UUID that another ApiClient row holds. Compensating against that UUID would
+    /// mutate the other client's provider object, so the ownership check refuses it: no rollback,
+    /// synchronization, deletion or outcome resolution, the inconsistency reported at Error, and a
+    /// sanitized server error instead of the duplicate-name contract.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_update_with_a_duplicate_name_whose_provider_uuid_is_held_by_another_client
+        : CompensationSyncTestBase
+    {
+        private RecordingLockManager _recordingLockManager = null!;
+        private TestLogger<ApiClientModule> _moduleLogger = null!;
+        private List<string> _providerUpdateUuids = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            // The fixture instance, and so its fakes, outlives each test, so the recorded calls
+            // below must cover only this test's request.
+            Fake.ClearRecordedCalls(_apiClientRepository);
+            _recordingLockManager = new RecordingLockManager();
+            _lockManager = _recordingLockManager;
+            _moduleLogger = new TestLogger<ApiClientModule>();
+            _providerUpdateUuids = [];
+
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Invokes(call => _providerUpdateUuids.Add(call.GetArgument<string>(0)!))
+                .ReturnsNextFromSequence(
+                    new ClientUpdateResult.Success(_updatedUuid),
+                    new ClientUpdateResult.Success(_rollbackUuid)
+                );
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Returns(new ApiClientUpdateResult.FailureDuplicateName());
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(_updatedUuid))
+                .Returns(new ApiClientUuidReferenceResult.Referenced());
+            ArrangeSyncResult(new ApiClientUuidSyncResult.Success());
+
+            await ActUpdateAsync(configureServices: collection =>
+                collection.AddSingleton<ILogger<ApiClientModule>>(_moduleLogger)
+            );
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, _updatedUuid.ToString());
+
+        [Test]
+        public void It_checks_ownership_of_the_reported_uuid_once() =>
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(_updatedUuid))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_updates_the_provider_once_and_never_rolls_it_back() =>
+            _providerUpdateUuids.Should().Equal(_existingUuid.ToString());
+
+        [Test]
+        public void It_synchronizes_no_uuid() =>
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(A<int>.Ignored, A<Guid>.Ignored, A<Guid>.Ignored)
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_deletes_no_provider_client() => _deletedClientIds.Should().BeEmpty();
+
+        [Test]
+        public void It_does_not_resolve_the_outcome() =>
+            A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<int>.Ignored))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_reports_the_held_uuid_at_error_without_compensation() =>
+            _moduleLogger
+                .Entries.Where(entry => entry.Level == LogLevel.Error)
+                .Select(entry => $"{entry.State}")
+                .Should()
+                .ContainSingle(entry =>
+                    entry.Contains("already held by another API client")
+                    && entry.Contains("no compensation attempted")
+                    && entry.Contains(_updatedUuid.ToString())
+                );
+
+        [Test]
+        public void It_releases_every_lock() =>
+            _recordingLockManager.Handles.Should().OnlyContain(handle => handle.Disposed);
+    }
+
+    /// <summary>
+    /// Same misleading name failure, but the ownership check of the replacement UUID throws. An
+    /// unknown ownership outcome never authorizes compensation: nothing is rolled back,
+    /// synchronized or deleted, the thrown check is reported by exception type only, and the
+    /// request ends in a sanitized server error.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_update_with_a_duplicate_name_whose_ownership_check_throws
+        : CompensationSyncTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_OWNERSHIP_CHECK_THROWN_must_not_leak";
+        private TestLogger<ApiClientModule> _moduleLogger = null!;
+        private List<string> _providerUpdateUuids = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            Fake.ClearRecordedCalls(_apiClientRepository);
+            _moduleLogger = new TestLogger<ApiClientModule>();
+            _providerUpdateUuids = [];
+
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Invokes(call => _providerUpdateUuids.Add(call.GetArgument<string>(0)!))
+                .ReturnsNextFromSequence(
+                    new ClientUpdateResult.Success(_updatedUuid),
+                    new ClientUpdateResult.Success(_rollbackUuid)
+                );
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Returns(new ApiClientUpdateResult.FailureDuplicateName());
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(_updatedUuid))
+                .Throws(new InvalidOperationException(Sentinel));
+            ArrangeSyncResult(new ApiClientUuidSyncResult.Success());
+
+            await ActUpdateAsync(configureServices: collection =>
+                collection.AddSingleton<ILogger<ApiClientModule>>(_moduleLogger)
+            );
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
+
+        [Test]
+        public void It_updates_the_provider_once_and_never_rolls_it_back() =>
+            _providerUpdateUuids.Should().Equal(_existingUuid.ToString());
+
+        [Test]
+        public void It_synchronizes_no_uuid() =>
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(A<int>.Ignored, A<Guid>.Ignored, A<Guid>.Ignored)
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_deletes_no_provider_client() => _deletedClientIds.Should().BeEmpty();
+
+        [Test]
+        public void It_reports_the_thrown_check_by_type_only() =>
+            _moduleLogger
+                .Entries.Where(entry => entry.Level == LogLevel.Error)
+                .Select(entry => $"{entry.State}")
+                .Should()
+                .ContainSingle(entry =>
+                    entry.Contains(nameof(InvalidOperationException))
+                    && entry.Contains("no compensation attempted")
+                    && entry.Contains(_updatedUuid.ToString())
+                );
+
+        [Test]
+        public void It_attaches_no_exception_to_any_log_entry() =>
+            _moduleLogger.Entries.Should().AllSatisfy(entry => entry.Exception.Should().BeNull());
+
+        [Test]
+        public void It_logs_the_exception_message_nowhere() =>
+            _moduleLogger
+                .Entries.Select(entry => $"{entry.State}")
+                .Should()
+                .OnlyContain(message => !message.Contains(Sentinel));
     }
 }

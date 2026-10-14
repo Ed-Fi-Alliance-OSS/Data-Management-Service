@@ -675,6 +675,19 @@ public class ApplicationModule : IEndpointModule
                             // replace the client report a new one that must be persisted.
                             async Task<bool> TryCompensateAsync()
                             {
+                                // The rollback addresses the UUID the provider reported for this
+                                // update. The stored UUID is this client's own; a replacement is
+                                // this request's only while no ApiClient row holds it. Whichever
+                                // constraint the database reported, a replacement another row
+                                // holds is never addressed.
+                                if (
+                                    updateSuccess.ClientUuid != originalState.ClientUuid
+                                    && !await IsUnreferencedReplacementAsync(updateSuccess.ClientUuid)
+                                )
+                                {
+                                    return false;
+                                }
+
                                 logger.LogWarning(
                                     "Repository update failed for Application {Id}; rolling back the identity provider",
                                     id
@@ -764,6 +777,51 @@ public class ApplicationModule : IEndpointModule
                                         );
                                         return false;
                                 }
+                            }
+
+                            // True only when the reference check proves no ApiClient row holds the
+                            // replacement UUID. A referenced UUID, a failed or unrecognized check,
+                            // or a check that throws all refuse compensation and report it at
+                            // Error; a thrown check is reported by exception type only, since its
+                            // message is never sanitized.
+                            async Task<bool> IsUnreferencedReplacementAsync(Guid replacementUuid)
+                            {
+                                string outcome;
+                                try
+                                {
+                                    switch (
+                                        await apiClientRepository.HasApiClientUuidReference(replacementUuid)
+                                    )
+                                    {
+                                        case ApiClientUuidReferenceResult.None:
+                                            return true;
+                                        case ApiClientUuidReferenceResult.Referenced:
+                                            logger.LogError(
+                                                "The identity provider reported a client UUID {ClientUuid} already held by another API client for Application {Id}; stored client state is inconsistent; no compensation attempted",
+                                                replacementUuid,
+                                                id
+                                            );
+                                            return false;
+                                        case ApiClientUuidReferenceResult.FailureUnknown referenceFailure:
+                                            outcome = SanitizeForLog(referenceFailure.FailureMessage);
+                                            break;
+                                        case var unrecognized:
+                                            outcome = unrecognized.GetType().Name;
+                                            break;
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    outcome = ex.GetType().Name;
+                                }
+
+                                logger.LogError(
+                                    "Could not verify the identity provider client {ClientUuid} reported for Application {Id} is unreferenced: {Outcome}; stored client state is inconsistent; no compensation attempted",
+                                    replacementUuid,
+                                    id,
+                                    outcome
+                                );
+                                return false;
                             }
 
                             // Removes the identity provider client left by the update of a vanished
