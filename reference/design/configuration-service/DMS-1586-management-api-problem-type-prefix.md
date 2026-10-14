@@ -12,8 +12,15 @@
 | Jira ticket | [DMS-1586](https://edfi.atlassian.net/browse/DMS-1586) |
 | Branch | `DMS-1586` (worktree `C:/dev/simpat/Data-Management-Service-DMS-1586`) |
 | Base | `a077929f1` (`origin/main` when the worktree was created); all line numbers below are against this commit |
-| Status | **Draft R1 — awaiting architect (Codex) review.** No production or test code is changed until the spec is explicitly approved |
+| Status | **Draft R2 — architect (Codex) review of R1 applied; awaiting review of R2.** Q-1 to Q-7 are resolved (§11). Step 1.1 is not approved, and no production or test code is changed until it is |
 | Gate model | One step = one local commit = one explicit approval. Phase approval does not approve unseen steps. Corrections land as focused corrective commits and are resubmitted |
+
+### 1.1 Revision history
+
+| Rev | Date | Change |
+|---|---|---|
+| R1 | 2026-10-14 | Initial draft (`29e86dd9e`) |
+| R2 | 2026-10-14 | Architect review of R1: removed the editor/IDE prescription from §5; the step 1.1 parser sketch uses a non-nullable `is not string type` guard; step 1.1 adds missing, null and non-integer `status` and missing, null and non-array `errors` cases under both accepted URNs; §9.3 makes the E2E image lifecycle explicit (no `-SkipDockerBuild` after a teardown, plus image verification); section references corrected (§11 challenge list, §12 validation log); Q-1 to Q-7 dispositions recorded; the step 2.1 reflection check is described as a factory-inventory guard |
 
 ---
 
@@ -32,7 +39,7 @@ The retrieved ticket has no separately enumerated acceptance criteria. Everythin
 | R-1 | **Explicit** | Every Ed-Fi-taxonomy problem type CMS emits uses the `urn:ed-fi:management-api:` prefix | Each `FailureResponse` factory except `ForUnclassifiedStatus` returns exactly the "new `type`" value in §4.1 |
 | R-2 | Derived (regression) | Only the prefix changes. Every suffix, HTTP status, `title`, `detail`, `correlationId`, `validationErrors`, `errors` and extension member is unchanged | Existing exact assertions on those members stay byte-for-byte unchanged and pass; the step 2.2 diff is prefix-substitution-only (§7.2 equivalence check) |
 | R-3 | Derived (regression) | The RFC 9457 `about:blank` fallback is unchanged | `ForUnclassifiedStatus` still returns `type: "about:blank"`, reason-phrase title, empty detail, supplied status; `SigningKeyDependencyResponse` 503 unchanged |
-| R-4 | Derived (completeness) | No CMS emitter is left on the old prefix | `git grep -n "urn:ed-fi:api" -- src/config` returns nothing after step 2.2; the contract fixture's reflection guard (step 2.1) covers every public factory |
+| R-4 | Derived (completeness) | No CMS emitter is left on the old prefix | `git grep -n "urn:ed-fi:api" -- src/config` returns nothing after step 2.2; the step 2.1 reflection guard classifies every public factory (an inventory check; that every emitter routes through the factories rests on the §4.2 audit) |
 | R-5 | Derived (compatibility) | The DMS `/oauth/token` proxy keeps recognising a CMS token-limit 429 from both an old CMS (`urn:ed-fi:api:security:authentication:too-many-tokens`) and a new CMS (`urn:ed-fi:management-api:security:authentication:too-many-tokens`) | Parameterized DMS tests: both upstream types produce DMS's token-limit 429 with the limit rebuilt; the cross-service test feeding CMS `FailureResponse.ForTooManyTokens` into the parser passes before and after step 2.2 |
 | R-6 | Derived (security / regression) | The DMS parser stays exact: ordinal comparison, every existing body rule kept, near-miss and unrelated types rejected, malformed bodies fall back to the generic 429, upstream text never reaches the DMS response or log | Deviation fixtures (existing, now run under both accepted types) plus new near-miss type cases all yield `urn:ed-fi:api:too-many-requests` with empty `errors`; the secret-embedding fixture passes under both types |
 | R-7 | Derived (scope) | DMS's own public problem-details types are unchanged; nothing else in `src/dms` changes | `git diff a077929f1 --stat -- src/dms` lists only `OAuthManager.cs` and `OAuthManagerTests.cs`; DMS `Response/FailureResponse.cs` untouched |
@@ -211,7 +218,7 @@ Counts are occurrences of `urn:ed-fi:api` at the base commit. **Every** `src/con
 
 Conventions for every step:
 
-- Edits go through the Rider MCP (`apply_patch` for files inside the Rider project; files outside it, such as `docs/` and `reference/`, through a scratchpad PowerShell script run in the Rider terminal). Formatting uses `dotnet csharpier format <changed .cs files>`.
+- Changed C# files are formatted with `dotnet csharpier format <changed .cs files>` (AGENTS.md).
 - Before committing: review `git diff` for accidental replacements, unrelated formatting, weakened assertions and out-of-scope files; run the focused checks listed; commit locally with the stated message ending in the `Co-Authored-By` trailer.
 - Report after committing: phase and step, commit SHA, each edited file with a one-line explanation, test commands and results (skips reported as skips), remaining risks, and any deviation from this spec. **Then stop for approval.**
 
@@ -224,7 +231,7 @@ Conventions for every step:
 - Edit: create this file only.
 - Tests: none.
 - Commit: `[DMS-1586] Add implementation spec for the management-api problem-type prefix`
-- Checkpoint: Codex review per the challenge list in §10; revise as R2 if needed (spec-only commits).
+- Checkpoint: Codex review per the challenge list in §11; revise as R2 if needed (spec-only commits).
 
 ### Phase 1 — DMS token-proxy compatibility
 
@@ -249,9 +256,13 @@ Production (`src/dms/core/EdFi.DataManagementService.Core/OAuth/OAuthManager.cs`
    private const string ManagementApiTooManyTokensType =
        "urn:ed-fi:management-api:security:authentication:too-many-tokens";
    ```
-2. Line 415: read the scalar once and accept either constant:
+2. Line 415: guard on a scalar `type` with a non-nullable pattern variable, then accept either constant:
    ```csharp
-   string? type = ScalarValueOrNull(obj["type"]);
+   if (ScalarValueOrNull(obj["type"]) is not string type)
+   {
+       return null;
+   }
+
    if (
        !string.Equals(type, LegacyTooManyTokensType, StringComparison.Ordinal)
        && !string.Equals(type, ManagementApiTooManyTokensType, StringComparison.Ordinal)
@@ -260,6 +271,7 @@ Production (`src/dms/core/EdFi.DataManagementService.Core/OAuth/OAuthManager.cs`
        return null;
    }
    ```
+   `ScalarValueOrNull` returns null for an absent member, a JSON `null`, an object and an array, so those bodies keep the existing fallback exactly as today.
 3. Update the line 402–407 comment only to say "a type other than the two accepted ones". The status, `errors`, message-prefix and suffix, and `NumberStyles.None` limit rules, the fallback logging and the rebuilt response stay **unchanged**.
 
 Tests (`src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/OAuth/OAuthManagerTests.cs`):
@@ -281,9 +293,21 @@ Tests (`src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/OAuth/OAuthManag
    - `type` member absent
    - `type` as a JSON array holding the management-api value
    - `type` as JSON `null`
+
+   Add `status` and `errors` shape cases, each **once per accepted type**, in an otherwise canonical body. They pin rules that already exist at `OAuthManager.cs` lines 420–432 (`status` must be a JSON integer equal to 429; `errors` must be a JSON array of exactly one entry); production validation does not change:
+   - `status` member absent
+   - `status` as JSON `null`
+   - `status` as the string `"429"`
+   - `status` as the non-integer number `429.5`
+   - `errors` member absent
+   - `errors` as JSON `null`
+   - `errors` as a string holding the canonical message
+   - `errors` as an object `{ "0": "<canonical message>" }`
+
+   The helpers gain the `type` parameter; `BodyWithStatus` takes the raw JSON token for `status` (`null`, `"429"`, `429.5`), and a body builder that omits a named member covers the absent cases. Every deviating case, old and new, asserts the unchanged generic contract through `ShouldBeTheGenericRateLimitContract`: 429, `urn:ed-fi:api:too-many-requests`, `Too Many Requests`, empty `errors`, DMS correlation id.
 6. `Given_An_Upstream_Status_The_New_Arm_Does_Not_Claim`: run each status with both upstream types (still 502 `urn:ed-fi:api:bad-gateway`).
 
-Mutation reasoning (each must fail if the behavior is reverted): drop the management-api constant → the ManagementApi parameterizations of fixtures 3 fail (generic type instead of `DmsTooManyTokensType`). Drop the legacy constant → the Legacy parameterizations fail. Switch to `OrdinalIgnoreCase`, `StartsWith` or `Contains` → the near-miss cases fail. Echo the upstream type → `DmsTooManyTokensType` assertions under ManagementApi fail.
+Mutation reasoning (each must fail if the behavior is reverted): drop the management-api constant → the ManagementApi parameterizations of fixtures 3 fail (generic type instead of `DmsTooManyTokensType`). Drop the legacy constant → the Legacy parameterizations fail. Switch to `OrdinalIgnoreCase`, `StartsWith` or `Contains` → the near-miss cases fail. Echo the upstream type → `DmsTooManyTokensType` assertions under ManagementApi fail. Relax the `status` or `errors` shape checks → the matching shape cases fail under the affected type.
 
 - Focused checks:
   - `dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter "FullyQualifiedName~OAuth.OAuthManagerTests"`
@@ -302,7 +326,7 @@ In `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Infrastru
 
 - A `TestCaseSource` with one case per factory F-1 to F-15: factory name, a `Func<JsonNode>` invoking it with fixed arguments, expected `type`, `status` and `title`. Expected values are the **current** (`urn:ed-fi:api:…`) types, and `about:blank` for F-8.
 - `It_has_the_exact_type`, `It_has_the_expected_status`, `It_has_the_expected_title`: use `node["type"]!.GetValue<string>()` (non-null-tolerant). The existing `result["type"]?.…Should()` lines would silently skip if `type` were missing; this fixture cannot.
-- `It_classifies_every_public_factory`: reflection over `typeof(FailureResponse).GetMethods(BindingFlags.Public | BindingFlags.Static)` returning `JsonNode` must equal the case-name set, so a newly added factory fails until it is classified. This is the guard against missed emitters (R-4).
+- `It_classifies_every_public_factory`: reflection over `typeof(FailureResponse).GetMethods(BindingFlags.Public | BindingFlags.Static)` returning `JsonNode` must equal the case-name set, so a newly added factory fails until it is classified. This is a factory-inventory guard: it proves every public factory is classified, not that every CMS emitter routes through the factories. That second claim rests on the §4.2 audit and the R-4 grep.
 
 The fixture passes at the base commit; that is the point. Step 2.2 flips its expectations together with production, which proves the fixture detects the change. Before committing, a temporary local mutation (changing `_typePrefix`) is run to show the fixture fails, then reverted; the result is reported, not committed.
 
@@ -365,7 +389,7 @@ Run §9 in order and report each command's actual result, with skips and environ
 
 #### Step 4.2 — Record evidence in this spec
 
-Update §1 status, fill §11 (validation log) and the commit list. Commit: `[DMS-1586] Record validation evidence in the spec`. Then present the final commit list, edited-file summary, requirement-to-test evidence and limitations, and **request push approval** (no push, PR, merge or Jira update without it).
+Update §1 status, fill §12 (validation log) and the commit list. Commit: `[DMS-1586] Record validation evidence in the spec`. Then present the final commit list, edited-file summary, requirement-to-test evidence and limitations, and **request push approval** (no push, PR, merge or Jira update without it).
 
 ---
 
@@ -424,7 +448,7 @@ Expected output: nothing. The only other changed file is `OAuthManagerTests.cs`,
 | Clients hard-code `urn:ed-fi:api:*` CMS types | Client-side mismatch | Breaking-change entry |
 | SQL Server integration tests skip when `ConnectionStrings__MssqlAdmin` is unset | False confidence | Skips reported as skips; MSSQL instance started per §9.2 |
 | Keycloak E2E lanes are not run locally | Provider-specific expectation miss | CMS E2E types are provider-independent (same `FailureResponse`); Keycloak legs run in PR CI before merge; reported as a remaining gate |
-| E2E environment state left over between runs | Flaky E2E | Teardown and setup per AGENTS.md before each lane |
+| E2E environment state left over between runs, or a lane running a stale image | Flaky E2E, or results against old code | §9.3 lifecycle: teardown (plus `-d -v` after SQL Server lanes), rebuild on every lane, image-ID verification recorded in §12 |
 
 ---
 
@@ -447,15 +471,21 @@ Expected output: nothing. The only other changed file is `OAuthManagerTests.cs`,
 | V-6 | `dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.csproj` (full; jobs fixture `Given_jobs_of_two_tenants_and_without_a_tenant` must be reported) | PostgreSQL reachable per the project's `appsettings.json` (`localhost:5432`, `edfi_configurationservice`) or its environment override |
 | V-7 | `dotnet test src/config/backend/EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration/EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.csproj` (full; same fixture) | `ConnectionStrings__MssqlAdmin` pointing at SQL Server 2025 (container `dms-mssql-integration-2025` on `14333`, or LocalDB, which is acceptable for this non-engine ticket); unset means the fixtures are **ignored**, which is reported as a blocker, not a pass |
 
-### 9.3 CMS E2E (Docker; run from the repository root; teardown between lanes with `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/teardown-local-cms.ps1`)
+### 9.3 CMS E2E (Docker; run from the repository root)
 
-Prerequisite: a Release build (`./build-config.ps1 Build -Configuration Release`). Images must be **rebuilt** from the final tree, so `-SkipDockerBuild` is not used for the first lane.
+Prerequisite: a Release build (`./build-config.ps1 Build -Configuration Release`).
+
+**Image lifecycle.** `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/teardown-local-cms.ps1` stops the `cs-local` stack, deletes its volumes **and deletes the locally built `ed-fi-api-config-local` image**. Every lane therefore runs **without** `-SkipDockerBuild`; `build-config.ps1 E2ETest` then calls `eng/docker-compose/start-local-config.ps1 -r`, which rebuilds the image from the current tree. For each lane, in order:
+
+1. **Teardown.** `pwsh src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/teardown-local-cms.ps1`. Its own `compose down` names only `postgresql.yml`, so after an SQL Server lane also run `./start-local-config.ps1 -d -v -EnvironmentFile <that lane's env file>` from `eng/docker-compose`. Then confirm `docker ps -a --filter "label=com.docker.compose.project=cs-local"` lists nothing.
+2. **Run** the lane command below, which rebuilds the image.
+3. **Verify the image.** `docker image inspect ed-fi-api-config-local --format "{{.Id}} {{.Created}}"` must show a creation time after the lane started, and `docker inspect ed-fi-api-config-service --format "{{.Image}}"` must show the same image ID. Record both values in §12.
 
 | # | Command | Coverage |
 |---|---|---|
 | V-8 | `./build-config.ps1 E2ETest -Configuration Release -IdentityProvider self-contained` | PostgreSQL, single-tenant: all 11 affected feature files and the ClaimsManagement step |
-| V-9 | `./build-config.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile "./.env.config.mssql.e2e" -E2ETestFilter "TestCategory=MssqlRepresentative"` | SQL Server representative, including `Jobs.feature` not-found |
-| V-10 | `./build-config.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile "./.env.config.mssql.multitenant.e2e" -E2ETestFilter "TestCategory=MssqlMultitenantRepresentative"` | SQL Server multi-tenant, including `Jobs.feature` missing-tenant `bad-request` |
+| V-9 | `./build-config.ps1 E2ETest -Configuration Release -IdentityProvider self-contained -EnvironmentFile "./.env.config.mssql.e2e" -E2ETestFilter "TestCategory=MssqlRepresentative"` | SQL Server representative, including `Jobs.feature` not-found |
+| V-10 | `./build-config.ps1 E2ETest -Configuration Release -IdentityProvider self-contained -EnvironmentFile "./.env.config.mssql.multitenant.e2e" -E2ETestFilter "TestCategory=MssqlMultitenantRepresentative"` | SQL Server multi-tenant, including `Jobs.feature` missing-tenant `bad-request` |
 | — | Keycloak legs (`-IdentityProvider keycloak`) | PR CI matrix; listed as an outstanding merge gate unless run locally |
 
 DMS E2E is not required: no DMS response changes, and no DMS E2E scenario exercises the CMS token-limit 429 (Q-7).
@@ -483,17 +513,21 @@ DMS E2E is not required: no DMS response changes, and no DMS E2E scenario exerci
 
 ---
 
-## 11. Open questions for the architect
+## 11. Open questions and dispositions
 
-| ID | Question | Recommendation | Blocking? |
-|---|---|---|---|
-| Q-1 | The published `management-api-3.0.0.yaml` lists `urn:ed-fi:admin-api:*` (stale `ProblemDetailsSchemaFilter` text), while the ODS Admin API v3 runtime (`AdminApiProblemTypes.cs`) and its Bruno tests use `urn:ed-fi:management-api:*`, as does the ticket. Confirm `management-api`. | Yes: follow the ticket and the runtime peer. DMS does **not** accept `admin-api` (covered by a near-miss test). Flag the stale spec text to the Ed-Fi spec owners outside this ticket | **Yes (acknowledgement)** |
-| Q-2 | Suffix parity with Admin API (`bad-request:validation`, `version-mismatch`, `service-unavailable` vs CMS-only suffixes) | Out of scope; candidate follow-up ticket | No |
-| Q-3 | Step 2.2 as one atomic flip (production plus every `src/config` expectation) versus per-suite steps with stale intermediate commits | Atomic flip with the §7.2 equivalence check | **Yes** |
-| Q-4 | Changelog: add to unreleased `8.1.0.md` and correct its lines 18 and 229 in place, versus a new changelog file | `8.1.0.md`, in place | No |
-| Q-5 | How long DMS keeps accepting the legacy upstream type | Indefinitely: it is one exact constant and protects any mixed-version window | No |
-| Q-6 | Keep the reflection completeness guard in step 2.1 | Keep: it is the structural defence against missed emitters | No |
-| Q-7 | Run a DMS E2E shard as well | Not required (no DMS response change); optional at reviewer request | No |
+All questions were resolved in the architect's review of R1 (2026-10-14).
+
+| ID | Question | Disposition |
+|---|---|---|
+| Q-1 | The published `management-api-3.0.0.yaml` lists `urn:ed-fi:admin-api:*` (stale `ProblemDetailsSchemaFilter` text), while the ODS Admin API v3 runtime (`AdminApiProblemTypes.cs`) and its Bruno tests use `urn:ed-fi:management-api:*`, as does the ticket. Confirm `management-api`. | **Confirmed:** use `urn:ed-fi:management-api:`. The architect independently verified the runtime constants and the YAML discrepancy. The discrepancy note (§2.3 A-1) stays; DMS does not accept `admin-api` (near-miss test). Correcting the upstream spec is outside this ticket |
+| Q-2 | Suffix parity with Admin API (`bad-request:validation`, `version-mismatch`, `service-unavailable` vs CMS-only suffixes) | **Accepted:** suffixes are preserved; parity is out of scope |
+| Q-3 | Step 2.2 as one atomic flip (production plus every `src/config` expectation) versus per-suite steps with stale intermediate commits | **Approved:** one atomic CMS switch commit including the directly affected expectations, reviewed with the §7.2 equivalence check |
+| Q-4 | Changelog: add to unreleased `8.1.0.md` and correct its lines 18 and 229 in place, versus a new changelog file | **Accepted:** `8.1.0.md`, in place |
+| Q-5 | How long DMS keeps accepting the legacy upstream type | **Accepted:** indefinitely |
+| Q-6 | Keep the reflection completeness guard in step 2.1 | **Keep, as a factory-inventory guard.** It does not independently prove that every CMS emitter uses the factories; that rests on the §4.2 audit and the R-4 grep |
+| Q-7 | Run a DMS E2E shard as well | **Not required:** the step 1.1 OAuth tests and V-4 token-endpoint tests cover the affected path |
+
+DMS-first sequencing (Phase 1 before Phase 2) and the §6 deployment-order note are accepted. DMS's public types, and every CMS field other than the taxonomy prefix, stay unchanged.
 
 ### Review challenge list (for Codex)
 
