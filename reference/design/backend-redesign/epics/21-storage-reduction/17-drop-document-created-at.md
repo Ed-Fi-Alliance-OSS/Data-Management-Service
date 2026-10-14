@@ -145,6 +145,22 @@ code or workflow change.
     `lane=Postgresql, suite=MessageContract`.
   - I7-contract again, with `lane=Mssql, suite=MessageContract`.
 
+Found while reviewing step 4.1 (approved 2026-10-13): the P1 row said live scenarios self-skip,
+but `NorthridgeFailClosedGuards.Tests.ps1` has no live scenarios. Its three skips are
+environment-dependent: one needs symbolic-link privilege and two need a POSIX `sh` on `PATH`. The
+P1 row now says this. This is a wording change only. Step 4.1's recorded run (129 passed,
+3 skipped, the same three as the 0.3 baseline) already matches it, and no rerun was needed.
+
+Found while implementing step 4.2: from Windows `pwsh`, the live suite cannot get past the copy.
+The tool pipes its COPY-header rewrite script into `docker exec -i … sh -s`, and Windows `pwsh`
+ends piped text with CRLF. The script's last line, `grep -e "$header" "$in"`, then passes the file
+name with a trailing carriage return, and the copy stops at the staging step (`grep:
+/tmp/northridge-document.sql…: No such file or directory`). The cause is in how Windows pipes
+text, not in this story's change; the Pester lane runs on ubuntu. P2 is therefore run from Linux
+`pwsh` (§8.3 P2). Step 4.2 also narrows the existing exact `dms.Document` value comparison to the
+target's columns, compared by name, because a whole-row comparison cannot hold once the source
+row has one more column (§6 step 4.2).
+
 ---
 
 ## 1. Problem, proposed decision, alternatives, assumptions, open questions
@@ -830,7 +846,10 @@ holds an exception fails the gate.
   `"CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),` into `dms."Document"` (as the
   older schema had it) while the target keeps the current fixture DDL; keep the seed's explicit
   `CreatedAt` values on the source; add assertions that the target catalog has no `CreatedAt`
-  after the copy and that the copy output reports it as source-only.
+  after the copy and that the copy output reports it as source-only. The existing exact
+  `dms.Document` value comparison compares every target column by name, because the source row
+  now has one more column than the target (`dms.ReferentialIdentity` keeps its whole-row
+  comparison).
 - Prerequisite: disposable PostgreSQL 16 container, `DMS_NORTHRIDGE_PG_FIXTURE_CONTAINER=<name>`.
 - Verification: P2; both `-ForEach` forms pass; counts reported. This suite is opt-in locally and
   not in the CI lane, so the local run is the evidence.
@@ -1173,8 +1192,8 @@ the PR before the story is complete (not reproducible locally or deliberately CI
 | I7-smoke | Connector-template pinned-image smoke | Qualification run: dispatch `on-dms-pullrequest.yml` (`workflow_dispatch`) on the branch; job `run-backend-cdc-connector-template-smoke-tests` (`Category=CdcConnectorTemplateSmoke`, Docker Compose stack, repository image variables) | pass on the reviewed branch SHA | not run locally (stated; 200 tests skip without the pinned-image variables) | required before merge; ordinary PR and merge-queue CI skip this job |
 | I7-contract | CDC message contract, both providers | Qualification runs: dispatch `nightly-cdc-qualification.yml` twice on the branch, with `lane=Postgresql, suite=MessageContract` and `lane=Mssql, suite=MessageContract` | both pass on the reviewed branch SHA | not run locally (stated; 964 tests skip without `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE`) | required before merge; not part of PR CI |
 | I8 | API integration (in-process DMS on provisioned DBs) | `dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration -p:BuildingPluginFixtures=true --filter "Category=ApiIntegration&Category=PostgresqlIntegration" --results-directory "$R\6.2" --logger "trx;LogFileName=I8-pg.trx" --nologo` (+ `MssqlIntegration` variant when the MSSQL container is up) | pass; proves DMS boots and serves on a six-column schema; plugin tests not run (NU1008 workaround) and stated | pre-push | PG + MSSQL API lanes, Plugin lane |
-| P1 | Northridge db-free guards | `Invoke-Pester eng/northridge/tests/NorthridgeFailClosedGuards.Tests.ps1 -Output Detailed *> "$R\<step>\P1.log"` | all pass; live scenarios self-skip (named) | 4.1, pre-push | Pester lane |
-| P2 | Northridge live carry-forward | `$env:DMS_NORTHRIDGE_PG_FIXTURE_CONTAINER='<pg16>'; Invoke-Pester eng/northridge/tests/CompactDescriptorCarryForward.Tests.ps1 -Output Detailed *> "$R\<step>\P2.log"` | both `-ForEach` forms pass; target catalog has no `CreatedAt` | 4.2, pre-push | not in CI (stated) |
+| P1 | Northridge db-free guards | `Invoke-Pester eng/northridge/tests/NorthridgeFailClosedGuards.Tests.ps1 -Output Detailed *> "$R\<step>\P1.log"` | all pass; the suite has no live scenarios; its skips are environment-dependent (no symbolic-link privilege; no POSIX `sh` on `PATH`, twice), named in the log, and must match the 0.3 baseline by name | 4.1, pre-push | Pester lane |
+| P2 | Northridge live carry-forward | `$env:DMS_NORTHRIDGE_PG_FIXTURE_CONTAINER='<pg16>'; Invoke-Pester eng/northridge/tests/CompactDescriptorCarryForward.Tests.ps1 -Output Detailed *> "$R\<step>\P2.log"`, run from Linux `pwsh` (on this Windows workstation, a disposable `mcr.microsoft.com/powershell` container with the Docker socket) | both `-ForEach` forms pass with nothing skipped; the source archive's `dms.Document` COPY header carries `CreatedAt`; the copy reports it as the only source-only column; the target catalog has no `CreatedAt`; the existing integrity assertions pass | 4.2, pre-push | not in CI (stated) |
 | P3 | Template verifier Pester | `Invoke-Pester eng/DatabaseTemplates/tests -Output Detailed *> "$R\<step>\P3.log"` | all pass incl. `Template-DocumentShape.Tests.ps1` case groups (a)–(f) on both engines, named in the log | 5.3, pre-push | Pester lane |
 | P4 | Bootstrap Pester lane subset | the `paths` array in `on-dms-pullrequest.yml` lines 220-279, each file via `Invoke-Pester <file> -Output Detailed`, output to `"$R\<step>\P4-<name>.log"` (AzureVmDeployment isolated per memory note) | no failing names beyond 0.3 baseline | 0.3 (baseline), pre-push | Pester lane |
 | F1 | Format | `git diff --name-only --diff-filter=ACM origin/main -- '*.cs' \| ForEach-Object { dotnet csharpier check $_ }` | clean on every changed file (whole-tree drift is out of scope) | every C# step | Format lane |
