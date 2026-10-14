@@ -360,7 +360,7 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
                 sql.Contains("@source_name = N'Document'")
                 && sql.Contains("@capture_instance = N'dms_binding_document'")
                 && sql.Contains(
-                    "@captured_column_list = N'[DocumentId], [DocumentUuid], [ResourceKeyId], [CreatedByOwnershipTokenId], [ContentVersion], [ContentLastModifiedAt]'"
+                    "@captured_column_list = N'[DocumentId], [DocumentUuid], [ResourceKeyId], [CreatedByOwnershipTokenId], [ContentVersion]'"
                 )
             );
         enableCaptureSql
@@ -1621,7 +1621,7 @@ public class Given_An_Existing_Seven_Column_Document_Capture_Instance
         "DocumentId,DocumentUuid,ResourceKeyId,CreatedByOwnershipTokenId,ContentVersion,ContentLastModifiedAt,CreatedAt";
 
     private const string ExpectedCapturedColumns =
-        "DocumentId,DocumentUuid,ResourceKeyId,CreatedByOwnershipTokenId,ContentVersion,ContentLastModifiedAt";
+        "DocumentId,DocumentUuid,ResourceKeyId,CreatedByOwnershipTokenId,ContentVersion";
 
     private RecordingSqlServerCdcExecutor _executor = null!;
     private CdcProviderSetupResult _result = null!;
@@ -1629,7 +1629,7 @@ public class Given_An_Existing_Seven_Column_Document_Capture_Instance
     [SetUp]
     public async Task SetUp()
     {
-        // The source inventory is the default, generated six-column one, so the source-inventory step adds no
+        // The source inventory is the default, generated five-column one, so the source-inventory step adds no
         // diagnostic and setup reaches capture-instance inspection. Only the existing capture instance is legacy.
         _executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
             captureJobPresent: true,
@@ -1668,7 +1668,7 @@ public class Given_An_Existing_Seven_Column_Document_Capture_Instance
     }
 
     [Test]
-    public void It_reports_the_document_capture_instance_as_mismatched_seven_observed_six_expected()
+    public void It_reports_the_document_capture_instance_as_mismatched_seven_observed_five_expected()
     {
         _result
             .ArtifactInventory.Should()

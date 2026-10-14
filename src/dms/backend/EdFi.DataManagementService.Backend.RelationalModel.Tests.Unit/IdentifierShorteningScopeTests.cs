@@ -213,7 +213,7 @@ public class Given_Trigger_Name_Shortening_Collision_Across_Tables_For_Mssql
 
 /// <summary>
 /// Verifies that identifier shortening rewrites a DocumentStamping trigger's
-/// <see cref="DbTriggerInfo.MirrorStampTargetTable"/> consistently with every other table
+/// <see cref="DbTriggerInfo.StampTargetTable"/> consistently with every other table
 /// reference, including when the trigger's own table is unaffected (the mirror target points at a
 /// different, shortened table — the root for a child / extension trigger).
 /// </summary>
@@ -253,8 +253,8 @@ public class Given_DocumentStamping_Trigger_With_Shortened_Mirror_Stamp_Target_T
             trigger.Name.Value == "TR_RootStamp"
         );
         rootTrigger.Table.Name.Should().Be("Sch");
-        rootTrigger.MirrorStampTargetTable.Should().NotBeNull();
-        rootTrigger.MirrorStampTargetTable!.Value.Name.Should().Be("Sch");
+        rootTrigger.StampTargetTable.Should().NotBeNull();
+        rootTrigger.StampTargetTable!.Value.Name.Should().Be("Sch");
     }
 
     /// <summary>
@@ -267,8 +267,8 @@ public class Given_DocumentStamping_Trigger_With_Shortened_Mirror_Stamp_Target_T
             trigger.Name.Value == "TR_ChildStamp"
         );
         childTrigger.Table.Name.Should().Be("Student");
-        childTrigger.MirrorStampTargetTable.Should().NotBeNull();
-        childTrigger.MirrorStampTargetTable!.Value.Name.Should().Be("Sch");
+        childTrigger.StampTargetTable.Should().NotBeNull();
+        childTrigger.StampTargetTable!.Value.Name.Should().Be("Sch");
     }
 }
 
@@ -466,7 +466,7 @@ file sealed class MirrorStampTargetShorteningPass : IRelationalModelSetPass
                 [],
                 [],
                 new TriggerKindParameters.DocumentStamping(),
-                MirrorStampTargetTable: rootTable
+                StampTargetTable: rootTable
             )
         );
         context.TriggerInventory.Add(
@@ -476,7 +476,7 @@ file sealed class MirrorStampTargetShorteningPass : IRelationalModelSetPass
                 [],
                 [],
                 new TriggerKindParameters.DocumentStamping(),
-                MirrorStampTargetTable: rootTable
+                StampTargetTable: rootTable
             )
         );
     }
@@ -646,7 +646,7 @@ file sealed class TrackedChangeAttachmentShorteningFixturePass : IRelationalMode
                 [],
                 [],
                 new TriggerKindParameters.DocumentStamping(new TrackedChangeAttachment(trackedTable)),
-                MirrorStampTargetTable: sourceTable
+                StampTargetTable: sourceTable
             )
         );
     }

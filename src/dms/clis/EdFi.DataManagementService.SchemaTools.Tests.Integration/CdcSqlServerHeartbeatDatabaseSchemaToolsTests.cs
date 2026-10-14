@@ -282,6 +282,7 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
             .HaveCount(3)
             .And.OnlyContain(observation => observation.State == CdcProviderArtifactState.Matched);
         ReadHeartbeatSnapshot(connection).Should().Be(beforeValidate);
+        AssertCaptureInstances(connection);
     }
 
     [Test]
@@ -776,58 +777,35 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
             );
         rows.Select(row => row.SourceName).Should().NotContain("DocumentProjectionWork");
 
-        AssertCapture(
-            captures["dms_binding_document_cache"],
-            sourceName: "DocumentCache",
-            expectedColumns:
-            [
-                "DocumentId",
-                "DocumentUuid",
-                "ProjectName",
-                "ResourceName",
-                "ResourceVersion",
-                "ContentVersion",
-                "StreamEtag",
-                "LastModifiedAt",
-                "DocumentJson",
-                "ComputedAt",
-            ]
-        );
-        AssertCapture(
-            captures["dms_binding_document"],
-            sourceName: "Document",
-            expectedColumns:
-            [
-                "DocumentId",
-                "DocumentUuid",
-                "ResourceKeyId",
-                "CreatedByOwnershipTokenId",
-                "ContentVersion",
-                "ContentLastModifiedAt",
-            ]
-        );
-        AssertCapture(
-            captures["dms_binding_cdc_heartbeat"],
-            sourceName: "CdcHeartbeat",
-            expectedColumns: ["HeartbeatId", "HeartbeatSequence", "HeartbeatAt"]
-        );
-    }
+        var inventory = CdcSchemaToolsTestMetadata
+            .BuildMinimalDdlEmission(SqlDialect.Mssql)
+            .CdcSourceInventory;
+        foreach (var table in inventory)
+        {
+            var captureName = table.TableKind switch
+            {
+                CdcSourceTableKind.Document => "dms_binding_document",
+                CdcSourceTableKind.DocumentCache => "dms_binding_document_cache",
+                CdcSourceTableKind.CdcHeartbeat => "dms_binding_cdc_heartbeat",
+                _ => throw new InvalidOperationException($"Unexpected CDC source table {table.TableKind}."),
+            };
+            var capturedColumns = captures[captureName].OrderBy(row => row.ColumnOrdinal).ToArray();
 
-    private static void AssertCapture(
-        IEnumerable<CaptureColumn> captureRows,
-        string sourceName,
-        IReadOnlyList<string> expectedColumns
-    )
-    {
-        var rows = captureRows.OrderBy(row => row.ColumnOrdinal).ToArray();
-        var first = rows[0];
-
-        first.SourceSchema.Should().Be("dms");
-        first.SourceName.Should().Be(sourceName);
-        first.RoleName.Should().Be("dms_binding_gate");
-        first.SupportsNetChanges.Should().BeFalse();
-        first.FilegroupName.Should().BeEmpty();
-        rows.Select(row => row.ColumnName).Should().Equal(expectedColumns);
+            capturedColumns.Should().HaveCount(table.Columns.Count);
+            capturedColumns
+                .Should()
+                .OnlyContain(row =>
+                    row.RoleName == "dms_binding_gate"
+                    && row.SourceSchema == table.TableName.Schema.Value
+                    && row.SourceName == table.TableName.Name
+                    && !row.SupportsNetChanges
+                    && row.FilegroupName == string.Empty
+                );
+            capturedColumns
+                .Select(row => (row.ColumnName, row.ColumnOrdinal))
+                .Should()
+                .Equal(table.Columns.Select(column => (column.ColumnName.Value, column.Ordinal)));
+        }
     }
 
     private static HeartbeatSnapshot ReadHeartbeatSnapshot(SqlConnection connection)

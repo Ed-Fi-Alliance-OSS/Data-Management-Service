@@ -32,6 +32,9 @@ public interface IDocumentHydrator
     /// </param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The hydrated page containing document metadata and per-table row data.</returns>
+    /// <exception cref="HydrationConsistencyException">
+    /// Standalone hydration exhausted its attempts to read a stable representation under concurrent writes.
+    /// </exception>
     Task<HydratedPage> HydrateAsync(
         ResourceReadPlan plan,
         PageKeysetSpec keyset,

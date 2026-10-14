@@ -60,6 +60,9 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
     public async Task Setup()
     {
         await _database.ResetAsync();
+        await _database.ExecuteNonQueryAsync(
+            "UPDATE [dms].[DocumentCacheState] SET [ProjectionLifecycleState] = 'Tracking';"
+        );
     }
 
     [OneTimeTearDown]
@@ -69,6 +72,199 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
         {
             await _database.DisposeAsync();
         }
+    }
+
+    [Test]
+    public async Task It_provisions_only_authoritative_owner_timestamps_and_retains_document_versions()
+    {
+        var columns = await _database.QueryRowsAsync(
+            """
+            SELECT s.name AS [SchemaName], t.name AS [TableName], c.name AS [ColumnName],
+                   TYPE_NAME(c.user_type_id) AS [TypeName], c.is_nullable AS [IsNullable], c.scale AS [Scale]
+            FROM sys.columns c
+            JOIN sys.tables t ON t.object_id = c.object_id
+            JOIN sys.schemas s ON s.schema_id = t.schema_id
+            WHERE ((s.name = 'dms' AND t.name IN ('Document', 'Descriptor'))
+                OR (s.name = 'edfi' AND t.name = 'School'))
+              AND c.name IN ('ContentVersion', 'ContentLastModifiedAt')
+            ORDER BY s.name, t.name, c.name;
+            """
+        );
+        columns
+            .Select(row =>
+                $"{row["SchemaName"]}.{row["TableName"]}.{row["ColumnName"]}:{row["TypeName"]}:{row["IsNullable"]}:{row["Scale"]}"
+            )
+            .Should()
+            .Equal(
+                "dms.Descriptor.ContentLastModifiedAt:datetime2:False:7",
+                "dms.Descriptor.ContentVersion:bigint:False:0",
+                "dms.Document.ContentVersion:bigint:False:0",
+                "edfi.School.ContentLastModifiedAt:datetime2:False:7",
+                "edfi.School.ContentVersion:bigint:False:0"
+            );
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task It_stamps_distinct_owners_concurrently_while_both_hold_root_and_work_locks(
+        bool firstWriterChangesRoot
+    )
+    {
+        var first = await SeedSchoolWithAddressesAsync(100, 2);
+        var second = await SeedSchoolWithAddressesAsync(200, 2);
+        var neighbor = await SeedSchoolWithAddressesAsync(300, 2);
+        await RewindContentLastModifiedAtAsync(first);
+        await RewindContentLastModifiedAtAsync(second);
+        const string childWrite = """
+            UPDATE [edfi].[SchoolAddress] SET [City] = [City] + '-changed'
+            WHERE [School_DocumentId] = @documentId;
+            """;
+        await MssqlStampingConcurrencyScenario.RunAsync(
+            _database,
+            "[edfi].[School]",
+            first,
+            second,
+            neighbor,
+            firstWriterChangesRoot
+                ? "UPDATE [edfi].[School] SET [SchoolId] = [SchoolId] + 1 WHERE [DocumentId] = @documentId;"
+                : childWrite,
+            childWrite
+        );
+
+        var roots = await _database.QueryRowsAsync(
+            "SELECT [SchoolId] FROM [edfi].[School] ORDER BY [DocumentId];"
+        );
+        roots
+            .Select(row => Convert.ToInt32(row["SchoolId"]))
+            .Should()
+            .Equal(firstWriterChangesRoot ? 101 : 100, 200, 300);
+        var children = await _database.QueryRowsAsync(
+            "SELECT [City] FROM [edfi].[SchoolAddress] ORDER BY [School_DocumentId], [Ordinal];"
+        );
+        children
+            .Select(row => row["City"])
+            .Should()
+            .Equal(
+                firstWriterChangesRoot ? "City-100-1" : "City-100-1-changed",
+                firstWriterChangesRoot ? "City-100-2" : "City-100-2-changed",
+                "City-200-1-changed",
+                "City-200-2-changed",
+                "City-300-1",
+                "City-300-2"
+            );
+    }
+
+    [Test]
+    public async Task It_initializes_the_root_timestamp_without_allocating_an_extra_document_version()
+    {
+        var documentId = await InsertDocumentAsync("Ed-Fi", "School");
+        var version = await ReadDocumentContentVersionAsync(documentId);
+        var watermark = await ReadMaxChangeVersionAsync();
+        var beforeInsert = await _database.ExecuteScalarAsync<DateTime>("SELECT SYSUTCDATETIME();");
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[School] ([DocumentId], [SchoolId], [ContentLastModifiedAt])
+            VALUES (@documentId, 900, '2000-01-01');
+            """,
+            new SqlParameter("@documentId", documentId)
+        );
+        var afterInsert = await _database.ExecuteScalarAsync<DateTime>("SELECT SYSUTCDATETIME();");
+        var after = await ReadStampPairAsync(documentId);
+        after.DocumentVersion.Should().Be(version);
+        after.Owner.ContentVersion.Should().Be(version);
+        after.Owner.ContentLastModifiedAt.Should().BeOnOrAfter(beforeInsert).And.BeOnOrBefore(afterInsert);
+        (await ReadMaxChangeVersionAsync()).Should().Be(watermark);
+    }
+
+    [Test]
+    public async Task It_terminates_stamp_maintenance_with_recursive_triggers_enabled()
+    {
+        await _database.ExecuteNonQueryAsync("ALTER DATABASE CURRENT SET RECURSIVE_TRIGGERS ON;");
+        try
+        {
+            var documentId = await SeedSchoolWithAddressesAsync(910, 3);
+            var watermark = await ReadMaxChangeVersionAsync();
+            await RewindContentLastModifiedAtAsync(documentId);
+            var before = await ReadStampPairAsync(documentId);
+            before.Owner.ContentLastModifiedAt.Should().Be(RewoundContentLastModifiedAt);
+            (await ReadMaxChangeVersionAsync()).Should().Be(watermark);
+            await _database.ExecuteNonQueryAsync(
+                "UPDATE [edfi].[SchoolAddress] SET [City] = [City] + '-changed' WHERE [School_DocumentId] = @documentId;",
+                new SqlParameter("@documentId", documentId)
+            );
+            var after = await ReadStampPairAsync(documentId);
+            after.DocumentVersion.Should().Be(watermark + 1);
+            after.Owner.ContentVersion.Should().Be(after.DocumentVersion);
+            after.Owner.ContentLastModifiedAt.Should().BeAfter(before.Owner.ContentLastModifiedAt);
+            (await ReadMaxChangeVersionAsync()).Should().Be(watermark + 1);
+        }
+        finally
+        {
+            await _database.ExecuteNonQueryAsync("ALTER DATABASE CURRENT SET RECURSIVE_TRIGGERS OFF;");
+        }
+    }
+
+    [TestCase("edfi", "School", "SchoolId", "DocumentId", "[SchoolId] + 1")]
+    [TestCase("edfi", "SchoolAddressPeriod", "PeriodName", "School_DocumentId", "[PeriodName] + '-changed'")]
+    [TestCase("sample", "SchoolExtension", "CampusCode", "DocumentId", "[CampusCode] + '-changed'")]
+    public async Task It_stamps_root_nested_child_and_root_extension_changes_once(
+        string schema,
+        string table,
+        string column,
+        string ownerColumn,
+        string value
+    )
+    {
+        var documentId = await SeedSchoolWithFullDescendantGraphAsync(800, 3);
+        await RewindContentLastModifiedAtAsync(documentId);
+        var before = await ReadStampPairAsync(documentId);
+        var watermark = await ReadMaxChangeVersionAsync();
+        await _database.ExecuteNonQueryAsync(
+            $"""
+            UPDATE [{schema}].[{table}] SET [{column}] = {value} WHERE [{ownerColumn}] = @documentId;
+            """,
+            new SqlParameter("documentId", documentId)
+        );
+        var after = await ReadStampPairAsync(documentId);
+        after.DocumentVersion.Should().Be(watermark + 1);
+        after.Owner.ContentVersion.Should().Be(after.DocumentVersion);
+        after.Owner.ContentLastModifiedAt.Should().BeAfter(before.Owner.ContentLastModifiedAt);
+        (await ReadMaxChangeVersionAsync()).Should().Be(watermark + 1);
+    }
+
+    [TestCase("edfi", "School", "SchoolId", "DocumentId")]
+    [TestCase("edfi", "SchoolAddress", "City", "School_DocumentId")]
+    [TestCase("edfi", "SchoolAddressPeriod", "PeriodName", "School_DocumentId")]
+    [TestCase("sample", "SchoolExtension", "CampusCode", "DocumentId")]
+    [TestCase("sample", "SchoolExtensionAddress", "Zone", "School_DocumentId")]
+    public async Task It_preserves_exact_stamps_and_projection_work_on_no_op_updates(
+        string schema,
+        string table,
+        string column,
+        string ownerColumn
+    )
+    {
+        var documentId = await SeedSchoolWithFullDescendantGraphAsync(700, 3);
+        await RewindContentLastModifiedAtAsync(documentId);
+        var before = await ReadStampPairAsync(documentId);
+        var watermark = await ReadMaxChangeVersionAsync();
+        var beforeWork = await _database.QueryRowsAsync(
+            """SELECT * FROM [dms].[DocumentProjectionWork] WHERE [DocumentId] = @documentId;""",
+            new SqlParameter("documentId", documentId)
+        );
+        await _database.ExecuteNonQueryAsync(
+            $"""
+            UPDATE [{schema}].[{table}] SET [{column}] = [{column}] WHERE [{ownerColumn}] = @documentId;
+            """,
+            new SqlParameter("documentId", documentId)
+        );
+        (await ReadStampPairAsync(documentId)).Should().Be(before);
+        (await ReadMaxChangeVersionAsync()).Should().Be(watermark);
+        var afterWork = await _database.QueryRowsAsync(
+            """SELECT * FROM [dms].[DocumentProjectionWork] WHERE [DocumentId] = @documentId;""",
+            new SqlParameter("documentId", documentId)
+        );
+        afterWork.Should().BeEquivalentTo(beforeWork);
     }
 
     [Test]
@@ -103,17 +299,11 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
                 1L,
                 "a multi-row single-statement child insert touching one root must allocate exactly one content version, not one per inserted row"
             );
-        after.Document.ContentVersion.Should().BeGreaterThan(before.Document.ContentVersion);
-        after.Document.ContentLastModifiedAt.Should().BeAfter(before.Document.ContentLastModifiedAt);
+        after.DocumentVersion.Should().BeGreaterThan(before.DocumentVersion);
+        after.Owner.ContentLastModifiedAt.Should().BeAfter(before.Owner.ContentLastModifiedAt);
         after
-            .Mirror.ContentVersion.Should()
-            .Be(after.Document.ContentVersion, "the root mirror ContentVersion must equal dms.Document");
-        after
-            .Mirror.ContentLastModifiedAt.Should()
-            .Be(
-                after.Document.ContentLastModifiedAt,
-                "the root mirror ContentLastModifiedAt must equal dms.Document"
-            );
+            .Owner.ContentVersion.Should()
+            .Be(after.DocumentVersion, "the root mirror ContentVersion must equal dms.Document");
     }
 
     [Test]
@@ -143,17 +333,11 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
                 1L,
                 "a multi-row child update touching one root must allocate exactly one content version, not one per row"
             );
-        after.Document.ContentVersion.Should().BeGreaterThan(before.Document.ContentVersion);
-        after.Document.ContentLastModifiedAt.Should().BeAfter(before.Document.ContentLastModifiedAt);
+        after.DocumentVersion.Should().BeGreaterThan(before.DocumentVersion);
+        after.Owner.ContentLastModifiedAt.Should().BeAfter(before.Owner.ContentLastModifiedAt);
         after
-            .Mirror.ContentVersion.Should()
-            .Be(after.Document.ContentVersion, "the root mirror ContentVersion must equal dms.Document");
-        after
-            .Mirror.ContentLastModifiedAt.Should()
-            .Be(
-                after.Document.ContentLastModifiedAt,
-                "the root mirror ContentLastModifiedAt must equal dms.Document"
-            );
+            .Owner.ContentVersion.Should()
+            .Be(after.DocumentVersion, "the root mirror ContentVersion must equal dms.Document");
     }
 
     [Test]
@@ -183,10 +367,9 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
                 1L,
                 "a multi-row collection-aligned _ext update touching one root must allocate exactly one content version"
             );
-        after.Document.ContentVersion.Should().BeGreaterThan(before.Document.ContentVersion);
-        after.Document.ContentLastModifiedAt.Should().BeAfter(before.Document.ContentLastModifiedAt);
-        after.Mirror.ContentVersion.Should().Be(after.Document.ContentVersion);
-        after.Mirror.ContentLastModifiedAt.Should().Be(after.Document.ContentLastModifiedAt);
+        after.DocumentVersion.Should().BeGreaterThan(before.DocumentVersion);
+        after.Owner.ContentLastModifiedAt.Should().BeAfter(before.Owner.ContentLastModifiedAt);
+        after.Owner.ContentVersion.Should().Be(after.DocumentVersion);
     }
 
     [Test]
@@ -211,9 +394,9 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
         (afterMaxChangeVersion - beforeMaxChangeVersion)
             .Should()
             .Be(0L, "a no-op update whose stored values do not change must not allocate a content version");
-        after.Document.ContentVersion.Should().Be(before.Document.ContentVersion);
-        after.Document.ContentLastModifiedAt.Should().Be(before.Document.ContentLastModifiedAt);
-        after.Mirror.ContentVersion.Should().Be(after.Document.ContentVersion);
+        after.DocumentVersion.Should().Be(before.DocumentVersion);
+        after.Owner.ContentLastModifiedAt.Should().Be(before.Owner.ContentLastModifiedAt);
+        after.Owner.ContentVersion.Should().Be(after.DocumentVersion);
     }
 
     [Test]
@@ -221,6 +404,8 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
     {
         var oldRootDocumentId = await SeedSchoolWithAddressesAsync(schoolId: 130, addressCount: 2);
         var newRootDocumentId = await SeedSchoolWithAddressesAsync(schoolId: 131, addressCount: 0);
+        await RewindContentLastModifiedAtAsync(oldRootDocumentId);
+        await RewindContentLastModifiedAtAsync(newRootDocumentId);
         var beforeOld = await ReadStampPairAsync(oldRootDocumentId);
         var beforeNew = await ReadStampPairAsync(newRootDocumentId);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
@@ -244,16 +429,15 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
         (afterMaxChangeVersion - beforeMaxChangeVersion)
             .Should()
             .Be(2L, "a locator change must stamp the old and the new owning root exactly once each");
-        afterOld.Document.ContentVersion.Should().BeGreaterThan(beforeOld.Document.ContentVersion);
-        afterNew.Document.ContentVersion.Should().BeGreaterThan(beforeNew.Document.ContentVersion);
-        afterOld.Mirror.ContentVersion.Should().Be(afterOld.Document.ContentVersion);
-        afterNew.Mirror.ContentVersion.Should().Be(afterNew.Document.ContentVersion);
+        afterOld.DocumentVersion.Should().BeGreaterThan(beforeOld.DocumentVersion);
+        afterNew.DocumentVersion.Should().BeGreaterThan(beforeNew.DocumentVersion);
+        afterOld.Owner.ContentLastModifiedAt.Should().BeAfter(beforeOld.Owner.ContentLastModifiedAt);
+        afterNew.Owner.ContentLastModifiedAt.Should().BeAfter(beforeNew.Owner.ContentLastModifiedAt);
+        afterOld.Owner.ContentVersion.Should().Be(afterOld.DocumentVersion);
+        afterNew.Owner.ContentVersion.Should().Be(afterNew.DocumentVersion);
         afterOld
-            .Document.ContentVersion.Should()
-            .NotBe(
-                afterNew.Document.ContentVersion,
-                "each distinct root must receive a distinct content version"
-            );
+            .DocumentVersion.Should()
+            .NotBe(afterNew.DocumentVersion, "each distinct root must receive a distinct content version");
     }
 
     [Test]
@@ -261,6 +445,10 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
     {
         var firstRootDocumentId = await SeedSchoolWithAddressesAsync(schoolId: 140, addressCount: 2);
         var secondRootDocumentId = await SeedSchoolWithAddressesAsync(schoolId: 141, addressCount: 2);
+        await RewindContentLastModifiedAtAsync(firstRootDocumentId);
+        await RewindContentLastModifiedAtAsync(secondRootDocumentId);
+        var beforeFirst = await ReadStampPairAsync(firstRootDocumentId);
+        var beforeSecond = await ReadStampPairAsync(secondRootDocumentId);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
 
         // One statement changes child rows belonging to two different roots.
@@ -282,12 +470,14 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
         (afterMaxChangeVersion - beforeMaxChangeVersion)
             .Should()
             .Be(2L, "two distinct affected roots must each receive exactly one content version");
-        afterFirst.Mirror.ContentVersion.Should().Be(afterFirst.Document.ContentVersion);
-        afterSecond.Mirror.ContentVersion.Should().Be(afterSecond.Document.ContentVersion);
+        afterFirst.Owner.ContentLastModifiedAt.Should().BeAfter(beforeFirst.Owner.ContentLastModifiedAt);
+        afterSecond.Owner.ContentLastModifiedAt.Should().BeAfter(beforeSecond.Owner.ContentLastModifiedAt);
+        afterFirst.Owner.ContentVersion.Should().Be(afterFirst.DocumentVersion);
+        afterSecond.Owner.ContentVersion.Should().Be(afterSecond.DocumentVersion);
         afterFirst
-            .Document.ContentVersion.Should()
+            .DocumentVersion.Should()
             .NotBe(
-                afterSecond.Document.ContentVersion,
+                afterSecond.DocumentVersion,
                 "each root must pull a distinct NEXT VALUE — a per-statement cache would collide"
             );
     }
@@ -318,17 +508,11 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
                 1L,
                 "a multi-row child delete against one surviving root must allocate exactly one content version, not one per deleted row"
             );
-        after.Document.ContentVersion.Should().BeGreaterThan(before.Document.ContentVersion);
-        after.Document.ContentLastModifiedAt.Should().BeAfter(before.Document.ContentLastModifiedAt);
+        after.DocumentVersion.Should().BeGreaterThan(before.DocumentVersion);
+        after.Owner.ContentLastModifiedAt.Should().BeAfter(before.Owner.ContentLastModifiedAt);
         after
-            .Mirror.ContentVersion.Should()
-            .Be(after.Document.ContentVersion, "the root mirror ContentVersion must equal dms.Document");
-        after
-            .Mirror.ContentLastModifiedAt.Should()
-            .Be(
-                after.Document.ContentLastModifiedAt,
-                "the root mirror ContentLastModifiedAt must equal dms.Document"
-            );
+            .Owner.ContentVersion.Should()
+            .Be(after.DocumentVersion, "the root mirror ContentVersion must equal dms.Document");
     }
 
     [Test]
@@ -584,9 +768,8 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
             """
             SELECT
                 doc.[ContentVersion] AS [DocumentContentVersion],
-                doc.[ContentLastModifiedAt] AS [DocumentContentLastModifiedAt],
-                school.[ContentVersion] AS [MirrorContentVersion],
-                school.[ContentLastModifiedAt] AS [MirrorContentLastModifiedAt]
+                school.[ContentVersion] AS [OwnerContentVersion],
+                school.[ContentLastModifiedAt] AS [OwnerContentLastModifiedAt]
             FROM [dms].[Document] doc
             INNER JOIN [edfi].[School] school ON school.[DocumentId] = doc.[DocumentId]
             WHERE doc.[DocumentId] = @documentId;
@@ -594,14 +777,16 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
             new SqlParameter("@documentId", documentId)
         );
         var row = rows.Single();
+        var requiredVersion = await _database.ExecuteScalarAsync<long>(
+            "SELECT [RequiredContentVersion] FROM [dms].[DocumentProjectionWork] WHERE [DocumentId] = @documentId;",
+            new SqlParameter("@documentId", documentId)
+        );
+        requiredVersion.Should().Be(Convert.ToInt64(row["DocumentContentVersion"]));
         return new StampPair(
+            Convert.ToInt64(row["DocumentContentVersion"]),
             new StampValues(
-                Convert.ToInt64(row["DocumentContentVersion"]),
-                Convert.ToDateTime(row["DocumentContentLastModifiedAt"])
-            ),
-            new StampValues(
-                Convert.ToInt64(row["MirrorContentVersion"]),
-                Convert.ToDateTime(row["MirrorContentLastModifiedAt"])
+                Convert.ToInt64(row["OwnerContentVersion"]),
+                Convert.ToDateTime(row["OwnerContentLastModifiedAt"])
             )
         );
     }
@@ -612,10 +797,6 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
         // between the seed writes and the write being tested.
         await _database.ExecuteNonQueryAsync(
             """
-            UPDATE [dms].[Document]
-            SET [ContentLastModifiedAt] = @contentLastModifiedAt
-            WHERE [DocumentId] = @documentId;
-
             UPDATE [edfi].[School]
             SET [ContentLastModifiedAt] = @contentLastModifiedAt
             WHERE [DocumentId] = @documentId;
@@ -625,7 +806,7 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
         );
     }
 
-    private sealed record StampPair(StampValues Document, StampValues Mirror);
+    private sealed record StampPair(long DocumentVersion, StampValues Owner);
 
     private sealed record StampValues(long ContentVersion, DateTime ContentLastModifiedAt);
 }

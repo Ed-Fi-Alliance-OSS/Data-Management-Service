@@ -3,9 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Etag;
 
 namespace EdFi.DataManagementService.Tests.E2E.Cdc;
@@ -28,10 +28,7 @@ internal static class CdcEnvelopeExpectations
         }
         JsonObject document = (JsonObject)apiBody.DeepClone();
         string uuid = source.DocumentUuid.ToString("D");
-        string timestamp = source.ContentLastModifiedAt.UtcDateTime.ToString(
-            "yyyy-MM-dd'T'HH:mm:ss'Z'",
-            CultureInfo.InvariantCulture
-        );
+        string timestamp = LastModifiedDateFormatter.Format(source.ContentLastModifiedAt);
         document["id"] = uuid;
         document["_lastModifiedDate"] = timestamp;
         // Never copy the HTTP ETag: ordinary API links may be disabled, while the stream uses links.

@@ -40,9 +40,10 @@ Describe 'Legacy dump carry-forward into native compact descriptor storage with 
         $ddl += '
 CREATE SCHEMA auth; CREATE TABLE auth."CarryForwardWitness" ("DocumentId" bigint PRIMARY KEY REFERENCES dms."Document" ("DocumentId"));'.Replace('\n', "`n")
         # A representative legacy dump: preserve the exact current schema set and existing non-
-        # descriptor objects, replace only the legacy physical descriptor contracts before seeding.
+        # descriptor objects, restore the old Document timestamp and legacy descriptor contracts.
         $script:compactDdl = $ddl
-        $legacy = $ddl.Replace('    "DescriptorId" int GENERATED ALWAYS AS IDENTITY NOT NULL,', '')
+        $legacy = $ddl.Replace('CREATE TABLE IF NOT EXISTS "dms"."Document"' + "`n(", 'CREATE TABLE IF NOT EXISTS "dms"."Document"' + "`n(" + "`n    " + '"ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),')
+        $legacy = $legacy.Replace('    "DescriptorId" int GENERATED ALWAYS AS IDENTITY NOT NULL,', '')
         $legacy = $legacy.Replace('CONSTRAINT "PK_Descriptor" PRIMARY KEY ("DescriptorId")', 'CONSTRAINT "PK_Descriptor" PRIMARY KEY ("DocumentId")')
         $legacy = $legacy.Replace('REFERENCES "dms"."Descriptor" ("DescriptorId")', 'REFERENCES "dms"."Descriptor" ("DocumentId")')
         $legacy = $legacy.Replace('CREATE TABLE IF NOT EXISTS "dms"."Descriptor"' + "`n(", 'CREATE TABLE IF NOT EXISTS "dms"."Descriptor"' + "`n(" + "`n    " + '"Uri" varchar(306) NOT NULL, "Discriminator" varchar(256) NOT NULL,')
@@ -69,18 +70,31 @@ INSERT INTO dms."Document" ("DocumentId", "DocumentUuid", "ResourceKeyId", "Cont
 (5000000042, '00000000-0000-0000-0000-000000000042', 3, 101, '2026-01-02Z', '2026-01-01Z'),
 (5000000043, '00000000-0000-0000-0000-000000000043', 5, 102, '2026-01-03Z', '2026-01-01Z'),
 (5000000100, '00000000-0000-0000-0000-000000000100', 4, 103, '2026-01-04Z', '2026-01-01Z'),
-(5000000200, '00000000-0000-0000-0000-000000000200', 2, 104, '2026-01-05Z', '2026-01-01Z');
+(5000000200, '00000000-0000-0000-0000-000000000200', 2, 104, '2026-01-05Z', '2026-01-01Z'),
+(5000000044, '00000000-0000-0000-0000-000000000044', 3, 105, '2026-01-01Z', '2026-01-01Z'),
+(5000000045, '00000000-0000-0000-0000-000000000045', 3, 106, '2026-01-05Z', '2026-01-01Z'),
+(5000000101, '00000000-0000-0000-0000-000000000101', 2, 107, '2026-01-03Z', '2026-01-01Z'),
+(5000000102, '00000000-0000-0000-0000-000000000102', 2, 108, '2026-01-01Z', '2026-01-01Z'),
+(5000000103, '00000000-0000-0000-0000-000000000103', 2, 109, '2026-01-06Z', '2026-01-01Z');
 INSERT INTO dms."Descriptor" ("DocumentId", "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription", "Uri", "Discriminator", "ContentVersion", "ContentLastModifiedAt") VALUES
 (5000000042, 3, 'uri://Example/Type', 'A#B', 'Core', 'uri://Example/Type#A#B', '__CORE_LIVE_TYPE__', 101, '2026-01-02Z'),
-(5000000043, 5, 'uri://Example/Type', 'A#B', 'Sample', 'uri://Example/Type#A#B', '__SAMPLE_LIVE_TYPE__', 102, '2026-01-03Z');
+(5000000043, 5, 'uri://Example/Type', 'A#B', 'Sample', 'uri://Example/Type#A#B', '__SAMPLE_LIVE_TYPE__', 102, '2026-01-03Z'),
+(5000000044, 3, 'uri://Example/Type', 'Min', 'Minimum', 'uri://Example/Type#Min', '__CORE_LIVE_TYPE__', 105, '2026-01-01Z'),
+(5000000045, 3, 'uri://Example/Type', 'Max', 'Maximum', 'uri://Example/Type#Max', '__CORE_LIVE_TYPE__', 106, '2026-01-05Z');
 INSERT INTO dms."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId") VALUES
 ('00000000-0000-0000-0000-000000000001', 5000000042, 3), ('00000000-0000-0000-0000-000000000002', 5000000043, 5),
-('00000000-0000-0000-0000-000000000003', 5000000100, 4), ('00000000-0000-0000-0000-000000000004', 5000000200, 2);
+('00000000-0000-0000-0000-000000000003', 5000000100, 4), ('00000000-0000-0000-0000-000000000004', 5000000200, 2),
+('00000000-0000-0000-0000-000000000005', 5000000044, 3), ('00000000-0000-0000-0000-000000000006', 5000000045, 3),
+('00000000-0000-0000-0000-000000000007', 5000000101, 2), ('00000000-0000-0000-0000-000000000008', 5000000102, 2),
+('00000000-0000-0000-0000-000000000009', 5000000103, 2);
 INSERT INTO edfi."Student" ("DocumentId", "SchoolTypeDescriptor_DescriptorId", "FirstName", "StudentUniqueId", "ContentVersion", "ContentLastModifiedAt") VALUES
 (5000000100, 5000000042, 'Test', 'student-100', 103, '2026-01-04Z');
 INSERT INTO edfi."DescriptorSubjectIdentity" ("DocumentId", "SchoolTypeDescriptor_DescriptorId", "Discriminator") VALUES (5000000100, 5000000042, 'Ed-Fi:Student');
 INSERT INTO edfi."ProfileRootOnlyMergeItem" ("DocumentId", "ProfileRootOnlyMergeItemId", "PrimarySchoolTypeDescriptor_DescriptorId_Present", "PrimarySchoolTypeDescriptor_Unified_DescriptorId", "StudentReference_DocumentId", "StudentReference_StudentUniqueId", "StudentReference_SchoolTypeDescriptor_DescriptorId", "ContentVersion", "ContentLastModifiedAt") VALUES
-(5000000200, 200, true, 5000000042, 5000000100, 'student-100', 5000000042, 104, '2026-01-05Z');
+(5000000200, 200, true, 5000000042, 5000000100, 'student-100', 5000000042, 104, '2026-01-05Z'),
+(5000000101, 101, true, 5000000042, 5000000100, 'student-100', 5000000042, 107, '2026-01-03Z'),
+(5000000102, 102, true, 5000000042, 5000000100, 'student-100', 5000000042, 108, '2026-01-01Z'),
+(5000000103, 103, true, 5000000042, 5000000100, 'student-100', 5000000042, 109, '2026-01-06Z');
 INSERT INTO sample."ProfileRootOnlyMergeItemExtension" ("DocumentId", "SchoolTypeDescriptor_DescriptorId") VALUES (5000000200, 5000000043);
 INSERT INTO edfi."ProfileRootOnlyMergeItemItem" ("CollectionItemId", "Ordinal", "ProfileRootOnlyMergeItem_DocumentId", "SchoolTypeDescriptor_DescriptorId") VALUES (9001, 0, 5000000200, 5000000042);
 INSERT INTO edfi."ProfileRootOnlyMergeItemItemNested" ("CollectionItemId", "Ordinal", "ParentCollectionItemId", "ProfileRootOnlyMergeItem_DocumentId", "SchoolTypeDescriptor_DescriptorId") VALUES (9002, 0, 9001, 5000000200, 5000000043), (9003, 1, 9001, 5000000200, NULL);
@@ -102,7 +116,7 @@ COMMIT;
         docker cp "${script:container}:/tmp/nr-compact-fixture.dump" $script:dump
         if ($LASTEXITCODE -ne 0) { throw 'Fixture dump copy failed' }
         $script:copyOutput = @(& $script:copy -Mode Copy -DumpPath $script:dump -SourceDatabase $script:source -TargetDatabase $script:target `
-            -ReferenceDatabase $script:reference -ExpectedDocumentCount 4 -ExpectedModelManifestPath $script:manifest `
+            -ReferenceDatabase $script:reference -ExpectedDocumentCount 9 -ExpectedModelManifestPath $script:manifest `
             -OutputDirectory $script:outputDir -Container $script:container -PostgresUser $script:user)
     }
     AfterAll {
@@ -110,29 +124,43 @@ COMMIT;
         docker exec $script:container rm -f /tmp/nr-compact-fixture.dump | Out-Null
     }
 
+    It 'Uses an explicitly old source and a timestamp-free combined target with the same fingerprint' {
+        $sql = "SELECT count(*) FROM information_schema.columns WHERE table_schema = 'dms' AND table_name = 'Document' AND column_name = 'ContentLastModifiedAt';"
+        (Query $script:source $sql) | Should -Be @('1')
+        (Query $script:target $sql) | Should -Be @('0')
+        (Query $script:target 'SELECT "EffectiveSchemaHash" FROM dms."EffectiveSchema";') |
+            Should -Be (Query $script:source 'SELECT "EffectiveSchemaHash" FROM dms."EffectiveSchema";')
+        $record = Import-Csv (Join-Path $script:outputDir "stamps.$script:source-vs-$script:target.tsv") -Delimiter "`t"
+        $record.Table | Should -Be @('dms.Descriptor', 'dms.Document', 'edfi.ProfileRootOnlyMergeItem', 'edfi.Student')
+        foreach ($row in $record) {
+            $row.TargetDistribution | Should -Be $row.SourceDistribution
+            if ($row.Table -cne 'dms.Document') { $row.TargetDistribution | Should -Match '\|[0-9a-f]{32}$' }
+            Write-Information "Verified stamp evidence: $($row.Table) source=$($row.SourceDistribution) target=$($row.TargetDistribution)" -InformationAction Continue
+        }
+    }
     It 'Executes actual dump conversion with independent native keys and retained key-map evidence' {
         $script:copyOutput -join "`n" | Should -Match 'PASS: copy complete'
-        (Query $script:target 'SELECT "DescriptorId" || ''|'' || "DocumentId" FROM dms."Descriptor" ORDER BY "DescriptorId";') | Should -Be @('41|5000000042', '42|5000000043')
+        (Query $script:target 'SELECT "DescriptorId" || ''|'' || "DocumentId" FROM dms."Descriptor" ORDER BY "DescriptorId";') | Should -Be @('41|5000000042', '42|5000000043', '43|5000000044', '44|5000000045')
         $map = Import-Csv (Join-Path $script:outputDir "descriptor-key-map.$script:target.tsv") -Delimiter "`t"
-        $map.DocumentId | Should -Be @('5000000042', '5000000043')
-        $map.DescriptorId | Should -Be @('41', '42')
+        $map.DocumentId | Should -Be @('5000000042', '5000000043', '5000000044', '5000000045')
+        $map.DescriptorId | Should -Be @('41', '42', '43', '44')
     }
-    It 'Reads a legacy archive whose dms.Document still carries CreatedAt' {
+    It 'Reads a legacy archive whose dms.Document still carries ContentLastModifiedAt and CreatedAt' {
         $archive = @(docker exec $script:container pg_restore --data-only -n dms -t Document -f - /tmp/nr-compact-fixture.dump)
         $LASTEXITCODE | Should -Be 0
-        @($archive | Where-Object { $_ -like 'COPY *' }) | Should -Be @('COPY dms."Document" ("DocumentId", "DocumentUuid", "ResourceKeyId", "CreatedByOwnershipTokenId", "ContentVersion", "ContentLastModifiedAt", "CreatedAt") FROM stdin;')
+        @($archive | Where-Object { $_ -like 'COPY *' }) | Should -Be @('COPY dms."Document" ("ContentLastModifiedAt", "DocumentId", "DocumentUuid", "ResourceKeyId", "CreatedByOwnershipTokenId", "ContentVersion", "CreatedAt") FROM stdin;')
     }
-    It 'Reports CreatedAt as the only source-only dms.Document column and leaves it out of the target' {
+    It 'Reports ContentLastModifiedAt and CreatedAt as the only source-only dms.Document columns and leaves them out of the target' {
         $script:copyOutput -join "`n" | Should -Match 'PASS: copy complete'
         @($script:copyOutput | Where-Object { $_ -like '*archive columns:*' -or $_ -like '*source-only columns left in staging:*' } | ForEach-Object { $_.Trim() }) | Should -Be @(
-            'archive columns: 7; target columns: 6; inserted: 6', 'source-only columns left in staging: CreatedAt')
+            'archive columns: 7; target columns: 5; inserted: 5', 'source-only columns left in staging: ContentLastModifiedAt, CreatedAt')
         $columnSql = "SELECT column_name FROM information_schema.columns WHERE table_schema = 'dms' AND table_name = 'Document' ORDER BY ordinal_position;"
-        (Query $script:target $columnSql) | Should -Be @('DocumentId', 'DocumentUuid', 'ResourceKeyId', 'CreatedByOwnershipTokenId', 'ContentVersion', 'ContentLastModifiedAt')
-        (Query $script:source $columnSql) | Should -Be @('DocumentId', 'DocumentUuid', 'ResourceKeyId', 'CreatedByOwnershipTokenId', 'ContentVersion', 'ContentLastModifiedAt', 'CreatedAt')
+        (Query $script:target $columnSql) | Should -Be @('DocumentId', 'DocumentUuid', 'ResourceKeyId', 'CreatedByOwnershipTokenId', 'ContentVersion')
+        (Query $script:source $columnSql) | Should -Be @('ContentLastModifiedAt', 'DocumentId', 'DocumentUuid', 'ResourceKeyId', 'CreatedByOwnershipTokenId', 'ContentVersion', 'CreatedAt')
     }
     It 'Preserves each owning document type and reconstructs the exact legacy URI' {
         (Query $script:target 'SELECT s."DocumentId" || ''|'' || s."ResourceKeyId" || ''|'' || d."ResourceKeyId" || ''|'' || s."Namespace" || ''#'' || s."CodeValue" FROM dms."Descriptor" s JOIN dms."Document" d ON d."DocumentId" = s."DocumentId" ORDER BY s."DocumentId";') | Should -Be @(
-            '5000000042|3|3|uri://Example/Type#A#B', '5000000043|5|5|uri://Example/Type#A#B')
+            '5000000042|3|3|uri://Example/Type#A#B', '5000000043|5|5|uri://Example/Type#A#B', '5000000044|3|3|uri://Example/Type#Min', '5000000045|3|3|uri://Example/Type#Max')
         (Query $script:target 'SELECT "Namespace" || ''#'' || "CodeValue" FROM dms."Descriptor" ORDER BY "DocumentId";') | Should -Be (Query $script:source 'SELECT "Uri" FROM dms."Descriptor" ORDER BY "DocumentId";')
     }
     It 'Remaps every stored root/copied/collection/nested/extension/abstract key and preserves composite FKs and aliases' {
@@ -141,7 +169,7 @@ COMMIT;
             $actual = Query $script:target "SELECT DISTINCT `"$($column.name)`" FROM `"$($column.schema)`".`"$($column.table)`" WHERE `"$($column.name)`" IS NOT NULL;"
             $actual | Should -Be @($value)
         }
-        (Query $script:target 'SELECT "PrimarySchoolTypeDescriptor_DescriptorId" || ''|'' || COALESCE("SecondarySchoolTypeDescriptor_DescriptorId"::text, ''NULL'') || ''|'' || "StudentReference_DocumentId" FROM edfi."ProfileRootOnlyMergeItem";') | Should -Be @('41|NULL|5000000100')
+        (Query $script:target 'SELECT "PrimarySchoolTypeDescriptor_DescriptorId" || ''|'' || COALESCE("SecondarySchoolTypeDescriptor_DescriptorId"::text, ''NULL'') || ''|'' || "StudentReference_DocumentId" FROM edfi."ProfileRootOnlyMergeItem" WHERE "DocumentId" = 5000000200;') | Should -Be @('41|NULL|5000000100')
         (Query $script:target 'SELECT count(*) FROM edfi."ProfileRootOnlyMergeItemItemNested" WHERE "SchoolTypeDescriptor_DescriptorId" IS NULL;') | Should -Be @('1')
         Query $script:target (Get-CompactDescriptorAssertionSql -Dialect pgsql -ExpectedModelManifestPath $script:manifest) | Out-Null
     }
@@ -155,7 +183,7 @@ COMMIT;
         }
     }
     It 'Preserves exact document/RI/stamp values, source identity and cleanup and passes checkpoint' {
-        # Every target dms.Document column, by name; the legacy source's extra CreatedAt is not copied.
+        # Every target dms.Document column, by name; the legacy source's extra ContentLastModifiedAt and CreatedAt are not copied.
         $sql = "SELECT json_agg(json_build_object($((Query $script:target "SELECT format('%L, %I', column_name, column_name) FROM information_schema.columns WHERE table_schema = 'dms' AND table_name = 'Document' ORDER BY ordinal_position;") -join ', ')) ORDER BY `"DocumentId`")::text FROM dms.`"Document`";"
         (Query $script:target $sql) | Should -Be (Query $script:source $sql)
         $sql = 'SELECT json_agg(t ORDER BY "DocumentId")::text FROM dms."ReferentialIdentity" t;'
@@ -166,19 +194,19 @@ COMMIT;
             (Query $script:target $sql) | Should -Be (Query $script:source $sql)
         }
         $output = @(& $script:copy -Mode Checkpoint -CheckpointName C2 -TargetDatabase $script:target -ReferenceDatabase $script:reference `
-            -ExpectedDocumentCount 4 -ExpectedSourceIdentity $script:originalIdentity -ExpectedModelManifestPath $script:manifest `
+            -ExpectedDocumentCount 9 -ExpectedSourceIdentity $script:originalIdentity -ExpectedModelManifestPath $script:manifest `
             -OutputDirectory $script:outputDir -Container $script:container -PostgresUser $script:user)
         $output -join "`n" | Should -Match 'PASS: checkpoint C2'
         (Query $script:target "SELECT count(*) FROM pg_namespace WHERE nspname = 'northridge_staging';") | Should -Be @('0')
     }
     It 'Rejects colliding allocator checkpoints without consuming or repairing the sequence' {
-        Query $script:target 'SELECT setval(pg_get_serial_sequence(''dms."Descriptor"'', ''DescriptorId''), 42, false);' | Out-Null
+        Query $script:target 'SELECT setval(pg_get_serial_sequence(''dms."Descriptor"'', ''DescriptorId''), 44, false);' | Out-Null
         try {
             { & $script:copy -Mode Checkpoint -CheckpointName Collision -TargetDatabase $script:target -ReferenceDatabase $script:reference `
-                -ExpectedDocumentCount 4 -ExpectedModelManifestPath $script:manifest -OutputDirectory $script:outputDir `
+                -ExpectedDocumentCount 9 -ExpectedModelManifestPath $script:manifest -OutputDirectory $script:outputDir `
                 -Container $script:container -PostgresUser $script:user } | Should -Throw '*DescriptorIdentitySequence*collide*'
-            (Query $script:target 'SELECT last_value || ''|'' || is_called FROM dms."Descriptor_DescriptorId_seq";') | Should -Be @('42|false')
-        } finally { Query $script:target 'SELECT setval(pg_get_serial_sequence(''dms."Descriptor"'', ''DescriptorId''), 42, true);' | Out-Null }
+            (Query $script:target 'SELECT last_value || ''|'' || is_called FROM dms."Descriptor_DescriptorId_seq";') | Should -Be @('44|false')
+        } finally { Query $script:target 'SELECT setval(pg_get_serial_sequence(''dms."Descriptor"'', ''DescriptorId''), 44, true);' | Out-Null }
     }
     It 'Stops the actual copy on <name> and cleans its staging' -ForEach @(
         @{ Name = 'unmapped stored reference'; Mutation = 'UPDATE edfi."Student" SET "SchoolTypeDescriptor_DescriptorId" = 5000000999'; Error = '*Unmapped descriptor reference*' },
@@ -203,7 +231,7 @@ COMMIT;
             docker cp "${script:container}:/tmp/nr-rejected.dump" $badDump
             if ($LASTEXITCODE -ne 0) { throw 'Cannot copy rejected dump' }
             { & $script:copy -Mode Copy -DumpPath $badDump -SourceDatabase $badSource -TargetDatabase $badTarget `
-                -ReferenceDatabase $script:reference -ExpectedDocumentCount 4 -ExpectedModelManifestPath $script:manifest `
+                -ReferenceDatabase $script:reference -ExpectedDocumentCount 9 -ExpectedModelManifestPath $script:manifest `
                 -OutputDirectory (Join-Path $TestDrive $id) -Container $script:container -PostgresUser $script:user } | Should -Throw $error
             (Query $badTarget "SELECT count(*) FROM pg_namespace WHERE nspname = 'northridge_staging';") | Should -Be @('0')
             (Query $badTarget 'SELECT count(*) FROM pg_trigger WHERE tgenabled = ''D'';') | Should -Be @('0')
@@ -213,14 +241,71 @@ COMMIT;
             docker exec $script:container rm -f /tmp/nr-rejected.dump | Out-Null
         }
     }
+    It 'Rejects <MutationKind> on <Owner> even when counts, versions and timestamp extrema are unchanged' -ForEach @(
+        @{ Owner = 'dms.Descriptor'; First = 5000000042L; Second = 5000000043L; MutationKind = 'interior timestamp change' },
+        @{ Owner = 'dms.Descriptor'; First = 5000000042L; Second = 5000000043L; MutationKind = 'timestamp swap' },
+        @{ Owner = 'edfi.ProfileRootOnlyMergeItem'; First = 5000000200L; Second = 5000000101L; MutationKind = 'interior timestamp change' },
+        @{ Owner = 'edfi.ProfileRootOnlyMergeItem'; First = 5000000200L; Second = 5000000101L; MutationKind = 'timestamp swap' }
+    ) {
+        $id = [guid]::NewGuid().ToString('N')
+        $badSource = "nr_stamp_source_$id"
+        $badTarget = "nr_stamp_target_$id"
+        $badDump = Join-Path $TestDrive "$id.dump"
+        $evidence = Join-Path $TestDrive $id
+        $schema, $table = $Owner.Split('.')
+        $qualified = '"' + $schema + '"."' + $table + '"'
+        try {
+            docker exec $script:container createdb -U $script:user -T $script:source $badSource
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot clone stamp fixture source' }
+            docker exec $script:container createdb -U $script:user $badTarget
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot create stamp fixture target' }
+            Query $badTarget $script:compactDdl | Out-Null
+            $mutation = if ($MutationKind -ceq 'timestamp swap') {
+                "UPDATE $qualified t SET `"ContentLastModifiedAt`" = s.`"ContentLastModifiedAt`" FROM $qualified s WHERE t.`"DocumentId`" IN ($First, $Second) AND s.`"DocumentId`" = CASE t.`"DocumentId`" WHEN $First THEN $Second ELSE $First END;"
+            } else {
+                "UPDATE $qualified SET `"ContentLastModifiedAt`" = `"ContentLastModifiedAt`" + interval '1 hour' WHERE `"DocumentId`" = $First;"
+            }
+            Query $badSource "SET session_replication_role = replica; $mutation" | Out-Null
+            $extrema = "SELECT json_build_array(count(*), min(`"ContentVersion`"), max(`"ContentVersion`"), min(`"ContentLastModifiedAt`"), max(`"ContentLastModifiedAt`"))::text FROM $qualified;"
+            (Query $badSource $extrema) | Should -Be (Query $script:source $extrema)
+            $versions = "SELECT json_agg(json_build_array(`"DocumentId`", `"ContentVersion`") ORDER BY `"DocumentId`")::text FROM $qualified;"
+            (Query $badSource $versions) | Should -Be (Query $script:source $versions)
+            docker exec $script:container pg_dump -U $script:user -Fc -f /tmp/nr-stamp-corruption.dump $badSource
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot dump stamp corruption' }
+            docker cp "${script:container}:/tmp/nr-stamp-corruption.dump" $badDump
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot copy stamp corruption dump' }
+            # Compare the corrupted archive with the unchanged source, through the actual copy's C1 gate.
+            { & $script:copy -Mode Copy -DumpPath $badDump -SourceDatabase $script:source -TargetDatabase $badTarget `
+                -ReferenceDatabase $script:reference -ExpectedDocumentCount 9 -ExpectedModelManifestPath $script:manifest `
+                -OutputDirectory $evidence -Container $script:container -PostgresUser $script:user } |
+                Should -Throw 'Post-copy validation failed with 1 problem(s).'
+            $checkpoint = Get-Content (Join-Path $evidence "checkpoint.C1.$badTarget.txt")
+            @($checkpoint | Where-Object { $_ -like 'Failure=*' }).Count | Should -Be 1
+            ($checkpoint -join "`n") | Should -Match ([regex]::Escape("Failure=stamp: $Owner stamp distribution differs:"))
+            $record = Import-Csv (Join-Path $evidence "stamps.$script:source-vs-$badTarget.tsv") -Delimiter "`t"
+            $different = @($record | Where-Object { $_.SourceDistribution -cne $_.TargetDistribution })
+            $different.Count | Should -Be 1
+            $different[0].Table | Should -Be $Owner
+            $before = $different[0].SourceDistribution.Split('|')
+            $after = $different[0].TargetDistribution.Split('|')
+            $before[0..4] | Should -Be $after[0..4]
+            $before[5] | Should -Not -Be $after[5]
+            Write-Information "Rejected $MutationKind on $Owner through C1 owner checksum: $($different[0].SourceDistribution) vs $($different[0].TargetDistribution)" -InformationAction Continue
+            (Query $badTarget "SELECT count(*) FROM pg_namespace WHERE nspname = 'northridge_staging';") | Should -Be @('0')
+        } finally {
+            docker exec $script:container dropdb -U $script:user --if-exists $badTarget | Out-Null
+            docker exec $script:container dropdb -U $script:user --if-exists $badSource | Out-Null
+            docker exec $script:container rm -f /tmp/nr-stamp-corruption.dump | Out-Null
+        }
+    }
     It 'Allows the next ordinary descriptor insert without collision while preserving bigint document allocation' {
         $result = Query $script:target @'
 BEGIN;
-INSERT INTO dms."Document" ("DocumentUuid", "ResourceKeyId") VALUES ('00000000-0000-0000-0000-000000000044', 3) RETURNING "DocumentId";
+INSERT INTO dms."Document" ("DocumentUuid", "ResourceKeyId") VALUES ('00000000-0000-0000-0000-000000000046', 3) RETURNING "DocumentId";
 INSERT INTO dms."Descriptor" ("DocumentId", "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription")
-SELECT "DocumentId", 3, 'uri://New', 'Next', 'Next' FROM dms."Document" WHERE "DocumentUuid" = '00000000-0000-0000-0000-000000000044' RETURNING "DescriptorId";
+SELECT "DocumentId", 3, 'uri://New', 'Next', 'Next' FROM dms."Document" WHERE "DocumentUuid" = '00000000-0000-0000-0000-000000000046' RETURNING "DescriptorId";
 ROLLBACK;
 '@
-        $result | Should -Be @('5000000201', '43')
+        $result | Should -Be @('5000000201', '45')
     }
 }

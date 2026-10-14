@@ -255,8 +255,8 @@ Backend is expected to own all of the following:
 
 Profile shaping does not change document ownership: UUID lookup, locks, concurrency/ETags,
 `DocumentCache`, `DocumentProjectionWork`, and representation restamps retain `bigint DocumentId`.
-Both `dms.Document.ContentVersion` and `ContentLastModifiedAt` remain authoritative and are mirrored
-onto descriptor rows through their document association. Hydration reconstructs original-case whole
+`dms.Document.ContentVersion` remains authoritative for concurrency and is mirrored onto the
+root/descriptor. `ContentLastModifiedAt` is authoritative on that owner and joins by `DocumentId`. Hydration reconstructs original-case whole
 URIs from compact keys before Core applies readable-profile projection.
 
 ## Data Model and Compilation Prerequisites

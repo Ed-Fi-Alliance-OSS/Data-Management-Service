@@ -95,6 +95,10 @@ public class Given_RelationalWrite_Target_Lookup_Surfaces
         commandExecutor.CapturedCommand.Should().NotBeNull();
         commandExecutor.CapturedCommand!.CommandText.Should().Contain(expectedTableFragment);
         commandExecutor
+            .CapturedCommand.CommandText.Should()
+            .NotContain("ContentLastModifiedAt")
+            .And.NotContain("JOIN");
+        commandExecutor
             .CapturedCommand.Parameters.Select(parameter => parameter.Value)
             .Should()
             .Equal(documentUuid.Value, (short)1);
@@ -129,9 +133,86 @@ public class Given_RelationalWrite_Target_Lookup_Surfaces
         commandExecutor.CapturedCommand.Should().NotBeNull();
         commandExecutor.CapturedCommand!.CommandText.Should().Contain(expectedTableFragment);
         commandExecutor
+            .CapturedCommand.CommandText.Should()
+            .NotContain("ContentLastModifiedAt")
+            .And.NotContain("JOIN");
+        commandExecutor
             .CapturedCommand.Parameters.Select(parameter => parameter.Value)
             .Should()
             .Equal(documentUuid.Value, (short)1);
+    }
+
+    [TestCase(SqlDialect.Pgsql, "dms.\"Document\"", "document.\"ResourceKeyId\" = @resourceKeyId")]
+    [TestCase(SqlDialect.Mssql, "[dms].[Document]", "document.[ResourceKeyId] = @resourceKeyId")]
+    public async Task It_resolves_descriptor_delete_from_document_only_metadata(
+        SqlDialect dialect,
+        string expectedTable,
+        string expectedResourcePredicate
+    )
+    {
+        var descriptorResource = new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor");
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    RelationalAccessTestData.CreateRow(
+                        ("DocumentId", 4_000_000_345L),
+                        ("DocumentUuid", documentUuid.Value),
+                        ("ResourceKeyId", (short)13),
+                        ("ContentVersion", null)
+                    )
+                ),
+            ]),
+        ]);
+
+        var result = await RelationalDocumentUuidLookupSupport.TryResolveDeleteTargetAsync(
+            commandExecutor,
+            CreateMappingSet(dialect),
+            descriptorResource,
+            documentUuid
+        );
+
+        result
+            .Should()
+            .BeEquivalentTo(new RelationalDocumentUuidLookupSupport.ResolvedDeleteTarget(4_000_000_345L));
+        commandExecutor.Commands.Should().ContainSingle();
+        var command = commandExecutor.Commands[0];
+        command.CommandText.Should().Contain(expectedTable).And.Contain(expectedResourcePredicate);
+        command.CommandText.Should().NotContain("ContentLastModifiedAt").And.NotContain("JOIN");
+        command.Parameters.Select(parameter => parameter.Value).Should().Equal(documentUuid.Value, (short)13);
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_returns_no_descriptor_delete_target_when_uuid_is_missing_or_belongs_to_another_resource(
+        SqlDialect dialect
+    )
+    {
+        var descriptorResource = new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor");
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
+        ]);
+
+        var result = await RelationalDocumentUuidLookupSupport.TryResolveDeleteTargetAsync(
+            commandExecutor,
+            CreateMappingSet(dialect),
+            descriptorResource,
+            documentUuid
+        );
+
+        result.Should().BeNull();
+        commandExecutor.Commands.Should().ContainSingle();
+        commandExecutor
+            .Commands[0]
+            .CommandText.Should()
+            .NotContain("ContentLastModifiedAt")
+            .And.NotContain("JOIN");
+        commandExecutor
+            .Commands[0]
+            .Parameters.Select(parameter => parameter.Value)
+            .Should()
+            .Equal(documentUuid.Value, (short)13);
     }
 
     private static MappingSet CreateMappingSet(SqlDialect dialect)
@@ -158,17 +239,10 @@ public class Given_RelationalWrite_Target_Lookup_Surfaces
         table.Columns.Add("DocumentUuid", typeof(Guid));
         table.Columns.Add("ResourceKeyId", typeof(short));
         table.Columns.Add("ContentVersion", typeof(long));
-        table.Columns.Add("ContentLastModifiedAt", typeof(DateTimeOffset));
 
         foreach (var row in rows)
         {
-            table.Rows.Add(
-                row.DocumentId,
-                row.DocumentUuid,
-                (short)1,
-                row.ContentVersion,
-                new DateTimeOffset(2026, 8, 1, 12, 0, 0, TimeSpan.Zero)
-            );
+            table.Rows.Add(row.DocumentId, row.DocumentUuid, (short)1, row.ContentVersion);
         }
 
         return table.CreateDataReader();

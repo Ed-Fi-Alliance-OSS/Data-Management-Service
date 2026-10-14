@@ -39,9 +39,16 @@ public partial class Given_DescriptorReadHandler
     )
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var descriptorLastModifiedAt = new DateTimeOffset(2026, 5, 6, 9, 30, 45, TimeSpan.FromHours(-5));
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
-                InMemoryRelationalResultSet.Create(CreateDescriptorRow(documentUuid.Value)),
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(
+                        documentUuid.Value,
+                        documentId: 5000000042L,
+                        contentLastModifiedAt: descriptorLastModifiedAt
+                    )
+                ),
             ]),
         ]);
         var sut = CreateHandler(commandExecutor);
@@ -50,18 +57,19 @@ public partial class Given_DescriptorReadHandler
 
         var success = result.Should().BeOfType<GetResult.GetSuccess>().Subject;
         success.DocumentUuid.Should().Be(documentUuid);
-        success.LastModifiedDate.Should().Be(new DateTime(2026, 5, 5, 14, 30, 45, DateTimeKind.Utc));
+        success.LastModifiedDate.Should().Be(descriptorLastModifiedAt.UtcDateTime);
         success.EdfiDoc["namespace"]!.GetValue<string>().Should().Be("uri://ed-fi.org/SchoolTypeDescriptor");
         success.EdfiDoc["codeValue"]!.GetValue<string>().Should().Be("Alternative");
         success.EdfiDoc["shortDescription"]!.GetValue<string>().Should().Be("Alternative");
         success.EdfiDoc["id"]!.GetValue<string>().Should().Be(documentUuid.Value.ToString());
         success.EdfiDoc["_etag"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
-        success.EdfiDoc["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-05-05T14:30:45Z");
+        success.EdfiDoc["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-05-06T14:30:45Z");
         success.EdfiDoc["Discriminator"].Should().BeNull();
         commandExecutor.Commands.Should().ContainSingle();
         commandExecutor.Commands[0].CommandText.Should().Contain(expectedDocumentTableFragment);
         commandExecutor.Commands[0].CommandText.Should().Contain(expectedDescriptorTableFragment);
         commandExecutor.Commands[0].CommandText.Should().Contain("LEFT JOIN");
+        AssertDescriptorStampSources(commandExecutor.Commands[0]);
         commandExecutor
             .Commands[0]
             .Parameters.Select(parameter => parameter.Value)
@@ -74,7 +82,7 @@ public partial class Given_DescriptorReadHandler
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-111111111111"));
         var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(CreateDescriptorRow(documentUuid.Value, documentId: 205L)),
             ]),
@@ -143,7 +151,7 @@ public partial class Given_DescriptorReadHandler
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-131313131313"));
         var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(CreateDescriptorRow(documentUuid.Value, documentId: 205L)),
             ]),
@@ -235,7 +243,7 @@ public partial class Given_DescriptorReadHandler
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-121212121212"));
         var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
                     CreateDescriptorRow(
@@ -298,7 +306,7 @@ public partial class Given_DescriptorReadHandler
     [Test]
     public async Task It_returns_not_exists_when_document_uuid_is_missing_or_is_for_the_wrong_resource()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
         var sut = CreateHandler(commandExecutor);
@@ -317,7 +325,7 @@ public partial class Given_DescriptorReadHandler
     [Test]
     public async Task It_fails_closed_for_descriptor_get_authorization_without_executing_sql()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateHandler(commandExecutor);
 
         var result = await sut.HandleGetByIdAsync(
@@ -343,7 +351,7 @@ public partial class Given_DescriptorReadHandler
     {
         // The namespace 403 still outranks the custom view's own outcome, but the view is configured ahead of
         // that terminal, so it executes first and its auth view is validated before the 403 is reported.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
         var sut = CreateHandler(commandExecutor);
@@ -380,11 +388,12 @@ public partial class Given_DescriptorReadHandler
     public async Task It_returns_an_unknown_failure_when_the_selected_document_has_no_descriptor_row()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-eeeeeeeeeeee"));
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
                     CreateDescriptorRow(
                         documentUuid.Value,
+                        descriptorMissing: true,
                         ns: null,
                         codeValue: null,
                         shortDescription: null,
@@ -400,11 +409,7 @@ public partial class Given_DescriptorReadHandler
         var result = await sut.HandleGetByIdAsync(CreateRequest(SqlDialect.Pgsql, documentUuid));
 
         var failure = result.Should().BeOfType<GetResult.UnknownFailure>().Subject;
-        // The row reader treats Namespace as nullable so a stored null can flow into the
-        // namespace-authorization stored-namespace-uninitialized 403; CodeValue is the next
-        // required column, so the reader's invariant message names it when the LEFT JOIN finds
-        // no descriptor row.
-        failure.FailureMessage.Should().Contain("dms.Descriptor.CodeValue must not be null.");
+        failure.FailureMessage.Should().Contain("dms.Descriptor.ContentLastModifiedAt must not be null.");
         failure.FailureMessage.Should().Contain("DocumentId 101");
         failure.FailureMessage.Should().Contain("ResourceKeyId=13");
     }
@@ -417,7 +422,7 @@ public partial class Given_DescriptorReadHandler
     {
         const long documentId = 5000000042L;
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-ffffffffffff"));
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
                     CreateDescriptorRow(
@@ -459,7 +464,7 @@ public partial class Given_DescriptorReadHandler
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-111111111111"));
         var projectionContext = CreateReadableProfileProjectionContext();
         var mappingSet = CreateMappingSet(SqlDialect.Pgsql);
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
                     CreateDescriptorRow(
@@ -547,7 +552,7 @@ public partial class Given_DescriptorReadHandler
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-aaaaaaaaaaaa"));
         var mappingSet = CreateMappingSet(SqlDialect.Pgsql);
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(CreateDescriptorRow(documentUuid.Value)),
             ]),
@@ -574,7 +579,7 @@ public partial class Given_DescriptorReadHandler
     public async Task It_skips_readable_profile_projection_for_stored_descriptor_reads()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-222222222222"));
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(CreateDescriptorRow(documentUuid.Value)),
             ]),
@@ -680,28 +685,25 @@ public partial class Given_DescriptorReadHandler
         commandExecutor.Commands[0].CommandText.Should().NotContain("COUNT(1)");
     }
 
-    // A traditional descriptor page whose request anchors on ContentVersion reports the anchor page
-    // selection ordered it by, not the row's DocumentId and not dms.Document's copy of the change
-    // version. The anchor arrives on the request, so it is supplied here alongside the window Core
-    // resolved it from rather than inferred from that window by the handler.
-    //
-    // The three values are deliberately distinct. DocumentId is 205, the joined dms.Document
-    // ContentVersion is 42, and the page-selection relation carried out 77. Only reading the projected
-    // anchor produces 77, so this fails if the boundary ever goes back to the document column — which
-    // is read through a different join in the same statement and can therefore name a version this page
-    // never selected.
+    // The boundary comes from the materialized keyset even when the acquired rows carry no anchor.
     [Test]
-    public async Task It_reports_a_content_version_boundary_for_a_windowed_traditional_descriptor_page()
+    public async Task It_uses_the_keyset_boundary_when_descriptor_rows_carry_no_selected_anchor()
     {
         var sut = CreateHandler(
-            CreateQueryRowsExecutor(
-                CreateDescriptorRow(
-                    Guid.NewGuid(),
-                    documentId: 205L,
-                    contentVersion: 42L,
-                    codeValue: "Charter",
-                    selectedAnchor: 77L
-                )
+            new DescriptorReadCommandExecutor(
+                [
+                    new InMemoryRelationalCommandExecution([
+                        InMemoryRelationalResultSet.Create(
+                            CreateDescriptorRow(
+                                Guid.NewGuid(),
+                                documentId: 205L,
+                                contentVersion: 42L,
+                                codeValue: "Charter"
+                            )
+                        ),
+                    ]),
+                ],
+                selectedBoundaries: [77L]
             )
         );
 
@@ -713,33 +715,7 @@ public partial class Given_DescriptorReadHandler
             )
         );
 
-        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
-        success.HighestSelectedAnchor.Should().Be(77L);
-    }
-
-    // The guard behind the assertion above. A request that resolved a ContentVersion anchor whose rows
-    // carry none means the page-rows statement and this boundary disagree about the request's anchor.
-    // Falling back to the document's ContentVersion would hand out a continuation that looks right and
-    // starts the next page past rows this one never returned, so the disagreement fails loudly instead.
-    [Test]
-    public async Task It_refuses_a_windowed_descriptor_page_whose_rows_carry_no_selected_anchor()
-    {
-        var sut = CreateHandler(
-            CreateQueryRowsExecutor(
-                CreateDescriptorRow(Guid.NewGuid(), documentId: 205L, codeValue: "Charter")
-            )
-        );
-
-        var act = async () =>
-            await sut.HandleQueryAsync(
-                CreateQueryRequest(
-                    SqlDialect.Pgsql,
-                    changeVersionRange: new ChangeVersionRange(null, 900L),
-                    pageOrderingMode: PageOrderingMode.ContentVersion
-                )
-            );
-
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*anchor*");
+        result.Should().BeOfType<QueryResult.QuerySuccess>().Which.HighestSelectedAnchor.Should().Be(77L);
     }
 
     // A DocumentId-anchored descriptor page reports its DocumentId and needs no projected anchor, which
@@ -761,14 +737,14 @@ public partial class Given_DescriptorReadHandler
         success.HighestSelectedAnchor.Should().Be(205L);
     }
 
-    private static InMemoryRelationalCommandExecutor CreateQueryRowsExecutor(
+    private static DescriptorReadCommandExecutor CreateQueryRowsExecutor(
         params IReadOnlyDictionary<string, object?>[] descriptorRows
     ) => new([new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create(descriptorRows)])]);
 
     [Test]
     public async Task It_fails_closed_for_descriptor_query_authorization_without_executing_sql()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateHandler(commandExecutor);
 
         var result = await sut.HandleQueryAsync(
@@ -793,7 +769,7 @@ public partial class Given_DescriptorReadHandler
     {
         const string omissionReason =
             "descriptor query support was intentionally omitted for the test fixture.";
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateHandler(commandExecutor);
 
         var result = await sut.HandleQueryAsync(
@@ -817,7 +793,7 @@ public partial class Given_DescriptorReadHandler
     [Test]
     public async Task It_emits_custom_view_filters_for_descriptor_get_many_queries()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
         var sut = CreateHandler(commandExecutor);
@@ -844,7 +820,7 @@ public partial class Given_DescriptorReadHandler
     [Test]
     public async Task It_validates_descriptor_custom_view_before_executing_ordinary_get_many_query()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(CreateDescriptorRow(Guid.NewGuid(), documentId: 101L)),
@@ -893,7 +869,18 @@ public partial class Given_DescriptorReadHandler
         A.CallTo(() =>
                 commandExecutor.ExecuteReaderAsync(
                     A<RelationalCommand>._,
-                    A<Func<IRelationalCommandReader, CancellationToken, Task<DescriptorQueryRowsPage>>>._,
+                    A<
+                        Func<
+                            IRelationalCommandReader,
+                            CancellationToken,
+                            Task<(
+                                bool Stable,
+                                long? TotalCount,
+                                IReadOnlyList<DescriptorReadRow> Rows,
+                                long? HighestSelectedAnchor
+                            )>
+                        >
+                    >._,
                     A<CancellationToken>._
                 )
             )
@@ -917,7 +904,7 @@ public partial class Given_DescriptorReadHandler
     [Test]
     public async Task It_preserves_namespace_and_custom_view_order_for_descriptor_get_many_queries()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
         var sut = CreateHandler(commandExecutor);
@@ -997,7 +984,7 @@ public partial class Given_DescriptorReadHandler
         // InvalidRelationshipStrategy (index 0) fails the classifier; the resolved custom view at index 1
         // executes after that terminal, so probing it would let a missing or non-conforming auth view mask
         // the earlier security-configuration failure.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateHandler(commandExecutor);
         var request = CreateQueryRequest(
             SqlDialect.Pgsql,
@@ -1019,7 +1006,7 @@ public partial class Given_DescriptorReadHandler
     {
         // The mirror case: the resolved custom view is configured first, so it is probed, and when that
         // probe succeeds the classifier's security-configuration failure is still the reported terminal.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
         var sut = CreateHandler(commandExecutor);
@@ -1083,7 +1070,7 @@ public partial class Given_DescriptorReadHandler
         // must not be listed among the unsupported effective strategies, and the message must not claim
         // only NamespaceBased/NoFurtherAuthorizationRequired are supported. The unsupported relationship
         // strategy that caused the 501 stays in the list.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
         var sut = CreateHandler(commandExecutor);
@@ -1171,7 +1158,7 @@ public partial class Given_DescriptorReadHandler
         // Same shape with a view that validates cleanly, so the 501 is returned. A resolved custom view is
         // supported on GET-by-id too, so it must not appear among the unsupported effective strategies and
         // the message must not claim only NamespaceBased/NoFurtherAuthorizationRequired are supported.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
         var sut = CreateHandler(commandExecutor);
@@ -1223,7 +1210,7 @@ public partial class Given_DescriptorReadHandler
         // The no-usable-root-column 500 resolves before any row is fetched, but a custom view configured ahead
         // of it executes first, so a missing or non-conforming view keeps its own configuration failure rather
         // than being hidden by this terminal.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
         var sut = CreateHandler(commandExecutor);
@@ -1267,7 +1254,7 @@ public partial class Given_DescriptorReadHandler
     {
         // NamespaceBased is configured first, so its no-usable-root-column terminal is reported even
         // though a later custom-view strategy has an unresolvable basis resource.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateHandler(commandExecutor);
         var request = CreateQueryRequest(
             SqlDialect.Pgsql,
@@ -1298,7 +1285,7 @@ public partial class Given_DescriptorReadHandler
         // descriptor guardrail still rejects the relationship OR group with a 501, and the client holds no token,
         // so ownership must not short-circuit ahead of it with an empty page. The custom view configured ahead
         // of it is still validated before the 501 is returned.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
         var sut = CreateHandler(commandExecutor);
@@ -1351,7 +1338,7 @@ public partial class Given_DescriptorReadHandler
     {
         // Same as the not-implemented sibling: OwnershipBased does not displace the relationship OR
         // group's security-configuration failure, and the earlier custom view is still validated.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
         var sut = CreateHandler(commandExecutor);
@@ -1384,7 +1371,7 @@ public partial class Given_DescriptorReadHandler
         // Custom view + OwnershipBased: both are AND filters on the one page relation. The custom view is
         // validated first, then the page query carries the view membership ahead of the ownership predicate —
         // ownership executes last among the AND strategies.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
@@ -1422,7 +1409,7 @@ public partial class Given_DescriptorReadHandler
         // OwnershipBased executes last per auth.md "Execution order" no matter where the CMS placed it, so a
         // caller with no ownership token still gets the custom view validated before its empty page, and no
         // page SQL runs.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
         var sut = CreateHandler(commandExecutor);
@@ -1492,7 +1479,7 @@ public partial class Given_DescriptorReadHandler
         Type expectedFailureType
     )
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
         var sut = CreateHandler(commandExecutor);
@@ -1517,7 +1504,7 @@ public partial class Given_DescriptorReadHandler
         // Meeting is a known resource, so the basis resolves, but the descriptor has no reference path to
         // it. That is NoCustomViewJoinPath, which must report the specific join-path message the regular
         // resource GET-many path uses — not the generic unknown-strategy message.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateHandler(commandExecutor);
         var request = CreateQueryRequest(
             SqlDialect.Pgsql,
@@ -1557,7 +1544,7 @@ public partial class Given_DescriptorReadHandler
     {
         // Custom view-based executes before Ownership, so its configuration failure must not be hidden
         // behind the ownership page filter or the empty page a token-less caller would otherwise get.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateHandler(commandExecutor);
         var request = CreateQueryRequest(
             SqlDialect.Pgsql,
@@ -1580,7 +1567,7 @@ public partial class Given_DescriptorReadHandler
         bool totalCount
     )
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
         DocumentCacheReadAccelerationQuerySelectionResult selectionResult = null!;
         A.CallTo(() =>
@@ -1632,7 +1619,7 @@ public partial class Given_DescriptorReadHandler
         bool totalCount
     )
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution(
                 totalCount
                     ?
@@ -1693,7 +1680,7 @@ public partial class Given_DescriptorReadHandler
     [Test]
     public async Task It_validates_descriptor_custom_view_before_namespace_no_prefixes_when_custom_view_is_configured_first()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
         var sut = CreateHandler(commandExecutor);
@@ -1722,7 +1709,7 @@ public partial class Given_DescriptorReadHandler
     [Test]
     public async Task It_returns_descriptor_namespace_no_prefixes_without_custom_view_validation_when_namespace_is_configured_first()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateHandler(commandExecutor);
         var request = CreateQueryRequest(
             SqlDialect.Pgsql,
@@ -1746,7 +1733,7 @@ public partial class Given_DescriptorReadHandler
     [Test]
     public async Task It_validates_only_descriptor_custom_views_before_mssql_namespace_parameter_limit()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
         var sut = CreateHandler(commandExecutor);
@@ -1780,7 +1767,7 @@ public partial class Given_DescriptorReadHandler
     [Test]
     public async Task It_validates_descriptor_custom_views_before_empty_page_preprocessing_success()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
         var sut = CreateHandler(commandExecutor);
@@ -1815,12 +1802,17 @@ public partial class Given_DescriptorReadHandler
     {
         var firstDocumentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-111111111111");
         var secondDocumentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-222222222222");
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 7))),
                 InMemoryRelationalResultSet.Create(
                     CreateDescriptorRow(firstDocumentUuid, documentId: 101L, codeValue: "Alternative"),
-                    CreateDescriptorRow(secondDocumentUuid, documentId: 205L, codeValue: "Charter")
+                    CreateDescriptorRow(
+                        secondDocumentUuid,
+                        documentId: 205L,
+                        codeValue: "Charter",
+                        contentLastModifiedAt: new DateTimeOffset(2026, 5, 7, 14, 30, 45, TimeSpan.Zero)
+                    )
                 ),
             ]),
         ]);
@@ -1844,6 +1836,13 @@ public partial class Given_DescriptorReadHandler
         result.TotalCount.Should().Be(7);
         result.Rows.Select(row => row.DocumentId).Should().Equal(101L, 205L);
         result.Rows.Select(row => row.DocumentUuid).Should().Equal(firstDocumentUuid, secondDocumentUuid);
+        result
+            .Rows.Select(row => row.ContentLastModifiedAt)
+            .Should()
+            .Equal(
+                new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero),
+                new DateTimeOffset(2026, 5, 7, 14, 30, 45, TimeSpan.Zero)
+            );
         commandExecutor.Commands.Should().ContainSingle();
         commandExecutor.Commands[0].CommandText.Should().Contain("COUNT(1)");
         commandExecutor.Commands[0].CommandText.Should().Contain(expectedDocumentTableFragment);
@@ -1859,13 +1858,13 @@ public partial class Given_DescriptorReadHandler
     )
     {
         var documentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-292929292929");
-        var fullRowCommandExecutor = new InMemoryRelationalCommandExecutor([
+        var fullRowCommandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 1))),
                 InMemoryRelationalResultSet.Create(CreateDescriptorRow(documentUuid)),
             ]),
         ]);
-        var candidateCommandExecutor = new InMemoryRelationalCommandExecutor([
+        var candidateCommandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 1))),
                 InMemoryRelationalResultSet.Create(CreateDescriptorRow(documentUuid)),
@@ -1933,7 +1932,7 @@ public partial class Given_DescriptorReadHandler
     public async Task It_does_not_fail_when_total_count_is_requested_and_a_corrupt_descriptor_document_is_outside_the_selected_page()
     {
         var documentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-333333333333");
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 2))),
                 InMemoryRelationalResultSet.Create(
@@ -1954,11 +1953,12 @@ public partial class Given_DescriptorReadHandler
     [Test]
     public async Task It_returns_an_unknown_failure_when_the_selected_descriptor_query_document_has_no_descriptor_row()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
                     CreateDescriptorRow(
                         Guid.Parse("aaaaaaaa-1111-2222-3333-444444444444"),
+                        descriptorMissing: true,
                         ns: null,
                         codeValue: null,
                         shortDescription: null,
@@ -1974,9 +1974,7 @@ public partial class Given_DescriptorReadHandler
         var result = await sut.HandleQueryAsync(CreateQueryRequest(SqlDialect.Pgsql));
 
         var failure = result.Should().BeOfType<QueryResult.UnknownFailure>().Subject;
-        // See sibling GET-by-id test: Namespace is read nullably so CodeValue is now the first
-        // required column whose null value the reader trips on when the LEFT JOIN finds no row.
-        failure.FailureMessage.Should().Contain("dms.Descriptor.CodeValue must not be null.");
+        failure.FailureMessage.Should().Contain("dms.Descriptor.ContentLastModifiedAt must not be null.");
         failure.FailureMessage.Should().Contain("DocumentId 101");
         failure.FailureMessage.Should().Contain("ResourceKeyId=13");
     }
@@ -1984,7 +1982,7 @@ public partial class Given_DescriptorReadHandler
     [Test]
     public async Task It_returns_an_unknown_failure_when_a_selected_descriptor_query_row_has_a_required_field_null()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
                     CreateDescriptorRow(
@@ -2009,7 +2007,7 @@ public partial class Given_DescriptorReadHandler
     {
         var firstDocumentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-666666666666");
         var secondDocumentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-777777777777");
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 7))),
                 InMemoryRelationalResultSet.Create(
@@ -2090,7 +2088,7 @@ public partial class Given_DescriptorReadHandler
         var firstDocumentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-999999999991");
         var secondDocumentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-999999999992");
         var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 7))),
                 InMemoryRelationalResultSet.Create(
@@ -2237,7 +2235,7 @@ public partial class Given_DescriptorReadHandler
     [Test]
     public async Task It_completes_cached_descriptor_query_selection_with_an_empty_page_for_a_caller_with_no_ownership_token()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         DocumentCacheReadAccelerationQuerySelectionResult selection = null!;
         var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
         A.CallTo(() =>
@@ -2276,30 +2274,28 @@ public partial class Given_DescriptorReadHandler
         commandExecutor.Commands.Should().BeEmpty();
     }
 
-    // A traditional descriptor page anchored on ContentVersion shapes a cache-served response from a
-    // candidate page whose boundary is that anchor. The candidate row's three values differ on purpose —
-    // DocumentId 205, the joined dms.Document ContentVersion 42, and the projected page-selection anchor
-    // 77 — so only reading the anchor produces the value asserted below. Candidate selection is the one
-    // statement on this path that ranges over the page-selection relation, which is why the boundary has
-    // to be taken here rather than re-derived from the rows retrieved afterwards.
+    // The materialized keyset boundary differs from both the acquired DocumentId and ContentVersion.
+    // Cache-served responses must retain that boundary instead of deriving one from candidate rows.
     [Test]
     public async Task It_exposes_a_content_version_boundary_on_a_windowed_descriptor_candidate_page()
     {
         var documentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-999999999994");
         var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
-            new InMemoryRelationalCommandExecution([
-                InMemoryRelationalResultSet.Create(
-                    CreateDescriptorRow(
-                        documentUuid,
-                        documentId: 205L,
-                        contentVersion: 42L,
-                        codeValue: "Charter",
-                        selectedAnchor: 77L
-                    )
-                ),
-            ]),
-        ]);
+        var commandExecutor = new DescriptorReadCommandExecutor(
+            [
+                new InMemoryRelationalCommandExecution([
+                    InMemoryRelationalResultSet.Create(
+                        CreateDescriptorRow(
+                            documentUuid,
+                            documentId: 205L,
+                            contentVersion: 42L,
+                            codeValue: "Charter"
+                        )
+                    ),
+                ]),
+            ],
+            selectedBoundaries: [77L]
+        );
         DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage capturedSelection = null!;
 
         A.CallTo(() =>
@@ -2368,7 +2364,7 @@ public partial class Given_DescriptorReadHandler
     )
     {
         var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
         QueryResult.QuerySuccess capturedSuccess = null!;
@@ -2428,7 +2424,16 @@ public partial class Given_DescriptorReadHandler
                 commandExecutor.ExecuteReaderAsync(
                     A<RelationalCommand>._,
                     A<
-                        Func<IRelationalCommandReader, CancellationToken, Task<DescriptorQueryCandidatePage>>
+                        Func<
+                            IRelationalCommandReader,
+                            CancellationToken,
+                            Task<(
+                                bool Stable,
+                                long? TotalCount,
+                                IReadOnlyList<DescriptorReadCandidateRow> Rows,
+                                long? HighestSelectedAnchor
+                            )>
+                        >
                     >._,
                     A<CancellationToken>._
                 )
@@ -2439,15 +2444,25 @@ public partial class Given_DescriptorReadHandler
                     Func<
                         IRelationalCommandReader,
                         CancellationToken,
-                        Task<DescriptorQueryCandidatePage>
+                        Task<(
+                            bool Stable,
+                            long? TotalCount,
+                            IReadOnlyList<DescriptorReadCandidateRow> Rows,
+                            long? HighestSelectedAnchor
+                        )>
                     > readAsync,
                     CancellationToken cancellationToken
                 ) =>
                     readAsync(
                         new InMemoryRelationalCommandReader([
                             InMemoryRelationalResultSet.Create(
+                                RelationalAccessTestData.CreateRow(("HighestSelectedAnchor", 101L))
+                            ),
+                            VersionRows(42),
+                            InMemoryRelationalResultSet.Create(
                                 CreateDescriptorRow(documentUuid, documentId: 101L)
                             ),
+                            VersionRows(42),
                         ]),
                         cancellationToken
                     )
@@ -2459,7 +2474,12 @@ public partial class Given_DescriptorReadHandler
                         Func<
                             IRelationalCommandReader,
                             CancellationToken,
-                            Task<IReadOnlyList<DescriptorReadRow>>
+                            Task<(
+                                bool Stable,
+                                long? TotalCount,
+                                IReadOnlyList<DescriptorReadRow> Rows,
+                                long? HighestSelectedAnchor
+                            )>
                         >
                     >._,
                     A<CancellationToken>._
@@ -2509,8 +2529,21 @@ public partial class Given_DescriptorReadHandler
             .MustHaveHappenedOnceExactly();
         A.CallTo(() =>
                 commandExecutor.ExecuteReaderAsync(
-                    A<RelationalCommand>._,
-                    A<Func<IRelationalCommandReader, CancellationToken, Task<DescriptorQueryRowsPage>>>._,
+                    A<RelationalCommand>.That.Matches(command =>
+                        command.CommandText.Contains("INSERT INTO", StringComparison.Ordinal)
+                    ),
+                    A<
+                        Func<
+                            IRelationalCommandReader,
+                            CancellationToken,
+                            Task<(
+                                bool Stable,
+                                long? TotalCount,
+                                IReadOnlyList<DescriptorReadRow> Rows,
+                                long? HighestSelectedAnchor
+                            )>
+                        >
+                    >._,
                     A<CancellationToken>._
                 )
             )
@@ -2528,47 +2561,52 @@ public partial class Given_DescriptorReadHandler
         var secondDocumentUuid = Guid.Parse("bbbbbbbb-1111-2222-3333-343434343434");
         var newlyMatchingDocumentUuid = Guid.Parse("cccccccc-1111-2222-3333-343434343434");
         var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
-            new InMemoryRelationalCommandExecution([
-                InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 7))),
-                InMemoryRelationalResultSet.Create(
-                    CreateDescriptorRow(
-                        firstDocumentUuid,
-                        documentId: 101L,
-                        shortDescription: "First before fallback",
-                        contentVersion: 42L
+        // The keyset also selected DocumentId 300, which disappeared before acquisition. The fallback
+        // must retain that boundary even though it hydrates only the two surviving candidates.
+        var commandExecutor = new DescriptorReadCommandExecutor(
+            [
+                new InMemoryRelationalCommandExecution([
+                    InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 7))),
+                    InMemoryRelationalResultSet.Create(
+                        CreateDescriptorRow(
+                            firstDocumentUuid,
+                            documentId: 101L,
+                            shortDescription: "First before fallback",
+                            contentVersion: 42L
+                        ),
+                        CreateDescriptorRow(
+                            secondDocumentUuid,
+                            documentId: 205L,
+                            shortDescription: "Second before fallback",
+                            contentVersion: 43L
+                        )
                     ),
-                    CreateDescriptorRow(
-                        secondDocumentUuid,
-                        documentId: 205L,
-                        shortDescription: "Second before fallback",
-                        contentVersion: 43L
-                    )
-                ),
-            ]),
-            new InMemoryRelationalCommandExecution([
-                InMemoryRelationalResultSet.Create(
-                    CreateDescriptorRow(
-                        secondDocumentUuid,
-                        documentId: 205L,
-                        shortDescription: "Second after fallback",
-                        contentVersion: 43L
+                ]),
+                new InMemoryRelationalCommandExecution([
+                    InMemoryRelationalResultSet.Create(
+                        CreateDescriptorRow(
+                            secondDocumentUuid,
+                            documentId: 205L,
+                            shortDescription: "Second after fallback",
+                            contentVersion: 43L
+                        ),
+                        CreateDescriptorRow(
+                            newlyMatchingDocumentUuid,
+                            documentId: 999L,
+                            shortDescription: "Newly matching row",
+                            contentVersion: 999L
+                        ),
+                        CreateDescriptorRow(
+                            firstDocumentUuid,
+                            documentId: 101L,
+                            shortDescription: "First after fallback",
+                            contentVersion: 42L
+                        )
                     ),
-                    CreateDescriptorRow(
-                        newlyMatchingDocumentUuid,
-                        documentId: 999L,
-                        shortDescription: "Newly matching row",
-                        contentVersion: 999L
-                    ),
-                    CreateDescriptorRow(
-                        firstDocumentUuid,
-                        documentId: 101L,
-                        shortDescription: "First after fallback",
-                        contentVersion: 42L
-                    )
-                ),
-            ]),
-        ]);
+                ]),
+            ],
+            selectedBoundaries: [300L]
+        );
         A.CallTo(() =>
                 readAccelerationCoordinator.QueryAsync(
                     A<DocumentCacheReadAccelerationQueryRequest>._,
@@ -2588,6 +2626,7 @@ public partial class Given_DescriptorReadHandler
                     .Subject;
                 candidateSelection.AuthorizedCandidatePage.IncludesTotalCount.Should().BeTrue();
                 candidateSelection.AuthorizedCandidatePage.TotalCount.Should().Be(7);
+                candidateSelection.AuthorizedCandidatePage.HighestSelectedAnchor.Should().Be(300L);
 
                 return await candidateSelection.RelationalFallback(cancellationToken).ConfigureAwait(false);
             });
@@ -2598,6 +2637,7 @@ public partial class Given_DescriptorReadHandler
 
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
         success.TotalCount.Should().Be(7);
+        success.HighestSelectedAnchor.Should().Be(300L);
         success.EdfiDocs.Should().HaveCount(2);
         success
             .EdfiDocs.Select(document => document!["id"]!.GetValue<string>())
@@ -2658,7 +2698,7 @@ public partial class Given_DescriptorReadHandler
         var selectedDocumentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-343434343434");
         var rerunDocumentUuid = Guid.Parse("bbbbbbbb-1111-2222-3333-343434343434");
         var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 7))),
                 InMemoryRelationalResultSet.Create(
@@ -2733,7 +2773,7 @@ public partial class Given_DescriptorReadHandler
         var selectedDocumentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-454545454545");
         var rerunDocumentUuid = Guid.Parse("bbbbbbbb-1111-2222-3333-454545454545");
         var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 7))),
                 InMemoryRelationalResultSet.Create(
@@ -2814,7 +2854,7 @@ public partial class Given_DescriptorReadHandler
         var documentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-888888888888");
         var projectionContext = CreateReadableProfileProjectionContext();
         var mappingSet = CreateMappingSet(SqlDialect.Pgsql);
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
+        var commandExecutor = new DescriptorReadCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
                     CreateDescriptorRow(
@@ -3142,12 +3182,6 @@ public partial class Given_DescriptorReadHandler
         );
     }
 
-    /// <param name="selectedAnchor">
-    /// The <c>SelectedAnchor</c> column a ContentVersion-anchored page-rows statement projects out of
-    /// the page-selection relation. Omitted by default, which is the shape every other descriptor
-    /// statement returns — GET-by-id, the selected-page fallback, and any DocumentId-anchored page all
-    /// project no anchor at all, so a row that carries one has to say so.
-    /// </param>
     private static IReadOnlyDictionary<string, object?> CreateDescriptorRow(
         Guid documentUuid,
         long documentId = 101L,
@@ -3159,7 +3193,7 @@ public partial class Given_DescriptorReadHandler
         string? description = "Alternative school type",
         DateOnly? effectiveBeginDate = null,
         DateOnly? effectiveEndDate = null,
-        long? selectedAnchor = null
+        bool descriptorMissing = false
     )
     {
         List<(string, object?)> columns =
@@ -3169,7 +3203,9 @@ public partial class Given_DescriptorReadHandler
             ("ContentVersion", contentVersion),
             (
                 "ContentLastModifiedAt",
-                contentLastModifiedAt ?? new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero)
+                descriptorMissing
+                    ? null
+                    : contentLastModifiedAt ?? new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero)
             ),
             ("ResourceKeyId", (short)13),
             ("Namespace", ns),
@@ -3179,11 +3215,6 @@ public partial class Given_DescriptorReadHandler
             ("EffectiveBeginDate", effectiveBeginDate),
             ("EffectiveEndDate", effectiveEndDate),
         ];
-
-        if (selectedAnchor is not null)
-        {
-            columns.Add(("SelectedAnchor", selectedAnchor));
-        }
 
         return RelationalAccessTestData.CreateRow([.. columns]);
     }
@@ -3245,6 +3276,8 @@ public partial class Given_DescriptorReadHandler
         IReadOnlyList<string> columnNames
     )
     {
+        AssertDescriptorStampSources(command);
+
         foreach (string columnName in columnNames)
         {
             bool selectsColumn =
@@ -3252,6 +3285,27 @@ public partial class Given_DescriptorReadHandler
                 || command.CommandText.Contains($"AS [{columnName}]", StringComparison.Ordinal);
 
             selectsColumn.Should().BeTrue($"the descriptor projection should select {columnName}");
+        }
+    }
+
+    private static void AssertDescriptorStampSources(RelationalCommand command)
+    {
+        var sql = command.CommandText;
+        if (sql.Contains("dms.\"Document\"", StringComparison.Ordinal))
+        {
+            sql.Should().Contain("document.\"ContentVersion\" AS \"ContentVersion\"");
+            sql.Should().Contain("descriptor.\"ContentLastModifiedAt\" AS \"ContentLastModifiedAt\"");
+            sql.Should().Contain("descriptor.\"DocumentId\" = ");
+            sql.Should().NotContain("document.\"ContentLastModifiedAt\"");
+            sql.Should().NotContain("descriptor.\"DescriptorId\" = document.\"DocumentId\"");
+        }
+        else
+        {
+            sql.Should().Contain("document.[ContentVersion] AS [ContentVersion]");
+            sql.Should().Contain("descriptor.[ContentLastModifiedAt] AS [ContentLastModifiedAt]");
+            sql.Should().Contain("descriptor.[DocumentId] = ");
+            sql.Should().NotContain("document.[ContentLastModifiedAt]");
+            sql.Should().NotContain("descriptor.[DescriptorId] = document.[DocumentId]");
         }
     }
 
@@ -3288,7 +3342,11 @@ public partial class Given_DescriptorReadHandler
         )
             ? $"{documentIdSourceAlias}.\"DocumentId\" AS \"DocumentId\""
             : $"{documentIdSourceAlias}.[DocumentId] AS [DocumentId]";
-        int documentIdProjectionIndex = commandText.IndexOf(documentIdProjection, StringComparison.Ordinal);
+        int documentIdProjectionIndex = commandText.IndexOf(
+            documentIdProjection,
+            commandText.IndexOf("-- Descriptor acquisition: owner rows", StringComparison.Ordinal),
+            StringComparison.Ordinal
+        );
         documentIdProjectionIndex.Should().BeGreaterThanOrEqualTo(0);
         int selectIndex = commandText.LastIndexOf(
             "SELECT",

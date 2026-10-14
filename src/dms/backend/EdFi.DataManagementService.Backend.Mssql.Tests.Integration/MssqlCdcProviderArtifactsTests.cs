@@ -268,6 +268,7 @@ public class Given_MssqlCdcProviderArtifacts
         observed
             .Outcome.Should()
             .Be(CdcProviderSetupOutcome.ExactMatch, DescribeDiagnostics(observed.Diagnostics));
+        await AssertCaptureInstancesAsync(connection);
         var original = CaptureIdentities(created);
         original.Should().HaveCount(3);
         original.Values.Should().OnlyContain(hash => hash.Length == 64 && hash.All(Uri.IsHexDigit));
@@ -792,7 +793,7 @@ public class Given_MssqlCdcProviderArtifacts
         return snapshot;
     }
 
-    private static async Task AssertCaptureInstancesAsync(SqlConnection connection)
+    private async Task AssertCaptureInstancesAsync(SqlConnection connection)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -848,58 +849,33 @@ public class Given_MssqlCdcProviderArtifacts
             );
         rows.Select(row => row.SourceName).Should().NotContain("DocumentProjectionWork");
 
-        AssertCapture(
-            captures[DocumentCacheCaptureInstanceName],
-            sourceName: "DocumentCache",
-            expectedColumns:
-            [
-                "DocumentId",
-                "DocumentUuid",
-                "ProjectName",
-                "ResourceName",
-                "ResourceVersion",
-                "ContentVersion",
-                "StreamEtag",
-                "LastModifiedAt",
-                "DocumentJson",
-                "ComputedAt",
-            ]
-        );
-        AssertCapture(
-            captures[DocumentCaptureInstanceName],
-            sourceName: "Document",
-            expectedColumns:
-            [
-                "DocumentId",
-                "DocumentUuid",
-                "ResourceKeyId",
-                "CreatedByOwnershipTokenId",
-                "ContentVersion",
-                "ContentLastModifiedAt",
-            ]
-        );
-        AssertCapture(
-            captures[HeartbeatCaptureInstanceName],
-            sourceName: "CdcHeartbeat",
-            expectedColumns: ["HeartbeatId", "HeartbeatSequence", "HeartbeatAt"]
-        );
-    }
+        var inventory = _fixture.CdcSourceInventory;
+        foreach (var table in inventory)
+        {
+            var captureName = table.TableKind switch
+            {
+                CdcSourceTableKind.Document => DocumentCaptureInstanceName,
+                CdcSourceTableKind.DocumentCache => DocumentCacheCaptureInstanceName,
+                CdcSourceTableKind.CdcHeartbeat => HeartbeatCaptureInstanceName,
+                _ => throw new InvalidOperationException($"Unexpected CDC source table {table.TableKind}."),
+            };
+            var capturedColumns = captures[captureName].OrderBy(row => row.ColumnOrdinal).ToArray();
 
-    private static void AssertCapture(
-        IEnumerable<CaptureColumn> captureRows,
-        string sourceName,
-        IReadOnlyList<string> expectedColumns
-    )
-    {
-        var rows = captureRows.OrderBy(row => row.ColumnOrdinal).ToArray();
-        var first = rows[0];
-
-        first.SourceSchema.Should().Be("dms");
-        first.SourceName.Should().Be(sourceName);
-        first.RoleName.Should().Be(GatingRoleName);
-        first.SupportsNetChanges.Should().BeFalse();
-        first.FilegroupName.Should().BeEmpty();
-        rows.Select(row => row.ColumnName).Should().Equal(expectedColumns);
+            capturedColumns.Should().HaveCount(table.Columns.Count);
+            capturedColumns
+                .Should()
+                .OnlyContain(row =>
+                    row.RoleName == GatingRoleName
+                    && row.SourceSchema == table.TableName.Schema.Value
+                    && row.SourceName == table.TableName.Name
+                    && !row.SupportsNetChanges
+                    && row.FilegroupName == string.Empty
+                );
+            capturedColumns
+                .Select(row => (row.ColumnName, row.ColumnOrdinal))
+                .Should()
+                .Equal(table.Columns.Select(column => (column.ColumnName.Value, column.Ordinal)));
+        }
     }
 
     internal static async Task ExecuteNonQueryAsync(SqlConnection connection, string sql)
@@ -1121,20 +1097,19 @@ public class Given_MssqlCdcProviderArtifacts
 [Category("CdcProviderArtifacts")]
 public class Given_MssqlCdcProviderArtifacts_With_A_Legacy_CreatedAt_Column
 {
-    private static readonly string[] _sixDocumentColumns =
+    private static readonly string[] _fiveDocumentColumns =
     [
         "DocumentId",
         "DocumentUuid",
         "ResourceKeyId",
         "CreatedByOwnershipTokenId",
         "ContentVersion",
-        "ContentLastModifiedAt",
     ];
 
     private MssqlGeneratedDdlFixture _fixture = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
     private string _connectorPrincipalName = null!;
-    private CdcProviderSetupResult _sixColumnValidation = null!;
+    private CdcProviderSetupResult _fiveColumnValidation = null!;
     private CdcProviderSetupResult _legacyColumnValidation = null!;
 
     [OneTimeSetUp]
@@ -1157,10 +1132,10 @@ public class Given_MssqlCdcProviderArtifacts_With_A_Legacy_CreatedAt_Column
         await using var connection = new SqlConnection(_database.ConnectionString);
         await connection.OpenAsync();
 
-        // Create every CDC prerequisite against the six-column table, then confirm it validates cleanly,
+        // Create every CDC prerequisite against the five-column table, then confirm it validates cleanly,
         // so the legacy column is the only difference in the second validation.
         await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
-        _sixColumnValidation = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
+        _fiveColumnValidation = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
 
         await Given_MssqlCdcProviderArtifacts.ExecuteNonQueryAsync(
             connection,
@@ -1187,21 +1162,21 @@ public class Given_MssqlCdcProviderArtifacts_With_A_Legacy_CreatedAt_Column
     }
 
     [Test]
-    public void It_expects_a_six_column_Document_source_without_CreatedAt()
+    public void It_expects_a_five_column_Document_source_without_CreatedAt()
     {
-        DocumentColumnNames(_fixture.CdcSourceInventory).Should().Equal(_sixDocumentColumns);
+        DocumentColumnNames(_fixture.CdcSourceInventory).Should().Equal(_fiveDocumentColumns);
     }
 
     [Test]
-    public void It_validates_the_six_column_database_as_an_exact_match()
+    public void It_validates_the_five_column_database_as_an_exact_match()
     {
-        _sixColumnValidation
+        _fiveColumnValidation
             .Outcome.Should()
             .Be(
                 CdcProviderSetupOutcome.ExactMatch,
-                Given_MssqlCdcProviderArtifacts.DescribeDiagnostics(_sixColumnValidation.Diagnostics)
+                Given_MssqlCdcProviderArtifacts.DescribeDiagnostics(_fiveColumnValidation.Diagnostics)
             );
-        _sixColumnValidation
+        _fiveColumnValidation
             .Diagnostics.Should()
             .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
     }
@@ -1233,17 +1208,17 @@ public class Given_MssqlCdcProviderArtifacts_With_A_Legacy_CreatedAt_Column
     }
 
     [Test]
-    public void It_reports_the_same_non_error_diagnostics_as_the_six_column_validation()
+    public void It_reports_the_same_non_error_diagnostics_as_the_five_column_validation()
     {
         NonErrorDiagnosticCodes(_legacyColumnValidation)
             .Should()
-            .Equal(NonErrorDiagnosticCodes(_sixColumnValidation));
+            .Equal(NonErrorDiagnosticCodes(_fiveColumnValidation));
     }
 
     [Test]
     public void It_reads_CreatedAt_from_the_live_source_inventory()
     {
-        string[] legacyDocumentColumns = [.. _sixDocumentColumns, "CreatedAt"];
+        string[] legacyDocumentColumns = [.. _fiveDocumentColumns, "CreatedAt"];
         DocumentColumnNames(_legacyColumnValidation.SourceTableInventory)
             .Should()
             .Equal(legacyDocumentColumns);
@@ -1252,14 +1227,14 @@ public class Given_MssqlCdcProviderArtifacts_With_A_Legacy_CreatedAt_Column
     [Test]
     public void It_stops_before_capture_instance_inspection()
     {
-        _sixColumnValidation
+        _fiveColumnValidation
             .ArtifactInventory.Should()
             .Contain(observation =>
                 observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
                 && observation.SafeArtifactName.Value
                     == Given_MssqlCdcProviderArtifacts.DocumentCaptureInstanceName
             );
-        _sixColumnValidation.GrantInventory.Should().NotBeEmpty();
+        _fiveColumnValidation.GrantInventory.Should().NotBeEmpty();
 
         _legacyColumnValidation
             .ArtifactInventory.Should()

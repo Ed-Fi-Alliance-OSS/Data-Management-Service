@@ -524,6 +524,7 @@ public class QueryRequestHandlerTests
         public void It_has_the_correct_response()
         {
             _requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
 
             var expected = FailureResponse.ForSystemError(new TraceId(_traceId));
 

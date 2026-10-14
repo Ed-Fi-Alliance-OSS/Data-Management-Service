@@ -25,12 +25,12 @@ Describe "Assert-DocumentTableShape" -ForEach $script:engines {
             Pop-Location
         }
 
-        $script:currentColumns = @('DocumentId', 'DocumentUuid', 'ResourceKeyId', 'CreatedByOwnershipTokenId', 'ContentVersion', 'ContentLastModifiedAt')
+        $script:currentColumns = @('DocumentId', 'DocumentUuid', 'ResourceKeyId', 'CreatedByOwnershipTokenId', 'ContentVersion')
         $script:legacyColumns = $script:currentColumns + 'CreatedAt'
     }
 
     Context "on <engine>" {
-        It "(a) passes for the current six-column table and queries the engine's catalog" {
+        It "(a) passes for the current five-column table and queries the engine's catalog" {
             $queries = [System.Collections.Generic.List[string]]::new()
             $columns = $script:currentColumns
 
@@ -61,7 +61,7 @@ Describe "Assert-DocumentTableShape" -ForEach $script:engines {
         }
 
         It "(b) rejects every column in -ForbiddenColumns" {
-            $columns = $script:currentColumns
+            $columns = $script:currentColumns + 'ContentLastModifiedAt'
 
             { Assert-DocumentTableShape -DatabaseEngine $engine -DatabaseName 'src_db' -ForbiddenColumns @('CreatedAt', 'ContentLastModifiedAt') -QueryRunner { $columns } } |
                 Should -Throw "*still carries ContentLastModifiedAt*"
@@ -105,7 +105,7 @@ Describe "Assert-DocumentTableShape" -ForEach $script:engines {
                     $calls.Add(@($args))
                     $global:LASTEXITCODE = 0
                     # Blank and padded lines prove the output is trimmed before it is compared.
-                    @('', ' DocumentId ', ' DocumentUuid ', ' ResourceKeyId ', ' CreatedByOwnershipTokenId ', ' ContentVersion ', ' ContentLastModifiedAt ', '')
+                    @('', ' DocumentId ', ' DocumentUuid ', ' ResourceKeyId ', ' CreatedByOwnershipTokenId ', ' ContentVersion ', '')
                 }
 
                 Assert-DocumentTableShape -DatabaseEngine $engine -ContainerName 'db-container' -DatabaseName 'src_db' -MssqlPassword 'pw1!'
@@ -160,6 +160,7 @@ Describe "verify-template-restore.ps1 dms.Document shape checks" -ForEach $scrip
         try {
             Import-Module (Join-Path $script:templatesDir "Template-Management.psm1") -Force
             Import-Module (Join-Path $script:templatesDir "../Dms-Management.psm1") -Force
+            Import-Module (Join-Path $script:templatesDir "Template-Schema.psm1") -Force
         }
         finally {
             Pop-Location
@@ -172,6 +173,11 @@ Describe "verify-template-restore.ps1 dms.Document shape checks" -ForEach $scrip
         $callLog = [System.Collections.Generic.List[string]]::new()
 
         Mock Assert-DocumentTableShape { $callLog.Add("Assert-DocumentTableShape:${DatabaseEngine}:${DatabaseName}") }
+        # DMS-1401's catalog assertions also run (Assert-TemplateSchema.ps1); render a placeholder script for the
+        # mocked docker. Their ordering is pinned in Template-Schema.Tests.ps1.
+        $manifest = Join-Path $TestDrive 'reviewed.json'
+        '{}' | Set-Content $manifest
+        Mock Get-TemplateSchemaAssertionSql { 'catalog assertions' }
         Mock Get-UserSchemaNames { @('dms', 'edfi') }
         Mock Restore-TemplatePackage { $callLog.Add('Restore-TemplatePackage'); 'Fake.nupkg' }
         # Serves the Invoke-*Scalar count queries and `docker restart`.
@@ -190,7 +196,7 @@ Describe "verify-template-restore.ps1 dms.Document shape checks" -ForEach $scrip
         It "(f1) a source shape failure stops the script before the restore" {
             Mock Assert-DocumentTableShape { throw "dms.Document in $DatabaseEngine database '$DatabaseName' still carries CreatedAt." } -ParameterFilter { $DatabaseName -eq 'src_db' }
 
-            { & $script:verifyScript -SourceDatabaseName src_db -PackageDirectory $TestDrive -DatabaseEngine $engine } |
+            { & $script:verifyScript -SourceDatabaseName src_db -PackageDirectory $TestDrive -ExpectedModelManifestPath $manifest -DatabaseEngine $engine } |
                 Should -Throw "*database 'src_db' still carries CreatedAt*"
 
             Should -Invoke Assert-DocumentTableShape -Times 1 -Exactly -ParameterFilter { $DatabaseName -eq 'src_db' -and $DatabaseEngine -eq $engine }
@@ -201,7 +207,7 @@ Describe "verify-template-restore.ps1 dms.Document shape checks" -ForEach $scrip
         It "(f2) a restored shape failure stops the script before the API probe" {
             Mock Assert-DocumentTableShape { throw "dms.Document in $DatabaseEngine database '$DatabaseName' still carries CreatedAt." } -ParameterFilter { $DatabaseName -eq 'template_restore_verification' }
 
-            { & $script:verifyScript -SourceDatabaseName src_db -PackageDirectory $TestDrive -DatabaseEngine $engine } |
+            { & $script:verifyScript -SourceDatabaseName src_db -PackageDirectory $TestDrive -ExpectedModelManifestPath $manifest -DatabaseEngine $engine } |
                 Should -Throw "*database 'template_restore_verification' still carries CreatedAt*"
 
             Should -Invoke Restore-TemplatePackage -Times 1 -Exactly
@@ -211,7 +217,7 @@ Describe "verify-template-restore.ps1 dms.Document shape checks" -ForEach $scrip
         }
 
         It "(f3) checks the source before the restore and the restored database before the API probe" {
-            { & $script:verifyScript -SourceDatabaseName src_db -PackageDirectory $TestDrive -DatabaseEngine $engine } |
+            { & $script:verifyScript -SourceDatabaseName src_db -PackageDirectory $TestDrive -ExpectedModelManifestPath $manifest -DatabaseEngine $engine } |
                 Should -Not -Throw
 
             ($callLog -join ' > ') | Should -Be (@(

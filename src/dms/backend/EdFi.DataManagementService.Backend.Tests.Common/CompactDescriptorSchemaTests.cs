@@ -26,6 +26,7 @@ public abstract class CompactDescriptorSchemaTests
     private string _repositoryRoot = "";
     private string _manifestPath = "";
     private string _assertionSql = "";
+    private string _templateAssertionSql = "";
     private short _resourceKeyId;
     private short _otherResourceKeyId;
     private bool IsPgsql => Dialect == "pgsql";
@@ -48,6 +49,11 @@ public abstract class CompactDescriptorSchemaTests
             $"relational-model.{Dialect}.manifest.json"
         );
         _assertionSql = await CompactDescriptorCatalogAssertions.RenderAsync(
+            _repositoryRoot,
+            Dialect,
+            _manifestPath
+        );
+        _templateAssertionSql = await CompactDescriptorCatalogAssertions.RenderTemplateSchemaAsync(
             _repositoryRoot,
             Dialect,
             _manifestPath
@@ -164,18 +170,57 @@ public abstract class CompactDescriptorSchemaTests
     private async Task<object[]> SnapshotAsync(long id) =>
         (
             await RowsAsync(
-                $"SELECT d.{Q("DocumentId")}, s.{Q("DescriptorId")}, d.{Q("ContentVersion")}, d.{Q("ContentLastModifiedAt")}, s.{Q("ContentVersion")}, s.{Q("ContentLastModifiedAt")}, s.{Q("Namespace")}, s.{Q("CodeValue")} FROM {Document} d JOIN {Descriptor} s ON d.{Q("DocumentId")} = s.{Q("DocumentId")} WHERE d.{Q("DocumentId")} = @id;",
+                $"SELECT d.{Q("DocumentId")}, s.{Q("DescriptorId")}, d.{Q("ContentVersion")}, s.{Q("ContentVersion")}, s.{Q("ContentLastModifiedAt")}, s.{Q("Namespace")}, s.{Q("CodeValue")} FROM {Document} d JOIN {Descriptor} s ON d.{Q("DocumentId")} = s.{Q("DocumentId")} WHERE d.{Q("DocumentId")} = @id;",
                 ("id", id)
             )
         ).Single();
 
     [Test]
-    public async Task It_passes_reusable_catalog_assertions_with_both_document_stamp_columns_present()
+    public async Task It_passes_reusable_catalog_assertions_with_document_version_and_owner_timestamp()
     {
         await ExecuteAsync(_assertionSql);
-        (await RowsAsync($"SELECT {Q("ContentVersion")}, {Q("ContentLastModifiedAt")} FROM {Document};"))
-            .Should()
-            .BeEmpty();
+        (await RowsAsync($"SELECT {Q("ContentVersion")} FROM {Document};")).Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_passes_the_combined_template_schema_gate()
+    {
+        await ExecuteAsync(_templateAssertionSql);
+    }
+
+    [TestCase("document_timestamp", "*forbidden column dms.Document.ContentLastModifiedAt*")]
+    [TestCase("missing_document", "*missing table dms.Document*")]
+    [TestCase("missing_version", "*missing/invalid stored column dms.Document.ContentVersion*")]
+    [TestCase("missing_root", "*missing owner table edfi.Student*")]
+    [TestCase("missing_root_timestamp", "*edfi.Student.ContentLastModifiedAt*")]
+    [TestCase("missing_descriptor", "*missing owner table dms.Descriptor*")]
+    [TestCase("missing_descriptor_timestamp", "*dms.Descriptor.ContentLastModifiedAt*")]
+    [TestCase("nullable_root_timestamp", "*edfi.Student.ContentLastModifiedAt*")]
+    public async Task It_rejects_incompatible_timestamp_catalogs_even_with_the_same_v3_fingerprint(
+        string mutation,
+        string diagnostic
+    )
+    {
+        await AssertCatalogMutationRejectedAsync(
+            mutation,
+            "*Timestamp baseline:" + diagnostic,
+            _templateAssertionSql
+        );
+    }
+
+    [TestCase("missing_document_unique")]
+    [TestCase("missing_fk")]
+    [TestCase("missing_uri_index")]
+    [TestCase("wide_history")]
+    public async Task It_rejects_timestamp_correct_templates_missing_compact_descriptor_features(
+        string mutation
+    )
+    {
+        await AssertCatalogMutationRejectedAsync(
+            mutation,
+            "*Compact descriptor baseline:*",
+            _templateAssertionSql
+        );
     }
 
     [Test]
@@ -191,7 +236,7 @@ public abstract class CompactDescriptorSchemaTests
         compactId.Should().BePositive().And.BeLessThan(int.MaxValue);
         ((long)compactId).Should().NotBe(id);
         await ExecuteAsync(
-            $"UPDATE {Document} SET {Q("ContentLastModifiedAt")} = @past WHERE {Q("DocumentId")} = @id; UPDATE {Descriptor} SET {Q("ContentLastModifiedAt")} = @past WHERE {Q("DocumentId")} = @id;",
+            $"UPDATE {Descriptor} SET {Q("ContentLastModifiedAt")} = @past WHERE {Q("DocumentId")} = @id;",
             ("past", new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc)),
             ("id", id)
         );
@@ -211,11 +256,10 @@ public abstract class CompactDescriptorSchemaTests
         changed[0].Should().Be(id);
         changed[1].Should().Be(compactId);
         Convert.ToInt64(changed[2]).Should().Be(Convert.ToInt64(before[2]) + 1);
-        Convert.ToDateTime(changed[3]).Should().BeAfter(Convert.ToDateTime(before[3]));
-        changed[4].Should().Be(changed[2]);
-        changed[5].Should().Be(changed[3]);
-        changed[6].Should().Be("uri://Case#A");
-        changed[7].Should().Be("B");
+        changed[3].Should().Be(changed[2]);
+        Convert.ToDateTime(changed[4]).Should().BeAfter(Convert.ToDateTime(before[4]));
+        changed[5].Should().Be("uri://Case#A");
+        changed[6].Should().Be("B");
 
         await ExecuteAsync(
             $"UPDATE {Descriptor} SET {Q("Namespace")} = 'uri://case#A' WHERE {Q("DescriptorId")} = @id;",
@@ -225,8 +269,7 @@ public abstract class CompactDescriptorSchemaTests
         casing[0].Should().Be(id);
         casing[1].Should().Be(compactId);
         Convert.ToInt64(casing[2]).Should().Be(Convert.ToInt64(changed[2]) + 1);
-        casing[4].Should().Be(casing[2]);
-        casing[5].Should().Be(casing[3]);
+        casing[3].Should().Be(casing[2]);
         await ExecuteAsync(
             $"UPDATE {Descriptor} SET {Q("ShortDescription")} = {Q("ShortDescription")} WHERE {Q("DescriptorId")} = @id;",
             ("id", compactId)
@@ -294,7 +337,7 @@ public abstract class CompactDescriptorSchemaTests
         else
         {
             await InsertDescriptorAsync(id, _resourceKeyId, ns, code);
-            (await SnapshotAsync(id))[6].Should().Be(ns);
+            (await SnapshotAsync(id))[5].Should().Be(ns);
         }
     }
 
@@ -337,9 +380,16 @@ public abstract class CompactDescriptorSchemaTests
     protected Task AssertDescriptorAliasMutationAsync(string mutation) =>
         AssertCatalogMutationRejectedAsync(mutation, "*Compact descriptor baseline:*descriptor alias*");
 
-    private async Task AssertCatalogMutationRejectedAsync(string mutation, string expectedMessage)
+    private Task AssertCatalogMutationRejectedAsync(string mutation, string expectedMessage) =>
+        AssertCatalogMutationRejectedAsync(mutation, expectedMessage, _assertionSql);
+
+    private async Task AssertCatalogMutationRejectedAsync(
+        string mutation,
+        string expectedMessage,
+        string assertionSql
+    )
     {
-        await ExecuteAsync(_assertionSql);
+        await ExecuteAsync(assertionSql);
         var model = JsonNode.Parse(await File.ReadAllTextAsync(_manifestPath))!;
         model["relational_mapping_version"]!.GetValue<string>().Should().Be("v3");
         var fingerprint = (
@@ -355,7 +405,7 @@ public abstract class CompactDescriptorSchemaTests
             .Single()[0]
             .Should()
             .Be(fingerprint);
-        Func<Task> assert = () => ExecuteAsync(_assertionSql);
+        Func<Task> assert = () => ExecuteAsync(assertionSql);
         await assert.Should().ThrowAsync<DbException>().WithMessage(expectedMessage);
     }
 

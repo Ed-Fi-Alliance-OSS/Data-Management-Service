@@ -299,7 +299,10 @@ public class Given_CoreDdlMetadata_For_CdcSourceInventory(SqlDialect dialect)
             .Should()
             .Equal(CdcSourceInventoryContract.RequiredSourceTableKinds);
 
-        _inventory.Select(table => table.TableName).Should().NotContain(DmsTableNames.DocumentProjectionWork);
+        _inventory
+            .Select(table => table.TableName.Name)
+            .Should()
+            .Equal("DocumentCache", "Document", "CdcHeartbeat");
     }
 
     [Test]
@@ -329,27 +332,54 @@ public class Given_CoreDdlMetadata_For_CdcSourceInventory(SqlDialect dialect)
         var document = _inventory.Single(table => table.TableKind == CdcSourceTableKind.Document);
 
         document
-            .Columns.Select(column => column.ColumnName.Value)
+            .Columns.Select(column =>
+                (column.ColumnName.Value, column.Ordinal, column.ProviderDataType, column.IsNullable)
+            )
             .Should()
             .Equal(
-                "DocumentId",
-                "DocumentUuid",
-                "ResourceKeyId",
-                "CreatedByOwnershipTokenId",
-                "ContentVersion",
-                "ContentLastModifiedAt"
+                (
+                    "DocumentId",
+                    1,
+                    dialect == SqlDialect.Pgsql
+                        ? "bigint GENERATED ALWAYS AS IDENTITY"
+                        : "bigint IDENTITY(1,1)",
+                    false
+                ),
+                ("DocumentUuid", 2, dialect == SqlDialect.Pgsql ? "uuid" : "uniqueidentifier", false),
+                ("ResourceKeyId", 3, "smallint", false),
+                ("CreatedByOwnershipTokenId", 4, "smallint", true),
+                ("ContentVersion", 5, "bigint", false)
             );
-        document.Columns.Select(column => column.Ordinal).Should().Equal(Enumerable.Range(1, 6));
-        document
-            .Columns.Single(column => column.ColumnName.Value == "CreatedByOwnershipTokenId")
-            .IsNullable.Should()
-            .BeTrue();
     }
 
     [Test]
     public void It_should_include_document_cache_provider_types_from_core_metadata()
     {
         var documentCache = _inventory.Single(table => table.TableKind == CdcSourceTableKind.DocumentCache);
+
+        documentCache
+            .Columns.Select(column => column.ColumnName.Value)
+            .Should()
+            .Equal(
+                "DocumentId",
+                "DocumentUuid",
+                "ProjectName",
+                "ResourceName",
+                "ResourceVersion",
+                "ContentVersion",
+                "StreamEtag",
+                "LastModifiedAt",
+                "DocumentJson",
+                "ComputedAt"
+            );
+        documentCache.Columns.Select(column => column.Ordinal).Should().Equal(Enumerable.Range(1, 10));
+        var lastModifiedAt = documentCache.Columns.Single(column =>
+            column.ColumnName.Value == "LastModifiedAt"
+        );
+        lastModifiedAt
+            .ProviderDataType.Should()
+            .Be(dialect == SqlDialect.Pgsql ? "timestamp with time zone" : "datetime2(7)");
+        lastModifiedAt.IsNullable.Should().BeFalse();
 
         var documentJson = documentCache.Columns.Single(column => column.ColumnName.Value == "DocumentJson");
         var streamEtag = documentCache.Columns.Single(column => column.ColumnName.Value == "StreamEtag");
@@ -589,7 +619,7 @@ public class Given_A_Legacy_Seven_Column_Document_Inventory
     {
         var expected = CdcSourceInventoryTestEmission.EmitCoreCdcSourceInventory(SqlDialect.Pgsql);
 
-        // A database provisioned before the column was dropped still carries CreatedAt as its seventh column.
+        // A database provisioned before the column was dropped still carries CreatedAt after its surviving columns.
         var observed = expected
             .Select(table =>
             {

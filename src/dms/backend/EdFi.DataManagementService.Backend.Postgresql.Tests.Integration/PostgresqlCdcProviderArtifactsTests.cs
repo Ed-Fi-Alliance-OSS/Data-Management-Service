@@ -684,21 +684,20 @@ public class Given_PostgresqlCdcProviderArtifacts
 [Category("CdcProviderArtifacts")]
 public class Given_PostgresqlCdcProviderArtifacts_With_A_Legacy_CreatedAt_Column
 {
-    private static readonly string[] _sixDocumentColumns =
+    private static readonly string[] _fiveDocumentColumns =
     [
         "DocumentId",
         "DocumentUuid",
         "ResourceKeyId",
         "CreatedByOwnershipTokenId",
         "ContentVersion",
-        "ContentLastModifiedAt",
     ];
 
     private PostgresqlGeneratedDdlFixture _fixture = null!;
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
     private string _connectorRoleName = null!;
     private string _replicationSlotName = null!;
-    private CdcProviderSetupResult _sixColumnValidation = null!;
+    private CdcProviderSetupResult _fiveColumnValidation = null!;
     private CdcProviderSetupResult _legacyColumnValidation = null!;
 
     [OneTimeSetUp]
@@ -719,10 +718,10 @@ public class Given_PostgresqlCdcProviderArtifacts_With_A_Legacy_CreatedAt_Column
         await using var connection = new NpgsqlConnection(_database.ConnectionString);
         await connection.OpenAsync();
 
-        // Create every CDC prerequisite against the six-column table, then confirm it validates cleanly,
+        // Create every CDC prerequisite against the five-column table, then confirm it validates cleanly,
         // so the legacy column is the only difference in the second validation.
         await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
-        _sixColumnValidation = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
+        _fiveColumnValidation = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
 
         await Given_PostgresqlCdcProviderArtifacts.ExecuteNonQueryAsync(
             connection,
@@ -750,18 +749,18 @@ public class Given_PostgresqlCdcProviderArtifacts_With_A_Legacy_CreatedAt_Column
     }
 
     [Test]
-    public void It_expects_a_six_column_Document_source_without_CreatedAt()
+    public void It_expects_a_five_column_Document_source_without_CreatedAt()
     {
-        DocumentColumnNames(_fixture.CdcSourceInventory).Should().Equal(_sixDocumentColumns);
+        DocumentColumnNames(_fixture.CdcSourceInventory).Should().Equal(_fiveDocumentColumns);
     }
 
     [Test]
-    public void It_validates_the_six_column_database_as_an_exact_match()
+    public void It_validates_the_five_column_database_as_an_exact_match()
     {
-        _sixColumnValidation
+        _fiveColumnValidation
             .Outcome.Should()
-            .Be(CdcProviderSetupOutcome.ExactMatch, DescribeDiagnostics(_sixColumnValidation));
-        _sixColumnValidation.Diagnostics.Should().BeEmpty();
+            .Be(CdcProviderSetupOutcome.ExactMatch, DescribeDiagnostics(_fiveColumnValidation));
+        _fiveColumnValidation.Diagnostics.Should().BeEmpty();
     }
 
     [Test]
@@ -789,17 +788,17 @@ public class Given_PostgresqlCdcProviderArtifacts_With_A_Legacy_CreatedAt_Column
     }
 
     [Test]
-    public void It_reports_the_same_non_error_diagnostics_as_the_six_column_validation()
+    public void It_reports_the_same_non_error_diagnostics_as_the_five_column_validation()
     {
         NonErrorDiagnosticCodes(_legacyColumnValidation)
             .Should()
-            .Equal(NonErrorDiagnosticCodes(_sixColumnValidation));
+            .Equal(NonErrorDiagnosticCodes(_fiveColumnValidation));
     }
 
     [Test]
     public void It_reads_CreatedAt_from_the_live_source_inventory()
     {
-        string[] legacyDocumentColumns = [.. _sixDocumentColumns, "CreatedAt"];
+        string[] legacyDocumentColumns = [.. _fiveDocumentColumns, "CreatedAt"];
         DocumentColumnNames(_legacyColumnValidation.SourceTableInventory)
             .Should()
             .Equal(legacyDocumentColumns);
@@ -815,11 +814,11 @@ public class Given_PostgresqlCdcProviderArtifacts_With_A_Legacy_CreatedAt_Column
             CdcProviderArtifactKind.PostgresqlReplicationSlot,
         ];
 
-        _sixColumnValidation
+        _fiveColumnValidation
             .ArtifactInventory.Select(observation => observation.ArtifactKind)
             .Should()
             .Contain(laterStepArtifactKinds);
-        _sixColumnValidation.GrantInventory.Should().NotBeEmpty();
+        _fiveColumnValidation.GrantInventory.Should().NotBeEmpty();
 
         _legacyColumnValidation
             .ArtifactInventory.Should()

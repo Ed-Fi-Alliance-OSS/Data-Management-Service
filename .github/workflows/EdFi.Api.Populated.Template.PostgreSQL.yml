@@ -139,6 +139,7 @@ jobs:
       provenance_file: ${{ matrix.provenance_file }}
       publish_package: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.publish_package == true) }}
       environment_file: ${{ matrix.environment_file }}
+      database_engine: postgresql
       verify_restore: true
       require_populated_data: true
     secrets:

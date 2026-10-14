@@ -751,13 +751,22 @@ internal static class CompactDescriptorResourceScenario
 
     private static async Task<Stamp> ReadStampAsync(ApiIntegrationHarness harness, string path)
     {
+        string owner = path.Split('/')[3] switch
+        {
+            "compactDescriptorItems" => "\"edfi\".\"CompactDescriptorItem\"",
+            "compactDescriptorBridges" => "\"edfi\".\"CompactDescriptorBridge\"",
+            "compactDescriptorConsumers" => "\"edfi\".\"CompactDescriptorConsumer\"",
+            "schoolTypeDescriptors" or "academicSubjectDescriptors" => "\"dms\".\"Descriptor\"",
+            _ => throw new InvalidOperationException($"Unknown stamp owner for {path}"),
+        };
         await using DbCommand command = Command(
             harness,
-            "SELECT \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\" FROM \"dms\".\"Document\" WHERE \"DocumentUuid\" = @uuid",
+            $"SELECT d.\"DocumentId\", d.\"ContentVersion\", r.\"ContentLastModifiedAt\", r.\"ContentVersion\" FROM \"dms\".\"Document\" d JOIN {owner} r ON r.\"DocumentId\" = d.\"DocumentId\" WHERE d.\"DocumentUuid\" = @uuid",
             ("@uuid", Guid.Parse(path.Split('/')[^1]))
         );
         await using DbDataReader reader = await command.ExecuteReaderAsync();
         (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetInt64(3).Should().Be(reader.GetInt64(1));
         return new(reader.GetInt64(0), reader.GetInt64(1), reader.GetValue(2));
     }
 

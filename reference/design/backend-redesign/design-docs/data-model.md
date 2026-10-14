@@ -72,7 +72,7 @@ CREATE TABLE dms.ResourceKey (
 
 Canonical metadata per persisted resource instance. One row per document, regardless of resource type.
 
-Update tracking note: `reference/design/backend-redesign/design-docs/update-tracking.md` defines representation-sensitive `_etag/_lastModifiedDate` (and Change Query support) using stored per-document stamps on `dms.Document`, updated in-transaction. Indirect representation changes are realized via FK-cascade updates to reference-identity *storage* columns on referrers (the writable columns participating in composite reference FKs); under key unification, per-site identity-part binding columns may be generated/persisted aliases of those storage columns.
+Update tracking note: `reference/design/backend-redesign/design-docs/update-tracking.md` defines representation-sensitive `_etag/_lastModifiedDate` (and Change Query support) using `ContentVersion` on `dms.Document` and authoritative `ContentLastModifiedAt` on the resource root or `dms.Descriptor`, updated in the same transaction. Indirect representation changes are realized via FK-cascade updates to reference-identity *storage* columns on referrers (the writable columns participating in composite reference FKs); under key unification, per-site identity-part binding columns may be generated/persisted aliases of those storage columns.
 
 **PostgreSQL**
 
@@ -88,7 +88,6 @@ CREATE TABLE dms.Document (
     -- Update tracking tokens (see reference/design/backend-redesign/design-docs/update-tracking.md)
     -- Note: emitted DDL must create dms.ChangeVersionSequence before dms.Document.
     ContentVersion bigint NOT NULL DEFAULT nextval('dms.ChangeVersionSequence'),
-    ContentLastModifiedAt timestamp with time zone NOT NULL DEFAULT now(),
 
     CONSTRAINT UX_Document_DocumentUuid UNIQUE (DocumentUuid),
     CONSTRAINT UX_Document_DocumentId_ResourceKeyId UNIQUE (DocumentId, ResourceKeyId)
@@ -115,7 +114,6 @@ CREATE TABLE dms.Document (
     -- Update tracking tokens (see reference/design/backend-redesign/design-docs/update-tracking.md)
     -- Note: emitted DDL must create dms.ChangeVersionSequence before dms.Document.
     ContentVersion bigint NOT NULL CONSTRAINT DF_Document_ContentVersion DEFAULT (NEXT VALUE FOR dms.ChangeVersionSequence),
-    ContentLastModifiedAt datetime2(7) NOT NULL CONSTRAINT DF_Document_ContentLastModifiedAt DEFAULT (sysutcdatetime()),
 
     CONSTRAINT UX_Document_DocumentUuid UNIQUE (DocumentUuid),
     CONSTRAINT UX_Document_DocumentId_ResourceKeyId UNIQUE (DocumentId, ResourceKeyId),
@@ -139,7 +137,8 @@ Notes:
   rebuild, and scrub scans use the `DocumentId` primary-key order.
 - `CreatedByOwnershipTokenId` is stamped from the authenticated client context on create and is used by the ownership-based authorization strategy; it is not client-writable (see [auth.md](auth.md)).
 - Update tracking columns (brief semantics; see `reference/design/backend-redesign/design-docs/update-tracking.md` for the normative rules):
-  - `ContentVersion` / `ContentLastModifiedAt`: bump when the document's full resource-state representation changes (local write, or cascaded update to reference-identity storage columns and any dependent generated aliases).
+  - `dms.Document.ContentVersion` advances when the document's full resource-state representation changes (local write, or cascaded update to reference-identity storage columns and any dependent generated aliases). It remains the universal lock/concurrency and projection-enqueue authority.
+  - The root resource table (or `dms.Descriptor`) mirrors `ContentVersion` and owns the authoritative `ContentLastModifiedAt`; `dms.Document` has no timestamp column of that name. Both stamps change in the same transaction. Document insertion allocates the initial version; owner insertion copies it and initializes the owner timestamp.
   - Identity-projection changes that alter the stored representation are reflected through the same content stamps.
   - API `_lastModifiedDate` and per-item `ChangeVersion` are served from these stored stamps. `_lastModifiedDate` uses the existing DMS whole-second UTC `yyyy-MM-ddTHH:mm:ssZ` formatter, discarding fractional seconds without rounding. API `_etag` is composed from `ContentVersion` plus a representation `variantKey` (schema epoch, format, profile code, link flag, and content-coding code); the document body is not hashed for etag construction.
 - `dms.Document` has no creation-time column. The former `CreatedAt` was removed without
@@ -329,8 +328,10 @@ windows. There is no live-owner FK, so tombstones retain their type and identity
 Resource history joins descriptor-valued identities through the compact key before capturing
 components; authorization and recreation checks keep their existing comparisons.
 
-Both document stamp columns remain authoritative and are mirrored onto descriptors in DMS-1404.
-DMS-1401 owns the later timestamp change. See the developer guide's
+At the historical DMS-1404 handoff, both document stamp columns were authoritative and mirrored
+onto descriptors. In the combined DMS-1401 schema, only `ContentVersion` is mirrored from
+`dms.Document`; `dms.Descriptor.ContentLastModifiedAt` is authoritative. Document-oriented
+reads and restamps join by `DocumentId`, even when it differs from `DescriptorId`. See the developer guide's
 [reprovisioning](../../../../docs/RELATIONAL-BACKEND.md#reprovisioning-and-legacy-data-carry-forward)
 and [template handoff](../../../../docs/RELATIONAL-BACKEND.md#descriptor-catalog-checks-and-template-handoff).
 

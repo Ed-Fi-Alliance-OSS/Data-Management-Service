@@ -147,8 +147,8 @@ over to pooled runtime connections; direct SQL clients must supply the effective
 
 ### Reprovisioning and legacy data carry-forward
 
-Existing databases require deliberate reprovisioning before using the compact-descriptor
-runtime. Keep `SchemaHashConstants.RelationalMappingVersion` at `v3` for the current 8.1
+Existing databases require deliberate reprovisioning before using the runtime with compact
+descriptors and authoritative root/descriptor timestamps. Keep `SchemaHashConstants.RelationalMappingVersion` at `v3` for the current 8.1
 release line. The constant tracks releases: bump at most once per release when mapping
 changes, never lower it, and do not add another bump before 8.1 ships. The next eligible
 bump is `v4` for the first qualifying mapping change after 8.1 ships.
@@ -156,7 +156,8 @@ bump is `v4` for the first qualifying mapping change after 8.1 ships.
 `EffectiveSchemaHash` includes that constant and normalized ApiSchema inputs, but excludes
 generated DDL and mapping-set output. Consequently, this mapping-only physical change can
 leave the hash unchanged. Hash equality and successful first-use validation cannot prove
-that an older database or template has compact descriptor columns. Rerunning create-only
+that an older database or template has compact descriptor columns or the current timestamp
+ownership (no `dms.Document.ContentLastModifiedAt`, authoritative root/descriptor timestamps). Rerunning create-only
 provisioning against it does not convert its schema.
 
 Provision a fresh target from current DDL for its exact core/extension schema set, or use a
@@ -183,11 +184,12 @@ the [current conversion recipe](../eng/northridge/README.md#copy-legacy-data-int
 
 This conversion loads legacy data into a fresh schema; an unchanged legacy dump restore
 and an in-place schema upgrade do not produce the required target. Discard and reprovision
-a partially loaded target after failure. The tool requires the `ContentVersion` and
-`ContentLastModifiedAt` document stamp columns; DMS-1401 owns removing its document-timestamp
-dependency. It no longer reads `dms.Document.CreatedAt` and accepts source dumps that still
-carry that column, which it stages but does not copy. A full Northridge reload or dataset
-republication is not a DMS-1404 closure gate.
+a partially loaded target after failure. The tool omits both legacy document timestamps
+(`ContentLastModifiedAt` and `CreatedAt`) from target inserts and retains the document
+`ContentVersion` check. It verifies authoritative descriptor and sampled root stamps with
+deterministic, `DocumentId`-ordered tuple checksums, so redistributed stamps with unchanged
+minima/maxima fail validation. The sampled-root scope is unchanged. A full Northridge reload or
+dataset republication is not a prerequisite for this schema change.
 
 **`dms.Document.CreatedAt` removal (DMS-1403).** Freshly provisioned schemas no longer have
 `dms.Document.CreatedAt` on either engine. The DMS API data path did not use this column;
@@ -243,11 +245,12 @@ association, compact stored FKs and composite keys/indexes, URI storage/index sh
 from detecting what an older source or restored database happens to contain.
 
 DMS-1404's handoff to [DMS-1401](../reference/design/backend-redesign/epics/21-storage-reduction/16-drop-document-content-last-modified-at.md)
-is the working RI runtime on fresh schemas on both engines, regenerated fixtures, reusable
+was the working RI runtime on fresh schemas on both engines, regenerated fixtures, reusable
 catalog assertions, working fixture/performance loaders and legacy conversion, and passing
-unequal-ID metadata, stamping, restamping, and cache regressions. `dms.Document.ContentVersion`
-and `dms.Document.ContentLastModifiedAt` remain authoritative, with stamps mirrored to resource
-roots and descriptors. DMS-1401 owns timestamp removal and the resulting ownership changes.
+unequal-ID metadata, stamping, restamping, and cache regressions. At that historical checkpoint,
+`dms.Document.ContentVersion` and `dms.Document.ContentLastModifiedAt` were authoritative, with
+both mirrored to roots/descriptors. The combined DMS-1401 schema removes the document timestamp:
+only `ContentVersion` is mirrored; the root/descriptor timestamp is authoritative.
 
 [DMS-1404](../reference/design/backend-redesign/epics/21-storage-reduction/15-compact-descriptor-id-and-storage-optimizations.md)
 may close after its implementation, fixture, fresh-schema behavior/catalog, tooling, and
@@ -259,12 +262,46 @@ source and restored catalogs before API probes, alongside DMS-1401's timestamp c
 retain `RequirePopulatedData` for Populated verification. These package gates are required
 before DMS-1401 closes and are deferred from DMS-1404 closure.
 
-Until compatible rebuilds are verified, use databases freshly provisioned from DMS-1404 DDL
+Until compatible rebuilds are verified, use databases freshly provisioned from the combined current DDL
 and defer template-backed deployment. If templates are needed earlier, build and verify
 compatible packages first. Retaining `v3` does not make old physical schemas or packages
 compatible. Final v8.1 template production/publication, release-view promotion, and deployment
 pins remain release-workflow responsibilities; verify the final release schema against both
 stories' physical expectations when both changes are included.
+
+For the combined closure gate, build Minimal and Populated packages on both PostgreSQL and
+SQL Server for DS `5.2.0` core + TPDM and DS `6.1.0` core: eight artifacts from the same reviewed
+combined implementation commit. Use the existing engine-specific template workflows with
+`publish_package: false`, fresh sources provisioned from changed DDL and fresh restoration
+targets. Each leg emits its complete provider relational-model manifest with SchemaTools
+`ddl emit` using the exact ordered ApiSchema inputs used for provisioning; review it and pass
+it as `ExpectedModelManifestPath`. Both source and restored catalogs must pass
+`Assert-TemplateSchema.ps1` before API registration/probes: timestamp-free Document with its
+version, authoritative non-null timestamps on every expected root/descriptor, and all compact
+ID/FK/type/URI assertions. Keep schema/data/serveability checks and `RequirePopulatedData`.
+A matching `v3` fingerprint or a successful API read alone is insufficient.
+
+Retain per-leg producing commit, build run, engine image, package id/version/SHA-256, exact-schema
+manifest/hash, and source/restored catalog, data and authenticated API results. Update affected
+fixed repository consumer pins to those verified prereleases before story closure. Preserve
+`DATABASE_TEMPLATE_PACKAGE` ids and their Data Standard suffixes. Publish any retained verified
+prereleases needed by those consumers unchanged via the existing `build-dms.ps1 Push` path and
+EdFi Azure Artifacts feed, then download the exact versions from the configured feed, verify their
+hashes and smoke-test resolution/restoration.
+
+Final stable v8.1 production, publication, release-view promotion and deployment pin changes
+remain in the release workflow. Rebuild from the final release commit/schema and repeat all
+eight source/restore gates before publication. Deploy compatible rebuilt Minimal and Populated
+packages on both engines, discard cached older artifacts, update fixed deployment pins to the
+verified release versions, and deliberately reprovision affected databases before serving traffic.
+No benchmark, full dataset run, engine upgrade, RI removal or future bootstrap-restore feature
+is a prerequisite for this story.
+
+The expected saving is roughly eight bytes of raw timestamp payload per document, about half
+of the raw payload of the two former document stamp columns, not half of table/database storage.
+Alignment and page layout affect actual savings. Document-version updates and owner stamp
+maintenance remain necessary; throughput improvement and negligible read overhead are unmeasured
+hypotheses.
 
 ### Always-provisioned DocumentCache inventory
 
@@ -465,9 +502,13 @@ are in the design docs:
 
 ### Stored stamps and tracked-change tables
 
-Each document carries two stamps set together by the same **stamping triggers** on the document
-tables: a `ContentVersion` (the change-version number, from the shared change-version sequence) and
-a `ContentLastModifiedAt` timestamp (the current UTC time, refreshed on representation changes). Those triggers
+Each document has a `ContentVersion` on `dms.Document` (allocated from the global sequence) and
+an authoritative `ContentLastModifiedAt` on its resource root or `dms.Descriptor`. The owner also
+mirrors `ContentVersion`. **Stamping triggers** maintain those stamps in one transaction, including
+child/extension and identity-cascade changes; `dms.Document` has no last-modified timestamp.
+No-op writes preserve stamps. Document insertion allocates the initial version and owner insertion
+copies it while generating its timestamp. Document locks, optimistic concurrency and projection
+enqueueing remain version-only. Those triggers
 also populate per-resource **tracked-change tables** that live under a per-project schema named
 `tracked_changes_<projectSchema>` (for example the `tracked_changes_edfi` schema), recording the
 old/new identity and securable values plus a `ChangeVersion`. Descriptors share
@@ -490,7 +531,8 @@ document `Id`, and the `ChangeVersion` for a given write. Only the separator aft
 
 #### Read metadata (`_etag`, `_lastModifiedDate`)
 
-On read, `_lastModifiedDate` is served from the stored `ContentLastModifiedAt` and `_etag` is
+On read, `_lastModifiedDate` uses the authoritative root/descriptor `ContentLastModifiedAt`,
+formatted as UTC `yyyy-MM-ddTHH:mm:ssZ` (fractional seconds discarded without rounding). `_etag` is
 composed from `ContentVersion` plus the active representation `variantKey`; the materialized
 content is not hashed to build `_etag`. When a served `_etag` or `_lastModifiedDate` looks wrong,
 start here:
@@ -498,15 +540,30 @@ start here:
 - [`RelationalReadMaterializer.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalReadMaterializer.cs) — composes `_etag` and serves `_lastModifiedDate` for resources
 - [`DescriptorDocumentMaterializer.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/DescriptorDocumentMaterializer.cs) — the same for descriptors
 
+Ordinary GET-by-id/page metadata SELECTs join the compiled root by `DocumentId` inside the
+existing hydration batch. Descriptor metadata reads join its owning `DocumentId`; compact
+`DescriptorId` remains the stored-reference key. PUT and descriptor delete-target UUID lookups
+remain document-only when they need identity/version, preserving wrong-resource behavior without
+a new timestamp-only query. Standalone hydration appends a document-only version fence and
+retries the whole acquisition on drift/disappearance, up to three attempts. Cache source reads
+and final rereads likewise use owner timestamps and reject incoherent candidates or stable
+missing owners. See the [read/cache contracts](../reference/design/backend-redesign/design-docs/transactions-and-concurrency.md#authoritative-response-metadata).
+
+Representation restamping allocates document versions, updates the mapped root/descriptor by
+`DocumentId` and captures its persisted timestamp in the same transaction. Missing owners roll
+back the page and any enqueued work. Body, identity and tracked history remain unchanged; the
+existing document-version trigger drives projection work when the lifecycle enables it.
+
 #### Change-version filtering (`minChangeVersion` / `maxChangeVersion`)
 
-Root and descriptor tables carry **mirrored** `ContentVersion` / `ContentLastModifiedAt` columns
-(`ColumnKind.MirroredContentVersion` / `ColumnKind.MirroredContentLastModifiedAt`).
+Root and descriptor tables carry a **mirrored** `ContentVersion` and **authoritative**
+`ContentLastModifiedAt` (`ColumnKind.MirroredContentVersion` /
+`ColumnKind.AuthoritativeContentLastModifiedAt`).
 The query-time change-version filter ranges over `ContentVersion`. Descriptor live windows use
 `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId`; history windows use
 `IX_Descriptor_ResourceKeyId_ChangeVersion` on the shared history table.
 
-- [`DeriveContentVersionMirrorPass.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveContentVersionMirrorPass.cs) — derives the mirrored `ContentVersion` / `ContentLastModifiedAt` columns on root resource tables (descriptor mirror columns live on the shared `dms.Descriptor` table from the core DDL pass)
+- [`DeriveContentVersionMirrorPass.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveContentVersionMirrorPass.cs) — derives the version mirror and authoritative timestamp on root resource tables (the core DDL pass owns those columns on `dms.Descriptor`)
 - [`RelationalQueryPageKeysetPlanner.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalQueryPageKeysetPlanner.cs) — the change-version range predicate (`ChangeVersionFilterConstants`, `AppendChangeVersionPredicates`)
 
 The relational `/deletes` and `/keyChanges` paths use

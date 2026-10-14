@@ -98,6 +98,12 @@ public class Given_A_Fresh_Mssql_Database_Provisioned_With_Create_Database_Flag
         );
         connection.Open();
         ProvisionTestHelper.AssertCoreTablesExist(connection);
+        ProvisionTestHelper.AssertContentStampOwnership(
+            new MssqlSchemaIntrospector().Introspect(
+                MssqlTestDatabaseHelper.BuildConnectionString(_databaseName),
+                ["dms", "testproject"]
+            )
+        );
     }
 
     [Test]
@@ -422,6 +428,8 @@ public class Given_Mssql_Provisioning_Rerun_On_Same_Database
     private string? _secondManifestJson;
     private ProvisionTestHelper.DocumentCacheMutableStateSnapshot? _beforeRerun;
     private ProvisionTestHelper.DocumentCacheMutableStateSnapshot? _afterRerun;
+    private DateTime _beforeRerunTimestamp;
+    private DateTime _afterRerunTimestamp;
 
     [OneTimeSetUp]
     public void OneTimeSetUp()
@@ -448,6 +456,7 @@ public class Given_Mssql_Provisioning_Rerun_On_Same_Database
         var schemaAllowlist = ProvisionTestHelper.DiscoverProvisionedSchemasMssql(connectionString);
         var introspector = new MssqlSchemaIntrospector();
         var firstManifest = introspector.Introspect(connectionString, schemaAllowlist);
+        ProvisionTestHelper.AssertContentStampOwnership(firstManifest);
         _firstManifestJson = ProvisionedSchemaManifestEmitter.Emit(firstManifest);
 
         using (var connection = new SqlConnection(connectionString))
@@ -455,6 +464,11 @@ public class Given_Mssql_Provisioning_Rerun_On_Same_Database
             connection.Open();
             ProvisionTestHelper.InsertRowsThatMustSurviveRerun(connection, "mssql");
             _beforeRerun = ProvisionTestHelper.ReadDocumentCacheMutableStateSnapshot(connection, "mssql");
+            _beforeRerunTimestamp = ProvisionTestHelper.AssertCachedContentStamp(
+                connection,
+                "dms",
+                "Descriptor"
+            );
         }
 
         // Second provisioning run (idempotent rerun)
@@ -468,12 +482,18 @@ public class Given_Mssql_Provisioning_Rerun_On_Same_Database
         // Introspect after second run (rediscover schemas to catch accidental new schemas)
         var secondSchemaAllowlist = ProvisionTestHelper.DiscoverProvisionedSchemasMssql(connectionString);
         var secondManifest = introspector.Introspect(connectionString, secondSchemaAllowlist);
+        ProvisionTestHelper.AssertContentStampOwnership(secondManifest);
         _secondManifestJson = ProvisionedSchemaManifestEmitter.Emit(secondManifest);
 
         using (var connection = new SqlConnection(connectionString))
         {
             connection.Open();
             _afterRerun = ProvisionTestHelper.ReadDocumentCacheMutableStateSnapshot(connection, "mssql");
+            _afterRerunTimestamp = ProvisionTestHelper.AssertCachedContentStamp(
+                connection,
+                "dms",
+                "Descriptor"
+            );
         }
     }
 
@@ -513,6 +533,7 @@ public class Given_Mssql_Provisioning_Rerun_On_Same_Database
     public void It_preserves_document_cache_mutable_rows_on_second_run()
     {
         _afterRerun.Should().Be(_beforeRerun);
+        _afterRerunTimestamp.Should().Be(_beforeRerunTimestamp);
     }
 }
 
@@ -1793,15 +1814,13 @@ public class Given_Mssql_DocumentProjectionSafety
         using var connection = MssqlDocumentProjectionTestSupport.OpenConnection(_databaseName);
         MssqlDocumentProjectionTestSupport.SetLifecycle(connection, "Tracking");
 
-        var documentId = MssqlDocumentProjectionTestSupport
-            .InsertDocuments(connection, 1)
-            .Single()
-            .DocumentId;
+        var documentId = MssqlDocumentProjectionTestSupport.InsertWidget(connection, 1, "Widget 1");
         MssqlDocumentProjectionTestSupport.InsertDocumentCache(
             connection,
             documentId,
             """{"id":"matching"}"""
         );
+        ProvisionTestHelper.AssertCachedContentStamp(connection, "testproject", "Widget");
 
         MssqlDocumentProjectionTestSupport
             .TryExecuteNonQuery(
@@ -1811,10 +1830,11 @@ public class Given_Mssql_DocumentProjectionSafety
             .Message.Should()
             .Contain("DocumentUuid diverges");
 
-        var invalidJsonDocumentId = MssqlDocumentProjectionTestSupport
-            .InsertDocuments(connection, 1)
-            .Single()
-            .DocumentId;
+        var invalidJsonDocumentId = MssqlDocumentProjectionTestSupport.InsertWidget(
+            connection,
+            2,
+            "Widget 2"
+        );
         MssqlDocumentProjectionTestSupport
             .TryExecuteNonQuery(
                 connection,
@@ -1848,7 +1868,10 @@ public class Given_Mssql_DocumentProjectionSafety
 
         MssqlDocumentProjectionTestSupport.ExecuteNonQuery(
             connection,
-            $"DELETE FROM [dms].[Document] WHERE [DocumentId] = {documentId}"
+            $"""
+            DELETE FROM [testproject].[Widget] WHERE [DocumentId] = {documentId};
+            DELETE FROM [dms].[Document] WHERE [DocumentId] = {documentId};
+            """
         );
 
         MssqlDocumentProjectionTestSupport
@@ -2111,8 +2134,7 @@ internal static class MssqlDocumentProjectionTestSupport
             );
 
             UPDATE document
-            SET [ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence],
-                [ContentLastModifiedAt] = SYSUTCDATETIME()
+            SET [ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]
             OUTPUT inserted.[DocumentId], inserted.[ContentVersion]
             INTO @updated_document
             FROM [dms].[Document] document
@@ -2356,9 +2378,11 @@ internal static class MssqlDocumentProjectionTestSupport
                 resource_key.[ResourceVersion],
                 document.[ContentVersion],
                 CONCAT(N'etag-', CONVERT(varchar(20), document.[ContentVersion])),
-                document.[ContentLastModifiedAt],
+                widget.[ContentLastModifiedAt],
                 N'{{escapedJson}}'
             FROM [dms].[Document] document
+            INNER JOIN [testproject].[Widget] widget
+                ON widget.[DocumentId] = document.[DocumentId]
             INNER JOIN [dms].[ResourceKey] resource_key
                 ON resource_key.[ResourceKeyId] = document.[ResourceKeyId]
             WHERE document.[DocumentId] = {{documentId}}

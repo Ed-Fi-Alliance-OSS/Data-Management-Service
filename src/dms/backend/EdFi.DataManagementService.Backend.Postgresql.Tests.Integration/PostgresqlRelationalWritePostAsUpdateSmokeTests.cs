@@ -190,8 +190,7 @@ file static class PostAsUpdateIntegrationTestSupport
                 state.Document.DocumentId,
                 state.Document.DocumentUuid,
                 state.Document.ResourceKeyId,
-                state.Document.ContentVersion,
-                state.Document.ContentLastModifiedAt
+                state.Document.ContentVersion
             ),
             new NoProfilePostAsUpdateScenarios.AuthoritativeAcademicRecordSnapshot(
                 state.AcademicRecord.DocumentId,
@@ -667,8 +666,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion",
-                "ContentLastModifiedAt"
+            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
             FROM "dms"."Document"
             WHERE "DocumentUuid" = @documentUuid;
             """,
@@ -680,8 +678,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
                 PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
-                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt")
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
             )
             : throw new InvalidOperationException(
                 $"Expected exactly one document row for '{documentUuid}', but found {rows.Count}."
@@ -689,7 +686,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Cha
     }
 
     // The rejected-write proof compares the School root row including its replicated
-    // ContentVersion/ContentLastModifiedAt stamps, so this fixture reads the stamp-complete shape.
+    // ContentVersion mirror and authoritative ContentLastModifiedAt, so this fixture reads the complete root shape.
     private async Task<NoProfilePostAsUpdateScenarios.RejectedSchoolSnapshot> ReadSchoolAsync(long documentId)
     {
         var rows = await _database.QueryRowsAsync(
@@ -2038,8 +2035,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion",
-                "ContentLastModifiedAt"
+            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
             FROM "dms"."Document"
             WHERE "DocumentUuid" = @documentUuid;
             """,
@@ -2051,8 +2047,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
                 PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
-                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt")
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
             )
             : throw new InvalidOperationException(
                 $"Expected exactly one document row for '{documentUuid}', but found {rows.Count}."
@@ -3271,8 +3266,7 @@ internal sealed record AuthoritativePostAsUpdateDocumentRow(
     long DocumentId,
     Guid DocumentUuid,
     short ResourceKeyId,
-    long ContentVersion,
-    DateTimeOffset ContentLastModifiedAt
+    long ContentVersion
 );
 
 internal sealed record AuthoritativeSchoolYearTypeRow(
@@ -3481,8 +3475,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion",
-                "ContentLastModifiedAt"
+            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
             FROM "dms"."Document"
             WHERE "DocumentUuid" = @documentUuid;
             """,
@@ -3494,8 +3487,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
                 PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
-                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt")
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
             )
             : throw new InvalidOperationException(
                 $"Expected exactly one document row for '{documentUuid}', but found {rows.Count}."
@@ -4829,8 +4821,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion",
-                "ContentLastModifiedAt"
+            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
             FROM "dms"."Document"
             WHERE "DocumentUuid" = @documentUuid;
             """,
@@ -4842,8 +4833,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
                 PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
-                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt")
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
             )
             : throw new InvalidOperationException(
                 $"Expected exactly one document row for '{documentUuid}', but found {rows.Count}."

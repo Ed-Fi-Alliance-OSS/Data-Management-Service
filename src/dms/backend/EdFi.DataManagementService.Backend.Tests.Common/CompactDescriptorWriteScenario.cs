@@ -53,6 +53,9 @@ internal static class CompactDescriptorWriteScenario
         ((long)initial.DescriptorId).Should().NotBe(initial.DocumentId);
         await AssertReadEtagAsync(resource, inserted.NewDocumentUuid, inserted.ETag);
 
+        await BackdateOwnerAsync();
+        initial = await SnapshotAsync(create.DocumentUuid);
+
         string componentsBody = Body($"{Namespace}#Campus", "MiXeD");
         UpsertResult.UpdateSuccess components = (
             await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(
@@ -67,6 +70,9 @@ internal static class CompactDescriptorWriteScenario
         StoredDescriptor afterComponents = await SnapshotAsync(create.DocumentUuid);
         AssertChanged(afterComponents, initial, $"{Namespace}#Campus", "MiXeD");
         await AssertReadEtagAsync(resource, components.ExistingDocumentUuid, components.ETag);
+
+        await BackdateOwnerAsync();
+        afterComponents = await SnapshotAsync(create.DocumentUuid);
 
         string casingBody = Body($"{Namespace}#CAMPUS", "MIXED");
         UpsertResult.UpdateSuccess casing = (
@@ -97,6 +103,9 @@ internal static class CompactDescriptorWriteScenario
             await AssertReadEtagAsync(resource, create.DocumentUuid, casing.ETag);
         }
 
+        await BackdateOwnerAsync();
+        afterCasing = await SnapshotAsync(create.DocumentUuid);
+
         string equalUriBody = Body(Namespace, "CAMPUS#MIXED");
         UpdateResult.UpdateSuccess equalUri = (await handler.HandlePutAsync(Put(equalUriBody)))
             .Should()
@@ -106,6 +115,9 @@ internal static class CompactDescriptorWriteScenario
         StoredDescriptor afterEqualUri = await SnapshotAsync(create.DocumentUuid);
         AssertChanged(afterEqualUri, afterCasing, Namespace, "CAMPUS#MIXED");
         await AssertReadEtagAsync(resource, create.DocumentUuid, equalUri.ETag);
+
+        await BackdateOwnerAsync();
+        afterEqualUri = await SnapshotAsync(create.DocumentUuid);
 
         string descriptiveBody = Body(Namespace, "CAMPUS#MIXED", "Updated description", "2025-02-03");
         UpdateResult.UpdateSuccess descriptive = (await handler.HandlePutAsync(Put(descriptiveBody)))
@@ -236,13 +248,26 @@ internal static class CompactDescriptorWriteScenario
             command.CommandText = $"SELECT COUNT(*) FROM \"dms\".\"{table}\"";
             return Convert.ToInt64(await command.ExecuteScalarAsync());
         }
+        async Task BackdateOwnerAsync()
+        {
+            await using DbCommand command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE "dms"."Descriptor" SET "ContentLastModifiedAt" = '2000-01-01T00:00:00'
+                WHERE "DocumentId" = @documentId;
+                """;
+            DbParameter parameter = command.CreateParameter();
+            parameter.ParameterName = "@documentId";
+            parameter.Value = initial.DocumentId;
+            command.Parameters.Add(parameter);
+            await command.ExecuteNonQueryAsync();
+        }
         async Task<StoredDescriptor> SnapshotAsync(DocumentUuid uuid)
         {
             await using DbCommand command = connection.CreateCommand();
             command.CommandText = """
                 SELECT descriptor."DescriptorId", document."DocumentId", descriptor."ResourceKeyId",
                        descriptor."Namespace", descriptor."CodeValue", descriptor."Description", descriptor."EffectiveBeginDate",
-                       document."ContentVersion", document."ContentLastModifiedAt", descriptor."ContentVersion", descriptor."ContentLastModifiedAt",
+                       document."ContentVersion", descriptor."ContentLastModifiedAt", descriptor."ContentVersion",
                        (SELECT COUNT(*) FROM "dms"."ReferentialIdentity" ri WHERE ri."DocumentId" = document."DocumentId")
                 FROM "dms"."Document" document
                 JOIN "dms"."Descriptor" descriptor ON descriptor."DocumentId" = document."DocumentId"
@@ -257,7 +282,6 @@ internal static class CompactDescriptorWriteScenario
             long version = data.GetInt64(7);
             DateTime at = data.GetDateTime(8);
             data.GetInt64(9).Should().Be(version);
-            data.GetDateTime(10).Should().Be(at);
             return new(
                 data.GetInt32(0),
                 data.GetInt64(1),
@@ -268,7 +292,7 @@ internal static class CompactDescriptorWriteScenario
                 data.GetDateTime(6),
                 version,
                 at,
-                Convert.ToInt32(data.GetValue(11))
+                Convert.ToInt32(data.GetValue(10))
             );
         }
     }

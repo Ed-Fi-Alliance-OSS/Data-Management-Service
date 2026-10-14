@@ -16,7 +16,21 @@ public static class CompactDescriptorCatalogAssertions
     public const string FixtureRelativePath =
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/compact-descriptor";
 
-    public static async Task<string> RenderAsync(string repositoryRoot, string dialect, string manifestPath)
+    public static Task<string> RenderAsync(string repositoryRoot, string dialect, string manifestPath) =>
+        RenderAsync(repositoryRoot, dialect, manifestPath, "Assert-CompactDescriptor.ps1");
+
+    public static Task<string> RenderTemplateSchemaAsync(
+        string repositoryRoot,
+        string dialect,
+        string manifestPath
+    ) => RenderAsync(repositoryRoot, dialect, manifestPath, "Assert-TemplateSchema.ps1");
+
+    private static async Task<string> RenderAsync(
+        string repositoryRoot,
+        string dialect,
+        string manifestPath,
+        string script
+    )
     {
         ProcessStartInfo start = new("pwsh")
         {
@@ -29,7 +43,7 @@ public static class CompactDescriptorCatalogAssertions
             {
                 "-NoProfile",
                 "-File",
-                Path.Combine(repositoryRoot, "eng/DatabaseTemplates/Assert-CompactDescriptor.ps1"),
+                Path.Combine(repositoryRoot, "eng/DatabaseTemplates", script),
                 "-ExpectedModelManifestPath",
                 manifestPath,
                 "-DatabaseEngine",

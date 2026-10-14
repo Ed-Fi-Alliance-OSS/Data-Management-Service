@@ -23,7 +23,7 @@ public static class NoProfileGuardedNoOpScenarios
 {
     /// <summary>
     /// The deterministic ContentLastModifiedAt stamp every injected concurrent content-version bump
-    /// writes alongside its version increment, mirroring production stamping. It is deliberately far
+    /// writes to the resource root alongside its document version increment, mirroring production stamping. It is deliberately far
     /// from any live clock so retention of the exact concurrent stamp (rather than a fresh DMS
     /// rewrite) is provable and non-vacuous.
     /// </summary>
@@ -123,8 +123,7 @@ public static class NoProfileGuardedNoOpScenarios
         long DocumentId,
         Guid DocumentUuid,
         short ResourceKeyId,
-        long ContentVersion,
-        DateTimeOffset ContentLastModifiedAt
+        long ContentVersion
     );
 
     public sealed record SchoolRow(
@@ -181,7 +180,7 @@ public static class NoProfileGuardedNoOpScenarios
 
     /// <summary>
     /// Asserts a guarded no-op left the full persisted rowset, ContentVersion, and every stored
-    /// update-tracking stamp (ContentLastModifiedAt) unchanged, with the expected resource key.
+    /// update-tracking metadata (root ContentLastModifiedAt and document ContentVersion) unchanged, with the expected resource key.
     /// Guards the focused snapshot against vacuity (one document, two base and two aligned rows)
     /// before the full equality check.
     /// </summary>
@@ -236,22 +235,24 @@ public static class NoProfileGuardedNoOpScenarios
         concurrentContentLastModifiedAt
             .Should()
             .NotBe(
-                before.Document.ContentLastModifiedAt,
+                before.School.ContentLastModifiedAt,
                 "the concurrent sentinel must differ from the pre-state stamp for retention to be provable"
             );
 
         PersistedState afterWithBeforeContentStamps = after with
         {
-            Document = after.Document with
+            Document = after.Document with { ContentVersion = before.Document.ContentVersion },
+            School = after.School with
             {
-                ContentVersion = before.Document.ContentVersion,
-                ContentLastModifiedAt = before.Document.ContentLastModifiedAt,
+                ContentVersion = before.School.ContentVersion,
+                ContentLastModifiedAt = before.School.ContentLastModifiedAt,
             },
         };
 
         afterWithBeforeContentStamps.Should().BeEquivalentTo(before);
         after.Document.ContentVersion.Should().Be(before.Document.ContentVersion + 1);
-        after.Document.ContentLastModifiedAt.Should().Be(concurrentContentLastModifiedAt);
+        after.School.ContentVersion.Should().Be(after.Document.ContentVersion);
+        after.School.ContentLastModifiedAt.Should().Be(concurrentContentLastModifiedAt);
         after.Document.ResourceKeyId.Should().Be(mappingSet.ResourceKeyIdByResource[resource]);
     }
 

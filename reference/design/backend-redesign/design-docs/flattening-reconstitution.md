@@ -870,10 +870,12 @@ SELECT
   d.DocumentId,
   d.DocumentUuid,
   d.ContentVersion,
-  d.ContentLastModifiedAt,
+  r.ContentLastModifiedAt,
   d.ResourceKeyId
 FROM dms.Document d
-JOIN page p ON p.DocumentId = d.DocumentId;
+JOIN <schema>.<ResourceRoot> r ON r.DocumentId = d.DocumentId
+JOIN page p ON p.DocumentId = d.DocumentId
+ORDER BY d.DocumentId;
 
 -- Root table rows
 SELECT r.*
@@ -888,7 +890,14 @@ JOIN page p ON p.DocumentId = c.<RootDocumentIdColumn>
 ORDER BY c.<RootDocumentIdColumn>, c.<ParentScopeColumn>, c.Ordinal;
 ```
 
-This avoids N+1 queries and keeps network round-trips minimal (one command, multiple result sets).
+The metadata SELECT joins the compiled root once for the whole page; there is no timestamp
+query per document. Standalone provider hydration appends a final document-only version SELECT
+to this batch and retries the complete acquisition on version drift or disappearance (at most
+three attempts). This prevents serving old metadata with newly acquired content under concurrent
+writes/restamps. Session-scoped write hydration retains its existing transaction contract.
+Descriptor reads acquire body and owner timestamp together; candidate-based rereads return the
+selected row's current metadata with its representation. The SQL examples show the hydration
+result sets; the standalone version fence follows all representation queries.
 
 #### Single-document fast path: no keyset materialization
 
@@ -903,9 +912,10 @@ SELECT
   d.DocumentId,
   d.DocumentUuid,
   d.ContentVersion,
-  d.ContentLastModifiedAt,
+  r.ContentLastModifiedAt,
   d.ResourceKeyId
 FROM dms.Document d
+JOIN <schema>.<ResourceRoot> r ON r.DocumentId = d.DocumentId
 WHERE d.DocumentId = @DocumentId
 ORDER BY d.DocumentId;
 
@@ -1022,7 +1032,7 @@ Use `Utf8JsonWriter` to avoid building large intermediate `JsonNode` graphs:
   reconstructing `Namespace + '#' + CodeValue` in its original casing
 - write `_ext` blocks from extension tables (only when at least one extension value is present at that scope)
 - inject `id` from `dms.Document.DocumentUuid`
-- serve `_lastModifiedDate` from stored `dms.Document.ContentLastModifiedAt`
+- serve `_lastModifiedDate` from the authoritative root/descriptor `ContentLastModifiedAt` projected in the metadata result set
 - emit response properties in deterministic compiled-path order
 - serve `_etag` as `"{ContentVersion}-{variantKey}"` (see `update-tracking.md`, "Serving API
   metadata"). `_etag` MUST NOT be computed by hashing the reconstituted document: it is composed
@@ -1132,21 +1142,20 @@ public enum ColumnKind
 
     /// <summary>
     /// Server-stamped bigint column that mirrors <c>dms.Document.ContentVersion</c> onto the concrete root
-    /// resource table (and onto <c>dms.Descriptor</c>). Written only by the resource's <c>*_Stamp</c> trigger
-    /// from the same sequence value the trigger allocates against <c>dms.Document</c>. Not client-writable;
+    /// resource table (and onto <c>dms.Descriptor</c>). Maintained by stamping triggers or explicit
+    /// representation restamping from the document's allocated sequence value. Not client-writable;
     /// write planning excludes it from <c>TableWritePlan.ColumnBindings</c>. SourceJsonPath and TargetResource
-    /// are null. See <c>change-queries.md</c> §"Concrete-resource ContentVersion / ContentLastModifiedAt mirror".
+    /// are null. See <c>change-queries.md</c> §"Concrete-resource version mirror and authoritative timestamp".
     /// </summary>
     MirroredContentVersion,
 
     /// <summary>
-    /// Server-stamped UTC timestamp column that mirrors <c>dms.Document.ContentLastModifiedAt</c> onto the
-    /// concrete root resource table (and onto <c>dms.Descriptor</c>). Written only by the resource's
-    /// <c>*_Stamp</c> trigger from the same value the trigger writes to <c>dms.Document</c>. Not client-writable.
-    /// SourceJsonPath and TargetResource are null. See <c>change-queries.md</c> §"Concrete-resource ContentVersion
-    /// / ContentLastModifiedAt mirror".
+    /// Authoritative server-stamped UTC timestamp on the concrete root resource table (and on
+    /// <c>dms.Descriptor</c>). Generated on the owner in the same transaction as the document version.
+    /// Not client-writable; SourceJsonPath and TargetResource are null. See <c>change-queries.md</c>
+    /// §"Concrete-resource version mirror and authoritative timestamp".
     /// </summary>
-    MirroredContentLastModifiedAt
+    AuthoritativeContentLastModifiedAt
 }
 
 /// <summary>
@@ -1374,7 +1383,7 @@ public abstract record ColumnStorage
 /// A table column description used for both DDL and runtime binding.
 /// </summary>
 /// <param name="ColumnName">Physical column name.</param>
-/// <param name="Kind">Semantic kind (Scalar, CollectionKey, DocumentFk, DescriptorFk, Ordinal, ParentKeyPart, MirroredContentVersion, MirroredContentLastModifiedAt).</param>
+/// <param name="Kind">Semantic kind (Scalar, CollectionKey, DocumentFk, DescriptorFk, Ordinal, ParentKeyPart, MirroredContentVersion, AuthoritativeContentLastModifiedAt).</param>
 /// <param name="ScalarType">Scalar type definition for Kind=Scalar; otherwise null.</param>
 /// <param name="IsNullable">Whether the column can be null (DDL + parameter binding).</param>
 /// <param name="SourceJsonPath">
@@ -1401,7 +1410,7 @@ public sealed record DbColumnModel(
     ColumnKind Kind,
     RelationalScalarType? ScalarType,
     bool IsNullable,
-    JsonPathExpression? SourceJsonPath,            // null for derived columns (CollectionKey/ParentKey/Ordinal/MirroredContentVersion/MirroredContentLastModifiedAt)
+    JsonPathExpression? SourceJsonPath,            // null for derived columns (CollectionKey/ParentKey/Ordinal/MirroredContentVersion/AuthoritativeContentLastModifiedAt)
     QualifiedResourceName? TargetResource,         // for DocumentFk / DescriptorFk
     ColumnStorage Storage,
     bool UsesSqlServerIdentityCollation = false
@@ -1818,7 +1827,7 @@ public sealed record KeysetTableContract(
 
 When `DbTableModel.KeyUnificationClasses` is non-empty:
 
-- `TableWritePlan.ColumnBindings` (and emitted `INSERT`/`UPDATE` column lists) MUST include only stored/writable columns. Any column whose `DbColumnModel.Storage` is `UnifiedAlias(...)` MUST be excluded. Columns whose `Kind` is `MirroredContentVersion` or `MirroredContentLastModifiedAt` MUST also be excluded — they are server-stamped by the resource's `*_Stamp` trigger and rely on their DDL defaults for INSERT, never on a client-supplied value.
+- `TableWritePlan.ColumnBindings` (and emitted `INSERT`/`UPDATE` column lists) MUST include only stored/writable columns. Any column whose `DbColumnModel.Storage` is `UnifiedAlias(...)` MUST be excluded. Columns whose `Kind` is `MirroredContentVersion` or `AuthoritativeContentLastModifiedAt` MUST also be excluded — they are server-stamped by the resource's `*_Stamp` trigger and rely on their DDL defaults for INSERT, never on a client-supplied value.
 - Canonical storage columns and synthetic `..._Present` presence-flag columns MUST be bound as `WriteValueSource.Precomputed`.
 - `TableWritePlan.KeyUnificationPlans` MUST be emitted for every `KeyUnificationClass` to compute canonical values and synthetic presence flags during row materialization.
 - Fail fast: the plan compiler MUST reject any plan that attempts to write a `UnifiedAlias` column, or that leaves a `Precomputed` binding without exactly one corresponding `KeyUnificationWritePlan`.

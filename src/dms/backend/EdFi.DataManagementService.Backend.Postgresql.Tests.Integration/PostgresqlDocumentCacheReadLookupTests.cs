@@ -490,21 +490,18 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
             INSERT INTO "dms"."Document" (
                 "DocumentUuid",
                 "ResourceKeyId",
-                "ContentVersion",
-                "ContentLastModifiedAt"
+                "ContentVersion"
             )
             VALUES (
                 @documentUuid,
                 @resourceKeyId,
-                @contentVersion,
-                @lastModifiedAt
+                @contentVersion
             )
             RETURNING "DocumentId";
             """,
             new NpgsqlParameter("documentUuid", NpgsqlDbType.Uuid) { Value = documentUuid },
             new NpgsqlParameter("resourceKeyId", NpgsqlDbType.Smallint) { Value = resourceKeyId },
-            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion },
-            new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz) { Value = LastModifiedAt }
+            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion }
         );
 
         return new SourceDocument(
@@ -549,14 +546,12 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
             INSERT INTO "dms"."Document" (
                 "DocumentUuid",
                 "ResourceKeyId",
-                "ContentVersion",
-                "ContentLastModifiedAt"
+                "ContentVersion"
             )
             SELECT
                 source_documents."DocumentUuid",
                 source_documents."ResourceKeyId",
-                source_documents."ContentVersion",
-                @lastModifiedAt
+                source_documents."ContentVersion"
             FROM source_documents
             ORDER BY source_documents."Ordinal"
             RETURNING
@@ -568,8 +563,7 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
             new NpgsqlParameter("sourceDocumentsJson", NpgsqlDbType.Jsonb)
             {
                 Value = JsonSerializer.Serialize(seed),
-            },
-            new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz) { Value = LastModifiedAt }
+            }
         );
 
         return rows.OrderBy(static row => Convert.ToInt64(row["ContentVersion"]))
@@ -793,16 +787,11 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
         await _database.ExecuteNonQueryAsync(
             """
             UPDATE "dms"."Document"
-            SET "ContentVersion" = @contentVersion,
-                "ContentLastModifiedAt" = @lastModifiedAt
+            SET "ContentVersion" = @contentVersion
             WHERE "DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = documentId },
-            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion },
-            new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz)
-            {
-                Value = LastModifiedAt.AddMinutes(5),
-            }
+            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion }
         );
     }
 

@@ -59,10 +59,23 @@ public class Given_MaterializedDocumentFixtureSeeder
                 command.Contains("CREATE TABLE IF NOT EXISTS \"dms\".\"Document\"", StringComparison.Ordinal)
             );
         commands
+            .Single(command =>
+                command.CommandText.Contains(
+                    "CREATE TABLE IF NOT EXISTS \"dms\".\"Document\"",
+                    StringComparison.Ordinal
+                )
+            )
+            .CommandText.Should()
+            .NotContain("ContentLastModifiedAt");
+        commands
             .Select(command => command.CommandText)
             .Should()
             .Contain(command =>
                 command.Contains(
+                    "CREATE TABLE IF NOT EXISTS \"edfi\".\"StudentSchoolAssociation\"",
+                    StringComparison.Ordinal
+                )
+                && command.Contains(
                     "\"ContentLastModifiedAt\" timestamp with time zone",
                     StringComparison.Ordinal
                 )
@@ -85,16 +98,12 @@ public class Given_MaterializedDocumentFixtureSeeder
         documentInsert
             .CommandText.Should()
             .Be(
-                "INSERT INTO \"dms\".\"Document\" (\"DocumentId\", \"DocumentUuid\", \"ResourceKeyId\", \"CreatedByOwnershipTokenId\", \"ContentVersion\", \"ContentLastModifiedAt\") VALUES (@p0, @p1, @p2, NULL, @p3, @p4)"
+                "INSERT INTO \"dms\".\"Document\" (\"DocumentId\", \"DocumentUuid\", \"ResourceKeyId\", \"CreatedByOwnershipTokenId\", \"ContentVersion\") VALUES (@p0, @p1, @p2, NULL, @p3)"
             );
         documentInsert.Parameters.Should().Contain(parameter => Equals(parameter.Value, 970101L));
-        documentInsert
-            .Parameters.Any(parameter =>
-                parameter.Value is DateTimeOffset value
-                && value == _ordinaryFixture.SourceSetup.Documents[0].ContentLastModifiedAt
-            )
-            .Should()
-            .BeTrue();
+        // The combined dms.Document has no timestamp column; the stamp is seeded on the resource root below.
+        documentInsert.Parameters.Should().HaveCount(4);
+        documentInsert.Parameters.Should().NotContain(parameter => parameter.Value is DateTimeOffset);
 
         var sourceInsert = commands.Single(command =>
             command.CommandText.StartsWith(
@@ -104,12 +113,25 @@ public class Given_MaterializedDocumentFixtureSeeder
         );
         sourceInsert.Parameters.Should().Contain(parameter => Equals(parameter.Value, 970201L));
         sourceInsert.Parameters.Should().Contain(parameter => Equals(parameter.Value, 255901));
+        sourceInsert
+            .CommandText.Should()
+            .Contain("\"ContentVersion\"")
+            .And.Contain("\"ContentLastModifiedAt\"");
+        sourceInsert.Parameters.Should().Contain(parameter => Equals(parameter.Value, 222L));
+        sourceInsert
+            .Parameters.Any(parameter =>
+                parameter.Value is DateTimeOffset value
+                && value == _ordinaryFixture.SourceSetup.Documents[0].ContentLastModifiedAt
+            )
+            .Should()
+            .BeTrue();
 
         commands
             .Select(command => command.CommandText)
             .Should()
             .Contain(command =>
-                command.Contains("\"ContentLastModifiedAt\" = @p1", StringComparison.Ordinal)
+                command.StartsWith("UPDATE \"edfi\".\"StudentSchoolAssociation\"", StringComparison.Ordinal)
+                && command.Contains("\"ContentLastModifiedAt\" = @p1", StringComparison.Ordinal)
             );
     }
 
@@ -131,10 +153,20 @@ public class Given_MaterializedDocumentFixtureSeeder
                 command.Contains("IF OBJECT_ID(N'[dms].[Document]', N'U') IS NULL", StringComparison.Ordinal)
             );
         commands
+            .Single(command =>
+                command.CommandText.Contains(
+                    "IF OBJECT_ID(N'[dms].[Document]', N'U') IS NULL",
+                    StringComparison.Ordinal
+                )
+            )
+            .CommandText.Should()
+            .NotContain("ContentLastModifiedAt");
+        commands
             .Select(command => command.CommandText)
             .Should()
             .Contain(command =>
-                command.Contains("[ContentLastModifiedAt] datetime2(7)", StringComparison.Ordinal)
+                command.Contains("CREATE TABLE [dms].[Descriptor]", StringComparison.Ordinal)
+                && command.Contains("[ContentLastModifiedAt] datetime2(7)", StringComparison.Ordinal)
             );
 
         var documentInsert = commands.Single(command =>
@@ -143,7 +175,7 @@ public class Given_MaterializedDocumentFixtureSeeder
         documentInsert
             .CommandText.Should()
             .Be(
-                "INSERT INTO [dms].[Document] ([DocumentId], [DocumentUuid], [ResourceKeyId], [CreatedByOwnershipTokenId], [ContentVersion], [ContentLastModifiedAt]) VALUES (@p0, @p1, @p2, NULL, @p3, @p4)"
+                "INSERT INTO [dms].[Document] ([DocumentId], [DocumentUuid], [ResourceKeyId], [CreatedByOwnershipTokenId], [ContentVersion]) VALUES (@p0, @p1, @p2, NULL, @p3)"
             );
 
         var descriptorInsert = commands.Single(command => command.DescriptorKey is not null);
@@ -151,6 +183,8 @@ public class Given_MaterializedDocumentFixtureSeeder
         descriptorInsert
             .CommandText.Should()
             .Contain("[EffectiveBeginDate]")
+            .And.Contain("[ContentVersion]")
+            .And.Contain("[ContentLastModifiedAt]")
             .And.NotContain("[Discriminator]")
             .And.NotContain("[Uri]")
             .And.Contain("OUTPUT inserted.[DescriptorId] INTO @descriptor");
@@ -274,13 +308,7 @@ public class Given_MaterializedDocumentFixtureSeeder
         var stampUpdate = commands.Single(command =>
             command.CommandText.StartsWith("UPDATE \"dms\".\"Document\"", StringComparison.Ordinal)
         );
-        stampUpdate
-            .Parameters.Any(parameter =>
-                parameter.Value is DateTimeOffset value
-                && value == _failureFixture.SourceSetup.Documents[0].ContentLastModifiedAt
-            )
-            .Should()
-            .BeTrue();
+        stampUpdate.CommandText.Should().NotContain("ContentLastModifiedAt");
     }
 
     [Test]
@@ -300,9 +328,8 @@ public class Given_MaterializedDocumentFixtureSeeder
             .Be(
                 """
                 UPDATE [dms].[Document]
-                SET [ContentVersion] = @p0,
-                    [ContentLastModifiedAt] = @p1
-                WHERE [DocumentId] = @p2
+                SET [ContentVersion] = @p0
+                WHERE [DocumentId] = @p1
                 """
             );
     }
@@ -332,10 +359,18 @@ public class Given_MaterializedDocumentFixtureSeeder
             .Contain("SET IDENTITY_INSERT [dms].[Document] ON")
             .And.Contain("INSERT INTO [dms].[Document]")
             .And.Contain("SET IDENTITY_INSERT [dms].[Document] OFF");
-        documentInsert
+        // The document row carries no timestamp. The SQL Server timestamp conversion now applies where the
+        // authoritative stamp is seeded: the resource root's stamp update.
+        documentInsert.Parameters.Should().NotContain(parameter => parameter.Value is DateTime);
+        var rootStampUpdate = new MaterializedDocumentFixtureSeeder(MaterializedDocumentFixtureSqlDialect.Mssql)
+            .BuildSetupCommands(_ordinaryFixture)
+            .Single(command =>
+                command.CommandText.StartsWith("UPDATE [edfi].[StudentSchoolAssociation]", StringComparison.Ordinal)
+            );
+        rootStampUpdate
             .Parameters.Any(parameter =>
                 parameter.Value is DateTime value
-                && value == _failureFixture.SourceSetup.Documents[0].ContentLastModifiedAt.UtcDateTime
+                && value == _ordinaryFixture.SourceSetup.Documents[0].ContentLastModifiedAt.UtcDateTime
                 && parameter.ConfigureParameter is not null
             )
             .Should()

@@ -1454,8 +1454,10 @@ The offline operation follows this sequence:
    remain eligible for the mode recorded by the manifest before resuming.
 4. Run the utility with an explicit affected-document scope. For each current affected
    document, allocate a fresh unique value from the normal change-version sequence, update
-   `dms.Document.ContentVersion` and `ContentLastModifiedAt`, and update the concrete
-   resource-root or `dms.Descriptor` content-stamp mirror in the same provider transaction.
+   `dms.Document.ContentVersion`, then update the concrete resource root or `dms.Descriptor`
+   by `DocumentId` with that version and a newly generated authoritative `ContentLastModifiedAt`
+   in the same provider transaction. Capture the persisted owner timestamp, not a document
+   timestamp. Validate affected owner counts and roll back the whole page on a missing owner.
    Do not change domain fields, keys, or deletion history. The utility only refreshes the
    stored change-tracking columns. The utility uses a captured pre-restamp version boundary
    so a retry resumes without stamping an already completed document again. In

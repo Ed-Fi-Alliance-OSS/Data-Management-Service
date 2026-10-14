@@ -238,11 +238,12 @@ public sealed partial class DocumentCacheHostedHappyPathTests
                     d.[DocumentId],
                     d.[DocumentUuid],
                     d.[ContentVersion],
-                    d.[ContentLastModifiedAt],
+                    student.[ContentLastModifiedAt],
                     rk.[ProjectName],
                     rk.[ResourceName],
                     rk.[ResourceVersion]
                 FROM [dms].[Document] AS d
+                INNER JOIN [edfi].[Student] AS student ON student.[DocumentId] = d.[DocumentId]
                 INNER JOIN [dms].[ResourceKey] AS rk ON rk.[ResourceKeyId] = d.[ResourceKeyId]
                 WHERE d.[DocumentUuid] = @documentUuid;
                 """
@@ -251,11 +252,12 @@ public sealed partial class DocumentCacheHostedHappyPathTests
                     d."DocumentId",
                     d."DocumentUuid",
                     d."ContentVersion",
-                    d."ContentLastModifiedAt",
+                    student."ContentLastModifiedAt",
                     rk."ProjectName",
                     rk."ResourceName",
                     rk."ResourceVersion"
                 FROM "dms"."Document" AS d
+                INNER JOIN "edfi"."Student" AS student ON student."DocumentId" = d."DocumentId"
                 INNER JOIN "dms"."ResourceKey" AS rk ON rk."ResourceKeyId" = d."ResourceKeyId"
                 WHERE d."DocumentUuid" = @documentUuid;
                 """;

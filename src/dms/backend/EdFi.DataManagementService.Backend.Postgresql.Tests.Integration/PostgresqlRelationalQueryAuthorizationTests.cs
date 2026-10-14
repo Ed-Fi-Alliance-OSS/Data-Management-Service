@@ -2310,8 +2310,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                 "DocumentId",
                 "DocumentUuid",
                 "ResourceKeyId",
-                "ContentVersion",
-                "ContentLastModifiedAt"
+                "ContentVersion"
             FROM "dms"."Document"
             WHERE "DocumentUuid" = @documentUuid
               AND "ResourceKeyId" = @resourceKeyId;
@@ -2325,8 +2324,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                 GetRequiredInt64(rows[0], "DocumentId"),
                 GetRequiredGuid(rows[0], "DocumentUuid"),
                 GetRequiredInt16(rows[0], "ResourceKeyId"),
-                GetRequiredInt64(rows[0], "ContentVersion"),
-                GetRequiredDateTime(rows[0], "ContentLastModifiedAt")
+                GetRequiredInt64(rows[0], "ContentVersion")
             )
             : throw new InvalidOperationException(
                 $"Expected one AuthorizationRootChildResource document row for '{documentUuid.Value}', but found {rows.Count}."
@@ -2873,15 +2871,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
 
     private static int GetRequiredInt32(IReadOnlyDictionary<string, object?> row, string columnName) =>
         Convert.ToInt32(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
-
-    private static DateTime GetRequiredDateTime(IReadOnlyDictionary<string, object?> row, string columnName)
-    {
-        return GetRequiredValue(row, columnName) is DateTime value
-            ? value
-            : throw new InvalidOperationException(
-                $"Expected column '{columnName}' to contain a DateTime value."
-            );
-    }
 
     private static Guid GetRequiredGuid(IReadOnlyDictionary<string, object?> row, string columnName)
     {

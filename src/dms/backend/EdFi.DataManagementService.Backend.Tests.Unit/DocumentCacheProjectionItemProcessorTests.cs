@@ -338,7 +338,7 @@ public class Given_DocumentCacheProjectionItemProcessor
         DocumentCacheProjectionTargetRuntimeContext targetContext = RuntimeContext(
             new RecordingDocumentCacheMaterializer(
                 new DocumentCacheProjectionProcessingException(
-                    DocumentCacheProjectionProcessingFailureReason.DocumentJsonNotObject,
+                    DocumentCacheProjectionProcessingFailureReason.StableSourceBodyMissing,
                     FailureMetadata(documentId: 101)
                 )
             ),
@@ -349,6 +349,8 @@ public class Given_DocumentCacheProjectionItemProcessor
             .ProcessItemAsync(Request(targetContext, WorkItem(101, requiredContentVersion: 10)));
 
         result.Should().BeSameAs(DocumentCacheProjectionItemProcessResult.DocumentScopedFailure);
+        result.AcknowledgedOrRemovedDurableWork.Should().BeFalse();
+        writer.Calls.Should().ContainSingle().Which.Candidate.Should().BeNull();
         targetContext.SchedulingState.IsTargetPaused.Should().BeFalse();
         DocumentCacheProjectionDocumentDiagnostic diagnostic = targetContext
             .FailureBackoffState.CreateFailureDiagnosticsSnapshot()
@@ -359,7 +361,7 @@ public class Given_DocumentCacheProjectionItemProcessor
         diagnostic
             .Category.Should()
             .Be(DocumentCacheProjectionDocumentDiagnosticCategory.DeterministicInvariantFailure);
-        diagnostic.Message.Should().Contain("DocumentJsonNotObject");
+        diagnostic.Message.Should().Contain("StableSourceBodyMissing");
         diagnostic.NextRetryAt.Should().Be(ObservedAt.AddSeconds(10));
 
         DocumentCacheProjectionItemProcessResult laterResult = await CreateProcessor()
