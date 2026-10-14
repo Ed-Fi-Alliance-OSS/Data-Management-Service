@@ -1717,9 +1717,20 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
-    public void It_should_have_named_default_for_document_created_at()
+    public void It_should_not_emit_document_created_at()
     {
-        _ddl.Should().Contain("CONSTRAINT [DF_Document_CreatedAt] DEFAULT");
+        var mssqlDocument = CoreDdlStatements.Extract(_ddl, "CREATE TABLE [dms].[Document]");
+        mssqlDocument.Should().Contain("[DocumentId] bigint IDENTITY(1,1) NOT NULL");
+        mssqlDocument.Should().NotContain("[CreatedAt]");
+        mssqlDocument.Should().NotContain("[DF_Document_CreatedAt]");
+
+        var pgsqlDdl = new CoreDdlEmitter(new PgsqlDialect(new PgsqlDialectRules())).Emit();
+        var pgsqlDocument = CoreDdlStatements.Extract(
+            pgsqlDdl,
+            "CREATE TABLE IF NOT EXISTS \"dms\".\"Document\""
+        );
+        pgsqlDocument.Should().Contain("\"ContentLastModifiedAt\" timestamp with time zone NOT NULL");
+        pgsqlDocument.Should().NotContain("\"CreatedAt\"");
     }
 
     [Test]

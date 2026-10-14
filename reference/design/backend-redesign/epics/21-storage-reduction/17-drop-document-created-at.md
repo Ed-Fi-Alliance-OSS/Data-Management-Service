@@ -73,6 +73,20 @@ recorded the decisions in the DMS-1403 Jira description ("Implementation Decisio
 2026-10-12). The Jira text that step 0.2 was to draft is therefore already posted; this workflow
 still performs no Jira write.
 
+### 0.5 Baseline review (step 0.3, 2026-10-13)
+
+The 0.3 baseline was accepted. Two recording rules follow from it. First, the parameterized
+fixture `Given_Compact_Descriptor_Fixture_Seeds` is required as `…(Postgresql)` and `…(Mssql)`
+independently, because neither the test listing nor the `.trx` reports the bare class name (§8.2,
+§8.3 U3, §8.4 list 2.1). Second, a later failure is classified as pre-existing only when both its
+test name and its failure signature match the baseline record (`baseline\failing-signatures.txt`),
+not on the name alone.
+
+Found while implementing step 1.1 (pending review): the golden regeneration also rewrites the
+`normalized_sql_sha256` pair in 24 DDL manifest JSONs, which §5.5 had listed as not affected. The
+change is derived from the SQL goldens and carries no other edit; §5.5 and step 1.1 (files and
+diff-shape gate) now include it.
+
 ---
 
 ## 1. Problem, proposed decision, alternatives, assumptions, open questions
@@ -441,11 +455,12 @@ and all of `src/config`.
 |---|---|---|
 | `**/expected/pgsql.sql` carrying `"CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),` inside `dms."Document"` | 18 (11 under `Backend.Ddl.Tests.Unit/Fixtures/{small,focused}`, 4 under `Backend.IntegrationFixtures`, 3 under `backend/Fixtures/authoritative/{ds-5.2,ds-5.2-tpdm,sample}`) | `UPDATE_GOLDENS=1` run of `Backend.Ddl.Tests.Unit` |
 | `**/expected/mssql.sql` carrying `[CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Document_CreatedAt] …` | 18 (same set) | same |
+| `**/expected/ddl.manifest.json` (17, alongside the SQL goldens; `no-ddl-manifest` has none) and `Backend.Ddl.Tests.Unit/Fixtures/ddl-emission/expected/ddl-manifest/*.json` (7) | 24 files, exactly the two `normalized_sql_sha256` lines each (one per dialect; a hash of the emitted DDL, so it changes with the SQL); `statement_count` unchanged | same `UPDATE_GOLDENS=1` run (corrected in step 1.1: originally listed as not affected) |
 | `src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/Fixtures/expected/provisioned-schema.{pgsql,mssql}.manifest.json` | 2 (`dms.Document.CreatedAt`, ordinal 7 — last, so no renumbering) | `UPDATE_GOLDENS=1` against live PostgreSQL and SQL Server |
 
 **Not affected (verified):** `relational-model.{pgsql,mssql}.manifest.json` (every `CreatedAt`
 entry is a tracked-change `role`), `authoritative-derived-relational-model-set.json` and
-`focused-stable-key-derived-relational-model-set.json` (same), `ddl.manifest.json`,
+`focused-stable-key-derived-relational-model-set.json` (same),
 `effective-schema.manifest.json` (hash inputs exclude DDL), `Fixtures/cdc/**`,
 `Fixtures/document-cache/**`, `Fixtures/synthetic/**`.
 
@@ -538,7 +553,8 @@ extracted to `baseline\failing-names.txt`; every pre-existing §8.4 fixture name
     in its observed values and the setup `Outcome == Failed`. Reuse the file's existing
     captured-column fixture rows and the mismatch assertions already present for other
     mismatch kinds; extend rather than duplicate.
-  - The 36 `expected/{pgsql,mssql}.sql` goldens regenerated in the same commit.
+  - The 36 `expected/{pgsql,mssql}.sql` goldens and the 24 DDL manifest JSONs (§5.5; only their
+    `normalized_sql_sha256` lines) regenerated in the same commit.
 - Commands (pwsh, repo root; `$R` from §8.1):
   ```powershell
   $env:UPDATE_GOLDENS = '1'
@@ -556,7 +572,10 @@ extracted to `baseline\failing-names.txt`; every pre-existing §8.4 fixture name
 - Diff-shape gate on the goldens (must hold before commit): `git diff --numstat -- '**/expected/*.sql'`
   shows exactly 36 files, each `0 added / 1 deleted`;
   `git diff -U0 -- '**/expected/*.sql' | Select-String '^-' | Where-Object { $_ -notmatch '^---' -and $_ -notmatch 'CreatedAt' }`
-  is empty. Any other hunk is unrelated drift and stops the step.
+  is empty. For the manifests, `git diff --numstat -- '*.json'` (excluding the preserved frontend
+  lockfile) shows exactly 24 files, each `2 added / 2 deleted`, and every changed line matches
+  `^[-+]\s+"normalized_sql_sha256": "[0-9a-f]{64}",$`. Any other hunk is unrelated drift and
+  stops the step.
 - Dependencies: 0.1, 0.3.
 - Risks: none to compilation (the `Backend.External` constant has no consumer; the CDC integration
   fixture still compiles because its column list is hand-written and is corrected in 3.1).
@@ -567,7 +586,8 @@ extracted to `baseline\failing-names.txt`; every pre-existing §8.4 fixture name
 - Commit: `[DMS-1403] Remove CreatedAt from the dms.Document definition and regenerate DDL goldens`.
 
 **Phase 1 acceptance:** U1, U2 green; both new CDC fixtures executed by name; diff-shape gate
-satisfied; a reviewer can read the 36-line golden diff in one screen.
+satisfied; a reviewer can read the 36-line golden diff in one screen (plus 48 hash-only manifest
+lines).
 
 ### Phase 2 — Shared test support and provider integration tests (one shared concern per commit, both engines together)
 
@@ -579,7 +599,8 @@ fixtures on both engines with the §8.4 filter and checks the §8.4 expected lis
 - Files: `MaterializedDocumentFixtureSeeder.cs` (drop the CREATE column and the INSERT column /
   parameter at 189, 334, 343), `MaterializedDocumentFixtureSeederTests.cs:88, 146` (pinned INSERT
   text on both dialects, now without `CreatedAt`).
-- Verification: U3 (`Given_MaterializedDocumentFixtureSeeder` and `Given_Compact_Descriptor_Fixture_Seeds`
+- Verification: U3 (`Given_MaterializedDocumentFixtureSeeder`,
+  `Given_Compact_Descriptor_Fixture_Seeds(Postgresql)`, and `Given_Compact_Descriptor_Fixture_Seeds(Mssql)`
   executed by name); §8.4 list 2.1 on each engine — the four fixtures that are the
   seeder's only integration consumers (`rg -l MaterializedDocumentFixtureSeeder` over the
   provider test projects).
@@ -1037,6 +1058,14 @@ function Get-TrxFixtureCounts {
 every expected fixture (`Select-String -SimpleMatch "<ClassName>."`); a name that does not
 discover stops the step until the list is corrected.
 
+**Parameterized fixtures (corrected after the 0.3 baseline review).** A fixture class declared with
+`[TestFixture(<argument>)]` is reported as `<ClassName>(<argument>)` in both the `--list-tests`
+output (with `-- NUnit.DisplayName=FullName`) and the `.trx` `className`, never as the bare class
+name. Each argument instance is therefore its own expected name, listed and checked
+independently, and the discovery match `"<Name>."` applies to that full name. The only such
+fixture in the §8.4 lists is `Given_Compact_Descriptor_Fixture_Seeds`, expected as
+`…(Postgresql)` and `…(Mssql)` (list 2.1).
+
 ### 8.3 Matrix
 
 Columns: **Local** = run locally before the step commit / pre-push; **CI** = required green on
@@ -1046,7 +1075,7 @@ the PR before the story is complete (not reproducible locally or deliberately CI
 |---|---|---|---|---|---|
 | U1 | Ddl unit + goldens | `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit --results-directory "$R\<step>" --logger "trx;LogFileName=U1.trx" --nologo` | all pass; after 1.1 no `UPDATE_GOLDENS` needed; §8.4 list 1.1 by name | 1.1, 3.1, pre-push | Run Unit Tests |
 | U2 | RelationalModel unit | `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit --results-directory "$R\<step>" --logger "trx;LogFileName=U2.trx" --nologo` | all pass, no golden changes | 1.1, pre-push | same |
-| U3 | Backend unit (seeder consumers) | `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit --filter "FullyQualifiedName~Given_MaterializedDocumentFixtureSeeder|FullyQualifiedName~Given_Compact_Descriptor_Fixture_Seeds" --results-directory "$R\<step>" --logger "trx;LogFileName=U3.trx" --nologo` (full project at pre-push) | `EdFi.DataManagementService.Backend.Tests.Unit.Given_MaterializedDocumentFixtureSeeder` and `…Given_Compact_Descriptor_Fixture_Seeds` by name | 2.1, pre-push | same |
+| U3 | Backend unit (seeder consumers) | `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit --filter "FullyQualifiedName~Given_MaterializedDocumentFixtureSeeder|FullyQualifiedName~Given_Compact_Descriptor_Fixture_Seeds" --results-directory "$R\<step>" --logger "trx;LogFileName=U3.trx" --nologo` (full project at pre-push) | `EdFi.DataManagementService.Backend.Tests.Unit.Given_MaterializedDocumentFixtureSeeder`, `…Given_Compact_Descriptor_Fixture_Seeds(Postgresql)`, and `…Given_Compact_Descriptor_Fixture_Seeds(Mssql)` by name, each independently | 2.1, pre-push | same |
 | U4 | All DMS unit projects | `./build-dms.ps1 UnitTest` with output redirected to `"$R\<step>\U4.log"` | no failing names beyond `baseline\failing-names.txt` (0.3) | 0.3 (baseline), pre-push | same |
 | I1 | PG backend integration, step fixtures | `dotnet test $PG --filter "<§8.4 PG filter for the step>" --results-directory "$R\<step>" --logger "trx;LogFileName=I1.trx" --nologo; Get-TrxFixtureCounts "$R\<step>\I1.trx" -ExpectedFixtures <§8.4 PG list>` | every listed fixture `Passed > 0`, `Failed = 0` | 2.1–2.7, 3.2 | PostgreSQL Integration lane |
 | I2 | PG backend integration, full | `dotnet test $PG --results-directory "$R\6.2" --logger "trx;LogFileName=I2.trx" --nologo` | healthy baseline ≈1144 passed / 0 failed (≈27 min); any failure classified against 0.3 | pre-push | same |
@@ -1089,9 +1118,10 @@ verified by `rg -l`; corrected in review 3)**
   `Given_Postgresql_DocumentCacheMaterializer_LinkBearingResource` (`PostgresqlDocumentCacheMaterializerLinkBearingResourceTests.cs`).
 - MSSQL: `Given_Mssql_DocumentCacheMaterializer_Fixtures` (`MssqlDocumentCacheMaterializerFixtureTests.cs`),
   `Given_Mssql_DocumentCacheMaterializer_LinkBearingResource` (`MssqlDocumentCacheMaterializerLinkBearingResourceTests.cs`).
-- Unit (U3, namespace `EdFi.DataManagementService.Backend.Tests.Unit`): `Given_MaterializedDocumentFixtureSeeder`
-  and `Given_Compact_Descriptor_Fixture_Seeds` (`CompactDescriptorFixtureSeedTests.cs`; it
-  references the seeder without naming `CreatedAt`).
+- Unit (U3, namespace `EdFi.DataManagementService.Backend.Tests.Unit`): `Given_MaterializedDocumentFixtureSeeder`,
+  `Given_Compact_Descriptor_Fixture_Seeds(Postgresql)`, and `Given_Compact_Descriptor_Fixture_Seeds(Mssql)`
+  (`CompactDescriptorFixtureSeedTests.cs`, a fixture parameterized by dialect; each instance is
+  required independently, see §8.2; it references the seeder without naming `CreatedAt`).
   The mirror-table document-cache and hydration fixtures previously listed here do not use the
   seeder; they belong to 2.7 only.
 

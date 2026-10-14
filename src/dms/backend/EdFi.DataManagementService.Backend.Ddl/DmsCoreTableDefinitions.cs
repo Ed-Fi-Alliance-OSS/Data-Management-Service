@@ -48,13 +48,6 @@ internal static class DmsCoreTableDefinitions
                     "DF_Document_ContentLastModifiedAt",
                     dialect.CurrentTimestampDefaultExpression
                 ),
-                new(
-                    Col("CreatedAt"),
-                    DateTimeType(dialect),
-                    IsNullable: false,
-                    "DF_Document_CreatedAt",
-                    dialect.CurrentTimestampDefaultExpression
-                ),
             ],
             [Col("DocumentId")]
         );

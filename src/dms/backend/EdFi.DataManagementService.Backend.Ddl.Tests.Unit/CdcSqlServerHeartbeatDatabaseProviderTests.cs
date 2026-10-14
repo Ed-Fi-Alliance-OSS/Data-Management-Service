@@ -360,7 +360,7 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
                 sql.Contains("@source_name = N'Document'")
                 && sql.Contains("@capture_instance = N'dms_binding_document'")
                 && sql.Contains(
-                    "@captured_column_list = N'[DocumentId], [DocumentUuid], [ResourceKeyId], [CreatedByOwnershipTokenId], [ContentVersion], [ContentLastModifiedAt], [CreatedAt]'"
+                    "@captured_column_list = N'[DocumentId], [DocumentUuid], [ResourceKeyId], [CreatedByOwnershipTokenId], [ContentVersion], [ContentLastModifiedAt]'"
                 )
             );
         enableCaptureSql
@@ -1611,6 +1611,90 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
         captureSql.Should().NotContain(ShortenedSqlServerManagedTableTestData.RawPhysicalSchema);
         captureSql.Should().NotContain(ShortenedSqlServerManagedTableTestData.RawTrackedChangeSchema);
         executor.ExecutedSql.Should().BeEmpty();
+    }
+}
+
+[TestFixture]
+public class Given_An_Existing_Seven_Column_Document_Capture_Instance
+{
+    private const string LegacyCapturedColumns =
+        "DocumentId,DocumentUuid,ResourceKeyId,CreatedByOwnershipTokenId,ContentVersion,ContentLastModifiedAt,CreatedAt";
+
+    private const string ExpectedCapturedColumns =
+        "DocumentId,DocumentUuid,ResourceKeyId,CreatedByOwnershipTokenId,ContentVersion,ContentLastModifiedAt";
+
+    private RecordingSqlServerCdcExecutor _executor = null!;
+    private CdcProviderSetupResult _result = null!;
+
+    [SetUp]
+    public async Task SetUp()
+    {
+        // The source inventory is the default, generated six-column one, so the source-inventory step adds no
+        // diagnostic and setup reaches capture-instance inspection. Only the existing capture instance is legacy.
+        _executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
+            captureJobPresent: true,
+            cleanupJobPresent: true,
+            captureInstances:
+            [
+                RecordingSqlServerCaptureInstance.Expected(CdcSourceTableKind.DocumentCache),
+                RecordingSqlServerCaptureInstance.Expected(
+                    CdcSourceTableKind.Document,
+                    capturedColumns: LegacyCapturedColumns.Split(',')
+                ),
+                RecordingSqlServerCaptureInstance.Expected(CdcSourceTableKind.CdcHeartbeat),
+            ]
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        _result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(
+                mode: CdcProviderSetupMode.ValidateOnly,
+                databaseExecutor: _executor
+            )
+        );
+    }
+
+    [Test]
+    public void It_fails_setup()
+    {
+        _result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+    }
+
+    [Test]
+    public void It_passes_the_source_inventory_and_reaches_capture_instance_inspection()
+    {
+        _result.Diagnostics.Should().NotContain(diagnostic => diagnostic.Code.StartsWith("CDC_SOURCE_"));
+        _executor.QueriedSql.Should().Contain(sql => sql.Contains("cdc:sqlserver:capture-instances"));
+    }
+
+    [Test]
+    public void It_reports_the_document_capture_instance_as_mismatched_seven_observed_six_expected()
+    {
+        _result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                && observation.SafeArtifactName.Value == "dms_binding_document"
+            )
+            .Which.Should()
+            .Match<CdcProviderArtifactObservation>(observation =>
+                observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues["captured_columns"] == LegacyCapturedColumns
+                && observation.SafeObservedValues["expected_captured_columns"] == ExpectedCapturedColumns
+                && observation.SafeObservedValues["captured_column_count"] == "7"
+            );
+        _result
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == "CDC_PROVIDER_ARTIFACT_MISMATCH"
+                && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+            );
+    }
+
+    [Test]
+    public void It_does_not_mutate_the_database()
+    {
+        _executor.ExecutedSql.Should().BeEmpty();
     }
 }
 

@@ -36,7 +36,6 @@ public static class DocumentCacheInventoryDefinition
         public static readonly DbColumnName CreatedByOwnershipTokenId = new("CreatedByOwnershipTokenId");
         public static readonly DbColumnName ContentVersion = new("ContentVersion");
         public static readonly DbColumnName ContentLastModifiedAt = new("ContentLastModifiedAt");
-        public static readonly DbColumnName CreatedAt = new("CreatedAt");
     }
 
     public static class ResourceKeyColumns

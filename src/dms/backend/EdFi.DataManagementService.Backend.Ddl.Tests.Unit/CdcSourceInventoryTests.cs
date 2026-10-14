@@ -337,10 +337,9 @@ public class Given_CoreDdlMetadata_For_CdcSourceInventory(SqlDialect dialect)
                 "ResourceKeyId",
                 "CreatedByOwnershipTokenId",
                 "ContentVersion",
-                "ContentLastModifiedAt",
-                "CreatedAt"
+                "ContentLastModifiedAt"
             );
-        document.Columns.Select(column => column.Ordinal).Should().Equal(Enumerable.Range(1, 7));
+        document.Columns.Select(column => column.Ordinal).Should().Equal(Enumerable.Range(1, 6));
         document
             .Columns.Single(column => column.ColumnName.Value == "CreatedByOwnershipTokenId")
             .IsNullable.Should()
@@ -578,6 +577,72 @@ public class Given_CdcSourceInventoryValidator
             providerDataType ?? column.ProviderDataType,
             column.IsNullable
         );
+}
+
+[TestFixture]
+public class Given_A_Legacy_Seven_Column_Document_Inventory
+{
+    private IReadOnlyList<CdcProviderDiagnostic> _diagnostics = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var expected = CdcSourceInventoryTestEmission.EmitCoreCdcSourceInventory(SqlDialect.Pgsql);
+
+        // A database provisioned before the column was dropped still carries CreatedAt as its seventh column.
+        var observed = expected
+            .Select(table =>
+            {
+                if (table.TableKind != CdcSourceTableKind.Document)
+                {
+                    return table;
+                }
+
+                var survivingColumns = table
+                    .Columns.Where(column => column.ColumnName.Value != "CreatedAt")
+                    .ToArray();
+
+                return new CdcSourceTableInventory(
+                    table.TableKind,
+                    table.TableName,
+                    table.EmittedQuotedTableName,
+                    [
+                        .. survivingColumns,
+                        new CdcSourceColumnInventory(
+                            new DbColumnName("CreatedAt"),
+                            @"""CreatedAt""",
+                            survivingColumns.Length + 1,
+                            "timestamp with time zone",
+                            IsNullable: false
+                        ),
+                    ]
+                );
+            })
+            .ToArray();
+
+        _diagnostics = CdcSourceInventoryValidator.ValidateLiveSourceInventory(expected, observed);
+    }
+
+    [Test]
+    public void It_reports_created_at_as_unexpected()
+    {
+        _diagnostics
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Match<CdcProviderDiagnostic>(diagnostic =>
+                diagnostic.Code == "CDC_SOURCE_COLUMN_UNEXPECTED"
+                && diagnostic.ArtifactKind == CdcProviderArtifactKind.SourceColumn
+                && diagnostic.SafeName.Value == "dms.Document.CreatedAt"
+                && diagnostic.Classification == CdcProviderRetryContinuityClassification.FailClosed
+            );
+    }
+
+    [Test]
+    public void It_does_not_report_an_order_mismatch_for_the_surviving_columns()
+    {
+        _diagnostics.Should().NotContain(diagnostic => diagnostic.Code == "CDC_SOURCE_COLUMN_ORDER_MISMATCH");
+    }
 }
 
 internal static class CdcSourceInventoryTestEmission
