@@ -178,7 +178,7 @@ $BaseEnvironmentFile = [IO.Path]::GetFullPath($BaseEnvironmentFile)
 # the container's own listening port as well as the host's - so what the base declares is what the
 # deployment takes, and the preflight has to guard exactly those.
 $baseEnvironment = ReadValuesFromEnvFile $BaseEnvironmentFile
-$portKey = @('DMS_HTTP_PORTS', 'DMS_CONFIG_ASPNETCORE_HTTP_PORTS', 'POSTGRES_PORT')
+$portKey = @('DMS_HTTP_PORTS', 'CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS', 'POSTGRES_PORT')
 $portVerdict = Test-ProofPort -EnvironmentValue $baseEnvironment -Key $portKey
 
 if (-not $portVerdict.Valid) {
@@ -187,7 +187,7 @@ if (-not $portVerdict.Valid) {
 }
 
 $dmsPort = $portVerdict.Port['DMS_HTTP_PORTS']
-$configurationServicePort = $portVerdict.Port['DMS_CONFIG_ASPNETCORE_HTTP_PORTS']
+$configurationServicePort = $portVerdict.Port['CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS']
 $requiredPort = @($portKey | ForEach-Object { $portVerdict.Port[$_] })
 
 # The path base the stack serves under, so the addresses this run requests are the ones it exposes

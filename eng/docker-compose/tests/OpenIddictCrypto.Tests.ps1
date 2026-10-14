@@ -36,7 +36,7 @@ Describe "OpenIddict SQL Server signing-key insert command" {
     }
 
     It "escapes a single quote in the encryption key instead of emitting invalid PostgreSQL" {
-        # A configured DMS_CONFIG_IDENTITY_ENCRYPTION_KEY may legitimately contain a single quote.
+        # A configured CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY may legitimately contain a single quote.
         # Pasted between bare quotes it closes the literal early, psql rejects the whole INSERT, and
         # the mandatory signing-key replacement fails before CMS can mint a token.
         $encryptionKey = "Identity'Encryption;Key"
@@ -530,7 +530,7 @@ Describe "OpenIddict PostgreSQL client provisioning from configured values" {
     }
 
     It "escapes a configured client id containing a single quote in both statements that carry it" {
-        # CONFIG_SERVICE_CLIENT_ID is a supported override. Pasted between bare quotes it closes its
+        # DMS_CONFIGURATION_SERVICE_CLIENT_ID is a supported override. Pasted between bare quotes it closes its
         # literal, psql rejects the INSERT, and the restore leaves DMS unable to authenticate to CMS.
         $sql = Invoke-InsertDataCapture -Parameter @{ NewClientId = "CMS'ReadOnly" }
 
@@ -549,7 +549,7 @@ Describe "OpenIddict PostgreSQL client provisioning from configured values" {
     }
 
     It "escapes a configured scope containing a single quote everywhere it lands" {
-        # CONFIG_SERVICE_CLIENT_SCOPE is a supported override as well, and it reaches three separate
+        # DMS_CONFIGURATION_SERVICE_CLIENT_SCOPE is a supported override as well, and it reaches three separate
         # statements: the scope insert, the scope lookup, and the permissions update.
         $sql = Invoke-InsertDataCapture -Parameter @{ ClientScopeName = "edfi_admin_api/read'only" }
 

@@ -14,6 +14,11 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 [ -f .env ] || { echo "ERROR: .env not found. Copy .env.example to .env and customize."; exit 1; }
 
+# Name any retired variable before Compose fails on its missing replacement.
+# shellcheck source=legacy-env-warning.sh
+source ./legacy-env-warning.sh
+warn_legacy_env_names .env
+
 # Refuse to deploy the .env.example placeholder secrets: they satisfy the complexity checks,
 # so nothing downstream would reject them, and 443 is Internet-open on the VM.
 if grep -qE '=.*CHANGEME' .env; then

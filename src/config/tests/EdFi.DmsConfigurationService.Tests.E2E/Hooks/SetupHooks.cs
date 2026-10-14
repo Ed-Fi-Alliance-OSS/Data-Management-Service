@@ -44,7 +44,7 @@ public static class SetupHooks
 
     private static bool UseMssql =>
         string.Equals(
-            Environment.GetEnvironmentVariable("DMS_CONFIG_DATASTORE"),
+            Environment.GetEnvironmentVariable("CONFIGURATION_SERVICE_DATASTORE"),
             "mssql",
             StringComparison.OrdinalIgnoreCase
         );
@@ -55,7 +55,7 @@ public static class SetupHooks
     [BeforeScenario("SelfContainedOnly")]
     public static void SkipUnlessSelfContainedIdentityProvider()
     {
-        var identityProvider = Environment.GetEnvironmentVariable("DMS_CONFIG_IDENTITY_PROVIDER");
+        var identityProvider = Environment.GetEnvironmentVariable("CONFIGURATION_SERVICE_IDENTITY_PROVIDER");
         if (
             !string.IsNullOrEmpty(identityProvider)
             && !identityProvider.Equals("self-contained", StringComparison.OrdinalIgnoreCase)
@@ -74,7 +74,9 @@ public static class SetupHooks
     {
         if (!KeycloakCharacterizationEnvironment.IsKeycloakProvider)
         {
-            var identityProvider = Environment.GetEnvironmentVariable("DMS_CONFIG_IDENTITY_PROVIDER");
+            var identityProvider = Environment.GetEnvironmentVariable(
+                "CONFIGURATION_SERVICE_IDENTITY_PROVIDER"
+            );
             Assert.Ignore(
                 $"Requires the keycloak identity provider; current provider is '{identityProvider ?? "unset"}'."
             );
@@ -113,12 +115,12 @@ public static class SetupHooks
     [BeforeScenario("MultitenantOnly")]
     public static void SkipUnlessMultiTenancyEnabled()
     {
-        var multiTenancy = Environment.GetEnvironmentVariable("DMS_CONFIG_MULTI_TENANCY");
+        var multiTenancy = Environment.GetEnvironmentVariable("CONFIGURATION_SERVICE_MULTI_TENANCY");
         if (!string.Equals(multiTenancy, "true", StringComparison.OrdinalIgnoreCase))
         {
             Assert.Ignore(
                 "Requires a multi-tenant CMS (tenant endpoints are only mapped when multi-tenancy is enabled); "
-                    + $"DMS_CONFIG_MULTI_TENANCY is '{multiTenancy ?? "unset"}'."
+                    + $"CONFIGURATION_SERVICE_MULTI_TENANCY is '{multiTenancy ?? "unset"}'."
             );
         }
     }
@@ -128,10 +130,12 @@ public static class SetupHooks
     [BeforeScenario("SingleTenantOnly")]
     public static void SkipIfMultiTenancyEnabled()
     {
-        var multiTenancy = Environment.GetEnvironmentVariable("DMS_CONFIG_MULTI_TENANCY");
+        var multiTenancy = Environment.GetEnvironmentVariable("CONFIGURATION_SERVICE_MULTI_TENANCY");
         if (string.Equals(multiTenancy, "true", StringComparison.OrdinalIgnoreCase))
         {
-            Assert.Ignore($"Requires a single-tenant CMS; DMS_CONFIG_MULTI_TENANCY is '{multiTenancy}'.");
+            Assert.Ignore(
+                $"Requires a single-tenant CMS; CONFIGURATION_SERVICE_MULTI_TENANCY is '{multiTenancy}'."
+            );
         }
     }
 

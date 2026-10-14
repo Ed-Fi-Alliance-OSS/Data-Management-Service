@@ -117,7 +117,7 @@ ls ~/dms-src/eng/azure-vm/compose/.bootstrap/ApiSchema/*.json   # sanity: should
 > ```bash
 > cd ~/dms-src/eng/azure-vm/compose
 > cp .env.example .env
-> sed -i -e 's/^DMS_CONFIG_DATA_STANDARD_VERSION=.*/DMS_CONFIG_DATA_STANDARD_VERSION=6.1/' \
+> sed -i -e 's/^CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=.*/CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=6.1/' \
 >   -e 's/^DATABASE_TEMPLATE_PACKAGE_ID=.*/DATABASE_TEMPLATE_PACKAGE_ID=EdFi.Api.Populated.Template.PostgreSql.6.1.0/' .env
 > ```
 
@@ -128,12 +128,12 @@ pwsh ../provision/setup-env.ps1 -PublicHost <FQDN> -LetsEncryptEmail you@org.tld
 ```
 
 Generates `.env` (secrets, locked to `0600`), obtains the TLS cert, starts PostgreSQL + Keycloak +
-both Config Services + gateway, and runs `bootstrap.ps1` (Keycloak realm/clients, tenants, CMS
+both Configuration Services + gateway, and runs `bootstrap.ps1` (Keycloak realm/clients, tenants, the Configuration Service
 data stores, and 15 review apps: one full-access `EdFiSandbox` app plus the four claim-set
 variants per deployment). **Record the API key/secret pairs it prints** into your private vault.
 It deliberately does **not** start the DMS.
 
-> Don't use `localhost` as the FQDN — CMS calls the public host from inside its container. A
+> Don't use `localhost` as the FQDN — the Configuration Service calls the public host from inside its container. A
 > real FQDN (Let's Encrypt) is the tested path.
 
 ## Part E — Seed all three data databases  [bash]

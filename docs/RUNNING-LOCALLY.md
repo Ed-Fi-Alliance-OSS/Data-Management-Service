@@ -103,7 +103,7 @@ Visual Studio. The file name is
 
 The `EdFi.DataManagementService.Tests.Integration` project boots the real DMS
 HTTP pipeline against a provisioned PostgreSQL and/or SQL Server database,
-with auth/CMS/profile-catalog/application-context faked. See
+with auth/Configuration Service/profile-catalog/application-context faked. See
 [`src/dms/tests/EdFi.DataManagementService.Tests.Integration/README.md`](../src/dms/tests/EdFi.DataManagementService.Tests.Integration/README.md)
 for the fixture map, runtime-compatibility materialization details, and the
 recipe for adding a scenario.

@@ -1383,7 +1383,7 @@ Describe 'CDC API E2E private preparation and ownership' {
         $inputs.Values.CDC_DATABASE_PASSWORD | Should -Be $inputs.ConnectorPassword
         $inputs.Values.CDC_WORKER_HEAP_MIB | Should -Be 1024
         $base = Get-Content (Join-Path $inputs.Local 'dms-base.json') -Raw | ConvertFrom-Json
-        $base.ConfigurationServiceSettings.ClientSecret | Should -Be $inputs.Values.CONFIG_SERVICE_CLIENT_SECRET
+        $base.ConfigurationServiceSettings.ClientSecret | Should -Be $inputs.Values.DMS_CONFIGURATION_SERVICE_CLIENT_SECRET
         $connection = [System.Data.Common.DbConnectionStringBuilder]::new()
         $connection.set_ConnectionString((Get-Content $inputs.InputPath -Raw).Trim())
         $connection['database'] | Should -Be $inputs.Database

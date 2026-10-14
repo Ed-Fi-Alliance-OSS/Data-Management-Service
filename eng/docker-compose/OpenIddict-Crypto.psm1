@@ -338,7 +338,7 @@ function New-ClientSecretUpdateSql {
 
         # Quoted by ConvertTo-PostgresSqlLiteral rather than pasted between bare quotes, matching
         # every other PostgreSQL literal this module and setup-openiddict.ps1 emit: the client id is
-        # a configured value (CONFIG_SERVICE_CLIENT_ID) and one carrying a single quote would close
+        # a configured value (DMS_CONFIGURATION_SERVICE_CLIENT_ID) and one carrying a single quote would close
         # its literal and make the statement invalid.
         $hashedSecretLiteral = ConvertTo-PostgresSqlLiteral -Value $hashedSecret
         $clientIdLiteral = ConvertTo-PostgresSqlLiteral -Value $ClientId

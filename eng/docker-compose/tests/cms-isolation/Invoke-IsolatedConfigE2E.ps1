@@ -66,25 +66,25 @@ $sourceEnvironmentFile = [System.IO.Path]::GetFullPath($sourceEnvironmentFile)
 
 # The isolated identity: none of it may equal a name or port the stock stack uses.
 $isolation = [ordered]@{
-    CMS_COMPOSE_PROJECT = "cms-e2e-isolated"
-    CMS_COMPOSE_NETWORK = "cms-e2e-isolated"
-    CMS_COMPOSE_OVERLAY_FILES = "tests/cms-isolation/cms-e2e-isolation.yml"
-    CMS_POSTGRES_CONTAINER = "cms-e2e-isolated-db"
-    CMS_MSSQL_CONTAINER = "cms-e2e-isolated-db"
-    CMS_KEYCLOAK_CONTAINER = "cms-e2e-isolated-keycloak"
-    CMS_CONFIG_CONTAINER = "cms-e2e-isolated-config"
+    CONFIGURATION_SERVICE_COMPOSE_PROJECT = "cms-e2e-isolated"
+    CONFIGURATION_SERVICE_COMPOSE_NETWORK = "cms-e2e-isolated"
+    CONFIGURATION_SERVICE_COMPOSE_OVERLAY_FILES = "tests/cms-isolation/cms-e2e-isolation.yml"
+    CONFIGURATION_SERVICE_POSTGRES_CONTAINER = "cms-e2e-isolated-db"
+    CONFIGURATION_SERVICE_MSSQL_CONTAINER = "cms-e2e-isolated-db"
+    CONFIGURATION_SERVICE_KEYCLOAK_CONTAINER = "cms-e2e-isolated-keycloak"
+    CONFIGURATION_SERVICE_CONTAINER = "cms-e2e-isolated-config"
     # The Configuration Service listens on the same port inside and outside its container, as the
     # stock stack does: it fetches its own OpenAPI document from the request's host and port.
-    DMS_CONFIG_ASPNETCORE_HTTP_PORTS = "8191"
+    CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS = "8191"
     SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT = "http://localhost:8191/connect/token"
     SELF_CONTAINED_DMS_JWT_AUTHORITY = "http://ed-fi-api-config:8191"
     SELF_CONTAINED_DMS_JWT_METADATA_ADDRESS = "http://ed-fi-api-config:8191/.well-known/openid-configuration"
-    DMS_CONFIG_IDENTITY_AUTHORITY = "http://ed-fi-api-config:8191"
-    CMS_E2E_API_URL = "http://localhost:8191"
+    CONFIGURATION_SERVICE_IDENTITY_AUTHORITY = "http://ed-fi-api-config:8191"
+    CONFIGURATION_SERVICE_E2E_API_URL = "http://localhost:8191"
     POSTGRES_PORT = "5536"
     MSSQL_PORT = "1536"
     KEYCLOAK_PORT = "8145"
-    DMS_CONFIG_DOCKER_IMAGE = "ed-fi-api-config-cms-e2e-isolated"
+    CONFIGURATION_SERVICE_DOCKER_IMAGE = "ed-fi-api-config-cms-e2e-isolated"
 }
 
 $derivedDirectory = Join-Path $composeDirectory ".derived"
@@ -149,12 +149,12 @@ try {
         }
 
         if ($downExitCode -ne 0) {
-            throw "Removing the isolated stack (project $($isolation.CMS_COMPOSE_PROJECT)) failed with exit code $downExitCode; it may still be running. Remove it with start-local-config.ps1 -d -v -EnvironmentFile $derivedEnvironmentFile."
+            throw "Removing the isolated stack (project $($isolation.CONFIGURATION_SERVICE_COMPOSE_PROJECT)) failed with exit code $downExitCode; it may still be running. Remove it with start-local-config.ps1 -d -v -EnvironmentFile $derivedEnvironmentFile."
         }
 
         # Every compose file declares this network external, so compose down leaves it and this is the
         # only removal. Its failure is not fatal: the network holds no data, and the next run reuses it.
-        & docker network rm $isolation.CMS_COMPOSE_NETWORK *> $null
+        & docker network rm $isolation.CONFIGURATION_SERVICE_COMPOSE_NETWORK *> $null
         $global:LASTEXITCODE = 0
     }
 
@@ -181,7 +181,7 @@ try {
             $derivedValues[$Matches.Key] = $Matches.Value
         }
     }
-    $datastore = if ($derivedValues["DMS_CONFIG_DATASTORE"]) { $derivedValues["DMS_CONFIG_DATASTORE"] } else { "postgresql" }
+    $datastore = if ($derivedValues["CONFIGURATION_SERVICE_DATASTORE"]) { $derivedValues["CONFIGURATION_SERVICE_DATASTORE"] } else { "postgresql" }
     $expectedDbTarget = if ($datastore -eq "mssql") {
         "mssql localhost:$($isolation.MSSQL_PORT)/$($derivedValues["POSTGRES_DB_NAME"])"
     }
@@ -191,11 +191,11 @@ try {
 
     # The values the suite's hooks read, as build-config.ps1 will export them for the run itself.
     Set-HarnessVariable -Name POSTGRES_DB_NAME -Value $derivedValues["POSTGRES_DB_NAME"]
-    Set-HarnessVariable -Name DMS_CONFIG_DATASTORE -Value $datastore
-    Set-HarnessVariable -Name CMS_E2E_PREFLIGHT_API_URL -Value $isolation.CMS_E2E_API_URL
-    Set-HarnessVariable -Name CMS_E2E_PREFLIGHT_DB_TARGET -Value $expectedDbTarget
+    Set-HarnessVariable -Name CONFIGURATION_SERVICE_DATASTORE -Value $datastore
+    Set-HarnessVariable -Name CONFIGURATION_SERVICE_E2E_PREFLIGHT_API_URL -Value $isolation.CONFIGURATION_SERVICE_E2E_API_URL
+    Set-HarnessVariable -Name CONFIGURATION_SERVICE_E2E_PREFLIGHT_DB_TARGET -Value $expectedDbTarget
 
-    if ($derivedValues["CMS_CONFIG_CONTAINER"] -ne $isolation.CMS_CONFIG_CONTAINER) {
+    if ($derivedValues["CONFIGURATION_SERVICE_CONTAINER"] -ne $isolation.CONFIGURATION_SERVICE_CONTAINER) {
         throw "The derived environment file does not name the isolated Configuration Service container; refusing to run."
     }
 
@@ -226,7 +226,7 @@ try {
                 throw "The target preflight test $name did not execute and pass for $($assembly.FullName). Refusing to run."
             }
         }
-        Write-Output "Target preflight passed for $($assembly.FullName): requests go to $($isolation.CMS_E2E_API_URL), cleanup targets $expectedDbTarget."
+        Write-Output "Target preflight passed for $($assembly.FullName): requests go to $($isolation.CONFIGURATION_SERVICE_E2E_API_URL), cleanup targets $expectedDbTarget."
     }
 
     if ($PreflightOnly) {
@@ -257,7 +257,7 @@ try {
     finally {
         Pop-Location
         if ($KeepStack) {
-            Write-Output "Isolated stack left running (project $($isolation.CMS_COMPOSE_PROJECT))."
+            Write-Output "Isolated stack left running (project $($isolation.CONFIGURATION_SERVICE_COMPOSE_PROJECT))."
         }
         elseif ($exitCode -eq 0) {
             Remove-IsolatedStack

@@ -9,7 +9,7 @@ two applications:
 1. The Ed-Fi API (the Data Management Service, or "DMS", as the internal codebase
    name), a functional implementation of the Ed-Fi Resources API, Ed-Fi Descriptors
    API, and Ed-Fi Discovery API specifications.
-2. The Ed-Fi API Configuration Service (internally, the DMS Configuration Service),
+2. The Ed-Fi API Configuration Service (the Configuration Service for short),
    a functional implementation of the Ed-Fi Management API specification.
 
 These applications replace the legacy Ed-Fi ODS/API and Ed-Fi ODS Admin API

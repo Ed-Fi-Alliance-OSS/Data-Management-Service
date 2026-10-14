@@ -5,7 +5,7 @@
 
 # Regression coverage for DMS-1171: the local startup scripts must register the CMS
 # identity clients with the same secrets DMS/CMS authenticate with, so that overriding
-# CONFIG_SERVICE_CLIENT_SECRET (or DMS_CONFIG_IDENTITY_CLIENT_SECRET) does not produce a
+# DMS_CONFIGURATION_SERVICE_CLIENT_SECRET (or CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET) does not produce a
 # secret mismatch that breaks CMS token acquisition.
 
 BeforeAll {
@@ -16,20 +16,20 @@ BeforeAll {
 
 Describe "Resolve-IdentityClientSecretConfiguration" {
     Context "when env-file values are provided" {
-        It "returns CONFIG_SERVICE_CLIENT_SECRET for the CMSReadOnlyAccess client" {
-            $result = Resolve-IdentityClientSecretConfiguration -EnvValues @{ CONFIG_SERVICE_CLIENT_SECRET = "OverrideReadOnly1234567890!Abcd" }
+        It "returns DMS_CONFIGURATION_SERVICE_CLIENT_SECRET for the CMSReadOnlyAccess client" {
+            $result = Resolve-IdentityClientSecretConfiguration -EnvValues @{ DMS_CONFIGURATION_SERVICE_CLIENT_SECRET = "OverrideReadOnly1234567890!Abcd" }
             $result.CmsReadOnlyAccessClientSecret | Should -Be "OverrideReadOnly1234567890!Abcd"
         }
 
-        It "returns DMS_CONFIG_IDENTITY_CLIENT_SECRET for the DmsConfigurationService client" {
-            $result = Resolve-IdentityClientSecretConfiguration -EnvValues @{ DMS_CONFIG_IDENTITY_CLIENT_SECRET = "OverrideFullAccess123456789!Abcd" }
+        It "returns CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET for the DmsConfigurationService client" {
+            $result = Resolve-IdentityClientSecretConfiguration -EnvValues @{ CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET = "OverrideFullAccess123456789!Abcd" }
             $result.DmsConfigurationServiceClientSecret | Should -Be "OverrideFullAccess123456789!Abcd"
         }
 
         It "resolves both clients independently" {
             $result = Resolve-IdentityClientSecretConfiguration -EnvValues @{
-                CONFIG_SERVICE_CLIENT_SECRET     = "ReadOnlySecret1234567890!Abcdef"
-                DMS_CONFIG_IDENTITY_CLIENT_SECRET = "FullAccessSecret1234567890!Abcd"
+                DMS_CONFIGURATION_SERVICE_CLIENT_SECRET     = "ReadOnlySecret1234567890!Abcdef"
+                CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET = "FullAccessSecret1234567890!Abcd"
             }
             $result.CmsReadOnlyAccessClientSecret | Should -Be "ReadOnlySecret1234567890!Abcdef"
             $result.DmsConfigurationServiceClientSecret | Should -Be "FullAccessSecret1234567890!Abcd"
@@ -37,8 +37,8 @@ Describe "Resolve-IdentityClientSecretConfiguration" {
 
         It "resolves custom client-secret length bounds from the env file" {
             $result = Resolve-IdentityClientSecretConfiguration -EnvValues @{
-                DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH = "10"
-                DMS_CONFIG_IDENTITY_CLIENT_SECRET_MAXIMUM_LENGTH = "200"
+                CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH = "10"
+                CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET_MAXIMUM_LENGTH = "200"
             }
             $result.ClientSecretMinimumLength | Should -Be 10
             $result.ClientSecretMaximumLength | Should -Be 200
@@ -53,7 +53,7 @@ Describe "Resolve-IdentityClientSecretConfiguration" {
         }
 
         It "treats a whitespace-only value as missing" {
-            $result = Resolve-IdentityClientSecretConfiguration -EnvValues @{ CONFIG_SERVICE_CLIENT_SECRET = "   " }
+            $result = Resolve-IdentityClientSecretConfiguration -EnvValues @{ DMS_CONFIGURATION_SERVICE_CLIENT_SECRET = "   " }
             $result.CmsReadOnlyAccessClientSecret | Should -Be $script:defaultSecret
         }
 
@@ -83,8 +83,8 @@ Describe "Start scripts register identity clients with env-file secrets" {
         # A presence-only check (does the line contain -NewClientSecret?) is not enough: it would
         # still pass with a hard-coded value, with the same secret reused for both clients, or with
         # the two resolved secrets swapped. Assert the exact resolved property each client requires:
-        #   - CMSReadOnlyAccess           -> CmsReadOnlyAccessClientSecret        (CONFIG_SERVICE_CLIENT_SECRET)
-        #   - DmsConfigurationService     -> DmsConfigurationServiceClientSecret  (DMS_CONFIG_IDENTITY_CLIENT_SECRET)
+        #   - CMSReadOnlyAccess           -> CmsReadOnlyAccessClientSecret        (DMS_CONFIGURATION_SERVICE_CLIENT_SECRET)
+        #   - DmsConfigurationService     -> DmsConfigurationServiceClientSecret  (CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET)
         #   - CMSAuthMetadataReadOnlyAccess has no dedicated env-file secret and keeps the default.
         # Both operator-secret clients must also pass the env-file length bounds so a CMS-valid
         # secret is not rejected by the setup scripts' default 32/128 validation.
@@ -103,13 +103,13 @@ Describe "Start scripts register identity clients with env-file secrets" {
                 $line | Should -Not -Match '\$identityClientSecrets\.' -Because "CMSAuthMetadataReadOnlyAccess has no dedicated env-file secret: $line"
             }
             elseif ($line -match '-NewClientId\s+"CMSReadOnlyAccess"') {
-                $line | Should -Match '-NewClientSecret\s+\$identityClientSecrets\.CmsReadOnlyAccessClientSecret\b' -Because "CMSReadOnlyAccess must register CONFIG_SERVICE_CLIENT_SECRET: $line"
+                $line | Should -Match '-NewClientSecret\s+\$identityClientSecrets\.CmsReadOnlyAccessClientSecret\b' -Because "CMSReadOnlyAccess must register DMS_CONFIGURATION_SERVICE_CLIENT_SECRET: $line"
                 $line | Should -Match $minBoundPattern -Because "CMSReadOnlyAccess must validate with the env-file minimum length: $line"
                 $line | Should -Match $maxBoundPattern -Because "CMSReadOnlyAccess must validate with the env-file maximum length: $line"
             }
             else {
                 # No -NewClientId => the default DmsConfigurationService (full_access) client.
-                $line | Should -Match '-NewClientSecret\s+\$identityClientSecrets\.DmsConfigurationServiceClientSecret\b' -Because "DmsConfigurationService must register DMS_CONFIG_IDENTITY_CLIENT_SECRET: $line"
+                $line | Should -Match '-NewClientSecret\s+\$identityClientSecrets\.DmsConfigurationServiceClientSecret\b' -Because "DmsConfigurationService must register CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET: $line"
                 $line | Should -Match $minBoundPattern -Because "DmsConfigurationService must validate with the env-file minimum length: $line"
                 $line | Should -Match $maxBoundPattern -Because "DmsConfigurationService must validate with the env-file maximum length: $line"
             }
@@ -142,7 +142,7 @@ Describe "Start scripts pass the resolved database identity and role names to th
         # resolves to. Removed rather than blanked: a blank ambient value is not the same thing as
         # an absent one.
         $script:ambientBackup = @{}
-        foreach ($key in @("POSTGRES_USER", "DMS_CONFIG_IDENTITY_SERVICE_ROLE", "DMS_CONFIG_IDENTITY_CLIENT_ROLE")) {
+        foreach ($key in @("POSTGRES_USER", "CONFIGURATION_SERVICE_IDENTITY_SERVICE_ROLE", "CONFIGURATION_SERVICE_IDENTITY_CLIENT_ROLE")) {
             $script:ambientBackup[$key] = [System.Environment]::GetEnvironmentVariable($key)
             if (Test-Path -LiteralPath "Env:\$key") { Remove-Item -LiteralPath "Env:\$key" }
         }
@@ -246,7 +246,7 @@ Describe "Start scripts pass the resolved database identity and role names to th
             envValues      = @{ POSTGRES_USER = "northridge_super" }
         }
         $resolved.DbUser | Should -Be "northridge_super"
-        $resolved.DbName | Should -Be "ENV:DMS_CONFIG_DATABASE_NAME" -Because "the CMS database seam must be unchanged"
+        $resolved.DbName | Should -Be "ENV:CONFIGURATION_SERVICE_DATABASE_NAME" -Because "the CMS database seam must be unchanged"
     }
 
     It "keeps the postgres default when POSTGRES_USER is unset in <Name>" -ForEach $dmsCases {
@@ -293,8 +293,8 @@ Describe "Start scripts pass the resolved database identity and role names to th
         # DMS unable to read claim sets.
         $resolved = Get-ResolvedAssignment -ScriptPath $ScriptPath -VariableName "identityRoleParams" -Variable @{
             envValues = @{
-                DMS_CONFIG_IDENTITY_SERVICE_ROLE = "cms-operator"
-                DMS_CONFIG_IDENTITY_CLIENT_ROLE  = "dms-operator"
+                CONFIGURATION_SERVICE_IDENTITY_SERVICE_ROLE = "cms-operator"
+                CONFIGURATION_SERVICE_IDENTITY_CLIENT_ROLE  = "dms-operator"
             }
         }
         $resolved.ConfigServiceRole | Should -Be "cms-operator"

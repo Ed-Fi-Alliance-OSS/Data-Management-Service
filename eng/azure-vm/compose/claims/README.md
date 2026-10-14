@@ -6,7 +6,7 @@ can touch and under which authorization strategy.
 
 ## Built-in (embedded) claim sets
 
-Available out of the box (`DMS_CONFIG_CLAIMS_SOURCE=Embedded`). Confirm the live list with
+Available out of the box (`CONFIGURATION_SERVICE_CLAIMS_SOURCE=Embedded`). Confirm the live list with
 `GET /<config>/v3/claimSets`:
 
 | Claim set | Authorization |
@@ -37,14 +37,14 @@ assessments), and `EdFiSandbox` at `255901`. Add them to an older environment wi
 
 Two ways:
 
-1. **API (recommended, no restart):** the Configuration Service exposes full CRUD —
+1. **API (recommended, no restart):** The Configuration Service exposes full CRUD —
    `POST /v3/claimSets`, `PUT/DELETE /v3/claimSets/{id}`, `POST /v3/claimSets/copy`,
    `POST /v3/claimSets/import`, and `GET /v3/claimSets/{id}/export`. Easiest path:
-   `export` an existing claim set as a template, edit, then `import`/`POST` it. Use a CMS
+   `export` an existing claim set as a template, edit, then `import`/`POST` it. Use a Configuration Service
    admin token (see `http/multi-tenant.http`).
 
-2. **File-based:** set `DMS_CONFIG_CLAIMS_SOURCE=Hybrid` in `.env` and drop custom claim set
-   fragments in this directory (mounted into both Config Services at `/app/additional-claims`).
+2. **File-based:** set `CONFIGURATION_SERVICE_CLAIMS_SOURCE=Hybrid` in `.env` and drop custom claim set
+   fragments in this directory (mounted into both Configuration Services at `/app/additional-claims`).
    Each file must be named `*-claimset.json` and hold `{ "name": "<ClaimSetName>",
    "resourceClaims": [ ... ] }` — see the "A fragment that defines a claim set" example in
    `docs/CLAIMS-LOADING-GUIDE.md`. Its resource claims must not be `"isParent": true`: a fragment
@@ -60,4 +60,4 @@ Two ways:
 > step 3 exports the API-created ones first and Part C imports them back.
 
 > Keep this directory free of partial/invalid fragments while in Hybrid mode — a malformed
-> claim set can fail CMS startup. Files not named `*-claimset.json` (like this README) are ignored.
+> claim set can fail Configuration Service startup. Files not named `*-claimset.json` (like this README) are ignored.

@@ -121,6 +121,28 @@ Commands are labeled **[bash]** (WSL shell) or **[pwsh]** (`pwsh` inside WSL) an
 cd ~/dms-src && git status --short --untracked-files=no | grep -v 'packages\.lock\.json$'   # expect no output
 ```
 
+A `.env` created before the Configuration Service variable rename still uses `DMS_CONFIG_*` and `CONFIG_SERVICE_*` names, which Compose no longer reads.
+`update.sh` names each one it finds, but rename them before running it below, or the stack fails to start (see [Migrating from the earlier variable names](../../../docs/CONFIGURATION.md#migrating-from-the-earlier-variable-names)).
+This renames each assignment in place, including `export` and indented spellings, and changes only the name before `=`: every value stays as it is, including the database encryption key and the client secrets.
+It first deletes the assignments of settings this stack has no replacement for, so the rename cannot turn them into names nothing reads: the claims, reset-endpoint, and scope settings the Configuration Service no longer reads, and `DMS_CONFIG_IDENTITY_ENCRYPTION_KEY`, whose replacement only self-contained OpenIddict reads.
+The `grep` should print nothing; any line it prints is an assignment or a `$` reference the rename did not cover, so fix that line by hand before updating:
+
+```bash
+cd ~/dms-src/eng/azure-vm/compose && cp -p .env .env.before-rename &&
+  sed -i -E \
+    -e '/^[[:space:]]*(export[[:space:]]+)?DMS_CONFIG_(IDENTITY_ENCRYPTION_KEY|USE_EMBEDDED_BASE_CLAIMS|CLAIMS_PATH|USE_CLAIMS_PATH|DANGEROUSLY_ENABLE_DYNAMIC_CLAIMS_LOADING|ENABLE_APPLICATION_RESET_ENDPOINT|IDENTITY_SCOPE)[[:space:]]*=/d' \
+    -e 's/^([[:space:]]*(export[[:space:]]+)?)DMS_CONFIG_ENABLE_CLAIMS_RELOAD([[:space:]]*=)/\1CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING\3/' \
+    -e 's/^([[:space:]]*(export[[:space:]]+)?)DMS_CONFIG_([A-Za-z0-9_]+[[:space:]]*=)/\1CONFIGURATION_SERVICE_\3/' \
+    -e 's/^([[:space:]]*(export[[:space:]]+)?)CONFIG_SERVICE_([A-Za-z0-9_]+[[:space:]]*=)/\1DMS_CONFIGURATION_SERVICE_\3/' \
+    .env
+grep -nE '^[[:space:]]*(export[[:space:]]+)?(DMS_CONFIG_|CONFIG_SERVICE_)[A-Za-z0-9_]*[[:space:]]*=|\$\{?(DMS_CONFIG_|CONFIG_SERVICE_)' \
+  ~/dms-src/eng/azure-vm/compose/.env
+```
+
+Comments are left unchanged.
+`cp -p` keeps the owner-only mode, because `.env.before-rename` holds the secrets too; delete it once the stack is healthy.
+If the update below fails, copy it back over `.env` before running the previous build again.
+
 ```bash
 cd ~/dms-src && git restore -- '*packages.lock.json' &&
   git fetch --force --tags origin && git switch --detach origin/main && git log -1 --oneline &&
@@ -136,7 +158,7 @@ If the first command lists anything else, it was edited on the VM: keep or disca
 `update.sh` pulls the images for the current `DMS_IMAGE_TAG` (`pre` by default) and recreates the changed containers.
 It then restarts the gateway and Swagger UI, because both read their mounted files only at container start; that is how a pulled route such as `/swagger/` takes effect.
 The Configuration Service applies its database migrations at startup.
-If a config service stays unhealthy, `./logs.sh st-config` (or `mt-config`) names the migration that failed.
+If a Configuration Service stays unhealthy, `./logs.sh st-config` (or `mt-config`) names the migration that failed.
 
 Keycloak: `keycloak.yml` pins the floating minor tag `26.7`.
 `update.sh` refuses a changed pin, because the H2 realm volume cannot cross minor versions, but it does apply a patch release published under the same tag.
@@ -190,12 +212,12 @@ The DS 6.1 template must exist for the running build; builds before 8.0.1-alpha.
    cd ~/dms-src/eng/azure-vm/compose
    VERSION=$(docker inspect dms-sec-st-dms --format '{{index .Config.Labels "org.opencontainers.image.version"}}' | sed 's/^dms-pre-//; s/^dms-v//')
    sed -i \
-     -e 's/^DMS_CONFIG_DATA_STANDARD_VERSION=.*/DMS_CONFIG_DATA_STANDARD_VERSION=6.1/' \
-     -e 's/^DMS_CONFIG_ENABLE_CLAIMS_RELOAD=.*/DMS_CONFIG_ENABLE_CLAIMS_RELOAD=true/' \
+     -e 's/^CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=.*/CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=6.1/' \
+     -e 's/^CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=.*/CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=true/' \
      -e 's/^DATABASE_TEMPLATE_PACKAGE_ID=.*/DATABASE_TEMPLATE_PACKAGE_ID=EdFi.Api.Populated.Template.PostgreSql.6.1.0/' \
      -e "s/^DATABASE_TEMPLATE_PACKAGE_VERSION=.*/DATABASE_TEMPLATE_PACKAGE_VERSION=$VERSION/" .env
-   grep -q '^DMS_CONFIG_DATA_STANDARD_VERSION=' .env || echo 'DMS_CONFIG_DATA_STANDARD_VERSION=6.1' >> .env
-   grep -E '^(DMS_CONFIG_DATA_STANDARD_VERSION|DMS_CONFIG_ENABLE_CLAIMS_RELOAD|DATABASE_TEMPLATE_PACKAGE_ID|DATABASE_TEMPLATE_PACKAGE_VERSION)=' .env
+   grep -q '^CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=' .env || echo 'CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=6.1' >> .env
+   grep -E '^(CONFIGURATION_SERVICE_DATA_STANDARD_VERSION|CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING|DATABASE_TEMPLATE_PACKAGE_ID|DATABASE_TEMPLATE_PACKAGE_VERSION)=' .env
    ```
 
 3. Recreate the data databases from the DS 6.1 template **[bash]**:
@@ -249,7 +271,7 @@ The DS 6.1 template must exist for the running build; builds before 8.0.1-alpha.
    Then close the reload endpoint again:
 
    ```bash
-   sed -i 's/^DMS_CONFIG_ENABLE_CLAIMS_RELOAD=.*/DMS_CONFIG_ENABLE_CLAIMS_RELOAD=false/' .env
+   sed -i 's/^CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=.*/CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=false/' .env
    docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d --no-deps st-config mt-config
    ```
 
@@ -313,5 +335,5 @@ Copy the pairs into the private credentials doc, then delete `~/review-variants.
 - **Part B:** pin the previous images (the versions recorded in Part A) by setting `DMS_IMAGE_TAG`, or by re-tagging the recorded image ids as `pre`, then `./up.sh`.
   A Configuration Service migration does not roll back, so a downgrade across one needs the Part A config database backup.
 - **Part C:** the keys were never touched; repeat from the failed step.
-  Going back to DS 5.2 is the same procedure with `.env.template`, `DMS_CONFIG_DATA_STANDARD_VERSION=5.2` and the `5.2.0` template.
+  Going back to DS 5.2 is the same procedure with `.env.template`, `CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=5.2` and the `5.2.0` template.
 - **Lost keys:** stop the stack, restore `keycloak-volume.tgz` into the volume and `pg_restore` the config dumps, then start it again.

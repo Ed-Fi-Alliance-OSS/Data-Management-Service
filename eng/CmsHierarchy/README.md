@@ -25,7 +25,7 @@ the result as JSON.
 The Transform command transforms existing claims by applying modifications
 specified in one or more JSON files and outputs the result as JSON.
 
-**Note:** Some of this behavior can now be performed at startup by CMS itself.
+**Note:** Some of this behavior can now be performed at startup by the Configuration Service itself.
 
 ## Usage
 

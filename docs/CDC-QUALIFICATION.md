@@ -69,7 +69,7 @@ local/published Compose environment with no retained containers, volumes or boot
 workspace. The shared live runbook fixture requires two PostgreSQL setup cases and
 three SQL Server setup cases (local, published and direct DMS E2E); missing or skipped
 cases fail qualification independently of the controller suite. SQL Server published
-qualification tags matching branch-built application/CMS images under the published
+qualification tags matching branch-built application and Configuration Service images under the published
 Compose names and records their image IDs; it does not qualify a registry release.
 Both provider Lifecycle lanes reuse that fixture with `Procedure=Lifecycle` and require
 `CDC-DOC cdc-managed-start` in addition to the provider `CdcControllerManagedLifecycle`
@@ -92,7 +92,7 @@ Recovery. Each native-recovery attachment records snippet/scenario IDs, command
 results and immutable service image IDs. Test hooks supply failed/unverified shutdown
 and unavailable observations; real worker/task recovery, offset loss, state-file
 absence and CLI containment operate only on fixture-owned services. The fixture
-reuses the packaged-administration test CMS endpoint and runtime-compatible schema
+reuses the packaged-administration test Configuration Service endpoint and runtime-compatible schema
 workspace; the CLI loads complete matching settings and inspects live
 provider, broker, worker, offsets and metrics. Its invocation-owned projector is
 not started by status/watch, so projection health remains unavailable. Separate

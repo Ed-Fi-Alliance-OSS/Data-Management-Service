@@ -172,16 +172,16 @@ function New-BootstrapCdcHandoff {
         $DatabaseName -in @('edfi_configurationservice', 'postgres', 'master', 'model', 'msdb', 'tempdb')) {
         throw 'CDC requires a dedicated database distinct from infrastructure-created databases.'
     }
-    $cmsPort = [int](Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name 'DMS_CONFIG_ASPNETCORE_HTTP_PORTS' -DefaultValue '8081')
+    $cmsPort = [int](Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name 'CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS' -DefaultValue '8081')
     if (([uri]$Settings.ConfigurationServiceSettings.BaseUrl).Port -ne $cmsPort) {
         throw 'CDC settings must address the CMS port of the selected local environment.'
     }
-    foreach ($name in @('DMS_CONFIG_MULTI_TENANCY', 'DMS_MULTI_TENANCY')) {
+    foreach ($name in @('CONFIGURATION_SERVICE_MULTI_TENANCY', 'DMS_MULTI_TENANCY')) {
         if ((Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name $name -DefaultValue 'false') -ne 'false') {
             throw 'CDC bootstrap requires the default tenant topology.'
         }
     }
-    foreach ($name in @('CONFIG_SERVICE_TENANT', 'ROUTE_QUALIFIER_SEGMENTS')) {
+    foreach ($name in @('DMS_CONFIGURATION_SERVICE_TENANT', 'ROUTE_QUALIFIER_SEGMENTS')) {
         if (Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name $name -DefaultValue '') {
             throw 'CDC bootstrap requires the route-unqualified default tenant topology.'
         }

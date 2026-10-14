@@ -714,8 +714,8 @@ Describe 'Stock image proof orchestration' {
             $governed = Get-GovernedEnvironmentKey
 
             foreach ($key in @(
-                    'DMS_STOCK_IMAGE_REFERENCE', 'DMS_CONFIG_DOCKER_IMAGE', 'DMS_IMAGE_TAG'
-                    'SCHEMA_PACKAGES', 'DMS_CONFIG_DATA_STANDARD_VERSION'
+                    'DMS_STOCK_IMAGE_REFERENCE', 'CONFIGURATION_SERVICE_DOCKER_IMAGE', 'DMS_IMAGE_TAG'
+                    'SCHEMA_PACKAGES', 'CONFIGURATION_SERVICE_DATA_STANDARD_VERSION'
                     'DMS_PLUGINS_COMPOSE_FILES', 'DMS_PLUGINS_ALLOWED', 'DMS_PLUGINS_MOUNT_SOURCE'
                     'PLUGIN_FEED_SOURCE', 'PLUGIN_PACKAGE_URL', 'PLUGIN_PACKAGE_SHA256', 'PLUGIN_NAME')) {
                 $governed | Should -Contain $key
@@ -723,7 +723,7 @@ Describe 'Stock image proof orchestration' {
         }
 
         It 'reports an ambient <_>, which Compose would prefer over the env file' -ForEach @(
-            'SCHEMA_PACKAGES', 'DMS_CONFIG_DOCKER_IMAGE', 'DMS_IMAGE_TAG', 'PLUGIN_PACKAGE_SHA256'
+            'SCHEMA_PACKAGES', 'CONFIGURATION_SERVICE_DOCKER_IMAGE', 'DMS_IMAGE_TAG', 'PLUGIN_PACKAGE_SHA256'
         ) {
             # A process variable wins over --env-file, so an ambient one of these decides what the
             # proof runs against and the pin becomes a description of something else.
@@ -744,7 +744,7 @@ Describe 'Stock image proof orchestration' {
         }
 
         It 'refuses an ambient <_> although its value is kept from the base file' -ForEach @(
-            'DMS_HTTP_PORTS', 'DMS_CONFIG_ASPNETCORE_HTTP_PORTS', 'POSTGRES_PORT'
+            'DMS_HTTP_PORTS', 'CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS', 'POSTGRES_PORT'
         ) {
             # Not governed, because moving them would move the port the container listens on. Still
             # refused ambiently, because Compose and Get-EnvValue both prefer a process variable
@@ -840,7 +840,7 @@ Describe 'Stock image proof orchestration' {
         It 'pins the two images independently, from their own repositories' {
             $script:effective['DMS_STOCK_IMAGE_REFERENCE'] |
                 Should -BeExactly ('edfialliance/ed-fi-api:8.0.1-alpha.0.7@sha256:' + ('a' * 64))
-            $script:effective['DMS_CONFIG_DOCKER_IMAGE'] |
+            $script:effective['CONFIGURATION_SERVICE_DOCKER_IMAGE'] |
                 Should -BeExactly ('edfialliance/ed-fi-api-configuration-service@sha256:' + ('b' * 64))
         }
 
@@ -854,7 +854,7 @@ Describe 'Stock image proof orchestration' {
         It 'declares each governed key exactly once in the composed file' {
             # The base declares some of them already, so "appended last" is not the same as "said
             # once", and which one wins would depend on the reader.
-            foreach ($key in @('SCHEMA_PACKAGES', 'DMS_CONFIG_DOCKER_IMAGE', 'DMS_STOCK_IMAGE_REFERENCE', 'DMS_PLUGINS_ALLOWED')) {
+            foreach ($key in @('SCHEMA_PACKAGES', 'CONFIGURATION_SERVICE_DOCKER_IMAGE', 'DMS_STOCK_IMAGE_REFERENCE', 'DMS_PLUGINS_ALLOWED')) {
                 @($script:content -split "`n" | Where-Object { $_ -match ('^' + [regex]::Escape($key) + '=') }) |
                     Should -HaveCount 1 -Because "$key must be declared once"
             }
@@ -910,10 +910,10 @@ Describe 'Stock image proof orchestration' {
             # the base file name ed-fi-api-config:8081 directly. The preflight reads these declared
             # values instead of a second list.
             Get-GovernedEnvironmentKey | Should -Not -Contain 'DMS_HTTP_PORTS'
-            Get-GovernedEnvironmentKey | Should -Not -Contain 'DMS_CONFIG_ASPNETCORE_HTTP_PORTS'
+            Get-GovernedEnvironmentKey | Should -Not -Contain 'CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS'
 
             $script:effective['DMS_HTTP_PORTS'] | Should -BeExactly '8080'
-            $script:effective['DMS_CONFIG_ASPNETCORE_HTTP_PORTS'] | Should -BeExactly '8081'
+            $script:effective['CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS'] | Should -BeExactly '8081'
         }
 
         It 'writes an empty allowlist rather than omitting it' {

@@ -44,7 +44,7 @@ Describe "E2E engine resolution and connection-string forwarding (DMS-1284)" {
             $script:basePath = Join-Path $script:work ".env.base"
             Set-Content -LiteralPath $script:basePath -NoNewline -Value @"
 DMS_DATASTORE=postgresql
-DMS_CONFIG_DATASTORE=postgresql
+CONFIGURATION_SERVICE_DATASTORE=postgresql
 DATA_STANDARD_MARKER=ds61
 E2E_DATABASE_NAME=edfi_datamanagementservice_e2e
 E2E_SNAPSHOT_DATABASE_NAME=edfi_datamanagementservice_e2e_snapshot
@@ -59,8 +59,8 @@ MSSQL_DB_NAME=edfi_datamanagementservice
 MSSQL_PORT=1435
 DMS_DATASTORE=mssql
 DATABASE_CONNECTION_STRING_ADMIN=Server=dms-mssql;Database=`${MSSQL_DB_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
-DMS_CONFIG_DATASTORE=mssql
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${MSSQL_DB_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+CONFIGURATION_SERVICE_DATASTORE=mssql
+CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${MSSQL_DB_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
 "@
         }
 

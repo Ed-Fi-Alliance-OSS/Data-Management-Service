@@ -273,13 +273,18 @@ WHERE rk."ResourceName" NOT LIKE '%Descriptor'
     # --- Serveability probe ---
     $cmsToken = Get-CmsToken -CmsUrl $CmsUrl
 
-    # Add-DataStore requires a PostgresCredential regardless of target engine; for MSSQL it goes
-    # unused because -ConnectionString is supplied verbatim from New-DataStoreConnectionString.
-    $postgresCredential = ConvertTo-PostgresCredential -UserName "postgres" -Secret $PostgresPassword
-
-    $dataStoreConnectionString = ""
+    # PostgreSQL: Add-DataStore builds the connection string from the credential.
+    # MSSQL: the connection string is supplied complete, so no PostgreSQL credential is passed.
+    $dataStoreParameters = @{
+        CmsUrl         = $CmsUrl
+        AccessToken    = $cmsToken
+        PostgresDbName = $VerificationDatabaseName
+        DatabaseEngine = $DatabaseEngine
+        Name           = "Template Restore Verification"
+        DataStoreType  = "Verification"
+    }
     if ($DatabaseEngine -eq "mssql") {
-        $dataStoreConnectionString = New-DataStoreConnectionString `
+        $dataStoreParameters.ConnectionString = New-DataStoreConnectionString `
             -DatabaseEngine "mssql" `
             -DbHost $ContainerName `
             -Port 1433 `
@@ -287,16 +292,11 @@ WHERE rk."ResourceName" NOT LIKE '%Descriptor'
             -Password $MssqlPassword `
             -DatabaseName $VerificationDatabaseName
     }
+    else {
+        $dataStoreParameters.PostgresCredential = ConvertTo-PostgresCredential -UserName "postgres" -Secret $PostgresPassword
+    }
 
-    $verificationDataStoreId = Add-DataStore `
-        -CmsUrl $CmsUrl `
-        -AccessToken $cmsToken `
-        -PostgresCredential $postgresCredential `
-        -PostgresDbName $VerificationDatabaseName `
-        -ConnectionString $dataStoreConnectionString `
-        -DatabaseEngine $DatabaseEngine `
-        -Name "Template Restore Verification" `
-        -DataStoreType "Verification"
+    $verificationDataStoreId = Add-DataStore @dataStoreParameters
 
     $vendorId = Add-Vendor -CmsUrl $CmsUrl -AccessToken $cmsToken -Company "Template Restore Verification Vendor"
 

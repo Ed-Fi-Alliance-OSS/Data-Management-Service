@@ -283,6 +283,6 @@ client secret as a PBKDF2 hash without the iteration count, and verifies at what
 count is configured now, so raising the work factor (or lowering it) makes every
 existing client secret fail verification. The remedy is to re-issue those client
 secrets. In the provided Docker Compose files this value is set from
-`DMS_CONFIG_IDENTITY_HASHING_ITERATIONS`, which also sets the count the bootstrap
+`CONFIGURATION_SERVICE_IDENTITY_HASHING_ITERATIONS`, which also sets the count the bootstrap
 script hashes its own client secrets with. See
 [Identity Provider Configuration](./CONFIGURATION.md#identity-provider-configuration).
