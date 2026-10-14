@@ -1516,7 +1516,7 @@ public class ApiClientTests : DatabaseTest
 
         [Test]
         public void It_attaches_no_exception_to_any_log_entry() =>
-            AllEntries.Should().OnlyContain(entry => entry.Exception == null);
+            AllEntries.Should().AllSatisfy(entry => entry.Exception.Should().BeNull());
 
         [Test]
         public void It_keeps_every_identifier_out_of_the_rendered_messages() =>
