@@ -136,7 +136,7 @@ public class JsonCharsetValidationTests
             response,
             body,
             HttpStatusCode.UnsupportedMediaType,
-            "urn:ed-fi:api:unsupported-media-type",
+            "urn:ed-fi:management-api:unsupported-media-type",
             "Unsupported Media Type",
             "The value specified in the 'Content-Type' header is not supported by this host."
         );
@@ -252,7 +252,7 @@ public class JsonCharsetValidationTests
                 _response,
                 _body,
                 HttpStatusCode.BadRequest,
-                "urn:ed-fi:api:bad-request",
+                "urn:ed-fi:management-api:bad-request",
                 "Bad Request",
                 "The request could not be processed. See 'errors' for details."
             );
@@ -289,7 +289,7 @@ public class JsonCharsetValidationTests
                 _response,
                 _body,
                 HttpStatusCode.Unauthorized,
-                "urn:ed-fi:api:security:authentication",
+                "urn:ed-fi:management-api:security:authentication",
                 "Authentication Failed",
                 "Authentication is required to access this resource."
             );
@@ -319,7 +319,7 @@ public class JsonCharsetValidationTests
                 _response,
                 _body,
                 HttpStatusCode.Forbidden,
-                "urn:ed-fi:api:security:authorization",
+                "urn:ed-fi:management-api:security:authorization",
                 "Authorization Failed",
                 "The authenticated client is not authorized to access this resource."
             );
@@ -378,7 +378,7 @@ public class JsonCharsetValidationTests
                 _response,
                 _body,
                 HttpStatusCode.UnsupportedMediaType,
-                "urn:ed-fi:api:unsupported-media-type",
+                "urn:ed-fi:management-api:unsupported-media-type",
                 "Unsupported Media Type",
                 "The value specified in the 'Content-Type' header is not supported by this host."
             );

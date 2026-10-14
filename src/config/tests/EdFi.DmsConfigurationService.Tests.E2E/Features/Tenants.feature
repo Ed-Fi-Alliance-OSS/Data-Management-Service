@@ -517,7 +517,7 @@ Feature: Tenants endpoints
                   """
                     {
                         "detail": "Data validation failed. See 'validationErrors' for details.",
-                        "type": "urn:ed-fi:api:bad-request:data",
+                        "type": "urn:ed-fi:management-api:bad-request:data",
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
@@ -592,7 +592,7 @@ Feature: Tenants endpoints
                   """
                     {
                         "detail": "Profile does not exist.",
-                        "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                        "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                         "title": "Unresolved Reference",
                         "status": 409,
                         "validationErrors": {},
@@ -635,7 +635,7 @@ Feature: Tenants endpoints
                   """
                     {
                         "detail": "Profile does not exist.",
-                        "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                        "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                         "title": "Unresolved Reference",
                         "status": 409,
                         "validationErrors": {},

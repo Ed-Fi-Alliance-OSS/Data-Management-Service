@@ -979,7 +979,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 updateResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -996,7 +996,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 deleteResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -1016,7 +1016,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 resetResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -1311,7 +1311,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 insertResponse,
                 HttpStatusCode.Conflict,
-                "urn:ed-fi:api:conflict:unresolved-reference",
+                "urn:ed-fi:management-api:conflict:unresolved-reference",
                 "Unresolved Reference",
                 "Application with ID 1 not found."
             );
@@ -1355,7 +1355,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 insertResponse,
                 HttpStatusCode.Conflict,
-                "urn:ed-fi:api:conflict:unresolved-reference",
+                "urn:ed-fi:management-api:conflict:unresolved-reference",
                 "Unresolved Reference",
                 "Data store does not exist."
             );
@@ -1411,7 +1411,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 updateResponse,
                 HttpStatusCode.NotFound,
-                "urn:ed-fi:api:not-found",
+                "urn:ed-fi:management-api:not-found",
                 "Not Found",
                 "ApiClient with ID 1 not found."
             );
@@ -1462,7 +1462,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 updateResponse,
                 HttpStatusCode.Conflict,
-                "urn:ed-fi:api:conflict:unresolved-reference",
+                "urn:ed-fi:management-api:conflict:unresolved-reference",
                 "Unresolved Reference",
                 "Application with ID 1 not found."
             );
@@ -1512,7 +1512,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 updateResponse,
                 HttpStatusCode.Conflict,
-                "urn:ed-fi:api:conflict:unresolved-reference",
+                "urn:ed-fi:management-api:conflict:unresolved-reference",
                 "Unresolved Reference",
                 "Data store does not exist."
             );
@@ -1588,7 +1588,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 insertResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -1619,7 +1619,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 updateResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -1695,7 +1695,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 insertResponse,
                 HttpStatusCode.Conflict,
-                "urn:ed-fi:api:conflict:unresolved-reference",
+                "urn:ed-fi:management-api:conflict:unresolved-reference",
                 "Unresolved Reference",
                 "Application with ID 999 not found."
             );
@@ -1729,7 +1729,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 updateResponse,
                 HttpStatusCode.Conflict,
-                "urn:ed-fi:api:conflict:unresolved-reference",
+                "urn:ed-fi:management-api:conflict:unresolved-reference",
                 "Unresolved Reference",
                 "Application with ID 999 not found."
             );
@@ -1763,7 +1763,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 insertResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -1799,7 +1799,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 updateResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -1888,7 +1888,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 insertResponse,
                 HttpStatusCode.Conflict,
-                "urn:ed-fi:api:conflict:unresolved-reference",
+                "urn:ed-fi:management-api:conflict:unresolved-reference",
                 "Unresolved Reference",
                 "The following DataStoreIds were not found in database: 999, 888"
             );
@@ -1922,7 +1922,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 updateResponse,
                 HttpStatusCode.Conflict,
-                "urn:ed-fi:api:conflict:unresolved-reference",
+                "urn:ed-fi:management-api:conflict:unresolved-reference",
                 "Unresolved Reference",
                 "The following DataStoreIds were not found in database: 999, 888"
             );
@@ -2113,7 +2113,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 updateResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -2191,7 +2191,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 resetResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -2451,7 +2451,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _updateResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -2527,7 +2527,7 @@ public class ApiClientModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -2732,7 +2732,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _deleteResponse,
                 HttpStatusCode.NotFound,
-                "urn:ed-fi:api:not-found",
+                "urn:ed-fi:management-api:not-found",
                 "Not Found",
                 "ApiClient not found"
             );
@@ -2768,7 +2768,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _deleteResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -2815,7 +2815,7 @@ public class ApiClientModuleTests
                 """
                 {
                   "detail": "The request could not be processed. See 'errors' for details.",
-                  "type": "urn:ed-fi:api:bad-gateway",
+                  "type": "urn:ed-fi:management-api:bad-gateway",
                   "title": "Bad Gateway",
                   "status": 502,
                   "correlationId": "{correlationId}",
@@ -2853,7 +2853,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _deleteResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -2887,7 +2887,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _deleteResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -2920,7 +2920,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _deleteResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -2948,7 +2948,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _deleteResponse,
                 HttpStatusCode.NotFound,
-                "urn:ed-fi:api:not-found",
+                "urn:ed-fi:management-api:not-found",
                 "Not Found",
                 "ApiClient not found"
             );
@@ -3023,7 +3023,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _deleteResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -3067,7 +3067,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _deleteResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -3102,7 +3102,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _deleteResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -3140,7 +3140,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _deleteResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -3222,7 +3222,7 @@ public class ApiClientModuleTests
             """
             {
               "detail": "Unable to process the request due to a concurrent modification. Retry the request.",
-              "type": "urn:ed-fi:api:conflict",
+              "type": "urn:ed-fi:management-api:conflict",
               "title": "Conflict",
               "status": 409,
               "correlationId": "{correlationId}",
@@ -5065,7 +5065,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _response,
                 HttpStatusCode.NotFound,
-                "urn:ed-fi:api:not-found",
+                "urn:ed-fi:management-api:not-found",
                 "Not Found",
                 $"ApiClient with ID {MissingApiClientId} not found."
             );
@@ -5105,7 +5105,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 response,
                 HttpStatusCode.NotFound,
-                "urn:ed-fi:api:not-found",
+                "urn:ed-fi:management-api:not-found",
                 "Not Found",
                 "ApiClient not found"
             );
@@ -5169,7 +5169,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _response,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -5208,7 +5208,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _response,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -5468,7 +5468,7 @@ public class ApiClientModuleTests
                 """
                 {
                   "detail": "The request could not be processed. See 'errors' for details.",
-                  "type": "urn:ed-fi:api:bad-gateway",
+                  "type": "urn:ed-fi:management-api:bad-gateway",
                   "title": "Bad Gateway",
                   "status": 502,
                   "correlationId": "{correlationId}",
@@ -5508,7 +5508,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _insertResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -5629,7 +5629,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _insertResponse,
                 HttpStatusCode.Conflict,
-                "urn:ed-fi:api:conflict:unresolved-reference",
+                "urn:ed-fi:management-api:conflict:unresolved-reference",
                 "Unresolved Reference",
                 "Application with ID 1 not found."
             );
@@ -5669,7 +5669,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _insertResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -5746,7 +5746,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _insertResponse,
                 HttpStatusCode.Conflict,
-                "urn:ed-fi:api:conflict:unresolved-reference",
+                "urn:ed-fi:management-api:conflict:unresolved-reference",
                 "Unresolved Reference",
                 "Data store does not exist."
             );
@@ -5819,7 +5819,7 @@ public class ApiClientModuleTests
             """
             {
               "detail": "Data validation failed. See 'validationErrors' for details.",
-              "type": "urn:ed-fi:api:bad-request:data",
+              "type": "urn:ed-fi:management-api:bad-request:data",
               "title": "Data Validation Failed",
               "status": 400,
               "correlationId": "{correlationId}",

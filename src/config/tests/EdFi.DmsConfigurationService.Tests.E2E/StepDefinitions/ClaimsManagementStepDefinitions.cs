@@ -354,7 +354,7 @@ public class ClaimsManagementStepDefinitions(ScenarioContext scenarioContext)
         // Exact Ed-Fi data-validation contract. This scenario posts a path-bearing
         // schema-validation failure, so the response is a data-validation problem: the detail is
         // carried in "validationErrors" and "errors" is empty.
-        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request:data");
         body["title"]!.GetValue<string>().Should().Be("Data Validation Failed");
         body["detail"]!
             .GetValue<string>()

@@ -123,7 +123,7 @@ public class GlobalExceptionHandlerTests
                 _context,
                 _body,
                 400,
-                "urn:ed-fi:api:bad-request:parameter",
+                "urn:ed-fi:management-api:bad-request:parameter",
                 "Parameter Validation Failed",
                 "Parameter validation failed. See 'errors' for details."
             );
@@ -170,7 +170,7 @@ public class GlobalExceptionHandlerTests
                 _context,
                 _body,
                 400,
-                "urn:ed-fi:api:bad-request",
+                "urn:ed-fi:management-api:bad-request",
                 "Bad Request",
                 "The request could not be processed. See 'errors' for details."
             );
@@ -238,7 +238,7 @@ public class GlobalExceptionHandlerTests
                 _context,
                 _body,
                 400,
-                "urn:ed-fi:api:bad-request:parameter",
+                "urn:ed-fi:management-api:bad-request:parameter",
                 "Parameter Validation Failed",
                 "Parameter validation failed. See 'errors' for details."
             );
@@ -306,7 +306,7 @@ public class GlobalExceptionHandlerTests
                 _context,
                 _body,
                 400,
-                "urn:ed-fi:api:bad-request",
+                "urn:ed-fi:management-api:bad-request",
                 "Bad Request",
                 "The request could not be processed. See 'errors' for details."
             );
@@ -352,7 +352,7 @@ public class GlobalExceptionHandlerTests
                 _context,
                 _body,
                 400,
-                "urn:ed-fi:api:bad-request",
+                "urn:ed-fi:management-api:bad-request",
                 "Bad Request",
                 "The request could not be processed. See 'errors' for details."
             );
@@ -404,7 +404,7 @@ public class GlobalExceptionHandlerTests
                 _context,
                 _body,
                 400,
-                "urn:ed-fi:api:bad-request:data",
+                "urn:ed-fi:management-api:bad-request:data",
                 "Data Validation Failed",
                 "Data validation failed. See 'validationErrors' for details."
             );
@@ -452,7 +452,7 @@ public class GlobalExceptionHandlerTests
                 _context,
                 _body,
                 400,
-                "urn:ed-fi:api:bad-request:parameter",
+                "urn:ed-fi:management-api:bad-request:parameter",
                 "Parameter Validation Failed",
                 "Parameter validation failed. See 'errors' for details."
             );
@@ -495,7 +495,7 @@ public class GlobalExceptionHandlerTests
                 _context,
                 _body,
                 415,
-                "urn:ed-fi:api:unsupported-media-type",
+                "urn:ed-fi:management-api:unsupported-media-type",
                 "Unsupported Media Type",
                 "The value specified in the 'Content-Type' header is not supported by this host."
             );
@@ -573,7 +573,7 @@ public class GlobalExceptionHandlerTests
                 _context,
                 _body,
                 400,
-                "urn:ed-fi:api:bad-request:data",
+                "urn:ed-fi:management-api:bad-request:data",
                 "Data Validation Failed",
                 "Data validation failed. See 'validationErrors' for details."
             );
@@ -618,7 +618,7 @@ public class GlobalExceptionHandlerTests
                 _context,
                 _body,
                 500,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -771,7 +771,7 @@ public class GlobalExceptionHandlerTests
                 _context,
                 _body,
                 400,
-                "urn:ed-fi:api:bad-request",
+                "urn:ed-fi:management-api:bad-request",
                 "Bad Request",
                 "The request could not be processed. See 'errors' for details."
             );

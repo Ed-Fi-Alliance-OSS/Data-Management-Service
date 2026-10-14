@@ -1914,6 +1914,7 @@ public class OAuthManagerTests
         private HttpStatusCode _status;
         private JsonNode _body = default!;
         private RecordingLogger<OAuthManager> _logger = default!;
+        private string _upstreamType = default!;
 
         [SetUp]
         public async Task Setup()
@@ -1921,7 +1922,16 @@ public class OAuthManagerTests
             string upstreamBody = CmsFailureResponse
                 .ForTooManyTokens(7, "upstream-correlation-id")
                 .ToJsonString();
+            _upstreamType = JsonNode.Parse(upstreamBody)!["type"]!.GetValue<string>();
             (_status, _, _body, _logger) = await UpstreamRejectsWith(upstreamBody);
+        }
+
+        // Shows this fixture exercises the type the Configuration Service emits from DMS-1586 on,
+        // not the legacy one the hand-built fixtures also cover.
+        [Test]
+        public void It_is_fed_the_management_api_type()
+        {
+            _upstreamType.Should().Be(TooManyTokensUpstream.ManagementApiType);
         }
 
         [Test]
