@@ -3970,6 +3970,346 @@ public class ApplicationModuleTests
         }
     }
 
+    /// <summary>
+    /// Shared arrangement for the insert's identifier-conflict arms: the database rejects the
+    /// initial client's row under one of the two identifier constraints, and the fixture decides
+    /// what the UUID reference check reports. Every fixture asserts the exact sanitized 409 body,
+    /// the absence of credentials, and whether the provisioned provider client was deleted.
+    /// </summary>
+    public abstract class IdentifierConflictInsertTestBase : InsertWorkflowTestBase
+    {
+        protected const string DuplicateClientIdDetail =
+            "The generated client key is already in use. Retry the request.";
+
+        protected const string DuplicateClientUuidDetail =
+            "The identity provider client is already associated with another API client.";
+
+        protected const string LeftInPlaceMarker = "Could not prove provider client";
+
+        protected void ArrangeReferenceCheck(ApiClientUuidReferenceResult result) =>
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored)).Returns(result);
+
+        protected async Task AssertIdentifierConflictContract(string detail)
+        {
+            _insertResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            _insertResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+            string responseBody = await _insertResponse.Content.ReadAsStringAsync();
+            JsonNode actualResponse = JsonNode.Parse(responseBody)!;
+            string correlationId = actualResponse["correlationId"]!.GetValue<string>();
+            correlationId.Should().NotBeNullOrWhiteSpace();
+            JsonNode expectedResponse = JsonNode.Parse(
+                $$"""
+                {
+                  "detail": "{{detail}}",
+                  "type": "urn:ed-fi:api:conflict",
+                  "title": "Conflict",
+                  "status": 409,
+                  "correlationId": "{{correlationId}}",
+                  "validationErrors": {},
+                  "errors": []
+                }
+                """
+            )!;
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+            responseBody.Should().NotContain(_createdClientUuid.ToString());
+            responseBody.Should().NotContain(_createdClientId);
+        }
+
+        protected void AssertReferenceCheckedOnceForTheCreatedUuid() =>
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(_createdClientUuid))
+                .MustHaveHappenedOnceExactly();
+
+        protected void AssertLeftInPlace(string outcome)
+        {
+            LoggedAt(LogLevel.Error)
+                .Should()
+                .ContainSingle(entry =>
+                    entry.Contains(LeftInPlaceMarker)
+                    && entry.Contains(_createdClientUuid.ToString())
+                    && entry.Contains(_createdClientId)
+                    && entry.Contains(outcome)
+                    && entry.Contains("left in place")
+                );
+            AssertNoRawCharactersLogged();
+        }
+    }
+
+    /// <summary>
+    /// The generated key collided and no row holds the provisioned client's UUID, so the client is
+    /// deleted exactly once and the caller is told to retry.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_application_insert_whose_generated_key_is_already_in_use
+        : IdentifierConflictInsertTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApplicationInsertResult.FailureDuplicateClientId());
+            ArrangeReferenceCheck(new ApiClientUuidReferenceResult.None());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_duplicate_key_conflict_contract() =>
+            await AssertIdentifierConflictContract(DuplicateClientIdDetail);
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_checks_the_created_uuid_for_references_before_deleting() =>
+            AssertReferenceCheckedOnceForTheCreatedUuid();
+
+        [Test]
+        public void It_deletes_the_provisioned_client_exactly_once() =>
+            _deletedClientUuids.Should().Equal(_createdClientUuid.ToString());
+
+        [Test]
+        public void It_records_the_collision_as_a_warning_with_the_client_id() =>
+            LoggedAt(LogLevel.Warning)
+                .Should()
+                .Contain(entry => entry.Contains("already in use") && entry.Contains(_createdClientId));
+
+        [Test]
+        public void It_logs_nothing_at_error() => LoggedAt(LogLevel.Error).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// The both-identifier arrangement: the database reports the key collision, and the reference
+    /// check finds another row already holding the provisioned client's UUID. The client is in
+    /// use, so it stays, and the key conflict is still what the caller is told.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_application_insert_whose_generated_key_collides_and_whose_uuid_is_referenced
+        : IdentifierConflictInsertTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApplicationInsertResult.FailureDuplicateClientId());
+            ArrangeReferenceCheck(new ApiClientUuidReferenceResult.Referenced());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_duplicate_key_conflict_contract() =>
+            await AssertIdentifierConflictContract(DuplicateClientIdDetail);
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_checks_the_created_uuid_for_references() =>
+            AssertReferenceCheckedOnceForTheCreatedUuid();
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_reports_the_client_left_in_place() =>
+            AssertLeftInPlace(nameof(ApiClientUuidReferenceResult.Referenced));
+    }
+
+    [TestFixture]
+    public class Given_an_application_insert_whose_generated_key_collides_and_whose_reference_check_fails
+        : IdentifierConflictInsertTestBase
+    {
+        private const string Sentinel = "SENTINEL_APPLICATION_REFERENCE_CHECK_UNKNOWN_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApplicationInsertResult.FailureDuplicateClientId());
+            ArrangeReferenceCheck(new ApiClientUuidReferenceResult.FailureUnknown(Sentinel + RawSuffix));
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_duplicate_key_conflict_contract()
+        {
+            await AssertIdentifierConflictContract(DuplicateClientIdDetail);
+            (await _insertResponse.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+        }
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_reports_the_client_left_in_place_with_the_sanitized_failure() =>
+            AssertLeftInPlace(
+                $"{nameof(ApiClientUuidReferenceResult.FailureUnknown)}: {Sentinel}{SanitizedSuffix}"
+            );
+    }
+
+    [TestFixture]
+    public class Given_an_application_insert_whose_generated_key_collides_and_whose_reference_check_is_unrecognized
+        : IdentifierConflictInsertTestBase
+    {
+        private sealed record UnrecognizedReferenceResult : ApiClientUuidReferenceResult;
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApplicationInsertResult.FailureDuplicateClientId());
+            ArrangeReferenceCheck(new UnrecognizedReferenceResult());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_duplicate_key_conflict_contract() =>
+            await AssertIdentifierConflictContract(DuplicateClientIdDetail);
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_reports_the_client_left_in_place_naming_the_outcome() =>
+            AssertLeftInPlace(nameof(UnrecognizedReferenceResult));
+    }
+
+    /// <summary>
+    /// A reference check that throws must not reach the global handler: the 409 stands, nothing is
+    /// deleted, and the thrown check is reported by its exception type alone. The exception's
+    /// message is never sanitized, so attaching it would log whatever text it carries; the
+    /// sentinel therefore carries the raw suffix and must appear nowhere in the log in either form.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_application_insert_whose_generated_key_collides_and_whose_reference_check_throws
+        : IdentifierConflictInsertTestBase
+    {
+        private const string Sentinel = "SENTINEL_APPLICATION_REFERENCE_CHECK_THROWN_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApplicationInsertResult.FailureDuplicateClientId());
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
+                .Throws(new InvalidOperationException(Sentinel + RawSuffix));
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_duplicate_key_conflict_contract()
+        {
+            await AssertIdentifierConflictContract(DuplicateClientIdDetail);
+            (await _insertResponse.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+        }
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_reports_the_thrown_check_by_type_only() =>
+            AssertLeftInPlace(nameof(InvalidOperationException));
+
+        [Test]
+        public void It_attaches_no_exception_to_any_log_entry() =>
+            _moduleLogger.Entries.Should().AllSatisfy(entry => entry.Exception.Should().BeNull());
+
+        [Test]
+        public void It_logs_the_exception_message_in_neither_form() =>
+            _moduleLogger
+                .Entries.Select(entry => $"{entry.State}")
+                .Should()
+                .OnlyContain(message => !message.Contains(Sentinel));
+    }
+
+    /// <summary>
+    /// The reference check clears the deletion, and the deletion itself then fails. The existing
+    /// cleanup helper reports the client as possibly remaining; the caller's 409 is unchanged.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_application_insert_whose_generated_key_collides_and_whose_cleanup_throws
+        : IdentifierConflictInsertTestBase
+    {
+        private const string Sentinel = "SENTINEL_APPLICATION_KEY_CLEANUP_THROWN_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApplicationInsertResult.FailureDuplicateClientId());
+            ArrangeReferenceCheck(new ApiClientUuidReferenceResult.None());
+            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>.Ignored))
+                .Invokes(call => _deletedClientUuids.Add(call.GetArgument<string>(0)!))
+                .Throws(new InvalidOperationException(Sentinel));
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_keeps_the_duplicate_key_conflict_contract()
+        {
+            await AssertIdentifierConflictContract(DuplicateClientIdDetail);
+            (await _insertResponse.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+        }
+
+        [Test]
+        public void It_attempted_the_deletion() =>
+            _deletedClientUuids.Should().Equal(_createdClientUuid.ToString());
+
+        [Test]
+        public void It_reports_the_thrown_cleanup_as_unconfirmed() =>
+            AssertCleanupReportedAsUnconfirmed(nameof(InvalidOperationException));
+    }
+
+    /// <summary>
+    /// Another row already references the UUID the provider reported for this request's client.
+    /// The client is provably in use, so no reference check and no deletion are attempted.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_application_insert_whose_provider_client_is_already_associated
+        : IdentifierConflictInsertTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApplicationInsertResult.FailureDuplicateClientUuid());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_duplicate_uuid_conflict_contract() =>
+            await AssertIdentifierConflictContract(DuplicateClientUuidDetail);
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_runs_no_reference_check() =>
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_reports_the_client_left_in_place_at_error()
+        {
+            LoggedAt(LogLevel.Error)
+                .Should()
+                .ContainSingle(entry =>
+                    entry.Contains("already associated with another API client")
+                    && entry.Contains(_createdClientUuid.ToString())
+                    && entry.Contains(_createdClientId)
+                    && entry.Contains("left in place")
+                );
+            AssertNoRawCharactersLogged();
+        }
+    }
+
     [TestFixture]
     public class Given_a_successful_application_insert : InsertWorkflowTestBase
     {
