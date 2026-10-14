@@ -17,5 +17,6 @@
     <ItemGroup>
         <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
         <PackageReference Include="Microsoft.Data.SqlClient" />
+        <PackageReference Include="System.Security.Cryptography.Pkcs" />
     </ItemGroup>
 </Project>
