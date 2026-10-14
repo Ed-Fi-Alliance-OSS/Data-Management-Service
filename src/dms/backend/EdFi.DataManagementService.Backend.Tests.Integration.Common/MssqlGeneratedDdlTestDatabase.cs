@@ -51,9 +51,10 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
     private static readonly MssqlDatabaseResetPlan _dynamicResetPlan = MssqlDatabaseResetPlan.Dynamic(
         _generatedDdlBaselineTables
     );
-    private static readonly Lazy<SemaphoreSlim?> _generatedDdlProvisionSemaphore = new(
-        CreateGeneratedDdlProvisionSemaphore
-    );
+    private static readonly Lazy<MssqlGeneratedDdlProvisioningGate> _generatedDdlProvisioningGate =
+        MssqlGeneratedDdlProvisioningGate.CreateLazy(() =>
+            Environment.GetEnvironmentVariable(ProvisionMaxConcurrencyVariable) ?? ""
+        );
     private int _ownsDatabase = 1;
 
     private MssqlGeneratedDdlTestDatabase(
@@ -260,7 +261,7 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
 
         try
         {
-            await using var provisionSlot = await AcquireGeneratedDdlProvisionSlotAsync();
+            await using var provisionSlot = await _generatedDdlProvisioningGate.Value.AcquireAsync();
 
             database = await CreateEmptyAsync(context, databaseCollation);
             databaseName = database.DatabaseName;
@@ -801,39 +802,6 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
     private static bool IsDirectLeaseStrategy(string leaseStrategy) =>
         leaseStrategy.Equals(MssqlProvisioningTimingRecorder.DirectLeaseStrategy, StringComparison.Ordinal);
 
-    private static async ValueTask<GeneratedDdlProvisionSemaphoreLease> AcquireGeneratedDdlProvisionSlotAsync()
-    {
-        var semaphore = _generatedDdlProvisionSemaphore.Value;
-        if (semaphore is null)
-        {
-            return new(null);
-        }
-
-        await semaphore.WaitAsync();
-        return new(semaphore);
-    }
-
-    private static SemaphoreSlim? CreateGeneratedDdlProvisionSemaphore()
-    {
-        var value = Environment.GetEnvironmentVariable(ProvisionMaxConcurrencyVariable);
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
-
-        if (
-            !int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var maxConcurrency)
-            || maxConcurrency < 1
-        )
-        {
-            throw new InvalidOperationException(
-                $"{ProvisionMaxConcurrencyVariable} must be a positive integer when set."
-            );
-        }
-
-        return new(maxConcurrency, maxConcurrency);
-    }
-
     private static string NormalizeReferentialAction(string value)
     {
         return value.Replace('_', ' ');
@@ -865,15 +833,6 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
                 DeleteAction,
                 UpdateAction
             );
-        }
-    }
-
-    private readonly struct GeneratedDdlProvisionSemaphoreLease(SemaphoreSlim? semaphore) : IAsyncDisposable
-    {
-        public ValueTask DisposeAsync()
-        {
-            semaphore?.Release();
-            return ValueTask.CompletedTask;
         }
     }
 }
