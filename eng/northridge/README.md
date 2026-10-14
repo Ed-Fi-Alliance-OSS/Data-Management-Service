@@ -139,7 +139,10 @@ type identity before retrying. Live rows accept those same qualified forms or an
 resource name matching the owning document's type; their `ResourceKeyId` comes from that document.
 
 Document IDs/UUIDs, document-level RI rows, content stamps and history IDs/versions remain intact.
-Both document stamp columns remain required here; DMS-1401 owns the timestamp change. The tool
+Both document stamp columns remain required here; DMS-1401 owns the timestamp change.
+`dms.Document.CreatedAt` is no longer read: an older archive that still carries it is staged and
+the column is omitted from the target insert as source-only, and the stamp-distribution check
+compares `ContentVersion` and `ContentLastModifiedAt` only. The tool
 retains row-count, FK, trigger-state, fingerprint, singleton, stamp-distribution and source-identity
 checks. It initializes the native descriptor backing sequence from allocated compact keys. Copy
 and Checkpoint resolve that sequence from catalog ownership and check `last_value`, `is_called`

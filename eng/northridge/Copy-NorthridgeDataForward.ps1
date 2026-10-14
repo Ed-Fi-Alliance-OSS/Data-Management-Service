@@ -1117,8 +1117,7 @@ function Get-StampDistribution {
     $part = [System.Collections.Generic.List[string]]::new()
     $part.Add('SELECT ''dms.Document'' AS t, COUNT(*)::text || ''|'' ||
         COALESCE(MIN("ContentVersion")::text, ''-'') || ''|'' || COALESCE(MAX("ContentVersion")::text, ''-'') || ''|'' ||
-        COALESCE(MIN("ContentLastModifiedAt")::text, ''-'') || ''|'' || COALESCE(MAX("ContentLastModifiedAt")::text, ''-'') || ''|'' ||
-        COALESCE(MIN("CreatedAt")::text, ''-'') || ''|'' || COALESCE(MAX("CreatedAt")::text, ''-'') AS v
+        COALESCE(MIN("ContentLastModifiedAt")::text, ''-'') || ''|'' || COALESCE(MAX("ContentLastModifiedAt")::text, ''-'') AS v
     FROM dms."Document"')
 
     foreach ($table in $SampleTable) {
