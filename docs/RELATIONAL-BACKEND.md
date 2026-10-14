@@ -228,7 +228,9 @@ coordination item.
 
 Database template packages built before this change still have the column. They restore and
 serve, but they do not deliver the saving. Replace them with packages built from DDL that
-includes this change.
+includes this change. `eng/DatabaseTemplates/verify-template-restore.ps1` rejects them: it fails
+when the source database (before the restore) or the restored database (before the API probe)
+has no `dms.Document` table, still has `CreatedAt`, or cannot be queried.
 
 ### Descriptor catalog checks and template handoff
 

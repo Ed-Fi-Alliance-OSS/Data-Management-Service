@@ -183,6 +183,23 @@ gates measured against the integration base. The full PAC recheck is retained. S
 implemented as designed, without importing or waiting for #1356. This is a spec correction only,
 with no code change.
 
+Found while implementing step 5.3. These are small departures from the design text. None changes
+the call points or the fail-closed semantics.
+- **`SET NOCOUNT ON`.** The SQL Server query starts with it, as `Get-UserSchemaNames` already does.
+  Without it, sqlcmd prints `(N rows affected)`, which would be parsed as a column name. A missing
+  table would then report "unexpected shape" instead of "missing". §6 step 5.3 now shows the
+  prefix.
+- **Database name.** The function rejects an unsafe database name before running any query.
+- **Comparison and parameters.** Forbidden columns are compared case-insensitively and required
+  columns case-sensitively; both are the stricter choice. `-DatabaseEngine` is mandatory.
+- **Default runner.** It is an inline branch rather than a default scriptblock, so
+  PSScriptAnalyzer can see that `-ContainerName` and `-MssqlPassword` are used. The
+  `-QueryRunner` seam is unchanged.
+- **Tests beyond (a)–(f).** The suite adds a case-variant forbidden column, a two-column
+  `-ForbiddenColumns` list (the combined-tree shape), a missing required column, and an unsafe
+  database name. (f3) also asserts the call order: source check, then restore, then restored
+  check, then CMS token.
+
 ---
 
 ## 1. Problem, proposed decision, alternatives, assumptions, open questions
@@ -929,7 +946,7 @@ verbatim.
     sqlcmd -h -1 -W` exactly as the verifier's `Invoke-PsqlScalar` / `Invoke-SqlcmdScalar` do,
     and throws on non-zero exit).
   - Query: PostgreSQL `SELECT column_name FROM information_schema.columns WHERE table_schema = 'dms' AND table_name = 'Document' ORDER BY ordinal_position;`
-    SQL Server `SELECT c.name FROM sys.columns c WHERE c.object_id = OBJECT_ID(N'dms.Document') ORDER BY c.column_id;`.
+    SQL Server `SET NOCOUNT ON; SELECT c.name FROM sys.columns c WHERE c.object_id = OBJECT_ID(N'dms.Document') ORDER BY c.column_id;`.
   - Semantics (each throws with the database name and engine): zero rows → "dms.Document is
     missing"; any required column absent → "unexpected dms.Document shape"; any forbidden column
     present → "dms.Document still carries <column>"; runner failure → rethrown, never treated as

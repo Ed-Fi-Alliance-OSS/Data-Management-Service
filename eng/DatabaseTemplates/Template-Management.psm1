@@ -854,6 +854,114 @@ function Get-UserSchemaNames {
 
 <#
 .SYNOPSIS
+    Asserts that dms.Document exists and has the expected column shape.
+
+.DESCRIPTION
+    Reads the dms.Document column names from the catalog and fails closed: a missing
+    table, a missing required column, a present forbidden column, or a failed query
+    each throw with the engine and database name. A query failure is never treated as
+    an absent column. The check is catalog-based because the v3 schema hash does not
+    include generated DDL and cannot tell the shapes apart.
+
+.PARAMETER DatabaseEngine
+    "postgresql" or "mssql".
+
+.PARAMETER ContainerName
+    The running database container hosting the database. Defaults to
+    "dms-postgresql" for PostgreSQL and "dms-mssql" for MSSQL.
+
+.PARAMETER DatabaseName
+    Name of the database to inspect.
+
+.PARAMETER MssqlPassword
+    The MSSQL "sa" password. Defaults to environment variable MSSQL_SA_PASSWORD or "abcdefgh1!".
+
+.PARAMETER ForbiddenColumns
+    Columns that must not exist on dms.Document (compared case-insensitively).
+
+.PARAMETER RequiredColumns
+    Columns that must exist on dms.Document (compared case-sensitively).
+
+.PARAMETER QueryRunner
+    Test seam. Receives the catalog query and returns its output lines; the default runs
+    psql or sqlcmd through docker exec and throws on a non-zero exit code.
+#>
+function Assert-DocumentTableShape {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Template tooling intentionally writes operator progress to the console.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The MSSQL password is handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); the account is always "sa" so there is no companion username parameter, and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The MSSQL password is handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); SecureString adds no protection across that boundary.')]
+    param (
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [string]$ContainerName = $(if ($DatabaseEngine -eq "mssql") { "dms-mssql" } else { "dms-postgresql" }),
+
+        [Parameter(Mandatory = $true)]
+        [string]$DatabaseName,
+
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!",
+
+        [string[]]$ForbiddenColumns = @('CreatedAt'),
+
+        [string[]]$RequiredColumns = @('DocumentId', 'DocumentUuid'),
+
+        [scriptblock]$QueryRunner
+    )
+
+    if ($DatabaseName -notmatch "^[A-Za-z0-9_]+$") {
+        throw "Database name '$DatabaseName' contains unsupported characters."
+    }
+
+    if ($DatabaseEngine -eq "mssql") {
+        $query = "SET NOCOUNT ON; SELECT c.name FROM sys.columns c WHERE c.object_id = OBJECT_ID(N'dms.Document') ORDER BY c.column_id;"
+    }
+    else {
+        $query = "SELECT column_name FROM information_schema.columns WHERE table_schema = 'dms' AND table_name = 'Document' ORDER BY ordinal_position;"
+    }
+
+    try {
+        if ($null -ne $QueryRunner) {
+            $output = & $QueryRunner $query
+        }
+        else {
+            if ($DatabaseEngine -eq "mssql") {
+                $output = & docker exec -e "SQLCMDPASSWORD=$MssqlPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -d $DatabaseName -C -b -h -1 -W -Q $query
+            }
+            else {
+                $output = & docker exec $ContainerName psql -U postgres -d $DatabaseName -tA -c $query
+            }
+
+            if ($LASTEXITCODE -ne 0) {
+                throw "Query exited with code $LASTEXITCODE."
+            }
+        }
+    }
+    catch {
+        throw "Failed to read the dms.Document columns of $DatabaseEngine database '$DatabaseName': $($_.Exception.Message)"
+    }
+
+    $columns = @($output | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { "$_".Trim() })
+
+    if ($columns.Count -eq 0) {
+        throw "dms.Document is missing in $DatabaseEngine database '$DatabaseName'."
+    }
+
+    $missingColumns = @($RequiredColumns | Where-Object { $_ -cnotin $columns })
+    if ($missingColumns.Count -gt 0) {
+        throw "Unexpected dms.Document shape in $DatabaseEngine database '$DatabaseName': missing $($missingColumns -join ', '). Observed: $($columns -join ', ')."
+    }
+
+    $presentForbiddenColumns = @($ForbiddenColumns | Where-Object { $_ -in $columns })
+    if ($presentForbiddenColumns.Count -gt 0) {
+        throw "dms.Document in $DatabaseEngine database '$DatabaseName' still carries $($presentForbiddenColumns -join ', '). Observed: $($columns -join ', ')."
+    }
+
+    Write-Host "dms.Document shape verified in $DatabaseEngine database '$DatabaseName': $($columns -join ', ')"
+}
+
+<#
+.SYNOPSIS
     Restores a database template package into a freshly created database.
 
 .DESCRIPTION
@@ -1596,4 +1704,4 @@ function Build-Template {
     Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion -DatabaseName $DataStoreDatabaseName -DumpAllUserSchemas:$DumpAllUserSchemas -DatabaseEngine $DatabaseEngine -MssqlPassword $MssqlPassword
 }
 
-Export-ModuleMember -Function Build-Template, Get-UserSchemaNames, Restore-TemplatePackage, Get-EducatorPreparationSampleFileName, Get-EducationOrganizationIdsFromSampleData, Get-TemplateBulkLoadTuning
+Export-ModuleMember -Function Build-Template, Get-UserSchemaNames, Assert-DocumentTableShape, Restore-TemplatePackage, Get-EducatorPreparationSampleFileName, Get-EducationOrganizationIdsFromSampleData, Get-TemplateBulkLoadTuning
