@@ -1904,6 +1904,18 @@
             }
           },
           {
+            "name": "ResourceKeyId",
+            "kind": "Scalar",
+            "type": {
+              "kind": "Int16"
+            },
+            "is_nullable": false,
+            "source_path": null,
+            "storage": {
+              "kind": "Stored"
+            }
+          },
+          {
             "name": "CodeValue",
             "kind": "Scalar",
             "type": {
@@ -1965,16 +1977,18 @@
           },
           {
             "kind": "ForeignKey",
-            "name": "FK_Descriptor_Document",
+            "name": "FK_Descriptor_DocumentResourceKey",
             "columns": [
-              "DocumentId"
+              "DocumentId",
+              "ResourceKeyId"
             ],
             "target_table": {
               "schema": "dms",
               "name": "Document"
             },
             "target_columns": [
-              "DocumentId"
+              "DocumentId",
+              "ResourceKeyId"
             ],
             "on_delete": "Restrict",
             "on_update": "NoAction"
@@ -2223,6 +2237,18 @@
             }
           },
           {
+            "name": "ResourceKeyId",
+            "kind": "Scalar",
+            "type": {
+              "kind": "Int16"
+            },
+            "is_nullable": false,
+            "source_path": null,
+            "storage": {
+              "kind": "Stored"
+            }
+          },
+          {
             "name": "CodeValue",
             "kind": "Scalar",
             "type": {
@@ -2284,16 +2310,18 @@
           },
           {
             "kind": "ForeignKey",
-            "name": "FK_Descriptor_Document",
+            "name": "FK_Descriptor_DocumentResourceKey",
             "columns": [
-              "DocumentId"
+              "DocumentId",
+              "ResourceKeyId"
             ],
             "target_table": {
               "schema": "dms",
               "name": "Document"
             },
             "target_columns": [
-              "DocumentId"
+              "DocumentId",
+              "ResourceKeyId"
             ],
             "on_delete": "Restrict",
             "on_update": "NoAction"

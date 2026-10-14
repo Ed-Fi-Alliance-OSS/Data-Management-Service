@@ -243,6 +243,7 @@ CREATE TABLE [dms].[Descriptor]
     [EffectiveBeginDate] date NULL,
     [EffectiveEndDate] date NULL,
     [Uri] AS ([Namespace] + N'#' + [CodeValue]),
+    [UriLowered] AS LOWER(([Namespace] + N'#' + [CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Descriptor_ContentVersion] DEFAULT 0,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_Descriptor] PRIMARY KEY CLUSTERED ([DescriptorId])
@@ -470,23 +471,12 @@ CREATE TABLE [dms].[SchemaComponent]
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Descriptor_Document' AND parent_object_id = OBJECT_ID(N'dms.Descriptor')
+    WHERE name = N'FK_Descriptor_DocumentResourceKey' AND parent_object_id = OBJECT_ID(N'dms.Descriptor')
 )
 ALTER TABLE [dms].[Descriptor]
-ADD CONSTRAINT [FK_Descriptor_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Descriptor_ResourceKey' AND parent_object_id = OBJECT_ID(N'dms.Descriptor')
-)
-ALTER TABLE [dms].[Descriptor]
-ADD CONSTRAINT [FK_Descriptor_ResourceKey]
-FOREIGN KEY ([ResourceKeyId])
-REFERENCES [dms].[ResourceKey] ([ResourceKeyId])
+ADD CONSTRAINT [FK_Descriptor_DocumentResourceKey]
+FOREIGN KEY ([DocumentId], [ResourceKeyId])
+REFERENCES [dms].[Document] ([DocumentId], [ResourceKeyId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -580,6 +570,14 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'dms' AND t.name = N'Descriptor' AND i.name = N'UX_Descriptor_UriLowered_ResourceKeyId'
+)
+CREATE UNIQUE INDEX [UX_Descriptor_UriLowered_ResourceKeyId] ON [dms].[Descriptor] ([UriLowered], [ResourceKeyId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'dms' AND t.name = N'Document' AND i.name = N'IX_Document_CreatedByOwnershipTokenId'
 )
 CREATE INDEX [IX_Document_CreatedByOwnershipTokenId] ON [dms].[Document] ([CreatedByOwnershipTokenId]) WHERE [CreatedByOwnershipTokenId] IS NOT NULL;
@@ -603,15 +601,6 @@ AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF EXISTS (
-        SELECT 1
-        FROM inserted i
-        INNER JOIN [dms].[Document] d ON d.[DocumentId] = i.[DocumentId]
-        WHERE i.[ResourceKeyId] <> d.[ResourceKeyId]
-    )
-    BEGIN
-        THROW 50000, N'dms.Descriptor.ResourceKeyId diverges from the owning dms.Document row.', 1;
-    END
     DECLARE @stamped TABLE (
         [DocumentId] bigint NOT NULL PRIMARY KEY,
         [ContentVersion] bigint NOT NULL,

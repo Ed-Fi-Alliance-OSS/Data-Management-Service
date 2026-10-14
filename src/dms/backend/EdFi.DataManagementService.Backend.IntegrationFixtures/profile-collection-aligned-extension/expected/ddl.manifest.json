@@ -4,12 +4,12 @@
   "ddl": [
     {
       "dialect": "mssql",
-      "normalized_sql_sha256": "eb8dea34480689559aec97f8879a3f33e651ba102cc58549c42d8799c9a537be",
+      "normalized_sql_sha256": "108ed817f8b49efe4d74db1c7e2166af17cb23fcb2e9e51b430f53efc48f00bc",
       "statement_count": 134
     },
     {
       "dialect": "pgsql",
-      "normalized_sql_sha256": "cd16f16bd581d2384ba63279a605435717b2dd12753bfb4cb499579bed02b053",
+      "normalized_sql_sha256": "8b3eba8a0ede43e0b88d65da60d6dea1e0a403e8bbbda5f41a88385eaf57cff9",
       "statement_count": 154
     }
   ]
