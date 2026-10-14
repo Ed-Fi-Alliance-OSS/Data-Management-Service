@@ -121,6 +121,30 @@ legacy-shape fixtures as E4–E5. The Phase 2 gate keeps the step 3.1 CDC files 
 references, separate from the exceptions. This is a wording change only: Phase 2's recorded
 grep output already matches it, and no rerun was needed.
 
+Found while reviewing step 3.1 (approved 2026-10-13). There are two evidence corrections and no
+code or workflow change.
+
+- **I7 classification.** The I7 row said Kafka/Connect fixtures self-skip, but Kafka qualification
+  prerequisites can fail `OneTimeSetUp` rather than skip. Step 3.1's I7 run had 557 passed,
+  53 failed, and 1,174 not executed. The 53 failures are 50 Kafka qualification fixtures failing
+  with `Docker operation failed (image)` and three Windows journal-interruption failures
+  (`CdcWorkflowStateException`, state `Unavailable`). The 1,174 not-executed tests are 964 CDC
+  message-contract tests whose prerequisite `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` is missing,
+  200 pinned-image smoke tests whose prerequisites are not configured, and 10 marked unsupported
+  on Windows. I7 had no 0.3 baseline. All 53 failures were reproduced with identical names and
+  signatures on the **pre-step-3.1 tree** (`63f4e0989`, the 3.1 revert run), not on the 0.3
+  baseline. The I7 row (§8.3) now says this. Classification still compares name and signature,
+  and there are no blanket failure exclusions.
+- **Qualification runs.** "Pending CI" was not a plan. Ordinary PR CI runs the CDC integration
+  assembly with `Category!=DatabaseIntegration` only, and the connector smoke job
+  (`run-backend-cdc-connector-template-smoke-tests`) runs only on `workflow_dispatch`. So a green
+  PR build covers neither the pinned-image smoke nor the message contract. §8.3 now records three
+  required qualification runs against the reviewed branch SHA before merge:
+  - I7-smoke, from `on-dms-pullrequest.yml` dispatched on the branch.
+  - I7-contract, from `nightly-cdc-qualification.yml` dispatched with
+    `lane=Postgresql, suite=MessageContract`.
+  - I7-contract again, with `lane=Mssql, suite=MessageContract`.
+
 ---
 
 ## 1. Problem, proposed decision, alternatives, assumptions, open questions
@@ -717,8 +741,12 @@ both engines by exact name; diff review confirms no surviving assertion was loos
 - Verification: §8.4 list 3.1 (I3 `Given_MssqlCdcProviderArtifacts`; I5
   `Given_MssqlCdcHeartbeatDatabase_Provider_Setup`, `Given_PostgresqlCdcHeartbeatPublication_Provider_Setup`);
   `dotnet build` of `Backend.Cdc.Tests.Integration`. The pinned-image smoke test
-  (`Category=CdcConnectorTemplateSmoke`) is Docker-based and runs in CI's "Run Backend CDC
-  Connector Template Smoke Tests" lane; it is a CI gate (§8.3), reported as not run locally.
+  (`Category=CdcConnectorTemplateSmoke`) is Docker-based. It runs only in the "Run Backend
+  CDC Connector Template Smoke Tests" job, which runs on `workflow_dispatch` only, so ordinary
+  PR and merge-queue CI skip it. The message-contract fixtures (`….MessageContract.cs`) are
+  `DatabaseIntegration` and skip locally without the pinned images. Both are required
+  qualification runs against the reviewed branch SHA before merge (§8.3 I7-smoke and
+  I7-contract) and are reported as not run locally.
 - Commit: `[DMS-1403] Align CDC capture-column expectations with the six-column Document table`.
 
 **3.2 Live source-inventory rejection on both engines (PAC-10 a).**
@@ -909,7 +937,9 @@ description. Script lives under `C:\dev\ed-fi\reviews\DMS-1403\6.1\`, not the re
 `git status` shows only the pre-existing lock-file modification unstaged; `git log
 origin/main..HEAD` lists the step commits. Present the commit list, file summary, PAC evidence
 table (per-fixture counts by name), unresolved limitations (including §7.4 c), and the CI gates
-that will run only after push (§8.3), then wait for push approval.
+that will run only after push (§8.3), then wait for push approval. The report also lists the
+three qualification runs (I7-smoke and two I7-contract runs) still owed against the pushed SHA;
+each dispatch waits for its own approval.
 
 ---
 
@@ -1139,8 +1169,9 @@ the PR before the story is complete (not reproducible locally or deliberately CI
 | I4 | MSSQL backend integration, full by CI shard | `foreach ($n in 1..4) { dotnet test $MS --filter "Category=MssqlCiShard$n" --results-directory "$R\<step>" --logger "trx;LogFileName=I4-shard$n.trx" --nologo }` | all pass per shard; the alias-mutex timeouts against a `127.0.0.1`-only binding count as pre-existing only if present in 0.3 | 0.3 (baseline), pre-push | MSSQL shards 1–4 |
 | I5 | SchemaTools goldens + CDC heartbeat | `dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration --filter "FullyQualifiedName~Given_Provisioned_Pgsql_Database_When_Introspecting_Schema|FullyQualifiedName~Given_Provisioned_Mssql_Database_When_Introspecting_Schema|FullyQualifiedName~Given_MssqlCdcHeartbeatDatabase_Provider_Setup|FullyQualifiedName~Given_PostgresqlCdcHeartbeatPublication_Provider_Setup" --results-directory "$R\<step>" --logger "trx;LogFileName=I5.trx" --nologo; Get-TrxFixtureCounts … -ExpectedFixtures <§8.4 list 3.1/3.3 SchemaTools>` | all four fixtures by name; pass after 3.3 | 3.1, 3.3 | SchemaTools PG + MSSQL lanes |
 | I6 | SchemaTools full PG and MSSQL | same project, `--filter "Category=PostgresqlIntegration"` then `--filter "Category=MssqlIntegration"`, `LogFileName=I6-pg.trx` / `I6-mssql.trx` | all pass | pre-push | same |
-| I7 | Backend CDC integration, database lanes | `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration --filter "Category!=CdcConnectorTemplateSmoke" --results-directory "$R\<step>" --logger "trx;LogFileName=I7.trx" --nologo` | pass; fixtures that need Kafka/Connect self-skip and are listed by name as skipped | 3.1, pre-push | CDC lanes |
-| I7-smoke | Connector-template pinned-image smoke | CI only (`Category=CdcConnectorTemplateSmoke`, Docker Compose stack) | pass | not run locally (stated) | **Run Backend CDC Connector Template Smoke Tests** |
+| I7 | Backend CDC integration, database lanes | `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration --filter "Category!=CdcConnectorTemplateSmoke" --results-directory "$R\<step>" --logger "trx;LogFileName=I7.trx" --nologo` | no failure except those whose name **and** signature match the I7 record from the pre-step-3.1 tree (`3.1\I7-revert-check-outcomes.csv`: 50 Kafka qualification `Docker operation failed (image)`, 3 Windows journal-interruption). Kafka qualification prerequisites can fail `OneTimeSetUp` rather than skip. Not-executed tests are counted separately from failures and passes, with each reason named (§0.5). | 3.1, pre-push | **Run Backend CDC Integration Tests** runs `Category!=DatabaseIntegration` only |
+| I7-smoke | Connector-template pinned-image smoke | Qualification run: dispatch `on-dms-pullrequest.yml` (`workflow_dispatch`) on the branch; job `run-backend-cdc-connector-template-smoke-tests` (`Category=CdcConnectorTemplateSmoke`, Docker Compose stack, repository image variables) | pass on the reviewed branch SHA | not run locally (stated; 200 tests skip without the pinned-image variables) | required before merge; ordinary PR and merge-queue CI skip this job |
+| I7-contract | CDC message contract, both providers | Qualification runs: dispatch `nightly-cdc-qualification.yml` twice on the branch, with `lane=Postgresql, suite=MessageContract` and `lane=Mssql, suite=MessageContract` | both pass on the reviewed branch SHA | not run locally (stated; 964 tests skip without `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE`) | required before merge; not part of PR CI |
 | I8 | API integration (in-process DMS on provisioned DBs) | `dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration -p:BuildingPluginFixtures=true --filter "Category=ApiIntegration&Category=PostgresqlIntegration" --results-directory "$R\6.2" --logger "trx;LogFileName=I8-pg.trx" --nologo` (+ `MssqlIntegration` variant when the MSSQL container is up) | pass; proves DMS boots and serves on a six-column schema; plugin tests not run (NU1008 workaround) and stated | pre-push | PG + MSSQL API lanes, Plugin lane |
 | P1 | Northridge db-free guards | `Invoke-Pester eng/northridge/tests/NorthridgeFailClosedGuards.Tests.ps1 -Output Detailed *> "$R\<step>\P1.log"` | all pass; live scenarios self-skip (named) | 4.1, pre-push | Pester lane |
 | P2 | Northridge live carry-forward | `$env:DMS_NORTHRIDGE_PG_FIXTURE_CONTAINER='<pg16>'; Invoke-Pester eng/northridge/tests/CompactDescriptorCarryForward.Tests.ps1 -Output Detailed *> "$R\<step>\P2.log"` | both `-ForEach` forms pass; target catalog has no `CreatedAt` | 4.2, pre-push | not in CI (stated) |
@@ -1150,8 +1181,17 @@ the PR before the story is complete (not reproducible locally or deliberately CI
 | E1 | E2E | CI lanes (five E2E matrices) | green | not run locally unless I8 cannot run (then one shard after `Build -Configuration Release` and a teardown) | E2E lanes |
 
 Criteria for the broader regressions: I2, I4, I6, and I8 are local pre-push gates because the
-change alters the physical table every write path touches. I7-smoke and E1 are CI gates and are
-reported as "not run locally". A story is complete only when the CI column is green on the PR.
+change alters the physical table every write path touches. E1 is a CI gate, reported as "not run
+locally".
+
+I7-smoke and I7-contract are required qualification runs, not PR CI. A green ordinary PR build
+cannot satisfy them, because PR CI excludes `DatabaseIntegration` from the CDC integration
+assembly and skips the smoke job. They are dispatched against the reviewed branch SHA after push
+approval and before merge, and the §6.2 report records each run's URL and SHA. Dispatch is an
+outward action and needs its own approval.
+
+A story is complete only when both hold: the CI column is green on the PR, and all three
+qualification runs are green on the reviewed SHA.
 
 ### 8.4 Expected-fixture lists and filters per step (exact class names, verified 2026-10-12)
 
