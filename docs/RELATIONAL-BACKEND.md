@@ -45,13 +45,12 @@ Descriptors have two independent keys:
 | `DescriptorId` | Native `int` primary key on `dms.Descriptor`; PostgreSQL `GENERATED ALWAYS AS IDENTITY` with its own backing sequence, SQL Server `IDENTITY(1,1)`. Every stored descriptor reference is `Int32` and targets this key, including collections, extensions, copied reference identities, and composite keys. |
 | `DocumentId` | Unique, non-null `bigint` association to `dms.Document`; used for UUID lookup, document-level RI, locks, concurrency, paging, cache/projection work, and representation restamping. Updates preserve both keys. |
 
-`ResourceKeyId` (`smallint`) identifies the qualified descriptor type. The descriptor
-stamping trigger enforces agreement with the owning document.
-`FK_Descriptor_Document` uses `RESTRICT` on PostgreSQL and `NO ACTION` on SQL Server;
-`FK_Descriptor_ResourceKey` constrains
-the type key to the catalog. Live descriptors have no `Discriminator`
-and no physically stored `Uri`. `UX_Descriptor_ResourceKeyId_Uri` enforces uniqueness over
-the unlowered whole `Namespace + '#' + CodeValue` within a type:
+`ResourceKeyId` (`smallint`) identifies the qualified descriptor type. The composite
+`FK_Descriptor_DocumentResourceKey (DocumentId, ResourceKeyId)` references the owning document's
+`(DocumentId, ResourceKeyId)`, so the database rejects a type key that differs from the
+document's. It uses `RESTRICT` on PostgreSQL and `NO ACTION` on SQL Server. Live descriptors
+have no `Discriminator` and no physically stored `Uri`. `UX_Descriptor_ResourceKeyId_Uri`
+enforces uniqueness over the unlowered whole `Namespace + '#' + CodeValue` within a type:
 
 - PostgreSQL indexes `("ResourceKeyId", ("Namespace" || '#' || "CodeValue"))`.
 - SQL Server defines non-persisted `Uri AS ([Namespace] + N'#' + [CodeValue])` and indexes
@@ -59,12 +58,24 @@ the unlowered whole `Namespace + '#' + CodeValue` within a type:
 
 On SQL Server, `Namespace` and `CodeValue` carry the DMS identity collation
 (`SQL_Latin1_General_CP1_CI_AS`) independent of the database default, and the computed `Uri`
-and its index inherit it. PostgreSQL uses the database-default collation. Neither expression
-introduces component-wise uniqueness or a lowered URI column.
+and its index inherit it. PostgreSQL uses the database-default collation for this index.
+Neither expression introduces component-wise uniqueness or a lowered URI column.
+
+`UX_Descriptor_UriLowered_ResourceKeyId` also enforces uniqueness over the lowered whole URI
+within a type, so case variants of one URI cannot coexist on either engine:
+
+- PostgreSQL indexes `(lower(("Namespace" || '#' || "CodeValue") COLLATE "pg_c_utf8"), "ResourceKeyId")`,
+  pinning the folding collation instead of following the database default. It adds no column.
+- SQL Server defines non-persisted
+  `UriLowered AS LOWER(([Namespace] + N'#' + [CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS)`
+  and indexes `(UriLowered, ResourceKeyId)`.
+
+Descriptor writes and descriptor references whose values contain the NUL character or an
+unpaired surrogate are rejected with HTTP 400 at the offending field path.
 The current runtime still calculates and maintains RI: its existing descriptor join returns
 both IDs in one lookup, and URI witnesses and original-case responses reconstruct the whole
-string. Lowered-URI natural-key probes, RI removal, new validation/equality rules, platform
-upgrades, and stored-wins descriptor writes belong to later stories. Abstract identity
+string. Lowered-URI natural-key probes, RI removal, query-side descriptor validation, new equality
+rules, and stored-wins descriptor writes belong to later stories. Abstract identity
 discriminators and union-view discriminator outputs remain unchanged.
 
 The regenerated [DS 5.2 artifacts](../src/dms/backend/Fixtures/authoritative/ds-5.2/expected)
@@ -136,7 +147,7 @@ api-schema-tools ddl provision \
 bounds DDL execution. For SQL Server, provisioning configures Read Committed Snapshot
 Isolation (and `ALLOW_SNAPSHOT_ISOLATION`) on newly created databases.
 
-`IX_Document_CreatedByOwnershipTokenId` is a filtered index and `UX_Descriptor_ResourceKeyId_Uri` indexes a computed column, so SQL Server requires the indexed-view SET option set (`ANSI_NULLS`, `ANSI_PADDING`, `ANSI_WARNINGS`, `ARITHABORT`, `CONCAT_NULL_YIELDS_NULL`, `QUOTED_IDENTIFIER` ON; `NUMERIC_ROUNDABORT` OFF) for index creation and for writes to `dms.Document` or `dms.Descriptor`. It captures `QUOTED_IDENTIFIER` and `ANSI_NULLS` into each stamp trigger the script creates.
+`IX_Document_CreatedByOwnershipTokenId` is a filtered index and `UX_Descriptor_ResourceKeyId_Uri` and `UX_Descriptor_UriLowered_ResourceKeyId` index computed columns, so SQL Server requires the indexed-view SET option set (`ANSI_NULLS`, `ANSI_PADDING`, `ANSI_WARNINGS`, `ARITHABORT`, `CONCAT_NULL_YIELDS_NULL`, `QUOTED_IDENTIFIER` ON; `NUMERIC_ROUNDABORT` OFF) for index creation and for writes to `dms.Document` or `dms.Descriptor`. It captures `QUOTED_IDENTIFIER` and `ANSI_NULLS` into each stamp trigger the script creates.
 The generated SQL Server script therefore opens with one `SET` batch that puts the session in that state, so applying it with any client, including ODBC `sqlcmd` without `-I`, provisions the index and bakes the right settings into the triggers.
 The filter applies to newly provisioned databases only: both engines guard index creation by name, so a database provisioned before this change keeps its unfiltered index, with no startup-validation signal (generated DDL is not an input to the effective schema hash), until it is deliberately reprovisioned.
 Sessions that write `dms.Document` directly still need `QUOTED_IDENTIFIER` ON: `Microsoft.Data.SqlClient` and go-sqlcmd default it ON, ODBC `sqlcmd` needs `-I`, and a write without it fails with `Msg 1934` while a read raises nothing and silently stops using the index.

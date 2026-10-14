@@ -100,15 +100,15 @@ descriptor mirror through its document association even when the values differ.
 The descriptor stamping trigger copies insert stamps from its owning document; changed
 stored representation fields stamp that document and mirror the result back to the descriptor.
 SQL Server pairs descriptor `inserted`/`deleted` rows by `DescriptorId` while stamping and
-mirroring through `DocumentId`. The trigger also rejects descriptor `ResourceKeyId` drift
-from the document; the resource-key catalog FK remains. `FK_Descriptor_Document` is a
-safety-net FK with `RESTRICT` on PostgreSQL and `NO ACTION` on SQL Server. Delete the
+mirroring through `DocumentId`. The composite `FK_Descriptor_DocumentResourceKey
+(DocumentId, ResourceKeyId)` rejects descriptor `ResourceKeyId` drift from the document and is
+the safety-net FK, with `RESTRICT` on PostgreSQL and `NO ACTION` on SQL Server. Delete the
 descriptor before its owning document in the same transaction so stamping and tombstone
 capture can read the document metadata before it is removed.
 
 There is no live descriptor discriminator or physically stored URI. URI consumers reconstruct
-the whole `Namespace + '#' + CodeValue`; SQL Server's non-persisted computed URI exists for
-indexing. Namespace and code value remain independently compared stored representation fields.
+the whole `Namespace + '#' + CodeValue`; SQL Server's non-persisted computed `Uri` and `UriLowered`
+exist for indexing. Namespace and code value remain independently compared stored representation fields.
 An RI-matched POST applies incoming components, including case changes. PUT rejects differing
 whole-URI text ordinally (including case-only text), but accepts changed component pairs that
 reconstruct exactly the same URI. Such accepted component changes receive stamps/ETag changes;
