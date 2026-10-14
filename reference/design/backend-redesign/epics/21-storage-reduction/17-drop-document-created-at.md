@@ -87,6 +87,15 @@ Found while implementing step 1.1 (pending review): the golden regeneration also
 change is derived from the SQL goldens and carries no other edit; §5.5 and step 1.1 (files and
 diff-shape gate) now include it.
 
+Found while implementing step 2.2 (approved 2026-10-13): the `ParityScenarioCatalog.*.cs` method
+lists are resolved by reflection in `Given_The_Postgresql_Parity_Catalog_Resolution`,
+`Given_The_Mssql_Parity_Catalog_Resolution`, and the backend unit fixtures
+`Given_The_Parity_Scenario_Catalog` and `Given_The_Parity_Catalog_Entry_Point_Resolution`, so a
+removed test method must also leave the catalog. §8.4 lists 2.2 and 2.3 now require these four
+fixtures by exact name in their own projects, and step 2.2 states that its catalog edit removes
+the obsolete method references. Step 2.2's recorded evidence already passes the added gates
+(1, 1, 24, and 3 passed; no rerun).
+
 ---
 
 ## 1. Problem, proposed decision, alternatives, assumptions, open questions
@@ -610,8 +619,10 @@ fixtures on both engines with the §8.4 filter and checks the §8.4 expected lis
 - Files: `ProfileGuardedNoOpTestSupport.cs:16, 72`, `ParityScenarioCatalog.Profile.cs:525, 540, 555`,
   `PostgresqlProfileGuardedNoOpTests.cs:69, 715-718, 819-822`, `MssqlProfileGuardedNoOpTests.cs:73, 496, 601`
   (SELECT column; delete the two `It_does_not_change_created_at` tests per engine; every other
-  assertion unchanged).
-- Verification: §8.4 list 2.2 on both engines.
+  assertion unchanged). The `ParityScenarioCatalog.Profile.cs` edit removes the deleted
+  `It_does_not_change_created_at` method from each of the three catalog rows' method lists, which
+  the parity catalog fixtures resolve by reflection.
+- Verification: §8.4 list 2.2 on both engines, including its parity catalog gates.
 - Commit: `[DMS-1403] Drop CreatedAt from the profile-guarded no-op snapshots`.
 
 **2.3 No-profile guarded no-op snapshot and its two provider suites.**
@@ -619,7 +630,7 @@ fixtures on both engines with the §8.4 filter and checks the §8.4 expected lis
   the `ConcurrentBumpContentLastModifiedAt` sentinel check stays exactly as is),
   `ParityScenarioCatalog.NoProfile.cs:437`, `PostgresqlRelationalWriteGuardedNoOpTests.cs:196, 394, 577, 591`,
   `MssqlRelationalWriteGuardedNoOpTests.cs:207, 453, 639, 653`.
-- Verification: §8.4 list 2.3 on both engines.
+- Verification: §8.4 list 2.3 on both engines, including its parity catalog gates.
 - Commit: `[DMS-1403] Drop CreatedAt from the no-profile guarded no-op snapshots`.
 
 **2.4 POST-as-update snapshot and its two provider suites.**
@@ -1134,6 +1145,13 @@ verified by `rg -l`; corrected in review 3)**
   `Given_A_Mssql_Relational_Profile_Guarded_No_Op_Post_As_Update_With_Root_Only_Shape`,
   `Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Separate_Table_Shape`,
   `Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Top_Level_Collection_Shape`.
+- Parity catalog gates (added after the step 2.2 review; they reflection-check the
+  `ParityScenarioCatalog.*.cs` method lists and descriptions this step edits). Each is a separate
+  row in its own project, with the same exact-name discovery and `Get-TrxFixtureCounts` check:
+  - PG project: `EdFi.DataManagementService.Backend.Postgresql.Tests.Parity.Given_The_Postgresql_Parity_Catalog_Resolution`.
+  - MSSQL project: `EdFi.DataManagementService.Backend.Mssql.Tests.Parity.Given_The_Mssql_Parity_Catalog_Resolution`.
+  - Backend unit project (`Backend.Tests.Unit`): `EdFi.DataManagementService.Backend.Tests.Unit.Parity.Given_The_Parity_Scenario_Catalog`,
+    `EdFi.DataManagementService.Backend.Tests.Unit.Parity.Given_The_Parity_Catalog_Entry_Point_Resolution`.
 
 **2.3 (no-profile guarded no-op)**
 - PG: `Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Focused_Stable_Key_Fixture`,
@@ -1143,6 +1161,12 @@ verified by `rg -l`; corrected in review 3)**
   `Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Competing_Uncommitted_Content_Version_Bump`,
   `Given_A_Postgresql_Relational_Guarded_No_Op_Post_As_Update_With_A_Competing_Uncommitted_Content_Version_Bump`.
 - MSSQL: the same six names with `Mssql` in place of `Postgresql`.
+- Parity catalog gates (added after the step 2.2 review), each a separate row in its own project
+  with exact-name discovery and the `Get-TrxFixtureCounts` check:
+  - PG project: `EdFi.DataManagementService.Backend.Postgresql.Tests.Parity.Given_The_Postgresql_Parity_Catalog_Resolution`.
+  - MSSQL project: `EdFi.DataManagementService.Backend.Mssql.Tests.Parity.Given_The_Mssql_Parity_Catalog_Resolution`.
+  - Backend unit project (`Backend.Tests.Unit`): `EdFi.DataManagementService.Backend.Tests.Unit.Parity.Given_The_Parity_Scenario_Catalog`,
+    `EdFi.DataManagementService.Backend.Tests.Unit.Parity.Given_The_Parity_Catalog_Entry_Point_Resolution`.
 
 **2.4 (POST-as-update)**
 - PG: `Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Change_With_A_Focused_Stable_Key_Fixture`,
