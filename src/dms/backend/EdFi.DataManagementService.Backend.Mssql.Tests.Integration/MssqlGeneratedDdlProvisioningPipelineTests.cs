@@ -89,8 +89,8 @@ public class Given_MssqlGeneratedDdlProvisioningPipeline
         try
         {
             Func<Task> act = () => applyTask.WaitAsync(TimeSpan.FromSeconds(90));
-            var exception = await act.Should().ThrowAsync<SqlException>();
-            exception.Which.Number.Should().Be(-2);
+            var exception = await act.Should().ThrowAsync<Exception>();
+            PrimaryException(exception.Which).Should().BeOfType<SqlException>().Which.Number.Should().Be(-2);
             writer.ToString().Should().BeEmpty();
             (
                 await database.ExecuteScalarOrDefaultAsync<int>(
