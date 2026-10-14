@@ -153,7 +153,6 @@ public class Given_MssqlProvisioningTimingRecorder
         File.WriteAllText(parentFile, "file");
         var disposed = false;
         var primary = new InvalidOperationException("primary");
-        var cleanup = new ApplicationException("cleanup");
         Action act = () =>
         {
             try
@@ -182,8 +181,63 @@ public class Given_MssqlProvisioningTimingRecorder
         };
         act.Should().Throw<InvalidOperationException>().Which.Should().BeSameAs(primary);
         disposed.Should().BeTrue();
-        var aggregate = new AggregateException(primary, cleanup);
-        aggregate.InnerExceptions.Should().Equal(primary, cleanup);
+    }
+
+    [Test]
+    public void It_preserves_primary_and_cleanup_failures_after_timing_output_fails()
+    {
+        var parentFile = Path.Combine(_directory, "parent-file");
+        File.WriteAllText(parentFile, "file");
+        var cleanupInvoked = false;
+        var primary = new InvalidOperationException("primary");
+        var cleanup = new ApplicationException("cleanup");
+        Action dispose = () =>
+        {
+            cleanupInvoked = true;
+            throw cleanup;
+        };
+        Action act = () =>
+        {
+            try
+            {
+                throw primary;
+            }
+            catch (Exception primaryException)
+            {
+                List<Exception> cleanupExceptions = [];
+                try
+                {
+                    MssqlProvisioningTimingRecorder.RecordToPath(
+                        Path.Combine(parentFile, "child.csv"),
+                        new ThrowingWriter(),
+                        "failure",
+                        TimeSpan.Zero,
+                        "db",
+                        300,
+                        "fixture",
+                        "hash",
+                        "phase",
+                        "direct",
+                        "caller",
+                        "file.cs",
+                        1
+                    );
+                    dispose();
+                }
+                catch (Exception cleanupException)
+                {
+                    cleanupExceptions.Add(cleanupException);
+                }
+
+                MssqlLifecycleExceptionAggregator.Throw(primaryException, cleanupExceptions);
+            }
+        };
+
+        var aggregate = act.Should().Throw<AggregateException>().Which;
+        cleanupInvoked.Should().BeTrue();
+        aggregate.InnerExceptions.Should().HaveCount(2);
+        aggregate.InnerExceptions[0].Should().BeSameAs(primary);
+        aggregate.InnerExceptions[1].Should().BeSameAs(cleanup);
     }
 
     private sealed class ThrowingWriter : StringWriter
