@@ -110,6 +110,12 @@ public sealed record ConcreteResourceModel(
     /// query field paths against schema metadata.
     /// </summary>
     public QualifiedResourceName? SuperclassResource { get; init; }
+
+    /// <summary>
+    /// The resource's <c>identityJsonPaths</c> in ApiSchema.json order. Natural-key probe compilation
+    /// uses this as the semantic identity order.
+    /// </summary>
+    public IReadOnlyList<JsonPathExpression> IdentityJsonPaths { get; init; } = [];
 }
 
 /// <summary>

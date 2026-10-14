@@ -33,8 +33,9 @@ resource because they bind `UX_<R>_NK`.
   relational resource over its `UX_<R>_NK` contract.
 - Do not change `UX_<R>_RefKey` emission. Do not derive probe metadata from trigger metadata,
   constraint names, discriminator parsing, or emitted SQL.
-- Bind storage-resolved columns: key-unified identity parts bind the canonical storage column, not
-  a generated alias; abstract probes bind the stored concrete `ResourceKeyId`.
+- Bind storage-resolved columns in reference-target probes: key-unified identity parts bind the
+  canonical storage column, not a generated alias; abstract probes bind the stored concrete
+  `ResourceKeyId`. Own-key probes bind the `UX_<R>_NK` column contract as emitted.
 - Bind descriptor-valued parts as `Int32 ..._DescriptorId` targeting `dms.Descriptor.DescriptorId`,
   including copied reference identities and abstract projections. Shared descriptor probes project
   both `int DescriptorId` and owning `bigint DocumentId`; ordinary/abstract document probes retain
