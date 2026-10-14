@@ -16,13 +16,23 @@ public interface IRelationalReadTargetLookupService
         DocumentUuid documentUuid,
         CancellationToken cancellationToken = default
     );
+
+    Task<RelationalReadTargetLookupResult> ResolveForCacheCandidateAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        CancellationToken cancellationToken = default
+    );
 }
 
 public abstract record RelationalReadTargetLookupResult
 {
     private RelationalReadTargetLookupResult() { }
 
-    public sealed record ExistingDocument(
+    public sealed record ExistingDocument(long DocumentId, DocumentUuid DocumentUuid, long ContentVersion)
+        : RelationalReadTargetLookupResult;
+
+    public sealed record ExistingDocumentWithTimestamp(
         long DocumentId,
         DocumentUuid DocumentUuid,
         long ContentVersion,
@@ -63,7 +73,55 @@ internal sealed class RelationalReadTargetLookupService(IRelationalCommandExecut
     private readonly IRelationalCommandExecutor _commandExecutor =
         commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
 
+    /// <summary>
+    /// Resolves identity and version without reading the root timestamp. Hydration supplies response metadata.
+    /// </summary>
     public async Task<RelationalReadTargetLookupResult> ResolveForGetByIdAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mappingSet);
+
+        var expectedResourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
+        var resolvedDocument = await RelationalDocumentUuidLookupSupport
+            .TryResolveByDocumentUuidAsync(_commandExecutor, mappingSet, documentUuid, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (resolvedDocument is null)
+        {
+            return new RelationalReadTargetLookupResult.NotFound();
+        }
+
+        if (resolvedDocument.ResourceKeyId != expectedResourceKeyId)
+        {
+            return CreateWrongResourceResult(
+                mappingSet,
+                resolvedDocument.ResourceKeyId,
+                resolvedDocument.DocumentUuid
+            );
+        }
+
+        if (resolvedDocument.ContentVersion is null)
+        {
+            throw new InvalidOperationException(
+                $"Relational GET target lookup for document uuid '{documentUuid.Value}' returned a row without ContentVersion."
+            );
+        }
+
+        return new RelationalReadTargetLookupResult.ExistingDocument(
+            resolvedDocument.DocumentId,
+            resolvedDocument.DocumentUuid,
+            resolvedDocument.ContentVersion.Value
+        );
+    }
+
+    /// <summary>
+    /// Resolves the root timestamp as well as identity and version for cache candidate selection.
+    /// </summary>
+    public async Task<RelationalReadTargetLookupResult> ResolveForCacheCandidateAsync(
         MappingSet mappingSet,
         QualifiedResourceName resource,
         DocumentUuid documentUuid,
@@ -121,7 +179,7 @@ internal sealed class RelationalReadTargetLookupService(IRelationalCommandExecut
                 );
             }
 
-            return new RelationalReadTargetLookupResult.ExistingDocument(
+            return new RelationalReadTargetLookupResult.ExistingDocumentWithTimestamp(
                 resolvedDocument.DocumentId,
                 resolvedDocument.DocumentUuid,
                 resolvedDocument.ContentVersion.Value,
@@ -129,20 +187,28 @@ internal sealed class RelationalReadTargetLookupService(IRelationalCommandExecut
             );
         }
 
-        if (
-            !mappingSet.ResourceKeyById.TryGetValue(resolvedDocument.ResourceKeyId, out var actualResourceKey)
-        )
+        return CreateWrongResourceResult(
+            mappingSet,
+            resolvedDocument.ResourceKeyId,
+            resolvedDocument.DocumentUuid
+        );
+    }
+
+    private static RelationalReadTargetLookupResult.WrongResource CreateWrongResourceResult(
+        MappingSet mappingSet,
+        short resourceKeyId,
+        DocumentUuid documentUuid
+    )
+    {
+        if (!mappingSet.ResourceKeyById.TryGetValue(resourceKeyId, out var actualResourceKey))
         {
             throw new KeyNotFoundException(
                 $"Mapping set '{RelationalWriteSupport.FormatMappingSetKey(mappingSet.Key)}' does not contain a resource key entry for id "
-                    + $"'{resolvedDocument.ResourceKeyId}' resolved from document uuid '{documentUuid.Value}'. "
+                    + $"'{resourceKeyId}' resolved from document uuid '{documentUuid.Value}'. "
                     + "This indicates an internal compilation/selection bug."
             );
         }
 
-        return new RelationalReadTargetLookupResult.WrongResource(
-            resolvedDocument.DocumentUuid,
-            actualResourceKey.Resource
-        );
+        return new RelationalReadTargetLookupResult.WrongResource(documentUuid, actualResourceKey.Resource);
     }
 }

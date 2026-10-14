@@ -4553,7 +4553,7 @@ public sealed class RelationalDocumentStoreRepository(
         for (var attemptIndex = 0; attemptIndex < GetByIdReadBoundaryAttemptCount; attemptIndex++)
         {
             var targetLookupResult = await _readTargetLookupService
-                .ResolveForGetByIdAsync(
+                .ResolveForCacheCandidateAsync(
                     mappingSet,
                     resource,
                     relationalGetRequest.DocumentUuid,
@@ -4572,7 +4572,10 @@ public sealed class RelationalDocumentStoreRepository(
                 );
             }
 
-            if (targetLookupResult is not RelationalReadTargetLookupResult.ExistingDocument existingDocument)
+            if (
+                targetLookupResult
+                is not RelationalReadTargetLookupResult.ExistingDocumentWithTimestamp existingDocument
+            )
             {
                 throw new InvalidOperationException(
                     $"Relational repository GET target lookup returned unsupported result type '{targetLookupResult.GetType().Name}'."

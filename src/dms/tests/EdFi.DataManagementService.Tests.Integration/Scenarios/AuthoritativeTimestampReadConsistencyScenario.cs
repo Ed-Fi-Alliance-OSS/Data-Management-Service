@@ -538,6 +538,17 @@ internal static class AuthoritativeTimestampReadConsistencyScenario
             CancellationToken cancellationToken = default
         )
         {
+            if (boundary.DeleteDuringUuidLookup && boundary.Armed)
+            {
+                // Only cache selection joins the root during UUID lookup. Preserve the deletion-race
+                // regression on that path; ordinary GET obtains its timestamp during hydration.
+                var deletionSelection = await request.SelectAuthorizedCandidate(cancellationToken);
+                return deletionSelection
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationGetByIdSelectionResult.Complete>()
+                    .Subject.Result;
+            }
+
             if (!boundary.SelectedDescriptorFallback || !boundary.Armed)
             {
                 return await request.RelationalFallback(cancellationToken);

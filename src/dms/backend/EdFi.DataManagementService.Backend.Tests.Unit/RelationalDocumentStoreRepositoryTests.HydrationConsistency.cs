@@ -109,6 +109,21 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                 new RelationalReadTargetLookupResult.ExistingDocument(
                     345L,
                     _hydrationFailureDocumentUuid,
+                    91L
+                )
+            );
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForCacheCandidateAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    _hydrationFailureDocumentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocumentWithTimestamp(
+                    345L,
+                    _hydrationFailureDocumentUuid,
                     91L,
                     _readTargetContentLastModifiedAt
                 )

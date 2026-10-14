@@ -155,6 +155,18 @@ internal sealed class ThrowingRelationalReadTargetLookupService : IRelationalRea
             "Relational query execution should not route through get-by-id read target lookup."
         );
     }
+
+    public Task<RelationalReadTargetLookupResult> ResolveForCacheCandidateAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw new AssertionException(
+            "Relational query execution should not route through get-by-id read target lookup."
+        );
+    }
 }
 
 internal sealed record QuerySchoolSeed(DocumentUuid DocumentUuid, int SchoolId, string NameOfInstitution);
