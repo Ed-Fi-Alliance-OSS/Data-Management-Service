@@ -311,8 +311,8 @@ internal static class AbstractIdentitySchoolTestData
 
     /// <summary>
     /// Builds the School write plan and mapping set shared by the abstract-identity tests. The School
-    /// referential-identity trigger is always present so the failure mapper can project the concrete identity
-    /// values; the constraint resolver ignores triggers.
+    /// own natural-key probe is always present so the failure mapper can project the concrete identity
+    /// values; the constraint resolver classifies abstract identity conflicts structurally.
     /// </summary>
     /// <param name="abstractIdentityTable">
     /// The abstract identity table placed in the mapping set's abstract-identity inventory. Tests pass a
@@ -325,7 +325,6 @@ internal static class AbstractIdentitySchoolTestData
             SchoolResource,
             SchoolRootTable(),
             new DbColumnName("SchoolId"),
-            "$.schoolId",
             abstractIdentityTable,
             EducationOrganizationResource
         );
@@ -343,7 +342,6 @@ internal static class AbstractIdentitySchoolTestData
             LocalEducationAgencyResource,
             LocalEducationAgencyRootTable(),
             new DbColumnName("LocalEducationAgencyId"),
-            "$.localEducationAgencyId",
             EducationOrganizationIdentityTable(),
             EducationOrganizationResource
         );
@@ -363,20 +361,18 @@ internal static class AbstractIdentitySchoolTestData
             StudentProgramAssociationResource,
             StudentProgramAssociationRootTable(),
             new DbColumnName("Program_EducationOrganizationId"),
-            "$.programReference.educationOrganizationId",
             GeneralStudentProgramAssociationIdentityTable(),
             GeneralStudentProgramAssociationResource
         );
 
     /// <summary>
     /// Builds the write plan and mapping set for a concrete subclass that projects into the shared abstract
-    /// identity table, parameterized by the subclass's identity column, JSONPath, and abstract superclass.
+    /// identity table, parameterized by the subclass's identity column and abstract superclass.
     /// </summary>
     private static (ResourceWritePlan WritePlan, MappingSet MappingSet) BuildSubclassWriteModel(
         QualifiedResourceName concreteResource,
         DbTableModel concreteRootTable,
         DbColumnName identityColumnName,
-        string identityJsonPath,
         DbTableModel abstractIdentityTable,
         QualifiedResourceName abstractResource
     )
@@ -396,26 +392,23 @@ internal static class AbstractIdentitySchoolTestData
         var concreteKey = new ResourceKeyEntry(1, concreteResource, "1.0.0", false);
         var abstractResourceKey = new ResourceKeyEntry(2, abstractResource, "1.0.0", true);
 
-        // Subclass identifiers carry an Int32 scalar type in these fixtures; the failure mapper reads only the
-        // identity JSONPath from this element (walking it against the request body), not its scalar type, so a
-        // reference-backed nested path resolves the same way.
-        var referentialIdentityTrigger = new DbTriggerInfo(
-            new DbTriggerName($"TR_{concreteResource.ResourceName}_ReferentialIdentity"),
+        // The failure mapper reads only the identity JSONPath from the probe entry (walking it against the
+        // request body), not its column or binding, so a reference-backed nested path resolves the same way.
+        var identityColumn = concreteRootTable.Columns.Single(column =>
+            column.ColumnName == identityColumnName
+        );
+        var ownNaturalKeyProbe = new OwnNaturalKeyProbe(
+            concreteResource,
             concreteRootTable.Table,
-            [new DbColumnName("DocumentId")],
-            [identityColumnName],
-            new TriggerKindParameters.ReferentialIdentityMaintenance(
-                concreteKey.ResourceKeyId,
-                concreteResource.ProjectName,
-                concreteResource.ResourceName,
-                [
-                    new IdentityElementMapping(
-                        identityColumnName,
-                        identityJsonPath,
-                        new RelationalScalarType(ScalarKind.Int32)
-                    ),
-                ]
-            )
+            [
+                new NaturalKeyProbeKeyColumn(
+                    identityColumn.SourceJsonPath
+                        ?? throw new InvalidOperationException("Expected the identity column's source path."),
+                    identityColumnName,
+                    new NaturalKeyProbeKeyBinding.Scalar(new RelationalScalarType(ScalarKind.Int32))
+                ),
+            ],
+            new DbColumnName("DocumentId")
         );
 
         var mappingSet = new MappingSet(
@@ -436,7 +429,7 @@ internal static class AbstractIdentitySchoolTestData
                 [new AbstractIdentityTableInfo(abstractResourceKey, abstractIdentityTable)],
                 [],
                 [],
-                [referentialIdentityTrigger]
+                []
             ),
             new Dictionary<QualifiedResourceName, ResourceWritePlan> { [concreteResource] = writePlan },
             new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
@@ -451,7 +444,13 @@ internal static class AbstractIdentitySchoolTestData
                 [abstractResourceKey.ResourceKeyId] = abstractResourceKey,
             },
             new Dictionary<QualifiedResourceName, IReadOnlyList<ResolvedSecurableElementPath>>()
-        );
+        )
+        {
+            OwnNaturalKeyProbesByResource = new Dictionary<QualifiedResourceName, OwnNaturalKeyProbe>
+            {
+                [concreteResource] = ownNaturalKeyProbe,
+            },
+        };
 
         return (writePlan, mappingSet);
     }
