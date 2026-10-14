@@ -484,8 +484,10 @@ public class ApiClientModule : IEndpointModule
     /// its client key, but only once the reference check proves no ApiClient row holds its UUID.
     /// A key collision says nothing about the UUID, and the check is deliberately cross-tenant, so
     /// a referenced UUID, a failed or unrecognized check, or a check that throws all leave the
-    /// client in place and report it at Error with the identifiers needed to find it. The caller's
-    /// 409 is never replaced by what happens here.
+    /// client in place and report it at Error with the identifiers needed to find it. A thrown
+    /// check is reported by exception type only: its message can carry provider or database text
+    /// that the sanitizer never sees, so the exception itself is not attached. The caller's 409 is
+    /// never replaced by what happens here.
     /// </summary>
     private static async Task CleanUpProvisionedClientWhenUnreferencedAsync(
         IApiClientRepository apiClientRepository,
@@ -502,7 +504,7 @@ public class ApiClientModule : IEndpointModule
         }
         catch (Exception ex)
         {
-            LogLeftInPlace(ex.GetType().Name, ex);
+            LogLeftInPlace(ex.GetType().Name);
             return;
         }
 
@@ -527,9 +529,8 @@ public class ApiClientModule : IEndpointModule
                 return;
         }
 
-        void LogLeftInPlace(string outcome, Exception? exception = null) =>
+        void LogLeftInPlace(string outcome) =>
             logger.LogError(
-                exception,
                 "Could not prove provider client {ClientUuid} (client {ClientId}) is unreferenced after the database rejected its client key; reference check outcome {Outcome}; left in place; review manually",
                 clientUuid,
                 SanitizeForLog(clientId),

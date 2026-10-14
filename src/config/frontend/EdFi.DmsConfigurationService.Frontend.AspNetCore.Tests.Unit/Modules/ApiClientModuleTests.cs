@@ -6173,7 +6173,9 @@ public class ApiClientModuleTests
 
     /// <summary>
     /// A reference check that throws must not reach the global handler: the 409 stands, nothing is
-    /// deleted, and the thrown check is reported with its exception.
+    /// deleted, and the thrown check is reported by its exception type alone. The exception's
+    /// message is never sanitized, so attaching it would log whatever text it carries; the
+    /// sentinel therefore carries the raw suffix and must appear nowhere in the log in either form.
     /// </summary>
     [TestFixture]
     public class Given_an_api_client_insert_whose_generated_key_collides_and_whose_reference_check_throws
@@ -6186,7 +6188,7 @@ public class ApiClientModuleTests
         {
             ArrangeDatabaseInsert(new ApiClientInsertResult.FailureDuplicateClientId());
             A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
-                .Throws(new InvalidOperationException(Sentinel));
+                .Throws(new InvalidOperationException(Sentinel + RawSuffix));
 
             await ActInsertAsync();
         }
@@ -6205,15 +6207,19 @@ public class ApiClientModuleTests
         public void It_deletes_nothing() => AssertNoProviderCleanup();
 
         [Test]
-        public void It_reports_the_thrown_check_with_its_exception()
-        {
+        public void It_reports_the_thrown_check_by_type_only() =>
             AssertLeftInPlace(nameof(InvalidOperationException));
+
+        [Test]
+        public void It_attaches_no_exception_to_any_log_entry() =>
+            _moduleLogger.Entries.Should().AllSatisfy(entry => entry.Exception.Should().BeNull());
+
+        [Test]
+        public void It_logs_the_exception_message_in_neither_form() =>
             _moduleLogger
-                .Entries.Should()
-                .ContainSingle(entry =>
-                    entry.Level == LogLevel.Error && entry.Exception is InvalidOperationException
-                );
-        }
+                .Entries.Select(entry => $"{entry.State}")
+                .Should()
+                .OnlyContain(message => !message.Contains(Sentinel));
     }
 
     /// <summary>
