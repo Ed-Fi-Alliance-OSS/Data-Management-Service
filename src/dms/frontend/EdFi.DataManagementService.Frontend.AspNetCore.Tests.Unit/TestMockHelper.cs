@@ -60,8 +60,8 @@ public static class TestMockHelper
         var connectionStringProvider = A.Fake<IConnectionStringProvider>();
         A.CallTo(() => connectionStringProvider.GetConnectionString(A<long>._, A<string?>.Ignored))
             .Returns("test-connection-string");
-        A.CallTo(() => connectionStringProvider.GetHealthCheckConnectionString())
-            .Returns("test-connection-string");
+        A.CallTo(() => connectionStringProvider.GetHealthCheckTarget())
+            .Returns(HealthCheckTarget.Available("test-connection-string"));
         services.AddTransient(x => connectionStringProvider);
 
         // Replace the runtime backend mapping initializer so full app startup
