@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -15,7 +15,10 @@ using EdFi.DmsConfigurationService.DataModel.Model.OwnershipToken;
 using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration;
 
@@ -908,7 +911,8 @@ public class ApiClientTests : DatabaseTest
         private ApiClientInsertResult _repeatKeyOtherTenant = null!;
         private ApiClientInsertResult _losingConcurrentInsert = null!;
         private ApiClientUpdateResult _updateOntoTakenUuid = null!;
-        private Guid _otherClientUuidAfterRejectedUpdate;
+        private ApiClientResponse _otherClientBeforeRejectedUpdate = null!;
+        private ApiClientResponse _otherClientAfterRejectedUpdate = null!;
 
         [SetUp]
         public async Task Setup()
@@ -924,7 +928,7 @@ public class ApiClientTests : DatabaseTest
                 vendorId,
                 "DMS1529 Application B"
             );
-            _duplicateAttemptDataStoreId = await InsertDataStore();
+            _duplicateAttemptDataStoreId = await InsertDataStore(Connection!);
 
             (await InsertApiClient(_applicationAId, "Taken Client", _takenClientId, _takenClientUuid, []))
                 .Should()
@@ -969,27 +973,33 @@ public class ApiClientTests : DatabaseTest
                 []
             );
 
-            _repeatKeyOtherTenant = await InsertApiClientInAnotherTenant(_takenClientId);
+            _repeatKeyOtherTenant = await InsertApiClientRepeatingAnotherTenantsKey();
             _losingConcurrentInsert = await RunLosingConcurrentInsert();
 
+            // Every scalar and association of the client changes alongside the taken UUID, so a
+            // partially persisted update would show in the full before/after comparison.
+            _otherClientBeforeRejectedUpdate = await ReadApiClient(_otherClientRowId);
             _updateOntoTakenUuid = await _apiClientRepository.UpdateApiClient(
                 new ApiClientUpdateCommand
                 {
                     Id = _otherClientRowId,
-                    ApplicationId = _applicationAId,
-                    Name = "Other Client",
-                    IsApproved = true,
-                    DataStoreIds = [],
+                    ApplicationId = _applicationBId,
+                    Name = "Renamed Other Client",
+                    IsApproved = false,
+                    DataStoreIds = [_duplicateAttemptDataStoreId],
                     ClientUuid = _takenClientUuid,
                 }
             );
-            _otherClientUuidAfterRejectedUpdate = await Connection!.ExecuteScalarAsync<Guid>(
-                """SELECT "ClientUuid" FROM "dmscs"."ApiClient" WHERE "Id" = @Id;""",
-                new { Id = _otherClientRowId }
-            );
+            _otherClientAfterRejectedUpdate = await ReadApiClient(_otherClientRowId);
         }
 
-        private static async Task<int> InsertVendor(TenantContextProvider tenantContextProvider)
+        private async Task<ApiClientResponse> ReadApiClient(int id)
+        {
+            var result = await _apiClientRepository.GetApiClientById(id);
+            return ((ApiClientGetResult.Success)result).ApiClientResponse;
+        }
+
+        internal static async Task<int> InsertVendor(TenantContextProvider tenantContextProvider)
         {
             var vendorResult = await new VendorRepository(
                 Configuration.DatabaseOptions,
@@ -1008,7 +1018,7 @@ public class ApiClientTests : DatabaseTest
             return ((VendorInsertResult.Success)vendorResult).Id;
         }
 
-        private static async Task<int> InsertApplication(
+        internal static async Task<int> InsertApplication(
             IApplicationRepository applicationRepository,
             int vendorId,
             string name
@@ -1028,8 +1038,8 @@ public class ApiClientTests : DatabaseTest
             return ((ApplicationInsertResult.Success)result).Id;
         }
 
-        private async Task<int> InsertDataStore() =>
-            await Connection!.ExecuteScalarAsync<int>(
+        internal static async Task<int> InsertDataStore(NpgsqlConnection connection) =>
+            await connection.ExecuteScalarAsync<int>(
                 """
                 INSERT INTO "dmscs"."DataStore" ("DataStoreType", "Name")
                 VALUES ('Production', @Name) RETURNING "Id";
@@ -1037,14 +1047,60 @@ public class ApiClientTests : DatabaseTest
                 new { Name = $"DMS1529 Data Store {Guid.NewGuid()}" }
             );
 
+        /// <summary>
+        /// A tenant of its own with a vendor and an application, and the tenant-scoped repository
+        /// that writes clients under it.
+        /// </summary>
+        internal static async Task<(
+            IApiClientRepository ApiClientRepository,
+            int ApplicationId
+        )> CreateTenantAggregate(NpgsqlConnection connection, string tenantName)
+        {
+            long tenantId = await connection.ExecuteScalarAsync<long>(
+                """INSERT INTO "dmscs"."Tenant" ("Name") VALUES (@Name) RETURNING "Id";""",
+                new { Name = $"{tenantName}-{Guid.NewGuid():N}" }
+            );
+            var tenantProvider = new TenantContextProvider
+            {
+                Context = new TenantContext.Multitenant(tenantId, tenantName),
+            };
+            int vendorId = await InsertVendor(tenantProvider);
+            int applicationId = await InsertApplication(
+                new ApplicationRepository(
+                    Configuration.DatabaseOptions,
+                    NullLogger<ApplicationRepository>.Instance,
+                    new TestAuditContext(),
+                    tenantProvider
+                ),
+                vendorId,
+                $"DMS1529 {tenantName} Application"
+            );
+            IApiClientRepository apiClientRepository = new ApiClientRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<ApiClientRepository>.Instance,
+                new TestAuditContext(),
+                tenantProvider
+            );
+            return (apiClientRepository, applicationId);
+        }
+
         private Task<ApiClientInsertResult> InsertApiClient(
             int applicationId,
             string name,
             string clientId,
             Guid clientUuid,
             int[] dataStoreIds
+        ) => InsertApiClient(_apiClientRepository, applicationId, name, clientId, clientUuid, dataStoreIds);
+
+        private static Task<ApiClientInsertResult> InsertApiClient(
+            IApiClientRepository apiClientRepository,
+            int applicationId,
+            string name,
+            string clientId,
+            Guid clientUuid,
+            int[] dataStoreIds
         ) =>
-            _apiClientRepository.InsertApiClient(
+            apiClientRepository.InsertApiClient(
                 new ApiClientInsertCommand
                 {
                     ApplicationId = applicationId,
@@ -1056,45 +1112,35 @@ public class ApiClientTests : DatabaseTest
             );
 
         /// <summary>
-        /// A second tenant with its own vendor and application. The taken key lives under an
-        /// application of no tenant, so the rejection shows the constraint ignores tenancy.
+        /// Two tenants, each with its own vendor, application and tenant-scoped repository. The key
+        /// is taken by the first tenant's client; the second tenant's insert of the same key is
+        /// rejected, so the constraint is global rather than tenant-scoped.
         /// </summary>
-        private async Task<ApiClientInsertResult> InsertApiClientInAnotherTenant(string clientId)
+        private async Task<ApiClientInsertResult> InsertApiClientRepeatingAnotherTenantsKey()
         {
-            long tenantId = await Connection!.ExecuteScalarAsync<long>(
-                """INSERT INTO "dmscs"."Tenant" ("Name") VALUES (@Name) RETURNING "Id";""",
-                new { Name = $"dms1529-tenant-{Guid.NewGuid():N}" }
-            );
-            var tenantProvider = new TenantContextProvider
-            {
-                Context = new TenantContext.Multitenant(tenantId, "dms1529-tenant"),
-            };
-            int vendorId = await InsertVendor(tenantProvider);
-            int applicationId = await InsertApplication(
-                new ApplicationRepository(
-                    Configuration.DatabaseOptions,
-                    NullLogger<ApplicationRepository>.Instance,
-                    new TestAuditContext(),
-                    tenantProvider
-                ),
-                vendorId,
-                "DMS1529 Tenant Application"
-            );
+            string tenantOneClientId = Guid.NewGuid().ToString();
+            var tenantOne = await CreateTenantAggregate(Connection!, "dms1529-tenant-one");
+            (
+                await InsertApiClient(
+                    tenantOne.ApiClientRepository,
+                    tenantOne.ApplicationId,
+                    "Tenant One Client",
+                    tenantOneClientId,
+                    Guid.NewGuid(),
+                    []
+                )
+            )
+                .Should()
+                .BeOfType<ApiClientInsertResult.Success>();
 
-            return await new ApiClientRepository(
-                Configuration.DatabaseOptions,
-                NullLogger<ApiClientRepository>.Instance,
-                new TestAuditContext(),
-                tenantProvider
-            ).InsertApiClient(
-                new ApiClientInsertCommand
-                {
-                    ApplicationId = applicationId,
-                    Name = "Tenant Client",
-                    IsApproved = true,
-                    DataStoreIds = [],
-                },
-                new ApiClientCommand { ClientId = clientId, ClientUuid = Guid.NewGuid() }
+            var tenantTwo = await CreateTenantAggregate(Connection!, "dms1529-tenant-two");
+            return await InsertApiClient(
+                tenantTwo.ApiClientRepository,
+                tenantTwo.ApplicationId,
+                "Tenant Two Client",
+                tenantOneClientId,
+                Guid.NewGuid(),
+                []
             );
         }
 
@@ -1198,7 +1244,302 @@ public class ApiClientTests : DatabaseTest
             _updateOntoTakenUuid.Should().BeOfType<ApiClientUpdateResult.FailureDuplicateClientUuid>();
 
         [Test]
-        public void It_leaves_the_client_unchanged_after_the_rejected_update() =>
-            _otherClientUuidAfterRejectedUpdate.Should().Be(_otherClientUuid);
+        public void It_leaves_the_whole_client_unchanged_after_the_rejected_update()
+        {
+            _otherClientBeforeRejectedUpdate.Name.Should().Be("Other Client");
+            _otherClientBeforeRejectedUpdate.ClientUuid.Should().Be(_otherClientUuid);
+            _otherClientAfterRejectedUpdate.Should().BeEquivalentTo(_otherClientBeforeRejectedUpdate);
+        }
+    }
+
+    /// <summary>
+    /// DMS-1529: with IncludeErrorDetail the PostgreSQL exception for a unique violation carries the
+    /// conflicting value, so an expected conflict must be logged as fixed text with safe diagnostic
+    /// fields and no attached exception. Every one of the eight conflict catches is driven here and
+    /// its captured log line checked, after proving the detail really is present on the exception.
+    /// </summary>
+    [TestFixture]
+    public class Given_identifier_conflicts_logged_with_error_detail_enabled : ApiClientTests
+    {
+        private sealed class CapturingLogger<T> : ILogger<T>
+        {
+            public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];
+
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            ) => Entries.Add((logLevel, formatter(state, exception), exception));
+        }
+
+        private readonly string _takenClientId = Guid.NewGuid().ToString();
+        private readonly Guid _takenClientUuid = Guid.NewGuid();
+        private readonly string _secondClientId = Guid.NewGuid().ToString();
+        private readonly Guid _secondClientUuid = Guid.NewGuid();
+        private CapturingLogger<ApiClientRepository> _apiClientLogger = null!;
+        private CapturingLogger<ApplicationRepository> _applicationLogger = null!;
+        private string _rawExceptionText = string.Empty;
+        private int _vendorIdWithDetail;
+        private int _secondApplicationId;
+        private int _secondClientRowId;
+        private List<object> _results = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // NUnit runs SetUp before each test on one fixture instance, so the captured state
+            // is recreated here rather than accumulated across tests.
+            _apiClientLogger = new CapturingLogger<ApiClientRepository>();
+            _applicationLogger = new CapturingLogger<ApplicationRepository>();
+            _results = [];
+
+            NpgsqlConnectionStringBuilder withDetail = new(
+                Configuration.DatabaseOptions.Value.DatabaseConnection
+            )
+            {
+                IncludeErrorDetail = true,
+            };
+            IOptions<DatabaseOptions> detailedOptions = Options.Create(
+                new DatabaseOptions
+                {
+                    DatabaseConnection = withDetail.ConnectionString,
+                    EncryptionKey = Configuration.DatabaseOptions.Value.EncryptionKey,
+                }
+            );
+            IApiClientRepository apiClientRepository = new ApiClientRepository(
+                detailedOptions,
+                _apiClientLogger,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+            IApplicationRepository applicationRepository = new ApplicationRepository(
+                detailedOptions,
+                _applicationLogger,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+
+            _vendorIdWithDetail = await Given_api_client_inserts_that_repeat_an_identifier.InsertVendor(
+                new TenantContextProvider()
+            );
+            (
+                await _applicationRepository.InsertApplication(
+                    new ApplicationInsertCommand
+                    {
+                        ApplicationName = "DMS1529 Detail Taken Application",
+                        VendorId = _vendorIdWithDetail,
+                        ClaimSetName = "TestClaimSet",
+                        EducationOrganizationIds = [],
+                    },
+                    new ApiClientCommand { ClientId = _takenClientId, ClientUuid = _takenClientUuid }
+                )
+            ).Should().BeOfType<ApplicationInsertResult.Success>();
+            var secondApplication = await _applicationRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = "DMS1529 Detail Second Application",
+                    VendorId = _vendorIdWithDetail,
+                    ClaimSetName = "TestClaimSet",
+                    EducationOrganizationIds = [],
+                },
+                new ApiClientCommand { ClientId = _secondClientId, ClientUuid = _secondClientUuid }
+            );
+            _secondApplicationId = ((ApplicationInsertResult.Success)secondApplication).Id;
+            _secondClientRowId = await Connection!.ExecuteScalarAsync<int>(
+                """SELECT "Id" FROM "dmscs"."ApiClient" WHERE "ClientId" = @ClientId;""",
+                new { ClientId = _secondClientId }
+            );
+
+            // Prerequisite: the raw exception on a detail-enabled connection names the key, so a
+            // catch that attached it would leak the value the assertions below look for.
+            await using (NpgsqlConnection detailed = new(withDetail.ConnectionString))
+            {
+                await detailed.OpenAsync();
+                try
+                {
+                    await detailed.ExecuteAsync(
+                        """
+                        INSERT INTO "dmscs"."ApiClient" ("ApplicationId", "Name", "ClientId", "ClientUuid")
+                        VALUES (@ApplicationId, 'Raw Repeat', @ClientId, @ClientUuid);
+                        """,
+                        new
+                        {
+                            ApplicationId = _secondApplicationId,
+                            ClientId = _takenClientId,
+                            ClientUuid = Guid.NewGuid(),
+                        }
+                    );
+                }
+                catch (PostgresException exception)
+                {
+                    _rawExceptionText = exception.ToString();
+                }
+            }
+
+            _results.Add(
+                await apiClientRepository.InsertApiClient(
+                    new ApiClientInsertCommand
+                    {
+                        ApplicationId = _secondApplicationId,
+                        Name = "Detail Repeat Key",
+                        IsApproved = true,
+                        DataStoreIds = [],
+                    },
+                    new ApiClientCommand { ClientId = _takenClientId, ClientUuid = Guid.NewGuid() }
+                )
+            );
+            _results.Add(
+                await apiClientRepository.InsertApiClient(
+                    new ApiClientInsertCommand
+                    {
+                        ApplicationId = _secondApplicationId,
+                        Name = "Detail Repeat Uuid",
+                        IsApproved = true,
+                        DataStoreIds = [],
+                    },
+                    new ApiClientCommand
+                    {
+                        ClientId = Guid.NewGuid().ToString(),
+                        ClientUuid = _takenClientUuid,
+                    }
+                )
+            );
+            _results.Add(
+                await apiClientRepository.UpdateApiClient(
+                    new ApiClientUpdateCommand
+                    {
+                        Id = _secondClientRowId,
+                        ApplicationId = _secondApplicationId,
+                        Name = "DMS1529 Detail Second Application",
+                        IsApproved = true,
+                        DataStoreIds = [],
+                        ClientUuid = _takenClientUuid,
+                    }
+                )
+            );
+            _results.Add(
+                await apiClientRepository.SyncApiClientUuid(
+                    _secondClientRowId,
+                    _secondClientUuid,
+                    _takenClientUuid
+                )
+            );
+            _results.Add(
+                await applicationRepository.InsertApplication(
+                    new ApplicationInsertCommand
+                    {
+                        ApplicationName = "DMS1529 Detail Repeat Key Application",
+                        VendorId = _vendorIdWithDetail,
+                        ClaimSetName = "TestClaimSet",
+                        EducationOrganizationIds = [],
+                    },
+                    new ApiClientCommand { ClientId = _takenClientId, ClientUuid = Guid.NewGuid() }
+                )
+            );
+            _results.Add(
+                await applicationRepository.InsertApplication(
+                    new ApplicationInsertCommand
+                    {
+                        ApplicationName = "DMS1529 Detail Repeat Uuid Application",
+                        VendorId = _vendorIdWithDetail,
+                        ClaimSetName = "TestClaimSet",
+                        EducationOrganizationIds = [],
+                    },
+                    new ApiClientCommand
+                    {
+                        ClientId = Guid.NewGuid().ToString(),
+                        ClientUuid = _takenClientUuid,
+                    }
+                )
+            );
+            _results.Add(
+                await applicationRepository.UpdateApplication(
+                    new ApplicationUpdateCommand
+                    {
+                        Id = _secondApplicationId,
+                        ApplicationName = "DMS1529 Detail Second Application",
+                        VendorId = _vendorIdWithDetail,
+                        ClaimSetName = "TestClaimSet",
+                        EducationOrganizationIds = [],
+                        ProfileIds = [],
+                    },
+                    new ApiClientCommand { ClientId = _secondClientId, ClientUuid = _takenClientUuid }
+                )
+            );
+            _results.Add(
+                await applicationRepository.SyncApplicationApiClientUuid(
+                    _secondApplicationId,
+                    _secondClientId,
+                    _secondClientUuid,
+                    _takenClientUuid
+                )
+            );
+        }
+
+        private IEnumerable<(LogLevel Level, string Message, Exception? Exception)> AllEntries =>
+            _apiClientLogger.Entries.Concat(_applicationLogger.Entries);
+
+        [Test]
+        public void It_runs_against_a_connection_that_reports_the_conflicting_value() =>
+            _rawExceptionText.Should().Contain(_takenClientId);
+
+        [Test]
+        public void It_classifies_every_conflict() =>
+            _results
+                .Select(result => result.GetType().Name)
+                .Should()
+                .Equal(
+                    nameof(ApiClientInsertResult.FailureDuplicateClientId),
+                    nameof(ApiClientInsertResult.FailureDuplicateClientUuid),
+                    nameof(ApiClientUpdateResult.FailureDuplicateClientUuid),
+                    nameof(ApiClientUuidSyncResult.FailureNewUuidInUse),
+                    nameof(ApplicationInsertResult.FailureDuplicateClientId),
+                    nameof(ApplicationInsertResult.FailureDuplicateClientUuid),
+                    nameof(ApplicationUpdateResult.FailureDuplicateClientUuid),
+                    nameof(ApiClientUuidSyncResult.FailureNewUuidInUse)
+                );
+
+        [Test]
+        public void It_logs_one_warning_per_conflict_and_nothing_at_error()
+        {
+            _apiClientLogger.Entries.Where(entry => entry.Level == LogLevel.Warning).Should().HaveCount(4);
+            _applicationLogger.Entries.Where(entry => entry.Level == LogLevel.Warning).Should().HaveCount(4);
+            AllEntries.Should().NotContain(entry => entry.Level == LogLevel.Error);
+        }
+
+        [Test]
+        public void It_attaches_no_exception_to_any_log_entry() =>
+            AllEntries.Should().OnlyContain(entry => entry.Exception == null);
+
+        [Test]
+        public void It_keeps_every_identifier_out_of_the_rendered_messages() =>
+            AllEntries
+                .Select(entry => entry.Message)
+                .Should()
+                .OnlyContain(message =>
+                    !message.Contains(_takenClientId)
+                    && !message.Contains(_secondClientId)
+                    && !message.Contains(_takenClientUuid.ToString())
+                    && !message.Contains(_secondClientUuid.ToString())
+                );
+
+        [Test]
+        public void It_names_the_violated_constraint_in_each_warning()
+        {
+            string[] messages = AllEntries
+                .Where(entry => entry.Level == LogLevel.Warning)
+                .Select(entry => entry.Message)
+                .ToArray();
+            messages.Count(message => message.Contains("UX_ApiClient_ClientId")).Should().Be(2);
+            messages.Count(message => message.Contains("UX_ApiClient_ClientUuid")).Should().Be(6);
+            messages.Should().OnlyContain(message => message.Contains("23505"));
+        }
     }
 }

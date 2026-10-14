@@ -271,7 +271,15 @@ public class ApplicationRepository(
                 && ex.ConstraintName == DuplicateClientIdConstraint
             )
         {
-            logger.LogWarning(ex, "API client key is already in use");
+            // With IncludeErrorDetail the exception carries the conflicting key, so only the
+            // fixed text and the safe diagnostic fields are logged, never the exception itself.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - deliberately omitted, see comment above
+            logger.LogWarning(
+                "API client key is already in use ({SqlState}, {ConstraintName})",
+                ex.SqlState,
+                ex.ConstraintName
+            );
+#pragma warning restore S6667
             await transaction.RollbackAsync();
             return new ApplicationInsertResult.FailureDuplicateClientId();
         }
@@ -280,7 +288,15 @@ public class ApplicationRepository(
                 && ex.ConstraintName == DuplicateClientUuidConstraint
             )
         {
-            logger.LogWarning(ex, "Identity provider client is already associated with another API client");
+            // With IncludeErrorDetail the exception carries the conflicting UUID, so only the
+            // fixed text and the safe diagnostic fields are logged, never the exception itself.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - deliberately omitted, see comment above
+            logger.LogWarning(
+                "Identity provider client is already associated with another API client ({SqlState}, {ConstraintName})",
+                ex.SqlState,
+                ex.ConstraintName
+            );
+#pragma warning restore S6667
             await transaction.RollbackAsync();
             return new ApplicationInsertResult.FailureDuplicateClientUuid();
         }
@@ -654,7 +670,15 @@ public class ApplicationRepository(
                 && ex.ConstraintName == DuplicateClientUuidConstraint
             )
         {
-            logger.LogWarning(ex, "Identity provider client is already associated with another API client");
+            // With IncludeErrorDetail the exception carries the conflicting UUID, so only the
+            // fixed text and the safe diagnostic fields are logged, never the exception itself.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - deliberately omitted, see comment above
+            logger.LogWarning(
+                "Identity provider client is already associated with another API client ({SqlState}, {ConstraintName})",
+                ex.SqlState,
+                ex.ConstraintName
+            );
+#pragma warning restore S6667
             await RollbackSafelyAsync(transaction);
             return new ApplicationUpdateResult.FailureDuplicateClientUuid();
         }
@@ -905,10 +929,15 @@ public class ApplicationRepository(
                 && ex.ConstraintName == DuplicateClientUuidConstraint
             )
         {
+            // With IncludeErrorDetail the exception carries the conflicting UUID, so only the
+            // fixed text and the safe diagnostic fields are logged, never the exception itself.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - deliberately omitted, see comment above
             logger.LogWarning(
-                ex,
-                "The new identity provider client UUID is already referenced by another API client; nothing was written"
+                "The new identity provider client UUID is already referenced by another API client; nothing was written ({SqlState}, {ConstraintName})",
+                ex.SqlState,
+                ex.ConstraintName
             );
+#pragma warning restore S6667
             await RollbackSafelyAsync(transaction);
             return new ApiClientUuidSyncResult.FailureNewUuidInUse();
         }
