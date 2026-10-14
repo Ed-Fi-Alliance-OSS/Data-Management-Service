@@ -6026,7 +6026,8 @@ public class ApiClientModuleTests
 
     /// <summary>
     /// The name check passed, then a concurrent insert took the name before this row was written:
-    /// the unique constraint rejects it and the provisioned client is cleaned up.
+    /// the unique constraint rejects it, and the provisioned client is cleaned up once the
+    /// reference check proves no row holds its UUID.
     /// </summary>
     [TestFixture]
     public class Given_an_api_client_insert_with_a_duplicate_name : InsertWorkflowTestBase
@@ -6044,6 +6045,11 @@ public class ApiClientModuleTests
 
         [Test]
         public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_checks_the_created_uuid_for_references_before_deleting() =>
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(_createdClientUuid))
+                .MustHaveHappenedOnceExactly();
 
         [Test]
         public void It_deletes_the_provisioned_client_exactly_once() =>
@@ -6330,6 +6336,98 @@ public class ApiClientModuleTests
         [Test]
         public void It_reports_the_thrown_cleanup_as_unconfirmed() =>
             AssertCleanupReportedAsUnconfirmed(nameof(InvalidOperationException));
+    }
+
+    /// <summary>
+    /// The row violated both the name and the UUID constraint and the engine reported the name
+    /// one, so the duplicate-name result hides that another row holds the UUID the provider
+    /// reported. That client is in use, so it stays, and the caller still gets the name failure.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_insert_with_a_duplicate_name_whose_uuid_is_referenced
+        : IdentifierConflictInsertTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureDuplicateName());
+            ArrangeReferenceCheck(new ApiClientUuidReferenceResult.Referenced());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_data_validation_contract() =>
+            await AssertDuplicateApiClientNameContract(_insertResponse);
+
+        [Test]
+        public void It_checks_the_created_uuid_for_references() =>
+            AssertReferenceCheckedOnceForTheCreatedUuid();
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_reports_the_client_left_in_place() =>
+            AssertLeftInPlace(nameof(ApiClientUuidReferenceResult.Referenced));
+    }
+
+    /// <summary>
+    /// The application was not found, so no row was written and no constraint judged the reported
+    /// UUID. Another row holds it, so the client stays and the unresolved reference still answers.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_insert_for_a_missing_application_whose_uuid_is_referenced
+        : IdentifierConflictInsertTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureApplicationNotFound());
+            ArrangeReferenceCheck(new ApiClientUuidReferenceResult.Referenced());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public void It_keeps_the_unresolved_reference_conflict() =>
+            _insertResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_reports_the_client_left_in_place() =>
+            AssertLeftInPlace(nameof(ApiClientUuidReferenceResult.Referenced));
+    }
+
+    /// <summary>
+    /// An unclassified insert failure says nothing about the reported UUID. Another row holds it,
+    /// so the client stays and the server error still answers.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_insert_failing_unknown_whose_uuid_is_referenced
+        : IdentifierConflictInsertTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureUnknown("insert failed"));
+            ArrangeReferenceCheck(new ApiClientUuidReferenceResult.Referenced());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public void It_keeps_the_internal_server_error() =>
+            _insertResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_reports_the_client_left_in_place() =>
+            AssertLeftInPlace(nameof(ApiClientUuidReferenceResult.Referenced));
     }
 
     /// <summary>

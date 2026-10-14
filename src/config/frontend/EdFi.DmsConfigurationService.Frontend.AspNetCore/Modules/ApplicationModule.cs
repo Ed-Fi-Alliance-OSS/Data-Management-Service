@@ -169,7 +169,11 @@ public class ApplicationModule : IEndpointModule
                             }
                         );
                     case ApplicationInsertResult.FailureVendorNotFound:
-                        await CleanUpProvisionedClientAsync(
+                        // The Application row was never written, so the ApiClient constraints never
+                        // judged the reported UUID; it is deleted only once the check proves no
+                        // row holds it.
+                        await CleanUpProvisionedClientWhenUnreferencedAsync(
+                            apiClientRepository,
                             clientRepository,
                             clientSuccess.ClientUuid,
                             clientId,
@@ -184,6 +188,8 @@ public class ApplicationModule : IEndpointModule
                             statusCode: (int)HttpStatusCode.Conflict
                         );
                     case ApplicationInsertResult.FailureDataStoreNotFound:
+                        // This arm and the profile arm are reached only after the ApiClient row was
+                        // inserted, which proved no row held the reported UUID.
                         await CleanUpProvisionedClientAsync(
                             clientRepository,
                             clientSuccess.ClientUuid,
@@ -214,7 +220,10 @@ public class ApplicationModule : IEndpointModule
                             statusCode: (int)HttpStatusCode.Conflict
                         );
                     case ApplicationInsertResult.FailureDuplicateApplication duplicateApp:
-                        await CleanUpProvisionedClientAsync(
+                        // The Application insert failed before the ApiClient row, so a UUID another
+                        // row holds would surface here as the name conflict.
+                        await CleanUpProvisionedClientWhenUnreferencedAsync(
+                            apiClientRepository,
                             clientRepository,
                             clientSuccess.ClientUuid,
                             clientId,
@@ -256,7 +265,9 @@ public class ApplicationModule : IEndpointModule
                             "Failure inserting the application row: {FailureMessage}",
                             SanitizeForLog(failure.FailureMessage)
                         );
-                        await CleanUpProvisionedClientAsync(
+                        // An unclassified failure says nothing about the reported UUID.
+                        await CleanUpProvisionedClientWhenUnreferencedAsync(
+                            apiClientRepository,
                             clientRepository,
                             clientSuccess.ClientUuid,
                             clientId,
@@ -343,14 +354,15 @@ public class ApplicationModule : IEndpointModule
     }
 
     /// <summary>
-    /// Removes the identity-provider client this request provisioned after the database rejected
-    /// its client key, but only once the reference check proves no ApiClient row holds its UUID.
-    /// A key collision says nothing about the UUID, and the check is deliberately cross-tenant, so
-    /// a referenced UUID, a failed or unrecognized check, or a check that throws all leave the
-    /// client in place and report it at Error with the identifiers needed to find it. A thrown
-    /// check is reported by exception type only: its message can carry provider or database text
-    /// that the sanitizer never sees, so the exception itself is not attached. The caller's 409 is
-    /// never replaced by what happens here.
+    /// Removes the identity-provider client this request provisioned after a database insert
+    /// failure that does not prove the UUID is this request's own (a key collision, a name
+    /// conflict or missing vendor reported before the ApiClient row, or an unclassified failure),
+    /// but only once the reference check proves no ApiClient row holds its UUID. The check is
+    /// deliberately cross-tenant, so a referenced UUID, a failed or unrecognized check, or a check
+    /// that throws all leave the client in place and report it at Error with the identifiers needed
+    /// to find it. A thrown check is reported by exception type only: its message can carry
+    /// provider or database text that the sanitizer never sees, so the exception itself is not
+    /// attached. The caller's response is never replaced by what happens here.
     /// </summary>
     private static async Task CleanUpProvisionedClientWhenUnreferencedAsync(
         IApiClientRepository apiClientRepository,
@@ -394,7 +406,7 @@ public class ApplicationModule : IEndpointModule
 
         void LogLeftInPlace(string outcome) =>
             logger.LogError(
-                "Could not prove provider client {ClientUuid} (client {ClientId}) is unreferenced after the database rejected its client key; reference check outcome {Outcome}; left in place; review manually",
+                "Could not prove provider client {ClientUuid} (client {ClientId}) is unreferenced after the database insert failed; reference check outcome {Outcome}; left in place; review manually",
                 clientUuid,
                 SanitizeForLog(clientId),
                 outcome

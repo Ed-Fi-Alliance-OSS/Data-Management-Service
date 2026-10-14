@@ -4270,6 +4270,158 @@ public class ApplicationModuleTests
     }
 
     /// <summary>
+    /// The Application row is inserted before the ApiClient row, so a name conflict is reported
+    /// before the UUID constraint can judge the UUID the provider reported. Another row holds that
+    /// UUID, so the client stays, and the caller still gets the duplicate-name validation failure.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_application_insert_with_a_duplicate_name_whose_uuid_is_referenced
+        : IdentifierConflictInsertTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(
+                new ApplicationInsertResult.FailureDuplicateApplication("Test Application")
+            );
+            ArrangeReferenceCheck(new ApiClientUuidReferenceResult.Referenced());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_keeps_the_duplicate_name_validation_response()
+        {
+            _insertResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            _insertResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+            JsonNode actualResponse = JsonNode.Parse(await _insertResponse.Content.ReadAsStringAsync())!;
+            string correlationId = actualResponse["correlationId"]!.GetValue<string>();
+            JsonNode expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "ApplicationName": [
+                      "Application 'Test Application' already exists for vendor."
+                    ]
+                  },
+                  "errors": []
+                }
+                """.Replace("{correlationId}", correlationId)
+            )!;
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+        }
+
+        [Test]
+        public void It_checks_the_created_uuid_for_references() =>
+            AssertReferenceCheckedOnceForTheCreatedUuid();
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_reports_the_client_left_in_place() =>
+            AssertLeftInPlace(nameof(ApiClientUuidReferenceResult.Referenced));
+    }
+
+    /// <summary>
+    /// The same name conflict with a UUID no row holds: the reference check clears the deletion and
+    /// the provisioned client is removed exactly once.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_application_insert_with_a_duplicate_name_whose_uuid_is_unreferenced
+        : IdentifierConflictInsertTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(
+                new ApplicationInsertResult.FailureDuplicateApplication("Test Application")
+            );
+            ArrangeReferenceCheck(new ApiClientUuidReferenceResult.None());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public void It_keeps_the_duplicate_name_validation_failure() =>
+            _insertResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        [Test]
+        public void It_checks_the_created_uuid_for_references_before_deleting() =>
+            AssertReferenceCheckedOnceForTheCreatedUuid();
+
+        [Test]
+        public void It_deletes_the_provisioned_client_exactly_once() =>
+            _deletedClientUuids.Should().Equal(_createdClientUuid.ToString());
+
+        [Test]
+        public void It_logs_nothing_at_error() => LoggedAt(LogLevel.Error).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// The vendor was not found, so no row was written and no constraint judged the reported UUID.
+    /// Another row holds it, so the client stays and the unresolved reference still answers.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_application_insert_for_a_missing_vendor_whose_uuid_is_referenced
+        : IdentifierConflictInsertTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApplicationInsertResult.FailureVendorNotFound());
+            ArrangeReferenceCheck(new ApiClientUuidReferenceResult.Referenced());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public void It_keeps_the_unresolved_reference_conflict() =>
+            _insertResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_reports_the_client_left_in_place() =>
+            AssertLeftInPlace(nameof(ApiClientUuidReferenceResult.Referenced));
+    }
+
+    /// <summary>
+    /// An unclassified insert failure says nothing about the reported UUID. Another row holds it,
+    /// so the client stays and the server error still answers.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_application_insert_failing_unknown_whose_uuid_is_referenced
+        : IdentifierConflictInsertTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApplicationInsertResult.FailureUnknown("insert failed"));
+            ArrangeReferenceCheck(new ApiClientUuidReferenceResult.Referenced());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public void It_keeps_the_internal_server_error() =>
+            _insertResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_reports_the_client_left_in_place() =>
+            AssertLeftInPlace(nameof(ApiClientUuidReferenceResult.Referenced));
+    }
+
+    /// <summary>
     /// Another row already references the UUID the provider reported for this request's client.
     /// The client is provably in use, so no reference check and no deletion are attempted.
     /// </summary>
