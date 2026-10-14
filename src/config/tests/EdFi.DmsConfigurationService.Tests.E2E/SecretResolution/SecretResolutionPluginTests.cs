@@ -40,7 +40,7 @@ public abstract class SecretResolutionPluginTestBase
     [OneTimeSetUp]
     public async Task ConnectToTheHarnessDeployment()
     {
-        if (Environment.GetEnvironmentVariable("SECRETS_E2E_CMS_URL") is null)
+        if (Environment.GetEnvironmentVariable("SECRETS_E2E_CONFIGURATION_SERVICE_URL") is null)
         {
             Assert.Ignore(
                 $"The {CategoryName} proofs run only under Invoke-SecretResolutionE2E.ps1, which deploys the fixture plugin."
@@ -58,14 +58,14 @@ public abstract class SecretResolutionPluginTestBase
             )
         );
 
-        Cms = new HttpClient { BaseAddress = new Uri(Setting("SECRETS_E2E_CMS_URL")) };
+        Cms = new HttpClient { BaseAddress = new Uri(Setting("SECRETS_E2E_CONFIGURATION_SERVICE_URL")) };
         using HttpResponseMessage token = await Cms.PostAsync(
             "connect/token",
             new FormUrlEncodedContent(
                 new Dictionary<string, string>
                 {
-                    ["client_id"] = Setting("SECRETS_E2E_CMS_CLIENT_ID"),
-                    ["client_secret"] = Setting("SECRETS_E2E_CMS_CLIENT_SECRET"),
+                    ["client_id"] = Setting("SECRETS_E2E_CONFIGURATION_SERVICE_CLIENT_ID"),
+                    ["client_secret"] = Setting("SECRETS_E2E_CONFIGURATION_SERVICE_CLIENT_SECRET"),
                     ["grant_type"] = "client_credentials",
                     ["scope"] = "edfi_admin_api/full_access",
                 }

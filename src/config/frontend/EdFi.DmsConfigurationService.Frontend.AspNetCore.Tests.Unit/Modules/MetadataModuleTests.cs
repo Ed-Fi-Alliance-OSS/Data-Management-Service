@@ -5,6 +5,9 @@
 
 using System.Collections.Generic;
 using System.Net;
+using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -126,7 +129,6 @@ public class MetadataModuleTests
         "ApplicationUpdateCommand.id int32",
         "ApplicationUpdateCommand.vendorId int32",
         "ApplicationUpdateCommand.educationOrganizationIds int64",
-        "ApplicationUpdateCommand.dataStoreIds int32",
         "ApplicationUpdateCommand.profileIds int32",
         "AuthorizationStrategy.id int32",
         "ClaimSetCopyCommand.originalId int32",
@@ -403,6 +405,46 @@ public class MetadataModuleTests
         schema.GetProperty("format").GetString().Should().Be("int64");
     }
 
+    [TestCase("/")]
+    [TestCase("/metadata/specifications")]
+    [TestCase("/openapi/v1.json")]
+    public async Task Service_Description_Is_Served_Without_A_Tenant_Header_When_MultiTenancy_Is_Enabled(
+        string path
+    )
+    {
+        // Arrange
+        await using var factory = CreateFactory(multiTenancy: true);
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync(path);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Test]
+    public async Task Specifications_Are_Served_With_A_Tenant_Header_When_MultiTenancy_Is_Enabled()
+    {
+        // Arrange
+        // /metadata/specifications builds its document by requesting /openapi/v1.json from this same
+        // service, and that inner request carries no Tenant header whatever the caller sent. While
+        // the inner request needed one, this answered 500 even to a caller with a valid tenant.
+        var tenantRepository = A.Fake<ITenantRepository>();
+        A.CallTo(() => tenantRepository.GetTenantByName("test-tenant"))
+            .Returns(new TenantGetByNameResult.Success(new TenantResponse { Id = 1, Name = "test-tenant" }));
+
+        await using var factory = CreateFactory(multiTenancy: true, tenantRepository: tenantRepository);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("Tenant", "test-tenant");
+
+        // Act
+        var response = await client.GetAsync("/metadata/specifications");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     [Test]
     public async Task MetadataSpecifications_Declares_Tenancy_As_Anonymous()
     {
@@ -472,6 +514,30 @@ public class MetadataModuleTests
         properties.Keys.Should().Equal("tenants");
         TypeIncludes(properties["tenants"].GetProperty("type"), "array").Should().BeTrue();
         TypeIncludes(properties["tenants"].GetProperty("items").GetProperty("type"), "string")
+            .Should()
+            .BeTrue();
+    }
+
+    [Test]
+    public async Task It_marks_the_application_response_enabled_property_read_only()
+    {
+        // Arrange
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        // Act
+        using var doc = await FetchOpenApiDocumentAsync(client);
+
+        // Assert
+        // enabled is an aggregate computed across the application's API clients; no
+        // application-level write sets it.
+        doc.RootElement.GetProperty("components")
+            .GetProperty("schemas")
+            .GetProperty("ApplicationResponse")
+            .GetProperty("properties")
+            .GetProperty("enabled")
+            .GetProperty("readOnly")
+            .GetBoolean()
             .Should()
             .BeTrue();
     }
@@ -616,6 +682,7 @@ public class MetadataModuleTests
     private static WebApplicationFactory<Program> CreateFactory(
         bool multiTenancy = false,
         string? pathBase = null,
+        ITenantRepository? tenantRepository = null,
         ICollection<Uri?>? recordedRequestUris = null
     )
     {
@@ -626,10 +693,6 @@ public class MetadataModuleTests
                 configuration.AddInMemoryCollection(
                     new Dictionary<string, string?>
                     {
-                        // The application reset-credential route is registered only when this flag is
-                        // set, and it is false in both appsettings.json and appsettings.Test.json, so
-                        // without this the route is absent from the document under test.
-                        ["AppSettings:EnableApplicationResetEndpoint"] = "true",
                         ["AppSettings:MultiTenancy"] = multiTenancy.ToString(),
                         // Left null by default so the existing cases keep exercising the no-path-base
                         // shape; Program only calls UsePathBase when this carries a value.
@@ -649,6 +712,11 @@ public class MetadataModuleTests
                         provider.GetRequiredService<IServer>(),
                         recordedRequestUris
                     ));
+                }
+
+                if (tenantRepository is not null)
+                {
+                    services.AddTransient(_ => tenantRepository);
                 }
             });
         });

@@ -159,8 +159,8 @@ Describe "Docker Compose logging defaults (DMS-1407)" {
             if ($content -match "(?m)^LOG_LEVEL=") {
                 $content | Should -Match "(?m)^LOG_LEVEL=Information$" -Because "$relativePath must not ship DMS at Debug by default"
             }
-            if ($content -match "(?m)^DMS_CONFIG_LOG_LEVEL=") {
-                $content | Should -Match "(?m)^DMS_CONFIG_LOG_LEVEL=Information$" -Because "$relativePath must keep CMS aligned to the shipped Information default"
+            if ($content -match "(?m)^CONFIGURATION_SERVICE_LOG_LEVEL=") {
+                $content | Should -Match "(?m)^CONFIGURATION_SERVICE_LOG_LEVEL=Information$" -Because "$relativePath must keep CMS aligned to the shipped Information default"
             }
         }
     }

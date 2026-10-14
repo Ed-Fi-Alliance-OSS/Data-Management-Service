@@ -510,8 +510,6 @@ public class Given_A_Postgresql_Windowed_Page_Query_Plan
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
-                "Discriminator",
-                "Uri",
                 "ContentVersion"
             )
             SELECT
@@ -520,8 +518,6 @@ public class Given_A_Postgresql_Windowed_Page_Query_Plan
                 'uri://ed-fi.org/AcademicSubjectDescriptor',
                 'plan-' || source."DocumentId",
                 'Windowed Plan Descriptor ' || source."DocumentId",
-                'edfi.AcademicSubjectDescriptor',
-                'uri://ed-fi.org/AcademicSubjectDescriptor#plan-' || source."DocumentId",
                 source."ContentVersion"
             FROM "dms"."Document" AS source
             WHERE source."ResourceKeyId" = @resourceKeyId;

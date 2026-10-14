@@ -628,6 +628,7 @@ public static class ContractSurfaceReader
             .Append(" generics=")
             .Append(DescribeGenericParameters(reader, provider, method.GetGenericParameters(), context));
         AppendFlowAttributes(builder, " methodattrs=", reader, provider, method.GetCustomAttributes(), owner);
+        AppendSetsRequiredMembers(builder, reader, method.GetCustomAttributes());
 
         return builder.ToString();
     }
@@ -812,6 +813,8 @@ public static class ContractSurfaceReader
             builder.Append(" value=").Append(value);
         }
 
+        AppendRequiredMember(builder, reader, field.GetCustomAttributes());
+
         return builder.ToString();
     }
 
@@ -929,6 +932,7 @@ public static class ContractSurfaceReader
         }
 
         AppendFlowAttributes(builder, " propattrs=", reader, provider, property.GetCustomAttributes(), owner);
+        AppendRequiredMember(builder, reader, property.GetCustomAttributes());
 
         line = builder.ToString();
 
@@ -1400,6 +1404,59 @@ public static class ContractSurfaceReader
         }
 
         return value;
+    }
+
+    /// <summary>
+    /// Appends <c> required=true</c> when a property or field is a C# <c>required</c> member, and
+    /// nothing otherwise.
+    /// </summary>
+    /// <remarks>
+    /// The compiler marks a required member with System.Runtime.CompilerServices.RequiredMemberAttribute
+    /// on the property or field row, and that row is the only place the change is guaranteed to
+    /// show. Adding the first required member to a type also adds RequiredMemberAttribute to the
+    /// type and CompilerFeatureRequiredAttribute("RequiredMembers") plus ObsoleteAttribute to its
+    /// constructors, but those are consequences of the member rows and carry no information the
+    /// member rows lack, so they are not rendered. The token is emitted only when present, so a
+    /// contract that declares no required member renders exactly as it did before this token existed.
+    /// </remarks>
+    private static void AppendRequiredMember(
+        StringBuilder builder,
+        MetadataReader reader,
+        CustomAttributeHandleCollection attributes
+    )
+    {
+        if (HasAttribute(reader, attributes, "System.Runtime.CompilerServices", "RequiredMemberAttribute"))
+        {
+            builder.Append(" required=true");
+        }
+    }
+
+    /// <summary>
+    /// Appends <c> setsrequired=true</c> when a constructor carries
+    /// System.Diagnostics.CodeAnalysis.SetsRequiredMembersAttribute, and nothing otherwise.
+    /// </summary>
+    /// <remarks>
+    /// The attribute lifts the obligation to initialise required members at every call site of
+    /// that constructor, so adding or removing it changes what consumers must write while no
+    /// signature moves.
+    /// </remarks>
+    private static void AppendSetsRequiredMembers(
+        StringBuilder builder,
+        MetadataReader reader,
+        CustomAttributeHandleCollection attributes
+    )
+    {
+        if (
+            HasAttribute(
+                reader,
+                attributes,
+                "System.Diagnostics.CodeAnalysis",
+                "SetsRequiredMembersAttribute"
+            )
+        )
+        {
+            builder.Append(" setsrequired=true");
+        }
     }
 
     /// <summary>

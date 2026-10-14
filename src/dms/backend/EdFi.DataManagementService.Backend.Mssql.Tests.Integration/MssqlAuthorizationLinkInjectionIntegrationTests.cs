@@ -244,7 +244,6 @@ public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
         await SeedDescriptorAsync(
             Guid.Parse("c3200001-0000-0000-0000-000000000001"),
             "EducationOrganizationCategoryDescriptor",
-            "Ed-Fi:EducationOrganizationCategoryDescriptor",
             "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School",
             "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
             "School",
@@ -253,7 +252,6 @@ public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
         await SeedDescriptorAsync(
             Guid.Parse("c3200002-0000-0000-0000-000000000002"),
             "GradeLevelDescriptor",
-            "Ed-Fi:GradeLevelDescriptor",
             "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade",
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Ninth grade",
@@ -264,7 +262,6 @@ public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
     private async Task SeedDescriptorAsync(
         Guid documentUuid,
         string resourceName,
-        string discriminator,
         string uri,
         string @namespace,
         string codeValue,
@@ -275,8 +272,6 @@ public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
         long documentId = await InsertDescriptorAsync(
             documentUuid,
             resourceKeyId,
-            discriminator,
-            uri,
             @namespace,
             codeValue,
             shortDescription
@@ -466,13 +461,12 @@ public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
     private async Task<long> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql);
         long documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
 
         await _database.ExecuteNonQueryAsync(
@@ -483,9 +477,7 @@ public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
-                [Description],
-                [Discriminator],
-                [Uri]
+                [Description]
             )
             VALUES (
                 @documentId,
@@ -493,9 +485,7 @@ public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
+                @description
             );
             """,
             new SqlParameter("@documentId", documentId),
@@ -503,9 +493,7 @@ public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),
-            new SqlParameter("@description", shortDescription),
-            new SqlParameter("@discriminator", discriminator),
-            new SqlParameter("@uri", uri)
+            new SqlParameter("@description", shortDescription)
         );
 
         return documentId;

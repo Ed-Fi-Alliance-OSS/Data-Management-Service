@@ -1,0 +1,293 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Sample",
+    "projectEndpointName": "sample",
+    "projectVersion": "1.0.0",
+    "isExtensionProject": true,
+    "openApiBaseDocuments": {
+      "resources": {
+        "paths": {},
+        "components": {
+          "schemas": {},
+          "parameters": {
+            "limit": {
+              "name": "limit",
+              "in": "query",
+              "schema": {}
+            },
+            "pageToken": {
+              "name": "pageToken",
+              "in": "query",
+              "schema": {}
+            },
+            "pageSize": {
+              "name": "pageSize",
+              "in": "query",
+              "schema": {}
+            },
+            "numberOfPartitions": {
+              "name": "number",
+              "in": "query",
+              "schema": {}
+            }
+          }
+        }
+      },
+      "descriptors": {
+        "paths": {},
+        "components": {
+          "schemas": {},
+          "parameters": {
+            "limit": {
+              "name": "limit",
+              "in": "query",
+              "schema": {}
+            },
+            "pageToken": {
+              "name": "pageToken",
+              "in": "query",
+              "schema": {}
+            },
+            "pageSize": {
+              "name": "pageSize",
+              "in": "query",
+              "schema": {}
+            },
+            "numberOfPartitions": {
+              "name": "number",
+              "in": "query",
+              "schema": {}
+            }
+          }
+        }
+      }
+    },
+    "description": "Compact descriptor resource references, transitive identities, collections and extensions.",
+    "abstractResources": {},
+    "caseInsensitiveEndpointNameMapping": {
+      "schooltypedescriptors": "schoolTypeDescriptors",
+      "compactdescriptoritems": "compactDescriptorItems"
+    },
+    "educationOrganizationHierarchy": {},
+    "educationOrganizationTypes": [],
+    "resourceNameMapping": {
+      "SchoolTypeDescriptor": "schoolTypeDescriptors",
+      "CompactDescriptorItem": "compactDescriptorItems"
+    },
+    "resourceSchemas": {
+      "schoolTypeDescriptors": {
+        "resourceName": "SchoolTypeDescriptor",
+        "isDescriptor": true,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.namespace",
+          "$.codeValue"
+        ],
+        "documentPathsMapping": {
+          "Namespace": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.namespace"
+          },
+          "CodeValue": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.codeValue"
+          },
+          "ShortDescription": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": true,
+            "path": "$.shortDescription"
+          },
+          "Description": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "path": "$.description"
+          },
+          "EffectiveBeginDate": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "path": "$.effectiveBeginDate"
+          },
+          "EffectiveEndDate": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "path": "$.effectiveEndDate"
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "namespace": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "codeValue": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 50
+            },
+            "shortDescription": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 75
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "effectiveBeginDate": {
+              "type": "string",
+              "format": "date"
+            },
+            "effectiveEndDate": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          "required": [
+            "namespace",
+            "codeValue",
+            "shortDescription"
+          ]
+        },
+        "queryFieldMapping": {
+          "id": [
+            {
+              "path": "$.id",
+              "type": "string"
+            }
+          ],
+          "namespace": [
+            {
+              "path": "$.namespace",
+              "type": "string"
+            }
+          ],
+          "codeValue": [
+            {
+              "path": "$.codeValue",
+              "type": "string"
+            }
+          ],
+          "shortDescription": [
+            {
+              "path": "$.shortDescription",
+              "type": "string"
+            }
+          ],
+          "description": [
+            {
+              "path": "$.description",
+              "type": "string"
+            }
+          ],
+          "effectiveBeginDate": [
+            {
+              "path": "$.effectiveBeginDate",
+              "type": "date"
+            }
+          ],
+          "effectiveEndDate": [
+            {
+              "path": "$.effectiveEndDate",
+              "type": "date"
+            }
+          ]
+        }
+      },
+      "compactDescriptorItems": {
+        "resourceName": "CompactDescriptorItem",
+        "isDescriptor": false,
+        "isResourceExtension": true,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": true,
+        "arrayUniquenessConstraints": [
+          {
+            "paths": [
+              "$._ext.sample.tags[*].tagCode"
+            ],
+            "nestedConstraints": []
+          }
+        ],
+        "equalityConstraints": [],
+        "identityJsonPaths": [],
+        "documentPathsMapping": {
+          "SampleSchoolTypeDescriptor": {
+            "isReference": true,
+            "isDescriptor": true,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "projectName": "Sample",
+            "resourceName": "SchoolTypeDescriptor",
+            "path": "$._ext.sample.schoolTypeDescriptor"
+          },
+          "TagSchoolTypeDescriptor": {
+            "isReference": true,
+            "isDescriptor": true,
+            "isPartOfIdentity": false,
+            "isRequired": true,
+            "projectName": "Sample",
+            "resourceName": "SchoolTypeDescriptor",
+            "path": "$._ext.sample.tags[*].schoolTypeDescriptor"
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "_ext": {
+              "type": "object",
+              "properties": {
+                "sample": {
+                  "type": "object",
+                  "properties": {
+                    "schoolTypeDescriptor": {
+                      "type": "string",
+                      "maxLength": 306
+                    },
+                    "tags": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "tagCode": {
+                            "type": "string",
+                            "maxLength": 30
+                          },
+                          "schoolTypeDescriptor": {
+                            "type": "string",
+                            "maxLength": 306
+                          }
+                        },
+                        "required": [
+                          "tagCode",
+                          "schoolTypeDescriptor"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": []
+        },
+        "queryFieldMapping": {}
+      }
+    }
+  }
+}

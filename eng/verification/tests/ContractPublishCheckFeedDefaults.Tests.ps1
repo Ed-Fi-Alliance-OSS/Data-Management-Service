@@ -16,6 +16,10 @@
 # No network, no credential, and no local server: the mocks answer from a table.
 
 BeforeAll {
+    # Loaded here so the mocks below attach to the module the defaults run in; the script under test
+    # imports it without -Force and so keeps this instance.
+    Import-Module (Join-Path $PSScriptRoot "../ContractFeed.psm1") -Force
+
     $script:checker = [System.IO.Path]::GetFullPath(
         (Join-Path $PSScriptRoot "../Invoke-ContractPublishCheck.ps1")
     )
@@ -178,7 +182,7 @@ AfterAll {
 
 Describe "The default feed implementations" {
     It "reads a healthy service index and a 404 package index as an absent package" {
-        Mock Invoke-RestMethod {
+        Mock -ModuleName ContractFeed Invoke-RestMethod {
             if ($Uri -eq (Get-ServiceIndexUrl)) {
                 return Get-HealthyServiceIndex
             }
@@ -195,7 +199,7 @@ Describe "The default feed implementations" {
     # The defect this suite exists for: a 200 that is not a versions index was filtered down to an
     # empty version list, which reads as absence, which is a push.
     It "fails on a 200 package index that carries no versions array" {
-        Mock Invoke-RestMethod {
+        Mock -ModuleName ContractFeed Invoke-RestMethod {
             if ($Uri -eq (Get-ServiceIndexUrl)) {
                 return Get-HealthyServiceIndex
             }
@@ -210,7 +214,7 @@ Describe "The default feed implementations" {
     # The probe that showed filtering was not enough: a 200 whose versions array holds only a blank
     # entry emptied the list and reached the absent branch, which is a push.
     It "fails on a versions array holding a blank entry" {
-        Mock Invoke-RestMethod {
+        Mock -ModuleName ContractFeed Invoke-RestMethod {
             if ($Uri -eq (Get-ServiceIndexUrl)) {
                 return Get-HealthyServiceIndex
             }
@@ -223,7 +227,7 @@ Describe "The default feed implementations" {
     }
 
     It "fails on a versions property that is a scalar rather than an array" {
-        Mock Invoke-RestMethod {
+        Mock -ModuleName ContractFeed Invoke-RestMethod {
             if ($Uri -eq (Get-ServiceIndexUrl)) {
                 return Get-HealthyServiceIndex
             }
@@ -236,7 +240,7 @@ Describe "The default feed implementations" {
     }
 
     It "fails on a versions array holding an entry NuGet cannot parse" {
-        Mock Invoke-RestMethod {
+        Mock -ModuleName ContractFeed Invoke-RestMethod {
             if ($Uri -eq (Get-ServiceIndexUrl)) {
                 return Get-HealthyServiceIndex
             }
@@ -249,28 +253,28 @@ Describe "The default feed implementations" {
     }
 
     It "fails when the service index answers 404" {
-        Mock Invoke-RestMethod { throw (Get-HttpError -StatusCode 404) }
+        Mock -ModuleName ContractFeed Invoke-RestMethod { throw (Get-HttpError -StatusCode 404) }
 
         { Invoke-DefaultCheck -PackageFile (New-MinimalPackage) } |
             Should -Throw -ExpectedMessage "*service index*"
     }
 
     It "fails when the service index answers 401" {
-        Mock Invoke-RestMethod { throw (Get-HttpError -StatusCode 401) }
+        Mock -ModuleName ContractFeed Invoke-RestMethod { throw (Get-HttpError -StatusCode 401) }
 
         { Invoke-DefaultCheck -PackageFile (New-MinimalPackage) } |
             Should -Throw -ExpectedMessage "*not an empty feed*"
     }
 
     It "fails when the service index times out" {
-        Mock Invoke-RestMethod { throw [System.TimeoutException]::new("The operation has timed out.") }
+        Mock -ModuleName ContractFeed Invoke-RestMethod { throw [System.TimeoutException]::new("The operation has timed out.") }
 
         { Invoke-DefaultCheck -PackageFile (New-MinimalPackage) } |
             Should -Throw -ExpectedMessage "*service index*"
     }
 
     It "fails when the service index advertises no package base address" {
-        Mock Invoke-RestMethod {
+        Mock -ModuleName ContractFeed Invoke-RestMethod {
             return [pscustomobject]@{
                 resources = @([pscustomobject]@{ '@id' = "https://feed.invalid/search"; '@type' = "SearchQueryService/3.0.0" })
             }
@@ -281,7 +285,7 @@ Describe "The default feed implementations" {
     }
 
     It "fails when the advertised package base address is not absolute" {
-        Mock Invoke-RestMethod {
+        Mock -ModuleName ContractFeed Invoke-RestMethod {
             return [pscustomobject]@{
                 resources = @([pscustomobject]@{ '@id' = "flat2/"; '@type' = "PackageBaseAddress/3.0.0" })
             }
@@ -292,7 +296,7 @@ Describe "The default feed implementations" {
     }
 
     It "fails on a package index status other than 200 or 404" {
-        Mock Invoke-RestMethod {
+        Mock -ModuleName ContractFeed Invoke-RestMethod {
             if ($Uri -eq (Get-ServiceIndexUrl)) {
                 return Get-HealthyServiceIndex
             }
@@ -305,7 +309,7 @@ Describe "The default feed implementations" {
     }
 
     It "fails on a package-index failure that carries no status at all" {
-        Mock Invoke-RestMethod {
+        Mock -ModuleName ContractFeed Invoke-RestMethod {
             if ($Uri -eq (Get-ServiceIndexUrl)) {
                 return Get-HealthyServiceIndex
             }
@@ -318,37 +322,37 @@ Describe "The default feed implementations" {
     }
 
     It "fails when the download answers 404 after the version was listed" {
-        Mock Invoke-RestMethod {
+        Mock -ModuleName ContractFeed Invoke-RestMethod {
             if ($Uri -eq (Get-ServiceIndexUrl)) {
                 return Get-HealthyServiceIndex
             }
 
             return [pscustomobject]@{ versions = @("1.0.0") }
         }
-        Mock Invoke-WebRequest { throw (Get-HttpError -StatusCode 404) }
+        Mock -ModuleName ContractFeed Invoke-WebRequest { throw (Get-HttpError -StatusCode 404) }
 
         { Invoke-DefaultCheck -PackageFile (New-MinimalPackage) } |
             Should -Throw -ExpectedMessage "*feed fault rather than an absent package*"
     }
 
     It "composes the flat-container URLs NuGet defines" {
-        Mock Invoke-RestMethod {
+        Mock -ModuleName ContractFeed Invoke-RestMethod {
             if ($Uri -eq (Get-ServiceIndexUrl)) {
                 return Get-HealthyServiceIndex
             }
 
             return [pscustomobject]@{ versions = @("1.0.0") }
         }
-        Mock Invoke-WebRequest { throw (Get-HttpError -StatusCode 500) }
+        Mock -ModuleName ContractFeed Invoke-WebRequest { throw (Get-HttpError -StatusCode 500) }
 
         { Invoke-DefaultCheck -PackageFile (New-MinimalPackage) } | Should -Throw
 
         # Lowercase id, lowercase normalized version, and the trailing slash on the advertised base
         # address collapsed rather than doubled.
-        Should -Invoke Invoke-RestMethod -Times 1 -Exactly -ParameterFilter {
+        Should -Invoke -ModuleName ContractFeed Invoke-RestMethod -Times 1 -Exactly -ParameterFilter {
             $Uri -ceq "https://feed.invalid/flat2/edfi.api.testcontract/index.json"
         }
-        Should -Invoke Invoke-WebRequest -Times 1 -Exactly -ParameterFilter {
+        Should -Invoke -ModuleName ContractFeed Invoke-WebRequest -Times 1 -Exactly -ParameterFilter {
             $Uri -ceq "https://feed.invalid/flat2/edfi.api.testcontract/1.0.0/edfi.api.testcontract.1.0.0.nupkg"
         }
     }
@@ -357,14 +361,14 @@ Describe "The default feed implementations" {
         Set-PublishedFixture -Path (New-MinimalPackage)
         $packed = New-MinimalPackage
 
-        Mock Invoke-RestMethod {
+        Mock -ModuleName ContractFeed Invoke-RestMethod {
             if ($Uri -eq (Get-ServiceIndexUrl)) {
                 return Get-HealthyServiceIndex
             }
 
             return [pscustomobject]@{ versions = @("1.0.0") }
         }
-        Mock Invoke-WebRequest {
+        Mock -ModuleName ContractFeed Invoke-WebRequest {
             Copy-Item -LiteralPath (Get-PublishedFixturePath) -Destination $OutFile
         }
 

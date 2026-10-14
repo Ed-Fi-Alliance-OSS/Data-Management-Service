@@ -30,17 +30,16 @@ internal static class TrackedChangeAuthorizationSqlEmitter
     // Custom views expose the basis DocumentId under this fixed column name (auth.md §"View-based
     // authorization strategy"); the tracked-change side always names its system column the same way.
     private static readonly DbColumnName _documentIdColumn = new("DocumentId");
+    private static readonly DbColumnName _descriptorIdColumn = new("DescriptorId");
     private static readonly DbTableName _descriptorTable = new(new DbSchemaName("dms"), "Descriptor");
     private static readonly DbColumnName _descriptorNamespaceColumn = new("Namespace");
     private static readonly DbColumnName _descriptorCodeValueColumn = new("CodeValue");
-    private static readonly DbColumnName _descriptorDiscriminatorColumn = new("Discriminator");
+    private static readonly DbColumnName _descriptorResourceKeyIdColumn = new("ResourceKeyId");
 
-    // Distinct from TrackedChangeQueryPlanner's @DescriptorDiscriminator{n} names, which the deletes query
+    // Distinct from TrackedChangeQueryPlanner's @DescriptorResourceKeyId{n} names, which the deletes query
     // binds for its recreated-row suppression join in the same command.
-    private const string CustomViewDescriptorDiscriminatorParameterPrefix =
-        "@CustomViewDescriptorDiscriminator";
-    private const string CustomViewDescriptorDiscriminatorQualifiedParameterPrefix =
-        "@CustomViewDescriptorDiscriminatorQualified";
+    private const string CustomViewDescriptorResourceKeyIdParameterPrefix =
+        "@CustomViewDescriptorResourceKeyId";
 
     private const string BasisAlias = "b";
     private const string ProbeAlias = "t";
@@ -91,7 +90,7 @@ internal static class TrackedChangeAuthorizationSqlEmitter
             parameters.AddRange(BuildClaimParameters(claimParameterization, parameterConfigurator));
         }
 
-        // Custom views are AND filters in CMS order (the plan already orders them). Descriptor discriminator
+        // Custom views are AND filters in CMS order (the plan already orders them). Descriptor resource-key
         // parameters are numbered across the whole plan so two checks never bind the same name.
         var descriptorParameterIndex = 0;
         foreach (ReadChangesCustomViewCheckSpec check in plan.CustomViewChecks)
@@ -169,12 +168,11 @@ internal static class TrackedChangeAuthorizationSqlEmitter
         {
             ReadChangesCustomViewDescriptorKeyPair pair = seek.DescriptorKeyPairs[i];
             string descriptorAlias = $"{DescriptorAlias}{i}";
-            (string discriminatorParameter, string qualifiedDiscriminatorParameter) =
-                BindDescriptorDiscriminator(
-                    pair.DescriptorResource,
-                    parameters,
-                    ref descriptorParameterIndex
-                );
+            string resourceKeyIdParameter = BindDescriptorResourceKeyId(
+                pair.DescriptorResourceKeyId,
+                parameters,
+                ref descriptorParameterIndex
+            );
 
             liveJoins.Add(
                 $"LEFT JOIN {Quote(dialect, _descriptorTable)} {descriptorAlias} ON "
@@ -182,17 +180,16 @@ internal static class TrackedChangeAuthorizationSqlEmitter
                         dialect,
                         alias,
                         descriptorAlias,
-                        _descriptorDiscriminatorColumn,
+                        _descriptorResourceKeyIdColumn,
                         _descriptorNamespaceColumn,
                         _descriptorCodeValueColumn,
-                        discriminatorParameter,
-                        qualifiedDiscriminatorParameter,
+                        resourceKeyIdParameter,
                         pair.TrackedOldNamespaceColumn,
                         pair.TrackedOldCodeValueColumn
                     )
             );
             liveConditions.Add(
-                $"{BasisAlias}.{Quote(dialect, pair.BasisFkColumn)} = {descriptorAlias}.{Quote(dialect, _documentIdColumn)}"
+                $"{BasisAlias}.{Quote(dialect, pair.BasisFkColumn)} = {descriptorAlias}.{Quote(dialect, _descriptorIdColumn)}"
             );
         }
 
@@ -252,8 +249,8 @@ internal static class TrackedChangeAuthorizationSqlEmitter
 
     /// <summary>
     /// Descriptor basis: descriptors share <c>dms.Descriptor</c>, so the tombstone's old Namespace/CodeValue
-    /// seek that table under the basis descriptor's discriminator; the optional probe arm reads the shared
-    /// descriptor tracked-change table under the same discriminator parameters.
+    /// seek that table under the basis descriptor's resource key; the optional probe arm reads the shared
+    /// descriptor tracked-change table under the same resource-key parameter.
     /// </summary>
     private static string BuildDescriptorSeekPredicate(
         SqlDialect dialect,
@@ -264,8 +261,8 @@ internal static class TrackedChangeAuthorizationSqlEmitter
         ref int descriptorParameterIndex
     )
     {
-        (string discriminatorParameter, string qualifiedDiscriminatorParameter) = BindDescriptorDiscriminator(
-            seek.DescriptorResource,
+        string resourceKeyIdParameter = BindDescriptorResourceKeyId(
+            seek.DescriptorResourceKeyId,
             parameters,
             ref descriptorParameterIndex
         );
@@ -273,11 +270,10 @@ internal static class TrackedChangeAuthorizationSqlEmitter
             dialect,
             alias,
             DescriptorAlias,
-            _descriptorDiscriminatorColumn,
+            _descriptorResourceKeyIdColumn,
             _descriptorNamespaceColumn,
             _descriptorCodeValueColumn,
-            discriminatorParameter,
-            qualifiedDiscriminatorParameter,
+            resourceKeyIdParameter,
             seek.TrackedOldNamespaceColumn,
             seek.TrackedOldCodeValueColumn
         );
@@ -293,11 +289,10 @@ internal static class TrackedChangeAuthorizationSqlEmitter
             dialect,
             alias,
             ProbeAlias,
-            probeArm.DiscriminatorColumn,
+            probeArm.ResourceKeyIdColumn,
             probeArm.OldNamespaceColumn,
             probeArm.OldCodeValueColumn,
-            discriminatorParameter,
-            qualifiedDiscriminatorParameter,
+            resourceKeyIdParameter,
             seek.TrackedOldNamespaceColumn,
             seek.TrackedOldCodeValueColumn
         );
@@ -312,48 +307,33 @@ internal static class TrackedChangeAuthorizationSqlEmitter
         );
     }
 
-    // <alias>.Discriminator IN (@p, @pq) AND <alias>.Namespace = c.OldNs AND <alias>.CodeValue = c.OldCv —
-    // the shape TrackedChangeQueryPlanner.BuildDescriptorIdentityJoin uses for the recreated-row join.
+    // Preserve this consumer's component-wise database comparisons; no URI normalization is applied.
     private static string BuildDescriptorMatch(
         SqlDialect dialect,
         string alias,
         string descriptorAlias,
-        DbColumnName discriminatorColumn,
+        DbColumnName resourceKeyIdColumn,
         DbColumnName namespaceColumn,
         DbColumnName codeValueColumn,
-        string discriminatorParameter,
-        string qualifiedDiscriminatorParameter,
+        string resourceKeyIdParameter,
         DbColumnName trackedOldNamespaceColumn,
         DbColumnName trackedOldCodeValueColumn
     ) =>
-        $"{descriptorAlias}.{Quote(dialect, discriminatorColumn)} IN ({discriminatorParameter}, {qualifiedDiscriminatorParameter})"
+        $"{descriptorAlias}.{Quote(dialect, resourceKeyIdColumn)} = {resourceKeyIdParameter}"
         + $" AND {descriptorAlias}.{Quote(dialect, namespaceColumn)} = {alias}.{Quote(dialect, trackedOldNamespaceColumn)}"
         + $" AND {descriptorAlias}.{Quote(dialect, codeValueColumn)} = {alias}.{Quote(dialect, trackedOldCodeValueColumn)}";
 
-    private static (
-        string DiscriminatorParameter,
-        string QualifiedDiscriminatorParameter
-    ) BindDescriptorDiscriminator(
-        QualifiedResourceName descriptorResource,
+    private static string BindDescriptorResourceKeyId(
+        short resourceKeyId,
         List<RelationalParameter> parameters,
         ref int descriptorParameterIndex
     )
     {
-        string discriminatorParameter =
-            $"{CustomViewDescriptorDiscriminatorParameterPrefix}{descriptorParameterIndex}";
-        string qualifiedDiscriminatorParameter =
-            $"{CustomViewDescriptorDiscriminatorQualifiedParameterPrefix}{descriptorParameterIndex}";
+        string parameterName =
+            $"{CustomViewDescriptorResourceKeyIdParameterPrefix}{descriptorParameterIndex}";
         descriptorParameterIndex++;
-
-        parameters.Add(new RelationalParameter(discriminatorParameter, descriptorResource.ResourceName));
-        parameters.Add(
-            new RelationalParameter(
-                qualifiedDiscriminatorParameter,
-                TrackedChangeQueryPlanner.BuildQualifiedDiscriminator(descriptorResource)
-            )
-        );
-
-        return (discriminatorParameter, qualifiedDiscriminatorParameter);
+        parameters.Add(new RelationalParameter(parameterName, resourceKeyId));
+        return parameterName;
     }
 
     private static string BuildUnionMembership(

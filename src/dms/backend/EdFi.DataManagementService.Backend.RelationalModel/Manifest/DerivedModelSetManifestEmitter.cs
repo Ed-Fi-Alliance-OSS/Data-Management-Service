@@ -501,6 +501,10 @@ public static class DerivedModelSetManifestEmitter
                 {
                     writer.WriteString("person_join_name", personJoinName);
                 }
+                if (column.UsesSqlServerIdentityCollation)
+                {
+                    writer.WriteBoolean("uses_sql_server_identity_collation", true);
+                }
                 writer.WriteEndObject();
             }
             writer.WriteEndArray();
@@ -849,6 +853,12 @@ public static class DerivedModelSetManifestEmitter
         WriteResource(writer, model.Resource);
         writer.WriteString("physical_schema", model.PhysicalSchema.Value);
         writer.WriteString("storage_kind", model.StorageKind.ToString());
+
+        if (model.StorageKind is ResourceStorageKind.SharedDescriptorTable)
+        {
+            writer.WritePropertyName("shared_descriptor_table");
+            WriteTable(writer, model.Root);
+        }
 
         writer.WritePropertyName("tables");
         writer.WriteStartArray();

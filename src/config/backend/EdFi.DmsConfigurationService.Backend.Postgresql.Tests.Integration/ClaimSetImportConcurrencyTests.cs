@@ -156,6 +156,46 @@ public class ClaimSetImportConcurrencyTests : DatabaseTest
         }
     }
 
+    private class AlwaysConflictingClaimsHierarchyRepository : IClaimsHierarchyRepository
+    {
+        public int GetCalls { get; private set; }
+
+        public int SaveCalls { get; private set; }
+
+        public Task<ClaimsHierarchyGetResult> GetClaimsHierarchy(DbTransaction? transaction = null)
+        {
+            GetCalls++;
+
+            return Task.FromResult<ClaimsHierarchyGetResult>(
+                new ClaimsHierarchyGetResult.Success(
+                    [
+                        new Claim
+                        {
+                            Name = "Root",
+                            ClaimSets = [],
+                            Claims = [],
+                        },
+                    ],
+                    DateTime.UtcNow,
+                    GetCalls
+                )
+            );
+        }
+
+        public Task<ClaimsHierarchySaveResult> SaveClaimsHierarchy(
+            List<Claim> claimsHierarchy,
+            DateTime existingLastModifiedDate,
+            DbTransaction? transaction = null
+        )
+        {
+            SaveCalls++;
+
+            return Task.FromResult<ClaimsHierarchySaveResult>(
+                new ClaimsHierarchySaveResult.FailureMultiUserConflict()
+            );
+        }
+    }
+
     [Test]
     public async Task Import_should_retry_on_concurrency_and_succeed()
     {
@@ -226,5 +266,35 @@ public class ClaimSetImportConcurrencyTests : DatabaseTest
         // Assert
         result.Should().BeOfType<ClaimSetImportResult.Success>();
         ((ClaimSetImportResult.Success)result).Warnings.Should().BeNullOrEmpty();
+    }
+
+    [Test]
+    public async Task Import_should_fail_after_3_retries_when_conflicts_persist()
+    {
+        // Arrange
+        var fakeRepo = new AlwaysConflictingClaimsHierarchyRepository();
+
+        var repository = new ClaimSetRepository(
+            Configuration.DatabaseOptions,
+            NullLogger<ClaimSetRepository>.Instance,
+            fakeRepo,
+            new EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy.ClaimsHierarchyManager(),
+            new TestAuditContext(),
+            new TenantContextProvider()
+        );
+
+        var command = new ClaimSetImportCommand { Name = "ExhaustedRetryImport", ResourceClaims = [] };
+
+        // Act
+        var result = await repository.Import(command);
+
+        // Assert
+        result
+            .Should()
+            .BeOfType<ClaimSetImportResult.FailureUnknown>()
+            .Which.FailureMessage.Should()
+            .Be("Optimistic lock concurrency failure.");
+        fakeRepo.SaveCalls.Should().Be(4);
+        fakeRepo.GetCalls.Should().Be(4);
     }
 }

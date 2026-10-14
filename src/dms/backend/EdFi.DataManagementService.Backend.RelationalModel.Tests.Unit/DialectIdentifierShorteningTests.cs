@@ -582,6 +582,11 @@ public class Given_Short_Identifier_Limit
         public SqlScalarTypeDefaults ScalarTypeDefaults => Defaults;
 
         /// <summary>
+        /// Gets the identity-equality contract.
+        /// </summary>
+        public IdentityEqualityContract IdentityEquality => IdentityEqualityContract.Postgresql;
+
+        /// <summary>
         /// Shortens an identifier by truncating it to <see cref="MaxIdentifierLength"/>.
         /// </summary>
         public string ShortenIdentifier(string identifier)
@@ -1048,7 +1053,7 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
             new DbColumnModel(
                 new DbColumnName(_identifiers.DescriptorColumnName),
                 ColumnKind.DescriptorFk,
-                new RelationalScalarType(ScalarKind.Int64),
+                new RelationalScalarType(ScalarKind.Int32),
                 IsNullable: false,
                 SourceJsonPath: JsonPathExpressionCompiler.Compile("$.descriptor"),
                 TargetResource: ShorteningScenario.AbstractResource

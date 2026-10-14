@@ -24,7 +24,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [Category(MssqlCiShards.Shard4)]
 public class Given_Mssql_DocumentCacheMaterializer_Descriptor
 {
-    private const long DescriptorDocumentId = 970301;
+    private const long DescriptorDocumentId = 5000970301;
     private const long ContentVersion = 222;
 
     private static readonly Guid DescriptorDocumentGuid = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-000000000301");
@@ -65,15 +65,15 @@ public class Given_Mssql_DocumentCacheMaterializer_Descriptor
                 );
 
                 CREATE TABLE [dms].[Descriptor] (
-                    [DocumentId] bigint NOT NULL CONSTRAINT [PK_Descriptor] PRIMARY KEY,
+                    [DescriptorId] int IDENTITY(1,1) NOT NULL CONSTRAINT [PK_Descriptor] PRIMARY KEY,
+                    [DocumentId] bigint NOT NULL UNIQUE REFERENCES [dms].[Document] ([DocumentId]) ON DELETE CASCADE,
                     [ResourceKeyId] smallint NOT NULL,
                     [Namespace] varchar(255) NOT NULL,
                     [CodeValue] varchar(50) NOT NULL,
                     [ShortDescription] varchar(75) NOT NULL,
                     [Description] varchar(1024) NULL,
                     [EffectiveBeginDate] date NULL,
-                    [EffectiveEndDate] date NULL,
-                    [Discriminator] varchar(128) NOT NULL
+                    [EffectiveEndDate] date NULL
                 );
 
                 INSERT INTO [dms].[Document] (
@@ -86,7 +86,7 @@ public class Given_Mssql_DocumentCacheMaterializer_Descriptor
                     [CreatedAt]
                 )
                 VALUES (
-                    970301,
+                    5000970301,
                     'aaaaaaaa-bbbb-cccc-dddd-000000000301',
                     13,
                     NULL,
@@ -103,19 +103,17 @@ public class Given_Mssql_DocumentCacheMaterializer_Descriptor
                     [ShortDescription],
                     [Description],
                     [EffectiveBeginDate],
-                    [EffectiveEndDate],
-                    [Discriminator]
+                    [EffectiveEndDate]
                 )
                 VALUES (
-                    970301,
+                    5000970301,
                     13,
                     'uri://ed-fi.org/SchoolTypeDescriptor',
                     'Alternative',
                     'Alternative',
                     'Alternative school type',
                     CAST('2025-01-15' AS date),
-                    CAST('2025-12-31' AS date),
-                    'SchoolTypeDescriptor'
+                    CAST('2025-12-31' AS date)
                 );
                 """
             );

@@ -212,6 +212,66 @@ Feature: Query String handling for GET requests for Resource Queries
                   }]
                   """
 
+        # WeekIdentifier is AcademicWeek identity. SQL Server pins identity columns to a case-insensitive
+        # collation, so the case-variant value matches; PostgreSQL identity storage is case-sensitive.
+        @API-134 @DMS-1443
+        @e2e-ci-shard-4 @MssqlOnly @MssqlRepresentative
+        Scenario: 11 Ensure clients GET information when querying with mixed case parameter name and value on SQL Server
+             When a GET request is made to "/ed-fi/academicWeeks?WEEKIDENTIFier=week+ONE"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [{
+                      "id": "{id}",
+                      "schoolReference": {
+                          "schoolId": 2
+                      },
+                      "weekIdentifier": "Week One",
+                      "beginDate": "2024-05-15",
+                      "endDate": "2024-05-22",
+                      "totalInstructionalDays": 2
+                  }]
+                  """
+
+        @API-134 @DMS-1443
+        @e2e-ci-shard-4 @PostgresqlOnly
+        Scenario: 11.1 Ensure clients get no match when querying with mixed case parameter name and value on PostgreSQL
+             When a GET request is made to "/ed-fi/academicWeeks?WEEKIDENTIFier=week+ONE"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  []
+                  """
+
+        @API-135 @DMS-1443
+        @e2e-ci-shard-4 @MssqlOnly @MssqlRepresentative
+        Scenario: 12 Ensure clients GET information when querying with mixed case parameter name and upper case value on SQL Server
+             When a GET request is made to "/ed-fi/academicWeeks?WEEKIDENTIFier=WEEK+ONE"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [{
+                      "id": "{id}",
+                      "schoolReference": {
+                          "schoolId": 2
+                      },
+                      "weekIdentifier": "Week One",
+                      "beginDate": "2024-05-15",
+                      "endDate": "2024-05-22",
+                      "totalInstructionalDays": 2
+                  }]
+                  """
+
+        @API-135 @DMS-1443
+        @e2e-ci-shard-4 @PostgresqlOnly
+        Scenario: 12.1 Ensure clients get no match when querying with mixed case parameter name and upper case value on PostgreSQL
+             When a GET request is made to "/ed-fi/academicWeeks?WEEKIDENTIFier=WEEK+ONE"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  []
+                  """
+
         @e2e-ci-shard-4
         Scenario: 13 Ensure clients get empty array when querying datetime with no time component and no midnight match
              When a GET request is made to "/ed-fi/studentAssessments?administrationDate=2021-09-28"

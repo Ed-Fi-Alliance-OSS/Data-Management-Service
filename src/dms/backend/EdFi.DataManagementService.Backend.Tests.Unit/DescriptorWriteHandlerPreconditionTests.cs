@@ -940,6 +940,39 @@ public class Given_Descriptor_Write_Preconditions
             .MustHaveHappenedOnceExactly();
     }
 
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_retains_write_conflict_for_descriptor_URI_uniqueness_without_an_RI_match(
+        SqlDialect dialect
+    )
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(dialect);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([]);
+        var documentInsert =
+            dialect is SqlDialect.Pgsql ? "INSERT INTO dms.\"Document\"" : "INSERT INTO [dms].[Document]";
+        sessionFactory.Session.Executor.CommandExceptionFactory = command =>
+            command.CommandText.Contains(documentInsert, StringComparison.Ordinal)
+                ? new StubDbException("unique constraint UX_Descriptor_ResourceKeyId_Uri")
+                : null;
+        var classifier = A.Fake<IRelationalWriteExceptionClassifier>();
+        A.CallTo(() => classifier.IsUniqueConstraintViolation(A<DbException>._)).Returns(true);
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PostResult = new RelationalWriteTargetLookupResult.CreateNew(documentUuid),
+        };
+        var sut = CreateSut(targetLookupService, sessionFactory, classifier);
+        var request = CreatePostRequest(CreateMappingSet(dialect), documentUuid);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
+
+        result.Should().BeOfType<UpsertResult.UpsertFailureWriteConflict>();
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+        sessionFactory.Session.DisposeCallCount.Should().Be(1);
+        sessionFactory.Session.Executor.Commands.Should().HaveCount(1);
+        sessionFactory.Session.ScalarCommands.Should().BeEmpty();
+    }
+
     private static string ExpectedComposedDescriptorEtag(long contentVersion) =>
         EtagComposer.Compose(
             contentVersion,
@@ -978,7 +1011,6 @@ public class Given_Descriptor_Write_Preconditions
             {
                 ["Namespace"] = "uri://ed-fi.org/SchoolTypeDescriptor",
                 ["CodeValue"] = "Charter",
-                ["Uri"] = "uri://ed-fi.org/SchoolTypeDescriptor#Charter",
                 ["ShortDescription"] = "Charter",
                 ["Description"] = description,
                 ["EffectiveBeginDate"] = new DateOnly(2024, 1, 1),

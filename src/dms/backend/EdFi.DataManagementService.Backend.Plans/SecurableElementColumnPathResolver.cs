@@ -421,8 +421,10 @@ internal static class SecurableElementColumnPathResolver
                         rootTable.Table,
                         PersonJoinPathResolver.ResolveToCanonicalColumn(rootTable, descriptorEdge.FkColumn),
                         DescriptorTable,
-                        RelationalNameConventions.DocumentIdColumnName
+                        RelationalNameConventions.DescriptorKeyColumnName
                     ),
+                    // Auth views expose the owning document key, not the compact resource FK.
+                    new(DescriptorTable, RelationalNameConventions.DocumentIdColumnName, null, null),
                 };
                 var descriptorHops = new List<(bool IsIdentity, bool IsRequired, bool IsRoleNamed)>(hopsSoFar)
                 {

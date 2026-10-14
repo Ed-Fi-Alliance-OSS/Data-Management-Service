@@ -865,7 +865,8 @@ Feature: CustomViewAuthorization
 
         @e2e-ci-shard-3 @MssqlRepresentative
         Scenario: Descriptor basis on an optional property gates StudentTransportation and rejects ReadChanges
-            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
+            Given descriptor document IDs are outside the compact ID range
+              And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
               And the system has these descriptors
                   | descriptorValue                                                                  |
                   | uri://ed-fi.org/TransportationTypeDescriptor#Special Needs Bus                   |
@@ -900,7 +901,11 @@ Feature: CustomViewAuthorization
                   | {"studentUniqueId": "604861"}    | {"educationOrganizationId": 255901}          | uri://ed-fi.org/TransportationTypeDescriptor#Special Needs Bus                 |
                   | {"studentUniqueId": "604862"}    | {"educationOrganizationId": 255901}          | uri://ed-fi.org/TransportationTypeDescriptor#General Public Transportation     |
               And the custom auth view "TransportationTypeDescriptorWithABus" authorizes "TransportationTypeDescriptor" descriptors whose code value contains "Bus"
-              And a claim set "E2E-CustomViewTransportationClaimSet" is uploaded to CMS with these resource claims
+             Then the custom auth view "TransportationTypeDescriptorWithABus" contains exactly these "TransportationTypeDescriptor" descriptor code values
+                  | codeValue         |
+                  | Special Needs Bus |
+                  | School Bus        |
+            Given a claim set "E2E-CustomViewTransportationClaimSet" is uploaded to CMS with these resource claims
                   | resource              | authorizationStrategies                                                  | readChangesAuthorizationStrategies                                                       |
                   | StudentTransportation | RelationshipsWithEdOrgsAndPeople, TransportationTypeDescriptorWithABus   | RelationshipsWithEdOrgsAndPeopleIncludingDeletes, TransportationTypeDescriptorWithABus   |
               And the claim set upload to CMS should be successful
@@ -984,7 +989,8 @@ Feature: CustomViewAuthorization
 
         @e2e-ci-shard-3 @MssqlRepresentative
         Scenario Outline: Rejected optional descriptor updates preserve the stored resource
-            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
+            Given descriptor document IDs are outside the compact ID range
+              And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
               And the system has these descriptors
                   | descriptorValue                                                            |
                   | uri://ed-fi.org/TransportationTypeDescriptor#School Bus                      |
@@ -1021,7 +1027,10 @@ Feature: CustomViewAuthorization
               And the response body path "_etag" is stored in request variable "transportationBeforeEtag"
               And the response body path "_lastModifiedDate" is stored in request variable "transportationBeforeModified"
             Given the custom auth view "TransportationTypeDescriptorWithABus" authorizes "TransportationTypeDescriptor" descriptors whose code value contains "Bus"
-              And a claim set "E2E-CustomViewTransportationUpdateClaimSet" is uploaded to CMS with these resource claims
+             Then the custom auth view "TransportationTypeDescriptorWithABus" contains exactly these "TransportationTypeDescriptor" descriptor code values
+                  | codeValue  |
+                  | School Bus |
+            Given a claim set "E2E-CustomViewTransportationUpdateClaimSet" is uploaded to CMS with these resource claims
                   | resource              | authorizationStrategies            |
                   | StudentTransportation | TransportationTypeDescriptorWithABus |
               And the claim set upload to CMS should be successful
@@ -1071,7 +1080,8 @@ Feature: CustomViewAuthorization
 
         @e2e-ci-shard-3 @MssqlRepresentative
         Scenario: Abstract EducationOrganization basis gates the AccountabilityRating lifecycle
-            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with namespacePrefixes "uri://ed-fi.org"
+            Given descriptor document IDs are outside the compact ID range
+              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with namespacePrefixes "uri://ed-fi.org"
               And the system has these descriptors
                   | descriptorValue                                                                |
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School                 |
@@ -1093,7 +1103,8 @@ Feature: CustomViewAuthorization
                   | {"educationOrganizationId": 255901}    | {"schoolYear": 2022}    | District Grade | Met Standard |
                   | {"educationOrganizationId": 255901001} | {"schoolYear": 2022}    | Campus Grade   | Met Standard |
               And the custom auth view "EducationOrganizationWithACategoryContainingAnSWord" authorizes education organizations with a category containing an S word
-              And a claim set "E2E-CustomViewEdOrgClaimSet" is uploaded to CMS with these resource claims
+             Then the custom auth view "EducationOrganizationWithACategoryContainingAnSWord" uses compact category keys for School 255901001 and LocalEducationAgency 255901
+            Given a claim set "E2E-CustomViewEdOrgClaimSet" is uploaded to CMS with these resource claims
                   | resource             | authorizationStrategies                              |
                   | AccountabilityRating | EducationOrganizationWithACategoryContainingAnSWord |
               And the claim set upload to CMS should be successful

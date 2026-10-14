@@ -67,10 +67,10 @@ x-dms-common-env: &dms-common-env
   AppSettings__EnableManagementEndpoints: "${DMS_ENABLE_MANAGEMENT_ENDPOINTS:-false}"
   AppSettings__EnableClaimsetReload: "${DMS_ENABLE_CLAIMSET_RELOAD:-false}"
   AppSettings__ManagementEndpoints__RequiredRole: "${DMS_MANAGEMENT_REQUIRED_ROLE:-}"
-  ConfigurationServiceSettings__ClientId: "${CONFIG_SERVICE_CLIENT_ID:-CMSReadOnlyAccess}"
-  ConfigurationServiceSettings__Scope: "${CONFIG_SERVICE_CLIENT_SCOPE:-edfi_admin_api/readonly_access}"
-  ConfigurationServiceSettings__ClientSecret: "${CONFIG_SERVICE_CLIENT_SECRET:?set CONFIG_SERVICE_CLIENT_SECRET in .env}"
-  ConfigurationServiceSettings__EncryptionKey: "${DMS_CONFIG_DATABASE_ENCRYPTION_KEY:?set DMS_CONFIG_DATABASE_ENCRYPTION_KEY in .env}"
+  ConfigurationServiceSettings__ClientId: "${DMS_CONFIGURATION_SERVICE_CLIENT_ID:-CMSReadOnlyAccess}"
+  ConfigurationServiceSettings__Scope: "${DMS_CONFIGURATION_SERVICE_CLIENT_SCOPE:-edfi_admin_api/readonly_access}"
+  ConfigurationServiceSettings__ClientSecret: "${DMS_CONFIGURATION_SERVICE_CLIENT_SECRET:?set DMS_CONFIGURATION_SERVICE_CLIENT_SECRET in .env}"
+  ConfigurationServiceSettings__EncryptionKey: "${CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY:?set CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY in .env}"
   # JWT validation. Authority = public issuer (must match token `iss`);
   # MetadataAddress = internal so DMS never has to trust the gateway cert.
   JwtAuthentication__Authority: "${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL in .env}/auth/realms/${KEYCLOAK_REALM:-edfi}"
@@ -90,7 +90,7 @@ x-dms-common-env: &dms-common-env
 x-cms-common-env: &cms-common-env
   ASPNETCORE_HTTP_PORTS: "8081"
   AppSettings__Datastore: "postgresql"
-  DatabaseSettings__EncryptionKey: "${DMS_CONFIG_DATABASE_ENCRYPTION_KEY:?set DMS_CONFIG_DATABASE_ENCRYPTION_KEY in .env}"
+  DatabaseSettings__EncryptionKey: "${CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY:?set CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY in .env}"
   AppSettings__DeployDatabaseOnStartup: "true"
   # Keycloak-only: the DMS/CMS token endpoints, JWT authority, and metadata addresses in
   # these env blocks are all wired to the shared Keycloak realm, so an alternative identity
@@ -116,32 +116,36 @@ x-cms-common-env: &cms-common-env
   # CMS token validation and Keycloak admin calls fail before bootstrap can create anything.
   IdentitySettings__Authority: "${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL in .env}/auth/realms/${KEYCLOAK_REALM:-edfi}"
   IdentitySettings__Audience: "${DMS_JWT_AUDIENCE:-account}"
-  IdentitySettings__ClientId: "${DMS_CONFIG_IDENTITY_CLIENT_ID:-DmsConfigurationService}"
-  IdentitySettings__ClientSecret: "${DMS_CONFIG_IDENTITY_CLIENT_SECRET:?set DMS_CONFIG_IDENTITY_CLIENT_SECRET in .env}"
+  IdentitySettings__ClientId: "${CONFIGURATION_SERVICE_IDENTITY_CLIENT_ID:-DmsConfigurationService}"
+  IdentitySettings__ClientSecret: "${CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET:?set CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET in .env}"
   IdentitySettings__ClientSecretValidation__MinimumLength: "32"
   IdentitySettings__ClientSecretValidation__MaximumLength: "128"
   IdentitySettings__RequireHttpsMetadata: "false"
   IdentitySettings__RoleClaimType: "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
   # Embedded claim sets include EdFiSandbox (the bootstrap default: broad access, with
   # relationship-based data scoped to the app's EdOrgs) and the other built-in claim sets.
-  # Set DMS_CONFIG_CLAIMS_SOURCE=Hybrid to also load *-claimset.json fragments dropped into
+  # Set CONFIGURATION_SERVICE_CLAIMS_SOURCE=Hybrid to also load *-claimset.json fragments dropped into
   # ./claims (mounted below). Custom claim sets can also be created at runtime via
   # POST/import /v3/claimSets.
-  ClaimsOptions__ClaimsSource: "${DMS_CONFIG_CLAIMS_SOURCE:-Embedded}"
+  ClaimsOptions__ClaimsSource: "${CONFIGURATION_SERVICE_CLAIMS_SOURCE:-Embedded}"
   ClaimsOptions__ClaimsDirectory: "/app/additional-claims"
+  # Embedded claims for the Data Standard the staged ApiSchema targets (5.2 or 6.1). The CMS loads
+  # claims only into an empty config DB, so switching a running deployment also needs a one-time
+  # POST /management/reload-claims (see provision/UPDATE.md).
+  ClaimsOptions__DataStandardVersion: "${CONFIGURATION_SERVICE_DATA_STANDARD_VERSION:-5.2}"
   # Enables POST /management/reload-claims (re-seeds the claim-set catalog from the
   # configured source into an already-populated config DB). Keep "false" for the review;
   # flip to "true" only to refresh claims (e.g. after pulling a newer image), then back.
-  ClaimsOptions__DangerouslyEnableUnrestrictedClaimsLoading: "${DMS_CONFIG_ENABLE_CLAIMS_RELOAD:-false}"
+  ClaimsOptions__DangerouslyEnableUnrestrictedClaimsLoading: "${CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING:-false}"
   # OpenSSL (and therefore .NET) adds this file as an extra CA anchor without displacing the
   # image's default CA directory, so the self-signed gateway cert is trusted for the in-network
   # calls to https://${PUBLIC_HOST}/auth/... described above. Harmless with a Let's Encrypt cert.
   SSL_CERT_FILE: "/gateway-tls/server.crt"
-  Serilog__MinimumLevel__Default: "${DMS_CONFIG_LOG_LEVEL:-Information}"
-  OtlpLogging__Enabled: "${DMS_CONFIG_OTLP_LOGGING_ENABLED:-false}"
-  OtlpLogging__Endpoint: "${DMS_CONFIG_OTLP_LOGGING_ENDPOINT:-}"
-  OtlpLogging__Protocol: "${DMS_CONFIG_OTLP_LOGGING_PROTOCOL:-HttpProtobuf}"
-  OtlpLogging__DeploymentEnvironment: "${DMS_CONFIG_OTLP_LOGGING_DEPLOYMENT_ENVIRONMENT:-}"
+  Serilog__MinimumLevel__Default: "${CONFIGURATION_SERVICE_LOG_LEVEL:-Information}"
+  OtlpLogging__Enabled: "${CONFIGURATION_SERVICE_OTLP_LOGGING_ENABLED:-false}"
+  OtlpLogging__Endpoint: "${CONFIGURATION_SERVICE_OTLP_LOGGING_ENDPOINT:-}"
+  OtlpLogging__Protocol: "${CONFIGURATION_SERVICE_OTLP_LOGGING_PROTOCOL:-HttpProtobuf}"
+  OtlpLogging__DeploymentEnvironment: "${CONFIGURATION_SERVICE_OTLP_LOGGING_DEPLOYMENT_ENVIRONMENT:-}"
 
 x-app-defaults: &app-defaults
   restart: unless-stopped
@@ -160,7 +164,7 @@ services:
   # databases (see postgres/init-databases.sh).
   # =========================================================================
   postgres:
-    image: postgres:16.14-alpine
+    image: postgres:18.6-alpine
     hostname: postgres
     container_name: dms-sec-postgres
     command: ["postgres", "-c", "max_locks_per_transaction=256"]
@@ -168,7 +172,7 @@ services:
       POSTGRES_USER: "${POSTGRES_USER:-postgres}"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}"
     volumes:
-      - dms-sec-postgres:/var/lib/postgresql/data
+      - dms-sec-postgres:/var/lib/postgresql
       - ./postgres/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
@@ -295,6 +299,28 @@ services:
       SCRIPT_NAME: "/pgadmin"
     depends_on:
       postgres: { condition: service_healthy }
+
+  # =========================================================================
+  # Swagger UI at /swagger/: every DMS and Configuration Service spec, with "Try it out".
+  # Static files only. The specs load through the gateway on the same origin, so no CORS is
+  # needed; the Ed-Fi plugins are shared with the local stack (eng/docker-compose/custom-swagger-ui).
+  # =========================================================================
+  swagger-ui:
+    <<: *app-defaults
+    image: nginx:1.30-alpine
+    hostname: swagger-ui
+    container_name: dms-sec-swagger-ui
+    environment:
+      MT_TENANT_1: "${MT_TENANT_1:-tenant1}"
+      MT_TENANT_2: "${MT_TENANT_2:-tenant2}"
+      MT_SCHOOL_YEAR: "${MT_SCHOOL_YEAR:-2025}"
+    volumes:
+      - ../../docker-compose/custom-swagger-ui:/opt/swagger-ui/shared:ro
+      - ./swagger-ui:/opt/swagger-ui/review:ro
+    command: >
+      sh -c "envsubst '$$MT_TENANT_1 $$MT_TENANT_2 $$MT_SCHOOL_YEAR' < /opt/swagger-ui/review/index.html > /usr/share/nginx/html/index.html &&
+             cp /opt/swagger-ui/shared/edfi-common-helper.js /opt/swagger-ui/shared/edfi-custom-fields.js /opt/swagger-ui/shared/edfi-custom-domains.js /opt/swagger-ui/shared/edfi-single-operation-group.js /opt/swagger-ui/shared/favicon.ico /opt/swagger-ui/review/swagger-initializer.js /usr/share/nginx/html/ &&
+             exec nginx -g 'daemon off;'"
 
   # =========================================================================
   # NGINX gateway — TLS termination + path routing (single public hostname).

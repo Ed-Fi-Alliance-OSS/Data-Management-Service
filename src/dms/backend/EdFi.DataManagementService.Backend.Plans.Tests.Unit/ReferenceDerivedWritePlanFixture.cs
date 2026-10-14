@@ -344,7 +344,7 @@ internal static class ReferenceDerivedWritePlanFixture
                 new DbColumnModel(
                     ColumnName: new DbColumnName("SchoolCategoryDescriptorId"),
                     Kind: ColumnKind.DescriptorFk,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: true,
                     SourceJsonPath: schoolCategoryDescriptorPath,
                     TargetResource: _schoolCategoryDescriptorResource
@@ -425,7 +425,7 @@ internal static class ReferenceDerivedWritePlanFixture
                 new DbColumnModel(
                     ColumnName: new DbColumnName("SchoolCategoryDescriptorId_Canonical"),
                     Kind: ColumnKind.DescriptorFk,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: true,
                     SourceJsonPath: null,
                     TargetResource: _schoolCategoryDescriptorResource
@@ -433,7 +433,7 @@ internal static class ReferenceDerivedWritePlanFixture
                 new DbColumnModel(
                     ColumnName: new DbColumnName("SchoolCategoryDescriptorId_Alias"),
                     Kind: ColumnKind.DescriptorFk,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: true,
                     SourceJsonPath: schoolCategoryDescriptorPath,
                     TargetResource: _schoolCategoryDescriptorResource,

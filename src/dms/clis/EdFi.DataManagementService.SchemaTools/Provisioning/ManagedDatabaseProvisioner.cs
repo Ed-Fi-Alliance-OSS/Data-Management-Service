@@ -20,6 +20,8 @@ public sealed class ManagedDatabaseProvisioner(
     CdcProjectionPrerequisiteMode projectionPrerequisites = CdcProjectionPrerequisiteMode.None
 ) : ICdcManagedDatabaseProvisioner
 {
+    public void CheckPlatformPreconditions() => provisioner.CheckPlatformPreconditions(connectionString);
+
     public bool CreateDatabase() => provisioner.CreateDatabaseIfNotExists(connectionString);
 
     public void ProvisionSchema(bool databaseWasCreated)

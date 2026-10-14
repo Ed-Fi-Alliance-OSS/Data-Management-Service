@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -1327,11 +1328,11 @@ public class Given_RelationalModelDdlEmitter_With_Descriptor_Valued_ReferentialI
 {
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
-    public void It_should_hash_descriptor_uri_instead_of_descriptor_document_id(SqlDialect dialect)
+    public void It_should_hash_reconstructed_descriptor_uri_using_compact_id(SqlDialect dialect)
     {
         var dialectInstance = SqlDialectFactory.Create(dialect);
         var emitter = new RelationalModelDdlEmitter(dialectInstance);
-        var modelSet = DescriptorValuedReferentialIdentityFixture.Build(dialect);
+        var modelSet = CompactDescriptorReferentialIdentityTestModel.Build(dialect);
 
         var ddl = emitter.Emit(modelSet);
 
@@ -1339,11 +1340,11 @@ public class Given_RelationalModelDdlEmitter_With_Descriptor_Valued_ReferentialI
         {
             ddl.Should()
                 .Contain(
-                    "'$.programTypeDescriptor=' || lower((SELECT descriptor.\"Uri\" FROM \"dms\".\"Descriptor\" descriptor WHERE descriptor.\"DocumentId\" = NEW.\"ProgramTypeDescriptor_DescriptorId\"))"
+                    "'$.programTypeDescriptor=' || lower((SELECT descriptor.\"Namespace\" || '#' || descriptor.\"CodeValue\" FROM \"dms\".\"Descriptor\" descriptor WHERE descriptor.\"DescriptorId\" = NEW.\"ProgramTypeDescriptor_DescriptorId\"))"
                 );
             ddl.Should()
                 .Contain(
-                    "'$.graduationPlanTypeDescriptor=' || lower((SELECT descriptor.\"Uri\" FROM \"dms\".\"Descriptor\" descriptor WHERE descriptor.\"DocumentId\" = NEW.\"GraduationPlanTypeDescriptor_DescriptorId\"))"
+                    "'$.graduationPlanTypeDescriptor=' || lower((SELECT descriptor.\"Namespace\" || '#' || descriptor.\"CodeValue\" FROM \"dms\".\"Descriptor\" descriptor WHERE descriptor.\"DescriptorId\" = NEW.\"GraduationPlanTypeDescriptor_DescriptorId\"))"
                 );
             ddl.Should()
                 .NotContain("'$.programTypeDescriptor=' || NEW.\"ProgramTypeDescriptor_DescriptorId\"::text");
@@ -1356,11 +1357,11 @@ public class Given_RelationalModelDdlEmitter_With_Descriptor_Valued_ReferentialI
         {
             ddl.Should()
                 .Contain(
-                    "N'$.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramTypeDescriptor_DescriptorId]))"
+                    "N'$.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]))"
                 );
             ddl.Should()
                 .Contain(
-                    "N'$.graduationPlanTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[GraduationPlanTypeDescriptor_DescriptorId]))"
+                    "N'$.graduationPlanTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[GraduationPlanTypeDescriptor_DescriptorId]))"
                 );
             ddl.Should()
                 .NotContain(
@@ -3561,121 +3562,6 @@ internal static class PgsqlMultiColumnReferentialIdentityFixture
                             partBColumn,
                             "$.partB",
                             new RelationalScalarType(ScalarKind.Int32)
-                        ),
-                    ]
-                )
-            ),
-        ];
-
-        return new DerivedRelationalModelSet(
-            new EffectiveSchemaInfo(
-                "1.0.0",
-                "1.0.0",
-                "hash",
-                1,
-                [0x01],
-                [
-                    new SchemaComponentInfo(
-                        "ed-fi",
-                        "Ed-Fi",
-                        "1.0.0",
-                        false,
-                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
-                    ),
-                ],
-                [resourceKey]
-            ),
-            dialect,
-            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
-            [new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)],
-            [],
-            [],
-            [],
-            triggers
-        );
-    }
-}
-
-internal static class DescriptorValuedReferentialIdentityFixture
-{
-    internal static DerivedRelationalModelSet Build(SqlDialect dialect)
-    {
-        var schema = new DbSchemaName("edfi");
-        var tableName = new DbTableName(schema, "ProgramOffering");
-        var documentIdColumn = new DbColumnName("DocumentId");
-        var programTypeDescriptorColumn = new DbColumnName("ProgramTypeDescriptor_DescriptorId");
-        var graduationPlanTypeDescriptorColumn = new DbColumnName(
-            "GraduationPlanTypeDescriptor_DescriptorId"
-        );
-        var resource = new QualifiedResourceName("Ed-Fi", "ProgramOffering");
-        var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
-
-        var rootTable = new DbTableModel(
-            tableName,
-            new JsonPathExpression("$", []),
-            new TableKey("PK_ProgramOffering", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
-            [
-                new DbColumnModel(
-                    documentIdColumn,
-                    ColumnKind.ParentKeyPart,
-                    new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    programTypeDescriptorColumn,
-                    ColumnKind.DescriptorFk,
-                    new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
-                    SourceJsonPath: new JsonPathExpression("$.programTypeDescriptor", []),
-                    TargetResource: new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor")
-                ),
-                new DbColumnModel(
-                    graduationPlanTypeDescriptorColumn,
-                    ColumnKind.DescriptorFk,
-                    new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
-                    SourceJsonPath: new JsonPathExpression("$.graduationPlanTypeDescriptor", []),
-                    TargetResource: new QualifiedResourceName("Ed-Fi", "GraduationPlanTypeDescriptor")
-                ),
-            ],
-            []
-        );
-
-        var relationalModel = new RelationalResourceModel(
-            resource,
-            schema,
-            ResourceStorageKind.RelationalTables,
-            rootTable,
-            [rootTable],
-            [],
-            []
-        );
-
-        IReadOnlyList<DbTriggerInfo> triggers =
-        [
-            new(
-                new DbTriggerName("TR_ProgramOffering_ReferentialIdentity"),
-                tableName,
-                [documentIdColumn],
-                [programTypeDescriptorColumn, graduationPlanTypeDescriptorColumn],
-                new TriggerKindParameters.ReferentialIdentityMaintenance(
-                    1,
-                    "Ed-Fi",
-                    "ProgramOffering",
-                    [
-                        new IdentityElementMapping(
-                            programTypeDescriptorColumn,
-                            "$.programTypeDescriptor",
-                            new RelationalScalarType(ScalarKind.Int64),
-                            IsDescriptorReference: true
-                        ),
-                        new IdentityElementMapping(
-                            graduationPlanTypeDescriptorColumn,
-                            "$.graduationPlanTypeDescriptor",
-                            new RelationalScalarType(ScalarKind.Int64),
-                            IsDescriptorReference: true
                         ),
                     ]
                 )

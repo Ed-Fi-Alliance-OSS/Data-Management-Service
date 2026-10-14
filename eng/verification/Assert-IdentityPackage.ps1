@@ -22,11 +22,14 @@
     comparing something other than what the implementer built against, and it would be silently
     blind rather than loudly wrong.
 
-    Unlike the sibling plugin-contract script, the readme is checked for presence and metadata only,
-    not for content. IIdentityService's implementer guide has not shipped yet, and IDENTITY.md says
-    so in as many words; asserting guide content here would either pin today's placeholder text as
-    if it were the real thing or force this script to special-case a placeholder it is not this
-    script's job to know about. The guide's own content is a later script's problem once it exists.
+    The readme is the implementer guide, and it is the only documentation an implementer resolving
+    the package from a feed ever sees. It is compared whole against the committed guide, after line
+    endings are normalized, so the check fails on a package that predates an edit to the guide, on a
+    readme altered after packing, and on a guide that was reduced to something shorter. A readme that
+    still carries the placeholder sentence the contract's first commits shipped is refused by name
+    before that comparison, so the failure says what is wrong rather than only that the two differ.
+    The readme is deliberately not part of the publish comparison in Invoke-ContractPublishCheck.ps1,
+    so this assertion is what decides the readme text frozen into 1.0.0 on the feed.
 
     This script adds one assertion the sibling plugin-contract script does not need: the contract's
     load-bearing rules - context-equality, async-token usability, the UniqueId constraints - live
@@ -37,13 +40,19 @@
     pass. This does not attempt to be exhaustive over the contract's documented behavior; it is a
     tripwire for the handful of rules that are easiest to silently soften in a rewrite.
 
+    The source commit the nuspec records is asserted, because the wire-contract gate reads the
+    baseline of every later release at the commit the published package records, and a published
+    version cannot be replaced. A package that recorded no commit, or another commit than the one it
+    was packed from, would leave every later release gated against nothing or against the wrong
+    baseline. The SDK records the commit on its own today; this is what notices if it ever stops.
+
     The dependency check is one-sided here rather than two-sided like the sibling plugin-contract
     script's: this contract's public surface names only framework types that resolve without any
     PackageReference, so the only thing that can go wrong is a dependency appearing at all.
 
-    Only the per-PR lane calls this today, because the package is deliberately built and never
-    published. Whoever wires the publishing lane calls it there too: it is the check that decides
-    what the first published version contains, and once published that content cannot be taken back.
+    The per-PR lane calls this on the packed artifact, and the prerelease pack-identity job calls it
+    on the artifact before that artifact is uploaded for publication: it is the check that decides
+    what a published version contains, and once published that content cannot be taken back.
 #>
 [CmdletBinding()]
 param(
@@ -82,7 +91,18 @@ param(
 
     # The target framework whose lib/ folder must carry the assembly and its XML documentation.
     [string]
-    $TargetFramework = "net10.0"
+    $TargetFramework = "net10.0",
+
+    # The committed implementer guide the packed readme must be a copy of. Passed in with a default
+    # so the Pester cases can point it at a fixture without rewriting a tracked file.
+    [string]
+    $GuidePath = (Join-Path $PSScriptRoot "../../src/dms/core/EdFi.DataManagementService.Identity/IDENTITY.md"),
+
+    # The commit the package must record in /package/metadata/repository/@commit. Omitted, it is the
+    # commit checked out in this repository, which is the commit both lanes pack from, since each
+    # runs this in the job that packed the artifact.
+    [string]
+    $ExpectedCommit = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -140,6 +160,10 @@ $requiredXmlDocLandmarks = @(
 
 $expectedReadme = "IDENTITY.md"
 
+# The sentence the readme carried before the guide shipped. Matched as a whole sentence so a guide
+# that merely discusses a later story is not refused.
+$placeholderSentence = "The implementer guide arrives in a later story."
+
 if (-not (Test-Path -LiteralPath $PackageFile)) {
     throw "Expected identity contract package was not found: $PackageFile"
 }
@@ -189,6 +213,61 @@ foreach ($required in "description", "title", "projectUrl") {
 }
 if (-not (Test-Path -LiteralPath (Join-Path $ExtractTo $expectedReadme))) {
     throw "Package does not carry the readme file itself"
+}
+
+$recordedCommit = $metadata.repository.commit
+if ([string]::IsNullOrWhiteSpace($recordedCommit)) {
+    throw "The package records no source commit in its nuspec repository element. The wire-contract gate reads every later release's baseline at that commit, so a published version without one could never be gated."
+}
+if ($recordedCommit -notmatch '^[0-9a-fA-F]{40}$') {
+    throw "The package records commit '$recordedCommit', which is not a 40-character hexadecimal commit id."
+}
+
+if ([string]::IsNullOrWhiteSpace($ExpectedCommit)) {
+    $ExpectedCommit = git -C (Join-Path $PSScriptRoot "../..") rev-parse HEAD
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($ExpectedCommit)) {
+        throw "The checked-out commit could not be read to compare with the commit the package records. Pass -ExpectedCommit."
+    }
+    $ExpectedCommit = $ExpectedCommit.Trim()
+}
+if (-not [string]::Equals($recordedCommit, $ExpectedCommit, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "The package records commit $recordedCommit, but it was expected to be packed at $ExpectedCommit. The wire-contract gate would read this version's baseline at the recorded commit."
+}
+
+# The readme is the implementer guide, compared whole. Line endings are normalized and trailing
+# whitespace trimmed from the end of each whole text only, so an autocrlf checkout does not fail it
+# and interior drift still does.
+if (-not (Test-Path -LiteralPath $GuidePath)) {
+    throw "The committed implementer guide was not found at $GuidePath, so the packed readme cannot be compared against it. Pass -GuidePath."
+}
+
+$packedReadme = ([System.IO.File]::ReadAllText((Join-Path $ExtractTo $expectedReadme))).Replace("`r`n", "`n").TrimEnd()
+$committedGuide = ([System.IO.File]::ReadAllText($GuidePath)).Replace("`r`n", "`n").TrimEnd()
+
+if ($packedReadme.Contains($placeholderSentence, [StringComparison]::Ordinal)) {
+    throw "Packed readme $expectedReadme still carries the placeholder sentence '$placeholderSentence'. The package's readme is the implementer guide and is what an implementer sees on the feed."
+}
+
+if (-not [string]::Equals($packedReadme, $committedGuide, [StringComparison]::Ordinal)) {
+    $packedLines = $packedReadme -split "`n"
+    $committedLines = $committedGuide -split "`n"
+    $firstDifference = "the two texts differ in length only"
+
+    for ($index = 0; $index -lt [Math]::Max($packedLines.Count, $committedLines.Count); $index++) {
+        $packedLine = if ($index -lt $packedLines.Count) { $packedLines[$index] } else { '<end of packed readme>' }
+        $committedLine = if ($index -lt $committedLines.Count) { $committedLines[$index] } else { '<end of committed guide>' }
+
+        if (-not [string]::Equals($packedLine, $committedLine, [StringComparison]::Ordinal)) {
+            $firstDifference = "line $($index + 1): package has '$packedLine', repository has '$committedLine'"
+            break
+        }
+    }
+
+    throw (
+        "The packed $expectedReadme is not the committed implementer guide. Either the package predates an " +
+        "edit to the guide and must be repacked, or the packed copy was altered. First difference at " +
+        "$firstDifference."
+    )
 }
 
 # The whole point of the package is the assembly. Every other assertion here can pass on a package
@@ -279,4 +358,4 @@ if ($null -ne $metadata.dependencies) {
     }
 }
 
-Write-Output "Verified $([System.IO.Path]::GetFileName($PackageFile)): id, version $($metadata.version), metadata, readme, $($assemblies[0].Name) at AssemblyVersion $actualAssemblyVersion, XML docs, $($actualTypes.Count) exported type(s), $($requiredXmlDocLandmarks.Count) documentation landmark(s), and an empty dependency set."
+Write-Output "Verified $([System.IO.Path]::GetFileName($PackageFile)): id, version $($metadata.version), metadata, the packed readme is the committed implementer guide, $($assemblies[0].Name) at AssemblyVersion $actualAssemblyVersion, XML docs, $($actualTypes.Count) exported type(s), $($requiredXmlDocLandmarks.Count) documentation landmark(s), and an empty dependency set."

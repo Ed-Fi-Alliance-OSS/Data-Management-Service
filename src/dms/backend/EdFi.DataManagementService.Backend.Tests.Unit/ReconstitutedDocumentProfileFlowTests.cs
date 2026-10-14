@@ -329,7 +329,7 @@ public class Given_Reconstituted_Document_With_Nested_Ext_In_ProfileHiddenExtens
             tableRowsInDependencyOrder: tableRowsInDependencyOrder,
             referenceProjectionPlans: [],
             descriptorProjectionSources: [],
-            descriptorUriLookup: new Dictionary<long, string>()
+            descriptorUriLookup: new Dictionary<int, string>()
         );
 
         // ── Build compiled-scope catalog from write plan ──

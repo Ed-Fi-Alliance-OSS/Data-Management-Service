@@ -233,27 +233,27 @@ ADD CONSTRAINT [CK_DataStoreIdentity_Singleton] CHECK ([DataStoreIdentitySinglet
 IF OBJECT_ID(N'dms.Descriptor', N'U') IS NULL
 CREATE TABLE [dms].[Descriptor]
 (
+    [DescriptorId] int IDENTITY(1,1) NOT NULL,
     [DocumentId] bigint NOT NULL,
     [ResourceKeyId] smallint NOT NULL,
-    [Namespace] nvarchar(255) NOT NULL,
-    [CodeValue] nvarchar(50) NOT NULL,
+    [Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
     [ShortDescription] nvarchar(75) NOT NULL,
     [Description] nvarchar(1024) NULL,
     [EffectiveBeginDate] date NULL,
     [EffectiveEndDate] date NULL,
-    [Discriminator] nvarchar(128) NOT NULL,
-    [Uri] nvarchar(306) NOT NULL,
+    [Uri] AS ([Namespace] + N'#' + [CodeValue]),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Descriptor_ContentVersion] DEFAULT 0,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
-    CONSTRAINT [PK_Descriptor] PRIMARY KEY CLUSTERED ([DocumentId])
+    CONSTRAINT [PK_Descriptor] PRIMARY KEY CLUSTERED ([DescriptorId])
 );
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.key_constraints
-    WHERE name = N'UX_Descriptor_Uri_Discriminator' AND type = 'UQ' AND parent_object_id = OBJECT_ID(N'dms.Descriptor')
+    WHERE name = N'UX_Descriptor_DocumentId' AND type = 'UQ' AND parent_object_id = OBJECT_ID(N'dms.Descriptor')
 )
 ALTER TABLE [dms].[Descriptor]
-ADD CONSTRAINT [UX_Descriptor_Uri_Discriminator] UNIQUE ([Uri], [Discriminator]);
+ADD CONSTRAINT [UX_Descriptor_DocumentId] UNIQUE ([DocumentId]);
 
 IF OBJECT_ID(N'dms.Document', N'U') IS NULL
 CREATE TABLE [dms].[Document]
@@ -565,6 +565,14 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'dms' AND t.name = N'Descriptor' AND i.name = N'UX_Descriptor_ResourceKeyId_Uri'
+)
+CREATE UNIQUE INDEX [UX_Descriptor_ResourceKeyId_Uri] ON [dms].[Descriptor] ([ResourceKeyId], [Uri]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'dms' AND t.name = N'Document' AND i.name = N'IX_Document_CreatedByOwnershipTokenId'
 )
 CREATE INDEX [IX_Document_CreatedByOwnershipTokenId] ON [dms].[Document] ([CreatedByOwnershipTokenId]) WHERE [CreatedByOwnershipTokenId] IS NOT NULL;
@@ -606,20 +614,20 @@ BEGIN
     SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]
     FROM [dms].[Document] d
     INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-    LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-    WHERE del.[DocumentId] IS NULL;
-    IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE([Namespace]) OR UPDATE([CodeValue]) OR UPDATE([ShortDescription]) OR UPDATE([Description]) OR UPDATE([EffectiveBeginDate]) OR UPDATE([EffectiveEndDate]) OR UPDATE([Discriminator]) OR UPDATE([Uri]))
+    LEFT JOIN deleted del ON del.[DescriptorId] = i.[DescriptorId]
+    WHERE del.[DescriptorId] IS NULL;
+    IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE([Namespace]) OR UPDATE([CodeValue]) OR UPDATE([ShortDescription]) OR UPDATE([Description]) OR UPDATE([EffectiveBeginDate]) OR UPDATE([EffectiveEndDate]))
     BEGIN
         ;WITH affectedDocs AS (
             SELECT i.[DocumentId]
             FROM inserted i
-            LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-            WHERE del.[DocumentId] IS NOT NULL AND ((CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)) OR (CAST(i.[CodeValue] AS varbinary(max)) <> CAST(del.[CodeValue] AS varbinary(max)) OR (i.[CodeValue] IS NULL AND del.[CodeValue] IS NOT NULL) OR (i.[CodeValue] IS NOT NULL AND del.[CodeValue] IS NULL)) OR (CAST(i.[ShortDescription] AS varbinary(max)) <> CAST(del.[ShortDescription] AS varbinary(max)) OR (i.[ShortDescription] IS NULL AND del.[ShortDescription] IS NOT NULL) OR (i.[ShortDescription] IS NOT NULL AND del.[ShortDescription] IS NULL)) OR (CAST(i.[Description] AS varbinary(max)) <> CAST(del.[Description] AS varbinary(max)) OR (i.[Description] IS NULL AND del.[Description] IS NOT NULL) OR (i.[Description] IS NOT NULL AND del.[Description] IS NULL)) OR (i.[EffectiveBeginDate] <> del.[EffectiveBeginDate] OR (i.[EffectiveBeginDate] IS NULL AND del.[EffectiveBeginDate] IS NOT NULL) OR (i.[EffectiveBeginDate] IS NOT NULL AND del.[EffectiveBeginDate] IS NULL)) OR (i.[EffectiveEndDate] <> del.[EffectiveEndDate] OR (i.[EffectiveEndDate] IS NULL AND del.[EffectiveEndDate] IS NOT NULL) OR (i.[EffectiveEndDate] IS NOT NULL AND del.[EffectiveEndDate] IS NULL)) OR (CAST(i.[Discriminator] AS varbinary(max)) <> CAST(del.[Discriminator] AS varbinary(max)) OR (i.[Discriminator] IS NULL AND del.[Discriminator] IS NOT NULL) OR (i.[Discriminator] IS NOT NULL AND del.[Discriminator] IS NULL)) OR (CAST(i.[Uri] AS varbinary(max)) <> CAST(del.[Uri] AS varbinary(max)) OR (i.[Uri] IS NULL AND del.[Uri] IS NOT NULL) OR (i.[Uri] IS NOT NULL AND del.[Uri] IS NULL)))
+            LEFT JOIN deleted del ON del.[DescriptorId] = i.[DescriptorId]
+            WHERE del.[DescriptorId] IS NOT NULL AND ((CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)) OR (CAST(i.[CodeValue] AS varbinary(max)) <> CAST(del.[CodeValue] AS varbinary(max)) OR (i.[CodeValue] IS NULL AND del.[CodeValue] IS NOT NULL) OR (i.[CodeValue] IS NOT NULL AND del.[CodeValue] IS NULL)) OR (CAST(i.[ShortDescription] AS varbinary(max)) <> CAST(del.[ShortDescription] AS varbinary(max)) OR (i.[ShortDescription] IS NULL AND del.[ShortDescription] IS NOT NULL) OR (i.[ShortDescription] IS NOT NULL AND del.[ShortDescription] IS NULL)) OR (CAST(i.[Description] AS varbinary(max)) <> CAST(del.[Description] AS varbinary(max)) OR (i.[Description] IS NULL AND del.[Description] IS NOT NULL) OR (i.[Description] IS NOT NULL AND del.[Description] IS NULL)) OR (i.[EffectiveBeginDate] <> del.[EffectiveBeginDate] OR (i.[EffectiveBeginDate] IS NULL AND del.[EffectiveBeginDate] IS NOT NULL) OR (i.[EffectiveBeginDate] IS NOT NULL AND del.[EffectiveBeginDate] IS NULL)) OR (i.[EffectiveEndDate] <> del.[EffectiveEndDate] OR (i.[EffectiveEndDate] IS NULL AND del.[EffectiveEndDate] IS NOT NULL) OR (i.[EffectiveEndDate] IS NOT NULL AND del.[EffectiveEndDate] IS NULL)))
             UNION ALL
             SELECT del.[DocumentId]
             FROM deleted del
-            LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-            WHERE i.[DocumentId] IS NULL
+            LEFT JOIN inserted i ON i.[DescriptorId] = del.[DescriptorId]
+            WHERE i.[DescriptorId] IS NULL
         )
         UPDATE d
         SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -746,7 +754,7 @@ CREATE TABLE [edfi].[ParentResourceParent]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ParentResource_DocumentId] bigint NOT NULL,
-    [ParentCode] nvarchar(30) NULL,
+    [ParentCode] nvarchar(30) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [ParentName] nvarchar(100) NULL,
     CONSTRAINT [PK_ParentResourceParent] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_ParentResourceParent_CollectionItemId_ParentResource_DocumentId] UNIQUE ([CollectionItemId], [ParentResource_DocumentId]),
@@ -760,7 +768,7 @@ CREATE TABLE [aligned].[ParentResourceExtensionParent]
     [BaseCollectionItemId] bigint NOT NULL,
     [ParentResource_DocumentId] bigint NOT NULL,
     [Sponsor_DocumentId] bigint NULL,
-    [Sponsor_SponsorName] nvarchar(30) NULL,
+    [Sponsor_SponsorName] nvarchar(30) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     CONSTRAINT [PK_ParentResourceExtensionParent] PRIMARY KEY ([BaseCollectionItemId]),
     CONSTRAINT [CK_ParentResourceExtensionParent_Sponsor_AllNone] CHECK (([Sponsor_DocumentId] IS NULL AND [Sponsor_SponsorName] IS NULL) OR ([Sponsor_DocumentId] IS NOT NULL AND [Sponsor_SponsorName] IS NOT NULL))
 );
@@ -771,7 +779,7 @@ CREATE TABLE [edfi].[Sponsor]
     [DocumentId] bigint NOT NULL,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Sponsor_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Sponsor_ContentVersion] DEFAULT 0,
-    [SponsorName] nvarchar(30) NOT NULL,
+    [SponsorName] nvarchar(30) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
     CONSTRAINT [PK_Sponsor] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_Sponsor_NK] UNIQUE ([SponsorName]),
     CONSTRAINT [UX_Sponsor_RefKey] UNIQUE ([SponsorName], [DocumentId])
@@ -792,8 +800,8 @@ CREATE TABLE [tracked_changes_edfi].[ParentResource]
 IF OBJECT_ID(N'tracked_changes_edfi.Sponsor', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[Sponsor]
 (
-    [OldSponsorName] nvarchar(30) NOT NULL,
-    [NewSponsorName] nvarchar(30) NULL,
+    [OldSponsorName] nvarchar(30) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewSponsorName] nvarchar(30) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [DocumentId] bigint NOT NULL,

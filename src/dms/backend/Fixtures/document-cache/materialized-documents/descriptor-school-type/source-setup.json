@@ -18,9 +18,11 @@
       "values": {
         "Description": "Alternative school type",
         "EffectiveBeginDate": "2025-01-15",
-        "EffectiveEndDate": "2025-12-31",
-        "Discriminator": "SchoolTypeDescriptor"
-      }
+        "EffectiveEndDate": "2025-12-31"
+      },
+      "descriptorId": 101,
+      "projectName": "Ed-Fi",
+      "resourceName": "SchoolTypeDescriptor"
     }
   ],
   "concreteRootRows": [],

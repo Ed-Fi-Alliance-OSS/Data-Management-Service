@@ -39,15 +39,13 @@ public static class PgsqlPerfDescriptorFixtureLoaderSql
         """;
 
     public const string DescriptorInsertSql = $"""
-        INSERT INTO "dms"."Descriptor" ("DocumentId", "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription", "Discriminator", "Uri")
+        INSERT INTO "dms"."Descriptor" ("DocumentId", "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription")
         SELECT
             n,
             @{PerfFixtureLoaderParameters.ResourceKeyId},
             {NamespaceCaseExpression},
             {CodeValueExpression},
-            {CodeValueExpression},
-            '{PerfDescriptorFixtureDefinition.ResourceName}',
-            {NamespaceCaseExpression} || '#' || {CodeValueExpression}
+            {CodeValueExpression}
         FROM generate_series(@{PerfFixtureLoaderParameters.FromOrdinal}, @{PerfFixtureLoaderParameters.ToOrdinal}) AS n;
         """;
 
@@ -147,10 +145,18 @@ public static class PgsqlPerfDescriptorFixtureLoaderSql
                 definition.RowCount
             ),
             new(
-                "uri-shape-count",
-                """
-                SELECT COUNT(*) FROM "dms"."Descriptor"
-                WHERE "Uri" = "Namespace" || '#' || "CodeValue";
+                "uri-witness-count",
+                $"""
+                SELECT COUNT(*) FROM "dms"."Descriptor" r
+                INNER JOIN "dms"."ReferentialIdentity" ri ON ri."DocumentId" = r."DocumentId"
+                INNER JOIN "dms"."ResourceKey" rk ON rk."ResourceKeyId" = r."ResourceKeyId"
+                WHERE rk."ProjectName" = '{PerfDescriptorFixtureDefinition.ProjectName}'
+                    AND rk."ResourceName" = '{PerfDescriptorFixtureDefinition.ResourceName}'
+                    AND ri."ResourceKeyId" = r."ResourceKeyId"
+                    AND ri."ReferentialId" = "dms"."uuidv5"(
+                        'edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid,
+                        '{PerfDescriptorFixtureDefinition.ProjectName}{PerfDescriptorFixtureDefinition.ResourceName}'
+                            || '$.descriptor=' || LOWER(r."Namespace" || '#' || r."CodeValue"));
                 """,
                 definition.RowCount
             ),

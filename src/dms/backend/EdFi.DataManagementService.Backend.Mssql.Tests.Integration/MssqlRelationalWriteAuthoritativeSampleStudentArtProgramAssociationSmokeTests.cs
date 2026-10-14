@@ -248,7 +248,7 @@ file static class MssqlStudentArtProgramAssociationIntegrationTestSupport
 internal sealed record MssqlStudentArtProgramAssociationSeedData(
     long SchoolDocumentId,
     long StudentDocumentId,
-    long ExtracurricularProgramTypeDescriptorId,
+    int ExtracurricularProgramTypeDescriptorId,
     long RoboticsClubProgramDocumentId
 );
 
@@ -259,7 +259,7 @@ internal sealed record MssqlStudentArtProgramAssociationPersistedState(
     long ProgramDocumentId,
     long ProgramEducationOrganizationId,
     string ProgramName,
-    long ProgramTypeDescriptorId,
+    int ProgramTypeDescriptorId,
     long StudentDocumentId,
     string StudentUniqueId,
     DateOnly BeginDate,
@@ -545,11 +545,9 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             studentResourceKeyId
         );
 
-        var extracurricularProgramTypeDescriptorId = await InsertDescriptorAsync(
+        var extracurricularProgramTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("33333333-cccc-cccc-cccc-ccccccccccc1"),
             programTypeDescriptorResourceKeyId,
-            "Ed-Fi:ProgramTypeDescriptor",
-            ExtracurricularProgramTypeDescriptorUri,
             "uri://ed-fi.org/ProgramTypeDescriptor",
             "Extracurricular",
             "Extracurricular"
@@ -560,7 +558,7 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
                 "ProgramTypeDescriptor",
                 ExtracurricularProgramTypeDescriptorUri
             ),
-            extracurricularProgramTypeDescriptorId,
+            extracurricularProgramTypeDescriptor.DocumentId,
             programTypeDescriptorResourceKeyId
         );
 
@@ -572,7 +570,7 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             roboticsClubProgramDocumentId,
             schoolDocumentId,
             (int)EducationOrganizationId,
-            extracurricularProgramTypeDescriptorId,
+            extracurricularProgramTypeDescriptor.DescriptorId,
             "PRG-01",
             RoboticsClubProgramName
         );
@@ -593,7 +591,7 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
         return new(
             SchoolDocumentId: schoolDocumentId,
             StudentDocumentId: studentDocumentId,
-            ExtracurricularProgramTypeDescriptorId: extracurricularProgramTypeDescriptorId,
+            ExtracurricularProgramTypeDescriptorId: extracurricularProgramTypeDescriptor.DescriptorId,
             RoboticsClubProgramDocumentId: roboticsClubProgramDocumentId
         );
     }
@@ -648,10 +646,7 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
                 row,
                 "ProgramProgram_ProgramName"
             ),
-            ProgramTypeDescriptorId: MssqlStudentArtProgramAssociationIntegrationTestSupport.GetInt64(
-                row,
-                "ProgramProgram_ProgramTypeDescriptor_DescriptorId"
-            ),
+            ProgramTypeDescriptorId: (int)row["ProgramProgram_ProgramTypeDescriptor_DescriptorId"]!,
             StudentDocumentId: MssqlStudentArtProgramAssociationIntegrationTestSupport.GetInt64(
                 row,
                 "Student_DocumentId"
@@ -697,52 +692,48 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
         );
     }
 
-    private async Task<long> InsertDescriptorAsync(
+    private async Task<SeededDescriptor> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
 
-        await _database.ExecuteNonQueryAsync(
+        var descriptorId = await _database.ExecuteScalarAsync<int>(
             """
+            DECLARE @descriptor TABLE ([DescriptorId] int);
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
                 [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
-                [Description],
-                [Discriminator],
-                [Uri]
+                [Description]
             )
+            OUTPUT INSERTED.[DescriptorId] INTO @descriptor ([DescriptorId])
             VALUES (
                 @documentId,
                 @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
+                @description
             );
+            SELECT [DescriptorId] FROM @descriptor;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),
-            new SqlParameter("@description", shortDescription),
-            new SqlParameter("@discriminator", discriminator),
-            new SqlParameter("@uri", uri)
+            new SqlParameter("@description", shortDescription)
         );
 
-        return documentId;
+        return new(descriptorId, documentId);
     }
 
     private async Task InsertSchoolAsync(long documentId, int schoolId, string nameOfInstitution)
@@ -799,7 +790,7 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
         long documentId,
         long educationOrganizationDocumentId,
         int educationOrganizationId,
-        long programTypeDescriptorId,
+        int programTypeDescriptorId,
         string programId,
         string programName
     )

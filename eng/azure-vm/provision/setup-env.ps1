@@ -114,6 +114,8 @@ if (-not (Test-Path $RepoDir)) {
 }
 $composeDir = Join-Path $RepoDir "compose"
 if (-not (Test-Path $composeDir)) { throw "compose dir not found at $composeDir" }
+# Resolved now: $RepoDir may be relative, and the steps below run from inside $composeDir.
+$envUtilityModule = (Resolve-Path -LiteralPath (Join-Path $RepoDir "../docker-compose/env-utility.psm1")).Path
 
 # docker group sanity check (cloud-init adds the user; needs a fresh login to take effect).
 docker info *> $null
@@ -138,6 +140,12 @@ try {
     Write-Output "Writing .env host values..."
     Set-EnvValue -File ".env" -Key "PUBLIC_BASE_URL" -Value "https://$PublicHost"
     Set-EnvValue -File ".env" -Key "PUBLIC_HOST" -Value $PublicHost
+    # Retired variable names are no longer read; name each one before Compose fails on a missing
+    # replacement, and before the removal below deletes one from .env. This Keycloak-only stack never
+    # reads CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY, so the old name is reported as removed.
+    Import-Module $envUtilityModule -Force
+    Write-LegacyEnvironmentVariableWarning -EnvironmentFile ".env" -AdditionalRemovedVariable 'DMS_CONFIG_IDENTITY_ENCRYPTION_KEY'
+
     # Removed from this Keycloak-only stack: it was consumed only by self-contained OpenIddict.
     # Clean legacy .env files too, particularly ones that still carry a CHANGEME placeholder.
     Remove-EnvValue -File ".env" -Key "DMS_CONFIG_IDENTITY_ENCRYPTION_KEY"
@@ -179,11 +187,11 @@ try {
         Write-Output "Writing generated secrets to .env..."
         Set-EnvValue -File ".env" -Key "POSTGRES_PASSWORD" -Value (New-ComplexSecret)
         Set-EnvValue -File ".env" -Key "KEYCLOAK_ADMIN_PASSWORD" -Value (New-ComplexSecret)
-        Set-EnvValue -File ".env" -Key "DMS_CONFIG_IDENTITY_CLIENT_SECRET" -Value (New-ComplexSecret)
-        Set-EnvValue -File ".env" -Key "CONFIG_SERVICE_CLIENT_SECRET" -Value (New-ComplexSecret)
+        Set-EnvValue -File ".env" -Key "CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET" -Value (New-ComplexSecret)
+        Set-EnvValue -File ".env" -Key "DMS_CONFIGURATION_SERVICE_CLIENT_SECRET" -Value (New-ComplexSecret)
         Set-EnvValue -File ".env" -Key "BOOTSTRAP_ADMIN_CLIENT_SECRET" -Value (New-ComplexSecret)
         Set-EnvValue -File ".env" -Key "PGADMIN_DEFAULT_PASSWORD" -Value (New-ComplexSecret)
-        Set-EnvValue -File ".env" -Key "DMS_CONFIG_DATABASE_ENCRYPTION_KEY" -Value (New-Key32)
+        Set-EnvValue -File ".env" -Key "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY" -Value (New-Key32)
     }
     else {
         Write-Output "Preserving existing secrets in .env (pass -RotateSecrets to regenerate)."
@@ -262,7 +270,7 @@ try {
     # --no-deps so the gateway (which depends_on the DMS services) does not pull them up early;
     # the gateway resolves upstreams at request time, so it starts fine without the DMS backends.
     docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d --no-deps `
-        postgres keycloak st-config mt-config pgadmin gateway
+        postgres keycloak st-config mt-config pgadmin swagger-ui gateway
     if ($LASTEXITCODE -ne 0) { throw "docker compose up (infrastructure) failed ($LASTEXITCODE)." }
 
     # Persist the image that ACTUALLY created/started the Keycloak H2 realm. A later plain
@@ -311,7 +319,7 @@ try {
         }
         else {
             Write-Output "Running bootstrap (over loopback)..."
-            & "$composeDir/bootstrap/bootstrap.ps1" -BaseUrl "https://localhost" -Insecure
+            & "$composeDir/bootstrap/bootstrap.ps1" -BaseUrl "https://localhost" -Insecure -SkipLegacyEnvironmentVariableWarning
         }
     }
 

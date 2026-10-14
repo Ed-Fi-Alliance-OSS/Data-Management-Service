@@ -33,6 +33,7 @@ public enum FixtureKey
     FocusedStableKeyUpdateSemantics,
     ProfileRootOnlyMerge,
     DescriptorRuntime,
+    CompactDescriptorResources,
     ProfileSeparateTableMerge,
     ProfileNestedAndRootExtensionChildren,
     ProfileCollectionAlignedExtension,

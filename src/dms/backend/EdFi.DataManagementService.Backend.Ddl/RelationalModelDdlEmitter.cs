@@ -23,7 +23,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private static readonly DbColumnName ReferentialIdColumn = new("ReferentialId");
     private static readonly DbColumnName ResourceKeyIdColumn = new("ResourceKeyId");
     private static readonly DbColumnName DiscriminatorColumn = new("Discriminator");
-    private static readonly DbColumnName DescriptorUriColumn = new("Uri");
+    private static readonly DbColumnName DescriptorIdColumn =
+        RelationalNameConventions.DescriptorKeyColumnName;
+    private static readonly DbColumnName DescriptorNamespaceColumn = new("Namespace");
+    private static readonly DbColumnName DescriptorCodeValueColumn = new("CodeValue");
 
     /// <summary>
     /// Builds a SQL script that creates all schemas, tables, indexes, views, and triggers in the model set.
@@ -260,7 +263,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         foreach (var column in trackedTable.ValueColumnsInTableOrder)
         {
-            var type = _dialect.RenderColumnType(column.ScalarType);
+            var type = ApplyIdentityCollation(
+                _dialect.RenderColumnType(column.ScalarType),
+                column.UsesSqlServerIdentityCollation
+            );
             definitions.Add(
                 _dialect.RenderColumnDefinition(column.OldColumnName, type, column.IsOldColumnNullable)
             );
@@ -307,7 +313,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Renders a fixed-by-role tracked-change system column. The <c>Id</c> role has no
-    /// <see cref="RelationalScalarType"/> and renders as the dialect UUID type; the <c>CreatedAt</c> role
+    /// <see cref="RelationalScalarType"/> and renders as the dialect UUID type; <c>ResourceKeyId</c>
+    /// likewise renders by role as the dialect smallint type. The <c>CreatedAt</c> role
     /// carries the current-UTC-timestamp default under a named <c>DF_*</c> constraint (consistent with the
     /// core DDL convention so SQL Server does not assign a system-generated default-constraint name); all
     /// other roles render directly from their scalar type.
@@ -317,9 +324,14 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         TrackedChangeSystemColumnInfo systemColumn
     )
     {
-        var type = systemColumn.ScalarType is null
-            ? _dialect.UuidColumnType
-            : _dialect.RenderColumnType(systemColumn.ScalarType);
+        var type = systemColumn.Role switch
+        {
+            TrackedChangeSystemColumnRole.Id => _dialect.UuidColumnType,
+            TrackedChangeSystemColumnRole.ResourceKeyId => _dialect.SmallintColumnType,
+            _ => systemColumn.ScalarType is null
+                ? _dialect.UuidColumnType
+                : _dialect.RenderColumnType(systemColumn.ScalarType),
+        };
 
         if (systemColumn.Role == TrackedChangeSystemColumnRole.CreatedAt)
         {
@@ -419,6 +431,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         if (column.Storage is ColumnStorage.UnifiedAlias alias)
         {
+            // Aliases render no COLLATE text: the computed column inherits the canonical column's collation.
             return _dialect.RenderComputedColumnDefinition(
                 column.ColumnName,
                 type,
@@ -426,6 +439,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 alias.PresenceColumn
             );
         }
+
+        type = ApplyIdentityCollation(type, column.UsesSqlServerIdentityCollation);
 
         if (TryResolveMirrorNamedDefault(table, column, out var mirrorConstraintName, out var mirrorDefault))
         {
@@ -2183,7 +2198,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Emits a canonical text conversion for an identity column value in PostgreSQL.
-    /// Delegates to <see cref="DialectIdentityTextFormatter.PgsqlColumnToText"/> so the
+    /// Reconstructs descriptor URI text through DescriptorId before lowercasing. Other values
+    /// delegate to <see cref="DialectIdentityTextFormatter.PgsqlColumnToText"/> so the
     /// trigger and the runtime reference-lookup verification SQL share one source of truth.
     /// </summary>
     private void EmitPgsqlIdentityElementToText(SqlWriter writer, IdentityElementMapping element)
@@ -2193,11 +2209,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         if (element.IsDescriptorReference)
         {
             writer.Append("lower((SELECT descriptor.");
-            writer.Append(Quote(DescriptorUriColumn));
+            writer.Append(Quote(DescriptorNamespaceColumn));
+            writer.Append(" || '#' || descriptor.");
+            writer.Append(Quote(DescriptorCodeValueColumn));
             writer.Append(" FROM ");
             writer.Append(Quote(DmsTableNames.Descriptor));
             writer.Append(" descriptor WHERE descriptor.");
-            writer.Append(Quote(DocumentIdColumn));
+            writer.Append(Quote(DescriptorIdColumn));
             writer.Append(" = ");
             writer.Append(columnExpression);
             writer.Append("))");
@@ -2355,7 +2373,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Emits a canonical nvarchar conversion for an identity column value in MSSQL.
-    /// Delegates to <see cref="DialectIdentityTextFormatter.MssqlColumnToNvarchar"/> so the
+    /// Reconstructs descriptor URI text through DescriptorId before lowercasing. Other values
+    /// delegate to <see cref="DialectIdentityTextFormatter.MssqlColumnToNvarchar"/> so the
     /// trigger and the runtime reference-lookup verification SQL share one source of truth.
     /// </summary>
     private void EmitMssqlIdentityElementToNvarchar(SqlWriter writer, IdentityElementMapping element)
@@ -2365,11 +2384,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         if (element.IsDescriptorReference)
         {
             writer.Append("LOWER((SELECT descriptor.");
-            writer.Append(Quote(DescriptorUriColumn));
+            writer.Append(Quote(DescriptorNamespaceColumn));
+            writer.Append(" + N'#' + descriptor.");
+            writer.Append(Quote(DescriptorCodeValueColumn));
             writer.Append(" FROM ");
             writer.Append(Quote(DmsTableNames.Descriptor));
             writer.Append(" descriptor WHERE descriptor.");
-            writer.Append(Quote(DocumentIdColumn));
+            writer.Append(Quote(DescriptorIdColumn));
             writer.Append(" = ");
             writer.Append(columnExpression);
             writer.Append("))");
@@ -2837,6 +2858,17 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             EmitMssqlColumnValueDiffPredicate(writer, tableModel, "i", "d", identityProjectionColumns[i]);
         }
         writer.AppendLine(";");
+    }
+
+    /// <summary>
+    /// Appends the dialect's identity text collation to a stored column type when the column carries the
+    /// identity-text role. Dialects without an identity collation never set the role.
+    /// </summary>
+    private string ApplyIdentityCollation(string type, bool usesIdentityCollation)
+    {
+        return usesIdentityCollation && _dialect.Rules.IdentityEquality.IdentityTextCollation is { } collation
+            ? $"{type} COLLATE {collation}"
+            : type;
     }
 
     /// <summary>

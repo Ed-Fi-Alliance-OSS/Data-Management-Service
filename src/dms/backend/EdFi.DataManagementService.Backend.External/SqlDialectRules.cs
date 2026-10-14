@@ -27,6 +27,11 @@ public interface ISqlDialectRules
     SqlScalarTypeDefaults ScalarTypeDefaults { get; }
 
     /// <summary>
+    /// Gets the identity-equality contract shared by DDL generation and runtime comparer selection.
+    /// </summary>
+    IdentityEqualityContract IdentityEquality { get; }
+
+    /// <summary>
     /// Applies deterministic shortening (truncate + hash) when identifiers exceed limits.
     /// </summary>
     /// <param name="identifier">The identifier to shorten.</param>
@@ -82,6 +87,9 @@ public sealed class PgsqlDialectRules : ISqlDialectRules
     public SqlScalarTypeDefaults ScalarTypeDefaults => _defaults;
 
     /// <inheritdoc />
+    public IdentityEqualityContract IdentityEquality => IdentityEqualityContract.Postgresql;
+
+    /// <inheritdoc />
     public string ShortenIdentifier(string identifier)
     {
         return SqlDialectRulesUtilities.ShortenIdentifier(
@@ -116,6 +124,9 @@ public sealed class MssqlDialectRules : ISqlDialectRules
 
     /// <inheritdoc />
     public SqlScalarTypeDefaults ScalarTypeDefaults => _defaults;
+
+    /// <inheritdoc />
+    public IdentityEqualityContract IdentityEquality => IdentityEqualityContract.SqlServer;
 
     /// <inheritdoc />
     public string ShortenIdentifier(string identifier)

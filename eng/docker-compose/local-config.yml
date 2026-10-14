@@ -5,84 +5,83 @@
 
 services:
   config:
-    image: ${DMS_CONFIG_DOCKER_IMAGE:-ed-fi-api-config-local}
+    image: ${CONFIGURATION_SERVICE_DOCKER_IMAGE:-ed-fi-api-config-local}
     build:
       context: ../../src/config
       additional_contexts:
         parentdir: ../../src/
     container_name: ed-fi-api-config-service
     environment:
-      ASPNETCORE_HTTP_PORTS: ${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}
-      AppSettings__Datastore: ${DMS_CONFIG_DATASTORE:-postgresql}
+      ASPNETCORE_HTTP_PORTS: ${CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS:-8081}
+      AppSettings__Datastore: ${CONFIGURATION_SERVICE_DATASTORE:-postgresql}
       # The database segment honors the CMS database topology seam (DMS-1270): with no explicit
-      # connection string, the nested fallback uses DMS_CONFIG_DATABASE_NAME when set and
+      # connection string, the nested fallback uses CONFIGURATION_SERVICE_DATABASE_NAME when set and
       # POSTGRES_DB_NAME otherwise, so a separate-mode run reaches the dedicated CMS database even
       # through this fallback. Host, port, and credentials stay PostgreSQL-shaped - Compose
       # interpolation cannot branch on the engine, and an MSSQL run always supplies
-      # DMS_CONFIG_DATABASE_CONNECTION_STRING explicitly through the .env.mssql overlay.
-      DatabaseSettings__DatabaseConnection: ${DMS_CONFIG_DATABASE_CONNECTION_STRING:-host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME:-${POSTGRES_DB_NAME}};}
-      DatabaseSettings__EncryptionKey: ${DMS_CONFIG_DATABASE_ENCRYPTION_KEY:-}
-      IdentitySettings__AllowRegistration: ${DMS_CONFIG_IDENTITY_ALLOW_REGISTRATION:-false}
-      IdentitySettings__ConfigServiceRole: ${DMS_CONFIG_IDENTITY_SERVICE_ROLE:-cms-client}
-      IdentitySettings__ClientRole: ${DMS_CONFIG_IDENTITY_CLIENT_ROLE:-dms-client}
-      IdentitySettings__Authority: ${DMS_CONFIG_IDENTITY_AUTHORITY:-http://localhost:8045/realms/edfi}
-      IdentitySettings__Audience: ${DMS_CONFIG_IDENTITY_AUDIENCE:-account}
-      IdentitySettings__ClientId: ${DMS_CONFIG_IDENTITY_CLIENT_ID:-DmsConfigurationService}
-      IdentitySettings__ClientSecret: ${DMS_CONFIG_IDENTITY_CLIENT_SECRET}
-      IdentitySettings__ClientSecretValidation__MinimumLength: ${DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH:-32}
-      IdentitySettings__ClientSecretValidation__MaximumLength: ${DMS_CONFIG_IDENTITY_CLIENT_SECRET_MAXIMUM_LENGTH:-128}
-      IdentitySettings__RequireHttpsMetadata: ${DMS_CONFIG_IDENTITY_REQUIRE_HTTPS:-false}
-      IdentitySettings__RoleClaimType: ${DMS_CONFIG_IDENTITY_ROLE_CLAIM_TYPE:-http://schemas.microsoft.com/ws/2008/06/identity/claims/role}
-      Serilog__MinimumLevel__Default: ${DMS_CONFIG_LOG_LEVEL:-Information}
-      OtlpLogging__Enabled: ${DMS_CONFIG_OTLP_LOGGING_ENABLED:-false}
-      OtlpLogging__Endpoint: ${DMS_CONFIG_OTLP_LOGGING_ENDPOINT:-}
-      OtlpLogging__Protocol: ${DMS_CONFIG_OTLP_LOGGING_PROTOCOL:-HttpProtobuf}
-      OtlpLogging__DeploymentEnvironment: ${DMS_CONFIG_OTLP_LOGGING_DEPLOYMENT_ENVIRONMENT:-}
-      AppSettings__DeployDatabaseOnStartup: ${DMS_CONFIG_DEPLOY_DATABASE:-true}
-      AppSettings__TokenRequestTimeoutSeconds: ${DMS_CONFIG_TOKEN_TIMEOUT_SECONDS:-30}
-      AppSettings__IdentityProvider: ${DMS_CONFIG_IDENTITY_PROVIDER:-keycloak}
-      AppSettings__MultiTenancy: ${DMS_CONFIG_MULTI_TENANCY:-false}
-      AppSettings__EnableApplicationResetEndpoint: ${DMS_CONFIG_ENABLE_APPLICATION_RESET_ENDPOINT:-false}
+      # CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING explicitly through the .env.mssql overlay.
+      DatabaseSettings__DatabaseConnection: ${CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING:-host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME:-${POSTGRES_DB_NAME}};}
+      DatabaseSettings__EncryptionKey: ${CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY:-}
+      IdentitySettings__AllowRegistration: ${CONFIGURATION_SERVICE_IDENTITY_ALLOW_REGISTRATION:-false}
+      IdentitySettings__ConfigServiceRole: ${CONFIGURATION_SERVICE_IDENTITY_SERVICE_ROLE:-cms-client}
+      IdentitySettings__ClientRole: ${CONFIGURATION_SERVICE_IDENTITY_CLIENT_ROLE:-dms-client}
+      IdentitySettings__Authority: ${CONFIGURATION_SERVICE_IDENTITY_AUTHORITY:-http://localhost:8045/realms/edfi}
+      IdentitySettings__Audience: ${CONFIGURATION_SERVICE_IDENTITY_AUDIENCE:-account}
+      IdentitySettings__ClientId: ${CONFIGURATION_SERVICE_IDENTITY_CLIENT_ID:-DmsConfigurationService}
+      IdentitySettings__ClientSecret: ${CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET}
+      IdentitySettings__ClientSecretValidation__MinimumLength: ${CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH:-32}
+      IdentitySettings__ClientSecretValidation__MaximumLength: ${CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET_MAXIMUM_LENGTH:-128}
+      IdentitySettings__RequireHttpsMetadata: ${CONFIGURATION_SERVICE_IDENTITY_REQUIRE_HTTPS:-false}
+      IdentitySettings__RoleClaimType: ${CONFIGURATION_SERVICE_IDENTITY_ROLE_CLAIM_TYPE:-http://schemas.microsoft.com/ws/2008/06/identity/claims/role}
+      Serilog__MinimumLevel__Default: ${CONFIGURATION_SERVICE_LOG_LEVEL:-Information}
+      OtlpLogging__Enabled: ${CONFIGURATION_SERVICE_OTLP_LOGGING_ENABLED:-false}
+      OtlpLogging__Endpoint: ${CONFIGURATION_SERVICE_OTLP_LOGGING_ENDPOINT:-}
+      OtlpLogging__Protocol: ${CONFIGURATION_SERVICE_OTLP_LOGGING_PROTOCOL:-HttpProtobuf}
+      OtlpLogging__DeploymentEnvironment: ${CONFIGURATION_SERVICE_OTLP_LOGGING_DEPLOYMENT_ENVIRONMENT:-}
+      AppSettings__DeployDatabaseOnStartup: ${CONFIGURATION_SERVICE_DEPLOY_DATABASE:-true}
+      AppSettings__TokenRequestTimeoutSeconds: ${CONFIGURATION_SERVICE_TOKEN_TIMEOUT_SECONDS:-30}
+      AppSettings__IdentityProvider: ${CONFIGURATION_SERVICE_IDENTITY_PROVIDER:-keycloak}
+      AppSettings__MultiTenancy: ${CONFIGURATION_SERVICE_MULTI_TENANCY:-false}
       # Segment of the url to use as base for all request. The default path base is deliberately blank on the following line
-      AppSettings__PathBase: ${DMS_CONFIG_PATH_BASE:-}
-      AppSettings__ReverseProxy__UseForwardedHeaders: ${DMS_CONFIG_USE_REVERSE_PROXY_HEADERS:-false}
+      AppSettings__PathBase: ${CONFIGURATION_SERVICE_PATH_BASE:-}
+      AppSettings__ReverseProxy__UseForwardedHeaders: ${CONFIGURATION_SERVICE_USE_REVERSE_PROXY_HEADERS:-false}
       # Trusted reverse-proxy sources honored when ReverseProxy:UseForwardedHeaders is true (comma-separated).
       # Leave empty to trust loopback only. KnownProxies: exact IPs; KnownNetworks: CIDR ranges.
-      AppSettings__ReverseProxy__KnownProxies: ${DMS_CONFIG_REVERSE_PROXY_KNOWN_PROXIES:-}
-      AppSettings__ReverseProxy__KnownNetworks: ${DMS_CONFIG_REVERSE_PROXY_KNOWN_NETWORKS:-}
-      ClaimsOptions__ClaimsSource: ${DMS_CONFIG_CLAIMS_SOURCE:-Embedded}
-      ClaimsOptions__DangerouslyEnableUnrestrictedClaimsLoading: ${DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING:-false}
-      ClaimsOptions__ClaimsDirectory: ${DMS_CONFIG_CLAIMS_DIRECTORY:-}
-      ClaimsOptions__DataStandardVersion: ${DMS_CONFIG_DATA_STANDARD_VERSION:-5.2}
-      JobSettings__WorkerEnabled: ${DMS_CONFIG_JOBS_WORKER_ENABLED:-true}
-      JobSettings__SchedulerEnabled: ${DMS_CONFIG_JOBS_SCHEDULER_ENABLED:-true}
-      JobSettings__RetentionEnabled: ${DMS_CONFIG_JOBS_RETENTION_ENABLED:-true}
-      JobSettings__PollInterval: ${DMS_CONFIG_JOBS_POLL_INTERVAL:-00:00:05}
-      JobSettings__LeaseDuration: ${DMS_CONFIG_JOBS_LEASE_DURATION:-00:05:00}
-      JobSettings__RenewalInterval: ${DMS_CONFIG_JOBS_RENEWAL_INTERVAL:-00:01:00}
-      JobSettings__FenceTimeout: ${DMS_CONFIG_JOBS_FENCE_TIMEOUT:-00:00:10}
-      JobSettings__MaxAttempts: ${DMS_CONFIG_JOBS_MAX_ATTEMPTS:-5}
-      JobSettings__RetryBackoffBase: ${DMS_CONFIG_JOBS_RETRY_BACKOFF_BASE:-00:00:30}
-      JobSettings__RetryBackoffMaximum: ${DMS_CONFIG_JOBS_RETRY_BACKOFF_MAXIMUM:-00:15:00}
-      JobSettings__MaxConcurrentJobs: ${DMS_CONFIG_JOBS_MAX_CONCURRENT_JOBS:-2}
-      JobSettings__FinishedJobRetention: ${DMS_CONFIG_JOBS_FINISHED_JOB_RETENTION:-7.00:00:00}
-      JobSettings__RetentionInterval: ${DMS_CONFIG_JOBS_RETENTION_INTERVAL:-01:00:00}
-      JobSettings__RetentionBatchSize: ${DMS_CONFIG_JOBS_RETENTION_BATCH_SIZE:-500}
-      SecretsSettings__CacheExpirationSeconds: ${DMS_CONFIG_SECRETS_CACHE_EXPIRATION_SECONDS:-300}
-      SecretsSettings__ResolveTimeoutSeconds: ${DMS_CONFIG_SECRETS_RESOLVE_TIMEOUT_SECONDS:-10}
-      IdentitySettings__EncryptionKey: ${DMS_CONFIG_IDENTITY_ENCRYPTION_KEY:-}
-      IdentitySettings__ClientSecretHashingIterations: ${DMS_CONFIG_IDENTITY_HASHING_ITERATIONS:-210000}
-      IdentitySettings__TokenCleanupEnabled: ${DMS_CONFIG_IDENTITY_TOKEN_CLEANUP_ENABLED:-true}
-      IdentitySettings__TokenCleanupIntervalMinutes: ${DMS_CONFIG_IDENTITY_TOKEN_CLEANUP_INTERVAL_MINUTES:-30}
+      AppSettings__ReverseProxy__KnownProxies: ${CONFIGURATION_SERVICE_REVERSE_PROXY_KNOWN_PROXIES:-}
+      AppSettings__ReverseProxy__KnownNetworks: ${CONFIGURATION_SERVICE_REVERSE_PROXY_KNOWN_NETWORKS:-}
+      ClaimsOptions__ClaimsSource: ${CONFIGURATION_SERVICE_CLAIMS_SOURCE:-Embedded}
+      ClaimsOptions__DangerouslyEnableUnrestrictedClaimsLoading: ${CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING:-false}
+      ClaimsOptions__ClaimsDirectory: ${CONFIGURATION_SERVICE_CLAIMS_DIRECTORY:-}
+      ClaimsOptions__DataStandardVersion: ${CONFIGURATION_SERVICE_DATA_STANDARD_VERSION:-5.2}
+      JobSettings__WorkerEnabled: ${CONFIGURATION_SERVICE_JOBS_WORKER_ENABLED:-true}
+      JobSettings__SchedulerEnabled: ${CONFIGURATION_SERVICE_JOBS_SCHEDULER_ENABLED:-true}
+      JobSettings__RetentionEnabled: ${CONFIGURATION_SERVICE_JOBS_RETENTION_ENABLED:-true}
+      JobSettings__PollInterval: ${CONFIGURATION_SERVICE_JOBS_POLL_INTERVAL:-00:00:05}
+      JobSettings__LeaseDuration: ${CONFIGURATION_SERVICE_JOBS_LEASE_DURATION:-00:05:00}
+      JobSettings__RenewalInterval: ${CONFIGURATION_SERVICE_JOBS_RENEWAL_INTERVAL:-00:01:00}
+      JobSettings__FenceTimeout: ${CONFIGURATION_SERVICE_JOBS_FENCE_TIMEOUT:-00:00:10}
+      JobSettings__MaxAttempts: ${CONFIGURATION_SERVICE_JOBS_MAX_ATTEMPTS:-5}
+      JobSettings__RetryBackoffBase: ${CONFIGURATION_SERVICE_JOBS_RETRY_BACKOFF_BASE:-00:00:30}
+      JobSettings__RetryBackoffMaximum: ${CONFIGURATION_SERVICE_JOBS_RETRY_BACKOFF_MAXIMUM:-00:15:00}
+      JobSettings__MaxConcurrentJobs: ${CONFIGURATION_SERVICE_JOBS_MAX_CONCURRENT_JOBS:-2}
+      JobSettings__FinishedJobRetention: ${CONFIGURATION_SERVICE_JOBS_FINISHED_JOB_RETENTION:-7.00:00:00}
+      JobSettings__RetentionInterval: ${CONFIGURATION_SERVICE_JOBS_RETENTION_INTERVAL:-01:00:00}
+      JobSettings__RetentionBatchSize: ${CONFIGURATION_SERVICE_JOBS_RETENTION_BATCH_SIZE:-500}
+      SecretsSettings__CacheExpirationSeconds: ${CONFIGURATION_SERVICE_SECRETS_CACHE_EXPIRATION_SECONDS:-300}
+      SecretsSettings__ResolveTimeoutSeconds: ${CONFIGURATION_SERVICE_SECRETS_RESOLVE_TIMEOUT_SECONDS:-10}
+      IdentitySettings__EncryptionKey: ${CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY:-}
+      IdentitySettings__ClientSecretHashingIterations: ${CONFIGURATION_SERVICE_IDENTITY_HASHING_ITERATIONS:-210000}
+      IdentitySettings__TokenCleanupEnabled: ${CONFIGURATION_SERVICE_IDENTITY_TOKEN_CLEANUP_ENABLED:-true}
+      IdentitySettings__TokenCleanupIntervalMinutes: ${CONFIGURATION_SERVICE_IDENTITY_TOKEN_CLEANUP_INTERVAL_MINUTES:-30}
       # Exemption requires no live ApiClient row and nonempty registered scopes
       # consisting only of recognized CMS admin scopes (case-sensitive).
       # Values below 1 disable enforcement globally.
-      IdentitySettings__BearerTokenPerClientLimit: ${DMS_CONFIG_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT:-15}
+      IdentitySettings__BearerTokenPerClientLimit: ${CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT:-15}
       Cors__SwaggerUIOrigin: ${DMS_SWAGGER_UI_URL:-http://localhost:8082}
     ports:
-      - "127.0.0.1:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}"
+      - "127.0.0.1:${CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS:-8081}:${CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS:-8081}"
     volumes:
-      - ${DMS_CONFIG_CLAIMS_MOUNT_SOURCE:-../../src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets}:/app/additional-claims:ro
+      - ${CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE:-../../src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets}:/app/additional-claims:ro
     networks:
       - dms
     restart: unless-stopped
@@ -92,7 +91,7 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:${CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS:-8081}/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 50

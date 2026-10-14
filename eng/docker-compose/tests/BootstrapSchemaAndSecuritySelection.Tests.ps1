@@ -18,15 +18,15 @@ Describe "Story 00 bootstrap" {
             "API_SCHEMA_PATH",
             "SCHEMA_PACKAGES",
             "DMS_API_SCHEMA_MOUNT_SOURCE",
-            "DMS_CONFIG_CLAIMS_SOURCE",
-            "DMS_CONFIG_CLAIMS_DIRECTORY",
-            "DMS_CONFIG_CLAIMS_MOUNT_SOURCE",
+            "CONFIGURATION_SERVICE_CLAIMS_SOURCE",
+            "CONFIGURATION_SERVICE_CLAIMS_DIRECTORY",
+            "CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE",
             # start-local-config.ps1 sets these before compose up and does not restore them.
-            "DMS_CONFIG_IDENTITY_PROVIDER",
+            "CONFIGURATION_SERVICE_IDENTITY_PROVIDER",
             "OAUTH_TOKEN_ENDPOINT",
             "DMS_JWT_AUTHORITY",
             "DMS_JWT_METADATA_ADDRESS",
-            "DMS_CONFIG_IDENTITY_AUTHORITY"
+            "CONFIGURATION_SERVICE_IDENTITY_AUTHORITY"
         )
 
     function script:New-TestDirectory {
@@ -1471,9 +1471,9 @@ exit $ExitCode
             Import-Module $script:repo.ManifestModule -Force
 
             # Pre-set stale process-env values to confirm bootstrap activation overrides them.
-            $env:DMS_CONFIG_CLAIMS_SOURCE = "Embedded"
-            $env:DMS_CONFIG_CLAIMS_DIRECTORY = ""
-            $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = "/some/stale/path"
+            $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE = "Embedded"
+            $env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY = ""
+            $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE = "/some/stale/path"
             $env:SCHEMA_PACKAGES = "ambient-packages"
 
             Set-BootstrapStartupEnvironment | Should -BeTrue
@@ -1488,9 +1488,9 @@ exit $ExitCode
 
             # Claims activation: manifest claims.mode=Hybrid (Sample extension) overrides the
             # stale Embedded process-env values.
-            $env:DMS_CONFIG_CLAIMS_SOURCE | Should -Be "Hybrid"
-            $env:DMS_CONFIG_CLAIMS_DIRECTORY | Should -Be "/app/additional-claims"
-            $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE | Should -Not -BeNullOrEmpty
+            $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE | Should -Be "Hybrid"
+            $env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY | Should -Be "/app/additional-claims"
+            $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE | Should -Not -BeNullOrEmpty
         }
 
         It "validates a package-backed standard-mode bootstrap manifest at startup (DMS-1156 wrapper path)" {
@@ -1545,23 +1545,23 @@ exit $ExitCode
         It "manifest claims.mode governs in bootstrap mode and overrides caller-set process-env claims values" {
             # Bootstrap mode: manifest claims.mode is authoritative. "Sample" extension produces
             # Hybrid mode; any pre-set Embedded process-env values are overridden by activation.
-            # DMS_CONFIG_CLAIMS_MOUNT_SOURCE is set to the staged .bootstrap/claims path.
+            # CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE is set to the staged .bootstrap/claims path.
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Sample"))
             Invoke-PrepareClaim
             Remove-Module bootstrap-manifest -Force -ErrorAction SilentlyContinue
             Import-Module $script:repo.ManifestModule -Force
 
             # Simulate process env set to Embedded by a prior caller; manifest says Hybrid.
-            $env:DMS_CONFIG_CLAIMS_SOURCE = "Embedded"
-            $env:DMS_CONFIG_CLAIMS_DIRECTORY = ""
-            $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = "/some/stale/path"
+            $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE = "Embedded"
+            $env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY = ""
+            $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE = "/some/stale/path"
 
             Set-BootstrapStartupEnvironment | Should -BeTrue
 
             # Manifest claims.mode=Hybrid overrides the Embedded process-env values.
-            $env:DMS_CONFIG_CLAIMS_SOURCE | Should -Be "Hybrid"
-            $env:DMS_CONFIG_CLAIMS_DIRECTORY | Should -Be "/app/additional-claims"
-            $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE | Should -Not -BeNullOrEmpty
+            $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE | Should -Be "Hybrid"
+            $env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY | Should -Be "/app/additional-claims"
+            $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE | Should -Not -BeNullOrEmpty
         }
 
         It "Embedded manifest claims.mode overrides pre-set Hybrid process-env values in bootstrap mode" {
@@ -1573,16 +1573,16 @@ exit $ExitCode
             Import-Module $script:repo.ManifestModule -Force
 
             # Simulate Hybrid values left in process env from a prior session.
-            $env:DMS_CONFIG_CLAIMS_SOURCE = "Hybrid"
-            $env:DMS_CONFIG_CLAIMS_DIRECTORY = "/app/additional-claims"
-            $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = "/some/stale/claims/path"
+            $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE = "Hybrid"
+            $env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY = "/app/additional-claims"
+            $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE = "/some/stale/claims/path"
 
             Set-BootstrapStartupEnvironment | Should -BeTrue
 
             # Manifest claims.mode=Embedded overrides Hybrid; mount source is blanked.
-            $env:DMS_CONFIG_CLAIMS_SOURCE | Should -Be "Embedded"
-            $env:DMS_CONFIG_CLAIMS_DIRECTORY | Should -BeNullOrEmpty
-            $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE | Should -BeNullOrEmpty
+            $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE | Should -Be "Embedded"
+            $env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY | Should -BeNullOrEmpty
+            $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE | Should -BeNullOrEmpty
         }
 
         It "AddExtensionSecurityMetadata flag is ignored in bootstrap mode; manifest claims.mode governs" {
@@ -1595,9 +1595,9 @@ exit $ExitCode
             Remove-Module bootstrap-manifest -Force -ErrorAction SilentlyContinue
             Import-Module $script:repo.ManifestModule -Force
 
-            $env:DMS_CONFIG_CLAIMS_SOURCE = "Embedded"
-            $env:DMS_CONFIG_CLAIMS_DIRECTORY = ""
-            $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = "/some/stale/path"
+            $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE = "Embedded"
+            $env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY = ""
+            $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE = "/some/stale/path"
 
             Invoke-BootstrapStartupConfiguration -AddExtensionSecurityMetadata
 
@@ -1605,9 +1605,9 @@ exit $ExitCode
             $env:USE_API_SCHEMA_PATH | Should -Be "true"
             $env:API_SCHEMA_PATH | Should -Be "/app/ApiSchema"
             # Manifest claims.mode=Hybrid governs; flag does not override.
-            $env:DMS_CONFIG_CLAIMS_SOURCE | Should -Be "Hybrid"
-            $env:DMS_CONFIG_CLAIMS_DIRECTORY | Should -Be "/app/additional-claims"
-            $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE | Should -Not -BeNullOrEmpty
+            $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE | Should -Be "Hybrid"
+            $env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY | Should -Be "/app/additional-claims"
+            $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE | Should -Not -BeNullOrEmpty
         }
 
         It "Invoke-BootstrapStartupConfiguration returns a clean boolean so start scripts can conditionally append bootstrap-dms.yml" {
@@ -1647,8 +1647,8 @@ exit $ExitCode
             $localDms | Should -Not -Match "/app/additional-claims"
             $publishedDms | Should -Not -Match "/app/additional-claims"
             $localDms | Should -Not -Match "/app/ApiSchema:ro"
-            $localConfig | Should -Match "DMS_CONFIG_CLAIMS_MOUNT_SOURCE"
-            $publishedConfig | Should -Match "DMS_CONFIG_CLAIMS_MOUNT_SOURCE"
+            $localConfig | Should -Match "CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE"
+            $publishedConfig | Should -Match "CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE"
 
             # bootstrap-dms.yml must exist and declare the dms service volume override.
             $bootstrapDmsYml = Join-Path $script:sourceDockerComposeRoot "bootstrap-dms.yml"
@@ -1694,20 +1694,20 @@ exit $ExitCode
 
             Invoke-BootstrapStartupConfiguration -AddExtensionSecurityMetadata
 
-            $env:DMS_CONFIG_CLAIMS_SOURCE | Should -Be "Hybrid"
-            $env:DMS_CONFIG_CLAIMS_DIRECTORY | Should -Be "/app/additional-claims"
+            $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE | Should -Be "Hybrid"
+            $env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY | Should -Be "/app/additional-claims"
         }
 
         It "mounts the staged E2E claims workspace when AddExtensionSecurityMetadata is passed without a bootstrap manifest" {
             # Pre-set a stale ambient value that a prior bootstrap session might have left behind.
-            $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = "/some/stale/path"
+            $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE = "/some/stale/path"
 
             Remove-Module bootstrap-manifest -Force -ErrorAction SilentlyContinue
             Import-Module $script:repo.ManifestModule -Force
 
             Invoke-BootstrapStartupConfiguration -AddExtensionSecurityMetadata
 
-            [System.IO.Path]::GetFullPath($env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE) | Should -Be $script:repo.E2EClaimsWorkspace
+            [System.IO.Path]::GetFullPath($env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE) | Should -Be $script:repo.E2EClaimsWorkspace
             Test-Path -LiteralPath (Join-Path $script:repo.E2EClaimsWorkspace "001-namespace-claimset.json") |
                 Should -BeTrue -Because "the mounted directory must already hold the E2E fragments when compose starts CMS"
         }
@@ -1730,20 +1730,20 @@ exit $ExitCode
         It "restores bootstrap environment variables through the snapshot helper including DMS_API_SCHEMA_MOUNT_SOURCE and SCHEMA_PACKAGES" {
             # Snapshot/restore covers all bootstrap-managed env vars: USE_API_SCHEMA_PATH,
             # API_SCHEMA_PATH, DMS_API_SCHEMA_MOUNT_SOURCE, SCHEMA_PACKAGES (schema side) and
-            # DMS_CONFIG_CLAIMS_SOURCE, DMS_CONFIG_CLAIMS_DIRECTORY, DMS_CONFIG_CLAIMS_MOUNT_SOURCE
+            # CONFIGURATION_SERVICE_CLAIMS_SOURCE, CONFIGURATION_SERVICE_CLAIMS_DIRECTORY, CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE
             # (claims side). Both new vars (DMS_API_SCHEMA_MOUNT_SOURCE and SCHEMA_PACKAGES) are
             # now fully managed by Set-BootstrapStartupEnvironment and must round-trip correctly.
             Remove-Module bootstrap-manifest -Force -ErrorAction SilentlyContinue
             Import-Module $script:repo.ManifestModule -Force
-            $env:DMS_CONFIG_CLAIMS_SOURCE = "existing"
-            Remove-Item Env:DMS_CONFIG_CLAIMS_DIRECTORY -ErrorAction SilentlyContinue
+            $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE = "existing"
+            Remove-Item Env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY -ErrorAction SilentlyContinue
             $env:USE_API_SCHEMA_PATH = "true"
             Remove-Item Env:API_SCHEMA_PATH -ErrorAction SilentlyContinue
             $env:DMS_API_SCHEMA_MOUNT_SOURCE = "/prior/ApiSchema"
             $env:SCHEMA_PACKAGES = "prior-packages"
             $snapshot = Get-BootstrapEnvSnapshot
-            $env:DMS_CONFIG_CLAIMS_SOURCE = "mutated"
-            $env:DMS_CONFIG_CLAIMS_DIRECTORY = "/app/additional-claims"
+            $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE = "mutated"
+            $env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY = "/app/additional-claims"
             $env:USE_API_SCHEMA_PATH = ""
             $env:API_SCHEMA_PATH = "/app/ApiSchema"
             $env:DMS_API_SCHEMA_MOUNT_SOURCE = "/mutated/ApiSchema"
@@ -1751,8 +1751,8 @@ exit $ExitCode
 
             Restore-BootstrapEnvSnapshot -Snapshot $snapshot
 
-            $env:DMS_CONFIG_CLAIMS_SOURCE | Should -Be "existing"
-            $env:DMS_CONFIG_CLAIMS_DIRECTORY | Should -BeNullOrEmpty
+            $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE | Should -Be "existing"
+            $env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY | Should -BeNullOrEmpty
             $env:USE_API_SCHEMA_PATH | Should -Be "true"
             $env:API_SCHEMA_PATH | Should -BeNullOrEmpty
             $env:DMS_API_SCHEMA_MOUNT_SOURCE | Should -Be "/prior/ApiSchema"
@@ -1761,8 +1761,8 @@ exit $ExitCode
 
         It "restores temporary identity selection before CDC fingerprints the next phase" {
             Import-Module $script:repo.ManifestModule -Force
-            $names = @('DMS_CONFIG_IDENTITY_PROVIDER', 'OAUTH_TOKEN_ENDPOINT', 'DMS_JWT_AUTHORITY',
-                'DMS_JWT_METADATA_ADDRESS', 'DMS_CONFIG_IDENTITY_AUTHORITY')
+            $names = @('CONFIGURATION_SERVICE_IDENTITY_PROVIDER', 'OAUTH_TOKEN_ENDPOINT', 'DMS_JWT_AUTHORITY',
+                'DMS_JWT_METADATA_ADDRESS', 'CONFIGURATION_SERVICE_IDENTITY_AUTHORITY')
             $original = Get-BootstrapEnvSnapshot
             try {
                 foreach ($name in $names) { Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
@@ -2135,7 +2135,7 @@ exit 0
                 $composeUpMountSources = [System.Collections.Generic.List[string]]::new()
                 function docker {
                     if ($args -contains "up") {
-                        $composeUpMountSources.Add([string]$env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE)
+                        $composeUpMountSources.Add([string]$env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE)
                         throw "fake docker stopped startup"
                     }
                     $global:LASTEXITCODE = 0
@@ -2152,7 +2152,7 @@ exit 0
             }
 
             It "mounts the staged workspace for compose and restores the caller's prior value" {
-                $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = "/caller/prior/value"
+                $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE = "/caller/prior/value"
 
                 { & $script:startLocalConfig -EnvironmentFile $script:configEnvFile -AddE2EClaimSets *> $null } |
                     Should -Throw "*fake docker stopped startup*"
@@ -2160,21 +2160,21 @@ exit 0
                 $composeUpMountSources.Count | Should -Be 1
                 [System.IO.Path]::GetFullPath($composeUpMountSources[0]) | Should -Be $script:repo.E2EClaimsWorkspace
                 @(Get-ChildItem -LiteralPath $script:repo.E2EClaimsWorkspace -File).Count | Should -Be $script:expectedE2EClaimsFiles.Count
-                $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE | Should -Be "/caller/prior/value"
+                $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE | Should -Be "/caller/prior/value"
             }
 
             It "removes the mount source again when the caller had none" {
-                Remove-Item -LiteralPath Env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath Env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE -ErrorAction SilentlyContinue
 
                 { & $script:startLocalConfig -EnvironmentFile $script:configEnvFile -AddE2EClaimSets *> $null } |
                     Should -Throw "*fake docker stopped startup*"
 
                 [System.IO.Path]::GetFullPath($composeUpMountSources[0]) | Should -Be $script:repo.E2EClaimsWorkspace
-                Test-Path -LiteralPath Env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE | Should -BeFalse
+                Test-Path -LiteralPath Env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE | Should -BeFalse
             }
 
             It "leaves the default compose mount in place without the switch" {
-                Remove-Item -LiteralPath Env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath Env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE -ErrorAction SilentlyContinue
 
                 { & $script:startLocalConfig -EnvironmentFile $script:configEnvFile *> $null } |
                     Should -Throw "*fake docker stopped startup*"

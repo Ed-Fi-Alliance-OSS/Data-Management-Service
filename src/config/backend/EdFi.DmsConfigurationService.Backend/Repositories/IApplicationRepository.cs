@@ -46,8 +46,10 @@ public interface IApplicationRepository
 }
 
 /// <summary>
-/// The complete state an Application update mutates: the Application scalars, its mapping sets,
-/// and the selected client's identity, approval, and exact data store set.
+/// The complete state an Application update touches: the Application scalars, its mapping sets,
+/// and the selected client's identity and approval. The selected client's exact data store set
+/// is read so the update can re-send it unchanged to the identity provider; the update never
+/// changes it.
 /// </summary>
 public record ApplicationUpdateState(
     string ApplicationName,
@@ -160,11 +162,6 @@ public record ApplicationUpdateResult
     /// Referenced vendor not found exception thrown and caught
     /// </summary>
     public record FailureVendorNotFound() : ApplicationUpdateResult();
-
-    /// <summary>
-    /// Referenced Data store not found exception thrown and caught
-    /// </summary>
-    public record FailureDataStoreNotFound() : ApplicationUpdateResult();
 
     /// <summary>
     /// Referenced profile not found exception thrown and caught

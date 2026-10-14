@@ -1,0 +1,295 @@
+# Relationship-based authorization with the SISVendor and EdFiSandbox claim sets.
+#
+# - People (students, staff, contacts) can be created by anyone with the claim, but are only
+#   readable once a relationship links them to one of the client's education organizations.
+# - A collection query for an unrelated record returns 200 with an empty array; a GET by id
+#   returns 403 ("Authorization Denied").
+# - Education organizations are readable by everyone; only EdFiSandbox may create them.
+#
+# Credentials: the single-tenant review-variant applications (add-review-variants.ps1 output):
+#   SISVendor District    - Grand Bend ISD 255901, namespace uri://ed-fi.org
+#   SISVendor School      - Grand Bend school 255901107 only, namespace uri://ed-fi.org
+#   EdFiSandbox District  - 255901, namespace uri://ed-fi.org (the broad "Sandbox" claim set)
+# The same walkthrough works on /mt-dms/{tenant}/{schoolYear} with that tenant's variant keys.
+# Re-running: creates return 201 the first time and 200 (upsert) after that.
+
+@base = https://your-label.eastus.cloudapp.azure.com
+@realm = edfi
+@dms = {{base}}/st-dms
+
+# The raw `Basic key:secret` form below is base64-encoded automatically by VS Code REST Client.
+# Pre-encode it instead (`Authorization: Basic <base64(key:secret)>`) if a secret contains
+# characters REST Client treats as variables ({{ }}) or your client does not auto-encode the raw form.
+@districtKey = REPLACE_WITH_SISVENDOR_DISTRICT_KEY
+@districtSecret = REPLACE_WITH_SISVENDOR_DISTRICT_SECRET
+@schoolKey = REPLACE_WITH_SISVENDOR_SCHOOL_KEY
+@schoolSecret = REPLACE_WITH_SISVENDOR_SCHOOL_SECRET
+@sandboxKey = REPLACE_WITH_EDFISANDBOX_DISTRICT_KEY
+@sandboxSecret = REPLACE_WITH_EDFISANDBOX_DISTRICT_SECRET
+
+### Get a token for SISVendor District (255901)
+# @name tokenRequestDistrict
+POST {{base}}/auth/realms/{{realm}}/protocol/openid-connect/token
+Authorization: Basic {{districtKey}}:{{districtSecret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@district = {{tokenRequestDistrict.response.body.access_token}}
+
+### Get a token for SISVendor School (255901107)
+# @name tokenRequestSchool
+POST {{base}}/auth/realms/{{realm}}/protocol/openid-connect/token
+Authorization: Basic {{schoolKey}}:{{schoolSecret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@school = {{tokenRequestSchool.response.body.access_token}}
+
+### Get a token for EdFiSandbox District (255901)
+# @name tokenRequestSandbox
+POST {{base}}/auth/realms/{{realm}}/protocol/openid-connect/token
+Authorization: Basic {{sandboxKey}}:{{sandboxSecret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@sandbox = {{tokenRequestSandbox.response.body.access_token}}
+
+### Review what the district token is authorized to do: claim set, namespace prefixes, and the
+# education organizations (with their descendants) it is bound to.
+POST {{dms}}/oauth/token_info
+Authorization: Bearer {{district}}
+Content-Type: application/json
+
+{
+  "token": "{{district}}"
+}
+
+#
+# Education Organizations
+#
+
+### Create a new school in LEA 255901 with SISVendor. DENIED (403): this claim set may only read schools.
+POST {{dms}}/data/ed-fi/schools
+Authorization: Bearer {{district}}
+Content-Type: application/json
+
+{
+  "schoolId": 255901998,
+  "nameOfInstitution": "Security Review Middle School",
+  "localEducationAgencyReference": { "localEducationAgencyId": 255901 },
+  "educationOrganizationCategories": [
+    { "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School" }
+  ],
+  "gradeLevels": [
+    { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade" }
+  ]
+}
+
+### Same school with the EdFiSandbox claim set, which is not intended for production data. ALLOWED.
+POST {{dms}}/data/ed-fi/schools
+Authorization: Bearer {{sandbox}}
+Content-Type: application/json
+
+{
+  "schoolId": 255901998,
+  "nameOfInstitution": "Security Review Middle School",
+  "localEducationAgencyReference": { "localEducationAgencyId": 255901 },
+  "educationOrganizationCategories": [
+    { "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School" }
+  ],
+  "gradeLevels": [
+    { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade" }
+  ]
+}
+
+### SISVendor can read it. ALLOWED: schools are not personally identifiable, so every client may read them.
+GET {{dms}}/data/ed-fi/schools?schoolId=255901998
+Authorization: Bearer {{district}}
+
+### Create a new Local Education Agency OUTSIDE Grand Bend, with Sandbox credentials. ALLOWED.
+POST {{dms}}/data/ed-fi/localEducationAgencies
+Authorization: Bearer {{sandbox}}
+Content-Type: application/json
+
+{
+  "localEducationAgencyId": 255999,
+  "nameOfInstitution": "Security Review Outside District",
+  "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Independent",
+  "categories": [
+    { "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency" }
+  ]
+}
+
+### And a school in it. ALLOWED.
+POST {{dms}}/data/ed-fi/schools
+Authorization: Bearer {{sandbox}}
+Content-Type: application/json
+
+{
+  "schoolId": 255999001,
+  "nameOfInstitution": "Security Review Outside School",
+  "localEducationAgencyReference": { "localEducationAgencyId": 255999 },
+  "educationOrganizationCategories": [
+    { "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School" }
+  ],
+  "gradeLevels": [
+    { "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade" }
+  ]
+}
+
+#
+# Students and Enrollment
+#
+
+### Create a student with the district token. ALLOWED.
+POST {{dms}}/data/ed-fi/students
+Authorization: Bearer {{district}}
+Content-Type: application/json
+
+{
+  "studentUniqueId": "SR-STUDENT-1",
+  "firstName": "Review",
+  "lastSurname": "Student",
+  "birthDate": "2010-01-01"
+}
+
+### Read the student back. There is no relationship yet: the request is allowed, but the array is EMPTY.
+GET {{dms}}/data/ed-fi/students?studentUniqueId=SR-STUDENT-1
+Authorization: Bearer {{district}}
+
+### Enroll the student in the school outside 255901's hierarchy. DENIED (403).
+POST {{dms}}/data/ed-fi/studentSchoolAssociations
+Authorization: Bearer {{district}}
+Content-Type: application/json
+
+{
+  "studentReference": { "studentUniqueId": "SR-STUDENT-1" },
+  "schoolReference": { "schoolId": 255999001 },
+  "entryDate": "2025-08-15",
+  "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+}
+
+### Enroll the student in a school that IS in 255901's hierarchy. ALLOWED.
+POST {{dms}}/data/ed-fi/studentSchoolAssociations
+Authorization: Bearer {{district}}
+Content-Type: application/json
+
+{
+  "studentReference": { "studentUniqueId": "SR-STUDENT-1" },
+  "schoolReference": { "schoolId": 255901001 },
+  "entryDate": "2025-08-15",
+  "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+}
+
+### Read the student again. ALLOWED: the record is returned.
+# @name districtStudent
+GET {{dms}}/data/ed-fi/students?studentUniqueId=SR-STUDENT-1
+Authorization: Bearer {{district}}
+
+### The Sandbox client is also bound to 255901, therefore ALLOWED.
+GET {{dms}}/data/ed-fi/students?studentUniqueId=SR-STUDENT-1
+Authorization: Bearer {{sandbox}}
+
+### The school-level client (255901107) has no relationship to a 255901001 student: EMPTY array.
+GET {{dms}}/data/ed-fi/students?studentUniqueId=SR-STUDENT-1
+Authorization: Bearer {{school}}
+
+### Same student by id with the school-level client. DENIED (403), with a hint to create a StudentSchoolAssociation.
+GET {{dms}}/data/ed-fi/students/{{districtStudent.response.body.$[0].id}}
+Authorization: Bearer {{school}}
+
+### The school-level client tries to enroll the student in a sibling school. DENIED (403).
+POST {{dms}}/data/ed-fi/studentSchoolAssociations
+Authorization: Bearer {{school}}
+Content-Type: application/json
+
+{
+  "studentReference": { "studentUniqueId": "SR-STUDENT-1" },
+  "schoolReference": { "schoolId": 255901044 },
+  "entryDate": "2025-08-15",
+  "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+}
+
+#
+# Staff
+#
+
+### Create a staff member. ALLOWED.
+POST {{dms}}/data/ed-fi/staffs
+Authorization: Bearer {{district}}
+Content-Type: application/json
+
+{
+  "staffUniqueId": "SR-STAFF-1",
+  "firstName": "Review",
+  "lastSurname": "Staff"
+}
+
+### Again, unable to read the staff member until there is a relationship: EMPTY array.
+GET {{dms}}/data/ed-fi/staffs?staffUniqueId=SR-STAFF-1
+Authorization: Bearer {{district}}
+
+### Establish a relationship. ALLOWED.
+POST {{dms}}/data/ed-fi/staffEducationOrganizationAssignmentAssociations
+Authorization: Bearer {{district}}
+Content-Type: application/json
+
+{
+  "staffReference": { "staffUniqueId": "SR-STAFF-1" },
+  "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+  "staffClassificationDescriptor": "uri://ed-fi.org/StaffClassificationDescriptor#Teacher",
+  "beginDate": "2025-08-01"
+}
+
+### Read the staff member again. ALLOWED this time.
+GET {{dms}}/data/ed-fi/staffs?staffUniqueId=SR-STAFF-1
+Authorization: Bearer {{district}}
+
+#
+# Contact (aka parent/guardian)
+#
+
+### Create a contact. ALLOWED.
+POST {{dms}}/data/ed-fi/contacts
+Authorization: Bearer {{district}}
+Content-Type: application/json
+
+{
+  "contactUniqueId": "SR-CONTACT-1",
+  "firstName": "Review",
+  "lastSurname": "Contact"
+}
+
+### Read the contact. Once again there is no relationship, therefore an EMPTY array.
+GET {{dms}}/data/ed-fi/contacts?contactUniqueId=SR-CONTACT-1
+Authorization: Bearer {{district}}
+
+### The school-level client cannot link the contact to a student it has no relationship with. DENIED (403).
+POST {{dms}}/data/ed-fi/studentContactAssociations
+Authorization: Bearer {{school}}
+Content-Type: application/json
+
+{
+  "studentReference": { "studentUniqueId": "SR-STUDENT-1" },
+  "contactReference": { "contactUniqueId": "SR-CONTACT-1" }
+}
+
+### Link the contact to the enrolled student with the district client. ALLOWED.
+POST {{dms}}/data/ed-fi/studentContactAssociations
+Authorization: Bearer {{district}}
+Content-Type: application/json
+
+{
+  "studentReference": { "studentUniqueId": "SR-STUDENT-1" },
+  "contactReference": { "contactUniqueId": "SR-CONTACT-1" }
+}
+
+### Try again. ALLOWED: the contact is returned.
+GET {{dms}}/data/ed-fi/contacts?contactUniqueId=SR-CONTACT-1
+Authorization: Bearer {{district}}

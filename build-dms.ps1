@@ -27,7 +27,7 @@
         * IntegrationTest: executes NUnit test in projects named `*.IntegrationTests`,
           which connect to a database.
         * BuildAndPublish: build and publish with `dotnet publish`
-        * Package: builds NuGet packages. The DMS API application, SchemaTools, and DocumentCacheAdmin packages are packed at -DMSVersion; the custom-validation, plugin contract, and identity contract packages are packed at the version each declares in its own project and ignore -DMSVersion. The identity contract package is built and verified only, and is deliberately not published yet. Use -PackageTarget to build only one package.
+        * Package: builds NuGet packages. The DMS API application, SchemaTools, and DocumentCacheAdmin packages are packed at -DMSVersion; the custom-validation, plugin contract, and identity contract packages are packed at the version each declares in its own project and ignore -DMSVersion. The identity contract package is published like the others. Use -PackageTarget to build only one package.
         * Push: uploads a NuGet package to the NuGet feed.
         * DockerBuild: builds a Docker image from source code
         * DockerRun: runs the Docker image that was built from source code
@@ -164,7 +164,14 @@ param(
     [string]
     $EnvironmentOverlayFile,
 
-    # Optional test filter for dotnet test operations
+    # Optional test filter for dotnet test operations. A leading @ on a category is stripped, also
+    # inside | and parenthesized groups. E2E scenarios tagged @MssqlOnly or @PostgresqlOnly run on
+    # one engine only, so each E2E lane excludes the other engine's tag:
+    #   PostgreSQL shard:       (Category=@e2e-ci-shard-N)&(Category!=@MssqlOnly)
+    #   PostgreSQL DS 6.1:      (Category=@StandardVersion-6_1)&(Category!=@MssqlOnly)
+    #   Partition sizing:       (Category=@CursorPartitionSizing)&(Category!=@MssqlOnly)
+    #   SQL Server:             (Category=@MssqlRepresentative|Category=@MssqlOnly)&(Category!=@PostgresqlOnly)
+    #   SQL Server DS 6.1:      (Category=@StandardVersion-6_1)&(Category!=@PostgresqlOnly)
     [string]
     $TestFilter,
 
@@ -901,7 +908,7 @@ function Invoke-WithE2EIdentityEnvironment {
     $prefix = if ($IdentityProvider -eq "keycloak") { "KEYCLOAK" } else { "SELF_CONTAINED" }
     # Keycloak's issuer (DMS_JWT_AUTHORITY) differs from the in-network URL the Configuration
     # Service calls; self-contained uses one value for both.
-    $configAuthorityKey = if ($IdentityProvider -eq "keycloak") { "DMS_CONFIG_IDENTITY_AUTHORITY" } else { "DMS_JWT_AUTHORITY" }
+    $configAuthorityKey = if ($IdentityProvider -eq "keycloak") { "CONFIGURATION_SERVICE_IDENTITY_AUTHORITY" } else { "DMS_JWT_AUTHORITY" }
     foreach ($key in 'OAUTH_TOKEN_ENDPOINT', 'DMS_JWT_AUTHORITY', 'DMS_JWT_METADATA_ADDRESS', $configAuthorityKey | Select-Object -Unique) {
         $sourceKey = "${prefix}_$key"
         if ([string]::IsNullOrWhiteSpace($environmentValues[$sourceKey])) {
@@ -911,11 +918,11 @@ function Invoke-WithE2EIdentityEnvironment {
     # Match startup's provider-specific endpoint selection. Startup restores its temporary values;
     # tests that recreate DMS with Compose must receive the selected identity settings explicitly.
     $identityEnvironment = @{
-        DMS_CONFIG_IDENTITY_PROVIDER = $IdentityProvider
+        CONFIGURATION_SERVICE_IDENTITY_PROVIDER = $IdentityProvider
         OAUTH_TOKEN_ENDPOINT = $environmentValues["${prefix}_OAUTH_TOKEN_ENDPOINT"]
         DMS_JWT_AUTHORITY = $environmentValues["${prefix}_DMS_JWT_AUTHORITY"]
         DMS_JWT_METADATA_ADDRESS = $environmentValues["${prefix}_DMS_JWT_METADATA_ADDRESS"]
-        DMS_CONFIG_IDENTITY_AUTHORITY = $environmentValues["${prefix}_$configAuthorityKey"]
+        CONFIGURATION_SERVICE_IDENTITY_AUTHORITY = $environmentValues["${prefix}_$configAuthorityKey"]
     }
     $previousEnvironment = @{}
     foreach ($name in $identityEnvironment.Keys) {
@@ -1738,13 +1745,6 @@ function Register-InstanceE2EFixture {
         -ClientId $bootstrapAdmin.ClientId `
         -ClientSecret $bootstrapAdmin.ClientSecret
 
-    # Resolved with Compose precedence for consistency with the registration connection strings;
-    # Add-DataStore ignores this credential whenever an explicit -ConnectionString is supplied, so
-    # this only matters if a future caller registers without one.
-    $postgresUser = Get-ComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name "POSTGRES_USER" -DefaultValue "postgres"
-    $postgresPassword = Get-ComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name "POSTGRES_PASSWORD" -DefaultValue "abcdefgh1!"
-    $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret $postgresPassword
-
     # Canonical fixture routes: three data stores under two tenants (255901/2024 and 255901/2025 under
     # Tenant_255901; 255902/2024 under Tenant_255902). Index maps to the resolved database/registration
     # string in $InstanceE2ESettings.
@@ -1781,7 +1781,6 @@ function Register-InstanceE2EFixture {
                         -Tenant $tenantName `
                         -DataStoreType "District" `
                         -Name "Instance E2E $($route.DistrictId)/$($route.SchoolYear)" `
-                        -PostgresCredential $postgresCredential `
                         -ConnectionString $InstanceE2ESettings.RegistrationConnectionStrings[$route.Index] `
                         -DatabaseEngine $InstanceE2ESettings.DatabaseEngine
 

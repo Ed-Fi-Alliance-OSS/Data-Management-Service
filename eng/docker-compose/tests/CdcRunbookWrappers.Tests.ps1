@@ -123,7 +123,7 @@ Describe 'CDC live lifecycle snippet boundary' {
 }
 
 Describe 'CDC provider image environment retention' -ForEach @(
-    @{ Engine = 'postgresql'; ImageVariable = 'POSTGRES_IMAGE'; DefaultImage = 'postgres:16.8-alpine@sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0' },
+    @{ Engine = 'postgresql'; ImageVariable = 'POSTGRES_IMAGE'; DefaultImage = 'postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873' },
     @{ Engine = 'mssql'; ImageVariable = 'MSSQL_IMAGE'; DefaultImage = 'mcr.microsoft.com/mssql/server:2025-latest' }
 ) {
     BeforeAll {

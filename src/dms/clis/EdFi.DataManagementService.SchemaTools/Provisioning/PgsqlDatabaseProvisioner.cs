@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Globalization;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Utilities;
@@ -72,11 +73,93 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : DatabaseProvisionerBase(
             : builder.Database;
     }
 
-    public override bool CreateDatabaseIfNotExists(string connectionString)
+    /// <summary>
+    /// The lowest <c>server_version_num</c> DMS supports: PostgreSQL 18.0.
+    /// </summary>
+    internal const int MinimumServerVersionNum = 180000;
+
+    /// <summary>
+    /// Maintenance-connection precondition: the server version, the existing target database's
+    /// encoding (NULL when it does not exist yet), and template1's encoding, which a new database
+    /// created with <c>ENCODING 'UTF8'</c> must match.
+    /// </summary>
+    internal const string PlatformPreconditionSql = """
+        SELECT current_setting('server_version_num')::integer,
+            (SELECT pg_encoding_to_char(encoding) FROM pg_database WHERE datname = @dbName),
+            (SELECT pg_encoding_to_char(encoding) FROM pg_database WHERE datname = 'template1')
+        """;
+
+    /// <summary>
+    /// Target-connection compatibility check run before any other preflight query.
+    /// </summary>
+    internal const string TargetPlatformSql = """
+        SELECT current_setting('server_version_num')::integer, pg_encoding_to_char(encoding)
+        FROM pg_database
+        WHERE datname = current_database()
+        """;
+
+    public override void CheckPlatformPreconditions(string connectionString)
     {
         var targetDatabase = GetDatabaseName(connectionString);
 
-        var builder = new NpgsqlConnectionStringBuilder(connectionString);
+        using var connection = CreateConnection(BuildMaintenanceConnectionString(connectionString));
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = PlatformPreconditionSql;
+        AddDatabaseNameParameter(command, targetDatabase);
+
+        using var reader = command.ExecuteReader();
+        reader.Read();
+        int serverVersionNum = Convert.ToInt32(reader.GetValue(0), CultureInfo.InvariantCulture);
+
+        // A new database inherits template1's encoding: CREATE DATABASE ... ENCODING 'UTF8' fails on a
+        // non-UTF-8 template1 with a raw 22023, so check template1 when the target does not exist yet.
+        if (reader.IsDBNull(1))
+        {
+            RequirePlatform(serverVersionNum, "template1 encoding", ReadEncoding(reader, 2));
+        }
+        else
+        {
+            RequirePlatform(serverVersionNum, "target database encoding", ReadEncoding(reader, 1));
+        }
+    }
+
+    protected override void ValidatePlatformCompatibility(DbConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = TargetPlatformSql;
+
+        using var reader = command.ExecuteReader();
+        reader.Read();
+        RequirePlatform(
+            Convert.ToInt32(reader.GetValue(0), CultureInfo.InvariantCulture),
+            "target database encoding",
+            ReadEncoding(reader, 1)
+        );
+    }
+
+    private static string ReadEncoding(DbDataReader reader, int ordinal) =>
+        reader.IsDBNull(ordinal) ? "unavailable" : reader.GetString(ordinal);
+
+    private static void RequirePlatform(int serverVersionNum, string encodingSource, string encoding)
+    {
+        if (serverVersionNum < MinimumServerVersionNum)
+        {
+            throw new PostgresqlPlatformCompatibilityException(
+                $"server_version_num {serverVersionNum.ToString(CultureInfo.InvariantCulture)}"
+            );
+        }
+
+        if (encoding != "UTF8")
+        {
+            throw new PostgresqlPlatformCompatibilityException($"{encodingSource} {encoding}");
+        }
+    }
+
+    public override bool CreateDatabaseIfNotExists(string connectionString)
+    {
+        var targetDatabase = GetDatabaseName(connectionString);
 
         Logger.LogInformation(
             "Checking if database exists: {DatabaseName}",
@@ -84,16 +167,13 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : DatabaseProvisionerBase(
         );
 
         // Connect to the admin database to create the target database
-        builder.Database = "postgres";
-        var adminConnectionString = builder.ConnectionString;
-
-        using var connection = new NpgsqlConnection(adminConnectionString);
+        using var connection = CreateConnection(BuildMaintenanceConnectionString(connectionString));
         connection.Open();
 
         // Check if the database already exists
         using var checkCommand = connection.CreateCommand();
         checkCommand.CommandText = "SELECT 1 FROM pg_database WHERE datname = @dbName";
-        checkCommand.Parameters.AddWithValue("@dbName", targetDatabase);
+        AddDatabaseNameParameter(checkCommand, targetDatabase);
 
         var exists = checkCommand.ExecuteScalar() is not null;
 
@@ -116,7 +196,9 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : DatabaseProvisionerBase(
 
         using var createCommand = connection.CreateCommand();
         var quotedName = $"\"{targetDatabase.Replace("\"", "\"\"")}\"";
-        createCommand.CommandText = $"CREATE DATABASE {quotedName}";
+        // The descriptor index's pg_c_utf8 collation requires a UTF-8 database. No TEMPLATE or locale
+        // override: a cluster whose template1 is not UTF-8 is an operator precondition, checked first.
+        createCommand.CommandText = $"CREATE DATABASE {quotedName} ENCODING 'UTF8'";
 
         try
         {
@@ -140,6 +222,17 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : DatabaseProvisionerBase(
         );
 
         return true;
+    }
+
+    private static string BuildMaintenanceConnectionString(string connectionString) =>
+        new NpgsqlConnectionStringBuilder(connectionString) { Database = "postgres" }.ConnectionString;
+
+    private static void AddDatabaseNameParameter(DbCommand command, string databaseName)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "@dbName";
+        parameter.Value = databaseName;
+        command.Parameters.Add(parameter);
     }
 
     public override void ExecuteInTransaction(

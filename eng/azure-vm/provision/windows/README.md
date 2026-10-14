@@ -137,7 +137,7 @@ cd ~/dms-src/eng/azure-vm/compose
 pwsh ../provision/setup-env.ps1 -PublicHost your-label.eastus.cloudapp.azure.com -LetsEncryptEmail you@org.tld
 ```
 
-`setup-env.ps1` generates secrets into `.env`, gets the Let's Encrypt cert, starts identity + CMS,
+`setup-env.ps1` generates secrets into `.env`, gets the Let's Encrypt cert, starts identity + the Configuration Service,
 and runs bootstrap; it does **not** start the DMS services — stage the ApiSchema workspace and
 provision the relational schema (see [`README.md`](../README.md) "What `setup-env.ps1` does NOT do"),
 then start them with `setup-env.ps1 -StartDms` (or `./up.sh st-dms mt-dms`). (The Let's Encrypt HTTP-01
@@ -161,6 +161,8 @@ this works on your build**; if not, RDP in and run `wsl` once (and `portproxy.ps
 cd ~/dms-src/eng/azure-vm/compose
 ./update.sh              # fast-forward pull + image pull + ApiSchema-guarded recreation
 # SKIP_GIT=1 ./update.sh # image-only refresh against the current checkout
+# Both keep the API keys. Backup, migration pre-check, Data Standard switch and the review-variant
+# keys: ../UPDATE.md.
 ```
 
 Teardown: Portal → delete the resource group.

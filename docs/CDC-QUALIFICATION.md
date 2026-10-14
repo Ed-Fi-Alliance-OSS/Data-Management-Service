@@ -55,7 +55,9 @@ All 17 live qualification jobs—Kafka plus Admission, Lifecycle, Recovery, Reco
 
 For targeted pre-merge validation, manually dispatch Nightly CDC Qualification on the desired branch with `lane` set to `Postgresql` or `Mssql` and a specific `suite`. `suite: All` runs that provider's eight jobs; `lane: Kafka` with `suite: All` selects the Kafka job. The default `All`/`All` selection runs all 17 jobs. A specific suite without a provider lane fails rather than silently selecting another scope.
 
-The nightly workflow loads `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` from the checked-out `CdcQualifiedWorkerImage.json` record. This keeps the worker image aligned with the branch being qualified without maintaining a separate GitHub repository variable. Redpanda and database images still come from their `CDC_CONNECTOR_TEMPLATE_*_IMAGE` repository variables.
+The nightly workflow loads `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` from the checked-out `CdcQualifiedWorkerImage.json` record. The nightly workflow and the manually dispatched CDC connector-template smoke job load `CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE` from the checked-in default in `eng/docker-compose/postgresql.yml`, using `eng/ci/Get-CdcQualificationPostgresqlImage.ps1`. This keeps both images aligned with the branch being qualified. Redpanda and SQL Server images still come from their `CDC_CONNECTOR_TEMPLATE_*_IMAGE` repository variables.
+
+`Get-CdcQualificationPostgresqlImage.ps1` requires a digest-pinned PostgreSQL 18 or later default and fails before image pulls when the pin is missing, malformed, or too old. A stale GitHub PostgreSQL image variable cannot override it. Direct local qualification still requires `CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE`; set it from the same script to match CI. SchemaTools also rejects older servers before provisioning (see [Database versions](OPERATIONS.md#database-versions)). The move to PostgreSQL 18 follows the [DMS-1447 closure checklist](../reference/design/backend-redesign/epics/21-storage-reduction/05-postgresql-18-and-descriptor-collation-upgrade.md#post-merge-closure-checklist).
 
 Both workflows call [Invoke-CdcQualification.ps1](../eng/ci/Invoke-CdcQualification.ps1); its default `All` selection runs Contract and all 17 live jobs sequentially locally. `-Lane` selects one complete lane; a provider `-Suite` selects one complete CI job. Results default to a unique system temporary directory. An explicit `-ResultsDirectory` must be new and outside the checkout. CI uploads sanitized results from the runner temporary directory with 14-day retention; generated diagnostics are never committed.
 
@@ -67,7 +69,7 @@ local/published Compose environment with no retained containers, volumes or boot
 workspace. The shared live runbook fixture requires two PostgreSQL setup cases and
 three SQL Server setup cases (local, published and direct DMS E2E); missing or skipped
 cases fail qualification independently of the controller suite. SQL Server published
-qualification tags matching branch-built application/CMS images under the published
+qualification tags matching branch-built application and Configuration Service images under the published
 Compose names and records their image IDs; it does not qualify a registry release.
 Both provider Lifecycle lanes reuse that fixture with `Procedure=Lifecycle` and require
 `CDC-DOC cdc-managed-start` in addition to the provider `CdcControllerManagedLifecycle`
@@ -90,7 +92,7 @@ Recovery. Each native-recovery attachment records snippet/scenario IDs, command
 results and immutable service image IDs. Test hooks supply failed/unverified shutdown
 and unavailable observations; real worker/task recovery, offset loss, state-file
 absence and CLI containment operate only on fixture-owned services. The fixture
-reuses the packaged-administration test CMS endpoint and runtime-compatible schema
+reuses the packaged-administration test Configuration Service endpoint and runtime-compatible schema
 workspace; the CLI loads complete matching settings and inspects live
 provider, broker, worker, offsets and metrics. Its invocation-owned projector is
 not started by status/watch, so projection health remains unavailable. Separate

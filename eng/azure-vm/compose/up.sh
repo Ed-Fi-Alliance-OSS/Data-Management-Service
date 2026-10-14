@@ -6,13 +6,18 @@
 # the relational schema already exist. For a FIRST-TIME stand-up the DMS services start AFTER bootstrap +
 # schema, so use provision/setup-env.ps1 (or pass an explicit subset -- note --no-deps, without
 # which `gateway` pulls the DMS services up via depends_on):
-#   ./up.sh --no-deps postgres keycloak st-config mt-config pgadmin gateway   # then bootstrap + schema
+#   ./up.sh --no-deps postgres keycloak st-config mt-config pgadmin swagger-ui gateway   # then bootstrap + schema
 #   ./up.sh st-dms mt-dms                                                      # finally the DMS services
 # Extra args are passed through to `docker compose up` (e.g. a single service name).
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
 [ -f .env ] || { echo "ERROR: .env not found. Copy .env.example to .env and customize."; exit 1; }
+
+# Name any retired variable before Compose fails on its missing replacement.
+# shellcheck source=legacy-env-warning.sh
+source ./legacy-env-warning.sh
+warn_legacy_env_names .env
 
 # Refuse to deploy the .env.example placeholder secrets: they satisfy the complexity checks,
 # so nothing downstream would reject them, and 443 is Internet-open on the VM.
@@ -115,7 +120,7 @@ if [ "$#" -eq 0 ]; then
   echo "Stopping DMS services before dependency restart/update..."
   "${compose[@]}" stop st-dms mt-dms
   echo "Starting infrastructure before DMS..."
-  "${compose[@]}" up -d --no-deps postgres keycloak st-config mt-config pgadmin gateway
+  "${compose[@]}" up -d --no-deps postgres keycloak st-config mt-config pgadmin swagger-ui gateway
   ./record-keycloak-image.sh
   wait_for_infrastructure
   echo "Starting DMS services..."

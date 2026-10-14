@@ -242,6 +242,7 @@ END $$;
 
 CREATE TABLE IF NOT EXISTS "dms"."Descriptor"
 (
+    "DescriptorId" int GENERATED ALWAYS AS IDENTITY NOT NULL,
     "DocumentId" bigint NOT NULL,
     "ResourceKeyId" smallint NOT NULL,
     "Namespace" varchar(255) NOT NULL,
@@ -250,23 +251,21 @@ CREATE TABLE IF NOT EXISTS "dms"."Descriptor"
     "Description" varchar(1024) NULL,
     "EffectiveBeginDate" date NULL,
     "EffectiveEndDate" date NULL,
-    "Discriminator" varchar(128) NOT NULL,
-    "Uri" varchar(306) NOT NULL,
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
-    CONSTRAINT "PK_Descriptor" PRIMARY KEY ("DocumentId")
+    CONSTRAINT "PK_Descriptor" PRIMARY KEY ("DescriptorId")
 );
 
 DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'UX_Descriptor_Uri_Discriminator'
+        WHERE conname = 'UX_Descriptor_DocumentId'
         AND conrelid = to_regclass('"dms"."Descriptor"')
     )
     THEN
         ALTER TABLE "dms"."Descriptor"
-        ADD CONSTRAINT "UX_Descriptor_Uri_Discriminator" UNIQUE ("Uri", "Discriminator");
+        ADD CONSTRAINT "UX_Descriptor_DocumentId" UNIQUE ("DocumentId");
     END IF;
 END $$;
 
@@ -700,6 +699,8 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS "IX_Descriptor_ResourceKeyId_DocumentId" ON "dms"."Descriptor" ("ResourceKeyId", "DocumentId");
 
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_Descriptor_ResourceKeyId_Uri" ON "dms"."Descriptor" ("ResourceKeyId", ("Namespace" || '#' || "CodeValue"));
+
 CREATE INDEX IF NOT EXISTS "IX_Document_CreatedByOwnershipTokenId" ON "dms"."Document" ("CreatedByOwnershipTokenId") WHERE "CreatedByOwnershipTokenId" IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS "IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId" ON "dms"."DocumentProjectionWork" ("FirstEnqueuedAt", "DocumentId");
@@ -722,7 +723,7 @@ BEGIN
         END IF;
     END IF;
     IF TG_OP = 'UPDATE' THEN
-        IF NOT (OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."CodeValue" IS DISTINCT FROM NEW."CodeValue" OR OLD."ShortDescription" IS DISTINCT FROM NEW."ShortDescription" OR OLD."Description" IS DISTINCT FROM NEW."Description" OR OLD."EffectiveBeginDate" IS DISTINCT FROM NEW."EffectiveBeginDate" OR OLD."EffectiveEndDate" IS DISTINCT FROM NEW."EffectiveEndDate" OR OLD."Discriminator" IS DISTINCT FROM NEW."Discriminator" OR OLD."Uri" IS DISTINCT FROM NEW."Uri") THEN
+        IF NOT (OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."CodeValue" IS DISTINCT FROM NEW."CodeValue" OR OLD."ShortDescription" IS DISTINCT FROM NEW."ShortDescription" OR OLD."Description" IS DISTINCT FROM NEW."Description" OR OLD."EffectiveBeginDate" IS DISTINCT FROM NEW."EffectiveBeginDate" OR OLD."EffectiveEndDate" IS DISTINCT FROM NEW."EffectiveEndDate") THEN
             RETURN NEW;
         END IF;
     END IF;
@@ -752,7 +753,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Descriptor" (
-            "Discriminator",
+            "ResourceKeyId",
             "OldNamespace",
             "OldCodeValue",
             "Id",
@@ -760,7 +761,7 @@ BEGIN
             "DocumentId"
         )
         SELECT
-            OLD."Discriminator",
+            OLD."ResourceKeyId",
             OLD."Namespace",
             OLD."CodeValue",
             doc."DocumentUuid",
@@ -1096,7 +1097,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Descriptor"
     "NewNamespace" varchar(255) NULL,
     "OldCodeValue" varchar(50) NOT NULL,
     "NewCodeValue" varchar(50) NULL,
-    "Discriminator" varchar(128) NOT NULL,
+    "ResourceKeyId" smallint NOT NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "DocumentId" bigint NOT NULL,
@@ -1166,13 +1167,13 @@ BEGIN
     END IF;
 END $$;
 
-CREATE INDEX IF NOT EXISTS "IX_Descriptor_Discriminator_ContentVersion" ON "dms"."Descriptor" ("Discriminator", "ContentVersion");
-
 CREATE INDEX IF NOT EXISTS "IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId" ON "dms"."Descriptor" ("ResourceKeyId", "ContentVersion", "DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_School_ContentVersion" ON "edfi"."School" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_SchoolAddressPhoneNumber_ParentCollectionItemId_S_9002c7691c" ON "edfi"."SchoolAddressPhoneNumber" ("ParentCollectionItemId", "School_DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_Descriptor_ResourceKeyId_ChangeVersion" ON "tracked_changes_edfi"."Descriptor" ("ResourceKeyId", "ChangeVersion");
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$

@@ -35,6 +35,10 @@ resource because they bind `UX_<R>_NK`.
   constraint names, discriminator parsing, or emitted SQL.
 - Bind storage-resolved columns: key-unified identity parts bind the canonical storage column, not
   a generated alias; abstract probes bind the stored concrete `ResourceKeyId`.
+- Bind descriptor-valued parts as `Int32 ..._DescriptorId` targeting `dms.Descriptor.DescriptorId`,
+  including copied reference identities and abstract projections. Shared descriptor probes project
+  both `int DescriptorId` and owning `bigint DocumentId`; ordinary/abstract document probes retain
+  `DocumentId`. No descriptor discriminator parsing or PostgreSQL stored-URI assumption is valid.
 - Retain each key entry's physical column, scalar type or descriptor-resource binding, and canonical
   identity JSON path/diagnostic name; own-key document-reference parts carry the
   `DocumentReferenceBindings` index for the reference site that supplies the resolved `..._DocumentId`.
@@ -51,4 +55,6 @@ resource because they bind `UX_<R>_NK`.
 - Runtime dictionaries contain reference-target, own-key, and shared descriptor probe contracts in
   semantic key-column order.
 - Abstract probes carry the concrete `ResourceKeyId`.
+- Probe tests use unequal descriptor/document keys and pin compact stored bindings separately from
+  document result keys.
 - Canonical diagnostic paths survive compilation.

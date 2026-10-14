@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.External.Model;
+using FluentAssertions;
 using Microsoft.Data.SqlClient;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
@@ -80,6 +81,7 @@ internal static class MssqlRelationalQueryAuthorizationVolumeGenerator
             RelationshipAuthorizationVolumeIdentifiers.ReachableSchoolId
         );
         await GenerateVolumeRowsAsync(context.Database, counts);
+        await AssertGeneratedDescriptorReferencesAsync(context.Database);
 
         return await ReadGenerationResultAsync(context.Database);
     }
@@ -203,7 +205,7 @@ internal static class MssqlRelationalQueryAuthorizationVolumeGenerator
                 @schoolYear,
                 {SchoolDocumentIdSql("@reachableSchoolId")},
                 @reachableSchoolId,
-                {DescriptorDocumentIdSql("TermDescriptor", "@termDescriptorUri")},
+                {DescriptorIdSql("TermDescriptor", "@termDescriptorUri")},
                 CAST('2024-08-01' AS date),
                 CAST('2024-12-20' AS date),
                 @sessionName,
@@ -319,7 +321,7 @@ internal static class MssqlRelationalQueryAuthorizationVolumeGenerator
                 @schoolYear,
                 {SchoolDocumentIdSql("@reachableSchoolId")},
                 @reachableSchoolId,
-                {DescriptorDocumentIdSql("GradingPeriodDescriptor", "@gradingPeriodDescriptorUri")},
+                {DescriptorIdSql("GradingPeriodDescriptor", "@gradingPeriodDescriptorUri")},
                 CAST('2024-08-01' AS date),
                 CAST('2024-09-13' AS date),
                 @gradingPeriodName,
@@ -438,7 +440,7 @@ internal static class MssqlRelationalQueryAuthorizationVolumeGenerator
                 END,
                 students.[DocumentId],
                 students.[StudentUniqueId],
-                {DescriptorDocumentIdSql("GradeLevelDescriptor", "@gradeLevelDescriptorUri")},
+                {DescriptorIdSql("GradeLevelDescriptor", "@gradeLevelDescriptorUri")},
                 CAST('2024-08-15' AS date)
             FROM numbered
             INNER JOIN students ON students.ordinal = numbered.ordinal;
@@ -479,7 +481,7 @@ internal static class MssqlRelationalQueryAuthorizationVolumeGenerator
                 @schoolYear,
                 students.[DocumentId],
                 students.[StudentUniqueId],
-                {DescriptorDocumentIdSql("TermDescriptor", "@termDescriptorUri")}
+                {DescriptorIdSql("TermDescriptor", "@termDescriptorUri")}
             FROM numbered
             INNER JOIN students ON students.ordinal = numbered.ordinal;
             """,
@@ -563,7 +565,7 @@ internal static class MssqlRelationalQueryAuthorizationVolumeGenerator
                 section.[SectionIdentifier],
                 students.[DocumentId],
                 students.[StudentUniqueId],
-                {DescriptorDocumentIdSql(
+                {DescriptorIdSql(
                 "AttendanceEventCategoryDescriptor",
                 "@attendanceEventCategoryDescriptorUri"
             )},
@@ -655,7 +657,7 @@ internal static class MssqlRelationalQueryAuthorizationVolumeGenerator
                 associations.[Section_SectionIdentifier],
                 associations.[Section_SessionName],
                 associations.[Student_StudentUniqueId],
-                {DescriptorDocumentIdSql("GradeTypeDescriptor", "@gradeTypeDescriptorUri")}
+                {DescriptorIdSql("GradeTypeDescriptor", "@gradeTypeDescriptorUri")}
             FROM numbered
             INNER JOIN associations ON associations.ordinal = numbered.ordinal
             CROSS JOIN [edfi].[GradingPeriod] gradingPeriod;
@@ -702,7 +704,7 @@ internal static class MssqlRelationalQueryAuthorizationVolumeGenerator
                 records.[SchoolYear_SchoolYear],
                 records.[Student_StudentUniqueId],
                 records.[TermDescriptor_DescriptorId],
-                {DescriptorDocumentIdSql(
+                {DescriptorIdSql(
                 "CourseAttemptResultDescriptor",
                 "@courseAttemptResultDescriptorUri"
             )}
@@ -823,10 +825,86 @@ internal static class MssqlRelationalQueryAuthorizationVolumeGenerator
     private static string SchoolYearDocumentIdSql() =>
         "(SELECT schoolYear.[DocumentId] FROM [edfi].[SchoolYearType] schoolYear WHERE schoolYear.[SchoolYear] = @schoolYear)";
 
-    private static string DescriptorDocumentIdSql(string resourceName, string uriParameter) =>
-        $"(SELECT descriptor.[DocumentId] FROM [dms].[Descriptor] descriptor "
+    private static async Task AssertGeneratedDescriptorReferencesAsync(MssqlGeneratedDdlTestDatabase database)
+    {
+        (string Table, string Column, string Resource, string Uri)[] inventory =
+        [
+            (
+                "Session",
+                "TermDescriptor_DescriptorId",
+                "TermDescriptor",
+                RelationshipAuthorizationVolumeIdentifiers.TermDescriptorUri
+            ),
+            (
+                "GradingPeriod",
+                "GradingPeriodDescriptor_DescriptorId",
+                "GradingPeriodDescriptor",
+                RelationshipAuthorizationVolumeIdentifiers.GradingPeriodDescriptorUri
+            ),
+            (
+                "StudentSchoolAssociation",
+                "EntryGradeLevelDescriptor_DescriptorId",
+                "GradeLevelDescriptor",
+                RelationshipAuthorizationVolumeIdentifiers.GradeLevelDescriptorUri
+            ),
+            (
+                "StudentAcademicRecord",
+                "TermDescriptor_DescriptorId",
+                "TermDescriptor",
+                RelationshipAuthorizationVolumeIdentifiers.TermDescriptorUri
+            ),
+            (
+                "StudentSectionAttendanceEvent",
+                "AttendanceEventCategoryDescriptor_DescriptorId",
+                "AttendanceEventCategoryDescriptor",
+                RelationshipAuthorizationVolumeIdentifiers.AttendanceEventCategoryDescriptorUri
+            ),
+            (
+                "Grade",
+                "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId",
+                "GradingPeriodDescriptor",
+                RelationshipAuthorizationVolumeIdentifiers.GradingPeriodDescriptorUri
+            ),
+            (
+                "Grade",
+                "GradeTypeDescriptor_DescriptorId",
+                "GradeTypeDescriptor",
+                RelationshipAuthorizationVolumeIdentifiers.GradeTypeDescriptorUri
+            ),
+            (
+                "CourseTranscript",
+                "StudentAcademicRecord_TermDescriptor_DescriptorId",
+                "TermDescriptor",
+                RelationshipAuthorizationVolumeIdentifiers.TermDescriptorUri
+            ),
+            (
+                "CourseTranscript",
+                "CourseAttemptResultDescriptor_DescriptorId",
+                "CourseAttemptResultDescriptor",
+                RelationshipAuthorizationVolumeIdentifiers.CourseAttemptResultDescriptorUri
+            ),
+        ];
+        foreach (var (table, column, resource, uri) in inventory)
+        {
+            var descriptorId = await database.ExecuteScalarAsync<int>(
+                $"""SELECT {DescriptorIdSql(resource, "@uri")};""",
+                new SqlParameter("@uri", uri)
+            );
+            (
+                await database.ExecuteScalarAsync<long>(
+                    $$"""SELECT COUNT_BIG(*) FROM [edfi].[{{table}}] WHERE [{{column}}] <> @descriptorId OR [{{column}}] IS NULL;""",
+                    new SqlParameter("@descriptorId", descriptorId)
+                )
+            )
+                .Should()
+                .Be(0, $"{table}.{column} must contain the generated compact descriptor key");
+        }
+    }
+
+    private static string DescriptorIdSql(string resourceName, string uriParameter) =>
+        $"(SELECT descriptor.[DescriptorId] FROM [dms].[Descriptor] descriptor "
         + "INNER JOIN [dms].[Document] document ON document.[DocumentId] = descriptor.[DocumentId] "
-        + $"WHERE document.[ResourceKeyId] = {ResourceKeyIdSql(resourceName)} AND descriptor.[Uri] = {uriParameter})";
+        + $"WHERE document.[ResourceKeyId] = {ResourceKeyIdSql(resourceName)} AND (descriptor.[Namespace] + N'#' + descriptor.[CodeValue]) = {uriParameter})";
 
     private static SqlParameter TotalRowsParameter(RelationshipAuthorizationVolumeCounts counts) =>
         new("@totalRows", counts.TotalRowsPerRoot);

@@ -313,13 +313,13 @@ function E2ETests {
 
             Import-Module ./env-utility.psm1 -Force
             $envValues = ReadValuesFromEnvFile $EnvironmentFile
-            if ($envValues["DMS_CONFIG_DATASTORE"]) {
-                $env:DMS_CONFIG_DATASTORE = $envValues["DMS_CONFIG_DATASTORE"]
+            if ($envValues["CONFIGURATION_SERVICE_DATASTORE"]) {
+                $env:CONFIGURATION_SERVICE_DATASTORE = $envValues["CONFIGURATION_SERVICE_DATASTORE"]
             }
             # The E2E harness skips @MultitenantOnly scenarios unless this is true.
             # Assign unconditionally so an env file without the key clears any stale
             # value instead of leaving the scenarios enabled against a single-tenant stack.
-            $env:DMS_CONFIG_MULTI_TENANCY = $envValues["DMS_CONFIG_MULTI_TENANCY"]
+            $env:CONFIGURATION_SERVICE_MULTI_TENANCY = $envValues["CONFIGURATION_SERVICE_MULTI_TENANCY"]
             # The E2E test-data cleanup connects to the stack's database using these
             # values (falling back to the standard .env.config*.e2e defaults when unset).
             # Assign unconditionally so keys absent from the env file clear stale values
@@ -332,8 +332,8 @@ function E2ETests {
             # Opt-in isolation (see start-local-config.ps1): the Configuration Service container the
             # role-claim read inspects, and the URL the suite calls. Unset, each keeps its default;
             # assigned unconditionally so a value left by an earlier run cannot leak into this one.
-            $script:ConfigContainerName = if ($envValues["CMS_CONFIG_CONTAINER"]) { $envValues["CMS_CONFIG_CONTAINER"] } else { "ed-fi-api-config-service" }
-            $env:CMS_E2E_API_URL = $envValues["CMS_E2E_API_URL"]
+            $script:ConfigContainerName = if ($envValues["CONFIGURATION_SERVICE_CONTAINER"]) { $envValues["CONFIGURATION_SERVICE_CONTAINER"] } else { "ed-fi-api-config-service" }
+            $env:CONFIGURATION_SERVICE_E2E_API_URL = $envValues["CONFIGURATION_SERVICE_E2E_API_URL"]
         }
         finally {
             Pop-Location
@@ -385,10 +385,10 @@ function PublishEffectiveRoleClaimSettings {
     # expectations never become configuration for a later run in the same shell. Assigned
     # unconditionally so a setting the container does not carry clears a stale expectation
     # instead of leaving the scenario comparing against an earlier lane.
-    $env:CMS_E2E_EXPECTED_IDENTITY_PROVIDER = $effective["AppSettings__IdentityProvider"]
-    $env:CMS_E2E_EXPECTED_ROLE_CLAIM_TYPE = $effective["IdentitySettings__RoleClaimType"]
-    $env:CMS_E2E_EXPECTED_CLIENT_ROLE = $effective["IdentitySettings__ClientRole"]
-    $env:CMS_E2E_EXPECTED_SELF_CONTAINED_ROLE_CLAIM_TYPE = $effective["Authentication__RoleClaimAttribute"]
+    $env:CONFIGURATION_SERVICE_E2E_EXPECTED_IDENTITY_PROVIDER = $effective["AppSettings__IdentityProvider"]
+    $env:CONFIGURATION_SERVICE_E2E_EXPECTED_ROLE_CLAIM_TYPE = $effective["IdentitySettings__RoleClaimType"]
+    $env:CONFIGURATION_SERVICE_E2E_EXPECTED_CLIENT_ROLE = $effective["IdentitySettings__ClientRole"]
+    $env:CONFIGURATION_SERVICE_E2E_EXPECTED_SELF_CONTAINED_ROLE_CLAIM_TYPE = $effective["Authentication__RoleClaimAttribute"]
 }
 
 function RunNuGetPack {

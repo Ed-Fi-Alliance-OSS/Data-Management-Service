@@ -5,6 +5,46 @@
 
 #Requires -Version 7.5
 
+Describe 'CDC qualification PostgreSQL image selection' {
+    BeforeAll {
+        $script:postgresqlImageScript = Join-Path $PSScriptRoot '../Get-CdcQualificationPostgresqlImage.ps1'
+    }
+    It 'uses the checked-in Compose pin even when the process specifies a legacy image' {
+        $savedImage = $env:POSTGRES_IMAGE
+        try {
+            $env:POSTGRES_IMAGE = 'postgres:16'
+            $compose = Get-Content (Join-Path $PSScriptRoot '../../docker-compose/postgresql.yml') -Raw
+            $expected = [regex]::Match($compose, '\$\{POSTGRES_IMAGE:-([^}]+)\}').Groups[1].Value
+            $actual = & $script:postgresqlImageScript
+            $actual | Should -Be $expected
+            $pin = [regex]::Match($actual, '^postgres:(?<major>[0-9]+)[^@]*@sha256:[a-f0-9]{64}$')
+            $pin.Success | Should -BeTrue
+            [int]$pin.Groups['major'].Value | Should -BeGreaterOrEqual 18
+        } finally {
+            $env:POSTGRES_IMAGE = $savedImage
+        }
+    }
+    It 'rejects a <Fault> Compose default before any image pull' -ForEach @(
+        @{ Fault = 'legacy version'; Image = 'postgres:16@sha256:' + ('a' * 64) },
+        @{ Fault = 'version below the floor'; Image = 'postgres:17@sha256:' + ('a' * 64) },
+        @{ Fault = 'missing digest'; Image = 'postgres:18.6-alpine' },
+        @{ Fault = 'malformed digest'; Image = 'postgres:18.6-alpine@sha256:invalid' },
+        @{ Fault = 'unversioned tag'; Image = 'postgres:latest@sha256:' + ('a' * 64) }
+    ) {
+        $composePath = Join-Path $TestDrive 'postgresql.yml'
+        ('services:' + "`n  db:`n    image: " + '${POSTGRES_IMAGE:-' + $Image + '}') |
+            Set-Content -LiteralPath $composePath
+        { & $script:postgresqlImageScript -ComposeFile $composePath } |
+            Should -Throw '*requires a digest-pinned PostgreSQL 18 or later*'
+    }
+    It 'rejects a missing Compose default' {
+        $composePath = Join-Path $TestDrive 'postgresql.yml'
+        'services: {}' | Set-Content -LiteralPath $composePath
+        { & $script:postgresqlImageScript -ComposeFile $composePath } |
+            Should -Throw '*requires a digest-pinned PostgreSQL 18 or later*'
+    }
+}
+
 Describe 'CDC qualification image pulls' {
     BeforeAll {
         Import-Module (Join-Path $PSScriptRoot '../cdc-qualification.psm1') -Force
@@ -84,9 +124,9 @@ Describe 'CDC qualification image pulls' {
     It 'appends attempts across images without overwriting evidence or private logs' {
         foreach ($code in @(0, 1, 0)) { $script:exitCodes.Enqueue($code) }
         Invoke-CdcQualificationImagePull $script:image $script:raw $script:destination
-        Invoke-CdcQualificationImagePull 'postgres:16' $script:raw $script:destination
+        Invoke-CdcQualificationImagePull 'postgres:18' $script:raw $script:destination
         $records = @(Get-Content (Join-Path $script:destination 'image-pulls.jsonl') | ConvertFrom-Json)
-        $records.Image | Should -Be @($script:image, 'postgres:16', 'postgres:16')
+        $records.Image | Should -Be @($script:image, 'postgres:18', 'postgres:18')
         $records.Attempt | Should -Be @(1, 1, 2)
         @($records.PrivateLog | Select-Object -Unique).Count | Should -Be 3
         @(Get-ChildItem $script:raw).Count | Should -Be 3
@@ -236,6 +276,9 @@ Describe 'CDC qualification result boundary' {
         foreach ($injected in @($false, $true)) {
             foreach ($outcome in @('TimedOut', 'Recovered')) {
                 $readinessEvent = [ordered]@{ Stage = 'connect-readiness'; Outcome = $outcome; Injected = $injected; Attempt = $(if ($outcome -eq 'TimedOut') { 1 } else { 2 }) }
+                if ($outcome -eq 'TimedOut') {
+                    $readinessEvent.Logs = @{ Available = $true; JvmMemoryFailureKinds = @('JavaHeapSpace', 'NativeThreadCreation') }
+                }
                 $readinessEvent | ConvertTo-Json | Set-Content (Join-Path $raw "admission-evidence-connect-readiness-$([guid]::NewGuid().ToString('N')).json")
             }
         }
@@ -252,6 +295,12 @@ Describe 'CDC qualification result boundary' {
         Export-CdcQualificationEvidence -RawDirectory $raw -Destination $published
         $events = @(Get-ChildItem $published -Filter 'admission-evidence-connect-readiness-*.json' -Recurse)
         $events.Count | Should -Be 4
+        foreach ($readinessAttachment in $events) {
+            $evidence = Get-Content $readinessAttachment.FullName -Raw | ConvertFrom-Json
+            if ($evidence.Outcome -eq 'TimedOut') {
+                $evidence.Logs.JvmMemoryFailureKinds | Should -Be @('JavaHeapSpace', 'NativeThreadCreation')
+            }
+        }
         @($events | ForEach-Object { (Get-Content $_.FullName -Raw | ConvertFrom-Json).Outcome } | Where-Object { $_ -eq 'Recovered' }).Count | Should -Be 2
         # A later failure cannot be converted into a passing result by a recovered setup.
         Write-Report -Outcome Failed -Message 'Expected admission refusal'
@@ -574,9 +623,10 @@ Describe 'CDC qualification CI scheduling' {
         $script:scheduledJob | Should -Match 'timeout-minutes: 130'
         $script:scheduledJob | Should -Match 'fail-fast: false'
         $script:scheduledJob | Should -Not -Match 'continue-on-error:'
-        foreach ($image in @('REDPANDA', 'POSTGRES', 'SQLSERVER_2025')) {
+        foreach ($image in @('REDPANDA', 'SQLSERVER_2025')) {
             $script:scheduledJob | Should -Match "CDC_CONNECTOR_TEMPLATE_$($image)_IMAGE:"
         }
+        $script:scheduledJob | Should -Match 'CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE=\$image'
         $script:scheduledJob | Should -Match 'Invoke-CdcQualification.ps1 -Lane.*-Suite.*-PullImages'
         $script:scheduledJob | Should -Match "Status = 'EnvironmentUnavailable'"
         $script:scheduledJob | Should -Match 'if: always\(\)'
@@ -597,6 +647,29 @@ Describe 'CDC qualification CI scheduling' {
             (Get-Content $env:GITHUB_ENV) | Should -Be "CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE=$($qualified.image)"
         }
         finally {
+            Pop-Location
+            $env:GITHUB_ENV = $savedGithubEnv
+        }
+    }
+    It 'configures the <Workflow> PostgreSQL image from the checked-in Compose pin' -ForEach @(
+        @{ Workflow = 'nightly-cdc-qualification.yml'; JobId = 'run-cdc-qualification'; BeforeOperation = 'Start packaged-history PostgreSQL' },
+        @{ Workflow = 'on-dms-pullrequest.yml'; JobId = 'run-backend-cdc-connector-template-smoke-tests'; BeforeOperation = 'Validate CDC Connector Template Smoke Settings' }
+    ) {
+        $workflow = Get-Content (Join-Path $PSScriptRoot "../../../.github/workflows/$Workflow") -Raw
+        $job = [regex]::Match($workflow, "(?ms)^  ${JobId}:.*?(?=^  [a-z][a-z0-9-]+:|\z)").Value
+        $job | Should -Not -Match 'vars.CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE'
+        $configure = [regex]::Match($job, '(?ms)^      - name: Configure PostgreSQL qualification image\r?\n        run: \|\r?\n(?<run>(?:          [^\r\n]*\r?\n)+)').Groups['run'].Value
+        $configure | Should -Not -BeNullOrEmpty
+        $job.IndexOf('Configure PostgreSQL qualification image') | Should -BeLessThan $job.IndexOf($BeforeOperation)
+        $savedGithubEnv = $env:GITHUB_ENV
+        try {
+            $env:GITHUB_ENV = Join-Path $TestDrive 'postgresql-github-env'
+            Remove-Item -LiteralPath $env:GITHUB_ENV -ErrorAction SilentlyContinue
+            Push-Location (Join-Path $PSScriptRoot '../../..')
+            $expected = ./eng/ci/Get-CdcQualificationPostgresqlImage.ps1
+            & ([scriptblock]::Create($configure))
+            (Get-Content $env:GITHUB_ENV) | Should -Be "CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE=$expected"
+        } finally {
             Pop-Location
             $env:GITHUB_ENV = $savedGithubEnv
         }
@@ -1310,7 +1383,7 @@ Describe 'CDC API E2E private preparation and ownership' {
         $inputs.Values.CDC_DATABASE_PASSWORD | Should -Be $inputs.ConnectorPassword
         $inputs.Values.CDC_WORKER_HEAP_MIB | Should -Be 1024
         $base = Get-Content (Join-Path $inputs.Local 'dms-base.json') -Raw | ConvertFrom-Json
-        $base.ConfigurationServiceSettings.ClientSecret | Should -Be $inputs.Values.CONFIG_SERVICE_CLIENT_SECRET
+        $base.ConfigurationServiceSettings.ClientSecret | Should -Be $inputs.Values.DMS_CONFIGURATION_SERVICE_CLIENT_SECRET
         $connection = [System.Data.Common.DbConnectionStringBuilder]::new()
         $connection.set_ConnectionString((Get-Content $inputs.InputPath -Raw).Trim())
         $connection['database'] | Should -Be $inputs.Database
@@ -1902,6 +1975,160 @@ function docker { `$global:LASTEXITCODE = 0 }
         $json | Should -Not -Match 'private-input-sentinel|ScriptStackTrace|/home/|/tmp/'
         @(Get-ChildItem $script:published -Name) | Should -Be @('cdc-runbook-failures.json', 'cdc-runbook-live-lifecycle.json')
     }
+    It 'exports the failing <Wrapper> teardown through the marked snippet child boundary' -ForEach @(
+        @{ Wrapper = 'bootstrap-local-dms.ps1' }, @{ Wrapper = 'bootstrap-published-dms.ps1' }
+    ) {
+        $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
+        $wrapperPath = Join-Path $repo "eng/docker-compose/$Wrapper"
+        $savedPath = $env:CDC_RUNBOOK_CHILD_FAILURE_PATH
+        $savedPhase = $env:CDC_RUNBOOK_CHILD_FAILURE_PHASE
+        # Fail the real wrapper's parameter guard before Docker or deployment state is touched.
+        $result = Invoke-CdcRunbookScript -Id cdc-stack-teardown -FixtureRoot $script:private -TimeoutSeconds 30 `
+            -Code "pwsh -NoProfile -NonInteractive -File '$($wrapperPath.Replace("'", "''"))' -v"
+        $result.ExitCode | Should -Be 1
+        $env:CDC_RUNBOOK_CHILD_FAILURE_PATH | Should -Be $savedPath
+        $env:CDC_RUNBOOK_CHILD_FAILURE_PHASE | Should -Be $savedPhase
+        $report = Get-CdcRunbookPesterReport -Tests @([pscustomobject]@{ ExpandedName = 'CDC-DOC cdc-managed-start'; Result = 'Failed' }) -QualificationProfile MssqlLifecycle -ProgressPath (Join-Path $script:private 'runbook-progress.json')
+        Export-CdcRunbookReport -Report $report -RawDirectory $script:private -Destination $script:published -FileName 'cdc-runbook-live-lifecycle.json'
+        $json = Get-Content (Join-Path $script:published 'cdc-runbook-live-lifecycle.json') -Raw
+        $operation = ($json | ConvertFrom-Json -NoEnumerate)[0].Operations[0]
+        $operation.Operation | Should -Be 'cdc-stack-teardown'
+        $operation.ExitCode | Should -Be 1
+        $operation.ChildFailures.Count | Should -Be 1
+        $failure = $operation.ChildFailures[0]
+        $failure.Phase | Should -Be 'Teardown'
+        $failure.Source | Should -Be "eng/docker-compose/$Wrapper"
+        (Get-Content $wrapperPath)[$failure.Line - 1] | Should -Match 'throw.*requires.*-d'
+        $failure.ExceptionType | Should -Be 'System.Management.Automation.RuntimeException'
+        $failure.HResult | Should -BeOfType ([long])
+        $json | Should -Not -Match 'ScriptStackTrace|/home/|/tmp/|requires -d|StandardError'
+    }
+    It 'records the current failure when the prior diagnostic file is <ContentKind>' -ForEach @(
+        @{ ContentKind = 'empty'; Content = '' },
+        @{ ContentKind = 'truncated'; Content = '[{"Phase":' },
+        @{ ContentKind = 'malformed'; Content = 'private-malformed-json' }
+    ) {
+        . (Join-Path $PSScriptRoot '../cdc-runbook-diagnostics.ps1')
+        $savedPath = $env:CDC_RUNBOOK_CHILD_FAILURE_PATH
+        try {
+            $env:CDC_RUNBOOK_CHILD_FAILURE_PATH = Join-Path $script:private 'damaged-errors.json'
+            Set-Content -LiteralPath $env:CDC_RUNBOOK_CHILD_FAILURE_PATH -Value $Content
+            try { throw 'Unverified cleanup' } catch {
+                Write-CdcRunbookChildFailure -Records @($_) -Phase Teardown
+            }
+            $errors = Get-Content $env:CDC_RUNBOOK_CHILD_FAILURE_PATH -Raw | ConvertFrom-Json -NoEnumerate
+            $errors.Count | Should -Be 1
+            $errors[0].Category | Should -Be 'ChildProcessFailure'
+            $errors[0].Phase | Should -Be 'Teardown'
+            $errors[0].Reason | Should -Be 'UnverifiedCleanup'
+            ($errors | ConvertTo-Json -Depth 5) | Should -Not -Match 'private|Unverified cleanup'
+        } finally {
+            $env:CDC_RUNBOOK_CHILD_FAILURE_PATH = $savedPath
+        }
+    }
+    It 'exports the reason for the <Guard> inventory guard' -ForEach @(
+        @{ Guard = 'Contradictory scope'; Reason = 'ContradictoryScope' },
+        @{ Guard = 'Contradictory Compose inputs'; Reason = 'ContradictoryComposeInputs' },
+        @{ Guard = 'Changed selected Compose file'; Reason = 'ChangedSelectedComposeFile' }
+    ) {
+        . (Join-Path $PSScriptRoot '../cdc-runbook-diagnostics.ps1')
+        $savedPath = $env:CDC_RUNBOOK_CHILD_FAILURE_PATH
+        $path = Join-Path $script:private 'guard-errors.json'
+        try {
+            $env:CDC_RUNBOOK_CHILD_FAILURE_PATH = $path
+            try { throw $Guard } catch {
+                Write-CdcRunbookChildFailure -Records @($_) -Phase Teardown
+            }
+        } finally {
+            $env:CDC_RUNBOOK_CHILD_FAILURE_PATH = $savedPath
+        }
+        Set-CdcRunbookOperation -Operation cdc-stack-teardown -Phase Teardown
+        $result = [pscustomobject]@{ ExitCode = 1; FailureKind = 'None' }
+        Complete-CdcRunbookOperation $result
+        Read-CdcRunbookChildFailure -Path $path -Result $result -Required
+        $report = Get-CdcRunbookPesterReport -Tests @([pscustomobject]@{ ExpandedName = 'CDC-DOC cdc-managed-start'; Result = 'Failed' }) -QualificationProfile MssqlLifecycle -ProgressPath (Join-Path $script:private 'runbook-progress.json')
+        Export-CdcRunbookReport -Report $report -RawDirectory $script:private -Destination $script:published -FileName 'cdc-runbook-live-lifecycle.json'
+        $json = Get-Content (Join-Path $script:published 'cdc-runbook-live-lifecycle.json') -Raw
+        $failure = ($json | ConvertFrom-Json -NoEnumerate)[0].Operations[0].ChildFailures[0]
+        $failure.Reason | Should -Be $Reason
+        $failure.Phase | Should -Be 'Teardown'
+        $json | Should -Not -Match ([regex]::Escape($Guard))
+    }
+    It 'retains an inner cleanup classification when its caller reports a broader error' {
+        . (Join-Path $PSScriptRoot '../cdc-runbook-diagnostics.ps1')
+        $lifecycle = Import-Module (Join-Path $PSScriptRoot '../../docker-compose/cdc-lifecycle.psm1') -Force -PassThru
+        Mock -ModuleName cdc-lifecycle Test-CdcDeployment { $false }
+        $generated = Join-Path $script:private 'generated.settings.json'
+        Set-Content -LiteralPath $generated 'private-settings-sentinel'
+        if (-not $IsWindows) { & chmod 600 $generated }
+        $deployment = @{ Project = 'dms-local'; Entries = @(@{ StatePath = (Join-Path $script:private 'source-state') });
+            RuntimeCleanupFiles = @(@{ Path = $generated; Hash = ('0' * 64) }) }
+        $savedPath = $env:CDC_RUNBOOK_CHILD_FAILURE_PATH
+        $savedPhase = $env:CDC_RUNBOOK_CHILD_FAILURE_PHASE
+        try {
+            $env:CDC_RUNBOOK_CHILD_FAILURE_PATH = Join-Path $script:private 'inner-errors.json'
+            $env:CDC_RUNBOOK_CHILD_FAILURE_PHASE = 'Teardown'
+            try {
+                & $lifecycle { param($Deployment) Complete-CdcRuntimeCleanup $Deployment } $deployment
+                throw 'Expected the changed generated file to prevent cleanup.'
+            } catch {
+                $_.Exception.Message | Should -Match 'runtime cleanup is incomplete'
+                Write-CdcRunbookChildFailure -Records @($_) -Phase Teardown
+            }
+            $errors = Get-Content $env:CDC_RUNBOOK_CHILD_FAILURE_PATH -Raw | ConvertFrom-Json -NoEnumerate
+            $errors.Count | Should -Be 2
+            $errors[0].Reason | Should -Be 'ChangedGeneratedConfiguration'
+            $errors[0].Source | Should -Be 'eng/docker-compose/cdc-lifecycle.psm1'
+            $errors.Phase | Should -Be @('Teardown', 'Teardown')
+            (Get-Content $generated -Raw).Trim() | Should -Be 'private-settings-sentinel'
+            ($errors | ConvertTo-Json -Depth 5) | Should -Not -Match 'sentinel|Changed generated configuration|runtime cleanup is incomplete'
+        } finally {
+            $env:CDC_RUNBOOK_CHILD_FAILURE_PATH = $savedPath
+            $env:CDC_RUNBOOK_CHILD_FAILURE_PHASE = $savedPhase
+            Remove-Module $lifecycle
+        }
+    }
+    It 'exports controller exit codes and allowlisted failure classifications for <OutputKind>' -ForEach @(
+        @{ OutputKind = 'valid' }, @{ OutputKind = 'malformed' }
+    ) {
+        $lifecycle = Import-Module (Join-Path $PSScriptRoot '../../docker-compose/cdc-lifecycle.psm1') -Force -PassThru
+        $savedPath = $env:CDC_RUNBOOK_CHILD_FAILURE_PATH
+        $savedPhase = $env:CDC_RUNBOOK_CHILD_FAILURE_PHASE
+        $path = Join-Path $script:private 'controller-errors.json'
+        try {
+            $env:CDC_RUNBOOK_CHILD_FAILURE_PATH = $path
+            $env:CDC_RUNBOOK_CHILD_FAILURE_PHASE = 'Teardown'
+            $output = if ($OutputKind -eq 'valid') {
+                '{"diagnostics":[{"component":"Connect","failure":"Unavailable","message":"private-sentinel"},{"component":"WorkflowState","failure":"Conflict"},{"component":"private-secret","failure":"Unavailable"}],"binding":{"dataStoreId":"private-id"}}'
+            } else { 'private-malformed-json' }
+            try { throw 'Controller rejected' } catch {
+                & $lifecycle {
+                    param($Record, $Output)
+                    Write-CdcLifecycleQualificationFailure $Record -ControllerOperation retire -ControllerExitCode 13 -ControllerOutput @($Output)
+                } $_ $output
+            }
+        } finally {
+            $env:CDC_RUNBOOK_CHILD_FAILURE_PATH = $savedPath
+            $env:CDC_RUNBOOK_CHILD_FAILURE_PHASE = $savedPhase
+            Remove-Module $lifecycle
+        }
+        Set-CdcRunbookOperation -Operation cdc-stack-teardown -Phase Teardown
+        $result = [pscustomobject]@{ ExitCode = 1; FailureKind = 'None' }
+        Complete-CdcRunbookOperation $result
+        Read-CdcRunbookChildFailure -Path $path -Result $result -Required
+        $report = Get-CdcRunbookPesterReport -Tests @([pscustomobject]@{ ExpandedName = 'CDC-DOC cdc-managed-start'; Result = 'Failed' }) -QualificationProfile MssqlLifecycle -ProgressPath (Join-Path $script:private 'runbook-progress.json')
+        Export-CdcRunbookReport -Report $report -RawDirectory $script:private -Destination $script:published -FileName 'cdc-runbook-live-lifecycle.json'
+        $json = Get-Content (Join-Path $script:published 'cdc-runbook-live-lifecycle.json') -Raw
+        $failure = ($json | ConvertFrom-Json -NoEnumerate)[0].Operations[0].ChildFailures[0]
+        $failure.Phase | Should -Be 'Teardown'
+        $failure.Reason | Should -Be 'ControllerRejected'
+        $failure.ControllerOperation | Should -Be 'retire'
+        $failure.ControllerExitCode | Should -Be 13
+        if ($OutputKind -eq 'valid') {
+            $failure.ControllerFailureCodes | Should -Be @('Connect/Unavailable', 'WorkflowState/Conflict')
+        } else { $failure.PSObject.Properties.Name | Should -Not -Contain ControllerFailureCodes }
+        $json | Should -Not -Match 'private|sentinel|binding|message|malformed'
+    }
     It 'preserves a child exit code when its diagnostic file is <Diagnostic>' -ForEach @(
         @{ Diagnostic = 'absent' }, @{ Diagnostic = 'malformed' }
     ) {
@@ -1965,6 +2192,8 @@ function docker { `$global:LASTEXITCODE = 0 }
                 Failures = @(@{ Phase = 'private'; Category = 'opaque'; Source = '/home/private.ps1'; Line = 'secret'; Message = 'raw' })
                 Operations = @(@{ Operation = 'cdc-secret-credential'; FailureKind = 'password'; ExitCode = 'secret'; ElapsedMilliseconds = -1
                     ChildFailures = @(1..20 | ForEach-Object { @{ Category = 'ChildProcessFailure'; ErrorCategory = 'secret'; Source = '/tmp/private.ps1'; Message = 'raw';
+                        ExceptionType = 'private-exception'; Reason = 'opaque-reason'; HResult = 'secret';
+                        ControllerOperation = 'private'; ControllerExitCode = 'secret'; ControllerFailureCodes = @('private');
                         ChildFailures = @(@{ Category = 'ChildProcessFailure'; Message = 'private' }) } }) }) })
         } | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $script:private 'cdc-runbook-live-lifecycle.json')
         Export-CdcQualificationEvidence $script:private $script:published

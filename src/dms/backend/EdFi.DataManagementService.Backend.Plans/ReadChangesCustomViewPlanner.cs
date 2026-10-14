@@ -48,7 +48,7 @@ internal sealed record ReadChangesCustomViewPlanResult(
 /// </summary>
 /// <remarks>
 /// A descriptor basis (the path terminates on <c>dms.Descriptor</c>) is the third shape: the tombstone's old
-/// Namespace/CodeValue seek the shared descriptor table under the basis descriptor's discriminator, with an
+/// Namespace/CodeValue seek the shared descriptor table under the basis descriptor's resource key, with an
 /// optional probe of the shared descriptor tombstone table. It obeys the same first-hop rule.
 /// </remarks>
 internal static class ReadChangesCustomViewPlanner
@@ -61,6 +61,7 @@ internal static class ReadChangesCustomViewPlanner
     /// <summary>The model-set inputs shared by every strategy of one request.</summary>
     private sealed record PlanningContext(
         DerivedRelationalModelSet ModelSet,
+        IReadOnlyDictionary<QualifiedResourceName, short> ResourceKeyIdByResource,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> ResourceLookup,
         ConcreteResourceModel Subject,
         TrackedChangeTableInfo TrackedChangeTable
@@ -122,6 +123,7 @@ internal static class ReadChangesCustomViewPlanner
         QualifiedResourceName subjectResource = resource.RelationalModel.Resource;
         var context = new PlanningContext(
             mappingSet.Model,
+            mappingSet.ResourceKeyIdByResource,
             mappingSet.Model.GetConcreteResourceModelsByResource(),
             resource,
             trackedChangeTable
@@ -285,11 +287,12 @@ internal static class ReadChangesCustomViewPlanner
             );
 
     /// <summary>
-    /// The resolver ends a descriptor-basis path on <c>dms.Descriptor</c> (a reference-basis path leaves
-    /// its terminal target unset).
+    /// Descriptor paths join the compact key, then read the owning DocumentId from dms.Descriptor.
     /// </summary>
     private static bool IsDescriptorBasisPath(IReadOnlyList<ColumnPathStep> path) =>
-        path[^1].TargetTable is { } terminalTarget && terminalTarget.Equals(_descriptorTable);
+        path.Count >= 2
+        && path[^2].TargetTable == _descriptorTable
+        && path[^1].SourceTable == _descriptorTable;
 
     // ---- Live seek -------------------------------------------------------------------------------
 
@@ -376,11 +379,12 @@ internal static class ReadChangesCustomViewPlanner
                 )),
             ],
             [
-                .. descriptorParts.Select(static pair => new ReadChangesCustomViewDescriptorKeyPair(
+                .. descriptorParts.Select(pair => new ReadChangesCustomViewDescriptorKeyPair(
                     pair.Part.BasisColumn,
                     pair.TrackedOldNamespaceColumn,
                     pair.TrackedOldCodeValueColumn,
-                    pair.Part.DescriptorResource!.Value
+                    pair.Part.DescriptorResource!.Value,
+                    RequireResourceKeyId(context, pair.Part.DescriptorResource.Value)
                 )),
             ],
             probeBasisTombstones
@@ -655,13 +659,13 @@ internal static class ReadChangesCustomViewPlanner
     {
         IReadOnlyList<DocumentReferenceBinding> hops = ResolveHopBindings(
             context,
-            [.. path.Take(path.Count - 1)]
+            [.. path.Take(path.Count - 2)]
         );
         RelationalResourceModel edgeOwner =
             hops.Count == 0
                 ? context.Subject.RelationalModel
                 : RequireResource(context, hops[^1].TargetResource).RelationalModel;
-        DbColumnName terminalColumn = path[^1].SourceColumnName;
+        DbColumnName terminalColumn = path[^2].SourceColumnName;
         DescriptorEdgeSource edge =
             edgeOwner.DescriptorEdgeSources.FirstOrDefault(candidate =>
                 candidate.Table.Equals(edgeOwner.Root.Table)
@@ -717,6 +721,7 @@ internal static class ReadChangesCustomViewPlanner
 
         return new ReadChangesCustomViewBasis.DescriptorSeek(
             edge.DescriptorResource,
+            RequireResourceKeyId(context, edge.DescriptorResource),
             trackedOld.Value.Namespace,
             trackedOld.Value.CodeValue,
             probeBasisTombstones ? BuildDescriptorProbeArm(context) : null
@@ -724,7 +729,7 @@ internal static class ReadChangesCustomViewPlanner
     }
 
     /// <summary>
-    /// The one shared descriptor tracked-change table, as the probe reads it: its Discriminator and DocumentId
+    /// The one shared descriptor tracked-change table, as the probe reads it: its ResourceKeyId and DocumentId
     /// system columns and the old Namespace/CodeValue value columns.
     /// </summary>
     private static ReadChangesCustomViewDescriptorProbeArm BuildDescriptorProbeArm(PlanningContext context)
@@ -740,11 +745,18 @@ internal static class ReadChangesCustomViewPlanner
         return new ReadChangesCustomViewDescriptorProbeArm(
             descriptorTracked.Table,
             RequireSystemColumn(descriptorTracked, TrackedChangeSystemColumnRole.DocumentId),
-            RequireSystemColumn(descriptorTracked, TrackedChangeSystemColumnRole.Discriminator),
+            RequireSystemColumn(descriptorTracked, TrackedChangeSystemColumnRole.ResourceKeyId),
             RequireSharedDescriptorValue(descriptorTracked, "$.namespace"),
             RequireSharedDescriptorValue(descriptorTracked, "$.codeValue")
         );
     }
+
+    private static short RequireResourceKeyId(PlanningContext context, QualifiedResourceName resource) =>
+        context.ResourceKeyIdByResource.TryGetValue(resource, out short resourceKeyId)
+            ? resourceKeyId
+            : throw new InvalidOperationException(
+                $"The mapping set has no resource key id for descriptor '{FormatResource(resource)}'."
+            );
 
     private static DbColumnName RequireSharedDescriptorValue(
         TrackedChangeTableInfo table,

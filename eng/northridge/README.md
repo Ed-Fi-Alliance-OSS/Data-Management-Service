@@ -24,7 +24,7 @@ and copying the data across -- never patching the published artifact.
 
 | Script | Purpose |
 | --- | --- |
-| [`Copy-NorthridgeDataForward.ps1`](./Copy-NorthridgeDataForward.ps1) | Copy dataset tables from a published dump into a freshly provisioned database, derive `dms.Descriptor.ResourceKeyId`, and assert the post-copy and checkpoint invariants |
+| [`Copy-NorthridgeDataForward.ps1`](./Copy-NorthridgeDataForward.ps1) | Copy dataset tables from a published dump into a freshly provisioned database, allocate compact descriptor keys, remap stored references/history, and assert the post-copy and checkpoint invariants |
 | [`Compare-DmsSchemaSnapshot.ps1`](./Compare-DmsSchemaSnapshot.ps1) | Capture a normalized catalog snapshot of a database -- structure, trigger state, ownership, privileges and routine security attributes -- and diff two snapshots |
 | [`Get-DmsResourceCount.ps1`](./Get-DmsResourceCount.ps1) | Per-resource document counts for PostgreSQL or SQL Server, and the both-direction reconciliation between two count sets |
 | [`Add-NorthridgeGapDocument.ps1`](./Add-NorthridgeGapDocument.ps1) | POST documents through the DMS API from a manifest and verify each with a GET-by-id |
@@ -55,7 +55,7 @@ exactly what they must not borrow. Start a throwaway one from the stack's own im
 for it to accept connections, and remove it afterwards:
 
 ```powershell
-docker run --rm -d --name nr-pg-fixture -e POSTGRES_PASSWORD=fixture postgres:16.8-alpine
+docker run --rm -d --name nr-pg-fixture -e POSTGRES_PASSWORD=fixture postgres:18.6-alpine
 $deadline = (Get-Date).AddSeconds(60)
 while ($(docker exec nr-pg-fixture pg_isready -q -h localhost -U postgres 2>$null; $LASTEXITCODE) -ne 0) {
     if ((Get-Date) -gt $deadline) { throw "nr-pg-fixture did not accept connections within 60 s" }
@@ -77,7 +77,7 @@ projects' resources of one name stay two resources, the descriptor load re-point
 and only inside the container, the recipe reads the service ports from the containers and bounds
 every wait, a failed restore is recovered from without touching the reference deployment, every
 secret and token the recipe sends travels as one process's environment rather than as an argument,
-and the DMS-to-CMS client is deleted and recreated in the one database the Configuration Service
+and the client DMS uses to call the Configuration Service is deleted and recreated in the one database the Configuration Service
 reads. It needs no database and runs in the same pull-request lane.
 
 ## Why the client tools run in containers
@@ -85,6 +85,84 @@ reads. It needs no database and runs in the same pull-request lane.
 The published restore recipe has to work for a consumer who has Docker and a checkout and nothing
 else. Assuming a host PostgreSQL client installation is the most common reason a documented recipe
 fails for its reader, so the scripts and the recipe below use the same containerized invocation.
+
+## Copy legacy data into the current compact schema
+
+Provision a fresh target and a separate reference database from the current DDL for the exact
+core/extension schema set. Restore the legacy dump into a third database as the source for counts
+and column-shape checks. Stop writers throughout the copy. Existing databases need deliberate
+reprovisioning: `RelationalMappingVersion` remains `v3` for the 8.1 release, and matching
+`EffectiveSchemaHash` values do not prove that an older physical descriptor schema is compatible.
+
+Both Copy and Checkpoint require `-ExpectedModelManifestPath`. Use the reviewed regenerated
+`relational-model.pgsql.manifest.json` for the target's exact schema set, with complete
+`resource_details`. The authoritative core DS 5.2 baseline is
+`src/dms/backend/Fixtures/authoritative/ds-5.2/expected/relational-model.pgsql.manifest.json`;
+core plus Sample uses `Fixtures/authoritative/sample/expected/relational-model.pgsql.manifest.json`,
+and core plus TPDM uses `Fixtures/authoritative/ds-5.2-tpdm/expected/relational-model.pgsql.manifest.json`.
+Use outputs regenerated from the current implementation when package inputs change. A focused
+synthetic manifest cannot verify a production dataset. The copy and
+[`Assert-CompactDescriptor.ps1`](../DatabaseTemplates/Assert-CompactDescriptor.ps1) use the same
+[`inventory reader`](../DatabaseTemplates/Compact-Descriptor.psm1), selecting each canonical stored
+descriptor column once across roots, collections, extensions, copied identities and abstract
+projections. Generated aliases are excluded from writes.
+
+```powershell
+$baseline = './src/dms/backend/Fixtures/authoritative/ds-5.2/expected/relational-model.pgsql.manifest.json'
+./eng/northridge/Copy-NorthridgeDataForward.ps1 -Mode Copy -DumpPath /w/nr.dump `
+    -SourceDatabase nr_source -TargetDatabase nr_target -ReferenceDatabase nr_reference `
+    -ExpectedDocumentCount 10576794 -ExpectedModelManifestPath $baseline `
+    -OutputDirectory /tmp/nr-copy -Container dms-postgresql -WhatIf
+# Remove -WhatIf after reviewing the plan to run the conversion.
+./eng/northridge/Copy-NorthridgeDataForward.ps1 -Mode Checkpoint -CheckpointName C2 `
+    -TargetDatabase nr_target -ReferenceDatabase nr_reference -ExpectedDocumentCount 10576794 `
+    -ExpectedModelManifestPath $baseline -ExpectedSourceIdentity '<source identity from C1>' `
+    -OutputDirectory /tmp/nr-copy -Container dms-postgresql
+```
+
+The copied schemas include every resource and tracked-history schema in the baseline, plus `auth`.
+The preflight verifies the compact target against that baseline, complete source/target table
+coverage, exact column shapes for descriptor conversion and directly restored tables, and unchanged
+resource-key seeds. `dms.Document` retains its staging rules: source-only columns are omitted from
+the target insert, and target columns absent from the source must be nullable, defaulted, identity
+or generated. Source descriptor keys and stored descriptor references must be legacy bigint
+document keys. Descriptor rows keep their bigint `DocumentId`
+and receive native independent int `DescriptorId` values. The exact mapping is saved as
+`descriptor-key-map.<target>.tsv` beside the copy evidence. Descriptor-bearing tables load through
+source-shaped staging and are remapped before target insertion; a non-null reference with no
+mapping stops the copy. Legacy `Uri` and `Discriminator` remain in staging only. History replaces
+`Discriminator` with the qualified catalog `ResourceKeyId` without joining live owners. Exact
+`ProjectName:ResourceName` and `ProjectName.ResourceName` values remain distinct across projects;
+old unqualified resource names are accepted in history only if exactly one descriptor type has
+that name. Unknown or ambiguous history types stop the copy and require resolving the source
+type identity before retrying. Live rows accept those same qualified forms or an unqualified
+resource name matching the owning document's type; their `ResourceKeyId` comes from that document.
+
+Document IDs/UUIDs, document-level RI rows, content stamps and history IDs/versions remain intact.
+Both document stamp columns remain required here; DMS-1401 owns the timestamp change. The tool
+retains row-count, FK, trigger-state, fingerprint, singleton, stamp-distribution and source-identity
+checks. It initializes the native descriptor backing sequence from allocated compact keys. Copy
+and Checkpoint resolve that sequence from catalog ownership and check `last_value`, `is_called`
+and increment against `MAX(DescriptorId)` without calling `nextval`. Document, collection and
+change-version sequences retain their existing checks.
+
+`-WhatIf` opens neither databases nor the baseline file. Failed copies clean their temporary files
+and staging schema but may leave a partially loaded target; discard and reprovision it before
+retrying. A pre-existing staging schema is refused. The conversion is within this copy tool; it
+introduces no in-place migration. The historical restore recipe and provenance below still describe
+the published artifact at its recorded revision. Shared template rebuilds and restore verification
+for the combined DMS-1404/DMS-1401 schema belong to DMS-1401; a full Northridge reload or dataset
+republication is not a DMS-1404 completion gate.
+
+The live regression runs the actual custom-dump conversion on PostgreSQL 16.8, with descriptor
+document keys above `Int32.MaxValue`, unequal native target keys, exact root/nested/extension/
+composite remaps, deleted-row history, retained stamps/RI and a successful next ordinary insert.
+Run it with the disposable-container environment variables described above:
+
+```powershell
+$env:DMS_NORTHRIDGE_PG_FIXTURE_CONTAINER = 'nr-pg-fixture'
+Invoke-Pester -Path ./eng/northridge/tests/CompactDescriptorCarryForward.Tests.ps1 -CI -Output Detailed
+```
 
 ## Artifact identities
 
@@ -111,8 +189,8 @@ Two different things are on record about this recipe, and they must not be read 
 text **as it stood at publication** -- eleven steps, branch head `b303450ab5fd689526696cb088a76a90b7ef6c14`,
 recorded unchanged in `a0eecb58a5e4051730f82ec4c12288a443307250`: no step 5b, no step 5c, and DMS started
 as its step 10 -- was executed from a clean slate on 2026-08-19, on a stack deliberately configured with
-a non-default PostgreSQL password, a non-default `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` and a non-default
-`DMS_CONFIG_IDENTITY_ENCRYPTION_KEY`, so that nothing could pass by sharing a default with the machine
+a non-default PostgreSQL password, a non-default `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` and a non-default
+`CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY`, so that nothing could pass by sharing a default with the machine
 that produced the artifact. The fourteen-step text below is that recipe plus the review hardening added
 after publication -- steps 5b and 5c, the fail-closed status checks, the bounded waits, the in-memory
 secret handling and the recovery helper -- and the current text has **not** been executed end to end
@@ -235,7 +313,7 @@ pwsh -NoProfile -File ./bootstrap-local-dms.ps1 -DatabaseEngine postgresql -Iden
 #    hard-coded copy of its own -- here, and in the connection string built in step 9, where a
 #    wrong name registers a data store that saves cleanly and cannot connect. This is not a claim
 #    that the stack supports another superuser end to end: .env.example and the compose defaults
-#    still build the DMS and CMS connection strings with `username=postgres`, so the bootstrap in
+#    still build the DMS and Configuration Service connection strings with `username=postgres`, so the bootstrap in
 #    step 4 works only with the default today. Reading the value keeps this recipe correct for the
 #    stack it actually finds, and keeps it from becoming one more place that has to change.
 DB=$(docker exec dms-postgresql printenv POSTGRES_DB_NAME)
@@ -606,14 +684,14 @@ echo "reference database $REF dropped"
 
 # 7. REQUIRED: install your own OpenIddict signing key.
 #    The artifact carries the producer's dmscs."OpenIddictKey" row, whose private key is encrypted
-#    with the PRODUCER's DMS_CONFIG_IDENTITY_ENCRYPTION_KEY. Yours differs, so CMS cannot decrypt it
+#    with the PRODUCER's CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY. Yours differs, so the Configuration Service cannot decrypt it
 #    and POST /connect/token answers 500 with "No active private key or key id found". Without a
-#    token no CMS API call succeeds, so step 9 becomes impossible -- this step must precede it.
+#    token no Configuration Service API call succeeds, so step 9 becomes impossible -- this step must precede it.
 #
-#    The key is replaced in the CMS database: CMS mints tokens from the dmscs."OpenIddictKey" row of
+#    The key is replaced in the Configuration Service database: the Configuration Service mints tokens from the dmscs."OpenIddictKey" row of
 #    the database it reads its dmscs rows from, taken from the running Configuration Service rather
-#    than assumed to be $DB -- DMS_CONFIG_DATABASE_NAME is a supported override, and local-config.yml
-#    builds the CMS connection string from it -- so a key replaced anywhere else leaves CMS reading
+#    than assumed to be $DB -- CONFIGURATION_SERVICE_DATABASE_NAME is a supported override, and local-config.yml
+#    builds the Configuration Service connection string from it -- so a key replaced anywhere else leaves the Configuration Service reading
 #    the producer's. The rule for the rest of the recipe: dmscs operations target $CMSDB (step 10
 #    reuses this value), dms data-store operations target $DB. The connection string carries the
 #    database password, so it travels to pwsh as CMSCS in that one process's environment, the channel
@@ -631,13 +709,13 @@ unset CMSCS
 test -n "$CMSDB" || \
   { echo "could not read the database name from the Configuration Service connection string; nothing was changed"; exit 1; }
 
-#    Note this is a DIFFERENT key from DMS_CONFIG_DATABASE_ENCRYPTION_KEY, which protects the data
+#    Note this is a DIFFERENT key from CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY, which protects the data
 #    store connection string in step 9. The two are configured separately and both matter here.
-#    Read the key with `docker inspect`, not `docker exec`: the CMS container is stopped at this
+#    Read the key with `docker inspect`, not `docker exec`: the Configuration Service container is stopped at this
 #    point in the recipe and `docker exec` refuses a stopped container.
 IDK=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' ed-fi-api-config-service |
       sed -n 's/^IdentitySettings__EncryptionKey=//p')
-test -n "$IDK" || { echo "could not read the CMS identity encryption key"; exit 1; }
+test -n "$IDK" || { echo "could not read the Configuration Service identity encryption key"; exit 1; }
 
 #    Deactivating the producer's key and inserting yours are one operation or none. Run as two
 #    statements, a failed insert leaves NO active key, and a failed deactivate leaves the producer's
@@ -703,12 +781,12 @@ echo "SourceIdentity rotated to $NEW_SOURCE_ID"
 #    The local PostgreSQL stack is single-database, so the artifact carries dmscs.* alongside dms.*.
 #    The restored dmscs rows are PRODUCER-LOCAL: the stored DataStore.ConnectionString describes the
 #    machine that produced the artifact and is encrypted with that machine's
-#    DMS_CONFIG_DATABASE_ENCRYPTION_KEY. Re-saving re-encrypts it with yours. The restore also
+#    CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY. Re-saving re-encrypts it with yours. The restore also
 #    replaced dmscs.OpenIddict*, so register the admin client AFTER the restore, not before.
 #    Skip this and DMS restart-loops with "Failed to decrypt the connection string".
 #
 #    The ports are read from the containers, not assumed. local-config.yml and local-dms.yml set each
-#    container's ASPNETCORE_HTTP_PORTS from DMS_CONFIG_ASPNETCORE_HTTP_PORTS and DMS_HTTP_PORTS
+#    container's ASPNETCORE_HTTP_PORTS from CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS and DMS_HTTP_PORTS
 #    respectively and publish that same number on 127.0.0.1, so the value inside the container is the
 #    host port -- the same two overrides eng/docker-compose/env-utility.psm1 resolves in
 #    Resolve-CmsBaseUrl and Resolve-DockerLocalDmsBaseUrl. A stack on other ports would otherwise meet
@@ -739,11 +817,11 @@ WAIT200() { # WAIT200 <url> <seconds> <container>
 }
 docker start ed-fi-api-config-service
 WAIT200 "$CMS/health" 300 ed-fi-api-config-service || exit 1
-echo "CMS healthy at $CMS"
+echo "Configuration Service healthy at $CMS"
 
-#    `restore-admin` is registered against YOUR CMS, so its secret has to satisfy that instance's
+#    `restore-admin` is registered against YOUR Configuration Service, so its secret has to satisfy that instance's
 #    IdentitySettings:ClientSecretValidation bounds -- which are configurable, so no literal secret
-#    written here can be known to fit. Reuse the CMS identity client secret instead: CMS validates
+#    written here can be known to fit. Reuse the Configuration Service identity client secret instead: the Configuration Service validates
 #    that secret against those same bounds itself, so whatever they are, it is in range. The bounds
 #    are read here as well; step 10 hands them to setup-openiddict.ps1, which otherwise falls back to
 #    its own 32/128 defaults and would reject a secret a differently configured stack accepts.
@@ -752,7 +830,7 @@ ADMIN_SECRET=$(printf '%s\n' "$CMSENV" | sed -n 's/^IdentitySettings__ClientSecr
 CLIENT_SECRET_MIN=$(printf '%s\n' "$CMSENV" | sed -n 's/^IdentitySettings__ClientSecretValidation__MinimumLength=//p')
 CLIENT_SECRET_MAX=$(printf '%s\n' "$CMSENV" | sed -n 's/^IdentitySettings__ClientSecretValidation__MaximumLength=//p')
 test -n "$ADMIN_SECRET" -a -n "$CLIENT_SECRET_MIN" -a -n "$CLIENT_SECRET_MAX" || \
-  { echo "could not read the CMS client secret and its validation bounds from ed-fi-api-config-service"; exit 1; }
+  { echo "could not read the Configuration Service client secret and its validation bounds from ed-fi-api-config-service"; exit 1; }
 
 #    The registration and every token request carry a client secret. A curl argument list is visible
 #    to every process on the host for as long as curl runs, so those calls are made by pwsh instead:
@@ -818,7 +896,7 @@ test -n "$PW" -a -n "$DB" -a -n "$DBUSER" || { echo "could not read the database
 #    container and may hold characters that are special in JSON (") or in a connection string
 #    (; ' " =) -- POSTGRES_USER no less than the password, since it is an override like the others. Raw
 #    interpolation either breaks the JSON outright or -- worse -- produces a connection string that
-#    CMS stores happily and Npgsql then reads differently, which is a data store that saves cleanly
+#    the Configuration Service stores happily and Npgsql then reads differently, which is a data store that saves cleanly
 #    and cannot connect. So DbConnectionStringBuilder assembles the connection string, applying the
 #    same quoting rules Npgsql parses; ConvertTo-Json writes the body; and the assembled string is
 #    re-parsed and compared to its inputs before anything is sent.
@@ -851,7 +929,7 @@ DS_BODY=$(PW="$PW" DB="$DB" DBUSER="$DBUSER" pwsh -NoProfile -Command '
   [Console]::Out.Write(($body | ConvertTo-Json -Compress))
 ') || { echo "the data store request body could not be built; nothing was sent"; exit 1; }
 
-#    The status is asserted rather than printed. CMS answers this PUT with 204 No Content on success;
+#    The status is asserted rather than printed. The Configuration Service answers this PUT with 204 No Content on success;
 #    on anything else the stored connection string is still the producer's, and DMS restart-loops on
 #    it in step 11 rather than failing here where you can see why. The body carries the database
 #    password, so it travels to AUTH_HTTP as BODY in that process's environment and is never written
@@ -870,29 +948,29 @@ fi
 echo "data store re-saved -> HTTP 204"
 
 # 10. REQUIRED: recreate the client DMS uses to reach the Configuration Service.
-#     Registering `restore-admin` above is not this step. DMS authenticates to CMS as its own client,
+#     Registering `restore-admin` above is not this step. DMS authenticates to the Configuration Service as its own client,
 #     `CMSReadOnlyAccess` by default, and the restore replaced `dmscs.OpenIddict*` with the PRODUCER's
 #     rows -- so the `CMSReadOnlyAccess` row now in the database stores a hash of the producer's
-#     secret, which is not published. DMS presents your `CONFIG_SERVICE_CLIENT_SECRET` on every call
-#     to CMS, so unless your secret is byte-identical to one you have never seen, CMS answers 401 and
+#     secret, which is not published. DMS presents your `DMS_CONFIGURATION_SERVICE_CLIENT_SECRET` on every call
+#     to the Configuration Service, so unless your secret is byte-identical to one you have never seen, the Configuration Service answers 401 and
 #     DMS cannot read claim sets or authorization metadata. There is no way to check whether you got
 #     lucky, so this step is unconditional.
 #
 #     Read the credentials from the DMS container rather than from your env file: what has to exist in
-#     CMS is what DMS will actually send. `docker inspect` (ENVOF, from step 7) rather than
+#     the Configuration Service is what DMS will actually send. `docker inspect` (ENVOF, from step 7) rather than
 #     `docker exec`, for the same reason as step 7 -- ed-fi-api is stopped until step 11.
 CID=$(ENVOF ed-fi-api | sed -n 's/^ConfigurationServiceSettings__ClientId=//p')
 CSEC=$(ENVOF ed-fi-api | sed -n 's/^ConfigurationServiceSettings__ClientSecret=//p')
 CSCOPE=$(ENVOF ed-fi-api | sed -n 's/^ConfigurationServiceSettings__Scope=//p')
 test -n "$CID" -a -n "$CSEC" -a -n "$CSCOPE" || \
-  { echo "could not read the DMS-to-CMS client id, secret and scope from ed-fi-api"; exit 1; }
+  { echo "could not read DMS's Configuration Service client id, secret and scope from ed-fi-api"; exit 1; }
 
-#     The two role names are read as well, and from CMS rather than from DMS, because CMS is the side
+#     The two role names are read as well, and from the Configuration Service rather than from DMS, because the Configuration Service is the side
 #     that enforces them: its service policy requires the presented token to carry
 #     IdentitySettings:ConfigServiceRole. Both are supported overrides -- local-config.yml sets them
-#     from DMS_CONFIG_IDENTITY_SERVICE_ROLE and DMS_CONFIG_IDENTITY_CLIENT_ROLE -- and left unpassed,
+#     from CONFIGURATION_SERVICE_IDENTITY_SERVICE_ROLE and CONFIGURATION_SERVICE_IDENTITY_CLIENT_ROLE -- and left unpassed,
 #     setup-openiddict.ps1 falls back to its own cms-client/dms-client defaults and grants a role your
-#     CMS does not require. The token check below would still pass, because minting a token does not
+#     Configuration Service does not require. The token check below would still pass, because minting a token does not
 #     exercise the role; the failure would surface in step 11 as DMS unable to read claim sets.
 CMSROLE=$(ENVOF ed-fi-api-config-service | sed -n 's/^IdentitySettings__ConfigServiceRole=//p')
 DMSROLE=$(ENVOF ed-fi-api-config-service | sed -n 's/^IdentitySettings__ClientRole=//p')
@@ -911,7 +989,7 @@ test -n "$CMSROLE" -a -n "$DMSROLE" || \
 #     statement quotes it with :'cid' rather than having it pasted into the SQL text. Guarded, like
 #     step 7: a delete that fails leaves the producer's row for the insert below to skip.
 docker exec -i dms-postgresql psql -U "$DBUSER" -d "$CMSDB" -v ON_ERROR_STOP=1 -v cid="$CID" -f - <<'SQL' || \
-  { echo "could not remove the producer's client row for $CID; the DMS-to-CMS client was not recreated"; exit 1; }
+  { echo "could not remove the producer's client row for $CID; DMS's Configuration Service client was not recreated"; exit 1; }
 DELETE FROM dmscs."OpenIddictApplication" WHERE "ClientId" = :'cid';
 SQL
 #     Nothing below has to be escaped for SQL. Every value passed here is a configured one, and
@@ -931,7 +1009,7 @@ CSEC="$CSEC" pwsh -NoProfile -File ./setup-openiddict.ps1 -InsertData \
   -NewClientSecretEnvironmentVariable CSEC -ConfigServiceRole "$CMSROLE" -DmsClientRole "$DMSROLE" \
   -EnvironmentFile ./.env -DbName "$CMSDB" -DbUser "$DBUSER" \
   -ClientSecretMinimumLength "$CLIENT_SECRET_MIN" -ClientSecretMaximumLength "$CLIENT_SECRET_MAX" || \
-  { echo "setup-openiddict.ps1 failed; the DMS-to-CMS client was not recreated"; exit 1; }
+  { echo "setup-openiddict.ps1 failed; DMS's Configuration Service client was not recreated"; exit 1; }
 #     Those are the arguments the bootstrap uses for this client, with the role names taken from the
 #     running Configuration Service rather than left to defaults, so the roles, scope, permissions and
 #     namespace claim come back identical rather than approximately.
@@ -939,8 +1017,8 @@ CSEC="$CSEC" pwsh -NoProfile -File ./setup-openiddict.ps1 -InsertData \
 #     Prove it before starting DMS: the credentials DMS will present must actually mint a token.
 CMS_SECRET="$CSEC"
 CT=$(CMS_TOKEN "$CID" "$CSCOPE") || \
-  { echo "the DMS-to-CMS client cannot mint a token; DMS would start and fail to read claim sets"; exit 1; }
-echo "DMS-to-CMS client '$CID' recreated with your secret and verified"
+  { echo "DMS's Configuration Service client cannot mint a token; DMS would start and fail to read claim sets"; exit 1; }
+echo "DMS's Configuration Service client '$CID' recreated with your secret and verified"
 
 # 11. Now start DMS. A cached first-use validation failure is NOT cleared by re-provisioning, so if
 #     DMS was started too early, restart the container rather than re-running any provisioning step.
@@ -954,11 +1032,11 @@ echo "DMS healthy at $DMS"
 #     `EdFiAPIPublisherWriter` is the claim set to ask for: API Publisher loaded this dataset
 #     originally, so that claim set already covers every resource present.
 #     POST /v3/vendors answers 201 with an EMPTY body, so read the new id from the Location header,
-#     which AUTH_HTTP writes to the headers file named. Every CMS call carries the admin token as TOKEN.
+#     which AUTH_HTTP writes to the headers file named. Every Configuration Service call carries the admin token as TOKEN.
 #     Each status is asserted before the response is trusted, as the data store PUT's is: a 4xx or
 #     5xx comes with no Location and no credentials, and unasserted it would surface one line later
 #     as "no Location" or "no credentials" with the cause gone. POST /v3/vendors is create-only: a
-#     new company answers 201, and a company CMS already holds answers 400 with "A vendor with this
+#     new company answers 201, and a company the Configuration Service already holds answers 400 with "A vendor with this
 #     company name already exists." and changes nothing, which is what a re-run of this step meets.
 #     That 400, and no other, continues: the existing vendor's id is looked up by company name, and
 #     the lookup must answer 200 with an id. Nothing else may continue.
@@ -1033,10 +1111,10 @@ fi
 echo "DMS served the restored dataset: HTTP 200, Total-Count 21628"
 ```
 
-> **Do not drop and recreate the database part-way through this recipe and expect a CMS restart to
-> recover.** CMS deploys the `dmscs` schema on startup but does not seed an OpenIddict signing key, so
+> **Do not drop and recreate the database part-way through this recipe and expect a Configuration Service restart to
+> recover.** The Configuration Service deploys the `dmscs` schema on startup but does not seed an OpenIddict signing key, so
 > a recreated database leaves `dmscs."OpenIddictKey"` empty, `POST /connect/token` answers 500, and no
-> CMS API call can succeed. Recovering means re-running step 7. Before step 6 has passed, a failed
+> Configuration Service API call can succeed. Recovering means re-running step 7. Before step 6 has passed, a failed
 > attempt puts the deployment back under its own name itself -- its guards run `RECOVER_FROM_REF`, and
 > *Recovery after a failed restore* below covers a helper that could not -- and the next attempt
 > resumes at step 5; to start over after that, tear the stack down with volumes
@@ -1094,7 +1172,7 @@ Then resume at step 5. In a fresh shell, first re-run the three assignments at t
 | Install your own OpenIddict key (step 7) | everyone | the shipped private key is encrypted with the producer's identity key; without this no token mints |
 | Rotate `SourceIdentity` (step 8) | everyone standing up a new data store | a restored copied backup is an independent writable data store and must not share a source identity with the producer |
 | Register admin client, re-save data store (step 9) | everyone | the shipped `dmscs` connection string is producer-local and encrypted with the producer's database key |
-| Recreate the DMS-to-CMS client (step 10) | everyone | the shipped `CMSReadOnlyAccess` row hashes the producer's secret, so DMS gets 401 from CMS with yours |
+| Recreate DMS's Configuration Service client (step 10) | everyone | the shipped `CMSReadOnlyAccess` row hashes the producer's secret, so DMS gets 401 from the Configuration Service with yours |
 | Create your own DMS API client (step 12) | everyone who reads data | the shipped vendor/application/client rows are the producer's and their secrets are not published |
 | Restart DMS rather than re-provisioning | anyone who saw a 503 | first-use validation failures are cached for the process lifetime |
 
@@ -1119,7 +1197,7 @@ Every published artifact records the following, on its ticket and in this direct
    row-count reconciliation, sequence-position assertions, and the invariant checkpoint table. The
    reconciliation is recorded as named script outputs and captured transcripts, not only as a summary
    sentence: a summary cannot be re-read to find which resource moved.
-5. **Known limitations** -- that the shipped CMS state is producer-local, and anything deferred.
+5. **Known limitations** -- that the shipped Configuration Service state is producer-local, and anything deferred.
 
 ### Record for `EdFi_DMS_Northridge_v80_20260819_PG`
 
@@ -1155,7 +1233,7 @@ the end of the archive, `RESTORE VERIFYONLY` passes an unreadable file, and a re
 starts reports zero errors — success-shaped signals that mean nothing on their own.
 
 Known limitations: the `dmscs` rows in the artifact are producer-local throughout — connection string,
-OpenIddict signing key, DMS-to-CMS client row, and vendor/application/client rows — which is what
+OpenIddict signing key, the row for DMS's Configuration Service client, and vendor/application/client rows — which is what
 steps 7, 9, 10 and 12 exist to replace. Ownership-token stamping is not implemented at this revision,
 so `CreatedByOwnershipTokenId` is null on every document. `tracked_changes_edfi` is present and empty
 by design. A restored database's catalog respells exactly one row of the deployment's: PostgreSQL

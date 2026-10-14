@@ -155,7 +155,7 @@ public sealed class DescriptorForeignKeyConstraintPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Creates the canonical descriptor FK constraint targeting <c>dms.Descriptor(DocumentId)</c> for one storage column.
+    /// Creates the canonical descriptor FK constraint targeting <c>dms.Descriptor(DescriptorId)</c> for one storage column.
     /// </summary>
     private static TableConstraint.ForeignKey CreateDescriptorForeignKey(
         DbTableName table,
@@ -166,14 +166,14 @@ public sealed class DescriptorForeignKeyConstraintPass : IRelationalModelSetPass
             ConstraintNaming.BuildDescriptorForeignKeyName(table, storageColumn),
             [storageColumn],
             _descriptorTableName,
-            [RelationalNameConventions.DocumentIdColumnName],
+            [RelationalNameConventions.DescriptorKeyColumnName],
             OnDelete: ReferentialAction.NoAction,
             OnUpdate: ReferentialAction.NoAction
         );
     }
 
     /// <summary>
-    /// Returns true when a constraint is a descriptor FK targeting the shared <c>dms.Descriptor(DocumentId)</c> contract.
+    /// Returns true when a constraint is a descriptor FK targeting the shared <c>dms.Descriptor(DescriptorId)</c> contract.
     /// </summary>
     private static bool IsDescriptorForeignKeyConstraint(TableConstraint constraint)
     {
@@ -189,7 +189,7 @@ public sealed class DescriptorForeignKeyConstraintPass : IRelationalModelSetPass
 
         return foreignKey.TargetColumns.Count == 1
             && foreignKey.TargetColumns.Any(column =>
-                column.Equals(RelationalNameConventions.DocumentIdColumnName)
+                column.Equals(RelationalNameConventions.DescriptorKeyColumnName)
             );
     }
 

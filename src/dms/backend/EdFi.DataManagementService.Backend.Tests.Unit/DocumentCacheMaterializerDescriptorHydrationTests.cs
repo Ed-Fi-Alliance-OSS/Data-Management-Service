@@ -250,8 +250,7 @@ public class Given_DocumentCacheMaterializer_With_DescriptorHydration
             "Alternative",
             "Alternative school type",
             new DateOnly(2025, 1, 15),
-            new DateOnly(2025, 12, 31),
-            "SchoolTypeDescriptor"
+            new DateOnly(2025, 12, 31)
         );
 
     private static DescriptorMappingSetTestContext CreateMaterializerTestContext() =>
@@ -436,7 +435,7 @@ public class Given_DocumentCacheDescriptorHydrator
         dataStore.Commands[0].CommandText.Should().NotContain("dms.\"Document\"");
         dataStore.Commands[0].CommandText.Should().NotContain("LEFT JOIN");
         dataStore.Commands[0].CommandText.Should().NotContain("@documentUuid");
-        dataStore.Commands[0].CommandText.Should().NotContain("Uri");
+        dataStore.Commands[0].CommandText.Should().NotContain("Uri").And.NotContain("Discriminator");
         dataStore
             .Commands[0]
             .Parameters.Should()
@@ -497,7 +496,11 @@ public class Given_DocumentCacheDescriptorHydrator
         dataStore.Commands[0].CommandText.Should().Contain("FROM [dms].[Descriptor] descriptor");
         dataStore.Commands[0].CommandText.Should().Contain("descriptor.[DocumentId] = @documentId");
         dataStore.Commands[0].CommandText.Should().Contain("descriptor.[ResourceKeyId] = @resourceKeyId");
-        dataStore.Commands[0].CommandText.Should().NotContain("[dms].[Document]");
+        dataStore
+            .Commands[0]
+            .CommandText.Should()
+            .NotContain("[dms].[Document]")
+            .And.NotContain("Discriminator");
         dataStore.Commands[0].CommandText.Should().NotContain("LEFT JOIN");
     }
 
@@ -555,7 +558,6 @@ public class Given_DocumentCacheDescriptorHydrator
             ["Description"] = "Alternative school type",
             ["EffectiveBeginDate"] = new DateOnly(2025, 1, 15),
             ["EffectiveEndDate"] = new DateOnly(2025, 12, 31),
-            ["Discriminator"] = "SchoolTypeDescriptor",
         };
 
         foreach (var (columnName, value) in overrides)
@@ -645,30 +647,15 @@ file static class DocumentCacheDescriptorTestData
         var descriptorTable = new DbTableModel(
             new DbTableName(new DbSchemaName("dms"), "Descriptor"),
             new JsonPathExpression("$", []),
-            new TableKey(
-                "PK_Descriptor",
-                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
-            ),
+            new TableKey("PK_Descriptor", [new DbKeyColumn(new("DescriptorId"), ColumnKind.Scalar)]),
             [
-                new DbColumnModel(
-                    new DbColumnName("DocumentId"),
-                    ColumnKind.ParentKeyPart,
-                    new RelationalScalarType(ScalarKind.Int64),
-                    false,
-                    null,
-                    null
-                ),
+                new(new("DescriptorId"), ColumnKind.Scalar, new(ScalarKind.Int32), false, null, null),
+                new(new("DocumentId"), ColumnKind.ParentKeyPart, new(ScalarKind.Int64), false, null, null),
             ],
-            []
+            [new TableConstraint.Unique("UX_Descriptor_DocumentId", [new("DocumentId")])]
         )
         {
-            IdentityMetadata = new DbTableIdentityMetadata(
-                DbTableKind.Root,
-                [new DbColumnName("DocumentId")],
-                [new DbColumnName("DocumentId")],
-                [],
-                []
-            ),
+            IdentityMetadata = new(DbTableKind.Root, [new("DescriptorId")], [new("DocumentId")], [], []),
         };
 
         return new RelationalResourceModel(

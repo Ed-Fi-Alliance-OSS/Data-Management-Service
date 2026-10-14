@@ -69,7 +69,7 @@ public enum ColumnKind
     DocumentFk,
 
     /// <summary>
-    /// A foreign key to <c>dms.Descriptor</c> (stored as <c>DescriptorId</c> / <c>DocumentId</c>).
+    /// An Int32 foreign key to the independently allocated <c>dms.Descriptor.DescriptorId</c>.
     /// </summary>
     DescriptorFk,
 
@@ -587,6 +587,14 @@ public abstract record ColumnStorage
 /// <see langword="true" /> for <see cref="ColumnStorage.Stored"/> columns and
 /// <see langword="false" /> for <see cref="ColumnStorage.UnifiedAlias"/> columns.
 /// </param>
+/// <param name="UsesSqlServerIdentityCollation">
+/// True only for generated SQL Server string columns that store or copy identity values. When true,
+/// DDL generation appends the <see cref="IdentityEqualityContract.IdentityTextCollation"/> to stored
+/// columns, and runtime comparer selection uses <see cref="IdentityEqualityContract.ComparerFor"/>.
+/// Unified aliases over a flagged canonical column carry the flag for comparer selection only; their
+/// effective collation is the canonical column's. Ordinary non-identity string payload columns leave
+/// this false and inherit the database default collation.
+/// </param>
 public sealed record DbColumnModel(
     DbColumnName ColumnName,
     ColumnKind Kind,
@@ -594,7 +602,8 @@ public sealed record DbColumnModel(
     bool IsNullable,
     JsonPathExpression? SourceJsonPath,
     QualifiedResourceName? TargetResource,
-    ColumnStorage Storage
+    ColumnStorage Storage,
+    bool UsesSqlServerIdentityCollation = false
 )
 {
     /// <summary>
@@ -782,8 +791,8 @@ public enum TrackedChangeTableKind
 
     /// <summary>
     /// The single shared descriptor tracked-change table (<c>tracked_changes_*.Descriptor</c>) covering
-    /// every <see cref="ResourceStorageKind.SharedDescriptorTable"/> resource, discriminated by
-    /// <see cref="TrackedChangeSystemColumnRole.Discriminator"/>.
+    /// every <see cref="ResourceStorageKind.SharedDescriptorTable"/> resource, routed by
+    /// <see cref="TrackedChangeSystemColumnRole.ResourceKeyId"/>.
     /// </summary>
     SharedDescriptor,
 }
@@ -871,8 +880,8 @@ public enum TrackedChangeSystemColumnRole
     CreatedAt,
 
     /// <summary>
-    /// <c>Discriminator</c> — present only on the shared descriptor tracked-change table; identifies the
-    /// concrete descriptor type.
+    /// <c>ResourceKeyId</c> — the owning document's qualified descriptor type key, copied from the
+    /// deleted descriptor row. Present only on the shared descriptor tracked-change table.
     /// </summary>
-    Discriminator,
+    ResourceKeyId,
 }

@@ -12,7 +12,7 @@ using FluentAssertions;
 
 namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 
-internal static class DescriptorRuntimeScenario
+internal static partial class DescriptorRuntimeScenario
 {
     private const string DescriptorEndpoint = "/data/ed-fi/schoolTypeDescriptors";
     private const string MergeItemsEndpoint = "/data/ed-fi/profileRootOnlyMergeItems";
@@ -90,6 +90,7 @@ internal static class DescriptorRuntimeScenario
         string initialLastModifiedDate = created["_lastModifiedDate"]!.GetValue<string>();
         initialPostEtag.Should().Be(initialGetEtag, "POST ETag header must match the initial GET _etag");
         DocumentMetadata initialMetadata = await ReadDocumentMetadataAsync(harness, resourceId);
+        StoredDescriptor initialState = await ReadStoredDescriptorAsync(harness, locationPath);
 
         DescriptorValues updated = initial with
         {
@@ -130,6 +131,9 @@ internal static class DescriptorRuntimeScenario
                 "changed descriptor PUT must advance the GET response _lastModifiedDate"
             );
 
+        StoredDescriptor updatedState = await ReadStoredDescriptorAsync(harness, locationPath);
+        AssertChangedState(updatedState, initialState, updated);
+        await AssertResponseStateAsync(harness, locationPath, updated, putEtag, updatedState);
         DocumentMetadata updatedMetadata = await ReadDocumentMetadataAsync(harness, resourceId);
         updatedMetadata
             .ContentVersion.Should()
@@ -244,6 +248,11 @@ internal static class DescriptorRuntimeScenario
             CreateDescriptorValues("identity-namespace-change"),
             static descriptor => descriptor with { Namespace = CreateNamespace("identity-namespace-changed") }
         );
+        await AssertDescriptorIdentityChangeRejectedAsync(
+            harness,
+            CreateDescriptorValues("identity-casing-change", codeValue: "MiXeD"),
+            static descriptor => descriptor with { CodeValue = "mixed" }
+        );
     }
 
     private static async Task AssertDescriptorIdentityChangeRejectedAsync(
@@ -259,6 +268,7 @@ internal static class DescriptorRuntimeScenario
         string initialGetEtag = created["_etag"]!.GetValue<string>();
         string initialLastModifiedDate = created["_lastModifiedDate"]!.GetValue<string>();
         DocumentMetadata initialMetadata = await ReadDocumentMetadataAsync(harness, resourceId);
+        StoredDescriptor initialState = await ReadStoredDescriptorAsync(harness, locationPath);
         DescriptorValues changedIdentity = mutateIdentity(descriptor);
 
         using HttpResponseMessage putResponse = await PutDescriptorAsync(
@@ -297,6 +307,7 @@ internal static class DescriptorRuntimeScenario
                 "rejected identity-change PUT must not advance the GET _lastModifiedDate"
             );
 
+        (await ReadStoredDescriptorAsync(harness, locationPath)).Should().Be(initialState);
         DocumentMetadata afterRejectionMetadata = await ReadDocumentMetadataAsync(harness, resourceId);
         afterRejectionMetadata
             .ContentVersion.Should()
@@ -634,6 +645,7 @@ internal static class DescriptorRuntimeScenario
         DescriptorValues descriptor
     )
     {
+        await PrepareCompactKeysAsync(harness);
         using HttpResponseMessage createResponse = await PostJsonAsync(
             harness,
             DescriptorEndpoint,
@@ -645,7 +657,11 @@ internal static class DescriptorRuntimeScenario
         createResponse.Headers.Location.Should().NotBeNull();
         createResponse.TryReadRawEtag(out string etag).Should().BeTrue("descriptor POST must emit an ETag");
 
-        return (ToPath(createResponse.Headers.Location!), etag);
+        string locationPath = ToPath(createResponse.Headers.Location!);
+        StoredDescriptor state = await ReadStoredDescriptorAsync(harness, locationPath);
+        AssertCompactKeys(state);
+        await AssertResponseStateAsync(harness, locationPath, descriptor, etag, state);
+        return (locationPath, etag);
     }
 
     private static async Task<HttpResponseMessage> PutDescriptorAsync(

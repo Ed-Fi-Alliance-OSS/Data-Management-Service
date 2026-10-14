@@ -455,8 +455,8 @@
             ],
             "descriptor_projection_plans_in_order": [
               {
-                "select_by_keyset_sql_sha256": "1e6f27420c22a087723624234a4060ca3d40a50144498c51bab5e3b8cd7ce814",
-                "select_by_single_document_sql_sha256": "49c350a1a4addaf9f56eeae5d95b3c2c3e4ddfea2c7894eb147be2183f7d0083",
+                "select_by_keyset_sql_sha256": "84311b0281d074207a0a5cab5fef6b6343b1d525ad5f7e2a86fe505e7fc169e9",
+                "select_by_single_document_sql_sha256": "5b84e40cad9b067b3e2232563d259ea208ebabc9bc2829f6b213919b9fea5f39",
                 "result_shape": {
                   "descriptor_id_ordinal": 0,
                   "uri_ordinal": 1
@@ -1128,8 +1128,8 @@
             ],
             "descriptor_projection_plans_in_order": [
               {
-                "select_by_keyset_sql_sha256": "6403654d6a0c2b5755237eadbe94c250671fda9579be9222d01633dbc07e4cdd",
-                "select_by_single_document_sql_sha256": "bd03bdd80048061c60dd406035c41498aa33eec7e8560cff965487d11cff04e7",
+                "select_by_keyset_sql_sha256": "4262c065f321f380e5cf7714aa6c6eba41a91ad9bf296b9892d825669496b8e7",
+                "select_by_single_document_sql_sha256": "e2b664d62f27223f0f4f640957c5e5b4fafa4b5d263f844e2aefe33601955a6f",
                 "result_shape": {
                   "descriptor_id_ordinal": 0,
                   "uri_ordinal": 1

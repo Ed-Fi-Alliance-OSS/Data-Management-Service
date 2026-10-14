@@ -367,14 +367,14 @@ internal static class RelationalModelSetSchemaHelpers
     /// </summary>
     /// <param name="identityPath">The abstract identity JSONPath to name.</param>
     /// <param name="isDescriptor">
-    /// <see langword="true"/> when the column stores a <c>dms.Descriptor.DocumentId</c> reference and the
+    /// <see langword="true"/> when the column stores a <c>dms.Descriptor.DescriptorId</c> reference and the
     /// name must carry the <c>_DescriptorId</c> suffix.
     /// </param>
     /// <returns>The resolved physical column name string (without schema or table qualification).</returns>
     internal static string BuildAbstractIdentityColumnName(JsonPathExpression identityPath, bool isDescriptor)
     {
         // Direct (non-reference) identity field. A descriptor-valued field still stores
-        // dms.Descriptor.DocumentId, so it gets the _DescriptorId suffix, matching concrete
+        // dms.Descriptor.DescriptorId, so it gets the _DescriptorId suffix, matching concrete
         // DescriptorIdColumnName naming.
         var scalarBaseName = BuildIdentityPartBaseName(identityPath);
 

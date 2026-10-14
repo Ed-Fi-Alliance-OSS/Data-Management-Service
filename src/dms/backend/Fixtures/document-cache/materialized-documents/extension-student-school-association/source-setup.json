@@ -50,9 +50,10 @@
       "namespace": "uri://sample.ed-fi.org/MembershipTypeDescriptor",
       "codeValue": "Member",
       "shortDescription": "Member",
-      "values": {
-        "Discriminator": "MembershipTypeDescriptor"
-      }
+      "values": {},
+      "descriptorId": 101,
+      "projectName": "Sample",
+      "resourceName": "MembershipTypeDescriptor"
     },
     {
       "documentId": 971302,
@@ -60,9 +61,10 @@
       "namespace": "uri://ed-fi.org/EducationPlanDescriptor",
       "codeValue": "IEP",
       "shortDescription": "IEP",
-      "values": {
-        "Discriminator": "EducationPlanDescriptor"
-      }
+      "values": {},
+      "descriptorId": 102,
+      "projectName": "Ed-Fi",
+      "resourceName": "EducationPlanDescriptor"
     },
     {
       "documentId": 971303,
@@ -70,9 +72,10 @@
       "namespace": "uri://ed-fi.org/GradeLevelDescriptor",
       "codeValue": "Ninth grade",
       "shortDescription": "Ninth grade",
-      "values": {
-        "Discriminator": "GradeLevelDescriptor"
-      }
+      "values": {},
+      "descriptorId": 103,
+      "projectName": "Ed-Fi",
+      "resourceName": "GradeLevelDescriptor"
     }
   ],
   "concreteRootRows": [
@@ -86,7 +89,7 @@
         "School_SchoolId": 255902,
         "Student_DocumentId": 971202,
         "Student_StudentUniqueId": "604822",
-        "EntryGradeLevelDescriptor_DescriptorId": 971303,
+        "EntryGradeLevelDescriptor_DescriptorId": 103,
         "EntryDate": "2025-08-19",
         "PrimarySchool": false
       }
@@ -120,7 +123,7 @@
         "CollectionItemId": 971401,
         "Ordinal": 0,
         "StudentSchoolAssociation_DocumentId": 971101,
-        "EducationPlanDescriptor_DescriptorId": 971302
+        "EducationPlanDescriptor_DescriptorId": 102
       }
     }
   ],
@@ -130,7 +133,7 @@
       "table": "StudentSchoolAssociationExtension",
       "documentId": 971101,
       "values": {
-        "MembershipTypeDescriptor_DescriptorId": 971301
+        "MembershipTypeDescriptor_DescriptorId": 101
       }
     }
   ],

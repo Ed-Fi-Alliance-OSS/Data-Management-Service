@@ -112,8 +112,7 @@ internal sealed class DocumentCacheDescriptorHydrator(
                 shortDescription,
                 reader.GetNullableFieldValue<string>("Description"),
                 reader.GetNullableDateFieldValue("EffectiveBeginDate"),
-                reader.GetNullableDateFieldValue("EffectiveEndDate"),
-                ReadOptionalStringField(reader, "Discriminator")
+                reader.GetNullableDateFieldValue("EffectiveEndDate")
             )
         );
     }
@@ -124,22 +123,6 @@ internal sealed class DocumentCacheDescriptorHydrator(
     )
     {
         var ordinal = reader.GetOrdinal(columnName);
-        return reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<string>(ordinal);
-    }
-
-    private static string? ReadOptionalStringField(IRelationalCommandReader reader, string columnName)
-    {
-        int ordinal;
-
-        try
-        {
-            ordinal = reader.GetOrdinal(columnName);
-        }
-        catch (IndexOutOfRangeException)
-        {
-            return null;
-        }
-
         return reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<string>(ordinal);
     }
 
@@ -165,8 +148,7 @@ internal sealed class DocumentCacheDescriptorHydrator(
                     descriptor."ShortDescription" AS "ShortDescription",
                     descriptor."Description" AS "Description",
                     descriptor."EffectiveBeginDate" AS "EffectiveBeginDate",
-                    descriptor."EffectiveEndDate" AS "EffectiveEndDate",
-                    descriptor."Discriminator" AS "Discriminator"
+                    descriptor."EffectiveEndDate" AS "EffectiveEndDate"
                 FROM dms."Descriptor" descriptor
                 WHERE descriptor."DocumentId" = @documentId
                     AND descriptor."ResourceKeyId" = @resourceKeyId;
@@ -181,8 +163,7 @@ internal sealed class DocumentCacheDescriptorHydrator(
                     descriptor.[ShortDescription] AS [ShortDescription],
                     descriptor.[Description] AS [Description],
                     descriptor.[EffectiveBeginDate] AS [EffectiveBeginDate],
-                    descriptor.[EffectiveEndDate] AS [EffectiveEndDate],
-                    descriptor.[Discriminator] AS [Discriminator]
+                    descriptor.[EffectiveEndDate] AS [EffectiveEndDate]
                 FROM [dms].[Descriptor] descriptor
                 WHERE descriptor.[DocumentId] = @documentId
                     AND descriptor.[ResourceKeyId] = @resourceKeyId;

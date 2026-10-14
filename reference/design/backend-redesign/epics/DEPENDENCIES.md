@@ -476,7 +476,7 @@ invent identifiers or dependency edges for them.
 | DMS-1444 | [`02-document-resource-invariant-and-abstract-resource-key.md`](21-storage-reduction/02-document-resource-invariant-and-abstract-resource-key.md) | DMS-1443 | Document/resource invariant and abstract `ResourceKeyId` |
 | DMS-1445 | [`03-natural-key-probe-metadata.md`](21-storage-reduction/03-natural-key-probe-metadata.md) | DMS-1444 | Compiled natural-key probe metadata |
 | DMS-1446 | [`04-probe-based-duplicate-identity-and-constraint-diagnostics.md`](21-storage-reduction/04-probe-based-duplicate-identity-and-constraint-diagnostics.md) | DMS-1445 | Probe-based duplicate-identity and constraint diagnostics |
-| DMS-1447 | [`05-postgresql-17-and-descriptor-collation-upgrade.md`](21-storage-reduction/05-postgresql-17-and-descriptor-collation-upgrade.md) | — | PostgreSQL floor and descriptor-collation upgrade contract |
+| DMS-1447 | [`05-postgresql-18-and-descriptor-collation-upgrade.md`](21-storage-reduction/05-postgresql-18-and-descriptor-collation-upgrade.md) | — | PostgreSQL floor and descriptor-collation upgrade contract |
 | DMS-1448 | [`06-descriptor-validation-index-and-fk-foundations.md`](21-storage-reduction/06-descriptor-validation-index-and-fk-foundations.md) | DMS-1443, DMS-1444, DMS-1447 | Descriptor validation, index, and FK foundations |
 | DMS-1449 | [`07-natural-key-sql-builders-and-cardinality-contracts.md`](21-storage-reduction/07-natural-key-sql-builders-and-cardinality-contracts.md) | DMS-1445, DMS-1448 | Natural-key SQL builders and cardinality contracts |
 | DMS-1450 | [`08-natural-key-resolver-internal-seam.md`](21-storage-reduction/08-natural-key-resolver-internal-seam.md) | DMS-1449 | Natural-key resolver behind an internal seam |

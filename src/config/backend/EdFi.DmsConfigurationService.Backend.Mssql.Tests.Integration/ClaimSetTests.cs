@@ -5,6 +5,7 @@
 
 using System.Data.Common;
 using System.Text.Json;
+using Dapper;
 using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
@@ -466,21 +467,17 @@ public class ClaimSetTests : DatabaseTest
 
             // Assert
 
-            // Ensure the correct number of attempts were made to apply the claim name change to the hierarchy
-            claimsHierarchyRepository
-                .SaveClaimsHierarchyInvocationCount.Should()
-                .Be(Math.Min(4, multiUserConflictCount + 1));
+            int saveAttempts = claimsHierarchyRepository.SaveClaimsHierarchyInvocationCount;
+            ClaimSetUpdateResult expectedResult = expectSuccess
+                ? new ClaimSetUpdateResult.Success()
+                : new ClaimSetUpdateResult.FailureMultiUserConflict();
 
-            if (expectSuccess)
-            {
-                // Verify that the update succeeded after retries were attempted
-                updateResult.Should().BeOfType<ClaimSetUpdateResult.Success>();
-            }
-            else
-            {
-                // Verify that the update failed after 3 retries
-                updateResult.Should().BeOfType<ClaimSetUpdateResult.FailureMultiUserConflict>();
-            }
+            // Each assertion reports both the attempt count and the actual update result, so an unrelated
+            // failure (such as FailureUnknown) cannot surface only as a retry-count mismatch
+            saveAttempts
+                .Should()
+                .Be(Math.Min(4, multiUserConflictCount + 1), "the update returned {0}", updateResult);
+            updateResult.Should().Be(expectedResult, "the save was attempted {0} times", saveAttempts);
         }
 
         private static ClaimsHierarchyRepository CreateClaimsHierarchyRepository()
@@ -500,13 +497,6 @@ public class ClaimSetTests : DatabaseTest
             int _conflictingUpdateCount = int.MaxValue
         ) : IClaimsHierarchyRepository
         {
-            private readonly IClaimsHierarchyRepository _multiUserClaimsHierarchyRepository =
-                new ClaimsHierarchyRepository(
-                    MssqlTestConfiguration.DatabaseOptions,
-                    NullLogger<ClaimsHierarchyRepository>.Instance,
-                    new TestAuditContext()
-                );
-
             private int _remainingConflictingUpdateCount = _conflictingUpdateCount;
 
             public Task<ClaimsHierarchyGetResult> GetClaimsHierarchy(DbTransaction? transaction = null)
@@ -526,23 +516,20 @@ public class ClaimSetTests : DatabaseTest
                 // Increment invocation counter for inspection by tests
                 SaveClaimsHierarchyInvocationCount++;
 
-                // If the call is part of an existing transaction, force a multi-user conflict on a separate connection
-                if (transaction != null && _remainingConflictingUpdateCount > 0)
+                // If the call is part of an existing transaction, force a multi-user conflict by committing
+                // another user's version change on a separate connection. The version is advanced explicitly
+                // rather than by saving through the repository, because the repository stamps SYSUTCDATETIME(),
+                // which can return the same value for successive writes and leave the supplied version current.
+                if (transaction is not null && _remainingConflictingUpdateCount > 0)
                 {
                     _remainingConflictingUpdateCount--;
 
-                    var hierarchyResult = GetCurrentClaimsHierarchy();
-
-                    hierarchyResult.claims.Add(
-                        new Claim() { Name = $"Test-MultiUser-Claim-{Random.Shared.Next(100000)}" }
+                    await using var connection = await OpenConnectionAsync();
+                    int affectedRows = await connection.ExecuteAsync(
+                        "UPDATE dmscs.ClaimsHierarchy SET LastModifiedDate = DATEADD(SECOND, 1, LastModifiedDate);"
                     );
 
-                    var result = await _multiUserClaimsHierarchyRepository.SaveClaimsHierarchy(
-                        hierarchyResult.claims,
-                        hierarchyResult.lastModifiedDate
-                    );
-
-                    result.Should().BeOfType<ClaimsHierarchySaveResult.Success>();
+                    affectedRows.Should().Be(1);
                 }
 
                 // Pass the call through
@@ -551,21 +538,6 @@ public class ClaimSetTests : DatabaseTest
                     existingLastModifiedDate,
                     transaction
                 );
-
-                (List<Claim> claims, DateTime lastModifiedDate) GetCurrentClaimsHierarchy()
-                {
-                    var claimsResult = _multiUserClaimsHierarchyRepository
-                        .GetClaimsHierarchy()
-                        .ConfigureAwait(false)
-                        .GetAwaiter()
-                        .GetResult();
-
-                    claimsResult.Should().BeOfType<ClaimsHierarchyGetResult.Success>();
-
-                    var success = (claimsResult as ClaimsHierarchyGetResult.Success)!;
-
-                    return (success.Claims, success.LastModifiedDate);
-                }
             }
         }
     }

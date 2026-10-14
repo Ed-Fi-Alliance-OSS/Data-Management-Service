@@ -291,6 +291,8 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
 
         command.Should().NotBeNull();
         command!.Parameters.Should().HaveCount(1999);
+        command.CommandText.Should().Contain("referentialIdentity.[DocumentId] AS [DocumentId]");
+        command.CommandText.Should().Contain("descriptor.[DescriptorId] AS [DescriptorId]");
         command
             .Parameters.Should()
             .AllSatisfy(parameter => parameter.ConfigureParameter.Should().NotBeNull());

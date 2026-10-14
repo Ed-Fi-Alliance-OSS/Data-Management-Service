@@ -1,0 +1,87 @@
+# Multi-tenant routing: tenant and schoolYear are PATH segments (/mt-dms/{tenant}/{schoolYear}),
+# and a token only reaches the data store its application is bound to. A token used on another
+# tenant's path is answered 404 ("No database instance found matching the request route
+# qualifiers"), not 401/403: DMS matches the token's data store against the route and finds none.
+#
+# Credentials: the tenant1 and tenant2 API clients from bootstrap.ps1 output.
+# Re-running: the first POST of a record returns 201; later runs return 200 (upsert).
+
+@base = https://your-label.eastus.cloudapp.azure.com
+@realm = edfi
+@schoolYear = 2025
+
+# The raw `Basic key:secret` form below is base64-encoded automatically by VS Code REST Client.
+# Pre-encode it instead (`Authorization: Basic <base64(key:secret)>`) if a secret contains
+# characters REST Client treats as variables ({{ }}) or your client does not auto-encode the raw form.
+@tenant1Key = REPLACE_WITH_TENANT1_KEY
+@tenant1Secret = REPLACE_WITH_TENANT1_SECRET
+@tenant2Key = REPLACE_WITH_TENANT2_KEY
+@tenant2Secret = REPLACE_WITH_TENANT2_SECRET
+
+### Get a token for tenant1
+# @name tokenRequestOne
+POST {{base}}/auth/realms/{{realm}}/protocol/openid-connect/token
+Authorization: Basic {{tenant1Key}}:{{tenant1Secret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@tokenOne = {{tokenRequestOne.response.body.access_token}}
+
+### Get a token for tenant2
+# @name tokenRequestTwo
+POST {{base}}/auth/realms/{{realm}}/protocol/openid-connect/token
+Authorization: Basic {{tenant2Key}}:{{tenant2Secret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@tokenTwo = {{tokenRequestTwo.response.body.access_token}}
+
+### Create a person with the tenant1 token. Note tenant1 in the URL. ALLOWED (201, or 200 on re-run).
+POST {{base}}/mt-dms/tenant1/{{schoolYear}}/data/ed-fi/people
+Authorization: Bearer {{tokenOne}}
+Content-Type: application/json
+
+{
+  "personId": "security-review-one",
+  "sourceSystemDescriptor": "uri://ed-fi.org/SourceSystemDescriptor#District"
+}
+
+### Same person, same URL, but the tenant2 token. DENIED (404): this token routes only to tenant2's data store.
+POST {{base}}/mt-dms/tenant1/{{schoolYear}}/data/ed-fi/people
+Authorization: Bearer {{tokenTwo}}
+Content-Type: application/json
+
+{
+  "personId": "security-review-one",
+  "sourceSystemDescriptor": "uri://ed-fi.org/SourceSystemDescriptor#District"
+}
+
+### Try again with tenant2's URL. ALLOWED (201, or 200 on re-run).
+POST {{base}}/mt-dms/tenant2/{{schoolYear}}/data/ed-fi/people
+Authorization: Bearer {{tokenTwo}}
+Content-Type: application/json
+
+{
+  "personId": "security-review-one",
+  "sourceSystemDescriptor": "uri://ed-fi.org/SourceSystemDescriptor#District"
+}
+
+### Read with the tenant1 token
+GET {{base}}/mt-dms/tenant1/{{schoolYear}}/data/ed-fi/people?personId=security-review-one
+Authorization: Bearer {{tokenOne}}
+
+### Read with the tenant2 token. A different record in a different database: compare `id` and `_lastModifiedDate`.
+GET {{base}}/mt-dms/tenant2/{{schoolYear}}/data/ed-fi/people?personId=security-review-one
+Authorization: Bearer {{tokenTwo}}
+
+### Read tenant2's data with the tenant1 token. DENIED (404).
+GET {{base}}/mt-dms/tenant2/{{schoolYear}}/data/ed-fi/people?personId=security-review-one
+Authorization: Bearer {{tokenOne}}
+
+### Right tenant, but a school year with no data store. DENIED (404).
+GET {{base}}/mt-dms/tenant1/2099/data/ed-fi/people?personId=security-review-one
+Authorization: Bearer {{tokenOne}}

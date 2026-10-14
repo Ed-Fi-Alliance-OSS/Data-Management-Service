@@ -524,16 +524,6 @@ public class ApplicationRepository(
             }
 
             if (
-                command.DataStoreIds.Length > 0
-                && !await AllDataStoresInTenant(connection, transaction, command.DataStoreIds)
-            )
-            {
-                logger.LogWarning("Update application failure: Data store not found");
-                await transaction.RollbackAsync();
-                return new ApplicationUpdateResult.FailureDataStoreNotFound();
-            }
-
-            if (
                 command.ProfileIds.Length > 0
                 && !await AllProfilesInTenant(connection, transaction, command.ProfileIds)
             )
@@ -580,37 +570,6 @@ public class ApplicationRepository(
                 transaction
             );
 
-            // Get ApiClient Id for DataStore relationship update
-            sql =
-                "SELECT Id FROM dmscs.ApiClient WHERE ClientId = @ClientId AND ApplicationId = @ApplicationId;";
-            int apiClientId = await connection.ExecuteScalarAsync<int>(
-                sql,
-                new { clientCommand.ClientId, ApplicationId = command.Id },
-                transaction
-            );
-
-            // Delete existing DataStore relationship
-            sql = "DELETE FROM dmscs.ApiClientDataStore WHERE ApiClientId = @ApiClientId";
-            await connection.ExecuteAsync(sql, new { ApiClientId = apiClientId }, transaction);
-
-            // Insert new DataStore relationships if provided
-            if (command.DataStoreIds.Length > 0)
-            {
-                sql = """
-                    INSERT INTO dmscs.ApiClientDataStore (ApiClientId, DataStoreId, CreatedBy)
-                    VALUES (@ApiClientId, @DataStoreId, @CreatedBy);
-                    """;
-
-                var dataStoreMappings = command.DataStoreIds.Select(dataStoreId => new
-                {
-                    ApiClientId = apiClientId,
-                    DataStoreId = dataStoreId,
-                    CreatedBy = currentUser,
-                });
-
-                await connection.ExecuteAsync(sql, dataStoreMappings, transaction);
-            }
-
             // Delete existing Profile relationships
             sql = "DELETE FROM dmscs.ApplicationProfile WHERE ApplicationId = @ApplicationId";
             await connection.ExecuteAsync(sql, new { ApplicationId = command.Id }, transaction);
@@ -644,12 +603,6 @@ public class ApplicationRepository(
             logger.LogWarning(ex, "Update application failure: Vendor not found");
             await RollbackSafelyAsync(transaction);
             return new ApplicationUpdateResult.FailureVendorNotFound();
-        }
-        catch (SqlException ex) when (ex.IsForeignKeyViolation("FK_ApiClientDataStore_DataStore"))
-        {
-            logger.LogWarning(ex, "Update application failure: Data store not found");
-            await RollbackSafelyAsync(transaction);
-            return new ApplicationUpdateResult.FailureDataStoreNotFound();
         }
         catch (SqlException ex) when (ex.IsForeignKeyViolation("FK_ApplicationProfile_Profile"))
         {

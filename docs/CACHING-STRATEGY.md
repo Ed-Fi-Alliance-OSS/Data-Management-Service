@@ -35,9 +35,9 @@ Only per-client and per-connection caches remain cold:
 | ---------------- | -------- | ------------------------------ |
 | Compiled Schemas | Warm     | Pre-compiled on startup        |
 | OIDC Metadata    | Warm     | Loaded during startup          |
-| data stores    | Warm     | Loaded from CMS on startup     |
-| ClaimSets        | Warm     | Loaded from CMS on startup     |
-| CMS Token        | Warm     | Fetched as startup dependency  |
+| data stores    | Warm     | Loaded from the Configuration Service on startup     |
+| ClaimSets        | Warm     | Loaded from the Configuration Service on startup     |
+| Configuration Service Token        | Warm     | Fetched as startup dependency  |
 | App Context      | Cold     | Fetched per client on auth     |
 | Identity Tenants | Cold     | Fetched on first identity call |
 | NpgsqlDataSource | Cold     | Created on first DB connection |
@@ -80,8 +80,8 @@ client's `DataStoreIds` determine which data they can access.
 **Dependency Scope:** Every authenticated resource request path that runs
 `ProfileResolutionMiddleware` requires a resolvable application context, because
 profile resolution needs the `ApplicationId`. This is broader than the
-ownership-gated operations alone. With a cold or missing cache entry, a CMS
-outage or a malformed CMS response makes those requests fail closed with
+ownership-gated operations alone. With a cold or missing cache entry, a Configuration Service
+outage or a malformed Configuration Service response makes those requests fail closed with
 `503 Service Unavailable`. A `NotFound` context still maps to
 `401 Unauthorized` as an invalid token.
 
@@ -89,20 +89,24 @@ outage or a malformed CMS response makes those requests fail closed with
 
 **Cache Operations:**
 
-| Operation | Method                        | Description             |
-| --------- | ----------------------------- | ----------------------- |
-| Set       | `CacheApplicationContext()`   | Stores context with TTL |
-| Get       | `GetCachedApplicationContext` | Retrieves cached ctx    |
-| Remove    | `ClearCacheForClient()`       | Removes specific client |
-
-Note: Bulk cache clearing is not supported. Individual entries expire via TTL
-or can be cleared per-client. For emergency clearing, restart the service.
+The cache is read through `IApplicationContextProvider.GetApplicationByClientIdAsync(clientId, tenant)`,
+which `CachedApplicationContextProvider` implements over `HybridCache.GetOrCreateAsync`.
+A hit returns the cached context. A miss fetches from the Configuration Service and stores a
+successful answer. A `NotFound` or an unavailable answer is never stored, so a client the
+Configuration Service does not know is looked up again on the next request.
+Within one request scope the answer is also memoized, so a request asks at most once per client and tenant.
 
 **Invalidation Strategy:**
 
-- TTL-based expiration after the configured duration
-- Manual invalidation via `ReloadApplicationByClientIdAsync()`
-- Follows cache-aside pattern with fallback to Configuration Service
+- TTL-based expiration after the configured duration. This is the only invalidation an operator has.
+- Follows cache-aside pattern with fallback to the Configuration Service
+- The provider has an internal reload that evicts one client's entry and fetches it again, but
+  application reload is internal: no endpoint calls it and no operator setting reaches it, so it is
+  not a way to clear this cache.
+- There is no per-client or bulk clear. For an emergency clear, drain and restart every serving
+  replica, or wait for the entries to expire. A deployment that added a distributed cache must also
+  invalidate those entries and the local copies. A deleted client can therefore stay accepted for up
+  to the TTL. See [Identity Management](./IDENTITY-MANAGEMENT.md#application-reload-and-urgent-revocation).
 
 ---
 
@@ -169,7 +173,13 @@ A reload advances a per-key generation, so a fetch that started before the reloa
   without one, and callers must present a bearer token carrying that role under
   `JwtAuthentication:RoleClaimType`.
 - Requires `AppSettings:EnableClaimsetReload: true` for the reload and view operations to execute
-  after authorization. See [Configuration](./CONFIGURATION.md#appsettings).
+  after authorization; when it is `false` they answer a `404` with no body. See
+  [Configuration](./CONFIGURATION.md#appsettings).
+- In multi-tenant mode the unscoped `/management/reload-claimsets` answers `404`; the reload route is
+  `/management/{tenant}/reload-claimsets`.
+- Identity Management relies on this cache for its claim checks, so a claim-action removal can stay
+  invisible until the entry expires or is reloaded. See
+  [Identity Management](./IDENTITY-MANAGEMENT.md#how-long-a-change-takes-to-apply).
 
 ---
 
@@ -221,7 +231,7 @@ during startup and entries are never evicted or replaced.
 ### 4. Configuration Service Token Cache
 
 **Purpose:** Caches OAuth bearer tokens used to authenticate with the
-Configuration Management Service (CMS).
+Configuration Service.
 
 **Location:**
 
@@ -246,7 +256,7 @@ built-in stampede protection
 
 **Invalidation Strategy:**
 
-- TTL matches the token's `expires_in` value from CMS response
+- TTL matches the token's `expires_in` value from the Configuration Service response
 - No manual invalidation - relies on automatic expiration
 - Cache-aside pattern: fetches new token when cache miss occurs
 
@@ -577,11 +587,11 @@ A caller's own cancellation propagates and is never turned into an answer.
 
 | Cache        | Mechanism    | Scope | TTL    | Tenant | Stampede | Invalidation |
 | ------------ | ------------ | ----- | ------ | ------ | -------- | ------------ |
-| App Context  | HybridCache  | Sing. | 10 min | Yes    | Yes      | Manual + TTL |
+| App Context  | HybridCache  | Sing. | 10 min | Yes    | Yes      | TTL only (reload is internal) |
 | ClaimSets    | MemoryCache  | Sing. | 10 min | Yes    | Yes      | Manual + TTL |
 | Id. Tenants  | Snapshot     | Sing. | 60 s   | N/A    | Yes      | TTL + miss refresh |
 | Comp. Schema | ConcurDict   | Sing. | None   | No     | No       | Reload ID    |
-| CMS Token    | HybridCache  | Sing. | 25 min | No     | Yes      | TTL only     |
+| Configuration Service Token    | HybridCache  | Sing. | 25 min | No     | Yes      | TTL only     |
 | NpgsqlDS     | Dict + lock  | Sing. | None   | N/A    | No       | Reconcile + Shutdown |
 | data store | ConcurDict   | Sing. | Configurable (CacheSettings.DataStoreCacheExpirationSeconds) | Yes    | No       | TTL + Restart      |
 | OIDC Meta    | ConfigMgr    | Sing. | 60 min | No     | Yes      | Auto-refresh |
@@ -594,7 +604,7 @@ DMS uses several invalidation patterns:
 
 ### 1. TTL-Based Expiration
 
-Used by: Application Context, ClaimSets, CMS Token, OIDC Metadata, data store cache
+Used by: Application Context, ClaimSets, Configuration Service Token, OIDC Metadata, data store cache
 
 Cache entries automatically expire after a configured time period. This is the
 simplest pattern and requires no manual intervention.
@@ -708,7 +718,7 @@ schemas on-demand only when first requested.
 
 | Setting         | Value      | Location                         |
 | --------------- | ---------- | -------------------------------- |
-| CMS Token TTL   | 25 minutes | `CacheSettings` (configurable)   |
+| Configuration Service Token TTL   | 25 minutes | `CacheSettings` (configurable)   |
 | Schema Cache    | No TTL     | Version-based invalidation       |
 
 Note: All cache TTLs are now configurable via `CacheSettings`.
@@ -735,9 +745,9 @@ Since caches are local to each instance:
 
 DMS warms most caches during startup (see `Program.cs`):
 
-- **data stores** - Loaded from Configuration Service before accepting requests
+- **data stores** - Loaded from the Configuration Service before accepting requests
 - **ClaimSets** - Retrieved and cached for all tenants on startup
-- **CMS Token** - Fetched as a dependency of the above operations
+- **Configuration Service Token** - Fetched as a dependency of the above operations
 - **Compiled Schemas** - Primed via `ProvideApiSchemaMiddleware`
 - **OIDC Metadata** - Fetched from identity provider on startup (fails fast if unavailable)
 

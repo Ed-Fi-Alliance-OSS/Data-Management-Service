@@ -5,7 +5,7 @@ Ed-Fi API host without rebuilding it.
 
 > **Both hosts load plugins, each for its own contracts.** The contract and the loader are
 > host-neutral, which is why the base class is named for the Ed-Fi API platform rather than for one
-> host. The Data Management Service loads plugins for custom validation. The Configuration Service
+> host. The Data Management Service loads plugins for custom validation and identity. The Configuration Service
 > loads them with the same loader for the secrets contracts in `EdFi.Api.Secrets`, a secret resolver
 > and a client secret hasher; see
 > [Configuration Service plugins](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/docs/CONFIGURATION.md#configuration-service-plugins).
@@ -501,8 +501,8 @@ class the host discovers alongside the old one for as long as both are supported
 
 ## Getting the package
 
-`EdFi.Api.Plugins`, `EdFi.Api.CustomValidation` and `EdFi.Api.Secrets` are published to the Ed-Fi
-Azure Artifacts feed:
+`EdFi.Api.Plugins`, `EdFi.Api.CustomValidation`, `EdFi.Api.Identity` and `EdFi.Api.Secrets` are
+published to the Ed-Fi Azure Artifacts feed:
 
 ```text
 https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json
@@ -524,6 +524,20 @@ which contract versions that release carries. Build against 1.1.0. It is the ver
 may already be pinned to `[1.0.0]`; that plugin runs unchanged on a host carrying 1.1.0, as
 [Older plugin, newer host](#older-plugin-newer-host) describes, but it cannot contribute
 configuration until it is rebuilt against 1.1.0.
+
+A Data Management Service plugin that backs Identity Management also references `EdFi.Api.Identity`,
+on the same feed:
+
+```xml
+<PackageReference Include="EdFi.Api.Plugins" Version="[1.1.0]" />
+<PackageReference Include="EdFi.Api.Identity" Version="[1.0.0]" />
+```
+
+Its version is declared in its own project file,
+`src/dms/core/EdFi.DataManagementService.Identity/EdFi.DataManagementService.Identity.csproj`,
+and moves independently of the Data Management Service release. Its
+[implementer guide](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/dms/core/EdFi.DataManagementService.Identity/IDENTITY.md)
+is the package readme.
 
 A Configuration Service plugin that resolves secrets or replaces the client secret hasher also
 references `EdFi.Api.Secrets`, on the same feed:

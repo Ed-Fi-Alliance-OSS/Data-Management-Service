@@ -632,9 +632,7 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
                 [ShortDescription],
                 [Description],
                 [EffectiveBeginDate],
-                [EffectiveEndDate],
-                [Discriminator],
-                [Uri]
+                [EffectiveEndDate]
             )
             VALUES (
                 @documentId,
@@ -644,9 +642,7 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
                 @shortDescription,
                 @description,
                 @effectiveBeginDate,
-                @effectiveEndDate,
-                @discriminator,
-                @uri
+                @effectiveEndDate
             );
             """,
             new SqlParameter("@documentId", SqlDbType.BigInt) { Value = descriptor.DocumentId },
@@ -659,15 +655,7 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
             new SqlParameter("@shortDescription", SqlDbType.VarChar, 75) { Value = "Alternative" },
             new SqlParameter("@description", SqlDbType.VarChar, 1024) { Value = "Alternative school type" },
             new SqlParameter("@effectiveBeginDate", SqlDbType.Date) { Value = new DateOnly(2025, 1, 15) },
-            new SqlParameter("@effectiveEndDate", SqlDbType.Date) { Value = new DateOnly(2025, 12, 31) },
-            new SqlParameter("@discriminator", SqlDbType.VarChar, 128)
-            {
-                Value = DescriptorResource.ResourceName,
-            },
-            new SqlParameter("@uri", SqlDbType.VarChar, 306)
-            {
-                Value = "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
-            }
+            new SqlParameter("@effectiveEndDate", SqlDbType.Date) { Value = new DateOnly(2025, 12, 31) }
         );
     }
 

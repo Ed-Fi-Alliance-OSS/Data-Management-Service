@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using FluentAssertions;
 using Npgsql;
@@ -33,7 +34,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
     private short _schoolResourceKeyId;
     private short _organizationDepartmentResourceKeyId;
     private short _localEducationAgencyCategoryDescriptorResourceKeyId;
-    private long _localEducationAgencyCategoryDescriptorDocumentId;
+    private int _localEducationAgencyCategoryDescriptorId;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -62,11 +63,9 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
 
         // Every LEA insert requires a LocalEducationAgencyCategoryDescriptor_DescriptorId; seed one
         // fresh per test so the row is in scope after ResetAsync() truncates user tables.
-        _localEducationAgencyCategoryDescriptorDocumentId = await InsertDescriptorAsync(
+        _localEducationAgencyCategoryDescriptorId = await InsertDescriptorAsync(
             documentUuid: Guid.Parse("aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa"),
             resourceKeyId: _localEducationAgencyCategoryDescriptorResourceKeyId,
-            discriminator: "Ed-Fi:LocalEducationAgencyCategoryDescriptor",
-            uri: "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Independent",
             @namespace: "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor",
             codeValue: "Independent",
             shortDescription: "Independent"
@@ -109,7 +108,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Test LEA",
             parentStateEducationAgencyDocumentId: seaDocumentId,
             parentStateEducationAgencyId: 100
@@ -140,7 +139,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         var leaDocumentId = await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Test LEA",
             parentStateEducationAgencyDocumentId: seaDocumentId,
             parentStateEducationAgencyId: 100
@@ -176,7 +175,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Orphan LEA"
         );
 
@@ -199,7 +198,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "ESC-only LEA",
             parentEducationServiceCenterDocumentId: escDocumentId,
             parentEducationServiceCenterId: 300
@@ -226,13 +225,13 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         var parentLeaDocumentId = await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000400"),
             localEducationAgencyId: 400,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Parent LEA"
         );
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Parent-LEA-only Child LEA",
             parentLocalEducationAgencyDocumentId: parentLeaDocumentId,
             parentLocalEducationAgencyId: 400
@@ -270,7 +269,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         var parentLeaDocumentId = await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000400"),
             localEducationAgencyId: 400,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Parent LEA",
             parentStateEducationAgencyDocumentId: seaDocumentId,
             parentStateEducationAgencyId: 100
@@ -278,7 +277,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Child LEA",
             parentStateEducationAgencyDocumentId: seaDocumentId,
             parentStateEducationAgencyId: 100,
@@ -363,7 +362,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Test LEA",
             parentStateEducationAgencyDocumentId: sea1DocumentId,
             parentStateEducationAgencyId: 100
@@ -412,7 +411,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         var leaDocumentId = await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Test LEA",
             parentStateEducationAgencyDocumentId: sea1DocumentId,
             parentStateEducationAgencyId: 100
@@ -467,7 +466,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Orphan LEA"
         );
 
@@ -508,7 +507,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Test LEA",
             parentStateEducationAgencyDocumentId: seaDocumentId,
             parentStateEducationAgencyId: 100
@@ -544,7 +543,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Test LEA",
             parentStateEducationAgencyDocumentId: seaDocumentId,
             parentStateEducationAgencyId: 100
@@ -591,7 +590,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         var parentLeaDocumentId = await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000400"),
             localEducationAgencyId: 400,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Parent LEA",
             parentStateEducationAgencyDocumentId: seaDocumentId,
             parentStateEducationAgencyId: 100
@@ -599,7 +598,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Orphan Child LEA"
         );
 
@@ -648,7 +647,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         var parentLeaDocumentId = await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000400"),
             localEducationAgencyId: 400,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Parent LEA",
             parentStateEducationAgencyDocumentId: seaDocumentId,
             parentStateEducationAgencyId: 100
@@ -656,7 +655,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Child LEA",
             parentLocalEducationAgencyDocumentId: parentLeaDocumentId,
             parentLocalEducationAgencyId: 400
@@ -753,7 +752,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         var lea1DocumentId = await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000400"),
             localEducationAgencyId: 400,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "LEA 1",
             parentStateEducationAgencyDocumentId: seaDocumentId,
             parentStateEducationAgencyId: 100
@@ -761,7 +760,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         var lea2DocumentId = await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "LEA 2",
             parentStateEducationAgencyDocumentId: seaDocumentId,
             parentStateEducationAgencyId: 100
@@ -951,7 +950,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         var leaDocumentId = await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Test LEA",
             parentStateEducationAgencyDocumentId: seaDocumentId,
             parentStateEducationAgencyId: 100
@@ -1015,19 +1014,18 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
         );
     }
 
-    private async Task<long> InsertDescriptorAsync(
+    private async Task<int> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
 
-        await _database.ExecuteNonQueryAsync(
+        var descriptorId = await _database.ExecuteScalarAsync<int>(
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
@@ -1035,9 +1033,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
-                "Description",
-                "Discriminator",
-                "Uri"
+                "Description"
             )
             VALUES (
                 @documentId,
@@ -1045,22 +1041,18 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
-            );
+                @description
+            ) RETURNING "DescriptorId";
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),
-            new NpgsqlParameter("description", shortDescription),
-            new NpgsqlParameter("discriminator", discriminator),
-            new NpgsqlParameter("uri", uri)
+            new NpgsqlParameter("description", shortDescription)
         );
 
-        return documentId;
+        return descriptorId;
     }
 
     /// <summary>
@@ -1142,7 +1134,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
     private async Task<long> InsertLocalEducationAgencyAsync(
         Guid documentUuid,
         long localEducationAgencyId,
-        long localEducationAgencyCategoryDescriptorDocumentId,
+        int localEducationAgencyCategoryDescriptorId,
         string nameOfInstitution,
         long? parentStateEducationAgencyDocumentId = null,
         long? parentStateEducationAgencyId = null,
@@ -1171,7 +1163,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
             VALUES (
                 @documentId,
                 @localEducationAgencyId,
-                @categoryDescriptorDocumentId,
+                @categoryDescriptorId,
                 @nameOfInstitution,
                 @parentSeaDocumentId,
                 @parentSeaId,
@@ -1183,10 +1175,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Auth_EdOrg_Hierarchy_T
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("localEducationAgencyId", localEducationAgencyId),
-            new NpgsqlParameter(
-                "categoryDescriptorDocumentId",
-                localEducationAgencyCategoryDescriptorDocumentId
-            ),
+            new NpgsqlParameter("categoryDescriptorId", localEducationAgencyCategoryDescriptorId),
             new NpgsqlParameter("nameOfInstitution", nameOfInstitution),
             new NpgsqlParameter(
                 "parentSeaDocumentId",

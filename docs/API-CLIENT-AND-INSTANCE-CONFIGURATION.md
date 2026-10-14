@@ -8,27 +8,27 @@ This database stores vendor and application information, API client credentials,
 data store connection strings, and route context mappings for multi-tenant
 deployments.
 
-All configuration data resides in the `dmscs` (DMS Configuration Service) schema
+All configuration data resides in the `dmscs` (Configuration Service) schema
 within the configuration database.
 
 ## Prerelease Rename Note
 
-DMS-1198 renames the prerelease CMS management contract and database objects
+DMS-1198 renames the prerelease Configuration Service management contract and database objects
 from DMS instance terminology to data store terminology. Deployments upgrading
-from alpha builds that already created `DmsInstance*` CMS tables should recreate
-the CMS configuration database, or run an operator-managed migration that copies
+from alpha builds that already created `DmsInstance*` Configuration Service tables should recreate
+the Configuration Service configuration database, or run an operator-managed migration that copies
 the old `DmsInstance*` rows into the new `DataStore*` tables before using the
-new CMS API routes. The DMS-1198 branch does not provide an in-place migration
-from the old prerelease CMS table names.
+new Configuration Service API routes. The DMS-1198 branch does not provide an in-place migration
+from the old prerelease Configuration Service table names.
 
-External CMS callers must update from the old DMS instance route and JSON field
+External Configuration Service callers must update from the old DMS instance route and JSON field
 names to the `dataStore*` routes and `dataStore*` payload fields.
 
 ## Ed-Fi DMS Data Stores
 
 ### Data Store Storage and Security
 
-The connection strings for data stores are configured in the DMS Configuration
+The connection strings for data stores are configured in the Configuration
 Service database and stored in the `DataStore` table. For security purposes,
 connection strings are encrypted using AES encryption to protect database
 credentials from unauthorized access.
@@ -156,6 +156,7 @@ What the resulting token can *do* is governed by the DMS identity surface under 
 With the surface enabled, the token reaches the identity operations its claim set grants, and it grants no resource access.
 Those operations run only when an identity provider plugin is registered; without one, an otherwise authorized request answers `404` with `urn:ed-fi:api:identities:operation-not-supported`.
 This section documents only how to provision such a client in the Configuration Service and confirm its credentials work.
+How quickly a deletion, a credential reset or a claim set change reaches the identity operations is in [How long a change takes to apply](./IDENTITY-MANAGEMENT.md#how-long-a-change-takes-to-apply), and the rest of the operator's side is in [Identity Management](./IDENTITY-MANAGEMENT.md).
 
 ### Context-Based Routing
 

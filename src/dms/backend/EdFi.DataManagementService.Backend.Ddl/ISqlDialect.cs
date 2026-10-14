@@ -308,6 +308,13 @@ public interface ISqlDialect
     string JsonColumnType { get; }
 
     /// <summary>
+    /// Gets the dialect's independently allocated identity int column type declaration.
+    /// PostgreSQL: <c>int GENERATED ALWAYS AS IDENTITY</c>.
+    /// SQL Server: <c>int IDENTITY(1,1)</c>.
+    /// </summary>
+    string IdentityIntColumnType { get; }
+
+    /// <summary>
     /// Gets the dialect's identity bigint column type declaration.
     /// PostgreSQL: <c>bigint GENERATED ALWAYS AS IDENTITY</c>.
     /// SQL Server: <c>bigint IDENTITY(1,1)</c>.

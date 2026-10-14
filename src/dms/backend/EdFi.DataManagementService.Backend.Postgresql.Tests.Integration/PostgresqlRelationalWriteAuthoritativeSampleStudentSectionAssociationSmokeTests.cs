@@ -356,7 +356,7 @@ file static class AuthoritativeSampleStudentSectionAssociationIntegrationTestSup
 internal sealed record AuthoritativeSampleStudentSectionAssociationSeedData(
     long SchoolDocumentId,
     long StudentDocumentId,
-    long ProgramTypeDescriptorDocumentId,
+    int ProgramTypeDescriptorId,
     long SectionDocumentId,
     long RoboticsClubAssociationDocumentId,
     long StemLabAssociationDocumentId,
@@ -395,7 +395,7 @@ internal sealed record AuthoritativeSampleStudentSectionAssociationProgramAssoci
     long RelatedGeneralStudentProgramAssociationEducationOrganizationId,
     long RelatedGeneralStudentProgramAssociationProgramEducationOrganizationId,
     string RelatedGeneralStudentProgramAssociationProgramName,
-    long RelatedGeneralStudentProgramAssociationProgramTypeDescriptorId,
+    int RelatedGeneralStudentProgramAssociationProgramTypeDescriptorId,
     string RelatedGeneralStudentProgramAssociationStudentUniqueId
 );
 
@@ -695,7 +695,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     SchoolId,
                     SchoolId,
                     RoboticsClubProgramName,
-                    _seedData.ProgramTypeDescriptorDocumentId,
+                    _seedData.ProgramTypeDescriptorId,
                     StudentUniqueId
                 ),
                 new AuthoritativeSampleStudentSectionAssociationProgramAssociationRow(
@@ -707,7 +707,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     SchoolId,
                     SchoolId,
                     StemLabProgramName,
-                    _seedData.ProgramTypeDescriptorDocumentId,
+                    _seedData.ProgramTypeDescriptorId,
                     StudentUniqueId
                 ),
                 new AuthoritativeSampleStudentSectionAssociationProgramAssociationRow(
@@ -719,7 +719,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     SchoolId,
                     SchoolId,
                     DesignStudioProgramName,
-                    _seedData.ProgramTypeDescriptorDocumentId,
+                    _seedData.ProgramTypeDescriptorId,
                     StudentUniqueId
                 )
             );
@@ -768,7 +768,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     SchoolId,
                     SchoolId,
                     DesignStudioProgramName,
-                    _seedData.ProgramTypeDescriptorDocumentId,
+                    _seedData.ProgramTypeDescriptorId,
                     StudentUniqueId
                 ),
                 new AuthoritativeSampleStudentSectionAssociationProgramAssociationRow(
@@ -780,7 +780,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     SchoolId,
                     SchoolId,
                     RoboticsClubProgramName,
-                    _seedData.ProgramTypeDescriptorDocumentId,
+                    _seedData.ProgramTypeDescriptorId,
                     StudentUniqueId
                 ),
                 new AuthoritativeSampleStudentSectionAssociationProgramAssociationRow(
@@ -792,7 +792,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     SchoolId,
                     SchoolId,
                     ArtsMentorshipProgramName,
-                    _seedData.ProgramTypeDescriptorDocumentId,
+                    _seedData.ProgramTypeDescriptorId,
                     StudentUniqueId
                 )
             );
@@ -997,33 +997,29 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         );
         await InsertSchoolYearTypeAsync(schoolYearTypeDocumentId, SchoolYear);
 
-        var termDescriptorDocumentId = await InsertDescriptorAsync(
+        var termDescriptor = await InsertDescriptorAsync(
             Guid.Parse("44444444-dddd-dddd-dddd-dddddddddddd"),
             termDescriptorResourceKeyId,
-            "Ed-Fi:TermDescriptor",
-            TermDescriptorUri,
             "uri://ed-fi.org/TermDescriptor",
             "Fall",
             "Fall"
         );
         await InsertReferentialIdentityAsync(
             CreateDescriptorReferentialId("Ed-Fi", "TermDescriptor", TermDescriptorUri),
-            termDescriptorDocumentId,
+            termDescriptor.DocumentId,
             termDescriptorResourceKeyId
         );
 
-        var programTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var programTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("55555555-eeee-eeee-eeee-eeeeeeeeeeee"),
             programTypeDescriptorResourceKeyId,
-            "Ed-Fi:ProgramTypeDescriptor",
-            ProgramTypeDescriptorUri,
             "uri://ed-fi.org/ProgramTypeDescriptor",
             "Extracurricular",
             "Extracurricular"
         );
         await InsertReferentialIdentityAsync(
             CreateDescriptorReferentialId("Ed-Fi", "ProgramTypeDescriptor", ProgramTypeDescriptorUri),
-            programTypeDescriptorDocumentId,
+            programTypeDescriptor.DocumentId,
             programTypeDescriptorResourceKeyId
         );
 
@@ -1043,7 +1039,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             SchoolYear,
             schoolDocumentId,
             SchoolId,
-            termDescriptorDocumentId,
+            termDescriptor.DescriptorId,
             SessionName
         );
 
@@ -1095,7 +1091,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             Guid.Parse("aaaaaaaa-4444-4444-4444-444444444444"),
             programResourceKeyId,
             schoolDocumentId,
-            programTypeDescriptorDocumentId,
+            programTypeDescriptor.DescriptorId,
             "PRG-01",
             RoboticsClubProgramName
         );
@@ -1103,7 +1099,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             Guid.Parse("bbbbbbbb-5555-5555-5555-555555555555"),
             programResourceKeyId,
             schoolDocumentId,
-            programTypeDescriptorDocumentId,
+            programTypeDescriptor.DescriptorId,
             "PRG-02",
             StemLabProgramName
         );
@@ -1111,7 +1107,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             Guid.Parse("cccccccc-6666-6666-6666-666666666666"),
             programResourceKeyId,
             schoolDocumentId,
-            programTypeDescriptorDocumentId,
+            programTypeDescriptor.DescriptorId,
             "PRG-03",
             DesignStudioProgramName
         );
@@ -1119,7 +1115,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             Guid.Parse("dddddddd-7777-7777-7777-777777777777"),
             programResourceKeyId,
             schoolDocumentId,
-            programTypeDescriptorDocumentId,
+            programTypeDescriptor.DescriptorId,
             "PRG-04",
             ArtsMentorshipProgramName
         );
@@ -1130,7 +1126,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             generalStudentProgramAssociationResourceKeyId,
             schoolDocumentId,
             roboticsProgramDocumentId,
-            programTypeDescriptorDocumentId,
+            programTypeDescriptor.DescriptorId,
             RoboticsClubProgramName,
             studentDocumentId
         );
@@ -1140,7 +1136,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             generalStudentProgramAssociationResourceKeyId,
             schoolDocumentId,
             stemLabProgramDocumentId,
-            programTypeDescriptorDocumentId,
+            programTypeDescriptor.DescriptorId,
             StemLabProgramName,
             studentDocumentId
         );
@@ -1150,7 +1146,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             generalStudentProgramAssociationResourceKeyId,
             schoolDocumentId,
             designStudioProgramDocumentId,
-            programTypeDescriptorDocumentId,
+            programTypeDescriptor.DescriptorId,
             DesignStudioProgramName,
             studentDocumentId
         );
@@ -1160,7 +1156,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             generalStudentProgramAssociationResourceKeyId,
             schoolDocumentId,
             artsMentorshipProgramDocumentId,
-            programTypeDescriptorDocumentId,
+            programTypeDescriptor.DescriptorId,
             ArtsMentorshipProgramName,
             studentDocumentId
         );
@@ -1168,7 +1164,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         return new(
             schoolDocumentId,
             studentDocumentId,
-            programTypeDescriptorDocumentId,
+            programTypeDescriptor.DescriptorId,
             sectionDocumentId,
             roboticsClubAssociationDocumentId,
             stemLabAssociationDocumentId,
@@ -1181,7 +1177,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         Guid documentUuid,
         short programResourceKeyId,
         long schoolDocumentId,
-        long programTypeDescriptorDocumentId,
+        int programTypeDescriptorId,
         string programId,
         string programName
     )
@@ -1191,7 +1187,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             programDocumentId,
             schoolDocumentId,
             SchoolId,
-            programTypeDescriptorDocumentId,
+            programTypeDescriptorId,
             programId,
             programName
         );
@@ -1218,7 +1214,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         short generalStudentProgramAssociationResourceKeyId,
         long schoolDocumentId,
         long programDocumentId,
-        long programTypeDescriptorDocumentId,
+        int programTypeDescriptorId,
         string programName,
         long studentDocumentId
     )
@@ -1231,7 +1227,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             programDocumentId,
             SchoolId,
             programName,
-            programTypeDescriptorDocumentId,
+            programTypeDescriptorId,
             studentDocumentId,
             StudentUniqueId,
             AssociationBeginDate
@@ -1242,7 +1238,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             SchoolId,
             SchoolId,
             programName,
-            programTypeDescriptorDocumentId,
+            programTypeDescriptorId,
             StudentUniqueId
         );
         await InsertReferentialIdentityAsync(
@@ -1295,19 +1291,18 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         );
     }
 
-    private async Task<long> InsertDescriptorAsync(
+    private async Task<SeededDescriptor> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
 
-        await _database.ExecuteNonQueryAsync(
+        var descriptorId = await _database.ExecuteScalarAsync<int>(
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
@@ -1315,9 +1310,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
-                "Description",
-                "Discriminator",
-                "Uri"
+                "Description"
             )
             VALUES (
                 @documentId,
@@ -1325,22 +1318,18 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
-            );
+                @description
+            ) RETURNING "DescriptorId";
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),
-            new NpgsqlParameter("description", shortDescription),
-            new NpgsqlParameter("discriminator", discriminator),
-            new NpgsqlParameter("uri", uri)
+            new NpgsqlParameter("description", shortDescription)
         );
 
-        return documentId;
+        return new(descriptorId, documentId);
     }
 
     private async Task InsertSchoolAsync(long documentId, long schoolId, string nameOfInstitution)
@@ -1442,7 +1431,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         int schoolYear,
         long schoolDocumentId,
         long schoolId,
-        long termDescriptorId,
+        int termDescriptorId,
         string sessionName
     )
     {
@@ -1599,7 +1588,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         long documentId,
         long educationOrganizationDocumentId,
         long educationOrganizationId,
-        long programTypeDescriptorId,
+        int programTypeDescriptorId,
         string programId,
         string programName
     )
@@ -1639,7 +1628,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         long programDocumentId,
         long programEducationOrganizationId,
         string programName,
-        long programTypeDescriptorId,
+        int programTypeDescriptorId,
         long studentDocumentId,
         string studentUniqueId,
         DateOnly beginDate
@@ -1694,7 +1683,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         long educationOrganizationId,
         long programEducationOrganizationId,
         string programName,
-        long programTypeDescriptorId,
+        int programTypeDescriptorId,
         string studentUniqueId
     )
     {
@@ -2031,7 +2020,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     row,
                     "RelatedGeneralStudentProgramAssociation_ProgramName"
                 ),
-                AuthoritativeSampleStudentSectionAssociationIntegrationTestSupport.GetInt64(
+                AuthoritativeSampleStudentSectionAssociationIntegrationTestSupport.GetInt32(
                     row,
                     "RelatedGeneralStudentProgramAssociation_ProgramTypeD_abfb5157a1"
                 ),

@@ -236,7 +236,7 @@ param(
     [string]$EnvironmentFile,
 
     # Default is left unset so the phase commands fall back to the env file's
-    # DMS_CONFIG_IDENTITY_PROVIDER value via Resolve-IdentityProvider. Pass explicitly
+    # CONFIGURATION_SERVICE_IDENTITY_PROVIDER value via Resolve-IdentityProvider. Pass explicitly
     # only to override the env-file resolution.
     [ValidateSet("keycloak", "self-contained")]
     [string]$IdentityProvider,
@@ -278,7 +278,7 @@ param(
     # (CMS SQL Server backend), and the self-contained OpenIddict identity stores — no
     # PostgreSQL container runs. Forwarded to start-local-dms.ps1 and
     # configure-local-data-store.ps1. The .env.mssql overlay (DMS_DATASTORE=mssql,
-    # DMS_CONFIG_DATASTORE=mssql, the MSSQL_* keys, and the SQL Server connection strings) is
+    # CONFIGURATION_SERVICE_DATASTORE=mssql, the MSSQL_* keys, and the SQL Server connection strings) is
     # composed automatically onto -EnvironmentFile, so no -EnvironmentFile is needed for a
     # turnkey MSSQL deploy.
     [ValidateSet("postgresql", "mssql")]
@@ -303,6 +303,23 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# CI opts into fixed child-error metadata; ordinary wrapper behavior is unchanged.
+trap {
+    $failure = $_
+    if ($env:CDC_RUNBOOK_CHILD_FAILURE_PATH) {
+        try {
+            . (Join-Path $PSScriptRoot '../ci/cdc-runbook-diagnostics.ps1')
+            $phase = if ($env:CDC_RUNBOOK_CHILD_FAILURE_PHASE -cin @('Setup', 'Test', 'Teardown')) {
+                $env:CDC_RUNBOOK_CHILD_FAILURE_PHASE
+            } elseif ($d) { 'Teardown' } else { 'Setup' }
+            Write-CdcRunbookChildFailure -Records @($failure) -Phase $phase
+        } catch { # Diagnostic collection must not replace the original failure.
+            Write-Verbose 'CDC qualification child diagnostics could not be collected.'
+        }
+    }
+    throw $failure
+}
 
 # Teardown short-circuit (see .DESCRIPTION): delegate stop / volume + workspace removal to
 # start-local-dms.ps1, which owns -d/-v/-RemoveBootstrap, and return before importing the wrapper or

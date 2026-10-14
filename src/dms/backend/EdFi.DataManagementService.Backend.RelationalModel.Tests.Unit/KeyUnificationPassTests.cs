@@ -536,6 +536,9 @@ public class Given_Key_Unification_For_Optional_NonReference_Descriptors
             .Subject;
 
         canonicalColumn.Kind.Should().Be(ColumnKind.DescriptorFk);
+        canonicalColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int32));
+        primaryDescriptorColumn.ScalarType.Should().Be(canonicalColumn.ScalarType);
+        secondaryDescriptorColumn.ScalarType.Should().Be(canonicalColumn.ScalarType);
         canonicalColumn.SourceJsonPath.Should().BeNull();
         canonicalColumn
             .TargetResource.Should()
@@ -610,7 +613,9 @@ public class Given_Key_Unification_For_Optional_NonReference_Descriptors
 
         var descriptorFk = descriptorForeignKeys.Should().ContainSingle().Subject;
         descriptorFk.Columns.Should().Equal(keyUnificationClass.CanonicalColumn);
-        descriptorFk.TargetColumns.Should().Equal(RelationalNameConventions.DocumentIdColumnName);
+        descriptorFk.TargetColumns.Should().Equal(RelationalNameConventions.DescriptorKeyColumnName);
+        descriptorFk.OnDelete.Should().Be(ReferentialAction.NoAction);
+        descriptorFk.OnUpdate.Should().Be(ReferentialAction.NoAction);
         dedup.Table.Should().Be(_rootTable.Table);
         dedup.StorageColumn.Should().Be(keyUnificationClass.CanonicalColumn);
         dedup.BindingColumns.Should().Equal(expectedBindingColumns);
@@ -1087,7 +1092,7 @@ public class Given_Key_Unification_With_Incompatible_Class_Members
         return new DbColumnModel(
             new DbColumnName(columnName),
             ColumnKind.DescriptorFk,
-            new RelationalScalarType(ScalarKind.Int64),
+            new RelationalScalarType(ScalarKind.Int32),
             IsNullable: true,
             SourceJsonPath: null,
             targetResource
@@ -1261,7 +1266,7 @@ public class Given_Key_Unification_Canonical_Base_Token_Derivation
         return new DbColumnModel(
             new DbColumnName(columnName),
             ColumnKind.DescriptorFk,
-            new RelationalScalarType(ScalarKind.Int64),
+            new RelationalScalarType(ScalarKind.Int32),
             IsNullable: true,
             sourcePath,
             new QualifiedResourceName("Ed-Fi", "ProgramDescriptor")

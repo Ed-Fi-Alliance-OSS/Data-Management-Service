@@ -37,7 +37,7 @@ else -> workload-TxN. Keep the two Q18 workloads separately identified in eviden
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Local investigation harness: the client secret is read from a parameter defaulting to the .env.e2e development value and sent as an OAuth form field; SecureString adds no protection across that boundary.')]
 [CmdletBinding(DefaultParameterSetName = 'Burst')]
 param(
-    # CMS base URL including the path base (DMS_CONFIG_PATH_BASE) when one is configured.
+    # CMS base URL including the path base (CONFIGURATION_SERVICE_PATH_BASE) when one is configured.
     # 127.0.0.1, not localhost: on this Windows host the dual-stack fallback adds ~2 s to
     # every new connection to a 127.0.0.1-bound port, which would contaminate latency
     # evidence with a client-side artifact (verified during the 0.1 smoke).

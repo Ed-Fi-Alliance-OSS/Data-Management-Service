@@ -390,8 +390,7 @@ public partial class Given_DescriptorReadHandler
                         shortDescription: null,
                         description: null,
                         effectiveBeginDate: null,
-                        effectiveEndDate: null,
-                        discriminator: null
+                        effectiveEndDate: null
                     )
                 ),
             ]),
@@ -410,25 +409,48 @@ public partial class Given_DescriptorReadHandler
         failure.FailureMessage.Should().Contain("ResourceKeyId=13");
     }
 
-    [Test]
-    public async Task It_treats_discriminator_as_diagnostic_only_when_the_document_resource_key_matches()
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_reads_using_resource_key_identity_without_removed_descriptor_columns(
+        SqlDialect dialect
+    )
     {
+        const long documentId = 5000000042L;
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-ffffffffffff"));
         var commandExecutor = new InMemoryRelationalCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
-                    CreateDescriptorRow(documentUuid.Value, discriminator: "OtherDescriptor")
+                    CreateDescriptorRow(
+                        documentUuid.Value,
+                        documentId: documentId,
+                        ns: "uri://Example.org/Kind #Part",
+                        codeValue: "MiXeD#Value"
+                    )
                 ),
             ]),
         ]);
         var sut = CreateHandler(commandExecutor);
 
-        var result = await sut.HandleGetByIdAsync(CreateRequest(SqlDialect.Pgsql, documentUuid));
+        var result = await sut.HandleGetByIdAsync(CreateRequest(dialect, documentUuid));
 
         var success = result.Should().BeOfType<GetResult.GetSuccess>().Subject;
         success.DocumentUuid.Should().Be(documentUuid);
-        success.EdfiDoc["namespace"]!.GetValue<string>().Should().Be("uri://ed-fi.org/SchoolTypeDescriptor");
-        success.EdfiDoc["codeValue"]!.GetValue<string>().Should().Be("Alternative");
+        success.EdfiDoc["namespace"]!.GetValue<string>().Should().Be("uri://Example.org/Kind #Part");
+        success.EdfiDoc["codeValue"]!.GetValue<string>().Should().Be("MiXeD#Value");
+        success.EdfiDoc["_etag"]!.GetValue<string>().Should().Be(ExpectedComposedDescriptorEtag(42L));
+        var command = commandExecutor.Commands.Should().ContainSingle().Subject;
+        command.CommandText.Should().NotContain("Discriminator").And.NotContain("DescriptorId");
+        command
+            .CommandText.Should()
+            .Contain(
+                dialect is SqlDialect.Pgsql
+                    ? "descriptor.\"DocumentId\" = document.\"DocumentId\""
+                    : "descriptor.[DocumentId] = document.[DocumentId]"
+            );
+        command
+            .Parameters.Single(parameter => parameter.Name == "@resourceKeyId")
+            .Value.Should()
+            .Be((short)13);
     }
 
     [Test]
@@ -1942,8 +1964,7 @@ public partial class Given_DescriptorReadHandler
                         shortDescription: null,
                         description: null,
                         effectiveBeginDate: null,
-                        effectiveEndDate: null,
-                        discriminator: null
+                        effectiveEndDate: null
                     )
                 ),
             ]),
@@ -3030,10 +3051,8 @@ public partial class Given_DescriptorReadHandler
                     ShortDescription: null,
                     Description: null,
                     EffectiveBeginDate: null,
-                    EffectiveEndDate: null,
-                    Discriminator: null
-                ),
-                DiscriminatorStrategy.ResourceKeyId
+                    EffectiveEndDate: null
+                )
             )
             : null;
 
@@ -3140,7 +3159,6 @@ public partial class Given_DescriptorReadHandler
         string? description = "Alternative school type",
         DateOnly? effectiveBeginDate = null,
         DateOnly? effectiveEndDate = null,
-        string? discriminator = "SchoolTypeDescriptor",
         long? selectedAnchor = null
     )
     {
@@ -3160,7 +3178,6 @@ public partial class Given_DescriptorReadHandler
             ("Description", description),
             ("EffectiveBeginDate", effectiveBeginDate),
             ("EffectiveEndDate", effectiveEndDate),
-            ("Discriminator", discriminator),
         ];
 
         if (selectedAnchor is not null)
@@ -3191,7 +3208,6 @@ public partial class Given_DescriptorReadHandler
                 "ResourceKeyId",
                 "Namespace",
                 "CodeValue",
-                "Discriminator",
             ]
         );
         command.CommandText.Should().NotContain("\"ShortDescription\"");
@@ -3220,7 +3236,6 @@ public partial class Given_DescriptorReadHandler
                 "Description",
                 "EffectiveBeginDate",
                 "EffectiveEndDate",
-                "Discriminator",
             ]
         );
     }

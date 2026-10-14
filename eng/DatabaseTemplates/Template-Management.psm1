@@ -5,9 +5,11 @@
 
 #Requires -Version 7
 
-Import-Module ../Package-Management.psm1 -Force
-Import-Module ../Dms-Management.psm1 -Force
-Import-Module ../SchoolYear-Loader.psm1 -Force -Global
+# Resolve sibling modules from this file's directory, not the caller's working directory, so the
+# module also imports from scripts that run elsewhere (e.g. eng/azure-vm/compose/seed).
+Import-Module (Join-Path $PSScriptRoot "../Package-Management.psm1") -Force
+Import-Module (Join-Path $PSScriptRoot "../Dms-Management.psm1") -Force
+Import-Module (Join-Path $PSScriptRoot "../SchoolYear-Loader.psm1") -Force -Global
 
 <#
 .SYNOPSIS
@@ -1162,10 +1164,11 @@ function Add-TemplateDataStore {
         Registers the template build's target data store when the Configuration Service has none.
 
     .DESCRIPTION
-        Add-DataStore retains a mandatory PostgreSQL credential for backward compatibility, even
-        when a caller supplies a complete connection string for another engine. This helper keeps
-        that compatibility detail in one place while ensuring an MSSQL template build registers an
-        MSSQL connection string instead of silently falling back to the PostgreSQL defaults.
+        For PostgreSQL, Add-DataStore builds the connection string from a credential made from
+        -PostgresPassword. For MSSQL, this helper passes a complete SQL Server connection string
+        made from -MssqlPassword, so an MSSQL template build registers an MSSQL connection string
+        instead of silently falling back to the PostgreSQL defaults. Each password is required
+        only for its own engine.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The database passwords are handed to the engine-specific data-store connection string where they must be plaintext; SecureString adds no protection across that boundary.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The database passwords are handed to the engine-specific data-store connection string where they must be plaintext; SecureString adds no protection across that boundary.')]
@@ -1182,25 +1185,28 @@ function Add-TemplateDataStore {
         [ValidateSet("postgresql", "mssql")]
         [string]$DatabaseEngine = "postgresql",
 
-        [Parameter(Mandatory)]
         [string]$PostgresPassword,
 
-        [Parameter(Mandatory)]
         [string]$MssqlPassword
     )
 
-    # Add-DataStore requires this credential even when -ConnectionString supplies the actual
-    # MSSQL target. It remains the real credential on the PostgreSQL path.
-    $postgresCredential = ConvertTo-PostgresCredential -UserName "postgres" -Secret $PostgresPassword
     $dataStoreParameters = @{
-        CmsUrl              = $CmsUrl
-        AccessToken         = $AccessToken
-        PostgresCredential  = $postgresCredential
-        PostgresDbName      = $DatabaseName
-        DatabaseEngine      = $DatabaseEngine
+        CmsUrl         = $CmsUrl
+        AccessToken    = $AccessToken
+        PostgresDbName = $DatabaseName
+        DatabaseEngine = $DatabaseEngine
     }
 
-    if ($DatabaseEngine -eq "mssql") {
+    if ($DatabaseEngine -eq "postgresql") {
+        if ([string]::IsNullOrEmpty($PostgresPassword)) {
+            throw "-PostgresPassword is required when -DatabaseEngine is 'postgresql'."
+        }
+        $dataStoreParameters.PostgresCredential = ConvertTo-PostgresCredential -UserName "postgres" -Secret $PostgresPassword
+    }
+    else {
+        if ([string]::IsNullOrEmpty($MssqlPassword)) {
+            throw "-MssqlPassword is required when -DatabaseEngine is 'mssql'."
+        }
         $dataStoreParameters.ConnectionString = New-DataStoreConnectionString `
             -DatabaseEngine "mssql" `
             -DbHost "dms-mssql" `
@@ -1594,4 +1600,4 @@ function Build-Template {
     Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion -DatabaseName $DataStoreDatabaseName -DumpAllUserSchemas:$DumpAllUserSchemas -DatabaseEngine $DatabaseEngine -MssqlPassword $MssqlPassword
 }
 
-Export-ModuleMember -Function Build-Template, Get-UserSchemaNames, Restore-TemplatePackage
+Export-ModuleMember -Function Build-Template, Get-UserSchemaNames, Restore-TemplatePackage, Get-EducatorPreparationSampleFileName, Get-EducationOrganizationIdsFromSampleData, Get-TemplateBulkLoadTuning

@@ -665,7 +665,8 @@
               "source_path": "$._ext.root_ext.root_ext_children[*].rootExtChildCode",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             },
             {
               "name": "RootExtChildValue",
@@ -794,7 +795,8 @@
               "source_path": "$.parents[*].parentCode",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             },
             {
               "name": "ParentName",
@@ -943,7 +945,8 @@
               "source_path": "$.parents[*].children[*].childCode",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             },
             {
               "name": "ChildValue",

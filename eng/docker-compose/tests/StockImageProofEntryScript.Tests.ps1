@@ -916,7 +916,7 @@ exit 0
                 $baseEnvironmentFile = Join-Path $scratch 'base.env'
                 $baseLine = @(Get-Content -LiteralPath (Join-Path $script:composeRoot '.env.e2e'))
                 $baseLine += "DMS_HTTP_PORTS=$($Port[0])"
-                $baseLine += "DMS_CONFIG_ASPNETCORE_HTTP_PORTS=$($Port[1])"
+                $baseLine += "CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=$($Port[1])"
                 $baseLine += "POSTGRES_PORT=$($Port[2])"
                 # A value nothing else in the run produces, so "this secret never appears" is an
                 # assertion about this string rather than about a default that might be empty.
@@ -1003,7 +1003,7 @@ exit 0
 
     Context 'nothing may quietly decide what the run is about' {
         It 'refuses an ambient <_> before touching anything' -ForEach @(
-            'SCHEMA_PACKAGES', 'DMS_CONFIG_DOCKER_IMAGE', 'DMS_IMAGE_TAG'
+            'SCHEMA_PACKAGES', 'CONFIGURATION_SERVICE_DOCKER_IMAGE', 'DMS_IMAGE_TAG'
         ) {
             # Compose prefers a process variable over --env-file, so an ambient one of these would
             # decide what the proof ran against while the pin described something else.
@@ -2601,11 +2601,11 @@ exit 0
         }
 
         It 'refuses an ambient <_>, whichever key it is' -ForEach @(
-            'DMS_STOCK_IMAGE_REFERENCE', 'DMS_CONFIG_DOCKER_IMAGE', 'DMS_IMAGE_TAG',
-            'DMS_CONFIG_DATA_STANDARD_VERSION', 'SCHEMA_PACKAGES', 'DMS_PLUGINS_COMPOSE_FILES',
+            'DMS_STOCK_IMAGE_REFERENCE', 'CONFIGURATION_SERVICE_DOCKER_IMAGE', 'DMS_IMAGE_TAG',
+            'CONFIGURATION_SERVICE_DATA_STANDARD_VERSION', 'SCHEMA_PACKAGES', 'DMS_PLUGINS_COMPOSE_FILES',
             'DMS_PLUGINS_ALLOWED', 'DMS_PLUGINS_MOUNT_SOURCE', 'PLUGIN_FEED_SOURCE',
             'PLUGIN_PACKAGE_URL', 'PLUGIN_PACKAGE_SHA256', 'PLUGIN_NAME',
-            'DMS_HTTP_PORTS', 'DMS_CONFIG_ASPNETCORE_HTTP_PORTS', 'POSTGRES_PORT'
+            'DMS_HTTP_PORTS', 'CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS', 'POSTGRES_PORT'
         ) {
             # Every key Get-AmbientRefusedKey names, through the script, including the three port
             # keys, which are refused ambiently without being rewritten in the file.
@@ -2620,11 +2620,11 @@ exit 0
             # The -ForEach above is a literal list, so this is what keeps it honest when the module
             # gains a key.
             $covered = @(
-                'DMS_STOCK_IMAGE_REFERENCE', 'DMS_CONFIG_DOCKER_IMAGE', 'DMS_IMAGE_TAG',
-                'DMS_CONFIG_DATA_STANDARD_VERSION', 'SCHEMA_PACKAGES', 'DMS_PLUGINS_COMPOSE_FILES',
+                'DMS_STOCK_IMAGE_REFERENCE', 'CONFIGURATION_SERVICE_DOCKER_IMAGE', 'DMS_IMAGE_TAG',
+                'CONFIGURATION_SERVICE_DATA_STANDARD_VERSION', 'SCHEMA_PACKAGES', 'DMS_PLUGINS_COMPOSE_FILES',
                 'DMS_PLUGINS_ALLOWED', 'DMS_PLUGINS_MOUNT_SOURCE', 'PLUGIN_FEED_SOURCE',
                 'PLUGIN_PACKAGE_URL', 'PLUGIN_PACKAGE_SHA256', 'PLUGIN_NAME',
-                'DMS_HTTP_PORTS', 'DMS_CONFIG_ASPNETCORE_HTTP_PORTS', 'POSTGRES_PORT'
+                'DMS_HTTP_PORTS', 'CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS', 'POSTGRES_PORT'
             )
 
             @(Get-AmbientRefusedKey | Sort-Object) | Should -Be @($covered | Sort-Object)

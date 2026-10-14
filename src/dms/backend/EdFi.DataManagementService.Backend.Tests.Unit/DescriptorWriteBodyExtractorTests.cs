@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -14,8 +13,6 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 [Parallelizable]
 public class Given_Descriptor_Write_Body_Extractor
 {
-    private static readonly QualifiedResourceName _resource = new("Ed-Fi", "AcademicSubjectDescriptor");
-
     [Test]
     public void It_extracts_all_fields_from_a_complete_descriptor_body()
     {
@@ -32,7 +29,7 @@ public class Given_Descriptor_Write_Body_Extractor
             """
         )!;
 
-        var result = DescriptorWriteBodyExtractor.Extract(body, _resource);
+        var result = DescriptorWriteBodyExtractor.Extract(body);
 
         result.Namespace.Should().Be("uri://ed-fi.org/AcademicSubjectDescriptor");
         result.CodeValue.Should().Be("English");
@@ -54,26 +51,9 @@ public class Given_Descriptor_Write_Body_Extractor
             """
         )!;
 
-        var result = DescriptorWriteBodyExtractor.Extract(body, _resource);
+        var result = DescriptorWriteBodyExtractor.Extract(body);
 
         result.Uri.Should().Be("uri://ed-fi.org/AcademicSubjectDescriptor#English");
-    }
-
-    [Test]
-    public void It_derives_discriminator_from_resource_name()
-    {
-        var body = JsonNode.Parse(
-            """
-            {
-                "namespace": "uri://ed-fi.org/AcademicSubjectDescriptor",
-                "codeValue": "English"
-            }
-            """
-        )!;
-
-        var result = DescriptorWriteBodyExtractor.Extract(body, _resource);
-
-        result.Discriminator.Should().Be("AcademicSubjectDescriptor");
     }
 
     [Test]
@@ -88,7 +68,7 @@ public class Given_Descriptor_Write_Body_Extractor
             """
         )!;
 
-        var result = DescriptorWriteBodyExtractor.Extract(body, _resource);
+        var result = DescriptorWriteBodyExtractor.Extract(body);
 
         result.ShortDescription.Should().BeNull();
         result.Description.Should().BeNull();
@@ -108,10 +88,47 @@ public class Given_Descriptor_Write_Body_Extractor
             """
         )!;
 
-        var resource = new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor");
-        var result = DescriptorWriteBodyExtractor.Extract(body, resource);
+        var result = DescriptorWriteBodyExtractor.Extract(body);
 
         result.Uri.Should().Be("uri://ed-fi.org/SchoolTypeDescriptor#Alternative");
+    }
+
+    [Test]
+    public void It_preserves_internal_spaces_and_additional_delimiters_in_the_whole_uri()
+    {
+        var body = new JsonObject
+        {
+            ["namespace"] = "uri://ed-fi.org/SchoolTypeDescriptor #Part",
+            ["codeValue"] = "Charter#More",
+        };
+
+        var result = DescriptorWriteBodyExtractor.Extract(body);
+
+        result.Uri.Should().Be("uri://ed-fi.org/SchoolTypeDescriptor #Part#Charter#More");
+    }
+
+    [Test]
+    public void It_reconstructs_uri_from_the_current_components_after_a_record_copy()
+    {
+        var original = new ExtractedDescriptorBody(
+            "uri://ed-fi.org/SchoolTypeDescriptor",
+            "Part#Charter",
+            null,
+            null,
+            null,
+            null
+        );
+
+        var changed = original with
+        {
+            Namespace = "uri://ed-fi.org/SchoolTypeDescriptor#Part",
+            CodeValue = "Charter",
+        };
+
+        changed.Uri.Should().Be(original.Uri);
+        (changed with { CodeValue = "Alternative" })
+            .Uri.Should()
+            .Be("uri://ed-fi.org/SchoolTypeDescriptor#Part#Alternative");
     }
 
     [Test]
@@ -125,7 +142,7 @@ public class Given_Descriptor_Write_Body_Extractor
             """
         )!;
 
-        var act = () => DescriptorWriteBodyExtractor.Extract(body, _resource);
+        var act = () => DescriptorWriteBodyExtractor.Extract(body);
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*missing required field 'namespace'*");
     }
@@ -141,7 +158,7 @@ public class Given_Descriptor_Write_Body_Extractor
             """
         )!;
 
-        var act = () => DescriptorWriteBodyExtractor.Extract(body, _resource);
+        var act = () => DescriptorWriteBodyExtractor.Extract(body);
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*missing required field 'codeValue'*");
     }

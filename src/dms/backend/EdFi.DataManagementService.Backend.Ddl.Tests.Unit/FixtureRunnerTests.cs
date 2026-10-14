@@ -18,6 +18,13 @@ internal static class FixtureTestHelper
 }
 
 [TestFixture]
+public class Given_FixtureRunner_With_CompactDescriptor_Fixture : SyntheticDdlGoldenFixtureTestBase
+{
+    protected override string ResolveFixtureDirectory(string projectRoot) =>
+        Path.Combine(projectRoot, "Fixtures", "focused", "compact-descriptor");
+}
+
+[TestFixture]
 public class Given_FixtureRunner_With_Minimal_Fixture : SyntheticDdlGoldenFixtureTestBase
 {
     protected override string ResolveFixtureDirectory(string projectRoot) =>

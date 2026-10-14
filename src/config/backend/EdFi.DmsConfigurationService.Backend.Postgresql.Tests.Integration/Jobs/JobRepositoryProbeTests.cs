@@ -29,7 +29,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.Jobs
 /// As for step 0.2, <c>[Explicit]</c> on every concrete fixture keeps these probes off CI. Run them with
 /// <c>dotnet test … --filter "Category=RepositoryProbe"</c>. The server comes
 /// from <c>ConnectionStrings__JobProbePostgresql</c> when set, otherwise from <c>DatabaseSettings:DatabaseConnection</c>.
-/// Set <c>CMS_JOB_PROBE_RESULTS</c> to a file path to append every measurement as a tab-separated line. The assertions
+/// Set <c>CONFIGURATION_SERVICE_JOB_PROBE_RESULTS</c> to a file path to append every measurement as a tab-separated line. The assertions
 /// are the spec §6.2 acceptance thresholds and each probe's correctness invariants.
 /// </remarks>
 [Category("OperationalProbe")]
@@ -228,7 +228,10 @@ public abstract class JobRepositoryProbeBase
         string text = Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
         TestContext.Progress.WriteLine($"PROBE repository-postgresql {probe} {metric} {text}");
 
-        if (Environment.GetEnvironmentVariable("CMS_JOB_PROBE_RESULTS") is { Length: > 0 } path)
+        if (
+            Environment.GetEnvironmentVariable("CONFIGURATION_SERVICE_JOB_PROBE_RESULTS") is
+            { Length: > 0 } path
+        )
         {
             lock (_resultsFileLock)
             {

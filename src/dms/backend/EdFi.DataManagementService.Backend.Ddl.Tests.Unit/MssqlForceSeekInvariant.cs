@@ -16,8 +16,9 @@ namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;
 /// the statement with error 8622, so a model change that moves a mirror target's key off the joined
 /// column turns every write to that resource into a runtime failure that applies cleanly and
 /// regenerates goldens cleanly. The emitter's own tests pin the hint's text, not its satisfiability;
-/// this reads the emitted <c>CREATE TABLE</c> for each hinted target and checks the key it actually
-/// declares.
+/// this reads the emitted primary and unique constraints for each hinted target and checks their
+/// leading columns. Descriptors join captured document stamps through their unique DocumentId
+/// association rather than their independently allocated DescriptorId primary key.
 ///
 /// <para>The presence half is checked here rather than left to the emitters' own tests because those
 /// pin the hint on a resource root (<c>edfi.School</c>) and on <c>dms.Descriptor</c> only. The child
@@ -68,14 +69,19 @@ internal static class MssqlForceSeekInvariant
         RegexOptions.Compiled | RegexOptions.Singleline
     );
 
-    private static readonly Regex _mssqlPrimaryKeyColumns = new(
-        @"PRIMARY KEY(?:\s+(?:NON)?CLUSTERED)?\s*\((?<columns>[^)]*)\)",
+    private static readonly Regex _mssqlKeyColumns = new(
+        @"(?:PRIMARY KEY|UNIQUE)(?:\s+(?:NON)?CLUSTERED)?\s*\((?<columns>[^)]*)\)",
+        RegexOptions.Compiled
+    );
+
+    private static readonly Regex _mssqlAddUniqueConstraint = new(
+        @"ALTER TABLE \[(?<schema>[^\]]+)\]\.\[(?<table>[^\]]+)\]\s+ADD CONSTRAINT \[[^\]]+\] UNIQUE(?:\s+(?:NON)?CLUSTERED)?\s*\((?<columns>[^)]*)\)",
         RegexOptions.Compiled
     );
 
     /// <summary>
     /// Asserts that no mirror-stamp UPDATE in <paramref name="generatedSql"/> is missing
-    /// <c>WITH (FORCESEEK)</c>, and that every hinted target declares a primary key led by the column
+    /// <c>WITH (FORCESEEK)</c>, and that every hinted target declares a primary or unique key led by the column
     /// the mirror joins it on.
     /// </summary>
     /// <param name="generatedSql">
@@ -102,7 +108,7 @@ internal static class MssqlForceSeekInvariant
                     + "seekability go unchecked"
             );
 
-        var primaryKeyLeadColumns = ReadMssqlPrimaryKeyLeadColumns(generatedSql);
+        var keyLeadColumns = ReadMssqlKeyLeadColumns(generatedSql);
 
         foreach (Match mirrorStamp in mirrorStamps)
         {
@@ -122,52 +128,47 @@ internal static class MssqlForceSeekInvariant
                         + "touched."
                 );
 
-            primaryKeyLeadColumns
-                .TryGetValue(qualifiedTable, out var leadColumn)
+            keyLeadColumns
                 .Should()
-                .BeTrue(
-                    $"the FORCESEEK mirror target {qualifiedTable} must declare a primary key in the "
-                        + $"DDL emitted for {source}; without one the hint cannot be honored and the "
-                        + "statement fails with error 8622"
-                );
-
-            leadColumn
-                .Should()
-                .Be(
-                    joinedColumn,
-                    $"the mirror stamp emitted for {source} joins {qualifiedTable} on [{joinedColumn}] "
-                        + $"under FORCESEEK, so [{joinedColumn}] must lead that table's primary key. "
-                        + "Drop the hint in the emitter if the key ever moves off the joined column."
+                .Contain(
+                    (qualifiedTable, joinedColumn),
+                    $"the FORCESEEK mirror target {qualifiedTable} must declare a primary or unique "
+                        + $"key led by [{joinedColumn}] in the DDL emitted for {source}; without one "
+                        + "the hint cannot be honored and the statement fails with error 8622"
                 );
         }
     }
 
     /// <summary>
-    /// Maps each emitted SQL Server table to the first column of its declared primary key, which is
-    /// the only key position an equality seek on that column can use.
+    /// Reads each emitted primary or unique key's first column, the key position an equality seek
+    /// on a single column can use. Includes unique constraints added after CREATE TABLE.
     /// </summary>
-    private static Dictionary<string, string> ReadMssqlPrimaryKeyLeadColumns(string generatedSql)
+    private static HashSet<(string Table, string Column)> ReadMssqlKeyLeadColumns(string generatedSql)
     {
-        Dictionary<string, string> leadColumns = new(StringComparer.Ordinal);
+        HashSet<(string Table, string Column)> leadColumns = [];
 
         foreach (Match table in _mssqlCreateTable.Matches(generatedSql))
         {
-            var primaryKey = _mssqlPrimaryKeyColumns.Match(table.Groups["body"].Value);
-            if (!primaryKey.Success)
+            foreach (Match key in _mssqlKeyColumns.Matches(table.Groups["body"].Value))
             {
-                continue;
+                AddLeadColumn(table, key);
             }
+        }
 
-            var leadColumn = primaryKey
-                .Groups["columns"]
-                .Value.Split(',')[0]
-                .Trim()
-                .TrimStart('[')
-                .Split(']')[0];
-
-            leadColumns[$"[{table.Groups["schema"].Value}].[{table.Groups["table"].Value}]"] = leadColumn;
+        foreach (Match constraint in _mssqlAddUniqueConstraint.Matches(generatedSql))
+        {
+            AddLeadColumn(constraint, constraint);
         }
 
         return leadColumns;
+
+        void AddLeadColumn(Match table, Match key)
+        {
+            var leadColumn = key.Groups["columns"].Value.Split(',')[0].Trim().TrimStart('[').Split(']')[0];
+
+            leadColumns.Add(
+                ($"[{table.Groups["schema"].Value}].[{table.Groups["table"].Value}]", leadColumn)
+            );
+        }
     }
 }

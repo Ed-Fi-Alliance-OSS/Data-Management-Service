@@ -7,9 +7,8 @@
 
 Describe "Get-EducationOrganizationIdsFromSampleData" {
     BeforeAll {
-        # The module imports sibling modules with paths relative to its own directory, so import
-        # it with that directory as the working directory (matching how the template workflow
-        # invokes it). The parser under test is not exported, so it is reached via InModuleScope.
+        # Import with the module's own directory as the working directory, matching how the
+        # template workflow invokes it. The tests reach the parser through InModuleScope.
         $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
         Push-Location $script:templatesDir
         try {
@@ -952,13 +951,9 @@ Describe "Add-TemplateDataStore engine dispatch" {
         }
     }
 
-    It "registers an MSSQL connection string when an MSSQL build finds no existing data store" {
+    It "registers an MSSQL connection string without a PostgreSQL password when an MSSQL build finds no existing data store" {
         InModuleScope Template-Management {
-            $credential = [System.Management.Automation.PSCredential]::new(
-                "postgres",
-                [System.Security.SecureString]::new()
-            )
-            Mock ConvertTo-PostgresCredential { return $credential }
+            Mock ConvertTo-PostgresCredential { throw "An MSSQL registration must not build a PostgreSQL credential." }
             Mock New-DataStoreConnectionString { return "mssql-connection-string" }
             Mock Add-DataStore { return 42 }
 
@@ -967,13 +962,10 @@ Describe "Add-TemplateDataStore engine dispatch" {
                 -AccessToken "cms-token" `
                 -DatabaseName "template_db" `
                 -DatabaseEngine "mssql" `
-                -PostgresPassword "pg-secret" `
                 -MssqlPassword "mssql-secret"
 
             $result | Should -Be 42
-            Should -Invoke ConvertTo-PostgresCredential -Times 1 -Exactly -ParameterFilter {
-                $UserName -eq "postgres" -and $Secret -eq "pg-secret"
-            }
+            Should -Invoke ConvertTo-PostgresCredential -Times 0 -Exactly
             Should -Invoke New-DataStoreConnectionString -Times 1 -Exactly -ParameterFilter {
                 $DatabaseEngine -eq "mssql" -and
                 $DbHost -eq "dms-mssql" -and
@@ -985,7 +977,7 @@ Describe "Add-TemplateDataStore engine dispatch" {
             Should -Invoke Add-DataStore -Times 1 -Exactly -ParameterFilter {
                 $CmsUrl -eq "http://cms" -and
                 $AccessToken -eq "cms-token" -and
-                $PostgresCredential -eq $credential -and
+                $null -eq $PostgresCredential -and
                 $PostgresDbName -eq "template_db" -and
                 $DatabaseEngine -eq "mssql" -and
                 $ConnectionString -eq "mssql-connection-string"
@@ -1007,8 +999,7 @@ Describe "Add-TemplateDataStore engine dispatch" {
                 -CmsUrl "http://cms" `
                 -AccessToken "cms-token" `
                 -DatabaseName "template_db" `
-                -PostgresPassword "pg-secret" `
-                -MssqlPassword "unused"
+                -PostgresPassword "pg-secret"
 
             $result | Should -Be 84
             Should -Invoke New-DataStoreConnectionString -Times 0 -Exactly
@@ -1020,6 +1011,38 @@ Describe "Add-TemplateDataStore engine dispatch" {
                 $DatabaseEngine -eq "postgresql" -and
                 [string]::IsNullOrWhiteSpace($ConnectionString)
             }
+        }
+    }
+
+    It "rejects a PostgreSQL build without -PostgresPassword before registering anything" {
+        InModuleScope Template-Management {
+            Mock Add-DataStore { return 1 }
+
+            {
+                Add-TemplateDataStore `
+                    -CmsUrl "http://cms" `
+                    -AccessToken "cms-token" `
+                    -DatabaseName "template_db" `
+                    -DatabaseEngine "postgresql" `
+                    -MssqlPassword "mssql-secret"
+            } | Should -Throw "*-PostgresPassword is required when -DatabaseEngine is 'postgresql'*"
+            Should -Invoke Add-DataStore -Times 0 -Exactly
+        }
+    }
+
+    It "rejects an MSSQL build without -MssqlPassword before registering anything" {
+        InModuleScope Template-Management {
+            Mock Add-DataStore { return 1 }
+
+            {
+                Add-TemplateDataStore `
+                    -CmsUrl "http://cms" `
+                    -AccessToken "cms-token" `
+                    -DatabaseName "template_db" `
+                    -DatabaseEngine "mssql" `
+                    -PostgresPassword "pg-secret"
+            } | Should -Throw "*-MssqlPassword is required when -DatabaseEngine is 'mssql'*"
+            Should -Invoke Add-DataStore -Times 0 -Exactly
         }
     }
 }

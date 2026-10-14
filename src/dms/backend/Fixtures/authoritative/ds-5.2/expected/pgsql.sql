@@ -242,6 +242,7 @@ END $$;
 
 CREATE TABLE IF NOT EXISTS "dms"."Descriptor"
 (
+    "DescriptorId" int GENERATED ALWAYS AS IDENTITY NOT NULL,
     "DocumentId" bigint NOT NULL,
     "ResourceKeyId" smallint NOT NULL,
     "Namespace" varchar(255) NOT NULL,
@@ -250,23 +251,21 @@ CREATE TABLE IF NOT EXISTS "dms"."Descriptor"
     "Description" varchar(1024) NULL,
     "EffectiveBeginDate" date NULL,
     "EffectiveEndDate" date NULL,
-    "Discriminator" varchar(128) NOT NULL,
-    "Uri" varchar(306) NOT NULL,
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
-    CONSTRAINT "PK_Descriptor" PRIMARY KEY ("DocumentId")
+    CONSTRAINT "PK_Descriptor" PRIMARY KEY ("DescriptorId")
 );
 
 DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'UX_Descriptor_Uri_Discriminator'
+        WHERE conname = 'UX_Descriptor_DocumentId'
         AND conrelid = to_regclass('"dms"."Descriptor"')
     )
     THEN
         ALTER TABLE "dms"."Descriptor"
-        ADD CONSTRAINT "UX_Descriptor_Uri_Discriminator" UNIQUE ("Uri", "Discriminator");
+        ADD CONSTRAINT "UX_Descriptor_DocumentId" UNIQUE ("DocumentId");
     END IF;
 END $$;
 
@@ -700,6 +699,8 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS "IX_Descriptor_ResourceKeyId_DocumentId" ON "dms"."Descriptor" ("ResourceKeyId", "DocumentId");
 
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_Descriptor_ResourceKeyId_Uri" ON "dms"."Descriptor" ("ResourceKeyId", ("Namespace" || '#' || "CodeValue"));
+
 CREATE INDEX IF NOT EXISTS "IX_Document_CreatedByOwnershipTokenId" ON "dms"."Document" ("CreatedByOwnershipTokenId") WHERE "CreatedByOwnershipTokenId" IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS "IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId" ON "dms"."DocumentProjectionWork" ("FirstEnqueuedAt", "DocumentId");
@@ -722,7 +723,7 @@ BEGIN
         END IF;
     END IF;
     IF TG_OP = 'UPDATE' THEN
-        IF NOT (OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."CodeValue" IS DISTINCT FROM NEW."CodeValue" OR OLD."ShortDescription" IS DISTINCT FROM NEW."ShortDescription" OR OLD."Description" IS DISTINCT FROM NEW."Description" OR OLD."EffectiveBeginDate" IS DISTINCT FROM NEW."EffectiveBeginDate" OR OLD."EffectiveEndDate" IS DISTINCT FROM NEW."EffectiveEndDate" OR OLD."Discriminator" IS DISTINCT FROM NEW."Discriminator" OR OLD."Uri" IS DISTINCT FROM NEW."Uri") THEN
+        IF NOT (OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."CodeValue" IS DISTINCT FROM NEW."CodeValue" OR OLD."ShortDescription" IS DISTINCT FROM NEW."ShortDescription" OR OLD."Description" IS DISTINCT FROM NEW."Description" OR OLD."EffectiveBeginDate" IS DISTINCT FROM NEW."EffectiveBeginDate" OR OLD."EffectiveEndDate" IS DISTINCT FROM NEW."EffectiveEndDate") THEN
             RETURN NEW;
         END IF;
     END IF;
@@ -752,7 +753,7 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Descriptor" (
-            "Discriminator",
+            "ResourceKeyId",
             "OldNamespace",
             "OldCodeValue",
             "Id",
@@ -760,7 +761,7 @@ BEGIN
             "DocumentId"
         )
         SELECT
-            OLD."Discriminator",
+            OLD."ResourceKeyId",
             OLD."Namespace",
             OLD."CodeValue",
             doc."DocumentUuid",
@@ -1105,8 +1106,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."Assessment"
     "EducationOrganization_EducationOrganizationId" bigint NULL,
     "MandatingEducationOrganization_DocumentId" bigint NULL,
     "MandatingEducationOrganization_EducationOrganizationId" bigint NULL,
-    "AssessmentCategoryDescriptor_DescriptorId" bigint NULL,
-    "ContentStandardPublicationStatusDescriptor_DescriptorId" bigint NULL,
+    "AssessmentCategoryDescriptor_DescriptorId" integer NULL,
+    "ContentStandardPublicationStatusDescriptor_DescriptorId" integer NULL,
     "AdaptiveAssessment" boolean NULL,
     "AssessmentFamily" varchar(60) NULL,
     "AssessmentForm" varchar(60) NULL,
@@ -1136,7 +1137,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAcademicSubject"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "AcademicSubjectDescriptor_DescriptorId" bigint NOT NULL,
+    "AcademicSubjectDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_AssessmentAcademicSubject" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_AssessmentAcademicSubject_AcademicSubjectDescript_55a54903f9" UNIQUE ("Assessment_DocumentId", "AcademicSubjectDescriptor_DescriptorId"),
     CONSTRAINT "UX_AssessmentAcademicSubject_Ordinal_Assessment_DocumentId" UNIQUE ("Assessment_DocumentId", "Ordinal")
@@ -1147,7 +1148,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAssessedGradeLevel"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
+    "GradeLevelDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_AssessmentAssessedGradeLevel" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_AssessmentAssessedGradeLevel_Assessment_DocumentI_cce16f742a" UNIQUE ("Assessment_DocumentId", "GradeLevelDescriptor_DescriptorId"),
     CONSTRAINT "UX_AssessmentAssessedGradeLevel_Ordinal_Assessment_DocumentId" UNIQUE ("Assessment_DocumentId", "Ordinal")
@@ -1169,7 +1170,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentIdentificationCode"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "AssessmentIdentificationSystemDescriptor_DescriptorId" bigint NOT NULL,
+    "AssessmentIdentificationSystemDescriptor_DescriptorId" integer NOT NULL,
     "AssigningOrganizationIdentificationCode" varchar(60) NULL,
     "IdentificationCode" varchar(60) NOT NULL,
     CONSTRAINT "PK_AssessmentIdentificationCode" PRIMARY KEY ("CollectionItemId"),
@@ -1182,7 +1183,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentLanguage"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "LanguageDescriptor_DescriptorId" bigint NOT NULL,
+    "LanguageDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_AssessmentLanguage" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_AssessmentLanguage_Assessment_DocumentId_Language_646d0f67d7" UNIQUE ("Assessment_DocumentId", "LanguageDescriptor_DescriptorId"),
     CONSTRAINT "UX_AssessmentLanguage_Ordinal_Assessment_DocumentId" UNIQUE ("Assessment_DocumentId", "Ordinal")
@@ -1193,9 +1194,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentPerformanceLevel"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "AssessmentReportingMethodDescriptor_DescriptorId" bigint NOT NULL,
-    "PerformanceLevelDescriptor_DescriptorId" bigint NOT NULL,
-    "ResultDatatypeTypeDescriptor_DescriptorId" bigint NULL,
+    "AssessmentReportingMethodDescriptor_DescriptorId" integer NOT NULL,
+    "PerformanceLevelDescriptor_DescriptorId" integer NOT NULL,
+    "ResultDatatypeTypeDescriptor_DescriptorId" integer NULL,
     "MaximumScore" varchar(35) NULL,
     "MinimumScore" varchar(35) NULL,
     "PerformanceLevelIndicatorName" varchar(60) NULL,
@@ -1209,7 +1210,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentPeriod"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "AssessmentPeriodDescriptor_DescriptorId" bigint NOT NULL,
+    "AssessmentPeriodDescriptor_DescriptorId" integer NOT NULL,
     "BeginDate" date NULL,
     "EndDate" date NULL,
     CONSTRAINT "PK_AssessmentPeriod" PRIMARY KEY ("CollectionItemId"),
@@ -1222,7 +1223,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentPlatformType"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "PlatformTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "PlatformTypeDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_AssessmentPlatformType" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_AssessmentPlatformType_Assessment_DocumentId_Plat_008b024f07" UNIQUE ("Assessment_DocumentId", "PlatformTypeDescriptor_DescriptorId"),
     CONSTRAINT "UX_AssessmentPlatformType_Ordinal_Assessment_DocumentId" UNIQUE ("Assessment_DocumentId", "Ordinal")
@@ -1236,7 +1237,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentProgram"
     "SectionOrProgramChoiceProgram_DocumentId" bigint NOT NULL,
     "SectionOrProgramChoiceProgram_EducationOrganizationId" bigint NOT NULL,
     "SectionOrProgramChoiceProgram_ProgramName" varchar(60) NOT NULL,
-    "SectionOrProgramChoiceProgram_ProgramTypeDescriptor__106025b7ce" bigint NOT NULL,
+    "SectionOrProgramChoiceProgram_ProgramTypeDescriptor__106025b7ce" integer NOT NULL,
     CONSTRAINT "PK_AssessmentProgram" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_AssessmentProgram_Assessment_DocumentId_SectionOr_3491ec6823" UNIQUE ("Assessment_DocumentId", "SectionOrProgramChoiceProgram_DocumentId"),
     CONSTRAINT "UX_AssessmentProgram_Ordinal_Assessment_DocumentId" UNIQUE ("Assessment_DocumentId", "Ordinal"),
@@ -1248,8 +1249,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentScore"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "AssessmentReportingMethodDescriptor_DescriptorId" bigint NOT NULL,
-    "ResultDatatypeTypeDescriptor_DescriptorId" bigint NULL,
+    "AssessmentReportingMethodDescriptor_DescriptorId" integer NOT NULL,
+    "ResultDatatypeTypeDescriptor_DescriptorId" integer NULL,
     "MaximumScore" varchar(35) NULL,
     "MinimumScore" varchar(35) NULL,
     CONSTRAINT "PK_AssessmentScore" PRIMARY KEY ("CollectionItemId"),
@@ -1392,7 +1393,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentItem"
     "Assessment_DocumentId" bigint NOT NULL,
     "Assessment_AssessmentIdentifier" varchar(60) NOT NULL,
     "Assessment_Namespace" varchar(255) NOT NULL,
-    "AssessmentItemCategoryDescriptor_DescriptorId" bigint NULL,
+    "AssessmentItemCategoryDescriptor_DescriptorId" integer NULL,
     "AssessmentItemURI" varchar(255) NULL,
     "ExpectedTimeAssessed" varchar(30) NULL,
     "IdentificationCode" varchar(60) NOT NULL,
@@ -1445,7 +1446,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentScoreRangeLearningStandard"
     "ObjectiveAssessment_AssessmentIdentifier" varchar(60) GENERATED ALWAYS AS (CASE WHEN "ObjectiveAssessment_DocumentId" IS NULL THEN NULL ELSE "AssessmentIdentifier_Unified" END) STORED,
     "ObjectiveAssessment_Namespace" varchar(255) GENERATED ALWAYS AS (CASE WHEN "ObjectiveAssessment_DocumentId" IS NULL THEN NULL ELSE "Namespace_Unified" END) STORED,
     "ObjectiveAssessment_IdentificationCode" varchar(60) NULL,
-    "AssessmentReportingMethodDescriptor_DescriptorId" bigint NULL,
+    "AssessmentReportingMethodDescriptor_DescriptorId" integer NULL,
     "MaximumScore" varchar(35) NOT NULL,
     "MinimumScore" varchar(35) NOT NULL,
     "ScoreRangeId" varchar(60) NOT NULL,
@@ -1486,7 +1487,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."BalanceSheetDimensionReportingTag"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "BalanceSheetDimension_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
+    "ReportingTagDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_BalanceSheetDimensionReportingTag" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_BalanceSheetDimensionReportingTag_BalanceSheetDim_11949afdd1" UNIQUE ("BalanceSheetDimension_DocumentId", "ReportingTagDescriptor_DescriptorId"),
     CONSTRAINT "UX_BalanceSheetDimensionReportingTag_Ordinal_Balance_57f176c4b3" UNIQUE ("BalanceSheetDimension_DocumentId", "Ordinal")
@@ -1539,7 +1540,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."BellScheduleGradeLevel"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "BellSchedule_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
+    "GradeLevelDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_BellScheduleGradeLevel" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_BellScheduleGradeLevel_BellSchedule_DocumentId_Gr_782d18182f" UNIQUE ("BellSchedule_DocumentId", "GradeLevelDescriptor_DescriptorId"),
     CONSTRAINT "UX_BellScheduleGradeLevel_Ordinal_BellSchedule_DocumentId" UNIQUE ("BellSchedule_DocumentId", "Ordinal")
@@ -1554,7 +1555,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Calendar"
     "SchoolYear_SchoolYear" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
     "School_SchoolId" bigint NOT NULL,
-    "CalendarTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "CalendarTypeDescriptor_DescriptorId" integer NOT NULL,
     "CalendarCode" varchar(60) NOT NULL,
     CONSTRAINT "PK_Calendar" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Calendar_NK" UNIQUE ("CalendarCode", "School_DocumentId", "SchoolYear_DocumentId"),
@@ -1568,7 +1569,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CalendarGradeLevel"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Calendar_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
+    "GradeLevelDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_CalendarGradeLevel" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_CalendarGradeLevel_Calendar_DocumentId_GradeLevel_e0e705f518" UNIQUE ("Calendar_DocumentId", "GradeLevelDescriptor_DescriptorId"),
     CONSTRAINT "UX_CalendarGradeLevel_Ordinal_Calendar_DocumentId" UNIQUE ("Calendar_DocumentId", "Ordinal")
@@ -1595,7 +1596,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CalendarDateCalendarEvent"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CalendarDate_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "CalendarEventDescriptor_DescriptorId" bigint NOT NULL,
+    "CalendarEventDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_CalendarDateCalendarEvent" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_CalendarDateCalendarEvent_CalendarDate_DocumentId_6f5997a783" UNIQUE ("CalendarDate_DocumentId", "CalendarEventDescriptor_DescriptorId"),
     CONSTRAINT "UX_CalendarDateCalendarEvent_Ordinal_CalendarDate_DocumentId" UNIQUE ("CalendarDate_DocumentId", "Ordinal")
@@ -1633,7 +1634,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ChartOfAccount"
     "SourceSourceDimension_DocumentId" bigint NULL,
     "SourceSourceDimension_Code" varchar(16) NULL,
     "SourceSourceDimension_FiscalYear" integer GENERATED ALWAYS AS (CASE WHEN "SourceSourceDimension_DocumentId" IS NULL THEN NULL ELSE "FiscalYear_Unified" END) STORED,
-    "AccountTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "AccountTypeDescriptor_DescriptorId" integer NOT NULL,
     "AccountIdentifier" varchar(50) NOT NULL,
     "AccountName" varchar(100) NULL,
     "FiscalYear" integer GENERATED ALWAYS AS ("FiscalYear_Unified") STORED,
@@ -1656,7 +1657,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ChartOfAccountReportingTag"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "ChartOfAccount_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
+    "ReportingTagDescriptor_DescriptorId" integer NOT NULL,
     "TagValue" varchar(100) NULL,
     CONSTRAINT "PK_ChartOfAccountReportingTag" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_ChartOfAccountReportingTag_ChartOfAccount_Documen_c76af8a320" UNIQUE ("ChartOfAccount_DocumentId", "ReportingTagDescriptor_DescriptorId"),
@@ -1697,9 +1698,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."Cohort"
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "AcademicSubjectDescriptor_DescriptorId" bigint NULL,
-    "CohortScopeDescriptor_DescriptorId" bigint NULL,
-    "CohortTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "AcademicSubjectDescriptor_DescriptorId" integer NULL,
+    "CohortScopeDescriptor_DescriptorId" integer NULL,
+    "CohortTypeDescriptor_DescriptorId" integer NOT NULL,
     "CohortDescription" varchar(1024) NULL,
     "CohortIdentifier" varchar(36) NOT NULL,
     CONSTRAINT "PK_Cohort" PRIMARY KEY ("DocumentId"),
@@ -1716,7 +1717,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CohortProgram"
     "ProgramProgram_DocumentId" bigint NOT NULL,
     "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_CohortProgram" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_CohortProgram_Cohort_DocumentId_ProgramProgram_DocumentId" UNIQUE ("Cohort_DocumentId", "ProgramProgram_DocumentId"),
     CONSTRAINT "UX_CohortProgram_Ordinal_Cohort_DocumentId" UNIQUE ("Cohort_DocumentId", "Ordinal"),
@@ -1728,7 +1729,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganization"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
-    "OperationalStatusDescriptor_DescriptorId" bigint NULL,
+    "OperationalStatusDescriptor_DescriptorId" integer NULL,
     "CommunityOrganizationId" bigint NOT NULL,
     "NameOfInstitution" varchar(75) NOT NULL,
     "ShortNameOfInstitution" varchar(75) NULL,
@@ -1743,9 +1744,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationAddress"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityOrganization_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "LocaleDescriptor_DescriptorId" bigint NULL,
-    "StateAbbreviationDescriptor_DescriptorId" bigint NOT NULL,
+    "AddressTypeDescriptor_DescriptorId" integer NOT NULL,
+    "LocaleDescriptor_DescriptorId" integer NULL,
+    "StateAbbreviationDescriptor_DescriptorId" integer NOT NULL,
     "ApartmentRoomSuiteNumber" varchar(50) NULL,
     "BuildingSiteNumber" varchar(20) NULL,
     "City" varchar(30) NOT NULL,
@@ -1768,7 +1769,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationCategory"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityOrganization_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
+    "EducationOrganizationCategoryDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_CommunityOrganizationCategory" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_CommunityOrganizationCategory_CommunityOrganizati_c806fd6da1" UNIQUE ("CommunityOrganization_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId"),
     CONSTRAINT "UX_CommunityOrganizationCategory_Ordinal_CommunityOr_9b9f57386e" UNIQUE ("CommunityOrganization_DocumentId", "Ordinal")
@@ -1779,7 +1780,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationIdentificationCode"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityOrganization_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
+    "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" integer NOT NULL,
     "IdentificationCode" varchar(60) NOT NULL,
     CONSTRAINT "PK_CommunityOrganizationIdentificationCode" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_CommunityOrganizationIdentificationCode_Community_82956715bc" UNIQUE ("CommunityOrganization_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede"),
@@ -1791,9 +1792,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationIndicator"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityOrganization_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
-    "IndicatorGroupDescriptor_DescriptorId" bigint NULL,
-    "IndicatorLevelDescriptor_DescriptorId" bigint NULL,
+    "IndicatorDescriptor_DescriptorId" integer NOT NULL,
+    "IndicatorGroupDescriptor_DescriptorId" integer NULL,
+    "IndicatorLevelDescriptor_DescriptorId" integer NULL,
     "DesignatedBy" varchar(60) NULL,
     "IndicatorValue" varchar(60) NULL,
     CONSTRAINT "PK_CommunityOrganizationIndicator" PRIMARY KEY ("CollectionItemId"),
@@ -1807,7 +1808,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationInstitutionTelephone"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityOrganization_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" integer NOT NULL,
     "TelephoneNumber" varchar(24) NOT NULL,
     CONSTRAINT "PK_CommunityOrganizationInstitutionTelephone" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_CommunityOrganizationInstitutionTelephone_Communi_237f8def85" UNIQUE ("CommunityOrganization_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId"),
@@ -1819,8 +1820,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationInternationalAddress"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityOrganization_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "CountryDescriptor_DescriptorId" bigint NOT NULL,
+    "AddressTypeDescriptor_DescriptorId" integer NOT NULL,
+    "CountryDescriptor_DescriptorId" integer NOT NULL,
     "AddressLine1" varchar(150) NOT NULL,
     "AddressLine2" varchar(150) NULL,
     "AddressLine3" varchar(150) NULL,
@@ -1867,10 +1868,10 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProvider"
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "CommunityOrganization_DocumentId" bigint NULL,
     "CommunityOrganization_CommunityOrganizationId" bigint NULL,
-    "OperationalStatusDescriptor_DescriptorId" bigint NULL,
-    "ProviderCategoryDescriptor_DescriptorId" bigint NOT NULL,
-    "ProviderProfitabilityDescriptor_DescriptorId" bigint NULL,
-    "ProviderStatusDescriptor_DescriptorId" bigint NOT NULL,
+    "OperationalStatusDescriptor_DescriptorId" integer NULL,
+    "ProviderCategoryDescriptor_DescriptorId" integer NOT NULL,
+    "ProviderProfitabilityDescriptor_DescriptorId" integer NULL,
+    "ProviderStatusDescriptor_DescriptorId" integer NOT NULL,
     "CommunityProviderId" bigint NOT NULL,
     "LicenseExemptIndicator" boolean NULL,
     "NameOfInstitution" varchar(75) NOT NULL,
@@ -1888,9 +1889,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderAddress"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityProvider_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "LocaleDescriptor_DescriptorId" bigint NULL,
-    "StateAbbreviationDescriptor_DescriptorId" bigint NOT NULL,
+    "AddressTypeDescriptor_DescriptorId" integer NOT NULL,
+    "LocaleDescriptor_DescriptorId" integer NULL,
+    "StateAbbreviationDescriptor_DescriptorId" integer NOT NULL,
     "ApartmentRoomSuiteNumber" varchar(50) NULL,
     "BuildingSiteNumber" varchar(20) NULL,
     "City" varchar(30) NOT NULL,
@@ -1913,7 +1914,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderCategory"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityProvider_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
+    "EducationOrganizationCategoryDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_CommunityProviderCategory" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_CommunityProviderCategory_CommunityProvider_Docum_d7967c5847" UNIQUE ("CommunityProvider_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId"),
     CONSTRAINT "UX_CommunityProviderCategory_Ordinal_CommunityProvid_a37a285df5" UNIQUE ("CommunityProvider_DocumentId", "Ordinal")
@@ -1924,7 +1925,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderIdentificationCode"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityProvider_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
+    "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" integer NOT NULL,
     "IdentificationCode" varchar(60) NOT NULL,
     CONSTRAINT "PK_CommunityProviderIdentificationCode" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_CommunityProviderIdentificationCode_CommunityProv_a0137882c2" UNIQUE ("CommunityProvider_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede"),
@@ -1936,9 +1937,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderIndicator"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityProvider_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
-    "IndicatorGroupDescriptor_DescriptorId" bigint NULL,
-    "IndicatorLevelDescriptor_DescriptorId" bigint NULL,
+    "IndicatorDescriptor_DescriptorId" integer NOT NULL,
+    "IndicatorGroupDescriptor_DescriptorId" integer NULL,
+    "IndicatorLevelDescriptor_DescriptorId" integer NULL,
     "DesignatedBy" varchar(60) NULL,
     "IndicatorValue" varchar(60) NULL,
     CONSTRAINT "PK_CommunityProviderIndicator" PRIMARY KEY ("CollectionItemId"),
@@ -1952,7 +1953,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderInstitutionTelephone"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityProvider_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" integer NOT NULL,
     "TelephoneNumber" varchar(24) NOT NULL,
     CONSTRAINT "PK_CommunityProviderInstitutionTelephone" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_CommunityProviderInstitutionTelephone_CommunityPr_88d98300ed" UNIQUE ("CommunityProvider_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId"),
@@ -1964,8 +1965,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderInternationalAddress"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityProvider_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "CountryDescriptor_DescriptorId" bigint NOT NULL,
+    "AddressTypeDescriptor_DescriptorId" integer NOT NULL,
+    "CountryDescriptor_DescriptorId" integer NOT NULL,
     "AddressLine1" varchar(150) NOT NULL,
     "AddressLine2" varchar(150) NULL,
     "AddressLine3" varchar(150) NULL,
@@ -2012,8 +2013,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderLicense"
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "CommunityProvider_DocumentId" bigint NOT NULL,
     "CommunityProvider_CommunityProviderId" bigint NOT NULL,
-    "LicenseStatusDescriptor_DescriptorId" bigint NULL,
-    "LicenseTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "LicenseStatusDescriptor_DescriptorId" integer NULL,
+    "LicenseTypeDescriptor_DescriptorId" integer NOT NULL,
     "AuthorizedFacilityCapacity" integer NULL,
     "LicenseEffectiveDate" date NOT NULL,
     "LicenseExpirationDate" date NULL,
@@ -2034,7 +2035,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CompetencyObjective"
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "ObjectiveGradeLevelDescriptor_DescriptorId" bigint NOT NULL,
+    "ObjectiveGradeLevelDescriptor_DescriptorId" integer NOT NULL,
     "CompetencyObjectiveId" varchar(60) NULL,
     "Description" varchar(1024) NULL,
     "Objective" varchar(60) NOT NULL,
@@ -2052,9 +2053,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."Contact"
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Person_DocumentId" bigint NULL,
     "Person_PersonId" varchar(32) NULL,
-    "Person_SourceSystemDescriptor_DescriptorId" bigint NULL,
-    "HighestCompletedLevelOfEducationDescriptor_DescriptorId" bigint NULL,
-    "SexDescriptor_DescriptorId" bigint NULL,
+    "Person_SourceSystemDescriptor_DescriptorId" integer NULL,
+    "HighestCompletedLevelOfEducationDescriptor_DescriptorId" integer NULL,
+    "SexDescriptor_DescriptorId" integer NULL,
     "ContactUniqueId" varchar(32) NOT NULL,
     "FirstName" varchar(75) NOT NULL,
     "GenderIdentity" varchar(60) NULL,
@@ -2077,9 +2078,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."ContactAddress"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Contact_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "LocaleDescriptor_DescriptorId" bigint NULL,
-    "StateAbbreviationDescriptor_DescriptorId" bigint NOT NULL,
+    "AddressTypeDescriptor_DescriptorId" integer NOT NULL,
+    "LocaleDescriptor_DescriptorId" integer NULL,
+    "StateAbbreviationDescriptor_DescriptorId" integer NOT NULL,
     "ApartmentRoomSuiteNumber" varchar(50) NULL,
     "BuildingSiteNumber" varchar(20) NULL,
     "City" varchar(30) NOT NULL,
@@ -2102,7 +2103,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ContactElectronicMail"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Contact_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "ElectronicMailTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "ElectronicMailTypeDescriptor_DescriptorId" integer NOT NULL,
     "DoNotPublishIndicator" boolean NULL,
     "ElectronicMailAddress" varchar(128) NOT NULL,
     "PrimaryEmailAddressIndicator" boolean NULL,
@@ -2116,8 +2117,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."ContactInternationalAddress"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Contact_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "CountryDescriptor_DescriptorId" bigint NOT NULL,
+    "AddressTypeDescriptor_DescriptorId" integer NOT NULL,
+    "CountryDescriptor_DescriptorId" integer NOT NULL,
     "AddressLine1" varchar(150) NOT NULL,
     "AddressLine2" varchar(150) NULL,
     "AddressLine3" varchar(150) NULL,
@@ -2136,7 +2137,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ContactLanguage"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Contact_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "LanguageDescriptor_DescriptorId" bigint NOT NULL,
+    "LanguageDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_ContactLanguage" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_ContactLanguage_CollectionItemId_Contact_DocumentId" UNIQUE ("CollectionItemId", "Contact_DocumentId"),
     CONSTRAINT "UX_ContactLanguage_Contact_DocumentId_LanguageDescri_0ee41b631a" UNIQUE ("Contact_DocumentId", "LanguageDescriptor_DescriptorId"),
@@ -2148,7 +2149,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ContactOtherName"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Contact_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "OtherNameTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "OtherNameTypeDescriptor_DescriptorId" integer NOT NULL,
     "FirstName" varchar(75) NOT NULL,
     "GenerationCodeSuffix" varchar(10) NULL,
     "LastSurname" varchar(75) NOT NULL,
@@ -2164,9 +2165,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."ContactPersonalIdentificationDocument"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Contact_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "IdentificationDocumentUseDescriptor_DescriptorId" bigint NOT NULL,
-    "IssuerCountryDescriptor_DescriptorId" bigint NULL,
-    "PersonalInformationVerificationDescriptor_DescriptorId" bigint NOT NULL,
+    "IdentificationDocumentUseDescriptor_DescriptorId" integer NOT NULL,
+    "IssuerCountryDescriptor_DescriptorId" integer NULL,
+    "PersonalInformationVerificationDescriptor_DescriptorId" integer NOT NULL,
     "PersonalDocumentExpirationDate" date NULL,
     "PersonalDocumentTitle" varchar(60) NULL,
     "PersonalIssuerDocumentIdentificationCode" varchar(60) NULL,
@@ -2181,7 +2182,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ContactTelephone"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Contact_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "TelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "TelephoneNumberTypeDescriptor_DescriptorId" integer NOT NULL,
     "DoNotPublishIndicator" boolean NULL,
     "OrderOfPriority" integer NULL,
     "TelephoneNumber" varchar(24) NOT NULL,
@@ -2210,7 +2211,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ContactLanguageUs"
     "Contact_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
-    "LanguageUseDescriptor_DescriptorId" bigint NOT NULL,
+    "LanguageUseDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_ContactLanguageUs" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_ContactLanguageUs_Ordinal_ParentCollectionItemId" UNIQUE ("ParentCollectionItemId", "Ordinal"),
     CONSTRAINT "UX_ContactLanguageUs_ParentCollectionItemId_Language_cef7c35816" UNIQUE ("ParentCollectionItemId", "LanguageUseDescriptor_DescriptorId")
@@ -2223,11 +2224,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."Course"
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "CareerPathwayDescriptor_DescriptorId" bigint NULL,
-    "CourseDefinedByDescriptor_DescriptorId" bigint NULL,
-    "CourseGPAApplicabilityDescriptor_DescriptorId" bigint NULL,
-    "MaximumAvailableCreditTypeDescriptor_DescriptorId" bigint NULL,
-    "MinimumAvailableCreditTypeDescriptor_DescriptorId" bigint NULL,
+    "CareerPathwayDescriptor_DescriptorId" integer NULL,
+    "CourseDefinedByDescriptor_DescriptorId" integer NULL,
+    "CourseGPAApplicabilityDescriptor_DescriptorId" integer NULL,
+    "MaximumAvailableCreditTypeDescriptor_DescriptorId" integer NULL,
+    "MinimumAvailableCreditTypeDescriptor_DescriptorId" integer NULL,
     "CourseCode" varchar(60) NOT NULL,
     "CourseDescription" varchar(1024) NULL,
     "CourseTitle" varchar(60) NOT NULL,
@@ -2251,7 +2252,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseAcademicSubject"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Course_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "AcademicSubjectDescriptor_DescriptorId" bigint NOT NULL,
+    "AcademicSubjectDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_CourseAcademicSubject" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_CourseAcademicSubject_AcademicSubjectDescriptor_D_258d86b3b7" UNIQUE ("Course_DocumentId", "AcademicSubjectDescriptor_DescriptorId"),
     CONSTRAINT "UX_CourseAcademicSubject_Ordinal_Course_DocumentId" UNIQUE ("Course_DocumentId", "Ordinal")
@@ -2262,7 +2263,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseCompetencyLevel"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Course_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "CompetencyLevelDescriptor_DescriptorId" bigint NOT NULL,
+    "CompetencyLevelDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_CourseCompetencyLevel" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_CourseCompetencyLevel_CompetencyLevelDescriptor_D_af7ea0c320" UNIQUE ("Course_DocumentId", "CompetencyLevelDescriptor_DescriptorId"),
     CONSTRAINT "UX_CourseCompetencyLevel_Ordinal_Course_DocumentId" UNIQUE ("Course_DocumentId", "Ordinal")
@@ -2273,7 +2274,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseIdentificationCode"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Course_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "CourseIdentificationSystemDescriptor_DescriptorId" bigint NOT NULL,
+    "CourseIdentificationSystemDescriptor_DescriptorId" integer NOT NULL,
     "AssigningOrganizationIdentificationCode" varchar(60) NULL,
     "CourseCatalogURL" varchar(255) NULL,
     "IdentificationCode" varchar(60) NOT NULL,
@@ -2300,7 +2301,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseLevelCharacteristic"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Course_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "CourseLevelCharacteristicDescriptor_DescriptorId" bigint NOT NULL,
+    "CourseLevelCharacteristicDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_CourseLevelCharacteristic" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_CourseLevelCharacteristic_Course_DocumentId_Cours_c239fe52c9" UNIQUE ("Course_DocumentId", "CourseLevelCharacteristicDescriptor_DescriptorId"),
     CONSTRAINT "UX_CourseLevelCharacteristic_Ordinal_Course_DocumentId" UNIQUE ("Course_DocumentId", "Ordinal")
@@ -2311,7 +2312,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseOfferedGradeLevel"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Course_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
+    "GradeLevelDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_CourseOfferedGradeLevel" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_CourseOfferedGradeLevel_Course_DocumentId_GradeLe_be9d4fd05a" UNIQUE ("Course_DocumentId", "GradeLevelDescriptor_DescriptorId"),
     CONSTRAINT "UX_CourseOfferedGradeLevel_Ordinal_Course_DocumentId" UNIQUE ("Course_DocumentId", "Ordinal")
@@ -2348,7 +2349,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseOfferingCourseLevelCharacteristic"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CourseOffering_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "CourseLevelCharacteristicDescriptor_DescriptorId" bigint NOT NULL,
+    "CourseLevelCharacteristicDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_CourseOfferingCourseLevelCharacteristic" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_CourseOfferingCourseLevelCharacteristic_CourseLev_2820839f6a" UNIQUE ("CourseOffering_DocumentId", "CourseLevelCharacteristicDescriptor_DescriptorId"),
     CONSTRAINT "UX_CourseOfferingCourseLevelCharacteristic_Ordinal_C_3321155053" UNIQUE ("CourseOffering_DocumentId", "Ordinal")
@@ -2359,7 +2360,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseOfferingCurriculumUsed"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CourseOffering_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "CurriculumUsedDescriptor_DescriptorId" bigint NOT NULL,
+    "CurriculumUsedDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_CourseOfferingCurriculumUsed" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_CourseOfferingCurriculumUsed_CourseOffering_Docum_e8ebc5dfb7" UNIQUE ("CourseOffering_DocumentId", "CurriculumUsedDescriptor_DescriptorId"),
     CONSTRAINT "UX_CourseOfferingCurriculumUsed_Ordinal_CourseOfferi_fa659d1ee5" UNIQUE ("CourseOffering_DocumentId", "Ordinal")
@@ -2370,7 +2371,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseOfferingOfferedGradeLevel"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CourseOffering_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
+    "GradeLevelDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_CourseOfferingOfferedGradeLevel" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_CourseOfferingOfferedGradeLevel_CourseOffering_Do_538d6e83fb" UNIQUE ("CourseOffering_DocumentId", "GradeLevelDescriptor_DescriptorId"),
     CONSTRAINT "UX_CourseOfferingOfferedGradeLevel_Ordinal_CourseOff_95457d1555" UNIQUE ("CourseOffering_DocumentId", "Ordinal")
@@ -2392,13 +2393,13 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscript"
     "StudentAcademicRecord_EducationOrganizationId" bigint NOT NULL,
     "StudentAcademicRecord_SchoolYear" integer NOT NULL,
     "StudentAcademicRecord_StudentUniqueId" varchar(32) NOT NULL,
-    "StudentAcademicRecord_TermDescriptor_DescriptorId" bigint NOT NULL,
-    "AttemptedCreditTypeDescriptor_DescriptorId" bigint NULL,
-    "CourseAttemptResultDescriptor_DescriptorId" bigint NOT NULL,
-    "CourseRepeatCodeDescriptor_DescriptorId" bigint NULL,
-    "EarnedCreditTypeDescriptor_DescriptorId" bigint NULL,
-    "MethodCreditEarnedDescriptor_DescriptorId" bigint NULL,
-    "WhenTakenGradeLevelDescriptor_DescriptorId" bigint NULL,
+    "StudentAcademicRecord_TermDescriptor_DescriptorId" integer NOT NULL,
+    "AttemptedCreditTypeDescriptor_DescriptorId" integer NULL,
+    "CourseAttemptResultDescriptor_DescriptorId" integer NOT NULL,
+    "CourseRepeatCodeDescriptor_DescriptorId" integer NULL,
+    "EarnedCreditTypeDescriptor_DescriptorId" integer NULL,
+    "MethodCreditEarnedDescriptor_DescriptorId" integer NULL,
+    "WhenTakenGradeLevelDescriptor_DescriptorId" integer NULL,
     "AlternativeCourseTitle" varchar(60) NULL,
     "AssigningOrganizationIdentificationCode" varchar(60) NULL,
     "AttemptedCreditConversion" numeric(9,2) NULL,
@@ -2423,7 +2424,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptAcademicSubject"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CourseTranscript_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "AcademicSubjectDescriptor_DescriptorId" bigint NOT NULL,
+    "AcademicSubjectDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_CourseTranscriptAcademicSubject" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_CourseTranscriptAcademicSubject_AcademicSubjectDe_5d08deb079" UNIQUE ("CourseTranscript_DocumentId", "AcademicSubjectDescriptor_DescriptorId"),
     CONSTRAINT "UX_CourseTranscriptAcademicSubject_Ordinal_CourseTra_0d474dc196" UNIQUE ("CourseTranscript_DocumentId", "Ordinal")
@@ -2434,7 +2435,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptAlternativeCourseIdentificati
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CourseTranscript_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "CourseIdentificationSystemDescriptor_DescriptorId" bigint NOT NULL,
+    "CourseIdentificationSystemDescriptor_DescriptorId" integer NOT NULL,
     "AlternativeAssigningOrganizationIdentificationCode" varchar(60) NULL,
     "AlternativeCourseCatalogURL" varchar(255) NULL,
     "AlternativeIdentificationCode" varchar(60) NOT NULL,
@@ -2451,7 +2452,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptCourseProgram"
     "CourseProgram_DocumentId" bigint NOT NULL,
     "CourseProgram_EducationOrganizationId" bigint NOT NULL,
     "CourseProgram_ProgramName" varchar(60) NOT NULL,
-    "CourseProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "CourseProgram_ProgramTypeDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_CourseTranscriptCourseProgram" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_CourseTranscriptCourseProgram_CourseProgram_Docum_c44523dbfa" UNIQUE ("CourseTranscript_DocumentId", "CourseProgram_DocumentId"),
     CONSTRAINT "UX_CourseTranscriptCourseProgram_Ordinal_CourseTrans_b17878ced7" UNIQUE ("CourseTranscript_DocumentId", "Ordinal"),
@@ -2463,7 +2464,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptCreditCategory"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CourseTranscript_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "CreditCategoryDescriptor_DescriptorId" bigint NOT NULL,
+    "CreditCategoryDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_CourseTranscriptCreditCategory" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_CourseTranscriptCreditCategory_CourseTranscript_D_9d05126794" UNIQUE ("CourseTranscript_DocumentId", "CreditCategoryDescriptor_DescriptorId"),
     CONSTRAINT "UX_CourseTranscriptCreditCategory_Ordinal_CourseTran_bda6ef2d2e" UNIQUE ("CourseTranscript_DocumentId", "Ordinal")
@@ -2474,7 +2475,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptEarnedAdditionalCredits"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CourseTranscript_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "AdditionalCreditTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "AdditionalCreditTypeDescriptor_DescriptorId" integer NOT NULL,
     "EarnedCredits" numeric(9,3) NOT NULL,
     CONSTRAINT "PK_CourseTranscriptEarnedAdditionalCredits" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_CourseTranscriptEarnedAdditionalCredits_Additiona_cb429c36fa" UNIQUE ("CourseTranscript_DocumentId", "AdditionalCreditTypeDescriptor_DescriptorId"),
@@ -2486,7 +2487,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptPartialCourseTranscriptAwards
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CourseTranscript_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "MethodCreditEarnedDescriptor_DescriptorId" bigint NULL,
+    "MethodCreditEarnedDescriptor_DescriptorId" integer NULL,
     "AwardDate" date NOT NULL,
     "EarnedCredits" numeric(9,3) NOT NULL,
     "LetterGradeEarned" varchar(20) NULL,
@@ -2518,11 +2519,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."Credential"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
-    "CredentialFieldDescriptor_DescriptorId" bigint NULL,
-    "CredentialTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "StateOfIssueStateAbbreviationDescriptor_DescriptorId" bigint NOT NULL,
-    "TeachingCredentialBasisDescriptor_DescriptorId" bigint NULL,
-    "TeachingCredentialDescriptor_DescriptorId" bigint NULL,
+    "CredentialFieldDescriptor_DescriptorId" integer NULL,
+    "CredentialTypeDescriptor_DescriptorId" integer NOT NULL,
+    "StateOfIssueStateAbbreviationDescriptor_DescriptorId" integer NOT NULL,
+    "TeachingCredentialBasisDescriptor_DescriptorId" integer NULL,
+    "TeachingCredentialDescriptor_DescriptorId" integer NULL,
     "CredentialIdentifier" varchar(60) NOT NULL,
     "EffectiveDate" date NULL,
     "ExpirationDate" date NULL,
@@ -2538,7 +2539,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CredentialAcademicSubject"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Credential_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "AcademicSubjectDescriptor_DescriptorId" bigint NOT NULL,
+    "AcademicSubjectDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_CredentialAcademicSubject" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_CredentialAcademicSubject_AcademicSubjectDescript_b3c5cb7d44" UNIQUE ("Credential_DocumentId", "AcademicSubjectDescriptor_DescriptorId"),
     CONSTRAINT "UX_CredentialAcademicSubject_Ordinal_Credential_DocumentId" UNIQUE ("Credential_DocumentId", "Ordinal")
@@ -2560,7 +2561,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CredentialGradeLevel"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Credential_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
+    "GradeLevelDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_CredentialGradeLevel" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_CredentialGradeLevel_Credential_DocumentId_GradeL_bcba2a68f9" UNIQUE ("Credential_DocumentId", "GradeLevelDescriptor_DescriptorId"),
     CONSTRAINT "UX_CredentialGradeLevel_Ordinal_Credential_DocumentId" UNIQUE ("Credential_DocumentId", "Ordinal")
@@ -2571,7 +2572,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CrisisEvent"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
-    "CrisisTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "CrisisTypeDescriptor_DescriptorId" integer NOT NULL,
     "CrisisDescription" varchar(1024) NULL,
     "CrisisEndDate" date NULL,
     "CrisisEventName" varchar(100) NOT NULL,
@@ -2599,7 +2600,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DescriptorMappingModelEntity"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "DescriptorMapping_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "ModelEntityDescriptor_DescriptorId" bigint NOT NULL,
+    "ModelEntityDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_DescriptorMappingModelEntity" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_DescriptorMappingModelEntity_DescriptorMapping_Do_267d920f70" UNIQUE ("DescriptorMapping_DocumentId", "ModelEntityDescriptor_DescriptorId"),
     CONSTRAINT "UX_DescriptorMappingModelEntity_Ordinal_DescriptorMa_c3c12ec275" UNIQUE ("DescriptorMapping_DocumentId", "Ordinal")
@@ -2616,7 +2617,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineAction"
     "ResponsibilitySchool_SchoolId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "DisciplineActionLengthDifferenceReasonDescriptor_DescriptorId" bigint NULL,
+    "DisciplineActionLengthDifferenceReasonDescriptor_DescriptorId" integer NULL,
     "ActualDisciplineActionLength" numeric(5,2) NULL,
     "DisciplineActionIdentifier" varchar(36) NOT NULL,
     "DisciplineActionLength" numeric(5,2) NULL,
@@ -2635,7 +2636,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineActionDiscipline"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "DisciplineAction_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "DisciplineDescriptor_DescriptorId" bigint NOT NULL,
+    "DisciplineDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_DisciplineActionDiscipline" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_DisciplineActionDiscipline_DisciplineAction_Docum_ea1b91b615" UNIQUE ("DisciplineAction_DocumentId", "DisciplineDescriptor_DescriptorId"),
     CONSTRAINT "UX_DisciplineActionDiscipline_Ordinal_DisciplineActi_766bd062ba" UNIQUE ("DisciplineAction_DocumentId", "Ordinal")
@@ -2660,7 +2661,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineActionStudentDisciplineIncidentBeha
     "DisciplineAction_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "StudentDisciplineIncidentBehaviorAssociation_DocumentId" bigint NOT NULL,
-    "StudentDisciplineIncidentBehaviorAssociation_Behavio_4bed9fbe3b" bigint NOT NULL,
+    "StudentDisciplineIncidentBehaviorAssociation_Behavio_4bed9fbe3b" integer NOT NULL,
     "StudentDisciplineIncidentBehaviorAssociation_IncidentIdentifier" varchar(36) NOT NULL,
     "StudentDisciplineIncidentBehaviorAssociation_SchoolId" bigint NOT NULL,
     "StudentDisciplineIncidentBehaviorAssociation_StudentUniqueId" varchar(32) NOT NULL,
@@ -2677,8 +2678,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineIncident"
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "School_DocumentId" bigint NOT NULL,
     "School_SchoolId" bigint NOT NULL,
-    "IncidentLocationDescriptor_DescriptorId" bigint NULL,
-    "ReporterDescriptionDescriptor_DescriptorId" bigint NULL,
+    "IncidentLocationDescriptor_DescriptorId" integer NULL,
+    "ReporterDescriptionDescriptor_DescriptorId" integer NULL,
     "CaseNumber" varchar(20) NULL,
     "IncidentCost" numeric(19,4) NULL,
     "IncidentDate" date NOT NULL,
@@ -2698,7 +2699,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineIncidentBehavior"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "DisciplineIncident_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "BehaviorDescriptor_DescriptorId" bigint NOT NULL,
+    "BehaviorDescriptor_DescriptorId" integer NOT NULL,
     "BehaviorDetailedDescription" varchar(1024) NULL,
     CONSTRAINT "PK_DisciplineIncidentBehavior" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_DisciplineIncidentBehavior_BehaviorDescriptor_Des_070583410c" UNIQUE ("DisciplineIncident_DocumentId", "BehaviorDescriptor_DescriptorId"),
@@ -2710,7 +2711,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineIncidentExternalParticipant"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "DisciplineIncident_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "DisciplineIncidentParticipationCodeDescriptor_DescriptorId" bigint NOT NULL,
+    "DisciplineIncidentParticipationCodeDescriptor_DescriptorId" integer NOT NULL,
     "FirstName" varchar(75) NOT NULL,
     "LastSurname" varchar(75) NOT NULL,
     CONSTRAINT "PK_DisciplineIncidentExternalParticipant" PRIMARY KEY ("CollectionItemId"),
@@ -2723,7 +2724,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineIncidentWeapon"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "DisciplineIncident_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "WeaponDescriptor_DescriptorId" bigint NOT NULL,
+    "WeaponDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_DisciplineIncidentWeapon" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_DisciplineIncidentWeapon_DisciplineIncident_Docum_112f0543b1" UNIQUE ("DisciplineIncident_DocumentId", "WeaponDescriptor_DescriptorId"),
     CONSTRAINT "UX_DisciplineIncidentWeapon_Ordinal_DisciplineIncide_eb59ced6d5" UNIQUE ("DisciplineIncident_DocumentId", "Ordinal")
@@ -2736,9 +2737,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationContent"
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "LearningResourceChoiceLearningResourceLearningStanda_5916be65e2" bigint NULL,
     "LearningResourceChoiceLearningResourceLearningStanda_bd2bbf48c0" varchar(60) NULL,
-    "ContentClassDescriptor_DescriptorId" bigint NULL,
-    "CostRateDescriptor_DescriptorId" bigint NULL,
-    "InteractivityStyleDescriptor_DescriptorId" bigint NULL,
+    "ContentClassDescriptor_DescriptorId" integer NULL,
+    "CostRateDescriptor_DescriptorId" integer NULL,
+    "InteractivityStyleDescriptor_DescriptorId" integer NULL,
     "AdditionalAuthorsIndicator" boolean NULL,
     "ContentIdentifier" varchar(225) NOT NULL,
     "Cost" numeric(19,4) NULL,
@@ -2763,7 +2764,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationContentAppropriateGradeLevel"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationContent_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
+    "GradeLevelDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_EducationContentAppropriateGradeLevel" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_EducationContentAppropriateGradeLevel_EducationCo_b44a96c330" UNIQUE ("EducationContent_DocumentId", "GradeLevelDescriptor_DescriptorId"),
     CONSTRAINT "UX_EducationContentAppropriateGradeLevel_Ordinal_Edu_ab782b7ac5" UNIQUE ("EducationContent_DocumentId", "Ordinal")
@@ -2774,7 +2775,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationContentAppropriateSex"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationContent_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "SexDescriptor_DescriptorId" bigint NOT NULL,
+    "SexDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_EducationContentAppropriateSex" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_EducationContentAppropriateSex_EducationContent_D_269a36e08e" UNIQUE ("EducationContent_DocumentId", "SexDescriptor_DescriptorId"),
     CONSTRAINT "UX_EducationContentAppropriateSex_Ordinal_EducationC_70a7c29e39" UNIQUE ("EducationContent_DocumentId", "Ordinal")
@@ -2831,7 +2832,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationContentLanguage"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationContent_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "LanguageDescriptor_DescriptorId" bigint NOT NULL,
+    "LanguageDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_EducationContentLanguage" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_EducationContentLanguage_EducationContent_Documen_1437e9e29c" UNIQUE ("EducationContent_DocumentId", "LanguageDescriptor_DescriptorId"),
     CONSTRAINT "UX_EducationContentLanguage_Ordinal_EducationContent_DocumentId" UNIQUE ("EducationContent_DocumentId", "Ordinal")
@@ -2860,8 +2861,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetwork"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
-    "NetworkPurposeDescriptor_DescriptorId" bigint NOT NULL,
-    "OperationalStatusDescriptor_DescriptorId" bigint NULL,
+    "NetworkPurposeDescriptor_DescriptorId" integer NOT NULL,
+    "OperationalStatusDescriptor_DescriptorId" integer NULL,
     "EducationOrganizationNetworkId" bigint NOT NULL,
     "NameOfInstitution" varchar(75) NOT NULL,
     "ShortNameOfInstitution" varchar(75) NULL,
@@ -2876,9 +2877,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkAddress"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationOrganizationNetwork_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "LocaleDescriptor_DescriptorId" bigint NULL,
-    "StateAbbreviationDescriptor_DescriptorId" bigint NOT NULL,
+    "AddressTypeDescriptor_DescriptorId" integer NOT NULL,
+    "LocaleDescriptor_DescriptorId" integer NULL,
+    "StateAbbreviationDescriptor_DescriptorId" integer NOT NULL,
     "ApartmentRoomSuiteNumber" varchar(50) NULL,
     "BuildingSiteNumber" varchar(20) NULL,
     "City" varchar(30) NOT NULL,
@@ -2901,7 +2902,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkCategory"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationOrganizationNetwork_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
+    "EducationOrganizationCategoryDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_EducationOrganizationNetworkCategory" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_EducationOrganizationNetworkCategory_EducationOrg_5558d272d7" UNIQUE ("EducationOrganizationNetwork_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId"),
     CONSTRAINT "UX_EducationOrganizationNetworkCategory_Ordinal_Educ_e458e4c914" UNIQUE ("EducationOrganizationNetwork_DocumentId", "Ordinal")
@@ -2912,7 +2913,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkIdentificationCod
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationOrganizationNetwork_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
+    "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" integer NOT NULL,
     "IdentificationCode" varchar(60) NOT NULL,
     CONSTRAINT "PK_EducationOrganizationNetworkIdentificationCode" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_EducationOrganizationNetworkIdentificationCode_Ed_03791941a4" UNIQUE ("EducationOrganizationNetwork_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede"),
@@ -2924,9 +2925,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkIndicator"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationOrganizationNetwork_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
-    "IndicatorGroupDescriptor_DescriptorId" bigint NULL,
-    "IndicatorLevelDescriptor_DescriptorId" bigint NULL,
+    "IndicatorDescriptor_DescriptorId" integer NOT NULL,
+    "IndicatorGroupDescriptor_DescriptorId" integer NULL,
+    "IndicatorLevelDescriptor_DescriptorId" integer NULL,
     "DesignatedBy" varchar(60) NULL,
     "IndicatorValue" varchar(60) NULL,
     CONSTRAINT "PK_EducationOrganizationNetworkIndicator" PRIMARY KEY ("CollectionItemId"),
@@ -2940,7 +2941,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkInstitutionTeleph
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationOrganizationNetwork_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" integer NOT NULL,
     "TelephoneNumber" varchar(24) NOT NULL,
     CONSTRAINT "PK_EducationOrganizationNetworkInstitutionTelephone" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_EducationOrganizationNetworkInstitutionTelephone__b4175ce89e" UNIQUE ("EducationOrganizationNetwork_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId"),
@@ -2952,8 +2953,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkInternationalAddr
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationOrganizationNetwork_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "CountryDescriptor_DescriptorId" bigint NOT NULL,
+    "AddressTypeDescriptor_DescriptorId" integer NOT NULL,
+    "CountryDescriptor_DescriptorId" integer NOT NULL,
     "AddressLine1" varchar(150) NOT NULL,
     "AddressLine2" varchar(150) NULL,
     "AddressLine3" varchar(150) NULL,
@@ -3032,7 +3033,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenter"
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "StateEducationAgency_DocumentId" bigint NULL,
     "StateEducationAgency_StateEducationAgencyId" bigint NULL,
-    "OperationalStatusDescriptor_DescriptorId" bigint NULL,
+    "OperationalStatusDescriptor_DescriptorId" integer NULL,
     "EducationServiceCenterId" bigint NOT NULL,
     "NameOfInstitution" varchar(75) NOT NULL,
     "ShortNameOfInstitution" varchar(75) NULL,
@@ -3048,9 +3049,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterAddress"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationServiceCenter_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "LocaleDescriptor_DescriptorId" bigint NULL,
-    "StateAbbreviationDescriptor_DescriptorId" bigint NOT NULL,
+    "AddressTypeDescriptor_DescriptorId" integer NOT NULL,
+    "LocaleDescriptor_DescriptorId" integer NULL,
+    "StateAbbreviationDescriptor_DescriptorId" integer NOT NULL,
     "ApartmentRoomSuiteNumber" varchar(50) NULL,
     "BuildingSiteNumber" varchar(20) NULL,
     "City" varchar(30) NOT NULL,
@@ -3073,7 +3074,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterCategory"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationServiceCenter_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
+    "EducationOrganizationCategoryDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_EducationServiceCenterCategory" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_EducationServiceCenterCategory_EducationOrganizat_fe61275ffc" UNIQUE ("EducationServiceCenter_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId"),
     CONSTRAINT "UX_EducationServiceCenterCategory_Ordinal_EducationS_d01e2a2f01" UNIQUE ("EducationServiceCenter_DocumentId", "Ordinal")
@@ -3084,7 +3085,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterIdentificationCode"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationServiceCenter_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
+    "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" integer NOT NULL,
     "IdentificationCode" varchar(60) NOT NULL,
     CONSTRAINT "PK_EducationServiceCenterIdentificationCode" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_EducationServiceCenterIdentificationCode_Educatio_8eb2a3d118" UNIQUE ("EducationServiceCenter_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede"),
@@ -3096,9 +3097,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterIndicator"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationServiceCenter_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
-    "IndicatorGroupDescriptor_DescriptorId" bigint NULL,
-    "IndicatorLevelDescriptor_DescriptorId" bigint NULL,
+    "IndicatorDescriptor_DescriptorId" integer NOT NULL,
+    "IndicatorGroupDescriptor_DescriptorId" integer NULL,
+    "IndicatorLevelDescriptor_DescriptorId" integer NULL,
     "DesignatedBy" varchar(60) NULL,
     "IndicatorValue" varchar(60) NULL,
     CONSTRAINT "PK_EducationServiceCenterIndicator" PRIMARY KEY ("CollectionItemId"),
@@ -3112,7 +3113,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterInstitutionTelephone"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationServiceCenter_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" integer NOT NULL,
     "TelephoneNumber" varchar(24) NOT NULL,
     CONSTRAINT "PK_EducationServiceCenterInstitutionTelephone" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_EducationServiceCenterInstitutionTelephone_Educat_8ff825b876" UNIQUE ("EducationServiceCenter_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId"),
@@ -3124,8 +3125,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterInternationalAddress"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationServiceCenter_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "CountryDescriptor_DescriptorId" bigint NOT NULL,
+    "AddressTypeDescriptor_DescriptorId" integer NOT NULL,
+    "CountryDescriptor_DescriptorId" integer NOT NULL,
     "AddressLine1" varchar(150) NOT NULL,
     "AddressLine2" varchar(150) NULL,
     "AddressLine3" varchar(150) NULL,
@@ -3173,12 +3174,12 @@ CREATE TABLE IF NOT EXISTS "edfi"."EvaluationRubricDimension"
     "ProgramEvaluationElement_DocumentId" bigint NOT NULL,
     "ProgramEvaluationElement_ProgramEvaluationElementTitle" varchar(50) NOT NULL,
     "ProgramEvaluationElement_ProgramEducationOrganizationId" bigint NOT NULL,
-    "ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706" bigint NOT NULL,
+    "ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706" integer NOT NULL,
     "ProgramEvaluationElement_ProgramEvaluationTitle" varchar(50) NOT NULL,
-    "ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71" bigint NOT NULL,
+    "ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71" integer NOT NULL,
     "ProgramEvaluationElement_ProgramName" varchar(60) NOT NULL,
-    "ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "EvaluationRubricRatingLevelDescriptor_DescriptorId" bigint NULL,
+    "ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId" integer NOT NULL,
+    "EvaluationRubricRatingLevelDescriptor_DescriptorId" integer NULL,
     "EvaluationCriterionDescription" varchar(1024) NOT NULL,
     "EvaluationRubricRating" integer NOT NULL,
     "RubricDimensionSortOrder" integer NULL,
@@ -3223,7 +3224,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."FunctionDimensionReportingTag"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "FunctionDimension_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
+    "ReportingTagDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_FunctionDimensionReportingTag" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_FunctionDimensionReportingTag_FunctionDimension_D_020c9561c9" UNIQUE ("FunctionDimension_DocumentId", "ReportingTagDescriptor_DescriptorId"),
     CONSTRAINT "UX_FunctionDimensionReportingTag_Ordinal_FunctionDim_6a39f5eb08" UNIQUE ("FunctionDimension_DocumentId", "Ordinal")
@@ -3247,7 +3248,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."FundDimensionReportingTag"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "FundDimension_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
+    "ReportingTagDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_FundDimensionReportingTag" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_FundDimensionReportingTag_FundDimension_DocumentI_3ae463b294" UNIQUE ("FundDimension_DocumentId", "ReportingTagDescriptor_DescriptorId"),
     CONSTRAINT "UX_FundDimensionReportingTag_Ordinal_FundDimension_DocumentId" UNIQUE ("FundDimension_DocumentId", "Ordinal")
@@ -3261,7 +3262,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Grade"
     "SchoolId_Unified" bigint NOT NULL,
     "SchoolYear_Unified" integer NOT NULL,
     "GradingPeriodGradingPeriod_DocumentId" bigint NOT NULL,
-    "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" bigint NOT NULL,
+    "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" integer NOT NULL,
     "GradingPeriodGradingPeriod_GradingPeriodName" varchar(60) NOT NULL,
     "GradingPeriodGradingPeriod_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "GradingPeriodGradingPeriod_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
     "GradingPeriodGradingPeriod_SchoolYear" integer GENERATED ALWAYS AS (CASE WHEN "GradingPeriodGradingPeriod_DocumentId" IS NULL THEN NULL ELSE "SchoolYear_Unified" END) STORED,
@@ -3273,8 +3274,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."Grade"
     "StudentSectionAssociation_SectionIdentifier" varchar(255) NOT NULL,
     "StudentSectionAssociation_SessionName" varchar(60) NOT NULL,
     "StudentSectionAssociation_StudentUniqueId" varchar(32) NOT NULL,
-    "GradeTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "PerformanceBaseConversionDescriptor_DescriptorId" bigint NULL,
+    "GradeTypeDescriptor_DescriptorId" integer NOT NULL,
+    "PerformanceBaseConversionDescriptor_DescriptorId" integer NULL,
     "CurrentGradeAsOfDate" date NULL,
     "CurrentGradeIndicator" boolean NULL,
     "DiagnosticStatement" varchar(1024) NULL,
@@ -3295,7 +3296,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GradeLearningStandardGrade"
     "Ordinal" integer NOT NULL,
     "LearningStandardGradeLearningStandard_DocumentId" bigint NOT NULL,
     "LearningStandardGradeLearningStandard_LearningStandardId" varchar(60) NOT NULL,
-    "PerformanceBaseConversionDescriptor_DescriptorId" bigint NULL,
+    "PerformanceBaseConversionDescriptor_DescriptorId" integer NULL,
     "DiagnosticStatement" varchar(1024) NULL,
     "LetterGradeEarned" varchar(20) NULL,
     "NumericGradeEarned" numeric(9,2) NULL,
@@ -3313,7 +3314,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GradebookEntry"
     "SchoolId_Unified" bigint NULL,
     "SchoolYear_Unified" integer NULL,
     "GradingPeriod_DocumentId" bigint NULL,
-    "GradingPeriod_GradingPeriodDescriptor_DescriptorId" bigint NULL,
+    "GradingPeriod_GradingPeriodDescriptor_DescriptorId" integer NULL,
     "GradingPeriod_GradingPeriodName" varchar(60) NULL,
     "GradingPeriod_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "GradingPeriod_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
     "GradingPeriod_SchoolYear" integer GENERATED ALWAYS AS (CASE WHEN "GradingPeriod_DocumentId" IS NULL THEN NULL ELSE "SchoolYear_Unified" END) STORED,
@@ -3323,7 +3324,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GradebookEntry"
     "Section_SchoolYear" integer GENERATED ALWAYS AS (CASE WHEN "Section_DocumentId" IS NULL THEN NULL ELSE "SchoolYear_Unified" END) STORED,
     "Section_SessionName" varchar(60) NULL,
     "Section_SectionIdentifier" varchar(255) NULL,
-    "GradebookEntryTypeDescriptor_DescriptorId" bigint NULL,
+    "GradebookEntryTypeDescriptor_DescriptorId" integer NULL,
     "DateAssigned" date NOT NULL,
     "Description" varchar(1024) NULL,
     "DueDate" date NULL,
@@ -3362,7 +3363,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GradingPeriod"
     "SchoolYear_SchoolYear" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
     "School_SchoolId" bigint NOT NULL,
-    "GradingPeriodDescriptor_DescriptorId" bigint NOT NULL,
+    "GradingPeriodDescriptor_DescriptorId" integer NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NOT NULL,
     "GradingPeriodName" varchar(60) NOT NULL,
@@ -3384,8 +3385,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlan"
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "GraduationSchoolYear_DocumentId" bigint NOT NULL,
     "GraduationSchoolYear_GraduationSchoolYear" integer NOT NULL,
-    "GraduationPlanTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "TotalRequiredCreditTypeDescriptor_DescriptorId" bigint NULL,
+    "GraduationPlanTypeDescriptor_DescriptorId" integer NOT NULL,
+    "TotalRequiredCreditTypeDescriptor_DescriptorId" integer NULL,
     "IndividualPlan" boolean NULL,
     "TotalRequiredCreditConversion" numeric(9,2) NULL,
     "TotalRequiredCredits" numeric(9,3) NOT NULL,
@@ -3401,8 +3402,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanCreditsByCours"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "GraduationPlan_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "CreditTypeDescriptor_DescriptorId" bigint NULL,
-    "WhenTakenGradeLevelDescriptor_DescriptorId" bigint NULL,
+    "CreditTypeDescriptor_DescriptorId" integer NULL,
+    "WhenTakenGradeLevelDescriptor_DescriptorId" integer NULL,
     "CourseSetName" varchar(120) NOT NULL,
     "CreditConversion" numeric(9,2) NULL,
     "Credits" numeric(9,3) NOT NULL,
@@ -3417,8 +3418,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanCreditsByCreditCategory"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "GraduationPlan_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "CreditCategoryDescriptor_DescriptorId" bigint NOT NULL,
-    "CreditTypeDescriptor_DescriptorId" bigint NULL,
+    "CreditCategoryDescriptor_DescriptorId" integer NOT NULL,
+    "CreditTypeDescriptor_DescriptorId" integer NULL,
     "CreditConversion" numeric(9,2) NULL,
     "Credits" numeric(9,3) NOT NULL,
     CONSTRAINT "PK_GraduationPlanCreditsByCreditCategory" PRIMARY KEY ("CollectionItemId"),
@@ -3431,8 +3432,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanCreditsBySubject"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "GraduationPlan_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "AcademicSubjectDescriptor_DescriptorId" bigint NOT NULL,
-    "CreditTypeDescriptor_DescriptorId" bigint NULL,
+    "AcademicSubjectDescriptor_DescriptorId" integer NOT NULL,
+    "CreditTypeDescriptor_DescriptorId" integer NULL,
     "CreditConversion" numeric(9,2) NULL,
     "Credits" numeric(9,3) NOT NULL,
     CONSTRAINT "PK_GraduationPlanCreditsBySubject" PRIMARY KEY ("CollectionItemId"),
@@ -3448,9 +3449,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanRequiredAssessment"
     "RequiredAssessmentAssessment_DocumentId" bigint NOT NULL,
     "RequiredAssessmentAssessment_AssessmentIdentifier" varchar(60) NOT NULL,
     "RequiredAssessmentAssessment_Namespace" varchar(255) NOT NULL,
-    "PerformanceLevelAssessmentReportingMethodDescriptor__5b84c3b397" bigint NULL,
-    "PerformanceLevelPerformanceLevelDescriptor_DescriptorId" bigint NULL,
-    "PerformanceLevelResultDatatypeTypeDescriptor_DescriptorId" bigint NULL,
+    "PerformanceLevelAssessmentReportingMethodDescriptor__5b84c3b397" integer NULL,
+    "PerformanceLevelPerformanceLevelDescriptor_DescriptorId" integer NULL,
+    "PerformanceLevelResultDatatypeTypeDescriptor_DescriptorId" integer NULL,
     "RequiredMaximumScore" varchar(35) NULL,
     "RequiredMinimumScore" varchar(35) NULL,
     "RequiredPerformanceLevelIndicatorName" varchar(60) NULL,
@@ -3482,8 +3483,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanRequiredAssessmentScore"
     "GraduationPlan_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
-    "AssessmentReportingMethodDescriptor_DescriptorId" bigint NOT NULL,
-    "ResultDatatypeTypeDescriptor_DescriptorId" bigint NULL,
+    "AssessmentReportingMethodDescriptor_DescriptorId" integer NOT NULL,
+    "ResultDatatypeTypeDescriptor_DescriptorId" integer NULL,
     "RequiredMaximumScore" varchar(35) NULL,
     "RequiredMinimumScore" varchar(35) NULL,
     CONSTRAINT "PK_GraduationPlanRequiredAssessmentScore" PRIMARY KEY ("CollectionItemId"),
@@ -3498,8 +3499,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."Intervention"
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "DeliveryMethodDescriptor_DescriptorId" bigint NOT NULL,
-    "InterventionClassDescriptor_DescriptorId" bigint NOT NULL,
+    "DeliveryMethodDescriptor_DescriptorId" integer NOT NULL,
+    "InterventionClassDescriptor_DescriptorId" integer NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
     "InterventionIdentificationCode" varchar(60) NOT NULL,
@@ -3517,7 +3518,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionAppropriateGradeLevel"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Intervention_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
+    "GradeLevelDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_InterventionAppropriateGradeLevel" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_InterventionAppropriateGradeLevel_GradeLevelDescr_76e6cdb6a4" UNIQUE ("Intervention_DocumentId", "GradeLevelDescriptor_DescriptorId"),
     CONSTRAINT "UX_InterventionAppropriateGradeLevel_Ordinal_Interve_08514b6ebb" UNIQUE ("Intervention_DocumentId", "Ordinal")
@@ -3528,7 +3529,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionAppropriateSex"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Intervention_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "SexDescriptor_DescriptorId" bigint NOT NULL,
+    "SexDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_InterventionAppropriateSex" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_InterventionAppropriateSex_Intervention_DocumentI_277831b55a" UNIQUE ("Intervention_DocumentId", "SexDescriptor_DescriptorId"),
     CONSTRAINT "UX_InterventionAppropriateSex_Ordinal_Intervention_DocumentId" UNIQUE ("Intervention_DocumentId", "Ordinal")
@@ -3539,7 +3540,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionDiagnos"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Intervention_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "DiagnosisDescriptor_DescriptorId" bigint NOT NULL,
+    "DiagnosisDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_InterventionDiagnos" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_InterventionDiagnos_DiagnosisDescriptor_Descripto_1fcc7db5bb" UNIQUE ("Intervention_DocumentId", "DiagnosisDescriptor_DescriptorId"),
     CONSTRAINT "UX_InterventionDiagnos_Ordinal_Intervention_DocumentId" UNIQUE ("Intervention_DocumentId", "Ordinal")
@@ -3600,7 +3601,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionPopulationServed"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Intervention_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "PopulationServedDescriptor_DescriptorId" bigint NOT NULL,
+    "PopulationServedDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_InterventionPopulationServed" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_InterventionPopulationServed_Intervention_Documen_bbffd68f0d" UNIQUE ("Intervention_DocumentId", "PopulationServedDescriptor_DescriptorId"),
     CONSTRAINT "UX_InterventionPopulationServed_Ordinal_Intervention_DocumentId" UNIQUE ("Intervention_DocumentId", "Ordinal")
@@ -3637,8 +3638,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescription"
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "DeliveryMethodDescriptor_DescriptorId" bigint NOT NULL,
-    "InterventionClassDescriptor_DescriptorId" bigint NOT NULL,
+    "DeliveryMethodDescriptor_DescriptorId" integer NOT NULL,
+    "InterventionClassDescriptor_DescriptorId" integer NOT NULL,
     "InterventionPrescriptionIdentificationCode" varchar(60) NOT NULL,
     "MaxDosage" integer NULL,
     "MinDosage" integer NULL,
@@ -3654,7 +3655,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionAppropriateGradeLevel
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "InterventionPrescription_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
+    "GradeLevelDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_InterventionPrescriptionAppropriateGradeLevel" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_InterventionPrescriptionAppropriateGradeLevel_Gra_e09e6f005a" UNIQUE ("InterventionPrescription_DocumentId", "GradeLevelDescriptor_DescriptorId"),
     CONSTRAINT "UX_InterventionPrescriptionAppropriateGradeLevel_Ord_d94f80eff1" UNIQUE ("InterventionPrescription_DocumentId", "Ordinal")
@@ -3665,7 +3666,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionAppropriateSex"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "InterventionPrescription_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "SexDescriptor_DescriptorId" bigint NOT NULL,
+    "SexDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_InterventionPrescriptionAppropriateSex" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_InterventionPrescriptionAppropriateSex_Interventi_27b943c969" UNIQUE ("InterventionPrescription_DocumentId", "SexDescriptor_DescriptorId"),
     CONSTRAINT "UX_InterventionPrescriptionAppropriateSex_Ordinal_In_7ba55569bc" UNIQUE ("InterventionPrescription_DocumentId", "Ordinal")
@@ -3676,7 +3677,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionDiagnos"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "InterventionPrescription_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "DiagnosisDescriptor_DescriptorId" bigint NOT NULL,
+    "DiagnosisDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_InterventionPrescriptionDiagnos" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_InterventionPrescriptionDiagnos_DiagnosisDescript_1f7c5bd11b" UNIQUE ("InterventionPrescription_DocumentId", "DiagnosisDescriptor_DescriptorId"),
     CONSTRAINT "UX_InterventionPrescriptionDiagnos_Ordinal_Intervent_3a68ccfeed" UNIQUE ("InterventionPrescription_DocumentId", "Ordinal")
@@ -3711,7 +3712,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionPopulationServed"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "InterventionPrescription_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "PopulationServedDescriptor_DescriptorId" bigint NOT NULL,
+    "PopulationServedDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_InterventionPrescriptionPopulationServed" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_InterventionPrescriptionPopulationServed_Interven_79844bd5d6" UNIQUE ("InterventionPrescription_DocumentId", "PopulationServedDescriptor_DescriptorId"),
     CONSTRAINT "UX_InterventionPrescriptionPopulationServed_Ordinal__2504226136" UNIQUE ("InterventionPrescription_DocumentId", "Ordinal")
@@ -3738,8 +3739,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudy"
     "InterventionPrescriptionInterventionPrescription_DocumentId" bigint NOT NULL,
     "InterventionPrescriptionInterventionPrescription_Edu_532babb247" bigint NOT NULL,
     "InterventionPrescriptionInterventionPrescription_Int_409fc39d28" varchar(60) NOT NULL,
-    "DeliveryMethodDescriptor_DescriptorId" bigint NOT NULL,
-    "InterventionClassDescriptor_DescriptorId" bigint NOT NULL,
+    "DeliveryMethodDescriptor_DescriptorId" integer NOT NULL,
+    "InterventionClassDescriptor_DescriptorId" integer NOT NULL,
     "InterventionStudyIdentificationCode" varchar(60) NOT NULL,
     "Participants" integer NOT NULL,
     CONSTRAINT "PK_InterventionStudy" PRIMARY KEY ("DocumentId"),
@@ -3753,7 +3754,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyAppropriateGradeLevel"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "InterventionStudy_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
+    "GradeLevelDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_InterventionStudyAppropriateGradeLevel" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_InterventionStudyAppropriateGradeLevel_GradeLevel_d06ac47522" UNIQUE ("InterventionStudy_DocumentId", "GradeLevelDescriptor_DescriptorId"),
     CONSTRAINT "UX_InterventionStudyAppropriateGradeLevel_Ordinal_In_8a6c348aea" UNIQUE ("InterventionStudy_DocumentId", "Ordinal")
@@ -3764,7 +3765,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyAppropriateSex"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "InterventionStudy_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "SexDescriptor_DescriptorId" bigint NOT NULL,
+    "SexDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_InterventionStudyAppropriateSex" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_InterventionStudyAppropriateSex_InterventionStudy_34b07c0f37" UNIQUE ("InterventionStudy_DocumentId", "SexDescriptor_DescriptorId"),
     CONSTRAINT "UX_InterventionStudyAppropriateSex_Ordinal_Intervent_87e75e54fe" UNIQUE ("InterventionStudy_DocumentId", "Ordinal")
@@ -3788,10 +3789,10 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyInterventionEffectiveness"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "InterventionStudy_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "DiagnosisDescriptor_DescriptorId" bigint NOT NULL,
-    "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
-    "InterventionEffectivenessRatingDescriptor_DescriptorId" bigint NOT NULL,
-    "PopulationServedDescriptor_DescriptorId" bigint NOT NULL,
+    "DiagnosisDescriptor_DescriptorId" integer NOT NULL,
+    "GradeLevelDescriptor_DescriptorId" integer NOT NULL,
+    "InterventionEffectivenessRatingDescriptor_DescriptorId" integer NOT NULL,
+    "PopulationServedDescriptor_DescriptorId" integer NOT NULL,
     "ImprovementIndex" integer NULL,
     CONSTRAINT "PK_InterventionStudyInterventionEffectiveness" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_InterventionStudyInterventionEffectiveness_Diagno_d84d897426" UNIQUE ("InterventionStudy_DocumentId", "DiagnosisDescriptor_DescriptorId", "GradeLevelDescriptor_DescriptorId", "PopulationServedDescriptor_DescriptorId"),
@@ -3814,7 +3815,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyPopulationServed"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "InterventionStudy_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "PopulationServedDescriptor_DescriptorId" bigint NOT NULL,
+    "PopulationServedDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_InterventionStudyPopulationServed" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_InterventionStudyPopulationServed_InterventionStu_65a1215f3f" UNIQUE ("InterventionStudy_DocumentId", "PopulationServedDescriptor_DescriptorId"),
     CONSTRAINT "UX_InterventionStudyPopulationServed_Ordinal_Interve_7f8e4c7a50" UNIQUE ("InterventionStudy_DocumentId", "Ordinal")
@@ -3825,7 +3826,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyStateAbbreviation"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "InterventionStudy_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "StateAbbreviationDescriptor_DescriptorId" bigint NOT NULL,
+    "StateAbbreviationDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_InterventionStudyStateAbbreviation" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_InterventionStudyStateAbbreviation_InterventionSt_b78e237c7f" UNIQUE ("InterventionStudy_DocumentId", "StateAbbreviationDescriptor_DescriptorId"),
     CONSTRAINT "UX_InterventionStudyStateAbbreviation_Ordinal_Interv_66f5c33ed8" UNIQUE ("InterventionStudy_DocumentId", "Ordinal")
@@ -3851,9 +3852,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."LearningStandard"
     "MandatingEducationOrganization_EducationOrganizationId" bigint NULL,
     "ParentLearningStandard_DocumentId" bigint NULL,
     "ParentLearningStandard_LearningStandardId" varchar(60) NULL,
-    "ContentStandardPublicationStatusDescriptor_DescriptorId" bigint NULL,
-    "LearningStandardCategoryDescriptor_DescriptorId" bigint NULL,
-    "LearningStandardScopeDescriptor_DescriptorId" bigint NULL,
+    "ContentStandardPublicationStatusDescriptor_DescriptorId" integer NULL,
+    "LearningStandardCategoryDescriptor_DescriptorId" integer NULL,
+    "LearningStandardScopeDescriptor_DescriptorId" integer NULL,
     "ContentStandardBeginDate" date NULL,
     "ContentStandardEndDate" date NULL,
     "ContentStandardPublicationDate" date NULL,
@@ -3880,7 +3881,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LearningStandardAcademicSubject"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "LearningStandard_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "AcademicSubjectDescriptor_DescriptorId" bigint NOT NULL,
+    "AcademicSubjectDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_LearningStandardAcademicSubject" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_LearningStandardAcademicSubject_AcademicSubjectDe_a2d19f6d74" UNIQUE ("LearningStandard_DocumentId", "AcademicSubjectDescriptor_DescriptorId"),
     CONSTRAINT "UX_LearningStandardAcademicSubject_Ordinal_LearningS_0093833af8" UNIQUE ("LearningStandard_DocumentId", "Ordinal")
@@ -3902,7 +3903,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LearningStandardGradeLevel"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "LearningStandard_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
+    "GradeLevelDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_LearningStandardGradeLevel" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_LearningStandardGradeLevel_GradeLevelDescriptor_D_ff015843f5" UNIQUE ("LearningStandard_DocumentId", "GradeLevelDescriptor_DescriptorId"),
     CONSTRAINT "UX_LearningStandardGradeLevel_Ordinal_LearningStanda_cafbbc9317" UNIQUE ("LearningStandard_DocumentId", "Ordinal")
@@ -3929,7 +3930,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LearningStandardEquivalenceAssociation"
     "SourceLearningStandard_LearningStandardId" varchar(60) NOT NULL,
     "TargetLearningStandard_DocumentId" bigint NOT NULL,
     "TargetLearningStandard_LearningStandardId" varchar(60) NOT NULL,
-    "LearningStandardEquivalenceStrengthDescriptor_DescriptorId" bigint NULL,
+    "LearningStandardEquivalenceStrengthDescriptor_DescriptorId" integer NULL,
     "EffectiveDate" date NULL,
     "LearningStandardEquivalenceStrengthDescription" varchar(255) NULL,
     "Namespace" varchar(255) NOT NULL,
@@ -3966,7 +3967,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalAccountReportingTag"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "LocalAccount_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
+    "ReportingTagDescriptor_DescriptorId" integer NOT NULL,
     "TagValue" varchar(100) NULL,
     CONSTRAINT "PK_LocalAccountReportingTag" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_LocalAccountReportingTag_LocalAccount_DocumentId__cf159e479b" UNIQUE ("LocalAccount_DocumentId", "ReportingTagDescriptor_DescriptorId"),
@@ -3982,7 +3983,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalActual"
     "LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
     "LocalAccount_EducationOrganizationId" bigint NOT NULL,
     "LocalAccount_FiscalYear" integer NOT NULL,
-    "FinancialCollectionDescriptor_DescriptorId" bigint NULL,
+    "FinancialCollectionDescriptor_DescriptorId" integer NULL,
     "Amount" numeric(19,4) NOT NULL,
     "AsOfDate" date NOT NULL,
     CONSTRAINT "PK_LocalActual" PRIMARY KEY ("DocumentId"),
@@ -3999,7 +4000,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalBudget"
     "LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
     "LocalAccount_EducationOrganizationId" bigint NOT NULL,
     "LocalAccount_FiscalYear" integer NOT NULL,
-    "FinancialCollectionDescriptor_DescriptorId" bigint NULL,
+    "FinancialCollectionDescriptor_DescriptorId" integer NULL,
     "Amount" numeric(19,4) NOT NULL,
     "AsOfDate" date NOT NULL,
     CONSTRAINT "PK_LocalBudget" PRIMARY KEY ("DocumentId"),
@@ -4018,7 +4019,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalContractedStaff"
     "LocalAccount_FiscalYear" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "Staff_StaffUniqueId" varchar(32) NOT NULL,
-    "FinancialCollectionDescriptor_DescriptorId" bigint NULL,
+    "FinancialCollectionDescriptor_DescriptorId" integer NULL,
     "Amount" numeric(19,4) NOT NULL,
     "AsOfDate" date NOT NULL,
     CONSTRAINT "PK_LocalContractedStaff" PRIMARY KEY ("DocumentId"),
@@ -4038,9 +4039,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgency"
     "ParentLocalEducationAgency_LocalEducationAgencyId" bigint NULL,
     "StateEducationAgency_DocumentId" bigint NULL,
     "StateEducationAgency_StateEducationAgencyId" bigint NULL,
-    "CharterStatusDescriptor_DescriptorId" bigint NULL,
-    "LocalEducationAgencyCategoryDescriptor_DescriptorId" bigint NOT NULL,
-    "OperationalStatusDescriptor_DescriptorId" bigint NULL,
+    "CharterStatusDescriptor_DescriptorId" integer NULL,
+    "LocalEducationAgencyCategoryDescriptor_DescriptorId" integer NOT NULL,
+    "OperationalStatusDescriptor_DescriptorId" integer NULL,
     "LocalEducationAgencyId" bigint NOT NULL,
     "NameOfInstitution" varchar(75) NOT NULL,
     "ShortNameOfInstitution" varchar(75) NULL,
@@ -4060,8 +4061,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyAccountability"
     "Ordinal" integer NOT NULL,
     "LocalEducationAgencyAccountabilitySchoolYear_DocumentId" bigint NOT NULL,
     "LocalEducationAgencyAccountabilitySchoolYear_SchoolYear" integer NOT NULL,
-    "GunFreeSchoolsActReportingStatusDescriptor_DescriptorId" bigint NULL,
-    "SchoolChoiceImplementStatusDescriptor_DescriptorId" bigint NULL,
+    "GunFreeSchoolsActReportingStatusDescriptor_DescriptorId" integer NULL,
+    "SchoolChoiceImplementStatusDescriptor_DescriptorId" integer NULL,
     CONSTRAINT "PK_LocalEducationAgencyAccountability" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_LocalEducationAgencyAccountability_LocalEducation_ccf851bf3d" UNIQUE ("LocalEducationAgency_DocumentId", "LocalEducationAgencyAccountabilitySchoolYear_DocumentId"),
     CONSTRAINT "UX_LocalEducationAgencyAccountability_Ordinal_LocalE_196048a6ee" UNIQUE ("LocalEducationAgency_DocumentId", "Ordinal"),
@@ -4073,9 +4074,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyAddress"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "LocalEducationAgency_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "LocaleDescriptor_DescriptorId" bigint NULL,
-    "StateAbbreviationDescriptor_DescriptorId" bigint NOT NULL,
+    "AddressTypeDescriptor_DescriptorId" integer NOT NULL,
+    "LocaleDescriptor_DescriptorId" integer NULL,
+    "StateAbbreviationDescriptor_DescriptorId" integer NOT NULL,
     "ApartmentRoomSuiteNumber" varchar(50) NULL,
     "BuildingSiteNumber" varchar(20) NULL,
     "City" varchar(30) NOT NULL,
@@ -4098,7 +4099,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyCategory"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "LocalEducationAgency_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
+    "EducationOrganizationCategoryDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_LocalEducationAgencyCategory" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_LocalEducationAgencyCategory_EducationOrganizatio_99bd89dd4e" UNIQUE ("LocalEducationAgency_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId"),
     CONSTRAINT "UX_LocalEducationAgencyCategory_Ordinal_LocalEducati_91837f8a40" UNIQUE ("LocalEducationAgency_DocumentId", "Ordinal")
@@ -4128,7 +4129,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyIdentificationCode"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "LocalEducationAgency_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
+    "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" integer NOT NULL,
     "IdentificationCode" varchar(60) NOT NULL,
     CONSTRAINT "PK_LocalEducationAgencyIdentificationCode" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_LocalEducationAgencyIdentificationCode_EducationO_f71ca68ab2" UNIQUE ("LocalEducationAgency_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede"),
@@ -4140,9 +4141,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyIndicator"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "LocalEducationAgency_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
-    "IndicatorGroupDescriptor_DescriptorId" bigint NULL,
-    "IndicatorLevelDescriptor_DescriptorId" bigint NULL,
+    "IndicatorDescriptor_DescriptorId" integer NOT NULL,
+    "IndicatorGroupDescriptor_DescriptorId" integer NULL,
+    "IndicatorLevelDescriptor_DescriptorId" integer NULL,
     "DesignatedBy" varchar(60) NULL,
     "IndicatorValue" varchar(60) NULL,
     CONSTRAINT "PK_LocalEducationAgencyIndicator" PRIMARY KEY ("CollectionItemId"),
@@ -4156,7 +4157,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyInstitutionTelephone"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "LocalEducationAgency_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" integer NOT NULL,
     "TelephoneNumber" varchar(24) NOT NULL,
     CONSTRAINT "PK_LocalEducationAgencyInstitutionTelephone" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_LocalEducationAgencyInstitutionTelephone_Institut_4a68c151c0" UNIQUE ("LocalEducationAgency_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId"),
@@ -4168,8 +4169,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyInternationalAddress"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "LocalEducationAgency_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "CountryDescriptor_DescriptorId" bigint NOT NULL,
+    "AddressTypeDescriptor_DescriptorId" integer NOT NULL,
+    "CountryDescriptor_DescriptorId" integer NOT NULL,
     "AddressLine1" varchar(150) NOT NULL,
     "AddressLine2" varchar(150) NULL,
     "AddressLine3" varchar(150) NULL,
@@ -4218,7 +4219,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEncumbrance"
     "LocalAccount_AccountIdentifier" varchar(50) NOT NULL,
     "LocalAccount_EducationOrganizationId" bigint NOT NULL,
     "LocalAccount_FiscalYear" integer NOT NULL,
-    "FinancialCollectionDescriptor_DescriptorId" bigint NULL,
+    "FinancialCollectionDescriptor_DescriptorId" integer NULL,
     "Amount" numeric(19,4) NOT NULL,
     "AsOfDate" date NOT NULL,
     CONSTRAINT "PK_LocalEncumbrance" PRIMARY KEY ("DocumentId"),
@@ -4237,7 +4238,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalPayroll"
     "LocalAccount_FiscalYear" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "Staff_StaffUniqueId" varchar(32) NOT NULL,
-    "FinancialCollectionDescriptor_DescriptorId" bigint NULL,
+    "FinancialCollectionDescriptor_DescriptorId" integer NULL,
     "Amount" numeric(19,4) NOT NULL,
     "AsOfDate" date NOT NULL,
     CONSTRAINT "PK_LocalPayroll" PRIMARY KEY ("DocumentId"),
@@ -4280,7 +4281,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ObjectDimensionReportingTag"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "ObjectDimension_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
+    "ReportingTagDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_ObjectDimensionReportingTag" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_ObjectDimensionReportingTag_ObjectDimension_Docum_d0122831b2" UNIQUE ("ObjectDimension_DocumentId", "ReportingTagDescriptor_DescriptorId"),
     CONSTRAINT "UX_ObjectDimensionReportingTag_Ordinal_ObjectDimensi_a8086e687e" UNIQUE ("ObjectDimension_DocumentId", "Ordinal")
@@ -4300,7 +4301,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessment"
     "ParentObjectiveAssessment_AssessmentIdentifier" varchar(60) GENERATED ALWAYS AS (CASE WHEN "ParentObjectiveAssessment_DocumentId" IS NULL THEN NULL ELSE "AssessmentIdentifier_Unified" END) STORED,
     "ParentObjectiveAssessment_Namespace" varchar(255) GENERATED ALWAYS AS (CASE WHEN "ParentObjectiveAssessment_DocumentId" IS NULL THEN NULL ELSE "Namespace_Unified" END) STORED,
     "ParentObjectiveAssessment_IdentificationCode" varchar(60) NULL,
-    "AcademicSubjectDescriptor_DescriptorId" bigint NULL,
+    "AcademicSubjectDescriptor_DescriptorId" integer NULL,
     "Description" varchar(1024) NULL,
     "IdentificationCode" varchar(60) NOT NULL,
     "MaxRawScore" numeric(15,5) NULL,
@@ -4346,9 +4347,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessmentPerformanceLevel"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "ObjectiveAssessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "AssessmentReportingMethodDescriptor_DescriptorId" bigint NOT NULL,
-    "PerformanceLevelDescriptor_DescriptorId" bigint NOT NULL,
-    "ResultDatatypeTypeDescriptor_DescriptorId" bigint NULL,
+    "AssessmentReportingMethodDescriptor_DescriptorId" integer NOT NULL,
+    "PerformanceLevelDescriptor_DescriptorId" integer NOT NULL,
+    "ResultDatatypeTypeDescriptor_DescriptorId" integer NULL,
     "MaximumScore" varchar(35) NULL,
     "MinimumScore" varchar(35) NULL,
     "PerformanceLevelIndicatorName" varchar(60) NULL,
@@ -4362,8 +4363,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessmentScore"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "ObjectiveAssessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "AssessmentReportingMethodDescriptor_DescriptorId" bigint NOT NULL,
-    "ResultDatatypeTypeDescriptor_DescriptorId" bigint NULL,
+    "AssessmentReportingMethodDescriptor_DescriptorId" integer NOT NULL,
+    "ResultDatatypeTypeDescriptor_DescriptorId" integer NULL,
     "MaximumScore" varchar(35) NULL,
     "MinimumScore" varchar(35) NULL,
     CONSTRAINT "PK_ObjectiveAssessmentScore" PRIMARY KEY ("CollectionItemId"),
@@ -4378,10 +4379,10 @@ CREATE TABLE IF NOT EXISTS "edfi"."OpenStaffPosition"
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "EmploymentStatusDescriptor_DescriptorId" bigint NOT NULL,
-    "PostingResultDescriptor_DescriptorId" bigint NULL,
-    "ProgramAssignmentDescriptor_DescriptorId" bigint NULL,
-    "StaffClassificationDescriptor_DescriptorId" bigint NOT NULL,
+    "EmploymentStatusDescriptor_DescriptorId" integer NOT NULL,
+    "PostingResultDescriptor_DescriptorId" integer NULL,
+    "ProgramAssignmentDescriptor_DescriptorId" integer NULL,
+    "StaffClassificationDescriptor_DescriptorId" integer NOT NULL,
     "DatePosted" date NOT NULL,
     "DatePostingRemoved" date NULL,
     "PositionTitle" varchar(100) NULL,
@@ -4396,7 +4397,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."OpenStaffPositionAcademicSubject"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "OpenStaffPosition_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "AcademicSubjectDescriptor_DescriptorId" bigint NOT NULL,
+    "AcademicSubjectDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_OpenStaffPositionAcademicSubject" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_OpenStaffPositionAcademicSubject_AcademicSubjectD_fb85ce61a9" UNIQUE ("OpenStaffPosition_DocumentId", "AcademicSubjectDescriptor_DescriptorId"),
     CONSTRAINT "UX_OpenStaffPositionAcademicSubject_Ordinal_OpenStaf_7b1a6385ee" UNIQUE ("OpenStaffPosition_DocumentId", "Ordinal")
@@ -4407,7 +4408,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."OpenStaffPositionInstructionalGradeLevel"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "OpenStaffPosition_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
+    "GradeLevelDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_OpenStaffPositionInstructionalGradeLevel" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_OpenStaffPositionInstructionalGradeLevel_GradeLev_f8b6d5d312" UNIQUE ("OpenStaffPosition_DocumentId", "GradeLevelDescriptor_DescriptorId"),
     CONSTRAINT "UX_OpenStaffPositionInstructionalGradeLevel_Ordinal__674dfbeab6" UNIQUE ("OpenStaffPosition_DocumentId", "Ordinal")
@@ -4431,7 +4432,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."OperationalUnitDimensionReportingTag"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "OperationalUnitDimension_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
-    "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
+    "ReportingTagDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_OperationalUnitDimensionReportingTag" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_OperationalUnitDimensionReportingTag_OperationalU_0822b30e5e" UNIQUE ("OperationalUnitDimension_DocumentId", "ReportingTagDescriptor_DescriptorId"),
     CONSTRAINT "UX_OperationalUnitDimensionReportingTag_Ordinal_Oper_c13c1acf20" UNIQUE ("OperationalUnitDimension_DocumentId", "Ordinal")
@@ -4444,8 +4445,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartment"
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "ParentEducationOrganization_DocumentId" bigint NULL,
     "ParentEducationOrganization_EducationOrganizationId" bigint NULL,
-    "AcademicSubjectDescriptor_DescriptorId" bigint NULL,
-    "OperationalStatusDescriptor_DescriptorId" bigint NULL,
+    "AcademicSubjectDescriptor_DescriptorId" integer NULL,
+    "OperationalStatusDescriptor_DescriptorId" integer NULL,
     "NameOfInstitution" varchar(75) NOT NULL,
     "OrganizationDepartmentId" bigint NOT NULL,
     "ShortNameOfInstitution" varchar(75) NULL,
@@ -4460,9 +4461,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentAddress"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "OrganizationDepartment_DocumentId" bigint NOT NULL,
-    "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "LocaleDescriptor_DescriptorId" bigint NULL,
-    "StateAbbreviationDescriptor_DescriptorId" bigint NOT NULL,
+    "AddressTypeDescriptor_DescriptorId" integer NOT NULL,
+    "LocaleDescriptor_DescriptorId" integer NULL,
+    "StateAbbreviationDescriptor_DescriptorId" integer NOT NULL,
     "ApartmentRoomSuiteNumber" varchar(50) NULL,
     "BuildingSiteNumber" varchar(20) NULL,
     "City" varchar(30) NOT NULL,
@@ -4485,7 +4486,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentCategory"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "OrganizationDepartment_DocumentId" bigint NOT NULL,
-    "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
+    "EducationOrganizationCategoryDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_OrganizationDepartmentCategory" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_OrganizationDepartmentCategory_EducationOrganizat_fe828c4e3d" UNIQUE ("OrganizationDepartment_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId"),
     CONSTRAINT "UX_OrganizationDepartmentCategory_Ordinal_Organizati_1b79fd86a0" UNIQUE ("OrganizationDepartment_DocumentId", "Ordinal")
@@ -4496,7 +4497,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentIdentificationCode"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "OrganizationDepartment_DocumentId" bigint NOT NULL,
-    "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
+    "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" integer NOT NULL,
     "IdentificationCode" varchar(60) NOT NULL,
     CONSTRAINT "PK_OrganizationDepartmentIdentificationCode" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_OrganizationDepartmentIdentificationCode_Educatio_7b150114ab" UNIQUE ("OrganizationDepartment_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede"),
@@ -4508,9 +4509,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentIndicator"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "OrganizationDepartment_DocumentId" bigint NOT NULL,
-    "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
-    "IndicatorGroupDescriptor_DescriptorId" bigint NULL,
-    "IndicatorLevelDescriptor_DescriptorId" bigint NULL,
+    "IndicatorDescriptor_DescriptorId" integer NOT NULL,
+    "IndicatorGroupDescriptor_DescriptorId" integer NULL,
+    "IndicatorLevelDescriptor_DescriptorId" integer NULL,
     "DesignatedBy" varchar(60) NULL,
     "IndicatorValue" varchar(60) NULL,
     CONSTRAINT "PK_OrganizationDepartmentIndicator" PRIMARY KEY ("CollectionItemId"),
@@ -4524,7 +4525,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentInstitutionTelephone"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "OrganizationDepartment_DocumentId" bigint NOT NULL,
-    "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" integer NOT NULL,
     "TelephoneNumber" varchar(24) NOT NULL,
     CONSTRAINT "PK_OrganizationDepartmentInstitutionTelephone" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_OrganizationDepartmentInstitutionTelephone_Instit_12e9ac27b2" UNIQUE ("OrganizationDepartment_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId"),
@@ -4536,8 +4537,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentInternationalAddress"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "OrganizationDepartment_DocumentId" bigint NOT NULL,
-    "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "CountryDescriptor_DescriptorId" bigint NOT NULL,
+    "AddressTypeDescriptor_DescriptorId" integer NOT NULL,
+    "CountryDescriptor_DescriptorId" integer NOT NULL,
     "AddressLine1" varchar(150) NOT NULL,
     "AddressLine2" varchar(150) NULL,
     "AddressLine3" varchar(150) NULL,
@@ -4582,7 +4583,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Person"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
-    "SourceSystemDescriptor_DescriptorId" bigint NOT NULL,
+    "SourceSystemDescriptor_DescriptorId" integer NOT NULL,
     "PersonId" varchar(32) NOT NULL,
     CONSTRAINT "PK_Person" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_Person_NK" UNIQUE ("PersonId", "SourceSystemDescriptor_DescriptorId"),
@@ -4598,7 +4599,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryEvent"
     "PostSecondaryInstitution_PostSecondaryInstitutionId" bigint NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "PostSecondaryEventCategoryDescriptor_DescriptorId" bigint NOT NULL,
+    "PostSecondaryEventCategoryDescriptor_DescriptorId" integer NOT NULL,
     "EventDate" date NOT NULL,
     CONSTRAINT "PK_PostSecondaryEvent" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_PostSecondaryEvent_NK" UNIQUE ("EventDate", "PostSecondaryEventCategoryDescriptor_DescriptorId", "Student_DocumentId"),
@@ -4611,9 +4612,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitution"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
-    "AdministrativeFundingControlDescriptor_DescriptorId" bigint NULL,
-    "OperationalStatusDescriptor_DescriptorId" bigint NULL,
-    "PostSecondaryInstitutionLevelDescriptor_DescriptorId" bigint NULL,
+    "AdministrativeFundingControlDescriptor_DescriptorId" integer NULL,
+    "OperationalStatusDescriptor_DescriptorId" integer NULL,
+    "PostSecondaryInstitutionLevelDescriptor_DescriptorId" integer NULL,
     "NameOfInstitution" varchar(75) NOT NULL,
     "PostSecondaryInstitutionId" bigint NOT NULL,
     "ShortNameOfInstitution" varchar(75) NULL,
@@ -4628,9 +4629,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionAddress"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
-    "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "LocaleDescriptor_DescriptorId" bigint NULL,
-    "StateAbbreviationDescriptor_DescriptorId" bigint NOT NULL,
+    "AddressTypeDescriptor_DescriptorId" integer NOT NULL,
+    "LocaleDescriptor_DescriptorId" integer NULL,
+    "StateAbbreviationDescriptor_DescriptorId" integer NOT NULL,
     "ApartmentRoomSuiteNumber" varchar(50) NULL,
     "BuildingSiteNumber" varchar(20) NULL,
     "City" varchar(30) NOT NULL,
@@ -4653,7 +4654,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionCategory"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
-    "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
+    "EducationOrganizationCategoryDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_PostSecondaryInstitutionCategory" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_PostSecondaryInstitutionCategory_EducationOrganiz_add6c4803e" UNIQUE ("PostSecondaryInstitution_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId"),
     CONSTRAINT "UX_PostSecondaryInstitutionCategory_Ordinal_PostSeco_fccb1af77d" UNIQUE ("PostSecondaryInstitution_DocumentId", "Ordinal")
@@ -4664,7 +4665,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionIdentificationCode"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
-    "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
+    "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" integer NOT NULL,
     "IdentificationCode" varchar(60) NOT NULL,
     CONSTRAINT "PK_PostSecondaryInstitutionIdentificationCode" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_PostSecondaryInstitutionIdentificationCode_Educat_2eac965986" UNIQUE ("PostSecondaryInstitution_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede"),
@@ -4676,9 +4677,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionIndicator"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
-    "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
-    "IndicatorGroupDescriptor_DescriptorId" bigint NULL,
-    "IndicatorLevelDescriptor_DescriptorId" bigint NULL,
+    "IndicatorDescriptor_DescriptorId" integer NOT NULL,
+    "IndicatorGroupDescriptor_DescriptorId" integer NULL,
+    "IndicatorLevelDescriptor_DescriptorId" integer NULL,
     "DesignatedBy" varchar(60) NULL,
     "IndicatorValue" varchar(60) NULL,
     CONSTRAINT "PK_PostSecondaryInstitutionIndicator" PRIMARY KEY ("CollectionItemId"),
@@ -4692,7 +4693,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionInstitutionTelephone"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
-    "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" integer NOT NULL,
     "TelephoneNumber" varchar(24) NOT NULL,
     CONSTRAINT "PK_PostSecondaryInstitutionInstitutionTelephone" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_PostSecondaryInstitutionInstitutionTelephone_Inst_c87875ca8a" UNIQUE ("PostSecondaryInstitution_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId"),
@@ -4704,8 +4705,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionInternationalAddress"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
-    "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "CountryDescriptor_DescriptorId" bigint NOT NULL,
+    "AddressTypeDescriptor_DescriptorId" integer NOT NULL,
+    "CountryDescriptor_DescriptorId" integer NOT NULL,
     "AddressLine1" varchar(150) NOT NULL,
     "AddressLine2" varchar(150) NULL,
     "AddressLine3" varchar(150) NULL,
@@ -4724,7 +4725,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionMediumOfInstruction"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
-    "MediumOfInstructionDescriptor_DescriptorId" bigint NOT NULL,
+    "MediumOfInstructionDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_PostSecondaryInstitutionMediumOfInstruction" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_PostSecondaryInstitutionMediumOfInstruction_Mediu_96af37a553" UNIQUE ("PostSecondaryInstitution_DocumentId", "MediumOfInstructionDescriptor_DescriptorId"),
     CONSTRAINT "UX_PostSecondaryInstitutionMediumOfInstruction_Ordin_41f3479e47" UNIQUE ("PostSecondaryInstitution_DocumentId", "Ordinal")
@@ -4763,7 +4764,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Program"
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "ProgramTypeDescriptor_DescriptorId" integer NOT NULL,
     "ProgramId" varchar(20) NULL,
     "ProgramName" varchar(60) NOT NULL,
     CONSTRAINT "PK_Program" PRIMARY KEY ("DocumentId"),
@@ -4777,7 +4778,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramCharacteristic"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Program_DocumentId" bigint NOT NULL,
-    "ProgramCharacteristicDescriptor_DescriptorId" bigint NOT NULL,
+    "ProgramCharacteristicDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_ProgramCharacteristic" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_ProgramCharacteristic_Ordinal_Program_DocumentId" UNIQUE ("Program_DocumentId", "Ordinal"),
     CONSTRAINT "UX_ProgramCharacteristic_Program_DocumentId_ProgramC_08bb610cbc" UNIQUE ("Program_DocumentId", "ProgramCharacteristicDescriptor_DescriptorId")
@@ -4801,7 +4802,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramSponsor"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Program_DocumentId" bigint NOT NULL,
-    "ProgramSponsorDescriptor_DescriptorId" bigint NOT NULL,
+    "ProgramSponsorDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_ProgramSponsor" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_ProgramSponsor_Ordinal_Program_DocumentId" UNIQUE ("Program_DocumentId", "Ordinal"),
     CONSTRAINT "UX_ProgramSponsor_Program_DocumentId_ProgramSponsorD_f998dd3ded" UNIQUE ("Program_DocumentId", "ProgramSponsorDescriptor_DescriptorId")
@@ -4825,7 +4826,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramDimensionReportingTag"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ProgramDimension_DocumentId" bigint NOT NULL,
-    "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
+    "ReportingTagDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_ProgramDimensionReportingTag" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_ProgramDimensionReportingTag_Ordinal_ProgramDimen_dc03da6d78" UNIQUE ("ProgramDimension_DocumentId", "Ordinal"),
     CONSTRAINT "UX_ProgramDimensionReportingTag_ProgramDimension_Doc_0e7daeb9e2" UNIQUE ("ProgramDimension_DocumentId", "ReportingTagDescriptor_DescriptorId")
@@ -4839,9 +4840,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluation"
     "ProgramProgram_DocumentId" bigint NOT NULL,
     "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "ProgramEvaluationPeriodDescriptor_DescriptorId" bigint NOT NULL,
-    "ProgramEvaluationTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" integer NOT NULL,
+    "ProgramEvaluationPeriodDescriptor_DescriptorId" integer NOT NULL,
+    "ProgramEvaluationTypeDescriptor_DescriptorId" integer NOT NULL,
     "EvaluationMaxNumericRating" numeric(6,3) NULL,
     "EvaluationMinNumericRating" numeric(6,3) NULL,
     "ProgramEvaluationDescription" varchar(255) NULL,
@@ -4857,7 +4858,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationLevel"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ProgramEvaluation_DocumentId" bigint NOT NULL,
-    "RatingLevelDescriptor_DescriptorId" bigint NOT NULL,
+    "RatingLevelDescriptor_DescriptorId" integer NOT NULL,
     "MaxNumericRating" numeric(6,3) NULL,
     "MinNumericRating" numeric(6,3) NULL,
     CONSTRAINT "PK_ProgramEvaluationLevel" PRIMARY KEY ("CollectionItemId"),
@@ -4871,26 +4872,26 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationElement"
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "ProgramEducationOrganizationId_Unified" bigint NOT NULL,
-    "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId" bigint NOT NULL,
+    "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId" integer NOT NULL,
     "ProgramEvaluationTitle_Unified" varchar(50) NOT NULL,
-    "ProgramEvaluationTypeDescriptor_Unified_DescriptorId" bigint NOT NULL,
+    "ProgramEvaluationTypeDescriptor_Unified_DescriptorId" integer NOT NULL,
     "ProgramName_Unified" varchar(60) NOT NULL,
-    "ProgramTypeDescriptor_Unified_DescriptorId" bigint NOT NULL,
+    "ProgramTypeDescriptor_Unified_DescriptorId" integer NOT NULL,
     "ProgramEvaluationObjective_DocumentId" bigint NULL,
     "ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle" varchar(50) NULL,
     "ProgramEvaluationObjective_ProgramEducationOrganizationId" bigint GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluationObjective_DocumentId" IS NULL THEN NULL ELSE "ProgramEducationOrganizationId_Unified" END) STORED,
-    "ProgramEvaluationObjective_ProgramEvaluationPeriodDe_0fde0c9fcc" bigint GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluationObjective_DocumentId" IS NULL THEN NULL ELSE "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId" END) STORED,
+    "ProgramEvaluationObjective_ProgramEvaluationPeriodDe_0fde0c9fcc" integer GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluationObjective_DocumentId" IS NULL THEN NULL ELSE "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId" END) STORED,
     "ProgramEvaluationObjective_ProgramEvaluationTitle" varchar(50) GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluationObjective_DocumentId" IS NULL THEN NULL ELSE "ProgramEvaluationTitle_Unified" END) STORED,
-    "ProgramEvaluationObjective_ProgramEvaluationTypeDesc_513b5067cb" bigint GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluationObjective_DocumentId" IS NULL THEN NULL ELSE "ProgramEvaluationTypeDescriptor_Unified_DescriptorId" END) STORED,
+    "ProgramEvaluationObjective_ProgramEvaluationTypeDesc_513b5067cb" integer GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluationObjective_DocumentId" IS NULL THEN NULL ELSE "ProgramEvaluationTypeDescriptor_Unified_DescriptorId" END) STORED,
     "ProgramEvaluationObjective_ProgramName" varchar(60) GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluationObjective_DocumentId" IS NULL THEN NULL ELSE "ProgramName_Unified" END) STORED,
-    "ProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId" bigint GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluationObjective_DocumentId" IS NULL THEN NULL ELSE "ProgramTypeDescriptor_Unified_DescriptorId" END) STORED,
+    "ProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId" integer GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluationObjective_DocumentId" IS NULL THEN NULL ELSE "ProgramTypeDescriptor_Unified_DescriptorId" END) STORED,
     "ProgramEvaluation_DocumentId" bigint NOT NULL,
-    "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" bigint GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluation_DocumentId" IS NULL THEN NULL ELSE "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId" END) STORED,
+    "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" integer GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluation_DocumentId" IS NULL THEN NULL ELSE "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId" END) STORED,
     "ProgramEvaluation_ProgramEvaluationTitle" varchar(50) GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluation_DocumentId" IS NULL THEN NULL ELSE "ProgramEvaluationTitle_Unified" END) STORED,
-    "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" bigint GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluation_DocumentId" IS NULL THEN NULL ELSE "ProgramEvaluationTypeDescriptor_Unified_DescriptorId" END) STORED,
+    "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" integer GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluation_DocumentId" IS NULL THEN NULL ELSE "ProgramEvaluationTypeDescriptor_Unified_DescriptorId" END) STORED,
     "ProgramEvaluation_ProgramEducationOrganizationId" bigint GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluation_DocumentId" IS NULL THEN NULL ELSE "ProgramEducationOrganizationId_Unified" END) STORED,
     "ProgramEvaluation_ProgramName" varchar(60) GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluation_DocumentId" IS NULL THEN NULL ELSE "ProgramName_Unified" END) STORED,
-    "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" bigint GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluation_DocumentId" IS NULL THEN NULL ELSE "ProgramTypeDescriptor_Unified_DescriptorId" END) STORED,
+    "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" integer GENERATED ALWAYS AS (CASE WHEN "ProgramEvaluation_DocumentId" IS NULL THEN NULL ELSE "ProgramTypeDescriptor_Unified_DescriptorId" END) STORED,
     "ElementMaxNumericRating" numeric(6,3) NULL,
     "ElementMinNumericRating" numeric(6,3) NULL,
     "ElementSortOrder" integer NULL,
@@ -4908,7 +4909,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationElementProgramEvaluationLeve
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ProgramEvaluationElement_DocumentId" bigint NOT NULL,
-    "RatingLevelDescriptor_DescriptorId" bigint NOT NULL,
+    "RatingLevelDescriptor_DescriptorId" integer NOT NULL,
     "ElementMaxNumericRating" numeric(6,3) NULL,
     "ElementMinNumericRating" numeric(6,3) NULL,
     CONSTRAINT "PK_ProgramEvaluationElementProgramEvaluationLevel" PRIMARY KEY ("CollectionItemId"),
@@ -4922,12 +4923,12 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationObjective"
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "ProgramEvaluation_DocumentId" bigint NOT NULL,
-    "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" bigint NOT NULL,
+    "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" integer NOT NULL,
     "ProgramEvaluation_ProgramEvaluationTitle" varchar(50) NOT NULL,
-    "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" integer NOT NULL,
     "ProgramEvaluation_ProgramEducationOrganizationId" bigint NOT NULL,
     "ProgramEvaluation_ProgramName" varchar(60) NOT NULL,
-    "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" integer NOT NULL,
     "ObjectiveMaxNumericRating" numeric(6,3) NULL,
     "ObjectiveMinNumericRating" numeric(6,3) NULL,
     "ObjectiveSortOrder" integer NULL,
@@ -4944,7 +4945,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationObjectiveProgramEvaluationLe
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ProgramEvaluationObjective_DocumentId" bigint NOT NULL,
-    "RatingLevelDescriptor_DescriptorId" bigint NOT NULL,
+    "RatingLevelDescriptor_DescriptorId" integer NOT NULL,
     "ObjectiveMaxNumericRating" numeric(6,3) NULL,
     "ObjectiveMinNumericRating" numeric(6,3) NULL,
     CONSTRAINT "PK_ProgramEvaluationObjectiveProgramEvaluationLevel" PRIMARY KEY ("CollectionItemId"),
@@ -4970,7 +4971,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProjectDimensionReportingTag"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ProjectDimension_DocumentId" bigint NOT NULL,
-    "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
+    "ReportingTagDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_ProjectDimensionReportingTag" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_ProjectDimensionReportingTag_Ordinal_ProjectDimen_6d3aeada42" UNIQUE ("ProjectDimension_DocumentId", "Ordinal"),
     CONSTRAINT "UX_ProjectDimensionReportingTag_ProjectDimension_Doc_cf0731f1e9" UNIQUE ("ProjectDimension_DocumentId", "ReportingTagDescriptor_DescriptorId")
@@ -4984,7 +4985,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ReportCard"
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "GradingPeriodGradingPeriod_DocumentId" bigint NOT NULL,
-    "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" bigint NOT NULL,
+    "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" integer NOT NULL,
     "GradingPeriodGradingPeriod_GradingPeriodName" varchar(60) NOT NULL,
     "GradingPeriodGradingPeriod_SchoolId" bigint NOT NULL,
     "GradingPeriodGradingPeriod_SchoolYear" integer NOT NULL,
@@ -5006,7 +5007,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ReportCardGradePointAverage"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ReportCard_DocumentId" bigint NOT NULL,
-    "GradePointAverageTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "GradePointAverageTypeDescriptor_DescriptorId" integer NOT NULL,
     "GradePointAverageValue" numeric(18,4) NOT NULL,
     "IsCumulative" boolean NULL,
     "MaxGradePointAverageValue" numeric(18,4) NULL,
@@ -5022,8 +5023,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."ReportCardGrade"
     "ReportCard_DocumentId" bigint NOT NULL,
     "SchoolId_Unified" bigint NOT NULL,
     "Grade_DocumentId" bigint NOT NULL,
-    "Grade_GradeTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "Grade_GradingPeriodDescriptor_DescriptorId" bigint NOT NULL,
+    "Grade_GradeTypeDescriptor_DescriptorId" integer NOT NULL,
+    "Grade_GradingPeriodDescriptor_DescriptorId" integer NOT NULL,
     "Grade_GradingPeriodName" varchar(60) NOT NULL,
     "Grade_GradingPeriodReferenceSchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "Grade_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
     "Grade_GradingPeriodSchoolYear" integer NOT NULL,
@@ -5046,13 +5047,13 @@ CREATE TABLE IF NOT EXISTS "edfi"."ReportCardStudentCompetencyObjective"
     "Ordinal" integer NOT NULL,
     "ReportCard_DocumentId" bigint NOT NULL,
     "StudentCompetencyObjective_DocumentId" bigint NOT NULL,
-    "StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId" bigint NOT NULL,
+    "StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId" integer NOT NULL,
     "StudentCompetencyObjective_GradingPeriodName" varchar(60) NOT NULL,
     "StudentCompetencyObjective_GradingPeriodSchoolId" bigint NOT NULL,
     "StudentCompetencyObjective_GradingPeriodSchoolYear" integer NOT NULL,
     "StudentCompetencyObjective_ObjectiveEducationOrganizationId" bigint NOT NULL,
     "StudentCompetencyObjective_Objective" varchar(60) NOT NULL,
-    "StudentCompetencyObjective_ObjectiveGradeLevelDescri_16507c4e9d" bigint NOT NULL,
+    "StudentCompetencyObjective_ObjectiveGradeLevelDescri_16507c4e9d" integer NOT NULL,
     "StudentCompetencyObjective_StudentUniqueId" varchar(32) NOT NULL,
     CONSTRAINT "PK_ReportCardStudentCompetencyObjective" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_ReportCardStudentCompetencyObjective_Ordinal_Repo_2bd6347db0" UNIQUE ("ReportCard_DocumentId", "Ordinal"),
@@ -5073,7 +5074,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."RestraintEvent"
     "School_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "School_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "EducationalEnvironmentDescriptor_DescriptorId" bigint NULL,
+    "EducationalEnvironmentDescriptor_DescriptorId" integer NULL,
     "EventDate" date NOT NULL,
     "RestraintEventIdentifier" varchar(36) NOT NULL,
     CONSTRAINT "PK_RestraintEvent" PRIMARY KEY ("DocumentId"),
@@ -5091,7 +5092,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."RestraintEventProgram"
     "Program_DocumentId" bigint NOT NULL,
     "Program_EducationOrganizationId" bigint NOT NULL,
     "Program_ProgramName" varchar(60) NOT NULL,
-    "Program_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "Program_ProgramTypeDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_RestraintEventProgram" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_RestraintEventProgram_Ordinal_RestraintEvent_DocumentId" UNIQUE ("RestraintEvent_DocumentId", "Ordinal"),
     CONSTRAINT "UX_RestraintEventProgram_Program_DocumentId_Restrain_4b9304020d" UNIQUE ("RestraintEvent_DocumentId", "Program_DocumentId"),
@@ -5103,7 +5104,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."RestraintEventReason"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "RestraintEvent_DocumentId" bigint NOT NULL,
-    "RestraintEventReasonDescriptor_DescriptorId" bigint NOT NULL,
+    "RestraintEventReasonDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_RestraintEventReason" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_RestraintEventReason_Ordinal_RestraintEvent_DocumentId" UNIQUE ("RestraintEvent_DocumentId", "Ordinal"),
     CONSTRAINT "UX_RestraintEventReason_RestraintEvent_DocumentId_Re_3241ca1f1b" UNIQUE ("RestraintEvent_DocumentId", "RestraintEventReasonDescriptor_DescriptorId")
@@ -5118,14 +5119,14 @@ CREATE TABLE IF NOT EXISTS "edfi"."School"
     "CharterApprovalSchoolYear_CharterApprovalSchoolYear" integer NULL,
     "LocalEducationAgency_DocumentId" bigint NULL,
     "LocalEducationAgency_LocalEducationAgencyId" bigint NULL,
-    "AdministrativeFundingControlDescriptor_DescriptorId" bigint NULL,
-    "CharterApprovalAgencyTypeDescriptor_DescriptorId" bigint NULL,
-    "CharterStatusDescriptor_DescriptorId" bigint NULL,
-    "InternetAccessDescriptor_DescriptorId" bigint NULL,
-    "MagnetSpecialProgramEmphasisSchoolDescriptor_DescriptorId" bigint NULL,
-    "OperationalStatusDescriptor_DescriptorId" bigint NULL,
-    "SchoolTypeDescriptor_DescriptorId" bigint NULL,
-    "TitleIPartASchoolDesignationDescriptor_DescriptorId" bigint NULL,
+    "AdministrativeFundingControlDescriptor_DescriptorId" integer NULL,
+    "CharterApprovalAgencyTypeDescriptor_DescriptorId" integer NULL,
+    "CharterStatusDescriptor_DescriptorId" integer NULL,
+    "InternetAccessDescriptor_DescriptorId" integer NULL,
+    "MagnetSpecialProgramEmphasisSchoolDescriptor_DescriptorId" integer NULL,
+    "OperationalStatusDescriptor_DescriptorId" integer NULL,
+    "SchoolTypeDescriptor_DescriptorId" integer NULL,
+    "TitleIPartASchoolDesignationDescriptor_DescriptorId" integer NULL,
     "NameOfInstitution" varchar(75) NOT NULL,
     "SchoolId" bigint NOT NULL,
     "ShortNameOfInstitution" varchar(75) NULL,
@@ -5142,9 +5143,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolAddress"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
-    "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "LocaleDescriptor_DescriptorId" bigint NULL,
-    "StateAbbreviationDescriptor_DescriptorId" bigint NOT NULL,
+    "AddressTypeDescriptor_DescriptorId" integer NOT NULL,
+    "LocaleDescriptor_DescriptorId" integer NULL,
+    "StateAbbreviationDescriptor_DescriptorId" integer NOT NULL,
     "ApartmentRoomSuiteNumber" varchar(50) NULL,
     "BuildingSiteNumber" varchar(20) NULL,
     "City" varchar(30) NOT NULL,
@@ -5167,7 +5168,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolEducationOrganizationCategory"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
-    "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
+    "EducationOrganizationCategoryDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_SchoolEducationOrganizationCategory" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_SchoolEducationOrganizationCategory_EducationOrga_520165a25c" UNIQUE ("School_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId"),
     CONSTRAINT "UX_SchoolEducationOrganizationCategory_Ordinal_Schoo_bdcb9843fd" UNIQUE ("School_DocumentId", "Ordinal")
@@ -5178,7 +5179,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolGradeLevel"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
-    "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
+    "GradeLevelDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_SchoolGradeLevel" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_SchoolGradeLevel_GradeLevelDescriptor_DescriptorI_eda0407c32" UNIQUE ("School_DocumentId", "GradeLevelDescriptor_DescriptorId"),
     CONSTRAINT "UX_SchoolGradeLevel_Ordinal_School_DocumentId" UNIQUE ("School_DocumentId", "Ordinal")
@@ -5189,7 +5190,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolIdentificationCode"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
-    "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
+    "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" integer NOT NULL,
     "IdentificationCode" varchar(60) NOT NULL,
     CONSTRAINT "PK_SchoolIdentificationCode" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_SchoolIdentificationCode_EducationOrganizationIde_9d725ee89c" UNIQUE ("School_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede"),
@@ -5201,9 +5202,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolIndicator"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
-    "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
-    "IndicatorGroupDescriptor_DescriptorId" bigint NULL,
-    "IndicatorLevelDescriptor_DescriptorId" bigint NULL,
+    "IndicatorDescriptor_DescriptorId" integer NOT NULL,
+    "IndicatorGroupDescriptor_DescriptorId" integer NULL,
+    "IndicatorLevelDescriptor_DescriptorId" integer NULL,
     "DesignatedBy" varchar(60) NULL,
     "IndicatorValue" varchar(60) NULL,
     CONSTRAINT "PK_SchoolIndicator" PRIMARY KEY ("CollectionItemId"),
@@ -5217,7 +5218,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolInstitutionTelephone"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
-    "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" integer NOT NULL,
     "TelephoneNumber" varchar(24) NOT NULL,
     CONSTRAINT "PK_SchoolInstitutionTelephone" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_SchoolInstitutionTelephone_InstitutionTelephoneNu_99719d1596" UNIQUE ("School_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId"),
@@ -5229,8 +5230,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolInternationalAddress"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
-    "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "CountryDescriptor_DescriptorId" bigint NOT NULL,
+    "AddressTypeDescriptor_DescriptorId" integer NOT NULL,
+    "CountryDescriptor_DescriptorId" integer NOT NULL,
     "AddressLine1" varchar(150) NOT NULL,
     "AddressLine2" varchar(150) NULL,
     "AddressLine3" varchar(150) NULL,
@@ -5249,7 +5250,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolCategory"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
-    "SchoolCategoryDescriptor_DescriptorId" bigint NOT NULL,
+    "SchoolCategoryDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_SchoolCategory" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_SchoolCategory_Ordinal_School_DocumentId" UNIQUE ("School_DocumentId", "Ordinal"),
     CONSTRAINT "UX_SchoolCategory_School_DocumentId_SchoolCategoryDe_c971f139ab" UNIQUE ("School_DocumentId", "SchoolCategoryDescriptor_DescriptorId")
@@ -5312,12 +5313,12 @@ CREATE TABLE IF NOT EXISTS "edfi"."Section"
     "LocationLocation_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "LocationLocation_DocumentId" IS NULL THEN NULL ELSE "SchoolId_U35501e03_Unified" END) STORED,
     "LocationSchool_DocumentId" bigint NULL,
     "LocationSchool_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "LocationSchool_DocumentId" IS NULL THEN NULL ELSE "SchoolId_U35501e03_Unified" END) STORED,
-    "AvailableCreditTypeDescriptor_DescriptorId" bigint NULL,
-    "EducationalEnvironmentDescriptor_DescriptorId" bigint NULL,
-    "InstructionLanguageDescriptor_DescriptorId" bigint NULL,
-    "MediumOfInstructionDescriptor_DescriptorId" bigint NULL,
-    "PopulationServedDescriptor_DescriptorId" bigint NULL,
-    "SectionTypeDescriptor_DescriptorId" bigint NULL,
+    "AvailableCreditTypeDescriptor_DescriptorId" integer NULL,
+    "EducationalEnvironmentDescriptor_DescriptorId" integer NULL,
+    "InstructionLanguageDescriptor_DescriptorId" integer NULL,
+    "MediumOfInstructionDescriptor_DescriptorId" integer NULL,
+    "PopulationServedDescriptor_DescriptorId" integer NULL,
+    "SectionTypeDescriptor_DescriptorId" integer NULL,
     "AvailableCreditConversion" numeric(9,2) NULL,
     "AvailableCredits" numeric(9,3) NULL,
     "OfficialAttendancePeriod" boolean NULL,
@@ -5337,7 +5338,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SectionCharacteristic"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Section_DocumentId" bigint NOT NULL,
-    "SectionCharacteristicDescriptor_DescriptorId" bigint NOT NULL,
+    "SectionCharacteristicDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_SectionCharacteristic" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_SectionCharacteristic_Ordinal_Section_DocumentId" UNIQUE ("Section_DocumentId", "Ordinal"),
     CONSTRAINT "UX_SectionCharacteristic_Section_DocumentId_SectionC_81102fe604" UNIQUE ("Section_DocumentId", "SectionCharacteristicDescriptor_DescriptorId")
@@ -5362,7 +5363,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SectionCourseLevelCharacteristic"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Section_DocumentId" bigint NOT NULL,
-    "CourseLevelCharacteristicDescriptor_DescriptorId" bigint NOT NULL,
+    "CourseLevelCharacteristicDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_SectionCourseLevelCharacteristic" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_SectionCourseLevelCharacteristic_CourseLevelChara_fee025c1a5" UNIQUE ("Section_DocumentId", "CourseLevelCharacteristicDescriptor_DescriptorId"),
     CONSTRAINT "UX_SectionCourseLevelCharacteristic_Ordinal_Section_DocumentId" UNIQUE ("Section_DocumentId", "Ordinal")
@@ -5373,7 +5374,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SectionOfferedGradeLevel"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Section_DocumentId" bigint NOT NULL,
-    "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
+    "GradeLevelDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_SectionOfferedGradeLevel" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_SectionOfferedGradeLevel_GradeLevelDescriptor_Des_072ebc9985" UNIQUE ("Section_DocumentId", "GradeLevelDescriptor_DescriptorId"),
     CONSTRAINT "UX_SectionOfferedGradeLevel_Ordinal_Section_DocumentId" UNIQUE ("Section_DocumentId", "Ordinal")
@@ -5387,7 +5388,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SectionProgram"
     "Program_DocumentId" bigint NOT NULL,
     "Program_EducationOrganizationId" bigint NOT NULL,
     "Program_ProgramName" varchar(60) NOT NULL,
-    "Program_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "Program_ProgramTypeDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_SectionProgram" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_SectionProgram_Ordinal_Section_DocumentId" UNIQUE ("Section_DocumentId", "Ordinal"),
     CONSTRAINT "UX_SectionProgram_Program_DocumentId_Section_DocumentId" UNIQUE ("Section_DocumentId", "Program_DocumentId"),
@@ -5431,7 +5432,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Session"
     "SchoolYear_SchoolYear" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
     "School_SchoolId" bigint NOT NULL,
-    "TermDescriptor_DescriptorId" bigint NOT NULL,
+    "TermDescriptor_DescriptorId" integer NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NOT NULL,
     "SessionName" varchar(60) NOT NULL,
@@ -5463,7 +5464,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SessionGradingPeriod"
     "Ordinal" integer NOT NULL,
     "Session_DocumentId" bigint NOT NULL,
     "GradingPeriod_DocumentId" bigint NOT NULL,
-    "GradingPeriod_GradingPeriodDescriptor_DescriptorId" bigint NOT NULL,
+    "GradingPeriod_GradingPeriodDescriptor_DescriptorId" integer NOT NULL,
     "GradingPeriod_GradingPeriodName" varchar(60) NOT NULL,
     "GradingPeriod_SchoolId" bigint NOT NULL,
     "GradingPeriod_SchoolYear" integer NOT NULL,
@@ -5491,7 +5492,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SourceDimensionReportingTag"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "SourceDimension_DocumentId" bigint NOT NULL,
-    "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
+    "ReportingTagDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_SourceDimensionReportingTag" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_SourceDimensionReportingTag_Ordinal_SourceDimensi_280746a6af" UNIQUE ("SourceDimension_DocumentId", "Ordinal"),
     CONSTRAINT "UX_SourceDimensionReportingTag_ReportingTagDescripto_c35c71ba1c" UNIQUE ("SourceDimension_DocumentId", "ReportingTagDescriptor_DescriptorId")
@@ -5504,10 +5505,10 @@ CREATE TABLE IF NOT EXISTS "edfi"."Staff"
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Person_DocumentId" bigint NULL,
     "Person_PersonId" varchar(32) NULL,
-    "Person_SourceSystemDescriptor_DescriptorId" bigint NULL,
-    "CitizenshipStatusDescriptor_DescriptorId" bigint NULL,
-    "HighestCompletedLevelOfEducationDescriptor_DescriptorId" bigint NULL,
-    "SexDescriptor_DescriptorId" bigint NULL,
+    "Person_SourceSystemDescriptor_DescriptorId" integer NULL,
+    "CitizenshipStatusDescriptor_DescriptorId" integer NULL,
+    "HighestCompletedLevelOfEducationDescriptor_DescriptorId" integer NULL,
+    "SexDescriptor_DescriptorId" integer NULL,
     "BirthDate" date NULL,
     "FirstName" varchar(75) NOT NULL,
     "GenderIdentity" varchar(60) NULL,
@@ -5535,9 +5536,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffAddress"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
-    "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "LocaleDescriptor_DescriptorId" bigint NULL,
-    "StateAbbreviationDescriptor_DescriptorId" bigint NOT NULL,
+    "AddressTypeDescriptor_DescriptorId" integer NOT NULL,
+    "LocaleDescriptor_DescriptorId" integer NULL,
+    "StateAbbreviationDescriptor_DescriptorId" integer NOT NULL,
     "ApartmentRoomSuiteNumber" varchar(50) NULL,
     "BuildingSiteNumber" varchar(20) NULL,
     "City" varchar(30) NOT NULL,
@@ -5560,7 +5561,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffAncestryEthnicOrigin"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
-    "AncestryEthnicOriginDescriptor_DescriptorId" bigint NOT NULL,
+    "AncestryEthnicOriginDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StaffAncestryEthnicOrigin" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StaffAncestryEthnicOrigin_AncestryEthnicOriginDes_8b93971b11" UNIQUE ("Staff_DocumentId", "AncestryEthnicOriginDescriptor_DescriptorId"),
     CONSTRAINT "UX_StaffAncestryEthnicOrigin_Ordinal_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "Ordinal")
@@ -5573,7 +5574,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffCredential"
     "Staff_DocumentId" bigint NOT NULL,
     "Credential_DocumentId" bigint NOT NULL,
     "Credential_CredentialIdentifier" varchar(60) NOT NULL,
-    "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" bigint NOT NULL,
+    "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StaffCredential" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StaffCredential_Credential_DocumentId_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "Credential_DocumentId"),
     CONSTRAINT "UX_StaffCredential_Ordinal_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "Ordinal"),
@@ -5585,7 +5586,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffElectronicMail"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
-    "ElectronicMailTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "ElectronicMailTypeDescriptor_DescriptorId" integer NOT NULL,
     "DoNotPublishIndicator" boolean NULL,
     "ElectronicMailAddress" varchar(128) NOT NULL,
     "PrimaryEmailAddressIndicator" boolean NULL,
@@ -5599,7 +5600,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffIdentificationCode"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
-    "StaffIdentificationSystemDescriptor_DescriptorId" bigint NOT NULL,
+    "StaffIdentificationSystemDescriptor_DescriptorId" integer NOT NULL,
     "AssigningOrganizationIdentificationCode" varchar(60) NULL,
     "IdentificationCode" varchar(60) NOT NULL,
     CONSTRAINT "PK_StaffIdentificationCode" PRIMARY KEY ("CollectionItemId"),
@@ -5612,9 +5613,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffIdentificationDocument"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
-    "IdentificationDocumentUseDescriptor_DescriptorId" bigint NULL,
-    "IssuerCountryDescriptor_DescriptorId" bigint NULL,
-    "PersonalInformationVerificationDescriptor_DescriptorId" bigint NULL,
+    "IdentificationDocumentUseDescriptor_DescriptorId" integer NULL,
+    "IssuerCountryDescriptor_DescriptorId" integer NULL,
+    "PersonalInformationVerificationDescriptor_DescriptorId" integer NULL,
     "DocumentExpirationDate" date NULL,
     "DocumentTitle" varchar(60) NULL,
     "IssuerDocumentIdentificationCode" varchar(60) NULL,
@@ -5629,8 +5630,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffInternationalAddress"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
-    "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "CountryDescriptor_DescriptorId" bigint NOT NULL,
+    "AddressTypeDescriptor_DescriptorId" integer NOT NULL,
+    "CountryDescriptor_DescriptorId" integer NOT NULL,
     "AddressLine1" varchar(150) NOT NULL,
     "AddressLine2" varchar(150) NULL,
     "AddressLine3" varchar(150) NULL,
@@ -5649,7 +5650,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffLanguage"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
-    "LanguageDescriptor_DescriptorId" bigint NOT NULL,
+    "LanguageDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StaffLanguage" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StaffLanguage_CollectionItemId_Staff_DocumentId" UNIQUE ("CollectionItemId", "Staff_DocumentId"),
     CONSTRAINT "UX_StaffLanguage_LanguageDescriptor_DescriptorId_Sta_d8941c4f3e" UNIQUE ("Staff_DocumentId", "LanguageDescriptor_DescriptorId"),
@@ -5661,7 +5662,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffOtherName"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
-    "OtherNameTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "OtherNameTypeDescriptor_DescriptorId" integer NOT NULL,
     "FirstName" varchar(75) NOT NULL,
     "GenerationCodeSuffix" varchar(10) NULL,
     "LastSurname" varchar(75) NOT NULL,
@@ -5677,9 +5678,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffPersonalIdentificationDocument"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
-    "IdentificationDocumentUseDescriptor_DescriptorId" bigint NOT NULL,
-    "IssuerCountryDescriptor_DescriptorId" bigint NULL,
-    "PersonalInformationVerificationDescriptor_DescriptorId" bigint NOT NULL,
+    "IdentificationDocumentUseDescriptor_DescriptorId" integer NOT NULL,
+    "IssuerCountryDescriptor_DescriptorId" integer NULL,
+    "PersonalInformationVerificationDescriptor_DescriptorId" integer NOT NULL,
     "PersonalDocumentExpirationDate" date NULL,
     "PersonalDocumentTitle" varchar(60) NULL,
     "PersonalIssuerDocumentIdentificationCode" varchar(60) NULL,
@@ -5694,7 +5695,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffRace"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
-    "RaceDescriptor_DescriptorId" bigint NOT NULL,
+    "RaceDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StaffRace" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StaffRace_Ordinal_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StaffRace_RaceDescriptor_DescriptorId_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "RaceDescriptor_DescriptorId")
@@ -5705,8 +5706,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffRecognition"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
-    "AchievementCategoryDescriptor_DescriptorId" bigint NULL,
-    "RecognitionTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "AchievementCategoryDescriptor_DescriptorId" integer NULL,
+    "RecognitionTypeDescriptor_DescriptorId" integer NOT NULL,
     "AchievementCategorySystem" varchar(60) NULL,
     "AchievementTitle" varchar(60) NULL,
     "Criteria" varchar(150) NULL,
@@ -5728,7 +5729,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffTelephone"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
-    "TelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "TelephoneNumberTypeDescriptor_DescriptorId" integer NOT NULL,
     "DoNotPublishIndicator" boolean NULL,
     "OrderOfPriority" integer NULL,
     "TelephoneNumber" varchar(24) NOT NULL,
@@ -5743,7 +5744,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffTribalAffiliation"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
-    "TribalAffiliationDescriptor_DescriptorId" bigint NOT NULL,
+    "TribalAffiliationDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StaffTribalAffiliation" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StaffTribalAffiliation_Ordinal_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StaffTribalAffiliation_Staff_DocumentId_TribalAff_2743253d04" UNIQUE ("Staff_DocumentId", "TribalAffiliationDescriptor_DescriptorId")
@@ -5754,7 +5755,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffVisa"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
-    "VisaDescriptor_DescriptorId" bigint NOT NULL,
+    "VisaDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StaffVisa" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StaffVisa_Ordinal_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StaffVisa_Staff_DocumentId_VisaDescriptor_DescriptorId" UNIQUE ("Staff_DocumentId", "VisaDescriptor_DescriptorId")
@@ -5779,7 +5780,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffLanguageUs"
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
-    "LanguageUseDescriptor_DescriptorId" bigint NOT NULL,
+    "LanguageUseDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StaffLanguageUs" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StaffLanguageUs_Ordinal_ParentCollectionItemId" UNIQUE ("ParentCollectionItemId", "Ordinal"),
     CONSTRAINT "UX_StaffLanguageUs_ParentCollectionItemId_LanguageUs_dc5ed9d73f" UNIQUE ("ParentCollectionItemId", "LanguageUseDescriptor_DescriptorId")
@@ -5792,7 +5793,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffAbsenceEvent"
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Staff_DocumentId" bigint NOT NULL,
     "Staff_StaffUniqueId" varchar(32) NOT NULL,
-    "AbsenceEventCategoryDescriptor_DescriptorId" bigint NOT NULL,
+    "AbsenceEventCategoryDescriptor_DescriptorId" integer NOT NULL,
     "AbsenceEventReason" varchar(40) NULL,
     "EventDate" date NOT NULL,
     "HoursAbsent" numeric(18,2) NULL,
@@ -5841,7 +5842,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffDisciplineIncidentAssociationDisciplineI
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StaffDisciplineIncidentAssociation_DocumentId" bigint NOT NULL,
-    "DisciplineIncidentParticipationCodeDescriptor_DescriptorId" bigint NOT NULL,
+    "DisciplineIncidentParticipationCodeDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StaffDisciplineIncidentAssociationDisciplineIncid_b1d039c192" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StaffDisciplineIncidentAssociationDisciplineIncid_6ca01cabf6" UNIQUE ("StaffDisciplineIncidentAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StaffDisciplineIncidentAssociationDisciplineIncid_8ab6e4f1c6" UNIQUE ("StaffDisciplineIncidentAssociation_DocumentId", "DisciplineIncidentParticipationCodeDescriptor_DescriptorId")
@@ -5855,17 +5856,17 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationAssignmentAssociati
     "StaffUniqueId_Unified" varchar(32) NOT NULL,
     "Credential_DocumentId" bigint NULL,
     "Credential_CredentialIdentifier" varchar(60) NULL,
-    "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" bigint NULL,
+    "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" integer NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "EmploymentStaffEducationOrganizationEmploymentAssoci_7a3d86aa2b" bigint NULL,
     "EmploymentStaffEducationOrganizationEmploymentAssoci_af1202f2de" bigint NULL,
-    "EmploymentStaffEducationOrganizationEmploymentAssoci_48a7f76b56" bigint NULL,
+    "EmploymentStaffEducationOrganizationEmploymentAssoci_48a7f76b56" integer NULL,
     "EmploymentStaffEducationOrganizationEmploymentAssoci_0cbe1eb337" date NULL,
     "EmploymentStaffEducationOrganizationEmploymentAssoci_3d5ca61d33" varchar(32) GENERATED ALWAYS AS (CASE WHEN "EmploymentStaffEducationOrganizationEmploymentAssoci_7a3d86aa2b" IS NULL THEN NULL ELSE "StaffUniqueId_Unified" END) STORED,
     "Staff_DocumentId" bigint NOT NULL,
     "Staff_StaffUniqueId" varchar(32) GENERATED ALWAYS AS (CASE WHEN "Staff_DocumentId" IS NULL THEN NULL ELSE "StaffUniqueId_Unified" END) STORED,
-    "StaffClassificationDescriptor_DescriptorId" bigint NOT NULL,
+    "StaffClassificationDescriptor_DescriptorId" integer NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
     "FullTimeEquivalency" numeric(5,4) NULL,
@@ -5888,10 +5889,10 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationContactAssociation"
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "Staff_StaffUniqueId" varchar(32) NOT NULL,
-    "AddressAddressTypeDescriptor_DescriptorId" bigint NULL,
-    "AddressLocaleDescriptor_DescriptorId" bigint NULL,
-    "AddressStateAbbreviationDescriptor_DescriptorId" bigint NULL,
-    "ContactTypeDescriptor_DescriptorId" bigint NULL,
+    "AddressAddressTypeDescriptor_DescriptorId" integer NULL,
+    "AddressLocaleDescriptor_DescriptorId" integer NULL,
+    "AddressStateAbbreviationDescriptor_DescriptorId" integer NULL,
+    "ContactTypeDescriptor_DescriptorId" integer NULL,
     "AddressApartmentRoomSuiteNumber" varchar(50) NULL,
     "AddressBuildingSiteNumber" varchar(20) NULL,
     "AddressCity" varchar(30) NULL,
@@ -5928,7 +5929,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationContactAssociationT
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StaffEducationOrganizationContactAssociation_DocumentId" bigint NOT NULL,
-    "TelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "TelephoneNumberTypeDescriptor_DescriptorId" integer NOT NULL,
     "DoNotPublishIndicator" boolean NULL,
     "OrderOfPriority" integer NULL,
     "TelephoneNumber" varchar(24) NOT NULL,
@@ -5945,14 +5946,14 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationEmploymentAssociati
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Credential_DocumentId" bigint NULL,
     "Credential_CredentialIdentifier" varchar(60) NULL,
-    "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" bigint NULL,
+    "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" integer NULL,
     "EducationOrganization_DocumentId" bigint NOT NULL,
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "Staff_StaffUniqueId" varchar(32) NOT NULL,
-    "EmploymentStatusDescriptor_DescriptorId" bigint NOT NULL,
-    "SeparationDescriptor_DescriptorId" bigint NULL,
-    "SeparationReasonDescriptor_DescriptorId" bigint NULL,
+    "EmploymentStatusDescriptor_DescriptorId" integer NOT NULL,
+    "SeparationDescriptor_DescriptorId" integer NULL,
+    "SeparationReasonDescriptor_DescriptorId" integer NULL,
     "AnnualWage" numeric(19,4) NULL,
     "Department" varchar(60) NULL,
     "EndDate" date NULL,
@@ -5975,7 +5976,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffLeave"
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Staff_DocumentId" bigint NOT NULL,
     "Staff_StaffUniqueId" varchar(32) NOT NULL,
-    "StaffLeaveEventCategoryDescriptor_DescriptorId" bigint NOT NULL,
+    "StaffLeaveEventCategoryDescriptor_DescriptorId" integer NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
     "Reason" varchar(40) NULL,
@@ -5993,7 +5994,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffProgramAssociation"
     "ProgramProgram_DocumentId" bigint NOT NULL,
     "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "Staff_StaffUniqueId" varchar(32) NOT NULL,
     "BeginDate" date NOT NULL,
@@ -6022,7 +6023,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffSchoolAssociation"
     "School_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "School_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
     "Staff_DocumentId" bigint NOT NULL,
     "Staff_StaffUniqueId" varchar(32) NOT NULL,
-    "ProgramAssignmentDescriptor_DescriptorId" bigint NOT NULL,
+    "ProgramAssignmentDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StaffSchoolAssociation" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_StaffSchoolAssociation_NK" UNIQUE ("ProgramAssignmentDescriptor_DescriptorId", "School_DocumentId", "Staff_DocumentId"),
     CONSTRAINT "CK_StaffSchoolAssociation_Calendar_AllNone" CHECK (("Calendar_DocumentId" IS NULL AND "Calendar_CalendarCode" IS NULL AND "Calendar_SchoolId" IS NULL AND "Calendar_SchoolYear" IS NULL) OR ("Calendar_DocumentId" IS NOT NULL AND "Calendar_CalendarCode" IS NOT NULL AND "Calendar_SchoolId" IS NOT NULL AND "Calendar_SchoolYear" IS NOT NULL)),
@@ -6036,7 +6037,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffSchoolAssociationAcademicSubject"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StaffSchoolAssociation_DocumentId" bigint NOT NULL,
-    "AcademicSubjectDescriptor_DescriptorId" bigint NOT NULL,
+    "AcademicSubjectDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StaffSchoolAssociationAcademicSubject" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StaffSchoolAssociationAcademicSubject_AcademicSub_62cfad3d6e" UNIQUE ("StaffSchoolAssociation_DocumentId", "AcademicSubjectDescriptor_DescriptorId"),
     CONSTRAINT "UX_StaffSchoolAssociationAcademicSubject_Ordinal_Sta_4fb1f1f42e" UNIQUE ("StaffSchoolAssociation_DocumentId", "Ordinal")
@@ -6047,7 +6048,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffSchoolAssociationGradeLevel"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StaffSchoolAssociation_DocumentId" bigint NOT NULL,
-    "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
+    "GradeLevelDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StaffSchoolAssociationGradeLevel" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StaffSchoolAssociationGradeLevel_GradeLevelDescri_fdfd75379f" UNIQUE ("StaffSchoolAssociation_DocumentId", "GradeLevelDescriptor_DescriptorId"),
     CONSTRAINT "UX_StaffSchoolAssociationGradeLevel_Ordinal_StaffSch_c966135219" UNIQUE ("StaffSchoolAssociation_DocumentId", "Ordinal")
@@ -6066,7 +6067,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffSectionAssociation"
     "Section_SectionIdentifier" varchar(255) NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "Staff_StaffUniqueId" varchar(32) NOT NULL,
-    "ClassroomPositionDescriptor_DescriptorId" bigint NOT NULL,
+    "ClassroomPositionDescriptor_DescriptorId" integer NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
     "HighlyQualifiedTeacher" boolean NULL,
@@ -6083,7 +6084,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgency"
     "DocumentId" bigint NOT NULL,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
-    "OperationalStatusDescriptor_DescriptorId" bigint NULL,
+    "OperationalStatusDescriptor_DescriptorId" integer NULL,
     "NameOfInstitution" varchar(75) NOT NULL,
     "ShortNameOfInstitution" varchar(75) NULL,
     "StateEducationAgencyId" bigint NOT NULL,
@@ -6112,9 +6113,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyAddress"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StateEducationAgency_DocumentId" bigint NOT NULL,
-    "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "LocaleDescriptor_DescriptorId" bigint NULL,
-    "StateAbbreviationDescriptor_DescriptorId" bigint NOT NULL,
+    "AddressTypeDescriptor_DescriptorId" integer NOT NULL,
+    "LocaleDescriptor_DescriptorId" integer NULL,
+    "StateAbbreviationDescriptor_DescriptorId" integer NOT NULL,
     "ApartmentRoomSuiteNumber" varchar(50) NULL,
     "BuildingSiteNumber" varchar(20) NULL,
     "City" varchar(30) NOT NULL,
@@ -6137,7 +6138,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyCategory"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StateEducationAgency_DocumentId" bigint NOT NULL,
-    "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
+    "EducationOrganizationCategoryDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StateEducationAgencyCategory" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StateEducationAgencyCategory_EducationOrganizatio_836b47864c" UNIQUE ("StateEducationAgency_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId"),
     CONSTRAINT "UX_StateEducationAgencyCategory_Ordinal_StateEducati_35b73440b9" UNIQUE ("StateEducationAgency_DocumentId", "Ordinal")
@@ -6160,7 +6161,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyIdentificationCode"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StateEducationAgency_DocumentId" bigint NOT NULL,
-    "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
+    "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" integer NOT NULL,
     "IdentificationCode" varchar(60) NOT NULL,
     CONSTRAINT "PK_StateEducationAgencyIdentificationCode" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StateEducationAgencyIdentificationCode_EducationO_a449a8b727" UNIQUE ("StateEducationAgency_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede"),
@@ -6172,9 +6173,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyIndicator"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StateEducationAgency_DocumentId" bigint NOT NULL,
-    "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
-    "IndicatorGroupDescriptor_DescriptorId" bigint NULL,
-    "IndicatorLevelDescriptor_DescriptorId" bigint NULL,
+    "IndicatorDescriptor_DescriptorId" integer NOT NULL,
+    "IndicatorGroupDescriptor_DescriptorId" integer NULL,
+    "IndicatorLevelDescriptor_DescriptorId" integer NULL,
     "DesignatedBy" varchar(60) NULL,
     "IndicatorValue" varchar(60) NULL,
     CONSTRAINT "PK_StateEducationAgencyIndicator" PRIMARY KEY ("CollectionItemId"),
@@ -6188,7 +6189,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyInstitutionTelephone"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StateEducationAgency_DocumentId" bigint NOT NULL,
-    "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" integer NOT NULL,
     "TelephoneNumber" varchar(24) NOT NULL,
     CONSTRAINT "PK_StateEducationAgencyInstitutionTelephone" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StateEducationAgencyInstitutionTelephone_Institut_f14e95bf4c" UNIQUE ("StateEducationAgency_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId"),
@@ -6200,8 +6201,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyInternationalAddress"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StateEducationAgency_DocumentId" bigint NOT NULL,
-    "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "CountryDescriptor_DescriptorId" bigint NOT NULL,
+    "AddressTypeDescriptor_DescriptorId" integer NOT NULL,
+    "CountryDescriptor_DescriptorId" integer NOT NULL,
     "AddressLine1" varchar(150) NOT NULL,
     "AddressLine2" varchar(150) NULL,
     "AddressLine3" varchar(150) NULL,
@@ -6248,11 +6249,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."Student"
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Person_DocumentId" bigint NULL,
     "Person_PersonId" varchar(32) NULL,
-    "Person_SourceSystemDescriptor_DescriptorId" bigint NULL,
-    "BirthCountryDescriptor_DescriptorId" bigint NULL,
-    "BirthSexDescriptor_DescriptorId" bigint NULL,
-    "BirthStateAbbreviationDescriptor_DescriptorId" bigint NULL,
-    "CitizenshipStatusDescriptor_DescriptorId" bigint NULL,
+    "Person_SourceSystemDescriptor_DescriptorId" integer NULL,
+    "BirthCountryDescriptor_DescriptorId" integer NULL,
+    "BirthSexDescriptor_DescriptorId" integer NULL,
+    "BirthStateAbbreviationDescriptor_DescriptorId" integer NULL,
+    "CitizenshipStatusDescriptor_DescriptorId" integer NULL,
     "BirthCity" varchar(30) NULL,
     "BirthDate" date NOT NULL,
     "BirthInternationalProvince" varchar(150) NULL,
@@ -6278,9 +6279,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentIdentificationDocument"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
-    "IdentificationDocumentUseDescriptor_DescriptorId" bigint NULL,
-    "IssuerCountryDescriptor_DescriptorId" bigint NULL,
-    "PersonalInformationVerificationDescriptor_DescriptorId" bigint NULL,
+    "IdentificationDocumentUseDescriptor_DescriptorId" integer NULL,
+    "IssuerCountryDescriptor_DescriptorId" integer NULL,
+    "PersonalInformationVerificationDescriptor_DescriptorId" integer NULL,
     "DocumentExpirationDate" date NULL,
     "DocumentTitle" varchar(60) NULL,
     "IssuerDocumentIdentificationCode" varchar(60) NULL,
@@ -6295,7 +6296,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentOtherName"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
-    "OtherNameTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "OtherNameTypeDescriptor_DescriptorId" integer NOT NULL,
     "FirstName" varchar(75) NOT NULL,
     "GenerationCodeSuffix" varchar(10) NULL,
     "LastSurname" varchar(75) NOT NULL,
@@ -6311,9 +6312,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentPersonalIdentificationDocument"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
-    "IdentificationDocumentUseDescriptor_DescriptorId" bigint NOT NULL,
-    "IssuerCountryDescriptor_DescriptorId" bigint NULL,
-    "PersonalInformationVerificationDescriptor_DescriptorId" bigint NOT NULL,
+    "IdentificationDocumentUseDescriptor_DescriptorId" integer NOT NULL,
+    "IssuerCountryDescriptor_DescriptorId" integer NULL,
+    "PersonalInformationVerificationDescriptor_DescriptorId" integer NOT NULL,
     "PersonalDocumentExpirationDate" date NULL,
     "PersonalDocumentTitle" varchar(60) NULL,
     "PersonalIssuerDocumentIdentificationCode" varchar(60) NULL,
@@ -6328,7 +6329,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentVisa"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
-    "VisaDescriptor_DescriptorId" bigint NOT NULL,
+    "VisaDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StudentVisa" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentVisa_Ordinal_Student_DocumentId" UNIQUE ("Student_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentVisa_Student_DocumentId_VisaDescriptor_DescriptorId" UNIQUE ("Student_DocumentId", "VisaDescriptor_DescriptorId")
@@ -6345,11 +6346,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecord"
     "SchoolYear_SchoolYear" integer NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "CumulativeAttemptedCreditTypeDescriptor_DescriptorId" bigint NULL,
-    "CumulativeEarnedCreditTypeDescriptor_DescriptorId" bigint NULL,
-    "SessionAttemptedCreditTypeDescriptor_DescriptorId" bigint NULL,
-    "SessionEarnedCreditTypeDescriptor_DescriptorId" bigint NULL,
-    "TermDescriptor_DescriptorId" bigint NOT NULL,
+    "CumulativeAttemptedCreditTypeDescriptor_DescriptorId" integer NULL,
+    "CumulativeEarnedCreditTypeDescriptor_DescriptorId" integer NULL,
+    "SessionAttemptedCreditTypeDescriptor_DescriptorId" integer NULL,
+    "SessionEarnedCreditTypeDescriptor_DescriptorId" integer NULL,
+    "TermDescriptor_DescriptorId" integer NOT NULL,
     "ClassRankingClassRank" integer NULL,
     "ClassRankingClassRankingDate" date NULL,
     "ClassRankingPercentageRanking" integer NULL,
@@ -6376,8 +6377,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordAcademicHonor"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentAcademicRecord_DocumentId" bigint NOT NULL,
-    "AcademicHonorCategoryDescriptor_DescriptorId" bigint NOT NULL,
-    "AchievementCategoryDescriptor_DescriptorId" bigint NULL,
+    "AcademicHonorCategoryDescriptor_DescriptorId" integer NOT NULL,
+    "AchievementCategoryDescriptor_DescriptorId" integer NULL,
     "AchievementCategorySystem" varchar(60) NULL,
     "AchievementTitle" varchar(60) NULL,
     "Criteria" varchar(150) NULL,
@@ -6399,9 +6400,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordDiploma"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentAcademicRecord_DocumentId" bigint NOT NULL,
-    "AchievementCategoryDescriptor_DescriptorId" bigint NULL,
-    "DiplomaLevelDescriptor_DescriptorId" bigint NULL,
-    "DiplomaTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "AchievementCategoryDescriptor_DescriptorId" integer NULL,
+    "DiplomaLevelDescriptor_DescriptorId" integer NULL,
+    "DiplomaTypeDescriptor_DescriptorId" integer NOT NULL,
     "AchievementCategorySystem" varchar(60) NULL,
     "AchievementTitle" varchar(60) NULL,
     "Criteria" varchar(150) NULL,
@@ -6424,7 +6425,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordGradePointAverage"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentAcademicRecord_DocumentId" bigint NOT NULL,
-    "GradePointAverageTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "GradePointAverageTypeDescriptor_DescriptorId" integer NOT NULL,
     "GradePointAverageValue" numeric(18,4) NOT NULL,
     "IsCumulative" boolean NULL,
     "MaxGradePointAverageValue" numeric(18,4) NULL,
@@ -6438,8 +6439,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordRecognition"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentAcademicRecord_DocumentId" bigint NOT NULL,
-    "AchievementCategoryDescriptor_DescriptorId" bigint NULL,
-    "RecognitionTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "AchievementCategoryDescriptor_DescriptorId" integer NULL,
+    "RecognitionTypeDescriptor_DescriptorId" integer NOT NULL,
     "AchievementCategorySystem" varchar(60) NULL,
     "AchievementTitle" varchar(60) NULL,
     "Criteria" varchar(150) NULL,
@@ -6463,7 +6464,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordReportCard"
     "StudentAcademicRecord_DocumentId" bigint NOT NULL,
     "ReportCard_DocumentId" bigint NOT NULL,
     "ReportCard_EducationOrganizationId" bigint NOT NULL,
-    "ReportCard_GradingPeriodDescriptor_DescriptorId" bigint NOT NULL,
+    "ReportCard_GradingPeriodDescriptor_DescriptorId" integer NOT NULL,
     "ReportCard_GradingPeriodName" varchar(60) NOT NULL,
     "ReportCard_GradingPeriodSchoolId" bigint NOT NULL,
     "ReportCard_GradingPeriodSchoolYear" integer NOT NULL,
@@ -6488,14 +6489,14 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessment"
     "SchoolYear_SchoolYear" integer NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "AdministrationEnvironmentDescriptor_DescriptorId" bigint NULL,
-    "AdministrationLanguageDescriptor_DescriptorId" bigint NULL,
-    "EventCircumstanceDescriptor_DescriptorId" bigint NULL,
-    "PeriodAssessmentPeriodDescriptor_DescriptorId" bigint NULL,
-    "PlatformTypeDescriptor_DescriptorId" bigint NULL,
-    "ReasonNotTestedDescriptor_DescriptorId" bigint NULL,
-    "RetestIndicatorDescriptor_DescriptorId" bigint NULL,
-    "WhenAssessedGradeLevelDescriptor_DescriptorId" bigint NULL,
+    "AdministrationEnvironmentDescriptor_DescriptorId" integer NULL,
+    "AdministrationLanguageDescriptor_DescriptorId" integer NULL,
+    "EventCircumstanceDescriptor_DescriptorId" integer NULL,
+    "PeriodAssessmentPeriodDescriptor_DescriptorId" integer NULL,
+    "PlatformTypeDescriptor_DescriptorId" integer NULL,
+    "ReasonNotTestedDescriptor_DescriptorId" integer NULL,
+    "RetestIndicatorDescriptor_DescriptorId" integer NULL,
+    "WhenAssessedGradeLevelDescriptor_DescriptorId" integer NULL,
     "AdministrationDate" timestamp with time zone NULL,
     "AdministrationEndDate" timestamp with time zone NULL,
     "AssessedMinutes" integer NULL,
@@ -6519,7 +6520,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentAccommodation"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentAssessment_DocumentId" bigint NOT NULL,
-    "AccommodationDescriptor_DescriptorId" bigint NOT NULL,
+    "AccommodationDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StudentAssessmentAccommodation" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentAssessmentAccommodation_AccommodationDescr_ceeb160577" UNIQUE ("StudentAssessment_DocumentId", "AccommodationDescriptor_DescriptorId"),
     CONSTRAINT "UX_StudentAssessmentAccommodation_Ordinal_StudentAss_fea63f1be9" UNIQUE ("StudentAssessment_DocumentId", "Ordinal")
@@ -6534,8 +6535,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentItem"
     "StudentAssessmentItemAssessmentItem_AssessmentIdentifier" varchar(60) NOT NULL,
     "StudentAssessmentItemAssessmentItem_Namespace" varchar(255) NOT NULL,
     "StudentAssessmentItemAssessmentItem_IdentificationCode" varchar(60) NOT NULL,
-    "AssessmentItemResultDescriptor_DescriptorId" bigint NOT NULL,
-    "ResponseIndicatorDescriptor_DescriptorId" bigint NULL,
+    "AssessmentItemResultDescriptor_DescriptorId" integer NOT NULL,
+    "ResponseIndicatorDescriptor_DescriptorId" integer NULL,
     "AssessmentResponse" varchar(255) NULL,
     "DescriptiveFeedback" varchar(1024) NULL,
     "ItemNumber" integer NULL,
@@ -6552,8 +6553,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentPerformanceLevel"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentAssessment_DocumentId" bigint NOT NULL,
-    "AssessmentReportingMethodDescriptor_DescriptorId" bigint NOT NULL,
-    "PerformanceLevelDescriptor_DescriptorId" bigint NOT NULL,
+    "AssessmentReportingMethodDescriptor_DescriptorId" integer NOT NULL,
+    "PerformanceLevelDescriptor_DescriptorId" integer NOT NULL,
     "PerformanceLevelIndicatorName" varchar(60) NULL,
     CONSTRAINT "PK_StudentAssessmentPerformanceLevel" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentAssessmentPerformanceLevel_AssessmentRepor_ab647d5bf7" UNIQUE ("StudentAssessment_DocumentId", "AssessmentReportingMethodDescriptor_DescriptorId", "PerformanceLevelDescriptor_DescriptorId"),
@@ -6565,8 +6566,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentScoreResult"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentAssessment_DocumentId" bigint NOT NULL,
-    "AssessmentReportingMethodDescriptor_DescriptorId" bigint NOT NULL,
-    "ResultDatatypeTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "AssessmentReportingMethodDescriptor_DescriptorId" integer NOT NULL,
+    "ResultDatatypeTypeDescriptor_DescriptorId" integer NOT NULL,
     "Result" varchar(35) NOT NULL,
     CONSTRAINT "PK_StudentAssessmentScoreResult" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentAssessmentScoreResult_AssessmentReportingM_124dd62ed1" UNIQUE ("StudentAssessment_DocumentId", "AssessmentReportingMethodDescriptor_DescriptorId"),
@@ -6598,8 +6599,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentStudentObjectiveAssessmentPe
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
     "StudentAssessment_DocumentId" bigint NOT NULL,
-    "AssessmentReportingMethodDescriptor_DescriptorId" bigint NOT NULL,
-    "PerformanceLevelDescriptor_DescriptorId" bigint NOT NULL,
+    "AssessmentReportingMethodDescriptor_DescriptorId" integer NOT NULL,
+    "PerformanceLevelDescriptor_DescriptorId" integer NOT NULL,
     "PerformanceLevelIndicatorName" varchar(60) NULL,
     CONSTRAINT "PK_StudentAssessmentStudentObjectiveAssessmentPerformanceLevel" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentAssessmentStudentObjectiveAssessmentPerfor_3a706a3d47" UNIQUE ("ParentCollectionItemId", "AssessmentReportingMethodDescriptor_DescriptorId", "PerformanceLevelDescriptor_DescriptorId"),
@@ -6612,8 +6613,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentStudentObjectiveAssessmentSc
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
     "StudentAssessment_DocumentId" bigint NOT NULL,
-    "AssessmentReportingMethodDescriptor_DescriptorId" bigint NOT NULL,
-    "ResultDatatypeTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "AssessmentReportingMethodDescriptor_DescriptorId" integer NOT NULL,
+    "ResultDatatypeTypeDescriptor_DescriptorId" integer NOT NULL,
     "Result" varchar(35) NOT NULL,
     CONSTRAINT "PK_StudentAssessmentStudentObjectiveAssessmentScoreResult" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentAssessmentStudentObjectiveAssessmentScoreR_8bbed93e07" UNIQUE ("ParentCollectionItemId", "AssessmentReportingMethodDescriptor_DescriptorId"),
@@ -6634,7 +6635,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentEducationOrganizationAssocia
     "StudentAssessment_Namespace" varchar(255) NOT NULL,
     "StudentAssessment_StudentAssessmentIdentifier" varchar(60) NOT NULL,
     "StudentAssessment_StudentUniqueId" varchar(32) NOT NULL,
-    "EducationOrganizationAssociationTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "EducationOrganizationAssociationTypeDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StudentAssessmentEducationOrganizationAssociation" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_StudentAssessmentEducationOrganizationAssociation_NK" UNIQUE ("EducationOrganizationAssociationTypeDescriptor_DescriptorId", "EducationOrganization_DocumentId", "StudentAssessment_DocumentId"),
     CONSTRAINT "CK_StudentAssessmentEducationOrganizationAssociation_0514ddc8b9" CHECK (("SchoolYear_DocumentId" IS NULL AND "SchoolYear_SchoolYear" IS NULL) OR ("SchoolYear_DocumentId" IS NOT NULL AND "SchoolYear_SchoolYear" IS NOT NULL)),
@@ -6667,8 +6668,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistration"
     "StudentSchoolAssociation_StudentUniqueId" varchar(32) GENERATED ALWAYS AS (CASE WHEN "StudentSchoolAssociation_DocumentId" IS NULL THEN NULL ELSE "StudentUniqueId_Unified" END) STORED,
     "TestingEducationOrganization_DocumentId" bigint NULL,
     "TestingEducationOrganization_EducationOrganizationId" bigint NULL,
-    "AssessmentGradeLevelDescriptor_DescriptorId" bigint NULL,
-    "PlatformTypeDescriptor_DescriptorId" bigint NULL,
+    "AssessmentGradeLevelDescriptor_DescriptorId" integer NULL,
+    "PlatformTypeDescriptor_DescriptorId" integer NULL,
     CONSTRAINT "PK_StudentAssessmentRegistration" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_StudentAssessmentRegistration_NK" UNIQUE ("AssessmentAdministration_DocumentId", "StudentEducationOrganizationAssociation_DocumentId"),
     CONSTRAINT "UX_StudentAssessmentRegistration_RefKey" UNIQUE ("AssessmentAdministration_AdministrationIdentifier", "AssessmentAdministration_AssessmentIdentifier", "AssessmentAdministration_AssigningEducationOrganizationId", "AssessmentAdministration_Namespace", "StudentEducationOrganizationAssociation_EducationOrganizationId", "StudentUniqueId_Unified", "DocumentId"),
@@ -6685,7 +6686,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistrationAssessmentAccomm
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentAssessmentRegistration_DocumentId" bigint NOT NULL,
-    "AccommodationDescriptor_DescriptorId" bigint NOT NULL,
+    "AccommodationDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StudentAssessmentRegistrationAssessmentAccommodation" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentAssessmentRegistrationAssessmentAccommodat_4cf25e5a37" UNIQUE ("StudentAssessmentRegistration_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentAssessmentRegistrationAssessmentAccommodat_6ba059ea60" UNIQUE ("StudentAssessmentRegistration_DocumentId", "AccommodationDescriptor_DescriptorId")
@@ -6732,7 +6733,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistrationBatteryPartAssoc
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentAssessmentRegistrationBatteryPartAssociation_DocumentId" bigint NOT NULL,
-    "AccommodationDescriptor_DescriptorId" bigint NOT NULL,
+    "AccommodationDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StudentAssessmentRegistrationBatteryPartAssociati_ba8c62cd84" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentAssessmentRegistrationBatteryPartAssociati_5ae43b3f7d" UNIQUE ("StudentAssessmentRegistrationBatteryPartAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentAssessmentRegistrationBatteryPartAssociati_bcad4ff1d6" UNIQUE ("StudentAssessmentRegistrationBatteryPartAssociation_DocumentId", "AccommodationDescriptor_DescriptorId")
@@ -6748,11 +6749,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCTEProgramAssociation"
     "ProgramProgram_DocumentId" bigint NOT NULL,
     "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" integer NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "ReasonExitedDescriptor_DescriptorId" bigint NULL,
-    "TechnicalSkillsAssessmentDescriptor_DescriptorId" bigint NULL,
+    "ReasonExitedDescriptor_DescriptorId" integer NULL,
+    "TechnicalSkillsAssessmentDescriptor_DescriptorId" integer NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
     "NonTraditionalGenderStatus" boolean NULL,
@@ -6770,7 +6771,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCTEProgramAssociationCteProgramService
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentCTEProgramAssociation_DocumentId" bigint NOT NULL,
-    "CteProgramServiceDescriptor_DescriptorId" bigint NOT NULL,
+    "CteProgramServiceDescriptor_DescriptorId" integer NOT NULL,
     "CipCode" varchar(120) NULL,
     "PrimaryIndicator" boolean NULL,
     "ServiceBeginDate" date NULL,
@@ -6785,7 +6786,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCTEProgramAssociationProgramParticipat
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentCTEProgramAssociation_DocumentId" bigint NOT NULL,
-    "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
+    "ParticipationStatusDescriptor_DescriptorId" integer NOT NULL,
     "DesignatedBy" varchar(60) NULL,
     "StatusBeginDate" date NOT NULL,
     "StatusEndDate" date NULL,
@@ -6835,17 +6836,17 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCompetencyObjective"
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "GradingPeriodGradingPeriod_DocumentId" bigint NOT NULL,
-    "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" bigint NOT NULL,
+    "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" integer NOT NULL,
     "GradingPeriodGradingPeriod_GradingPeriodName" varchar(60) NOT NULL,
     "GradingPeriodGradingPeriod_SchoolId" bigint NOT NULL,
     "GradingPeriodGradingPeriod_SchoolYear" integer NOT NULL,
     "ObjectiveCompetencyObjective_DocumentId" bigint NOT NULL,
     "ObjectiveCompetencyObjective_EducationOrganizationId" bigint NOT NULL,
     "ObjectiveCompetencyObjective_Objective" varchar(60) NOT NULL,
-    "ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e" bigint NOT NULL,
+    "ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e" integer NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "CompetencyLevelDescriptor_DescriptorId" bigint NOT NULL,
+    "CompetencyLevelDescriptor_DescriptorId" integer NOT NULL,
     "DiagnosticStatement" varchar(1024) NULL,
     CONSTRAINT "PK_StudentCompetencyObjective" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_StudentCompetencyObjective_NK" UNIQUE ("GradingPeriodGradingPeriod_DocumentId", "ObjectiveCompetencyObjective_DocumentId", "Student_DocumentId"),
@@ -6865,7 +6866,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCompetencyObjectiveGeneralStudentProgr
     "StudentCompetencyObjectiveSectionOrProgramChoiceGene_284e84bf96" bigint NOT NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceGene_20ceb9d821" bigint NOT NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceGene_72e6052582" varchar(60) NOT NULL,
-    "StudentCompetencyObjectiveSectionOrProgramChoiceGene_7c5bfc584c" bigint NOT NULL,
+    "StudentCompetencyObjectiveSectionOrProgramChoiceGene_7c5bfc584c" integer NOT NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceGene_d759bcc32e" varchar(32) NOT NULL,
     CONSTRAINT "PK_StudentCompetencyObjectiveGeneralStudentProgramAssociation" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentCompetencyObjectiveGeneralStudentProgramAs_857a6cc358" UNIQUE ("StudentCompetencyObjective_DocumentId", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829"),
@@ -6901,7 +6902,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentContactAssociation"
     "Contact_ContactUniqueId" varchar(32) NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "RelationDescriptor_DescriptorId" bigint NULL,
+    "RelationDescriptor_DescriptorId" integer NULL,
     "ContactPriority" integer NULL,
     "ContactRestrictions" varchar(250) NULL,
     "EmergencyContactStatus" boolean NULL,
@@ -6924,7 +6925,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentBehaviorAssociation"
     "DisciplineIncident_SchoolId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "BehaviorDescriptor_DescriptorId" bigint NOT NULL,
+    "BehaviorDescriptor_DescriptorId" integer NOT NULL,
     "BehaviorDetailedDescription" varchar(1024) NULL,
     CONSTRAINT "PK_StudentDisciplineIncidentBehaviorAssociation" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_StudentDisciplineIncidentBehaviorAssociation_NK" UNIQUE ("BehaviorDescriptor_DescriptorId", "DisciplineIncident_DocumentId", "Student_DocumentId"),
@@ -6938,7 +6939,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentBehaviorAssociationD
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentDisciplineIncidentBehaviorAssociation_DocumentId" bigint NOT NULL,
-    "DisciplineIncidentParticipationCodeDescriptor_DescriptorId" bigint NOT NULL,
+    "DisciplineIncidentParticipationCodeDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StudentDisciplineIncidentBehaviorAssociationDisci_258569bb58" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentDisciplineIncidentBehaviorAssociationDisci_96390d3c8f" UNIQUE ("StudentDisciplineIncidentBehaviorAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentDisciplineIncidentBehaviorAssociationDisci_cf6fcb596a" UNIQUE ("StudentDisciplineIncidentBehaviorAssociation_DocumentId", "DisciplineIncidentParticipationCodeDescriptor_DescriptorId")
@@ -6949,7 +6950,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentBehaviorAssociationW
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentDisciplineIncidentBehaviorAssociation_DocumentId" bigint NOT NULL,
-    "WeaponDescriptor_DescriptorId" bigint NOT NULL,
+    "WeaponDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StudentDisciplineIncidentBehaviorAssociationWeapon" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentDisciplineIncidentBehaviorAssociationWeapo_3caa35edb7" UNIQUE ("StudentDisciplineIncidentBehaviorAssociation_DocumentId", "WeaponDescriptor_DescriptorId"),
     CONSTRAINT "UX_StudentDisciplineIncidentBehaviorAssociationWeapo_c8cd66e83e" UNIQUE ("StudentDisciplineIncidentBehaviorAssociation_DocumentId", "Ordinal")
@@ -6976,7 +6977,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentNonOffenderAssociati
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentDisciplineIncidentNonOffenderAssociation_DocumentId" bigint NOT NULL,
-    "DisciplineIncidentParticipationCodeDescriptor_DescriptorId" bigint NOT NULL,
+    "DisciplineIncidentParticipationCodeDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StudentDisciplineIncidentNonOffenderAssociationDi_226794a78f" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentDisciplineIncidentNonOffenderAssociationDi_70425df271" UNIQUE ("StudentDisciplineIncidentNonOffenderAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentDisciplineIncidentNonOffenderAssociationDi_e4f28c9e93" UNIQUE ("StudentDisciplineIncidentNonOffenderAssociation_DocumentId", "DisciplineIncidentParticipationCodeDescriptor_DescriptorId")
@@ -7003,7 +7004,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssessmentAccommo
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssessmentAccommodation_DocumentId" bigint NOT NULL,
-    "AccommodationDescriptor_DescriptorId" bigint NOT NULL,
+    "AccommodationDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StudentEducationOrganizationAssessmentAccommodati_641f4fa5b8" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentEducationOrganizationAssessmentAccommodati_3dc6aa1b56" UNIQUE ("StudentEducationOrganizationAssessmentAccommodation_DocumentId", "AccommodationDescriptor_DescriptorId"),
     CONSTRAINT "UX_StudentEducationOrganizationAssessmentAccommodati_e9c1ecc1b8" UNIQUE ("StudentEducationOrganizationAssessmentAccommodation_DocumentId", "Ordinal")
@@ -7018,15 +7019,15 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociation"
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "BarrierToInternetAccessInResidenceDescriptor_DescriptorId" bigint NULL,
-    "InternetAccessTypeInResidenceDescriptor_DescriptorId" bigint NULL,
-    "InternetPerformanceInResidenceDescriptor_DescriptorId" bigint NULL,
-    "LimitedEnglishProficiencyDescriptor_DescriptorId" bigint NULL,
-    "PrimaryLearningDeviceAccessDescriptor_DescriptorId" bigint NULL,
-    "PrimaryLearningDeviceAwayFromSchoolDescriptor_DescriptorId" bigint NULL,
-    "PrimaryLearningDeviceProviderDescriptor_DescriptorId" bigint NULL,
-    "SexDescriptor_DescriptorId" bigint NULL,
-    "SupporterMilitaryConnectionDescriptor_DescriptorId" bigint NULL,
+    "BarrierToInternetAccessInResidenceDescriptor_DescriptorId" integer NULL,
+    "InternetAccessTypeInResidenceDescriptor_DescriptorId" integer NULL,
+    "InternetPerformanceInResidenceDescriptor_DescriptorId" integer NULL,
+    "LimitedEnglishProficiencyDescriptor_DescriptorId" integer NULL,
+    "PrimaryLearningDeviceAccessDescriptor_DescriptorId" integer NULL,
+    "PrimaryLearningDeviceAwayFromSchoolDescriptor_DescriptorId" integer NULL,
+    "PrimaryLearningDeviceProviderDescriptor_DescriptorId" integer NULL,
+    "SexDescriptor_DescriptorId" integer NULL,
+    "SupporterMilitaryConnectionDescriptor_DescriptorId" integer NULL,
     "GenderIdentity" varchar(60) NULL,
     "HispanicLatinoEthnicity" boolean NULL,
     "InternetAccessInResidence" boolean NULL,
@@ -7044,9 +7045,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationAddres
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
-    "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "LocaleDescriptor_DescriptorId" bigint NULL,
-    "StateAbbreviationDescriptor_DescriptorId" bigint NOT NULL,
+    "AddressTypeDescriptor_DescriptorId" integer NOT NULL,
+    "LocaleDescriptor_DescriptorId" integer NULL,
+    "StateAbbreviationDescriptor_DescriptorId" integer NOT NULL,
     "ApartmentRoomSuiteNumber" varchar(50) NULL,
     "BuildingSiteNumber" varchar(20) NULL,
     "City" varchar(30) NOT NULL,
@@ -7069,7 +7070,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationAncest
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
-    "AncestryEthnicOriginDescriptor_DescriptorId" bigint NOT NULL,
+    "AncestryEthnicOriginDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StudentEducationOrganizationAssociationAncestryEthnicOrigin" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationAncestryEt_13f462661e" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationAncestryEt_82c4aa29b4" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "AncestryEthnicOriginDescriptor_DescriptorId")
@@ -7082,8 +7083,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationCohort
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "CohortYearSchoolYear_DocumentId" bigint NOT NULL,
     "CohortYearSchoolYear_SchoolYear" integer NOT NULL,
-    "CohortYearTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "TermDescriptor_DescriptorId" bigint NULL,
+    "CohortYearTypeDescriptor_DescriptorId" integer NOT NULL,
+    "TermDescriptor_DescriptorId" integer NULL,
     CONSTRAINT "PK_StudentEducationOrganizationAssociationCohortYear" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationCohortYear_33afeb7297" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "CohortYearTypeDescriptor_DescriptorId", "CohortYearSchoolYear_DocumentId"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationCohortYear_cff344e2ac" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
@@ -7095,8 +7096,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationDisabi
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
-    "DisabilityDescriptor_DescriptorId" bigint NOT NULL,
-    "DisabilityDeterminationSourceTypeDescriptor_DescriptorId" bigint NULL,
+    "DisabilityDescriptor_DescriptorId" integer NOT NULL,
+    "DisabilityDeterminationSourceTypeDescriptor_DescriptorId" integer NULL,
     "DisabilityDiagnosis" varchar(80) NULL,
     "OrderOfDisability" integer NULL,
     CONSTRAINT "PK_StudentEducationOrganizationAssociationDisability" PRIMARY KEY ("CollectionItemId"),
@@ -7112,7 +7113,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationDispla
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "DisplacedStudentCrisisEvent_DocumentId" bigint NOT NULL,
     "DisplacedStudentCrisisEvent_CrisisEventName" varchar(100) NOT NULL,
-    "DisplacedStudentStatusDescriptor_DescriptorId" bigint NOT NULL,
+    "DisplacedStudentStatusDescriptor_DescriptorId" integer NOT NULL,
     "CrisisHomelessnessIndicator" boolean NULL,
     "DisplacedStudentEndDate" date NULL,
     "DisplacedStudentStartDate" date NULL,
@@ -7127,7 +7128,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationElectr
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
-    "ElectronicMailTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "ElectronicMailTypeDescriptor_DescriptorId" integer NOT NULL,
     "DoNotPublishIndicator" boolean NULL,
     "ElectronicMailAddress" varchar(128) NOT NULL,
     "PrimaryEmailAddressIndicator" boolean NULL,
@@ -7141,8 +7142,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationIntern
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
-    "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
-    "CountryDescriptor_DescriptorId" bigint NOT NULL,
+    "AddressTypeDescriptor_DescriptorId" integer NOT NULL,
+    "CountryDescriptor_DescriptorId" integer NOT NULL,
     "AddressLine1" varchar(150) NOT NULL,
     "AddressLine2" varchar(150) NULL,
     "AddressLine3" varchar(150) NULL,
@@ -7161,7 +7162,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationLangua
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
-    "LanguageDescriptor_DescriptorId" bigint NOT NULL,
+    "LanguageDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StudentEducationOrganizationAssociationLanguage" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationLanguage_C_2df87199b7" UNIQUE ("CollectionItemId", "StudentEducationOrganizationAssociation_DocumentId"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationLanguage_L_b58e723050" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "LanguageDescriptor_DescriptorId"),
@@ -7173,7 +7174,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationRace"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
-    "RaceDescriptor_DescriptorId" bigint NOT NULL,
+    "RaceDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StudentEducationOrganizationAssociationRace" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationRace_Ordin_2aae11cb13" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationRace_RaceD_bafae5c29e" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "RaceDescriptor_DescriptorId")
@@ -7184,7 +7185,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationStuden
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
-    "StudentCharacteristicDescriptor_DescriptorId" bigint NOT NULL,
+    "StudentCharacteristicDescriptor_DescriptorId" integer NOT NULL,
     "DesignatedBy" varchar(60) NULL,
     CONSTRAINT "PK_StudentEducationOrganizationAssociationStudentCharacteristic" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationStudentCha_0a5d1dc795" UNIQUE ("CollectionItemId", "StudentEducationOrganizationAssociation_DocumentId"),
@@ -7197,7 +7198,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationStuden
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
-    "StudentIdentificationSystemDescriptor_DescriptorId" bigint NOT NULL,
+    "StudentIdentificationSystemDescriptor_DescriptorId" integer NOT NULL,
     "AssigningOrganizationIdentificationCode" varchar(60) NOT NULL,
     "IdentificationCode" varchar(60) NOT NULL,
     CONSTRAINT "PK_StudentEducationOrganizationAssociationStudentIde_77441e658e" PRIMARY KEY ("CollectionItemId"),
@@ -7225,7 +7226,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationTeleph
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
-    "TelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "TelephoneNumberTypeDescriptor_DescriptorId" integer NOT NULL,
     "DoNotPublishIndicator" boolean NULL,
     "OrderOfPriority" integer NULL,
     "TelephoneNumber" varchar(24) NOT NULL,
@@ -7240,7 +7241,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationTribal
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
-    "TribalAffiliationDescriptor_DescriptorId" bigint NOT NULL,
+    "TribalAffiliationDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StudentEducationOrganizationAssociationTribalAffiliation" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationTribalAffi_8f8e9cac9d" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "TribalAffiliationDescriptor_DescriptorId"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationTribalAffi_ed32348673" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal")
@@ -7265,7 +7266,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationDisabi
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
-    "DisabilityDesignationDescriptor_DescriptorId" bigint NOT NULL,
+    "DisabilityDesignationDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StudentEducationOrganizationAssociationDisabilityDesignation" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationDisability_0c3481bbdd" UNIQUE ("ParentCollectionItemId", "DisabilityDesignationDescriptor_DescriptorId"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationDisability_4e0f8697de" UNIQUE ("ParentCollectionItemId", "Ordinal")
@@ -7277,7 +7278,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationLangua
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
-    "LanguageUseDescriptor_DescriptorId" bigint NOT NULL,
+    "LanguageUseDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StudentEducationOrganizationAssociationLanguageUs" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationLanguageUs_577d5ed0da" UNIQUE ("ParentCollectionItemId", "LanguageUseDescriptor_DescriptorId"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationLanguageUs_7479ba86d3" UNIQUE ("ParentCollectionItemId", "Ordinal")
@@ -7318,7 +7319,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationResponsibilityAss
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "ResponsibilityDescriptor_DescriptorId" bigint NOT NULL,
+    "ResponsibilityDescriptor_DescriptorId" integer NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
     CONSTRAINT "PK_StudentEducationOrganizationResponsibilityAssociation" PRIMARY KEY ("DocumentId"),
@@ -7337,9 +7338,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentGradebookEntry"
     "GradebookEntry_Namespace" varchar(255) NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "AssignmentLateStatusDescriptor_DescriptorId" bigint NULL,
-    "CompetencyLevelDescriptor_DescriptorId" bigint NULL,
-    "SubmissionStatusDescriptor_DescriptorId" bigint NULL,
+    "AssignmentLateStatusDescriptor_DescriptorId" integer NULL,
+    "CompetencyLevelDescriptor_DescriptorId" integer NULL,
+    "SubmissionStatusDescriptor_DescriptorId" integer NULL,
     "DateFulfilled" date NULL,
     "DiagnosticStatement" varchar(1024) NULL,
     "LetterGradeEarned" varchar(20) NULL,
@@ -7361,7 +7362,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentHealth"
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "NonMedicalImmunizationExemptionDescriptor_DescriptorId" bigint NULL,
+    "NonMedicalImmunizationExemptionDescriptor_DescriptorId" integer NULL,
     "AsOfDate" date NOT NULL,
     "NonMedicalImmunizationExemptionDate" date NULL,
     CONSTRAINT "PK_StudentHealth" PRIMARY KEY ("DocumentId"),
@@ -7387,7 +7388,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentHealthRequiredImmunization"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentHealth_DocumentId" bigint NOT NULL,
-    "ImmunizationTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "ImmunizationTypeDescriptor_DescriptorId" integer NOT NULL,
     "MedicalExemption" varchar(1024) NULL,
     "MedicalExemptionDate" date NULL,
     CONSTRAINT "PK_StudentHealthRequiredImmunization" PRIMARY KEY ("CollectionItemId"),
@@ -7430,11 +7431,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentHomelessProgramAssociation"
     "ProgramProgram_DocumentId" bigint NOT NULL,
     "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" integer NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "HomelessPrimaryNighttimeResidenceDescriptor_DescriptorId" bigint NULL,
-    "ReasonExitedDescriptor_DescriptorId" bigint NULL,
+    "HomelessPrimaryNighttimeResidenceDescriptor_DescriptorId" integer NULL,
+    "ReasonExitedDescriptor_DescriptorId" integer NULL,
     "AwaitingFosterCare" boolean NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
@@ -7452,7 +7453,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentHomelessProgramAssociationHomelessProg
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentHomelessProgramAssociation_DocumentId" bigint NOT NULL,
-    "HomelessProgramServiceDescriptor_DescriptorId" bigint NOT NULL,
+    "HomelessProgramServiceDescriptor_DescriptorId" integer NOT NULL,
     "PrimaryIndicator" boolean NULL,
     "ServiceBeginDate" date NULL,
     "ServiceEndDate" date NULL,
@@ -7466,7 +7467,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentHomelessProgramAssociationProgramParti
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentHomelessProgramAssociation_DocumentId" bigint NOT NULL,
-    "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
+    "ParticipationStatusDescriptor_DescriptorId" integer NOT NULL,
     "DesignatedBy" varchar(60) NULL,
     "StatusBeginDate" date NOT NULL,
     "StatusEndDate" date NULL,
@@ -7502,10 +7503,10 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentInterventionAssociationInterventionEff
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentInterventionAssociation_DocumentId" bigint NOT NULL,
-    "DiagnosisDescriptor_DescriptorId" bigint NOT NULL,
-    "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
-    "InterventionEffectivenessRatingDescriptor_DescriptorId" bigint NOT NULL,
-    "PopulationServedDescriptor_DescriptorId" bigint NOT NULL,
+    "DiagnosisDescriptor_DescriptorId" integer NOT NULL,
+    "GradeLevelDescriptor_DescriptorId" integer NOT NULL,
+    "InterventionEffectivenessRatingDescriptor_DescriptorId" integer NOT NULL,
+    "PopulationServedDescriptor_DescriptorId" integer NOT NULL,
     "ImprovementIndex" integer NULL,
     CONSTRAINT "PK_StudentInterventionAssociationInterventionEffectiveness" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentInterventionAssociationInterventionEffecti_d2f0f8aa0b" UNIQUE ("StudentInterventionAssociation_DocumentId", "DiagnosisDescriptor_DescriptorId", "GradeLevelDescriptor_DescriptorId", "PopulationServedDescriptor_DescriptorId"),
@@ -7522,8 +7523,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentInterventionAttendanceEvent"
     "Intervention_InterventionIdentificationCode" varchar(60) NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "AttendanceEventCategoryDescriptor_DescriptorId" bigint NOT NULL,
-    "EducationalEnvironmentDescriptor_DescriptorId" bigint NULL,
+    "AttendanceEventCategoryDescriptor_DescriptorId" integer NOT NULL,
+    "EducationalEnvironmentDescriptor_DescriptorId" integer NULL,
     "AttendanceEventReason" varchar(255) NULL,
     "EventDate" date NOT NULL,
     "EventDuration" numeric(3,2) NULL,
@@ -7544,10 +7545,10 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentLanguageInstructionProgramAssociation"
     "ProgramProgram_DocumentId" bigint NOT NULL,
     "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" integer NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "ReasonExitedDescriptor_DescriptorId" bigint NULL,
+    "ReasonExitedDescriptor_DescriptorId" integer NULL,
     "BeginDate" date NOT NULL,
     "Dosage" integer NULL,
     "EndDate" date NULL,
@@ -7567,10 +7568,10 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentLanguageInstructionProgramAssociationE
     "StudentLanguageInstructionProgramAssociation_DocumentId" bigint NOT NULL,
     "EnglishLanguageProficiencyAssessmentSchoolYear_DocumentId" bigint NOT NULL,
     "EnglishLanguageProficiencyAssessmentSchoolYear_SchoolYear" integer NOT NULL,
-    "MonitoredDescriptor_DescriptorId" bigint NULL,
-    "ParticipationDescriptor_DescriptorId" bigint NULL,
-    "ProficiencyDescriptor_DescriptorId" bigint NULL,
-    "ProgressDescriptor_DescriptorId" bigint NULL,
+    "MonitoredDescriptor_DescriptorId" integer NULL,
+    "ParticipationDescriptor_DescriptorId" integer NULL,
+    "ProficiencyDescriptor_DescriptorId" integer NULL,
+    "ProgressDescriptor_DescriptorId" integer NULL,
     CONSTRAINT "PK_StudentLanguageInstructionProgramAssociationEngli_4e9cf6c8c7" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentLanguageInstructionProgramAssociationEngli_268944e25b" UNIQUE ("StudentLanguageInstructionProgramAssociation_DocumentId", "EnglishLanguageProficiencyAssessmentSchoolYear_DocumentId"),
     CONSTRAINT "UX_StudentLanguageInstructionProgramAssociationEngli_f0e8c9857b" UNIQUE ("StudentLanguageInstructionProgramAssociation_DocumentId", "Ordinal"),
@@ -7582,7 +7583,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentLanguageInstructionProgramAssociationL
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentLanguageInstructionProgramAssociation_DocumentId" bigint NOT NULL,
-    "LanguageInstructionProgramServiceDescriptor_DescriptorId" bigint NOT NULL,
+    "LanguageInstructionProgramServiceDescriptor_DescriptorId" integer NOT NULL,
     "PrimaryIndicator" boolean NULL,
     "ServiceBeginDate" date NULL,
     "ServiceEndDate" date NULL,
@@ -7596,7 +7597,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentLanguageInstructionProgramAssociationP
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentLanguageInstructionProgramAssociation_DocumentId" bigint NOT NULL,
-    "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
+    "ParticipationStatusDescriptor_DescriptorId" integer NOT NULL,
     "DesignatedBy" varchar(60) NULL,
     "StatusBeginDate" date NOT NULL,
     "StatusEndDate" date NULL,
@@ -7615,11 +7616,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentMigrantEducationProgramAssociation"
     "ProgramProgram_DocumentId" bigint NOT NULL,
     "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" integer NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "ContinuationOfServicesReasonDescriptor_DescriptorId" bigint NULL,
-    "ReasonExitedDescriptor_DescriptorId" bigint NULL,
+    "ContinuationOfServicesReasonDescriptor_DescriptorId" integer NULL,
+    "ReasonExitedDescriptor_DescriptorId" integer NULL,
     "BeginDate" date NOT NULL,
     "EligibilityExpirationDate" date NULL,
     "EndDate" date NULL,
@@ -7643,7 +7644,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentMigrantEducationProgramAssociationMigr
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentMigrantEducationProgramAssociation_DocumentId" bigint NOT NULL,
-    "MigrantEducationProgramServiceDescriptor_DescriptorId" bigint NOT NULL,
+    "MigrantEducationProgramServiceDescriptor_DescriptorId" integer NOT NULL,
     "PrimaryIndicator" boolean NULL,
     "ServiceBeginDate" date NULL,
     "ServiceEndDate" date NULL,
@@ -7657,7 +7658,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentMigrantEducationProgramAssociationProg
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentMigrantEducationProgramAssociation_DocumentId" bigint NOT NULL,
-    "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
+    "ParticipationStatusDescriptor_DescriptorId" integer NOT NULL,
     "DesignatedBy" varchar(60) NULL,
     "StatusBeginDate" date NOT NULL,
     "StatusEndDate" date NULL,
@@ -7676,13 +7677,13 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentNeglectedOrDelinquentProgramAssociatio
     "ProgramProgram_DocumentId" bigint NOT NULL,
     "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" integer NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "ElaProgressLevelDescriptor_DescriptorId" bigint NULL,
-    "MathematicsProgressLevelDescriptor_DescriptorId" bigint NULL,
-    "NeglectedOrDelinquentProgramDescriptor_DescriptorId" bigint NULL,
-    "ReasonExitedDescriptor_DescriptorId" bigint NULL,
+    "ElaProgressLevelDescriptor_DescriptorId" integer NULL,
+    "MathematicsProgressLevelDescriptor_DescriptorId" integer NULL,
+    "NeglectedOrDelinquentProgramDescriptor_DescriptorId" integer NULL,
+    "ReasonExitedDescriptor_DescriptorId" integer NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
     "ServedOutsideOfRegularSession" boolean NULL,
@@ -7698,7 +7699,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentNeglectedOrDelinquentProgramAssociatio
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentNeglectedOrDelinquentProgramAssociation_DocumentId" bigint NOT NULL,
-    "NeglectedOrDelinquentProgramServiceDescriptor_DescriptorId" bigint NOT NULL,
+    "NeglectedOrDelinquentProgramServiceDescriptor_DescriptorId" integer NOT NULL,
     "PrimaryIndicator" boolean NULL,
     "ServiceBeginDate" date NULL,
     "ServiceEndDate" date NULL,
@@ -7712,7 +7713,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentNeglectedOrDelinquentProgramAssociatio
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentNeglectedOrDelinquentProgramAssociation_DocumentId" bigint NOT NULL,
-    "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
+    "ParticipationStatusDescriptor_DescriptorId" integer NOT NULL,
     "DesignatedBy" varchar(60) NULL,
     "StatusBeginDate" date NOT NULL,
     "StatusEndDate" date NULL,
@@ -7731,10 +7732,10 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramAssociation"
     "ProgramProgram_DocumentId" bigint NOT NULL,
     "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" integer NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "ReasonExitedDescriptor_DescriptorId" bigint NULL,
+    "ReasonExitedDescriptor_DescriptorId" integer NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
     "ServedOutsideOfRegularSession" boolean NULL,
@@ -7750,7 +7751,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramAssociationProgramParticipation
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentProgramAssociation_DocumentId" bigint NOT NULL,
-    "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
+    "ParticipationStatusDescriptor_DescriptorId" integer NOT NULL,
     "DesignatedBy" varchar(60) NULL,
     "StatusBeginDate" date NOT NULL,
     "StatusEndDate" date NULL,
@@ -7764,7 +7765,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramAssociationService"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentProgramAssociation_DocumentId" bigint NOT NULL,
-    "ServiceDescriptor_DescriptorId" bigint NOT NULL,
+    "ServiceDescriptor_DescriptorId" integer NOT NULL,
     "PrimaryIndicator" boolean NULL,
     "ServiceBeginDate" date NULL,
     "ServiceEndDate" date NULL,
@@ -7783,11 +7784,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramAttendanceEvent"
     "ProgramProgram_DocumentId" bigint NOT NULL,
     "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" integer NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "AttendanceEventCategoryDescriptor_DescriptorId" bigint NOT NULL,
-    "EducationalEnvironmentDescriptor_DescriptorId" bigint NULL,
+    "AttendanceEventCategoryDescriptor_DescriptorId" integer NOT NULL,
+    "EducationalEnvironmentDescriptor_DescriptorId" integer NULL,
     "AttendanceEventReason" varchar(255) NULL,
     "EventDate" date NOT NULL,
     "EventDuration" numeric(3,2) NULL,
@@ -7807,17 +7808,17 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluation"
     "EducationOrganization_DocumentId" bigint NULL,
     "EducationOrganization_EducationOrganizationId" bigint NULL,
     "ProgramEvaluation_DocumentId" bigint NOT NULL,
-    "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" bigint NOT NULL,
+    "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" integer NOT NULL,
     "ProgramEvaluation_ProgramEvaluationTitle" varchar(50) NOT NULL,
-    "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" integer NOT NULL,
     "ProgramEvaluation_ProgramEducationOrganizationId" bigint NOT NULL,
     "ProgramEvaluation_ProgramName" varchar(60) NOT NULL,
-    "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" integer NOT NULL,
     "StaffEvaluatorStaff_DocumentId" bigint NULL,
     "StaffEvaluatorStaff_StaffUniqueId" varchar(32) NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "SummaryEvaluationRatingLevelDescriptor_DescriptorId" bigint NULL,
+    "SummaryEvaluationRatingLevelDescriptor_DescriptorId" integer NULL,
     "EvaluationDate" date NOT NULL,
     "EvaluationDuration" integer NULL,
     "SummaryEvaluationComment" varchar(1024) NULL,
@@ -7849,12 +7850,12 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluationStudentEvaluationElem
     "StudentEvaluationElementProgramEvaluationElement_DocumentId" bigint NOT NULL,
     "StudentEvaluationElementProgramEvaluationElement_Pro_56aa4525fb" varchar(50) NOT NULL,
     "StudentEvaluationElementProgramEvaluationElement_Pro_467059facd" bigint NOT NULL,
-    "StudentEvaluationElementProgramEvaluationElement_Pro_38d123670f" bigint NOT NULL,
+    "StudentEvaluationElementProgramEvaluationElement_Pro_38d123670f" integer NOT NULL,
     "StudentEvaluationElementProgramEvaluationElement_Pro_57fb6d52f8" varchar(50) NOT NULL,
-    "StudentEvaluationElementProgramEvaluationElement_Pro_b27b83c178" bigint NOT NULL,
+    "StudentEvaluationElementProgramEvaluationElement_Pro_b27b83c178" integer NOT NULL,
     "StudentEvaluationElementProgramEvaluationElement_ProgramName" varchar(60) NOT NULL,
-    "StudentEvaluationElementProgramEvaluationElement_Pro_ef497c5466" bigint NOT NULL,
-    "EvaluationElementRatingLevelDescriptor_DescriptorId" bigint NULL,
+    "StudentEvaluationElementProgramEvaluationElement_Pro_ef497c5466" integer NOT NULL,
+    "EvaluationElementRatingLevelDescriptor_DescriptorId" integer NULL,
     "EvaluationElementNumericRating" numeric(6,3) NULL,
     CONSTRAINT "PK_StudentProgramEvaluationStudentEvaluationElement" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentProgramEvaluationStudentEvaluationElement__2fabdcdd7e" UNIQUE ("StudentProgramEvaluation_DocumentId", "StudentEvaluationElementProgramEvaluationElement_DocumentId"),
@@ -7870,12 +7871,12 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluationStudentEvaluationObje
     "StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId" bigint NOT NULL,
     "StudentEvaluationObjectiveProgramEvaluationObjective_74b56ed982" varchar(50) NOT NULL,
     "StudentEvaluationObjectiveProgramEvaluationObjective_dd70a2e950" bigint NOT NULL,
-    "StudentEvaluationObjectiveProgramEvaluationObjective_a646232b23" bigint NOT NULL,
+    "StudentEvaluationObjectiveProgramEvaluationObjective_a646232b23" integer NOT NULL,
     "StudentEvaluationObjectiveProgramEvaluationObjective_4b2b771726" varchar(50) NOT NULL,
-    "StudentEvaluationObjectiveProgramEvaluationObjective_5c8a926f84" bigint NOT NULL,
+    "StudentEvaluationObjectiveProgramEvaluationObjective_5c8a926f84" integer NOT NULL,
     "StudentEvaluationObjectiveProgramEvaluationObjective_e1d44bbcf0" varchar(60) NOT NULL,
-    "StudentEvaluationObjectiveProgramEvaluationObjective_344bbaad76" bigint NOT NULL,
-    "EvaluationObjectiveRatingLevelDescriptor_DescriptorId" bigint NULL,
+    "StudentEvaluationObjectiveProgramEvaluationObjective_344bbaad76" integer NOT NULL,
+    "EvaluationObjectiveRatingLevelDescriptor_DescriptorId" integer NULL,
     "EvaluationObjectiveNumericRating" numeric(6,3) NULL,
     CONSTRAINT "PK_StudentProgramEvaluationStudentEvaluationObjective" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentProgramEvaluationStudentEvaluationObjectiv_85741b6e4e" UNIQUE ("StudentProgramEvaluation_DocumentId", "StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId"),
@@ -7898,7 +7899,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociation"
     "ClassOfSchoolYear_ClassOfSchoolYear" integer NULL,
     "GraduationPlan_DocumentId" bigint NULL,
     "GraduationPlan_EducationOrganizationId" bigint NULL,
-    "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId" bigint NULL,
+    "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId" integer NULL,
     "GraduationPlan_GraduationSchoolYear" integer NULL,
     "NextYearSchool_DocumentId" bigint NULL,
     "NextYearSchool_SchoolId" bigint NULL,
@@ -7908,14 +7909,14 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociation"
     "School_SchoolId" bigint GENERATED ALWAYS AS (CASE WHEN "School_DocumentId" IS NULL THEN NULL ELSE "SchoolId_Unified" END) STORED,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "EnrollmentTypeDescriptor_DescriptorId" bigint NULL,
-    "EntryGradeLevelDescriptor_DescriptorId" bigint NOT NULL,
-    "EntryGradeLevelReasonDescriptor_DescriptorId" bigint NULL,
-    "EntryTypeDescriptor_DescriptorId" bigint NULL,
-    "ExitWithdrawTypeDescriptor_DescriptorId" bigint NULL,
-    "NextYearGradeLevelDescriptor_DescriptorId" bigint NULL,
-    "ResidencyStatusDescriptor_DescriptorId" bigint NULL,
-    "SchoolChoiceBasisDescriptor_DescriptorId" bigint NULL,
+    "EnrollmentTypeDescriptor_DescriptorId" integer NULL,
+    "EntryGradeLevelDescriptor_DescriptorId" integer NOT NULL,
+    "EntryGradeLevelReasonDescriptor_DescriptorId" integer NULL,
+    "EntryTypeDescriptor_DescriptorId" integer NULL,
+    "ExitWithdrawTypeDescriptor_DescriptorId" integer NULL,
+    "NextYearGradeLevelDescriptor_DescriptorId" integer NULL,
+    "ResidencyStatusDescriptor_DescriptorId" integer NULL,
+    "SchoolChoiceBasisDescriptor_DescriptorId" integer NULL,
     "EmployedWhileEnrolled" boolean NULL,
     "EntryDate" date NOT NULL,
     "ExitWithdrawDate" date NULL,
@@ -7944,7 +7945,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociationAlternativeGraduation
     "StudentSchoolAssociation_DocumentId" bigint NOT NULL,
     "AlternativeGraduationPlan_DocumentId" bigint NOT NULL,
     "AlternativeGraduationPlan_EducationOrganizationId" bigint NOT NULL,
-    "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181" bigint NOT NULL,
+    "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181" integer NOT NULL,
     "AlternativeGraduationPlan_GraduationSchoolYear" integer NOT NULL,
     CONSTRAINT "PK_StudentSchoolAssociationAlternativeGraduationPlan" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentSchoolAssociationAlternativeGraduationPlan_620cf4ccf8" UNIQUE ("StudentSchoolAssociation_DocumentId", "Ordinal"),
@@ -7957,7 +7958,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociationEducationPlan"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentSchoolAssociation_DocumentId" bigint NOT NULL,
-    "EducationPlanDescriptor_DescriptorId" bigint NOT NULL,
+    "EducationPlanDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StudentSchoolAssociationEducationPlan" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentSchoolAssociationEducationPlan_EducationPl_ded71a8fc2" UNIQUE ("StudentSchoolAssociation_DocumentId", "EducationPlanDescriptor_DescriptorId"),
     CONSTRAINT "UX_StudentSchoolAssociationEducationPlan_Ordinal_Stu_eca187dfc6" UNIQUE ("StudentSchoolAssociation_DocumentId", "Ordinal")
@@ -7977,8 +7978,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAttendanceEvent"
     "Session_SessionName" varchar(60) NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "AttendanceEventCategoryDescriptor_DescriptorId" bigint NOT NULL,
-    "EducationalEnvironmentDescriptor_DescriptorId" bigint NULL,
+    "AttendanceEventCategoryDescriptor_DescriptorId" integer NOT NULL,
+    "EducationalEnvironmentDescriptor_DescriptorId" integer NULL,
     "ArrivalTime" time NULL,
     "AttendanceEventReason" varchar(255) NULL,
     "DepartureTime" time NULL,
@@ -8002,10 +8003,10 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolFoodServiceProgramAssociation"
     "ProgramProgram_DocumentId" bigint NOT NULL,
     "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" integer NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "ReasonExitedDescriptor_DescriptorId" bigint NULL,
+    "ReasonExitedDescriptor_DescriptorId" integer NULL,
     "BeginDate" date NOT NULL,
     "DirectCertification" boolean NULL,
     "EndDate" date NULL,
@@ -8022,7 +8023,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolFoodServiceProgramAssociationPro
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentSchoolFoodServiceProgramAssociation_DocumentId" bigint NOT NULL,
-    "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
+    "ParticipationStatusDescriptor_DescriptorId" integer NOT NULL,
     "DesignatedBy" varchar(60) NULL,
     "StatusBeginDate" date NOT NULL,
     "StatusEndDate" date NULL,
@@ -8036,7 +8037,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolFoodServiceProgramAssociationSch
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentSchoolFoodServiceProgramAssociation_DocumentId" bigint NOT NULL,
-    "SchoolFoodServiceProgramServiceDescriptor_DescriptorId" bigint NOT NULL,
+    "SchoolFoodServiceProgramServiceDescriptor_DescriptorId" integer NOT NULL,
     "PrimaryIndicator" boolean NULL,
     "ServiceBeginDate" date NULL,
     "ServiceEndDate" date NULL,
@@ -8055,11 +8056,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSection504ProgramAssociation"
     "ProgramProgram_DocumentId" bigint NOT NULL,
     "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" integer NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "ReasonExitedDescriptor_DescriptorId" bigint NULL,
-    "Section504DisabilityDescriptor_DescriptorId" bigint NULL,
+    "ReasonExitedDescriptor_DescriptorId" integer NULL,
+    "Section504DisabilityDescriptor_DescriptorId" integer NULL,
     "AccommodationPlan" boolean NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
@@ -8079,7 +8080,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSection504ProgramAssociationProgramPar
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentSection504ProgramAssociation_DocumentId" bigint NOT NULL,
-    "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
+    "ParticipationStatusDescriptor_DescriptorId" integer NOT NULL,
     "DesignatedBy" varchar(60) NULL,
     "StatusBeginDate" date NOT NULL,
     "StatusEndDate" date NULL,
@@ -8103,10 +8104,10 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAssociation"
     "Section_SectionIdentifier" varchar(255) NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "AttemptStatusDescriptor_DescriptorId" bigint NULL,
-    "DualCreditInstitutionDescriptor_DescriptorId" bigint NULL,
-    "DualCreditTypeDescriptor_DescriptorId" bigint NULL,
-    "RepeatIdentifierDescriptor_DescriptorId" bigint NULL,
+    "AttemptStatusDescriptor_DescriptorId" integer NULL,
+    "DualCreditInstitutionDescriptor_DescriptorId" integer NULL,
+    "DualCreditTypeDescriptor_DescriptorId" integer NULL,
+    "RepeatIdentifierDescriptor_DescriptorId" integer NULL,
     "BeginDate" date NOT NULL,
     "DualCreditIndicator" boolean NULL,
     "DualHighSchoolCreditIndicator" boolean NULL,
@@ -8129,7 +8130,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAssociationProgram"
     "Program_DocumentId" bigint NOT NULL,
     "Program_EducationOrganizationId" bigint NOT NULL,
     "Program_ProgramName" varchar(60) NOT NULL,
-    "Program_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "Program_ProgramTypeDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StudentSectionAssociationProgram" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentSectionAssociationProgram_Ordinal_StudentS_6b6c060479" UNIQUE ("StudentSectionAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentSectionAssociationProgram_Program_Document_e1803f1bfc" UNIQUE ("StudentSectionAssociation_DocumentId", "Program_DocumentId"),
@@ -8149,8 +8150,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAttendanceEvent"
     "Section_SectionIdentifier" varchar(255) NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "AttendanceEventCategoryDescriptor_DescriptorId" bigint NOT NULL,
-    "EducationalEnvironmentDescriptor_DescriptorId" bigint NULL,
+    "AttendanceEventCategoryDescriptor_DescriptorId" integer NOT NULL,
+    "EducationalEnvironmentDescriptor_DescriptorId" integer NULL,
     "ArrivalTime" time NULL,
     "AttendanceEventReason" varchar(255) NULL,
     "DepartureTime" time NULL,
@@ -8187,12 +8188,12 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociation"
     "ProgramProgram_DocumentId" bigint NOT NULL,
     "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" integer NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "ReasonExitedDescriptor_DescriptorId" bigint NULL,
-    "SpecialEducationExitReasonDescriptor_DescriptorId" bigint NULL,
-    "SpecialEducationSettingDescriptor_DescriptorId" bigint NULL,
+    "ReasonExitedDescriptor_DescriptorId" integer NULL,
+    "SpecialEducationExitReasonDescriptor_DescriptorId" integer NULL,
+    "SpecialEducationSettingDescriptor_DescriptorId" integer NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
     "IdeaEligibility" boolean NULL,
@@ -8221,8 +8222,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociationDisa
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentSpecialEducationProgramAssociation_DocumentId" bigint NOT NULL,
-    "DisabilityDescriptor_DescriptorId" bigint NOT NULL,
-    "DisabilityDeterminationSourceTypeDescriptor_DescriptorId" bigint NULL,
+    "DisabilityDescriptor_DescriptorId" integer NOT NULL,
+    "DisabilityDeterminationSourceTypeDescriptor_DescriptorId" integer NULL,
     "DisabilityDiagnosis" varchar(80) NULL,
     "OrderOfDisability" integer NULL,
     CONSTRAINT "PK_StudentSpecialEducationProgramAssociationDisability" PRIMARY KEY ("CollectionItemId"),
@@ -8236,7 +8237,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociationProg
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentSpecialEducationProgramAssociation_DocumentId" bigint NOT NULL,
-    "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
+    "ParticipationStatusDescriptor_DescriptorId" integer NOT NULL,
     "DesignatedBy" varchar(60) NULL,
     "StatusBeginDate" date NOT NULL,
     "StatusEndDate" date NULL,
@@ -8264,7 +8265,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociationSpec
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentSpecialEducationProgramAssociation_DocumentId" bigint NOT NULL,
-    "SpecialEducationProgramServiceDescriptor_DescriptorId" bigint NOT NULL,
+    "SpecialEducationProgramServiceDescriptor_DescriptorId" integer NOT NULL,
     "PrimaryIndicator" boolean NULL,
     "ServiceBeginDate" date NULL,
     "ServiceEndDate" date NULL,
@@ -8280,7 +8281,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociationDisa
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
     "StudentSpecialEducationProgramAssociation_DocumentId" bigint NOT NULL,
-    "DisabilityDesignationDescriptor_DescriptorId" bigint NOT NULL,
+    "DisabilityDesignationDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StudentSpecialEducationProgramAssociationDisabili_06b4a409e7" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentSpecialEducationProgramAssociationDisabili_1996e0cd9e" UNIQUE ("ParentCollectionItemId", "DisabilityDesignationDescriptor_DescriptorId"),
     CONSTRAINT "UX_StudentSpecialEducationProgramAssociationDisabili_5c58e378d5" UNIQUE ("ParentCollectionItemId", "Ordinal")
@@ -8311,13 +8312,13 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramEligibilityAsso
     "ProgramProgram_DocumentId" bigint NOT NULL,
     "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" integer NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "EligibilityDelayReasonDescriptor_DescriptorId" bigint NULL,
-    "EligibilityEvaluationTypeDescriptor_DescriptorId" bigint NULL,
-    "EvaluationDelayReasonDescriptor_DescriptorId" bigint NULL,
-    "IdeaPartDescriptor_DescriptorId" bigint NOT NULL,
+    "EligibilityDelayReasonDescriptor_DescriptorId" integer NULL,
+    "EligibilityEvaluationTypeDescriptor_DescriptorId" integer NULL,
+    "EvaluationDelayReasonDescriptor_DescriptorId" integer NULL,
+    "IdeaPartDescriptor_DescriptorId" integer NOT NULL,
     "ConsentToEvaluationDate" date NULL,
     "ConsentToEvaluationReceivedDate" date NOT NULL,
     "EligibilityConferenceDate" date NULL,
@@ -8347,11 +8348,11 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentTitleIPartAProgramAssociation"
     "ProgramProgram_DocumentId" bigint NOT NULL,
     "ProgramProgram_EducationOrganizationId" bigint NOT NULL,
     "ProgramProgram_ProgramName" varchar(60) NOT NULL,
-    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "ProgramProgram_ProgramTypeDescriptor_DescriptorId" integer NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
-    "ReasonExitedDescriptor_DescriptorId" bigint NULL,
-    "TitleIPartAParticipantDescriptor_DescriptorId" bigint NOT NULL,
+    "ReasonExitedDescriptor_DescriptorId" integer NULL,
+    "TitleIPartAParticipantDescriptor_DescriptorId" integer NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
     "ServedOutsideOfRegularSession" boolean NULL,
@@ -8367,7 +8368,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentTitleIPartAProgramAssociationProgramPa
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentTitleIPartAProgramAssociation_DocumentId" bigint NOT NULL,
-    "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
+    "ParticipationStatusDescriptor_DescriptorId" integer NOT NULL,
     "DesignatedBy" varchar(60) NULL,
     "StatusBeginDate" date NOT NULL,
     "StatusEndDate" date NULL,
@@ -8381,7 +8382,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentTitleIPartAProgramAssociationTitleIPar
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentTitleIPartAProgramAssociation_DocumentId" bigint NOT NULL,
-    "TitleIPartAProgramServiceDescriptor_DescriptorId" bigint NOT NULL,
+    "TitleIPartAProgramServiceDescriptor_DescriptorId" integer NOT NULL,
     "PrimaryIndicator" boolean NULL,
     "ServiceBeginDate" date NULL,
     "ServiceEndDate" date NULL,
@@ -8399,9 +8400,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentTransportation"
     "Student_StudentUniqueId" varchar(32) NOT NULL,
     "TransportationEducationOrganization_DocumentId" bigint NOT NULL,
     "TransportationEducationOrganization_EducationOrganizationId" bigint NOT NULL,
-    "StudentBusDetailsBusRouteDescriptor_DescriptorId" bigint NULL,
-    "TransportationPublicExpenseEligibilityTypeDescriptor_16bbab4652" bigint NULL,
-    "TransportationTypeDescriptor_DescriptorId" bigint NULL,
+    "StudentBusDetailsBusRouteDescriptor_DescriptorId" integer NULL,
+    "TransportationPublicExpenseEligibilityTypeDescriptor_16bbab4652" integer NULL,
+    "TransportationTypeDescriptor_DescriptorId" integer NULL,
     "SpecialAccomodationRequirements" varchar(1024) NULL,
     "StudentBusDetailsBusNumber" varchar(36) NULL,
     "StudentBusDetailsMileage" numeric(5,2) NULL,
@@ -8416,7 +8417,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentTransportationTravelDayofWeek"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentTransportation_DocumentId" bigint NOT NULL,
-    "TravelDayofWeekDescriptor_DescriptorId" bigint NOT NULL,
+    "TravelDayofWeekDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StudentTransportationTravelDayofWeek" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentTransportationTravelDayofWeek_Ordinal_Stud_83598881c9" UNIQUE ("StudentTransportation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentTransportationTravelDayofWeek_StudentTrans_7734d76aff" UNIQUE ("StudentTransportation_DocumentId", "TravelDayofWeekDescriptor_DescriptorId")
@@ -8427,7 +8428,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentTransportationTravelDirection"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentTransportation_DocumentId" bigint NOT NULL,
-    "TravelDirectionDescriptor_DescriptorId" bigint NOT NULL,
+    "TravelDirectionDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_StudentTransportationTravelDirection" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentTransportationTravelDirection_Ordinal_Stud_b69f8adee1" UNIQUE ("StudentTransportation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentTransportationTravelDirection_StudentTrans_e066441640" UNIQUE ("StudentTransportation_DocumentId", "TravelDirectionDescriptor_DescriptorId")
@@ -8447,7 +8448,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Survey"
     "Session_SchoolId" bigint NULL,
     "Session_SchoolYear" integer GENERATED ALWAYS AS (CASE WHEN "Session_DocumentId" IS NULL THEN NULL ELSE "SchoolYear_Unified" END) STORED,
     "Session_SessionName" varchar(60) NULL,
-    "SurveyCategoryDescriptor_DescriptorId" bigint NULL,
+    "SurveyCategoryDescriptor_DescriptorId" integer NULL,
     "Namespace" varchar(255) NOT NULL,
     "NumberAdministered" integer NULL,
     "SurveyIdentifier" varchar(60) NOT NULL,
@@ -8485,7 +8486,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyProgramAssociation"
     "Program_DocumentId" bigint NOT NULL,
     "Program_EducationOrganizationId" bigint NOT NULL,
     "Program_ProgramName" varchar(60) NOT NULL,
-    "Program_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "Program_ProgramTypeDescriptor_DescriptorId" integer NOT NULL,
     "Survey_DocumentId" bigint NOT NULL,
     "Survey_Namespace" varchar(255) NOT NULL,
     "Survey_SurveyIdentifier" varchar(60) NOT NULL,
@@ -8509,7 +8510,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestion"
     "Survey_DocumentId" bigint NOT NULL,
     "Survey_Namespace" varchar(255) GENERATED ALWAYS AS (CASE WHEN "Survey_DocumentId" IS NULL THEN NULL ELSE "Namespace_Unified" END) STORED,
     "Survey_SurveyIdentifier" varchar(60) GENERATED ALWAYS AS (CASE WHEN "Survey_DocumentId" IS NULL THEN NULL ELSE "SurveyIdentifier_Unified" END) STORED,
-    "QuestionFormDescriptor_DescriptorId" bigint NOT NULL,
+    "QuestionFormDescriptor_DescriptorId" integer NOT NULL,
     "QuestionCode" varchar(60) NOT NULL,
     "QuestionText" varchar(1024) NOT NULL,
     CONSTRAINT "PK_SurveyQuestion" PRIMARY KEY ("DocumentId"),
@@ -8631,7 +8632,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyResponseSurveyLevel"
     "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "SurveyResponse_DocumentId" bigint NOT NULL,
-    "SurveyLevelDescriptor_DescriptorId" bigint NOT NULL,
+    "SurveyLevelDescriptor_DescriptorId" integer NOT NULL,
     CONSTRAINT "PK_SurveyResponseSurveyLevel" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_SurveyResponseSurveyLevel_Ordinal_SurveyResponse_DocumentId" UNIQUE ("SurveyResponse_DocumentId", "Ordinal"),
     CONSTRAINT "UX_SurveyResponseSurveyLevel_SurveyLevelDescriptor_D_4883faa7dd" UNIQUE ("SurveyResponse_DocumentId", "SurveyLevelDescriptor_DescriptorId")
@@ -9159,7 +9160,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."Descriptor"
     "NewNamespace" varchar(255) NULL,
     "OldCodeValue" varchar(50) NOT NULL,
     "NewCodeValue" varchar(50) NULL,
-    "Discriminator" varchar(128) NOT NULL,
+    "ResourceKeyId" smallint NOT NULL,
     "Id" uuid NOT NULL,
     "ChangeVersion" bigint NOT NULL,
     "DocumentId" bigint NOT NULL,
@@ -11291,7 +11292,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GeneralStudentProgramAssociationIdentity"
     "EducationOrganization_EducationOrganizationId" bigint NOT NULL,
     "Program_EducationOrganizationId" bigint NOT NULL,
     "Program_ProgramName" varchar(60) NOT NULL,
-    "Program_ProgramTypeDescriptor_DescriptorId" bigint NOT NULL,
+    "Program_ProgramTypeDescriptor_DescriptorId" integer NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
     "Discriminator" varchar(256) NOT NULL,
     CONSTRAINT "PK_GeneralStudentProgramAssociationIdentity" PRIMARY KEY ("DocumentId"),
@@ -11395,7 +11396,7 @@ BEGIN
         ALTER TABLE "edfi"."Assessment"
         ADD CONSTRAINT "FK_Assessment_AssessmentCategoryDescriptor"
         FOREIGN KEY ("AssessmentCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11412,7 +11413,7 @@ BEGIN
         ALTER TABLE "edfi"."Assessment"
         ADD CONSTRAINT "FK_Assessment_ContentStandardPublicationStatusDescriptor"
         FOREIGN KEY ("ContentStandardPublicationStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11480,7 +11481,7 @@ BEGIN
         ALTER TABLE "edfi"."AssessmentAcademicSubject"
         ADD CONSTRAINT "FK_AssessmentAcademicSubject_AcademicSubjectDescriptor"
         FOREIGN KEY ("AcademicSubjectDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11531,7 +11532,7 @@ BEGIN
         ALTER TABLE "edfi"."AssessmentAssessedGradeLevel"
         ADD CONSTRAINT "FK_AssessmentAssessedGradeLevel_GradeLevelDescriptor"
         FOREIGN KEY ("GradeLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11575,14 +11576,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_AssessmentIdentificationCode_AssessmentIdentifica_9944ebdd66'
+        WHERE conname = 'FK_AssessmentIdentificationCode_AssessmentIdentifica_4b2ac96336'
         AND conrelid = to_regclass('"edfi"."AssessmentIdentificationCode"')
     )
     THEN
         ALTER TABLE "edfi"."AssessmentIdentificationCode"
-        ADD CONSTRAINT "FK_AssessmentIdentificationCode_AssessmentIdentifica_9944ebdd66"
+        ADD CONSTRAINT "FK_AssessmentIdentificationCode_AssessmentIdentifica_4b2ac96336"
         FOREIGN KEY ("AssessmentIdentificationSystemDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11616,7 +11617,7 @@ BEGIN
         ALTER TABLE "edfi"."AssessmentLanguage"
         ADD CONSTRAINT "FK_AssessmentLanguage_LanguageDescriptor"
         FOREIGN KEY ("LanguageDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11643,14 +11644,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_AssessmentPerformanceLevel_AssessmentReportingMet_eb199000f4'
+        WHERE conname = 'FK_AssessmentPerformanceLevel_AssessmentReportingMet_b5af8d67e0'
         AND conrelid = to_regclass('"edfi"."AssessmentPerformanceLevel"')
     )
     THEN
         ALTER TABLE "edfi"."AssessmentPerformanceLevel"
-        ADD CONSTRAINT "FK_AssessmentPerformanceLevel_AssessmentReportingMet_eb199000f4"
+        ADD CONSTRAINT "FK_AssessmentPerformanceLevel_AssessmentReportingMet_b5af8d67e0"
         FOREIGN KEY ("AssessmentReportingMethodDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11667,7 +11668,7 @@ BEGIN
         ALTER TABLE "edfi"."AssessmentPerformanceLevel"
         ADD CONSTRAINT "FK_AssessmentPerformanceLevel_PerformanceLevelDescriptor"
         FOREIGN KEY ("PerformanceLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11684,7 +11685,7 @@ BEGIN
         ALTER TABLE "edfi"."AssessmentPerformanceLevel"
         ADD CONSTRAINT "FK_AssessmentPerformanceLevel_ResultDatatypeTypeDescriptor"
         FOREIGN KEY ("ResultDatatypeTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11718,7 +11719,7 @@ BEGIN
         ALTER TABLE "edfi"."AssessmentPeriod"
         ADD CONSTRAINT "FK_AssessmentPeriod_AssessmentPeriodDescriptor"
         FOREIGN KEY ("AssessmentPeriodDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11752,7 +11753,7 @@ BEGIN
         ALTER TABLE "edfi"."AssessmentPlatformType"
         ADD CONSTRAINT "FK_AssessmentPlatformType_PlatformTypeDescriptor"
         FOREIGN KEY ("PlatformTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11779,14 +11780,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_AssessmentProgram_SectionOrProgramChoiceProgram_P_cc414c6345'
+        WHERE conname = 'FK_AssessmentProgram_SectionOrProgramChoiceProgram_P_63ab52d928'
         AND conrelid = to_regclass('"edfi"."AssessmentProgram"')
     )
     THEN
         ALTER TABLE "edfi"."AssessmentProgram"
-        ADD CONSTRAINT "FK_AssessmentProgram_SectionOrProgramChoiceProgram_P_cc414c6345"
+        ADD CONSTRAINT "FK_AssessmentProgram_SectionOrProgramChoiceProgram_P_63ab52d928"
         FOREIGN KEY ("SectionOrProgramChoiceProgram_ProgramTypeDescriptor__106025b7ce")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11837,7 +11838,7 @@ BEGIN
         ALTER TABLE "edfi"."AssessmentScore"
         ADD CONSTRAINT "FK_AssessmentScore_AssessmentReportingMethodDescriptor"
         FOREIGN KEY ("AssessmentReportingMethodDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -11854,7 +11855,7 @@ BEGIN
         ALTER TABLE "edfi"."AssessmentScore"
         ADD CONSTRAINT "FK_AssessmentScore_ResultDatatypeTypeDescriptor"
         FOREIGN KEY ("ResultDatatypeTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -12160,7 +12161,7 @@ BEGIN
         ALTER TABLE "edfi"."AssessmentItem"
         ADD CONSTRAINT "FK_AssessmentItem_AssessmentItemCategoryDescriptor"
         FOREIGN KEY ("AssessmentItemCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -12255,14 +12256,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_AssessmentScoreRangeLearningStandard_AssessmentRe_55371bdb11'
+        WHERE conname = 'FK_AssessmentScoreRangeLearningStandard_AssessmentRe_fc8e33e4da'
         AND conrelid = to_regclass('"edfi"."AssessmentScoreRangeLearningStandard"')
     )
     THEN
         ALTER TABLE "edfi"."AssessmentScoreRangeLearningStandard"
-        ADD CONSTRAINT "FK_AssessmentScoreRangeLearningStandard_AssessmentRe_55371bdb11"
+        ADD CONSTRAINT "FK_AssessmentScoreRangeLearningStandard_AssessmentRe_fc8e33e4da"
         FOREIGN KEY ("AssessmentReportingMethodDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -12398,7 +12399,7 @@ BEGIN
         ALTER TABLE "edfi"."BalanceSheetDimensionReportingTag"
         ADD CONSTRAINT "FK_BalanceSheetDimensionReportingTag_ReportingTagDescriptor"
         FOREIGN KEY ("ReportingTagDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -12517,7 +12518,7 @@ BEGIN
         ALTER TABLE "edfi"."BellScheduleGradeLevel"
         ADD CONSTRAINT "FK_BellScheduleGradeLevel_GradeLevelDescriptor"
         FOREIGN KEY ("GradeLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -12534,7 +12535,7 @@ BEGIN
         ALTER TABLE "edfi"."Calendar"
         ADD CONSTRAINT "FK_Calendar_CalendarTypeDescriptor"
         FOREIGN KEY ("CalendarTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -12619,7 +12620,7 @@ BEGIN
         ALTER TABLE "edfi"."CalendarGradeLevel"
         ADD CONSTRAINT "FK_CalendarGradeLevel_GradeLevelDescriptor"
         FOREIGN KEY ("GradeLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -12687,7 +12688,7 @@ BEGIN
         ALTER TABLE "edfi"."CalendarDateCalendarEvent"
         ADD CONSTRAINT "FK_CalendarDateCalendarEvent_CalendarEventDescriptor"
         FOREIGN KEY ("CalendarEventDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -12704,7 +12705,7 @@ BEGIN
         ALTER TABLE "edfi"."ChartOfAccount"
         ADD CONSTRAINT "FK_ChartOfAccount_AccountTypeDescriptor"
         FOREIGN KEY ("AccountTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -12908,7 +12909,7 @@ BEGIN
         ALTER TABLE "edfi"."ChartOfAccountReportingTag"
         ADD CONSTRAINT "FK_ChartOfAccountReportingTag_ReportingTagDescriptor"
         FOREIGN KEY ("ReportingTagDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -12976,7 +12977,7 @@ BEGIN
         ALTER TABLE "edfi"."Cohort"
         ADD CONSTRAINT "FK_Cohort_AcademicSubjectDescriptor"
         FOREIGN KEY ("AcademicSubjectDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -12993,7 +12994,7 @@ BEGIN
         ALTER TABLE "edfi"."Cohort"
         ADD CONSTRAINT "FK_Cohort_CohortScopeDescriptor"
         FOREIGN KEY ("CohortScopeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13010,7 +13011,7 @@ BEGIN
         ALTER TABLE "edfi"."Cohort"
         ADD CONSTRAINT "FK_Cohort_CohortTypeDescriptor"
         FOREIGN KEY ("CohortTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13078,7 +13079,7 @@ BEGIN
         ALTER TABLE "edfi"."CohortProgram"
         ADD CONSTRAINT "FK_CohortProgram_ProgramProgram_ProgramTypeDescriptor"
         FOREIGN KEY ("ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13129,7 +13130,7 @@ BEGIN
         ALTER TABLE "edfi"."CommunityOrganization"
         ADD CONSTRAINT "FK_CommunityOrganization_OperationalStatusDescriptor"
         FOREIGN KEY ("OperationalStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13146,7 +13147,7 @@ BEGIN
         ALTER TABLE "edfi"."CommunityOrganizationAddress"
         ADD CONSTRAINT "FK_CommunityOrganizationAddress_AddressTypeDescriptor"
         FOREIGN KEY ("AddressTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13180,7 +13181,7 @@ BEGIN
         ALTER TABLE "edfi"."CommunityOrganizationAddress"
         ADD CONSTRAINT "FK_CommunityOrganizationAddress_LocaleDescriptor"
         FOREIGN KEY ("LocaleDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13197,7 +13198,7 @@ BEGIN
         ALTER TABLE "edfi"."CommunityOrganizationAddress"
         ADD CONSTRAINT "FK_CommunityOrganizationAddress_StateAbbreviationDescriptor"
         FOREIGN KEY ("StateAbbreviationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13224,14 +13225,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_CommunityOrganizationCategory_EducationOrganizati_e8f55049bb'
+        WHERE conname = 'FK_CommunityOrganizationCategory_EducationOrganizati_5e5c66ced5'
         AND conrelid = to_regclass('"edfi"."CommunityOrganizationCategory"')
     )
     THEN
         ALTER TABLE "edfi"."CommunityOrganizationCategory"
-        ADD CONSTRAINT "FK_CommunityOrganizationCategory_EducationOrganizati_e8f55049bb"
+        ADD CONSTRAINT "FK_CommunityOrganizationCategory_EducationOrganizati_5e5c66ced5"
         FOREIGN KEY ("EducationOrganizationCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13258,14 +13259,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_CommunityOrganizationIdentificationCode_Education_bfcdee0688'
+        WHERE conname = 'FK_CommunityOrganizationIdentificationCode_Education_e603491a87'
         AND conrelid = to_regclass('"edfi"."CommunityOrganizationIdentificationCode"')
     )
     THEN
         ALTER TABLE "edfi"."CommunityOrganizationIdentificationCode"
-        ADD CONSTRAINT "FK_CommunityOrganizationIdentificationCode_Education_bfcdee0688"
+        ADD CONSTRAINT "FK_CommunityOrganizationIdentificationCode_Education_e603491a87"
         FOREIGN KEY ("EducationOrganizationIdentificationSystemDescriptor__f63fb21ede")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13299,7 +13300,7 @@ BEGIN
         ALTER TABLE "edfi"."CommunityOrganizationIndicator"
         ADD CONSTRAINT "FK_CommunityOrganizationIndicator_IndicatorDescriptor"
         FOREIGN KEY ("IndicatorDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13316,7 +13317,7 @@ BEGIN
         ALTER TABLE "edfi"."CommunityOrganizationIndicator"
         ADD CONSTRAINT "FK_CommunityOrganizationIndicator_IndicatorGroupDescriptor"
         FOREIGN KEY ("IndicatorGroupDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13333,7 +13334,7 @@ BEGIN
         ALTER TABLE "edfi"."CommunityOrganizationIndicator"
         ADD CONSTRAINT "FK_CommunityOrganizationIndicator_IndicatorLevelDescriptor"
         FOREIGN KEY ("IndicatorLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13360,14 +13361,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_CommunityOrganizationInstitutionTelephone_Institu_d7c4cf34e7'
+        WHERE conname = 'FK_CommunityOrganizationInstitutionTelephone_Institu_bcd453b789'
         AND conrelid = to_regclass('"edfi"."CommunityOrganizationInstitutionTelephone"')
     )
     THEN
         ALTER TABLE "edfi"."CommunityOrganizationInstitutionTelephone"
-        ADD CONSTRAINT "FK_CommunityOrganizationInstitutionTelephone_Institu_d7c4cf34e7"
+        ADD CONSTRAINT "FK_CommunityOrganizationInstitutionTelephone_Institu_bcd453b789"
         FOREIGN KEY ("InstitutionTelephoneNumberTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13377,14 +13378,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_CommunityOrganizationInternationalAddress_Address_acf2f1145f'
+        WHERE conname = 'FK_CommunityOrganizationInternationalAddress_Address_245f00947b'
         AND conrelid = to_regclass('"edfi"."CommunityOrganizationInternationalAddress"')
     )
     THEN
         ALTER TABLE "edfi"."CommunityOrganizationInternationalAddress"
-        ADD CONSTRAINT "FK_CommunityOrganizationInternationalAddress_Address_acf2f1145f"
+        ADD CONSTRAINT "FK_CommunityOrganizationInternationalAddress_Address_245f00947b"
         FOREIGN KEY ("AddressTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13418,7 +13419,7 @@ BEGIN
         ALTER TABLE "edfi"."CommunityOrganizationInternationalAddress"
         ADD CONSTRAINT "FK_CommunityOrganizationInternationalAddress_CountryDescriptor"
         FOREIGN KEY ("CountryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13503,7 +13504,7 @@ BEGIN
         ALTER TABLE "edfi"."CommunityProvider"
         ADD CONSTRAINT "FK_CommunityProvider_OperationalStatusDescriptor"
         FOREIGN KEY ("OperationalStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13520,7 +13521,7 @@ BEGIN
         ALTER TABLE "edfi"."CommunityProvider"
         ADD CONSTRAINT "FK_CommunityProvider_ProviderCategoryDescriptor"
         FOREIGN KEY ("ProviderCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13537,7 +13538,7 @@ BEGIN
         ALTER TABLE "edfi"."CommunityProvider"
         ADD CONSTRAINT "FK_CommunityProvider_ProviderProfitabilityDescriptor"
         FOREIGN KEY ("ProviderProfitabilityDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13554,7 +13555,7 @@ BEGIN
         ALTER TABLE "edfi"."CommunityProvider"
         ADD CONSTRAINT "FK_CommunityProvider_ProviderStatusDescriptor"
         FOREIGN KEY ("ProviderStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13571,7 +13572,7 @@ BEGIN
         ALTER TABLE "edfi"."CommunityProviderAddress"
         ADD CONSTRAINT "FK_CommunityProviderAddress_AddressTypeDescriptor"
         FOREIGN KEY ("AddressTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13605,7 +13606,7 @@ BEGIN
         ALTER TABLE "edfi"."CommunityProviderAddress"
         ADD CONSTRAINT "FK_CommunityProviderAddress_LocaleDescriptor"
         FOREIGN KEY ("LocaleDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13622,7 +13623,7 @@ BEGIN
         ALTER TABLE "edfi"."CommunityProviderAddress"
         ADD CONSTRAINT "FK_CommunityProviderAddress_StateAbbreviationDescriptor"
         FOREIGN KEY ("StateAbbreviationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13649,14 +13650,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_CommunityProviderCategory_EducationOrganizationCa_acc0929a31'
+        WHERE conname = 'FK_CommunityProviderCategory_EducationOrganizationCa_1bd8b3e03e'
         AND conrelid = to_regclass('"edfi"."CommunityProviderCategory"')
     )
     THEN
         ALTER TABLE "edfi"."CommunityProviderCategory"
-        ADD CONSTRAINT "FK_CommunityProviderCategory_EducationOrganizationCa_acc0929a31"
+        ADD CONSTRAINT "FK_CommunityProviderCategory_EducationOrganizationCa_1bd8b3e03e"
         FOREIGN KEY ("EducationOrganizationCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13683,14 +13684,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_CommunityProviderIdentificationCode_EducationOrga_18fcd8720f'
+        WHERE conname = 'FK_CommunityProviderIdentificationCode_EducationOrga_3ada108ef6'
         AND conrelid = to_regclass('"edfi"."CommunityProviderIdentificationCode"')
     )
     THEN
         ALTER TABLE "edfi"."CommunityProviderIdentificationCode"
-        ADD CONSTRAINT "FK_CommunityProviderIdentificationCode_EducationOrga_18fcd8720f"
+        ADD CONSTRAINT "FK_CommunityProviderIdentificationCode_EducationOrga_3ada108ef6"
         FOREIGN KEY ("EducationOrganizationIdentificationSystemDescriptor__f63fb21ede")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13724,7 +13725,7 @@ BEGIN
         ALTER TABLE "edfi"."CommunityProviderIndicator"
         ADD CONSTRAINT "FK_CommunityProviderIndicator_IndicatorDescriptor"
         FOREIGN KEY ("IndicatorDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13741,7 +13742,7 @@ BEGIN
         ALTER TABLE "edfi"."CommunityProviderIndicator"
         ADD CONSTRAINT "FK_CommunityProviderIndicator_IndicatorGroupDescriptor"
         FOREIGN KEY ("IndicatorGroupDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13758,7 +13759,7 @@ BEGIN
         ALTER TABLE "edfi"."CommunityProviderIndicator"
         ADD CONSTRAINT "FK_CommunityProviderIndicator_IndicatorLevelDescriptor"
         FOREIGN KEY ("IndicatorLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13785,14 +13786,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_CommunityProviderInstitutionTelephone_Institution_91e814d74e'
+        WHERE conname = 'FK_CommunityProviderInstitutionTelephone_Institution_7c21d38877'
         AND conrelid = to_regclass('"edfi"."CommunityProviderInstitutionTelephone"')
     )
     THEN
         ALTER TABLE "edfi"."CommunityProviderInstitutionTelephone"
-        ADD CONSTRAINT "FK_CommunityProviderInstitutionTelephone_Institution_91e814d74e"
+        ADD CONSTRAINT "FK_CommunityProviderInstitutionTelephone_Institution_7c21d38877"
         FOREIGN KEY ("InstitutionTelephoneNumberTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13809,7 +13810,7 @@ BEGIN
         ALTER TABLE "edfi"."CommunityProviderInternationalAddress"
         ADD CONSTRAINT "FK_CommunityProviderInternationalAddress_AddressTypeDescriptor"
         FOREIGN KEY ("AddressTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13843,7 +13844,7 @@ BEGIN
         ALTER TABLE "edfi"."CommunityProviderInternationalAddress"
         ADD CONSTRAINT "FK_CommunityProviderInternationalAddress_CountryDescriptor"
         FOREIGN KEY ("CountryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13928,7 +13929,7 @@ BEGIN
         ALTER TABLE "edfi"."CommunityProviderLicense"
         ADD CONSTRAINT "FK_CommunityProviderLicense_LicenseStatusDescriptor"
         FOREIGN KEY ("LicenseStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13945,7 +13946,7 @@ BEGIN
         ALTER TABLE "edfi"."CommunityProviderLicense"
         ADD CONSTRAINT "FK_CommunityProviderLicense_LicenseTypeDescriptor"
         FOREIGN KEY ("LicenseTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -13996,7 +13997,7 @@ BEGIN
         ALTER TABLE "edfi"."CompetencyObjective"
         ADD CONSTRAINT "FK_CompetencyObjective_ObjectiveGradeLevelDescriptor"
         FOREIGN KEY ("ObjectiveGradeLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14030,7 +14031,7 @@ BEGIN
         ALTER TABLE "edfi"."Contact"
         ADD CONSTRAINT "FK_Contact_HighestCompletedLevelOfEducationDescriptor"
         FOREIGN KEY ("HighestCompletedLevelOfEducationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14064,7 +14065,7 @@ BEGIN
         ALTER TABLE "edfi"."Contact"
         ADD CONSTRAINT "FK_Contact_Person_SourceSystemDescriptor"
         FOREIGN KEY ("Person_SourceSystemDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14081,7 +14082,7 @@ BEGIN
         ALTER TABLE "edfi"."Contact"
         ADD CONSTRAINT "FK_Contact_SexDescriptor"
         FOREIGN KEY ("SexDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14098,7 +14099,7 @@ BEGIN
         ALTER TABLE "edfi"."ContactAddress"
         ADD CONSTRAINT "FK_ContactAddress_AddressTypeDescriptor"
         FOREIGN KEY ("AddressTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14132,7 +14133,7 @@ BEGIN
         ALTER TABLE "edfi"."ContactAddress"
         ADD CONSTRAINT "FK_ContactAddress_LocaleDescriptor"
         FOREIGN KEY ("LocaleDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14149,7 +14150,7 @@ BEGIN
         ALTER TABLE "edfi"."ContactAddress"
         ADD CONSTRAINT "FK_ContactAddress_StateAbbreviationDescriptor"
         FOREIGN KEY ("StateAbbreviationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14183,7 +14184,7 @@ BEGIN
         ALTER TABLE "edfi"."ContactElectronicMail"
         ADD CONSTRAINT "FK_ContactElectronicMail_ElectronicMailTypeDescriptor"
         FOREIGN KEY ("ElectronicMailTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14200,7 +14201,7 @@ BEGIN
         ALTER TABLE "edfi"."ContactInternationalAddress"
         ADD CONSTRAINT "FK_ContactInternationalAddress_AddressTypeDescriptor"
         FOREIGN KEY ("AddressTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14234,7 +14235,7 @@ BEGIN
         ALTER TABLE "edfi"."ContactInternationalAddress"
         ADD CONSTRAINT "FK_ContactInternationalAddress_CountryDescriptor"
         FOREIGN KEY ("CountryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14268,7 +14269,7 @@ BEGIN
         ALTER TABLE "edfi"."ContactLanguage"
         ADD CONSTRAINT "FK_ContactLanguage_LanguageDescriptor"
         FOREIGN KEY ("LanguageDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14302,7 +14303,7 @@ BEGIN
         ALTER TABLE "edfi"."ContactOtherName"
         ADD CONSTRAINT "FK_ContactOtherName_OtherNameTypeDescriptor"
         FOREIGN KEY ("OtherNameTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14329,14 +14330,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ContactPersonalIdentificationDocument_Identificat_3e81ba28af'
+        WHERE conname = 'FK_ContactPersonalIdentificationDocument_Identificat_12f282db9c'
         AND conrelid = to_regclass('"edfi"."ContactPersonalIdentificationDocument"')
     )
     THEN
         ALTER TABLE "edfi"."ContactPersonalIdentificationDocument"
-        ADD CONSTRAINT "FK_ContactPersonalIdentificationDocument_Identificat_3e81ba28af"
+        ADD CONSTRAINT "FK_ContactPersonalIdentificationDocument_Identificat_12f282db9c"
         FOREIGN KEY ("IdentificationDocumentUseDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14346,14 +14347,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ContactPersonalIdentificationDocument_IssuerCount_9a223aea86'
+        WHERE conname = 'FK_ContactPersonalIdentificationDocument_IssuerCount_cc368127d7'
         AND conrelid = to_regclass('"edfi"."ContactPersonalIdentificationDocument"')
     )
     THEN
         ALTER TABLE "edfi"."ContactPersonalIdentificationDocument"
-        ADD CONSTRAINT "FK_ContactPersonalIdentificationDocument_IssuerCount_9a223aea86"
+        ADD CONSTRAINT "FK_ContactPersonalIdentificationDocument_IssuerCount_cc368127d7"
         FOREIGN KEY ("IssuerCountryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14363,14 +14364,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ContactPersonalIdentificationDocument_PersonalInf_fad2a16d1e'
+        WHERE conname = 'FK_ContactPersonalIdentificationDocument_PersonalInf_1c477afd7b'
         AND conrelid = to_regclass('"edfi"."ContactPersonalIdentificationDocument"')
     )
     THEN
         ALTER TABLE "edfi"."ContactPersonalIdentificationDocument"
-        ADD CONSTRAINT "FK_ContactPersonalIdentificationDocument_PersonalInf_fad2a16d1e"
+        ADD CONSTRAINT "FK_ContactPersonalIdentificationDocument_PersonalInf_1c477afd7b"
         FOREIGN KEY ("PersonalInformationVerificationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14404,7 +14405,7 @@ BEGIN
         ALTER TABLE "edfi"."ContactTelephone"
         ADD CONSTRAINT "FK_ContactTelephone_TelephoneNumberTypeDescriptor"
         FOREIGN KEY ("TelephoneNumberTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14455,7 +14456,7 @@ BEGIN
         ALTER TABLE "edfi"."ContactLanguageUs"
         ADD CONSTRAINT "FK_ContactLanguageUs_LanguageUseDescriptor"
         FOREIGN KEY ("LanguageUseDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14472,7 +14473,7 @@ BEGIN
         ALTER TABLE "edfi"."Course"
         ADD CONSTRAINT "FK_Course_CareerPathwayDescriptor"
         FOREIGN KEY ("CareerPathwayDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14489,7 +14490,7 @@ BEGIN
         ALTER TABLE "edfi"."Course"
         ADD CONSTRAINT "FK_Course_CourseDefinedByDescriptor"
         FOREIGN KEY ("CourseDefinedByDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14506,7 +14507,7 @@ BEGIN
         ALTER TABLE "edfi"."Course"
         ADD CONSTRAINT "FK_Course_CourseGPAApplicabilityDescriptor"
         FOREIGN KEY ("CourseGPAApplicabilityDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14557,7 +14558,7 @@ BEGIN
         ALTER TABLE "edfi"."Course"
         ADD CONSTRAINT "FK_Course_MaximumAvailableCreditTypeDescriptor"
         FOREIGN KEY ("MaximumAvailableCreditTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14574,7 +14575,7 @@ BEGIN
         ALTER TABLE "edfi"."Course"
         ADD CONSTRAINT "FK_Course_MinimumAvailableCreditTypeDescriptor"
         FOREIGN KEY ("MinimumAvailableCreditTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14591,7 +14592,7 @@ BEGIN
         ALTER TABLE "edfi"."CourseAcademicSubject"
         ADD CONSTRAINT "FK_CourseAcademicSubject_AcademicSubjectDescriptor"
         FOREIGN KEY ("AcademicSubjectDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14625,7 +14626,7 @@ BEGIN
         ALTER TABLE "edfi"."CourseCompetencyLevel"
         ADD CONSTRAINT "FK_CourseCompetencyLevel_CompetencyLevelDescriptor"
         FOREIGN KEY ("CompetencyLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14669,14 +14670,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_CourseIdentificationCode_CourseIdentificationSyst_4180ff606e'
+        WHERE conname = 'FK_CourseIdentificationCode_CourseIdentificationSyst_d20dee314b'
         AND conrelid = to_regclass('"edfi"."CourseIdentificationCode"')
     )
     THEN
         ALTER TABLE "edfi"."CourseIdentificationCode"
-        ADD CONSTRAINT "FK_CourseIdentificationCode_CourseIdentificationSyst_4180ff606e"
+        ADD CONSTRAINT "FK_CourseIdentificationCode_CourseIdentificationSyst_d20dee314b"
         FOREIGN KEY ("CourseIdentificationSystemDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14737,14 +14738,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_CourseLevelCharacteristic_CourseLevelCharacterist_03b82ce0eb'
+        WHERE conname = 'FK_CourseLevelCharacteristic_CourseLevelCharacterist_f136981319'
         AND conrelid = to_regclass('"edfi"."CourseLevelCharacteristic"')
     )
     THEN
         ALTER TABLE "edfi"."CourseLevelCharacteristic"
-        ADD CONSTRAINT "FK_CourseLevelCharacteristic_CourseLevelCharacterist_03b82ce0eb"
+        ADD CONSTRAINT "FK_CourseLevelCharacteristic_CourseLevelCharacterist_f136981319"
         FOREIGN KEY ("CourseLevelCharacteristicDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14778,7 +14779,7 @@ BEGIN
         ALTER TABLE "edfi"."CourseOfferedGradeLevel"
         ADD CONSTRAINT "FK_CourseOfferedGradeLevel_GradeLevelDescriptor"
         FOREIGN KEY ("GradeLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14856,14 +14857,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_CourseOfferingCourseLevelCharacteristic_CourseLev_2b5ba4381c'
+        WHERE conname = 'FK_CourseOfferingCourseLevelCharacteristic_CourseLev_5ada07b3d5'
         AND conrelid = to_regclass('"edfi"."CourseOfferingCourseLevelCharacteristic"')
     )
     THEN
         ALTER TABLE "edfi"."CourseOfferingCourseLevelCharacteristic"
-        ADD CONSTRAINT "FK_CourseOfferingCourseLevelCharacteristic_CourseLev_2b5ba4381c"
+        ADD CONSTRAINT "FK_CourseOfferingCourseLevelCharacteristic_CourseLev_5ada07b3d5"
         FOREIGN KEY ("CourseLevelCharacteristicDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14914,7 +14915,7 @@ BEGIN
         ALTER TABLE "edfi"."CourseOfferingCurriculumUsed"
         ADD CONSTRAINT "FK_CourseOfferingCurriculumUsed_CurriculumUsedDescriptor"
         FOREIGN KEY ("CurriculumUsedDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14948,7 +14949,7 @@ BEGIN
         ALTER TABLE "edfi"."CourseOfferingOfferedGradeLevel"
         ADD CONSTRAINT "FK_CourseOfferingOfferedGradeLevel_GradeLevelDescriptor"
         FOREIGN KEY ("GradeLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14965,7 +14966,7 @@ BEGIN
         ALTER TABLE "edfi"."CourseTranscript"
         ADD CONSTRAINT "FK_CourseTranscript_AttemptedCreditTypeDescriptor"
         FOREIGN KEY ("AttemptedCreditTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -14982,7 +14983,7 @@ BEGIN
         ALTER TABLE "edfi"."CourseTranscript"
         ADD CONSTRAINT "FK_CourseTranscript_CourseAttemptResultDescriptor"
         FOREIGN KEY ("CourseAttemptResultDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15016,7 +15017,7 @@ BEGIN
         ALTER TABLE "edfi"."CourseTranscript"
         ADD CONSTRAINT "FK_CourseTranscript_CourseRepeatCodeDescriptor"
         FOREIGN KEY ("CourseRepeatCodeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15050,7 +15051,7 @@ BEGIN
         ALTER TABLE "edfi"."CourseTranscript"
         ADD CONSTRAINT "FK_CourseTranscript_EarnedCreditTypeDescriptor"
         FOREIGN KEY ("EarnedCreditTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15084,7 +15085,7 @@ BEGIN
         ALTER TABLE "edfi"."CourseTranscript"
         ADD CONSTRAINT "FK_CourseTranscript_MethodCreditEarnedDescriptor"
         FOREIGN KEY ("MethodCreditEarnedDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15135,7 +15136,7 @@ BEGIN
         ALTER TABLE "edfi"."CourseTranscript"
         ADD CONSTRAINT "FK_CourseTranscript_StudentAcademicRecord_TermDescriptor"
         FOREIGN KEY ("StudentAcademicRecord_TermDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15152,7 +15153,7 @@ BEGIN
         ALTER TABLE "edfi"."CourseTranscript"
         ADD CONSTRAINT "FK_CourseTranscript_WhenTakenGradeLevelDescriptor"
         FOREIGN KEY ("WhenTakenGradeLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15169,7 +15170,7 @@ BEGIN
         ALTER TABLE "edfi"."CourseTranscriptAcademicSubject"
         ADD CONSTRAINT "FK_CourseTranscriptAcademicSubject_AcademicSubjectDescriptor"
         FOREIGN KEY ("AcademicSubjectDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15196,14 +15197,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_CourseTranscriptAlternativeCourseIdentificationCo_5530fe541a'
+        WHERE conname = 'FK_CourseTranscriptAlternativeCourseIdentificationCo_1dade29616'
         AND conrelid = to_regclass('"edfi"."CourseTranscriptAlternativeCourseIdentificationCode"')
     )
     THEN
         ALTER TABLE "edfi"."CourseTranscriptAlternativeCourseIdentificationCode"
-        ADD CONSTRAINT "FK_CourseTranscriptAlternativeCourseIdentificationCo_5530fe541a"
+        ADD CONSTRAINT "FK_CourseTranscriptAlternativeCourseIdentificationCo_1dade29616"
         FOREIGN KEY ("CourseIdentificationSystemDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15230,14 +15231,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_CourseTranscriptCourseProgram_CourseProgram_Progr_065c4b204c'
+        WHERE conname = 'FK_CourseTranscriptCourseProgram_CourseProgram_Progr_1ea518df0e'
         AND conrelid = to_regclass('"edfi"."CourseTranscriptCourseProgram"')
     )
     THEN
         ALTER TABLE "edfi"."CourseTranscriptCourseProgram"
-        ADD CONSTRAINT "FK_CourseTranscriptCourseProgram_CourseProgram_Progr_065c4b204c"
+        ADD CONSTRAINT "FK_CourseTranscriptCourseProgram_CourseProgram_Progr_1ea518df0e"
         FOREIGN KEY ("CourseProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15305,7 +15306,7 @@ BEGIN
         ALTER TABLE "edfi"."CourseTranscriptCreditCategory"
         ADD CONSTRAINT "FK_CourseTranscriptCreditCategory_CreditCategoryDescriptor"
         FOREIGN KEY ("CreditCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15315,14 +15316,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_CourseTranscriptEarnedAdditionalCredits_Additiona_114476bf6a'
+        WHERE conname = 'FK_CourseTranscriptEarnedAdditionalCredits_Additiona_b0f08979e9'
         AND conrelid = to_regclass('"edfi"."CourseTranscriptEarnedAdditionalCredits"')
     )
     THEN
         ALTER TABLE "edfi"."CourseTranscriptEarnedAdditionalCredits"
-        ADD CONSTRAINT "FK_CourseTranscriptEarnedAdditionalCredits_Additiona_114476bf6a"
+        ADD CONSTRAINT "FK_CourseTranscriptEarnedAdditionalCredits_Additiona_b0f08979e9"
         FOREIGN KEY ("AdditionalCreditTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15366,14 +15367,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_CourseTranscriptPartialCourseTranscriptAwards_Met_fccdfd1292'
+        WHERE conname = 'FK_CourseTranscriptPartialCourseTranscriptAwards_Met_f6e1127bca'
         AND conrelid = to_regclass('"edfi"."CourseTranscriptPartialCourseTranscriptAwards"')
     )
     THEN
         ALTER TABLE "edfi"."CourseTranscriptPartialCourseTranscriptAwards"
-        ADD CONSTRAINT "FK_CourseTranscriptPartialCourseTranscriptAwards_Met_fccdfd1292"
+        ADD CONSTRAINT "FK_CourseTranscriptPartialCourseTranscriptAwards_Met_f6e1127bca"
         FOREIGN KEY ("MethodCreditEarnedDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15424,7 +15425,7 @@ BEGIN
         ALTER TABLE "edfi"."Credential"
         ADD CONSTRAINT "FK_Credential_CredentialFieldDescriptor"
         FOREIGN KEY ("CredentialFieldDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15441,7 +15442,7 @@ BEGIN
         ALTER TABLE "edfi"."Credential"
         ADD CONSTRAINT "FK_Credential_CredentialTypeDescriptor"
         FOREIGN KEY ("CredentialTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15475,7 +15476,7 @@ BEGIN
         ALTER TABLE "edfi"."Credential"
         ADD CONSTRAINT "FK_Credential_StateOfIssueStateAbbreviationDescriptor"
         FOREIGN KEY ("StateOfIssueStateAbbreviationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15492,7 +15493,7 @@ BEGIN
         ALTER TABLE "edfi"."Credential"
         ADD CONSTRAINT "FK_Credential_TeachingCredentialBasisDescriptor"
         FOREIGN KEY ("TeachingCredentialBasisDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15509,7 +15510,7 @@ BEGIN
         ALTER TABLE "edfi"."Credential"
         ADD CONSTRAINT "FK_Credential_TeachingCredentialDescriptor"
         FOREIGN KEY ("TeachingCredentialDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15526,7 +15527,7 @@ BEGIN
         ALTER TABLE "edfi"."CredentialAcademicSubject"
         ADD CONSTRAINT "FK_CredentialAcademicSubject_AcademicSubjectDescriptor"
         FOREIGN KEY ("AcademicSubjectDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15594,7 +15595,7 @@ BEGIN
         ALTER TABLE "edfi"."CredentialGradeLevel"
         ADD CONSTRAINT "FK_CredentialGradeLevel_GradeLevelDescriptor"
         FOREIGN KEY ("GradeLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15611,7 +15612,7 @@ BEGIN
         ALTER TABLE "edfi"."CrisisEvent"
         ADD CONSTRAINT "FK_CrisisEvent_CrisisTypeDescriptor"
         FOREIGN KEY ("CrisisTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15679,7 +15680,7 @@ BEGIN
         ALTER TABLE "edfi"."DescriptorMappingModelEntity"
         ADD CONSTRAINT "FK_DescriptorMappingModelEntity_ModelEntityDescriptor"
         FOREIGN KEY ("ModelEntityDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15706,14 +15707,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_DisciplineAction_DisciplineActionLengthDifference_60d852f3ea'
+        WHERE conname = 'FK_DisciplineAction_DisciplineActionLengthDifference_35988edac5'
         AND conrelid = to_regclass('"edfi"."DisciplineAction"')
     )
     THEN
         ALTER TABLE "edfi"."DisciplineAction"
-        ADD CONSTRAINT "FK_DisciplineAction_DisciplineActionLengthDifference_60d852f3ea"
+        ADD CONSTRAINT "FK_DisciplineAction_DisciplineActionLengthDifference_35988edac5"
         FOREIGN KEY ("DisciplineActionLengthDifferenceReasonDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15798,7 +15799,7 @@ BEGIN
         ALTER TABLE "edfi"."DisciplineActionDiscipline"
         ADD CONSTRAINT "FK_DisciplineActionDiscipline_DisciplineDescriptor"
         FOREIGN KEY ("DisciplineDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15842,14 +15843,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_DisciplineActionStudentDisciplineIncidentBehavior_53d44a5625'
+        WHERE conname = 'FK_DisciplineActionStudentDisciplineIncidentBehavior_76e135574b'
         AND conrelid = to_regclass('"edfi"."DisciplineActionStudentDisciplineIncidentBehaviorAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."DisciplineActionStudentDisciplineIncidentBehaviorAssociation"
-        ADD CONSTRAINT "FK_DisciplineActionStudentDisciplineIncidentBehavior_53d44a5625"
-        FOREIGN KEY ("StudentDisciplineIncidentBehaviorAssociation_Behavio_4bed9fbe3b")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        ADD CONSTRAINT "FK_DisciplineActionStudentDisciplineIncidentBehavior_76e135574b"
+        FOREIGN KEY ("StudentDisciplineIncidentBehaviorAssociation_Behavio_4bed9fbe3b", "StudentDisciplineIncidentBehaviorAssociation_IncidentIdentifier", "StudentDisciplineIncidentBehaviorAssociation_SchoolId", "StudentDisciplineIncidentBehaviorAssociation_StudentUniqueId", "StudentDisciplineIncidentBehaviorAssociation_DocumentId")
+        REFERENCES "edfi"."StudentDisciplineIncidentBehaviorAssociation" ("BehaviorDescriptor_DescriptorId", "DisciplineIncident_IncidentIdentifier", "DisciplineIncident_SchoolId", "Student_StudentUniqueId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15859,14 +15860,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_DisciplineActionStudentDisciplineIncidentBehavior_76e135574b'
+        WHERE conname = 'FK_DisciplineActionStudentDisciplineIncidentBehavior_c3ce43b804'
         AND conrelid = to_regclass('"edfi"."DisciplineActionStudentDisciplineIncidentBehaviorAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."DisciplineActionStudentDisciplineIncidentBehaviorAssociation"
-        ADD CONSTRAINT "FK_DisciplineActionStudentDisciplineIncidentBehavior_76e135574b"
-        FOREIGN KEY ("StudentDisciplineIncidentBehaviorAssociation_Behavio_4bed9fbe3b", "StudentDisciplineIncidentBehaviorAssociation_IncidentIdentifier", "StudentDisciplineIncidentBehaviorAssociation_SchoolId", "StudentDisciplineIncidentBehaviorAssociation_StudentUniqueId", "StudentDisciplineIncidentBehaviorAssociation_DocumentId")
-        REFERENCES "edfi"."StudentDisciplineIncidentBehaviorAssociation" ("BehaviorDescriptor_DescriptorId", "DisciplineIncident_IncidentIdentifier", "DisciplineIncident_SchoolId", "Student_StudentUniqueId", "DocumentId")
+        ADD CONSTRAINT "FK_DisciplineActionStudentDisciplineIncidentBehavior_c3ce43b804"
+        FOREIGN KEY ("StudentDisciplineIncidentBehaviorAssociation_Behavio_4bed9fbe3b")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15917,7 +15918,7 @@ BEGIN
         ALTER TABLE "edfi"."DisciplineIncident"
         ADD CONSTRAINT "FK_DisciplineIncident_IncidentLocationDescriptor"
         FOREIGN KEY ("IncidentLocationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15934,7 +15935,7 @@ BEGIN
         ALTER TABLE "edfi"."DisciplineIncident"
         ADD CONSTRAINT "FK_DisciplineIncident_ReporterDescriptionDescriptor"
         FOREIGN KEY ("ReporterDescriptionDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15968,7 +15969,7 @@ BEGIN
         ALTER TABLE "edfi"."DisciplineIncidentBehavior"
         ADD CONSTRAINT "FK_DisciplineIncidentBehavior_BehaviorDescriptor"
         FOREIGN KEY ("BehaviorDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -15995,14 +15996,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_DisciplineIncidentExternalParticipant_DisciplineI_fd3bf24e2f'
+        WHERE conname = 'FK_DisciplineIncidentExternalParticipant_DisciplineI_9a1b113aa9'
         AND conrelid = to_regclass('"edfi"."DisciplineIncidentExternalParticipant"')
     )
     THEN
         ALTER TABLE "edfi"."DisciplineIncidentExternalParticipant"
-        ADD CONSTRAINT "FK_DisciplineIncidentExternalParticipant_DisciplineI_fd3bf24e2f"
+        ADD CONSTRAINT "FK_DisciplineIncidentExternalParticipant_DisciplineI_9a1b113aa9"
         FOREIGN KEY ("DisciplineIncidentParticipationCodeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16053,7 +16054,7 @@ BEGIN
         ALTER TABLE "edfi"."DisciplineIncidentWeapon"
         ADD CONSTRAINT "FK_DisciplineIncidentWeapon_WeaponDescriptor"
         FOREIGN KEY ("WeaponDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16070,7 +16071,7 @@ BEGIN
         ALTER TABLE "edfi"."EducationContent"
         ADD CONSTRAINT "FK_EducationContent_ContentClassDescriptor"
         FOREIGN KEY ("ContentClassDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16087,7 +16088,7 @@ BEGIN
         ALTER TABLE "edfi"."EducationContent"
         ADD CONSTRAINT "FK_EducationContent_CostRateDescriptor"
         FOREIGN KEY ("CostRateDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16121,7 +16122,7 @@ BEGIN
         ALTER TABLE "edfi"."EducationContent"
         ADD CONSTRAINT "FK_EducationContent_InteractivityStyleDescriptor"
         FOREIGN KEY ("InteractivityStyleDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16172,7 +16173,7 @@ BEGIN
         ALTER TABLE "edfi"."EducationContentAppropriateGradeLevel"
         ADD CONSTRAINT "FK_EducationContentAppropriateGradeLevel_GradeLevelDescriptor"
         FOREIGN KEY ("GradeLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16206,7 +16207,7 @@ BEGIN
         ALTER TABLE "edfi"."EducationContentAppropriateSex"
         ADD CONSTRAINT "FK_EducationContentAppropriateSex_SexDescriptor"
         FOREIGN KEY ("SexDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16325,7 +16326,7 @@ BEGIN
         ALTER TABLE "edfi"."EducationContentLanguage"
         ADD CONSTRAINT "FK_EducationContentLanguage_LanguageDescriptor"
         FOREIGN KEY ("LanguageDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16410,7 +16411,7 @@ BEGIN
         ALTER TABLE "edfi"."EducationOrganizationNetwork"
         ADD CONSTRAINT "FK_EducationOrganizationNetwork_NetworkPurposeDescriptor"
         FOREIGN KEY ("NetworkPurposeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16427,7 +16428,7 @@ BEGIN
         ALTER TABLE "edfi"."EducationOrganizationNetwork"
         ADD CONSTRAINT "FK_EducationOrganizationNetwork_OperationalStatusDescriptor"
         FOREIGN KEY ("OperationalStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16444,7 +16445,7 @@ BEGIN
         ALTER TABLE "edfi"."EducationOrganizationNetworkAddress"
         ADD CONSTRAINT "FK_EducationOrganizationNetworkAddress_AddressTypeDescriptor"
         FOREIGN KEY ("AddressTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16478,7 +16479,7 @@ BEGIN
         ALTER TABLE "edfi"."EducationOrganizationNetworkAddress"
         ADD CONSTRAINT "FK_EducationOrganizationNetworkAddress_LocaleDescriptor"
         FOREIGN KEY ("LocaleDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16488,14 +16489,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationOrganizationNetworkAddress_StateAbbrevia_45b6534a87'
+        WHERE conname = 'FK_EducationOrganizationNetworkAddress_StateAbbrevia_225e220ee9'
         AND conrelid = to_regclass('"edfi"."EducationOrganizationNetworkAddress"')
     )
     THEN
         ALTER TABLE "edfi"."EducationOrganizationNetworkAddress"
-        ADD CONSTRAINT "FK_EducationOrganizationNetworkAddress_StateAbbrevia_45b6534a87"
+        ADD CONSTRAINT "FK_EducationOrganizationNetworkAddress_StateAbbrevia_225e220ee9"
         FOREIGN KEY ("StateAbbreviationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16505,14 +16506,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationOrganizationNetworkCategory_EducationOrg_1864817b78'
+        WHERE conname = 'FK_EducationOrganizationNetworkCategory_EducationOrg_a31c4a70a0'
         AND conrelid = to_regclass('"edfi"."EducationOrganizationNetworkCategory"')
     )
     THEN
         ALTER TABLE "edfi"."EducationOrganizationNetworkCategory"
-        ADD CONSTRAINT "FK_EducationOrganizationNetworkCategory_EducationOrg_1864817b78"
+        ADD CONSTRAINT "FK_EducationOrganizationNetworkCategory_EducationOrg_a31c4a70a0"
         FOREIGN KEY ("EducationOrganizationCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16539,14 +16540,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationOrganizationNetworkIdentificationCode_Ed_9f06875af7'
+        WHERE conname = 'FK_EducationOrganizationNetworkIdentificationCode_Ed_2b8e9df5d9'
         AND conrelid = to_regclass('"edfi"."EducationOrganizationNetworkIdentificationCode"')
     )
     THEN
         ALTER TABLE "edfi"."EducationOrganizationNetworkIdentificationCode"
-        ADD CONSTRAINT "FK_EducationOrganizationNetworkIdentificationCode_Ed_9f06875af7"
+        ADD CONSTRAINT "FK_EducationOrganizationNetworkIdentificationCode_Ed_2b8e9df5d9"
         FOREIGN KEY ("EducationOrganizationIdentificationSystemDescriptor__f63fb21ede")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16597,7 +16598,7 @@ BEGIN
         ALTER TABLE "edfi"."EducationOrganizationNetworkIndicator"
         ADD CONSTRAINT "FK_EducationOrganizationNetworkIndicator_IndicatorDescriptor"
         FOREIGN KEY ("IndicatorDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16607,14 +16608,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationOrganizationNetworkIndicator_IndicatorGr_31bbf864dc'
+        WHERE conname = 'FK_EducationOrganizationNetworkIndicator_IndicatorGr_34f6b98617'
         AND conrelid = to_regclass('"edfi"."EducationOrganizationNetworkIndicator"')
     )
     THEN
         ALTER TABLE "edfi"."EducationOrganizationNetworkIndicator"
-        ADD CONSTRAINT "FK_EducationOrganizationNetworkIndicator_IndicatorGr_31bbf864dc"
+        ADD CONSTRAINT "FK_EducationOrganizationNetworkIndicator_IndicatorGr_34f6b98617"
         FOREIGN KEY ("IndicatorGroupDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16624,14 +16625,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationOrganizationNetworkIndicator_IndicatorLe_da2342260d'
+        WHERE conname = 'FK_EducationOrganizationNetworkIndicator_IndicatorLe_0813a66f6a'
         AND conrelid = to_regclass('"edfi"."EducationOrganizationNetworkIndicator"')
     )
     THEN
         ALTER TABLE "edfi"."EducationOrganizationNetworkIndicator"
-        ADD CONSTRAINT "FK_EducationOrganizationNetworkIndicator_IndicatorLe_da2342260d"
+        ADD CONSTRAINT "FK_EducationOrganizationNetworkIndicator_IndicatorLe_0813a66f6a"
         FOREIGN KEY ("IndicatorLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16658,31 +16659,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationOrganizationNetworkInstitutionTelephone__ec8b53c0db'
+        WHERE conname = 'FK_EducationOrganizationNetworkInstitutionTelephone__a10c8d16ac'
         AND conrelid = to_regclass('"edfi"."EducationOrganizationNetworkInstitutionTelephone"')
     )
     THEN
         ALTER TABLE "edfi"."EducationOrganizationNetworkInstitutionTelephone"
-        ADD CONSTRAINT "FK_EducationOrganizationNetworkInstitutionTelephone__ec8b53c0db"
+        ADD CONSTRAINT "FK_EducationOrganizationNetworkInstitutionTelephone__a10c8d16ac"
         FOREIGN KEY ("InstitutionTelephoneNumberTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationOrganizationNetworkInternationalAddress__0593308855'
-        AND conrelid = to_regclass('"edfi"."EducationOrganizationNetworkInternationalAddress"')
-    )
-    THEN
-        ALTER TABLE "edfi"."EducationOrganizationNetworkInternationalAddress"
-        ADD CONSTRAINT "FK_EducationOrganizationNetworkInternationalAddress__0593308855"
-        FOREIGN KEY ("AddressTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16709,14 +16693,31 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationOrganizationNetworkInternationalAddress__65847d6028'
+        WHERE conname = 'FK_EducationOrganizationNetworkInternationalAddress__3d44b28937'
         AND conrelid = to_regclass('"edfi"."EducationOrganizationNetworkInternationalAddress"')
     )
     THEN
         ALTER TABLE "edfi"."EducationOrganizationNetworkInternationalAddress"
-        ADD CONSTRAINT "FK_EducationOrganizationNetworkInternationalAddress__65847d6028"
+        ADD CONSTRAINT "FK_EducationOrganizationNetworkInternationalAddress__3d44b28937"
+        FOREIGN KEY ("AddressTypeDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_EducationOrganizationNetworkInternationalAddress__85e65dff35'
+        AND conrelid = to_regclass('"edfi"."EducationOrganizationNetworkInternationalAddress"')
+    )
+    THEN
+        ALTER TABLE "edfi"."EducationOrganizationNetworkInternationalAddress"
+        ADD CONSTRAINT "FK_EducationOrganizationNetworkInternationalAddress__85e65dff35"
         FOREIGN KEY ("CountryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16886,7 +16887,7 @@ BEGIN
         ALTER TABLE "edfi"."EducationServiceCenter"
         ADD CONSTRAINT "FK_EducationServiceCenter_OperationalStatusDescriptor"
         FOREIGN KEY ("OperationalStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16920,7 +16921,7 @@ BEGIN
         ALTER TABLE "edfi"."EducationServiceCenterAddress"
         ADD CONSTRAINT "FK_EducationServiceCenterAddress_AddressTypeDescriptor"
         FOREIGN KEY ("AddressTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16954,7 +16955,7 @@ BEGIN
         ALTER TABLE "edfi"."EducationServiceCenterAddress"
         ADD CONSTRAINT "FK_EducationServiceCenterAddress_LocaleDescriptor"
         FOREIGN KEY ("LocaleDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16971,7 +16972,7 @@ BEGIN
         ALTER TABLE "edfi"."EducationServiceCenterAddress"
         ADD CONSTRAINT "FK_EducationServiceCenterAddress_StateAbbreviationDescriptor"
         FOREIGN KEY ("StateAbbreviationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -16981,14 +16982,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationServiceCenterCategory_EducationOrganizat_2d6fdc3cde'
+        WHERE conname = 'FK_EducationServiceCenterCategory_EducationOrganizat_6c439a85b3'
         AND conrelid = to_regclass('"edfi"."EducationServiceCenterCategory"')
     )
     THEN
         ALTER TABLE "edfi"."EducationServiceCenterCategory"
-        ADD CONSTRAINT "FK_EducationServiceCenterCategory_EducationOrganizat_2d6fdc3cde"
+        ADD CONSTRAINT "FK_EducationServiceCenterCategory_EducationOrganizat_6c439a85b3"
         FOREIGN KEY ("EducationOrganizationCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17032,14 +17033,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationServiceCenterIdentificationCode_Educatio_a6496101f0'
+        WHERE conname = 'FK_EducationServiceCenterIdentificationCode_Educatio_ae59c07d78'
         AND conrelid = to_regclass('"edfi"."EducationServiceCenterIdentificationCode"')
     )
     THEN
         ALTER TABLE "edfi"."EducationServiceCenterIdentificationCode"
-        ADD CONSTRAINT "FK_EducationServiceCenterIdentificationCode_Educatio_a6496101f0"
+        ADD CONSTRAINT "FK_EducationServiceCenterIdentificationCode_Educatio_ae59c07d78"
         FOREIGN KEY ("EducationOrganizationIdentificationSystemDescriptor__f63fb21ede")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17073,7 +17074,7 @@ BEGIN
         ALTER TABLE "edfi"."EducationServiceCenterIndicator"
         ADD CONSTRAINT "FK_EducationServiceCenterIndicator_IndicatorDescriptor"
         FOREIGN KEY ("IndicatorDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17090,7 +17091,7 @@ BEGIN
         ALTER TABLE "edfi"."EducationServiceCenterIndicator"
         ADD CONSTRAINT "FK_EducationServiceCenterIndicator_IndicatorGroupDescriptor"
         FOREIGN KEY ("IndicatorGroupDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17107,7 +17108,7 @@ BEGIN
         ALTER TABLE "edfi"."EducationServiceCenterIndicator"
         ADD CONSTRAINT "FK_EducationServiceCenterIndicator_IndicatorLevelDescriptor"
         FOREIGN KEY ("IndicatorLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17134,14 +17135,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationServiceCenterInstitutionTelephone_Instit_04b25dbb94'
+        WHERE conname = 'FK_EducationServiceCenterInstitutionTelephone_Instit_678f6b85d5'
         AND conrelid = to_regclass('"edfi"."EducationServiceCenterInstitutionTelephone"')
     )
     THEN
         ALTER TABLE "edfi"."EducationServiceCenterInstitutionTelephone"
-        ADD CONSTRAINT "FK_EducationServiceCenterInstitutionTelephone_Instit_04b25dbb94"
+        ADD CONSTRAINT "FK_EducationServiceCenterInstitutionTelephone_Instit_678f6b85d5"
         FOREIGN KEY ("InstitutionTelephoneNumberTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17151,14 +17152,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationServiceCenterInternationalAddress_Addres_31616d1c6c'
+        WHERE conname = 'FK_EducationServiceCenterInternationalAddress_Addres_f6bd009aca'
         AND conrelid = to_regclass('"edfi"."EducationServiceCenterInternationalAddress"')
     )
     THEN
         ALTER TABLE "edfi"."EducationServiceCenterInternationalAddress"
-        ADD CONSTRAINT "FK_EducationServiceCenterInternationalAddress_Addres_31616d1c6c"
+        ADD CONSTRAINT "FK_EducationServiceCenterInternationalAddress_Addres_f6bd009aca"
         FOREIGN KEY ("AddressTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17175,7 +17176,7 @@ BEGIN
         ALTER TABLE "edfi"."EducationServiceCenterInternationalAddress"
         ADD CONSTRAINT "FK_EducationServiceCenterInternationalAddress_CountryDescriptor"
         FOREIGN KEY ("CountryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17253,14 +17254,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EvaluationRubricDimension_EvaluationRubricRatingL_7e594ed888'
+        WHERE conname = 'FK_EvaluationRubricDimension_EvaluationRubricRatingL_5b6bb38186'
         AND conrelid = to_regclass('"edfi"."EvaluationRubricDimension"')
     )
     THEN
         ALTER TABLE "edfi"."EvaluationRubricDimension"
-        ADD CONSTRAINT "FK_EvaluationRubricDimension_EvaluationRubricRatingL_7e594ed888"
+        ADD CONSTRAINT "FK_EvaluationRubricDimension_EvaluationRubricRatingL_5b6bb38186"
         FOREIGN KEY ("EvaluationRubricRatingLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17270,31 +17271,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EvaluationRubricDimension_ProgramEvaluationElemen_8c49bc0ed7'
+        WHERE conname = 'FK_EvaluationRubricDimension_ProgramEvaluationElemen_0bfe3af94f'
         AND conrelid = to_regclass('"edfi"."EvaluationRubricDimension"')
     )
     THEN
         ALTER TABLE "edfi"."EvaluationRubricDimension"
-        ADD CONSTRAINT "FK_EvaluationRubricDimension_ProgramEvaluationElemen_8c49bc0ed7"
-        FOREIGN KEY ("ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EvaluationRubricDimension_ProgramEvaluationElemen_e9ca96b34e'
-        AND conrelid = to_regclass('"edfi"."EvaluationRubricDimension"')
-    )
-    THEN
-        ALTER TABLE "edfi"."EvaluationRubricDimension"
-        ADD CONSTRAINT "FK_EvaluationRubricDimension_ProgramEvaluationElemen_e9ca96b34e"
+        ADD CONSTRAINT "FK_EvaluationRubricDimension_ProgramEvaluationElemen_0bfe3af94f"
         FOREIGN KEY ("ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17304,14 +17288,31 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EvaluationRubricDimension_ProgramEvaluationElemen_ff437699d9'
+        WHERE conname = 'FK_EvaluationRubricDimension_ProgramEvaluationElemen_0fb89e93ac'
         AND conrelid = to_regclass('"edfi"."EvaluationRubricDimension"')
     )
     THEN
         ALTER TABLE "edfi"."EvaluationRubricDimension"
-        ADD CONSTRAINT "FK_EvaluationRubricDimension_ProgramEvaluationElemen_ff437699d9"
+        ADD CONSTRAINT "FK_EvaluationRubricDimension_ProgramEvaluationElemen_0fb89e93ac"
         FOREIGN KEY ("ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_EvaluationRubricDimension_ProgramEvaluationElemen_e0e917da7d'
+        AND conrelid = to_regclass('"edfi"."EvaluationRubricDimension"')
+    )
+    THEN
+        ALTER TABLE "edfi"."EvaluationRubricDimension"
+        ADD CONSTRAINT "FK_EvaluationRubricDimension_ProgramEvaluationElemen_e0e917da7d"
+        FOREIGN KEY ("ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17430,7 +17431,7 @@ BEGIN
         ALTER TABLE "edfi"."FunctionDimensionReportingTag"
         ADD CONSTRAINT "FK_FunctionDimensionReportingTag_ReportingTagDescriptor"
         FOREIGN KEY ("ReportingTagDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17481,7 +17482,7 @@ BEGIN
         ALTER TABLE "edfi"."FundDimensionReportingTag"
         ADD CONSTRAINT "FK_FundDimensionReportingTag_ReportingTagDescriptor"
         FOREIGN KEY ("ReportingTagDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17515,7 +17516,7 @@ BEGIN
         ALTER TABLE "edfi"."Grade"
         ADD CONSTRAINT "FK_Grade_GradeTypeDescriptor"
         FOREIGN KEY ("GradeTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17532,7 +17533,7 @@ BEGIN
         ALTER TABLE "edfi"."Grade"
         ADD CONSTRAINT "FK_Grade_GradingPeriodGradingPeriod_GradingPeriodDescriptor"
         FOREIGN KEY ("GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17566,7 +17567,7 @@ BEGIN
         ALTER TABLE "edfi"."Grade"
         ADD CONSTRAINT "FK_Grade_PerformanceBaseConversionDescriptor"
         FOREIGN KEY ("PerformanceBaseConversionDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17627,14 +17628,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_GradeLearningStandardGrade_PerformanceBaseConvers_8643539ccd'
+        WHERE conname = 'FK_GradeLearningStandardGrade_PerformanceBaseConvers_d950ccdc0d'
         AND conrelid = to_regclass('"edfi"."GradeLearningStandardGrade"')
     )
     THEN
         ALTER TABLE "edfi"."GradeLearningStandardGrade"
-        ADD CONSTRAINT "FK_GradeLearningStandardGrade_PerformanceBaseConvers_8643539ccd"
+        ADD CONSTRAINT "FK_GradeLearningStandardGrade_PerformanceBaseConvers_d950ccdc0d"
         FOREIGN KEY ("PerformanceBaseConversionDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17668,7 +17669,7 @@ BEGIN
         ALTER TABLE "edfi"."GradebookEntry"
         ADD CONSTRAINT "FK_GradebookEntry_GradebookEntryTypeDescriptor"
         FOREIGN KEY ("GradebookEntryTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17685,7 +17686,7 @@ BEGIN
         ALTER TABLE "edfi"."GradebookEntry"
         ADD CONSTRAINT "FK_GradebookEntry_GradingPeriod_GradingPeriodDescriptor"
         FOREIGN KEY ("GradingPeriod_GradingPeriodDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17787,7 +17788,7 @@ BEGIN
         ALTER TABLE "edfi"."GradingPeriod"
         ADD CONSTRAINT "FK_GradingPeriod_GradingPeriodDescriptor"
         FOREIGN KEY ("GradingPeriodDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17872,7 +17873,7 @@ BEGIN
         ALTER TABLE "edfi"."GraduationPlan"
         ADD CONSTRAINT "FK_GraduationPlan_GraduationPlanTypeDescriptor"
         FOREIGN KEY ("GraduationPlanTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17906,7 +17907,7 @@ BEGIN
         ALTER TABLE "edfi"."GraduationPlan"
         ADD CONSTRAINT "FK_GraduationPlan_TotalRequiredCreditTypeDescriptor"
         FOREIGN KEY ("TotalRequiredCreditTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17923,7 +17924,7 @@ BEGIN
         ALTER TABLE "edfi"."GraduationPlanCreditsByCours"
         ADD CONSTRAINT "FK_GraduationPlanCreditsByCours_CreditTypeDescriptor"
         FOREIGN KEY ("CreditTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17957,7 +17958,7 @@ BEGIN
         ALTER TABLE "edfi"."GraduationPlanCreditsByCours"
         ADD CONSTRAINT "FK_GraduationPlanCreditsByCours_WhenTakenGradeLevelDescriptor"
         FOREIGN KEY ("WhenTakenGradeLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17967,14 +17968,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_GraduationPlanCreditsByCreditCategory_CreditCateg_8258051fd9'
+        WHERE conname = 'FK_GraduationPlanCreditsByCreditCategory_CreditCateg_bdad4f2a82'
         AND conrelid = to_regclass('"edfi"."GraduationPlanCreditsByCreditCategory"')
     )
     THEN
         ALTER TABLE "edfi"."GraduationPlanCreditsByCreditCategory"
-        ADD CONSTRAINT "FK_GraduationPlanCreditsByCreditCategory_CreditCateg_8258051fd9"
+        ADD CONSTRAINT "FK_GraduationPlanCreditsByCreditCategory_CreditCateg_bdad4f2a82"
         FOREIGN KEY ("CreditCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -17991,7 +17992,7 @@ BEGIN
         ALTER TABLE "edfi"."GraduationPlanCreditsByCreditCategory"
         ADD CONSTRAINT "FK_GraduationPlanCreditsByCreditCategory_CreditTypeDescriptor"
         FOREIGN KEY ("CreditTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -18025,7 +18026,7 @@ BEGIN
         ALTER TABLE "edfi"."GraduationPlanCreditsBySubject"
         ADD CONSTRAINT "FK_GraduationPlanCreditsBySubject_AcademicSubjectDescriptor"
         FOREIGN KEY ("AcademicSubjectDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -18042,7 +18043,7 @@ BEGIN
         ALTER TABLE "edfi"."GraduationPlanCreditsBySubject"
         ADD CONSTRAINT "FK_GraduationPlanCreditsBySubject_CreditTypeDescriptor"
         FOREIGN KEY ("CreditTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -18086,48 +18087,48 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_GraduationPlanRequiredAssessment_PerformanceLevel_376515373f'
+        WHERE conname = 'FK_GraduationPlanRequiredAssessment_PerformanceLevel_42629a7176'
         AND conrelid = to_regclass('"edfi"."GraduationPlanRequiredAssessment"')
     )
     THEN
         ALTER TABLE "edfi"."GraduationPlanRequiredAssessment"
-        ADD CONSTRAINT "FK_GraduationPlanRequiredAssessment_PerformanceLevel_376515373f"
-        FOREIGN KEY ("PerformanceLevelPerformanceLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_GraduationPlanRequiredAssessment_PerformanceLevel_6ee636f617'
-        AND conrelid = to_regclass('"edfi"."GraduationPlanRequiredAssessment"')
-    )
-    THEN
-        ALTER TABLE "edfi"."GraduationPlanRequiredAssessment"
-        ADD CONSTRAINT "FK_GraduationPlanRequiredAssessment_PerformanceLevel_6ee636f617"
-        FOREIGN KEY ("PerformanceLevelAssessmentReportingMethodDescriptor__5b84c3b397")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_GraduationPlanRequiredAssessment_PerformanceLevel_a0a4769b6a'
-        AND conrelid = to_regclass('"edfi"."GraduationPlanRequiredAssessment"')
-    )
-    THEN
-        ALTER TABLE "edfi"."GraduationPlanRequiredAssessment"
-        ADD CONSTRAINT "FK_GraduationPlanRequiredAssessment_PerformanceLevel_a0a4769b6a"
+        ADD CONSTRAINT "FK_GraduationPlanRequiredAssessment_PerformanceLevel_42629a7176"
         FOREIGN KEY ("PerformanceLevelResultDatatypeTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_GraduationPlanRequiredAssessment_PerformanceLevel_afad6645b5'
+        AND conrelid = to_regclass('"edfi"."GraduationPlanRequiredAssessment"')
+    )
+    THEN
+        ALTER TABLE "edfi"."GraduationPlanRequiredAssessment"
+        ADD CONSTRAINT "FK_GraduationPlanRequiredAssessment_PerformanceLevel_afad6645b5"
+        FOREIGN KEY ("PerformanceLevelPerformanceLevelDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_GraduationPlanRequiredAssessment_PerformanceLevel_d6c77befdc'
+        AND conrelid = to_regclass('"edfi"."GraduationPlanRequiredAssessment"')
+    )
+    THEN
+        ALTER TABLE "edfi"."GraduationPlanRequiredAssessment"
+        ADD CONSTRAINT "FK_GraduationPlanRequiredAssessment_PerformanceLevel_d6c77befdc"
+        FOREIGN KEY ("PerformanceLevelAssessmentReportingMethodDescriptor__5b84c3b397")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -18188,14 +18189,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_GraduationPlanRequiredAssessmentScore_AssessmentR_6739949904'
+        WHERE conname = 'FK_GraduationPlanRequiredAssessmentScore_AssessmentR_1afb6c102a'
         AND conrelid = to_regclass('"edfi"."GraduationPlanRequiredAssessmentScore"')
     )
     THEN
         ALTER TABLE "edfi"."GraduationPlanRequiredAssessmentScore"
-        ADD CONSTRAINT "FK_GraduationPlanRequiredAssessmentScore_AssessmentR_6739949904"
+        ADD CONSTRAINT "FK_GraduationPlanRequiredAssessmentScore_AssessmentR_1afb6c102a"
         FOREIGN KEY ("AssessmentReportingMethodDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -18222,14 +18223,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_GraduationPlanRequiredAssessmentScore_ResultDatat_05a3a860e7'
+        WHERE conname = 'FK_GraduationPlanRequiredAssessmentScore_ResultDatat_8a5038da2c'
         AND conrelid = to_regclass('"edfi"."GraduationPlanRequiredAssessmentScore"')
     )
     THEN
         ALTER TABLE "edfi"."GraduationPlanRequiredAssessmentScore"
-        ADD CONSTRAINT "FK_GraduationPlanRequiredAssessmentScore_ResultDatat_05a3a860e7"
+        ADD CONSTRAINT "FK_GraduationPlanRequiredAssessmentScore_ResultDatat_8a5038da2c"
         FOREIGN KEY ("ResultDatatypeTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -18246,7 +18247,7 @@ BEGIN
         ALTER TABLE "edfi"."Intervention"
         ADD CONSTRAINT "FK_Intervention_DeliveryMethodDescriptor"
         FOREIGN KEY ("DeliveryMethodDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -18297,7 +18298,7 @@ BEGIN
         ALTER TABLE "edfi"."Intervention"
         ADD CONSTRAINT "FK_Intervention_InterventionClassDescriptor"
         FOREIGN KEY ("InterventionClassDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -18314,7 +18315,7 @@ BEGIN
         ALTER TABLE "edfi"."InterventionAppropriateGradeLevel"
         ADD CONSTRAINT "FK_InterventionAppropriateGradeLevel_GradeLevelDescriptor"
         FOREIGN KEY ("GradeLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -18365,7 +18366,7 @@ BEGIN
         ALTER TABLE "edfi"."InterventionAppropriateSex"
         ADD CONSTRAINT "FK_InterventionAppropriateSex_SexDescriptor"
         FOREIGN KEY ("SexDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -18382,7 +18383,7 @@ BEGIN
         ALTER TABLE "edfi"."InterventionDiagnos"
         ADD CONSTRAINT "FK_InterventionDiagnos_DiagnosisDescriptor"
         FOREIGN KEY ("DiagnosisDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -18535,7 +18536,7 @@ BEGIN
         ALTER TABLE "edfi"."InterventionPopulationServed"
         ADD CONSTRAINT "FK_InterventionPopulationServed_PopulationServedDescriptor"
         FOREIGN KEY ("PopulationServedDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -18603,7 +18604,7 @@ BEGIN
         ALTER TABLE "edfi"."InterventionPrescription"
         ADD CONSTRAINT "FK_InterventionPrescription_DeliveryMethodDescriptor"
         FOREIGN KEY ("DeliveryMethodDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -18654,7 +18655,7 @@ BEGIN
         ALTER TABLE "edfi"."InterventionPrescription"
         ADD CONSTRAINT "FK_InterventionPrescription_InterventionClassDescriptor"
         FOREIGN KEY ("InterventionClassDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -18664,14 +18665,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_InterventionPrescriptionAppropriateGradeLevel_Gra_72341f9440'
+        WHERE conname = 'FK_InterventionPrescriptionAppropriateGradeLevel_Gra_c692933bdb'
         AND conrelid = to_regclass('"edfi"."InterventionPrescriptionAppropriateGradeLevel"')
     )
     THEN
         ALTER TABLE "edfi"."InterventionPrescriptionAppropriateGradeLevel"
-        ADD CONSTRAINT "FK_InterventionPrescriptionAppropriateGradeLevel_Gra_72341f9440"
+        ADD CONSTRAINT "FK_InterventionPrescriptionAppropriateGradeLevel_Gra_c692933bdb"
         FOREIGN KEY ("GradeLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -18722,7 +18723,7 @@ BEGIN
         ALTER TABLE "edfi"."InterventionPrescriptionAppropriateSex"
         ADD CONSTRAINT "FK_InterventionPrescriptionAppropriateSex_SexDescriptor"
         FOREIGN KEY ("SexDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -18739,7 +18740,7 @@ BEGIN
         ALTER TABLE "edfi"."InterventionPrescriptionDiagnos"
         ADD CONSTRAINT "FK_InterventionPrescriptionDiagnos_DiagnosisDescriptor"
         FOREIGN KEY ("DiagnosisDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -18834,14 +18835,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_InterventionPrescriptionPopulationServed_Populati_abb4a1bd2c'
+        WHERE conname = 'FK_InterventionPrescriptionPopulationServed_Populati_a6135847d6'
         AND conrelid = to_regclass('"edfi"."InterventionPrescriptionPopulationServed"')
     )
     THEN
         ALTER TABLE "edfi"."InterventionPrescriptionPopulationServed"
-        ADD CONSTRAINT "FK_InterventionPrescriptionPopulationServed_Populati_abb4a1bd2c"
+        ADD CONSTRAINT "FK_InterventionPrescriptionPopulationServed_Populati_a6135847d6"
         FOREIGN KEY ("PopulationServedDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -18875,7 +18876,7 @@ BEGIN
         ALTER TABLE "edfi"."InterventionStudy"
         ADD CONSTRAINT "FK_InterventionStudy_DeliveryMethodDescriptor"
         FOREIGN KEY ("DeliveryMethodDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -18926,7 +18927,7 @@ BEGIN
         ALTER TABLE "edfi"."InterventionStudy"
         ADD CONSTRAINT "FK_InterventionStudy_InterventionClassDescriptor"
         FOREIGN KEY ("InterventionClassDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -18960,7 +18961,7 @@ BEGIN
         ALTER TABLE "edfi"."InterventionStudyAppropriateGradeLevel"
         ADD CONSTRAINT "FK_InterventionStudyAppropriateGradeLevel_GradeLevelDescriptor"
         FOREIGN KEY ("GradeLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19011,7 +19012,7 @@ BEGIN
         ALTER TABLE "edfi"."InterventionStudyAppropriateSex"
         ADD CONSTRAINT "FK_InterventionStudyAppropriateSex_SexDescriptor"
         FOREIGN KEY ("SexDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19055,14 +19056,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_InterventionStudyInterventionEffectiveness_Diagno_c692b155f0'
+        WHERE conname = 'FK_InterventionStudyInterventionEffectiveness_Diagno_f3fcb4831c'
         AND conrelid = to_regclass('"edfi"."InterventionStudyInterventionEffectiveness"')
     )
     THEN
         ALTER TABLE "edfi"."InterventionStudyInterventionEffectiveness"
-        ADD CONSTRAINT "FK_InterventionStudyInterventionEffectiveness_Diagno_c692b155f0"
+        ADD CONSTRAINT "FK_InterventionStudyInterventionEffectiveness_Diagno_f3fcb4831c"
         FOREIGN KEY ("DiagnosisDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19072,14 +19073,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_InterventionStudyInterventionEffectiveness_GradeL_448a14b0ae'
+        WHERE conname = 'FK_InterventionStudyInterventionEffectiveness_GradeL_2e5beab446'
         AND conrelid = to_regclass('"edfi"."InterventionStudyInterventionEffectiveness"')
     )
     THEN
         ALTER TABLE "edfi"."InterventionStudyInterventionEffectiveness"
-        ADD CONSTRAINT "FK_InterventionStudyInterventionEffectiveness_GradeL_448a14b0ae"
+        ADD CONSTRAINT "FK_InterventionStudyInterventionEffectiveness_GradeL_2e5beab446"
         FOREIGN KEY ("GradeLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19089,14 +19090,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_InterventionStudyInterventionEffectiveness_Interv_50f9e95d60'
+        WHERE conname = 'FK_InterventionStudyInterventionEffectiveness_Interv_c1361221ba'
         AND conrelid = to_regclass('"edfi"."InterventionStudyInterventionEffectiveness"')
     )
     THEN
         ALTER TABLE "edfi"."InterventionStudyInterventionEffectiveness"
-        ADD CONSTRAINT "FK_InterventionStudyInterventionEffectiveness_Interv_50f9e95d60"
+        ADD CONSTRAINT "FK_InterventionStudyInterventionEffectiveness_Interv_c1361221ba"
         FOREIGN KEY ("InterventionEffectivenessRatingDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19123,14 +19124,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_InterventionStudyInterventionEffectiveness_Popula_19916ad15a'
+        WHERE conname = 'FK_InterventionStudyInterventionEffectiveness_Popula_c87a4877c3'
         AND conrelid = to_regclass('"edfi"."InterventionStudyInterventionEffectiveness"')
     )
     THEN
         ALTER TABLE "edfi"."InterventionStudyInterventionEffectiveness"
-        ADD CONSTRAINT "FK_InterventionStudyInterventionEffectiveness_Popula_19916ad15a"
+        ADD CONSTRAINT "FK_InterventionStudyInterventionEffectiveness_Popula_c87a4877c3"
         FOREIGN KEY ("PopulationServedDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19181,7 +19182,7 @@ BEGIN
         ALTER TABLE "edfi"."InterventionStudyPopulationServed"
         ADD CONSTRAINT "FK_InterventionStudyPopulationServed_PopulationServedDescriptor"
         FOREIGN KEY ("PopulationServedDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19208,14 +19209,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_InterventionStudyStateAbbreviation_StateAbbreviat_cb5eaa9562'
+        WHERE conname = 'FK_InterventionStudyStateAbbreviation_StateAbbreviat_a6832eb05b'
         AND conrelid = to_regclass('"edfi"."InterventionStudyStateAbbreviation"')
     )
     THEN
         ALTER TABLE "edfi"."InterventionStudyStateAbbreviation"
-        ADD CONSTRAINT "FK_InterventionStudyStateAbbreviation_StateAbbreviat_cb5eaa9562"
+        ADD CONSTRAINT "FK_InterventionStudyStateAbbreviation_StateAbbreviat_a6832eb05b"
         FOREIGN KEY ("StateAbbreviationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19249,7 +19250,7 @@ BEGIN
         ALTER TABLE "edfi"."LearningStandard"
         ADD CONSTRAINT "FK_LearningStandard_ContentStandardPublicationStatusDescriptor"
         FOREIGN KEY ("ContentStandardPublicationStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19283,7 +19284,7 @@ BEGIN
         ALTER TABLE "edfi"."LearningStandard"
         ADD CONSTRAINT "FK_LearningStandard_LearningStandardCategoryDescriptor"
         FOREIGN KEY ("LearningStandardCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19300,7 +19301,7 @@ BEGIN
         ALTER TABLE "edfi"."LearningStandard"
         ADD CONSTRAINT "FK_LearningStandard_LearningStandardScopeDescriptor"
         FOREIGN KEY ("LearningStandardScopeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19351,7 +19352,7 @@ BEGIN
         ALTER TABLE "edfi"."LearningStandardAcademicSubject"
         ADD CONSTRAINT "FK_LearningStandardAcademicSubject_AcademicSubjectDescriptor"
         FOREIGN KEY ("AcademicSubjectDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19402,7 +19403,7 @@ BEGIN
         ALTER TABLE "edfi"."LearningStandardGradeLevel"
         ADD CONSTRAINT "FK_LearningStandardGradeLevel_GradeLevelDescriptor"
         FOREIGN KEY ("GradeLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19463,14 +19464,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_LearningStandardEquivalenceAssociation_LearningSt_fadb2757dc'
+        WHERE conname = 'FK_LearningStandardEquivalenceAssociation_LearningSt_7fcdb55906'
         AND conrelid = to_regclass('"edfi"."LearningStandardEquivalenceAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."LearningStandardEquivalenceAssociation"
-        ADD CONSTRAINT "FK_LearningStandardEquivalenceAssociation_LearningSt_fadb2757dc"
+        ADD CONSTRAINT "FK_LearningStandardEquivalenceAssociation_LearningSt_7fcdb55906"
         FOREIGN KEY ("LearningStandardEquivalenceStrengthDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19589,7 +19590,7 @@ BEGIN
         ALTER TABLE "edfi"."LocalAccountReportingTag"
         ADD CONSTRAINT "FK_LocalAccountReportingTag_ReportingTagDescriptor"
         FOREIGN KEY ("ReportingTagDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19623,7 +19624,7 @@ BEGIN
         ALTER TABLE "edfi"."LocalActual"
         ADD CONSTRAINT "FK_LocalActual_FinancialCollectionDescriptor"
         FOREIGN KEY ("FinancialCollectionDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19674,7 +19675,7 @@ BEGIN
         ALTER TABLE "edfi"."LocalBudget"
         ADD CONSTRAINT "FK_LocalBudget_FinancialCollectionDescriptor"
         FOREIGN KEY ("FinancialCollectionDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19725,7 +19726,7 @@ BEGIN
         ALTER TABLE "edfi"."LocalContractedStaff"
         ADD CONSTRAINT "FK_LocalContractedStaff_FinancialCollectionDescriptor"
         FOREIGN KEY ("FinancialCollectionDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19776,7 +19777,7 @@ BEGIN
         ALTER TABLE "edfi"."LocalEducationAgency"
         ADD CONSTRAINT "FK_LocalEducationAgency_CharterStatusDescriptor"
         FOREIGN KEY ("CharterStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19827,7 +19828,7 @@ BEGIN
         ALTER TABLE "edfi"."LocalEducationAgency"
         ADD CONSTRAINT "FK_LocalEducationAgency_LocalEducationAgencyCategoryDescriptor"
         FOREIGN KEY ("LocalEducationAgencyCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19844,7 +19845,7 @@ BEGIN
         ALTER TABLE "edfi"."LocalEducationAgency"
         ADD CONSTRAINT "FK_LocalEducationAgency_OperationalStatusDescriptor"
         FOREIGN KEY ("OperationalStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19888,14 +19889,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_LocalEducationAgencyAccountability_GunFreeSchools_07e8165305'
+        WHERE conname = 'FK_LocalEducationAgencyAccountability_GunFreeSchools_3c13e8076e'
         AND conrelid = to_regclass('"edfi"."LocalEducationAgencyAccountability"')
     )
     THEN
         ALTER TABLE "edfi"."LocalEducationAgencyAccountability"
-        ADD CONSTRAINT "FK_LocalEducationAgencyAccountability_GunFreeSchools_07e8165305"
+        ADD CONSTRAINT "FK_LocalEducationAgencyAccountability_GunFreeSchools_3c13e8076e"
         FOREIGN KEY ("GunFreeSchoolsActReportingStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19939,14 +19940,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_LocalEducationAgencyAccountability_SchoolChoiceIm_ae3c8f6566'
+        WHERE conname = 'FK_LocalEducationAgencyAccountability_SchoolChoiceIm_b1ae085d49'
         AND conrelid = to_regclass('"edfi"."LocalEducationAgencyAccountability"')
     )
     THEN
         ALTER TABLE "edfi"."LocalEducationAgencyAccountability"
-        ADD CONSTRAINT "FK_LocalEducationAgencyAccountability_SchoolChoiceIm_ae3c8f6566"
+        ADD CONSTRAINT "FK_LocalEducationAgencyAccountability_SchoolChoiceIm_b1ae085d49"
         FOREIGN KEY ("SchoolChoiceImplementStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19963,7 +19964,7 @@ BEGIN
         ALTER TABLE "edfi"."LocalEducationAgencyAddress"
         ADD CONSTRAINT "FK_LocalEducationAgencyAddress_AddressTypeDescriptor"
         FOREIGN KEY ("AddressTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -19997,7 +19998,7 @@ BEGIN
         ALTER TABLE "edfi"."LocalEducationAgencyAddress"
         ADD CONSTRAINT "FK_LocalEducationAgencyAddress_LocaleDescriptor"
         FOREIGN KEY ("LocaleDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20014,7 +20015,7 @@ BEGIN
         ALTER TABLE "edfi"."LocalEducationAgencyAddress"
         ADD CONSTRAINT "FK_LocalEducationAgencyAddress_StateAbbreviationDescriptor"
         FOREIGN KEY ("StateAbbreviationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20024,14 +20025,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_LocalEducationAgencyCategory_EducationOrganizatio_a425ea48d9'
+        WHERE conname = 'FK_LocalEducationAgencyCategory_EducationOrganizatio_19fab35527'
         AND conrelid = to_regclass('"edfi"."LocalEducationAgencyCategory"')
     )
     THEN
         ALTER TABLE "edfi"."LocalEducationAgencyCategory"
-        ADD CONSTRAINT "FK_LocalEducationAgencyCategory_EducationOrganizatio_a425ea48d9"
+        ADD CONSTRAINT "FK_LocalEducationAgencyCategory_EducationOrganizatio_19fab35527"
         FOREIGN KEY ("EducationOrganizationCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20075,14 +20076,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_LocalEducationAgencyIdentificationCode_EducationO_695ff667dc'
+        WHERE conname = 'FK_LocalEducationAgencyIdentificationCode_EducationO_21e046f507'
         AND conrelid = to_regclass('"edfi"."LocalEducationAgencyIdentificationCode"')
     )
     THEN
         ALTER TABLE "edfi"."LocalEducationAgencyIdentificationCode"
-        ADD CONSTRAINT "FK_LocalEducationAgencyIdentificationCode_EducationO_695ff667dc"
+        ADD CONSTRAINT "FK_LocalEducationAgencyIdentificationCode_EducationO_21e046f507"
         FOREIGN KEY ("EducationOrganizationIdentificationSystemDescriptor__f63fb21ede")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20116,7 +20117,7 @@ BEGIN
         ALTER TABLE "edfi"."LocalEducationAgencyIndicator"
         ADD CONSTRAINT "FK_LocalEducationAgencyIndicator_IndicatorDescriptor"
         FOREIGN KEY ("IndicatorDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20133,7 +20134,7 @@ BEGIN
         ALTER TABLE "edfi"."LocalEducationAgencyIndicator"
         ADD CONSTRAINT "FK_LocalEducationAgencyIndicator_IndicatorGroupDescriptor"
         FOREIGN KEY ("IndicatorGroupDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20150,7 +20151,7 @@ BEGIN
         ALTER TABLE "edfi"."LocalEducationAgencyIndicator"
         ADD CONSTRAINT "FK_LocalEducationAgencyIndicator_IndicatorLevelDescriptor"
         FOREIGN KEY ("IndicatorLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20177,14 +20178,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_LocalEducationAgencyInstitutionTelephone_Institut_44179ef7f2'
+        WHERE conname = 'FK_LocalEducationAgencyInstitutionTelephone_Institut_56a0f4cd44'
         AND conrelid = to_regclass('"edfi"."LocalEducationAgencyInstitutionTelephone"')
     )
     THEN
         ALTER TABLE "edfi"."LocalEducationAgencyInstitutionTelephone"
-        ADD CONSTRAINT "FK_LocalEducationAgencyInstitutionTelephone_Institut_44179ef7f2"
+        ADD CONSTRAINT "FK_LocalEducationAgencyInstitutionTelephone_Institut_56a0f4cd44"
         FOREIGN KEY ("InstitutionTelephoneNumberTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20211,14 +20212,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_LocalEducationAgencyInternationalAddress_AddressT_a072b2e5da'
+        WHERE conname = 'FK_LocalEducationAgencyInternationalAddress_AddressT_ebc6dc4d5d'
         AND conrelid = to_regclass('"edfi"."LocalEducationAgencyInternationalAddress"')
     )
     THEN
         ALTER TABLE "edfi"."LocalEducationAgencyInternationalAddress"
-        ADD CONSTRAINT "FK_LocalEducationAgencyInternationalAddress_AddressT_a072b2e5da"
+        ADD CONSTRAINT "FK_LocalEducationAgencyInternationalAddress_AddressT_ebc6dc4d5d"
         FOREIGN KEY ("AddressTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20235,7 +20236,7 @@ BEGIN
         ALTER TABLE "edfi"."LocalEducationAgencyInternationalAddress"
         ADD CONSTRAINT "FK_LocalEducationAgencyInternationalAddress_CountryDescriptor"
         FOREIGN KEY ("CountryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20320,7 +20321,7 @@ BEGIN
         ALTER TABLE "edfi"."LocalEncumbrance"
         ADD CONSTRAINT "FK_LocalEncumbrance_FinancialCollectionDescriptor"
         FOREIGN KEY ("FinancialCollectionDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20371,7 +20372,7 @@ BEGIN
         ALTER TABLE "edfi"."LocalPayroll"
         ADD CONSTRAINT "FK_LocalPayroll_FinancialCollectionDescriptor"
         FOREIGN KEY ("FinancialCollectionDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20490,7 +20491,7 @@ BEGIN
         ALTER TABLE "edfi"."ObjectDimensionReportingTag"
         ADD CONSTRAINT "FK_ObjectDimensionReportingTag_ReportingTagDescriptor"
         FOREIGN KEY ("ReportingTagDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20507,7 +20508,7 @@ BEGIN
         ALTER TABLE "edfi"."ObjectiveAssessment"
         ADD CONSTRAINT "FK_ObjectiveAssessment_AcademicSubjectDescriptor"
         FOREIGN KEY ("AcademicSubjectDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20636,14 +20637,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ObjectiveAssessmentPerformanceLevel_AssessmentRep_51d8ff53f4'
+        WHERE conname = 'FK_ObjectiveAssessmentPerformanceLevel_AssessmentRep_b4957f7e63'
         AND conrelid = to_regclass('"edfi"."ObjectiveAssessmentPerformanceLevel"')
     )
     THEN
         ALTER TABLE "edfi"."ObjectiveAssessmentPerformanceLevel"
-        ADD CONSTRAINT "FK_ObjectiveAssessmentPerformanceLevel_AssessmentRep_51d8ff53f4"
+        ADD CONSTRAINT "FK_ObjectiveAssessmentPerformanceLevel_AssessmentRep_b4957f7e63"
         FOREIGN KEY ("AssessmentReportingMethodDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20670,14 +20671,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ObjectiveAssessmentPerformanceLevel_PerformanceLe_2aa63405e3'
+        WHERE conname = 'FK_ObjectiveAssessmentPerformanceLevel_PerformanceLe_1a482c1ec4'
         AND conrelid = to_regclass('"edfi"."ObjectiveAssessmentPerformanceLevel"')
     )
     THEN
         ALTER TABLE "edfi"."ObjectiveAssessmentPerformanceLevel"
-        ADD CONSTRAINT "FK_ObjectiveAssessmentPerformanceLevel_PerformanceLe_2aa63405e3"
+        ADD CONSTRAINT "FK_ObjectiveAssessmentPerformanceLevel_PerformanceLe_1a482c1ec4"
         FOREIGN KEY ("PerformanceLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20687,14 +20688,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ObjectiveAssessmentPerformanceLevel_ResultDatatyp_2b3f7cf2ba'
+        WHERE conname = 'FK_ObjectiveAssessmentPerformanceLevel_ResultDatatyp_bfea888689'
         AND conrelid = to_regclass('"edfi"."ObjectiveAssessmentPerformanceLevel"')
     )
     THEN
         ALTER TABLE "edfi"."ObjectiveAssessmentPerformanceLevel"
-        ADD CONSTRAINT "FK_ObjectiveAssessmentPerformanceLevel_ResultDatatyp_2b3f7cf2ba"
+        ADD CONSTRAINT "FK_ObjectiveAssessmentPerformanceLevel_ResultDatatyp_bfea888689"
         FOREIGN KEY ("ResultDatatypeTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20711,7 +20712,7 @@ BEGIN
         ALTER TABLE "edfi"."ObjectiveAssessmentScore"
         ADD CONSTRAINT "FK_ObjectiveAssessmentScore_AssessmentReportingMethodDescriptor"
         FOREIGN KEY ("AssessmentReportingMethodDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20745,7 +20746,7 @@ BEGIN
         ALTER TABLE "edfi"."ObjectiveAssessmentScore"
         ADD CONSTRAINT "FK_ObjectiveAssessmentScore_ResultDatatypeTypeDescriptor"
         FOREIGN KEY ("ResultDatatypeTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20796,7 +20797,7 @@ BEGIN
         ALTER TABLE "edfi"."OpenStaffPosition"
         ADD CONSTRAINT "FK_OpenStaffPosition_EmploymentStatusDescriptor"
         FOREIGN KEY ("EmploymentStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20813,7 +20814,7 @@ BEGIN
         ALTER TABLE "edfi"."OpenStaffPosition"
         ADD CONSTRAINT "FK_OpenStaffPosition_PostingResultDescriptor"
         FOREIGN KEY ("PostingResultDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20830,7 +20831,7 @@ BEGIN
         ALTER TABLE "edfi"."OpenStaffPosition"
         ADD CONSTRAINT "FK_OpenStaffPosition_ProgramAssignmentDescriptor"
         FOREIGN KEY ("ProgramAssignmentDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20847,7 +20848,7 @@ BEGIN
         ALTER TABLE "edfi"."OpenStaffPosition"
         ADD CONSTRAINT "FK_OpenStaffPosition_StaffClassificationDescriptor"
         FOREIGN KEY ("StaffClassificationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20864,7 +20865,7 @@ BEGIN
         ALTER TABLE "edfi"."OpenStaffPositionAcademicSubject"
         ADD CONSTRAINT "FK_OpenStaffPositionAcademicSubject_AcademicSubjectDescriptor"
         FOREIGN KEY ("AcademicSubjectDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20891,14 +20892,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_OpenStaffPositionInstructionalGradeLevel_GradeLev_a9fd06fde1'
+        WHERE conname = 'FK_OpenStaffPositionInstructionalGradeLevel_GradeLev_38f0fd5aa5'
         AND conrelid = to_regclass('"edfi"."OpenStaffPositionInstructionalGradeLevel"')
     )
     THEN
         ALTER TABLE "edfi"."OpenStaffPositionInstructionalGradeLevel"
-        ADD CONSTRAINT "FK_OpenStaffPositionInstructionalGradeLevel_GradeLev_a9fd06fde1"
+        ADD CONSTRAINT "FK_OpenStaffPositionInstructionalGradeLevel_GradeLev_38f0fd5aa5"
         FOREIGN KEY ("GradeLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20966,7 +20967,7 @@ BEGIN
         ALTER TABLE "edfi"."OperationalUnitDimensionReportingTag"
         ADD CONSTRAINT "FK_OperationalUnitDimensionReportingTag_ReportingTagDescriptor"
         FOREIGN KEY ("ReportingTagDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -20983,7 +20984,7 @@ BEGIN
         ALTER TABLE "edfi"."OrganizationDepartment"
         ADD CONSTRAINT "FK_OrganizationDepartment_AcademicSubjectDescriptor"
         FOREIGN KEY ("AcademicSubjectDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21017,7 +21018,7 @@ BEGIN
         ALTER TABLE "edfi"."OrganizationDepartment"
         ADD CONSTRAINT "FK_OrganizationDepartment_OperationalStatusDescriptor"
         FOREIGN KEY ("OperationalStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21051,7 +21052,7 @@ BEGIN
         ALTER TABLE "edfi"."OrganizationDepartmentAddress"
         ADD CONSTRAINT "FK_OrganizationDepartmentAddress_AddressTypeDescriptor"
         FOREIGN KEY ("AddressTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21068,7 +21069,7 @@ BEGIN
         ALTER TABLE "edfi"."OrganizationDepartmentAddress"
         ADD CONSTRAINT "FK_OrganizationDepartmentAddress_LocaleDescriptor"
         FOREIGN KEY ("LocaleDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21102,7 +21103,7 @@ BEGIN
         ALTER TABLE "edfi"."OrganizationDepartmentAddress"
         ADD CONSTRAINT "FK_OrganizationDepartmentAddress_StateAbbreviationDescriptor"
         FOREIGN KEY ("StateAbbreviationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21112,14 +21113,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_OrganizationDepartmentCategory_EducationOrganizat_14d3161662'
+        WHERE conname = 'FK_OrganizationDepartmentCategory_EducationOrganizat_48c98d7d76'
         AND conrelid = to_regclass('"edfi"."OrganizationDepartmentCategory"')
     )
     THEN
         ALTER TABLE "edfi"."OrganizationDepartmentCategory"
-        ADD CONSTRAINT "FK_OrganizationDepartmentCategory_EducationOrganizat_14d3161662"
+        ADD CONSTRAINT "FK_OrganizationDepartmentCategory_EducationOrganizat_48c98d7d76"
         FOREIGN KEY ("EducationOrganizationCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21146,14 +21147,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_OrganizationDepartmentIdentificationCode_Educatio_c4c839d8f9'
+        WHERE conname = 'FK_OrganizationDepartmentIdentificationCode_Educatio_b3126adead'
         AND conrelid = to_regclass('"edfi"."OrganizationDepartmentIdentificationCode"')
     )
     THEN
         ALTER TABLE "edfi"."OrganizationDepartmentIdentificationCode"
-        ADD CONSTRAINT "FK_OrganizationDepartmentIdentificationCode_Educatio_c4c839d8f9"
+        ADD CONSTRAINT "FK_OrganizationDepartmentIdentificationCode_Educatio_b3126adead"
         FOREIGN KEY ("EducationOrganizationIdentificationSystemDescriptor__f63fb21ede")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21187,7 +21188,7 @@ BEGIN
         ALTER TABLE "edfi"."OrganizationDepartmentIndicator"
         ADD CONSTRAINT "FK_OrganizationDepartmentIndicator_IndicatorDescriptor"
         FOREIGN KEY ("IndicatorDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21204,7 +21205,7 @@ BEGIN
         ALTER TABLE "edfi"."OrganizationDepartmentIndicator"
         ADD CONSTRAINT "FK_OrganizationDepartmentIndicator_IndicatorGroupDescriptor"
         FOREIGN KEY ("IndicatorGroupDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21221,7 +21222,7 @@ BEGIN
         ALTER TABLE "edfi"."OrganizationDepartmentIndicator"
         ADD CONSTRAINT "FK_OrganizationDepartmentIndicator_IndicatorLevelDescriptor"
         FOREIGN KEY ("IndicatorLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21248,14 +21249,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_OrganizationDepartmentInstitutionTelephone_Instit_673c1e4b11'
+        WHERE conname = 'FK_OrganizationDepartmentInstitutionTelephone_Instit_f62deb95a5'
         AND conrelid = to_regclass('"edfi"."OrganizationDepartmentInstitutionTelephone"')
     )
     THEN
         ALTER TABLE "edfi"."OrganizationDepartmentInstitutionTelephone"
-        ADD CONSTRAINT "FK_OrganizationDepartmentInstitutionTelephone_Instit_673c1e4b11"
+        ADD CONSTRAINT "FK_OrganizationDepartmentInstitutionTelephone_Instit_f62deb95a5"
         FOREIGN KEY ("InstitutionTelephoneNumberTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21282,14 +21283,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_OrganizationDepartmentInternationalAddress_Addres_99a430b65b'
+        WHERE conname = 'FK_OrganizationDepartmentInternationalAddress_Addres_3c50fb41ee'
         AND conrelid = to_regclass('"edfi"."OrganizationDepartmentInternationalAddress"')
     )
     THEN
         ALTER TABLE "edfi"."OrganizationDepartmentInternationalAddress"
-        ADD CONSTRAINT "FK_OrganizationDepartmentInternationalAddress_Addres_99a430b65b"
+        ADD CONSTRAINT "FK_OrganizationDepartmentInternationalAddress_Addres_3c50fb41ee"
         FOREIGN KEY ("AddressTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21306,7 +21307,7 @@ BEGIN
         ALTER TABLE "edfi"."OrganizationDepartmentInternationalAddress"
         ADD CONSTRAINT "FK_OrganizationDepartmentInternationalAddress_CountryDescriptor"
         FOREIGN KEY ("CountryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21391,7 +21392,7 @@ BEGIN
         ALTER TABLE "edfi"."Person"
         ADD CONSTRAINT "FK_Person_SourceSystemDescriptor"
         FOREIGN KEY ("SourceSystemDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21425,7 +21426,7 @@ BEGIN
         ALTER TABLE "edfi"."PostSecondaryEvent"
         ADD CONSTRAINT "FK_PostSecondaryEvent_PostSecondaryEventCategoryDescriptor"
         FOREIGN KEY ("PostSecondaryEventCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21469,14 +21470,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_PostSecondaryInstitution_AdministrativeFundingCon_9605b3f743'
+        WHERE conname = 'FK_PostSecondaryInstitution_AdministrativeFundingCon_b8309ab89d'
         AND conrelid = to_regclass('"edfi"."PostSecondaryInstitution"')
     )
     THEN
         ALTER TABLE "edfi"."PostSecondaryInstitution"
-        ADD CONSTRAINT "FK_PostSecondaryInstitution_AdministrativeFundingCon_9605b3f743"
+        ADD CONSTRAINT "FK_PostSecondaryInstitution_AdministrativeFundingCon_b8309ab89d"
         FOREIGN KEY ("AdministrativeFundingControlDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21510,7 +21511,7 @@ BEGIN
         ALTER TABLE "edfi"."PostSecondaryInstitution"
         ADD CONSTRAINT "FK_PostSecondaryInstitution_OperationalStatusDescriptor"
         FOREIGN KEY ("OperationalStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21520,14 +21521,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_PostSecondaryInstitution_PostSecondaryInstitution_e1f7e28abe'
+        WHERE conname = 'FK_PostSecondaryInstitution_PostSecondaryInstitution_d70ba491b3'
         AND conrelid = to_regclass('"edfi"."PostSecondaryInstitution"')
     )
     THEN
         ALTER TABLE "edfi"."PostSecondaryInstitution"
-        ADD CONSTRAINT "FK_PostSecondaryInstitution_PostSecondaryInstitution_e1f7e28abe"
+        ADD CONSTRAINT "FK_PostSecondaryInstitution_PostSecondaryInstitution_d70ba491b3"
         FOREIGN KEY ("PostSecondaryInstitutionLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21544,7 +21545,7 @@ BEGIN
         ALTER TABLE "edfi"."PostSecondaryInstitutionAddress"
         ADD CONSTRAINT "FK_PostSecondaryInstitutionAddress_AddressTypeDescriptor"
         FOREIGN KEY ("AddressTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21561,7 +21562,7 @@ BEGIN
         ALTER TABLE "edfi"."PostSecondaryInstitutionAddress"
         ADD CONSTRAINT "FK_PostSecondaryInstitutionAddress_LocaleDescriptor"
         FOREIGN KEY ("LocaleDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21595,7 +21596,7 @@ BEGIN
         ALTER TABLE "edfi"."PostSecondaryInstitutionAddress"
         ADD CONSTRAINT "FK_PostSecondaryInstitutionAddress_StateAbbreviationDescriptor"
         FOREIGN KEY ("StateAbbreviationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21605,14 +21606,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_PostSecondaryInstitutionCategory_EducationOrganiz_fdac444274'
+        WHERE conname = 'FK_PostSecondaryInstitutionCategory_EducationOrganiz_c65bb07722'
         AND conrelid = to_regclass('"edfi"."PostSecondaryInstitutionCategory"')
     )
     THEN
         ALTER TABLE "edfi"."PostSecondaryInstitutionCategory"
-        ADD CONSTRAINT "FK_PostSecondaryInstitutionCategory_EducationOrganiz_fdac444274"
+        ADD CONSTRAINT "FK_PostSecondaryInstitutionCategory_EducationOrganiz_c65bb07722"
         FOREIGN KEY ("EducationOrganizationCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21639,14 +21640,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_PostSecondaryInstitutionIdentificationCode_Educat_967dbb5a34'
+        WHERE conname = 'FK_PostSecondaryInstitutionIdentificationCode_Educat_390995a1cf'
         AND conrelid = to_regclass('"edfi"."PostSecondaryInstitutionIdentificationCode"')
     )
     THEN
         ALTER TABLE "edfi"."PostSecondaryInstitutionIdentificationCode"
-        ADD CONSTRAINT "FK_PostSecondaryInstitutionIdentificationCode_Educat_967dbb5a34"
+        ADD CONSTRAINT "FK_PostSecondaryInstitutionIdentificationCode_Educat_390995a1cf"
         FOREIGN KEY ("EducationOrganizationIdentificationSystemDescriptor__f63fb21ede")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21680,7 +21681,7 @@ BEGIN
         ALTER TABLE "edfi"."PostSecondaryInstitutionIndicator"
         ADD CONSTRAINT "FK_PostSecondaryInstitutionIndicator_IndicatorDescriptor"
         FOREIGN KEY ("IndicatorDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21697,7 +21698,7 @@ BEGIN
         ALTER TABLE "edfi"."PostSecondaryInstitutionIndicator"
         ADD CONSTRAINT "FK_PostSecondaryInstitutionIndicator_IndicatorGroupDescriptor"
         FOREIGN KEY ("IndicatorGroupDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21714,7 +21715,7 @@ BEGIN
         ALTER TABLE "edfi"."PostSecondaryInstitutionIndicator"
         ADD CONSTRAINT "FK_PostSecondaryInstitutionIndicator_IndicatorLevelDescriptor"
         FOREIGN KEY ("IndicatorLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21741,14 +21742,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_PostSecondaryInstitutionInstitutionTelephone_Inst_b11c23558f'
+        WHERE conname = 'FK_PostSecondaryInstitutionInstitutionTelephone_Inst_54245ecd69'
         AND conrelid = to_regclass('"edfi"."PostSecondaryInstitutionInstitutionTelephone"')
     )
     THEN
         ALTER TABLE "edfi"."PostSecondaryInstitutionInstitutionTelephone"
-        ADD CONSTRAINT "FK_PostSecondaryInstitutionInstitutionTelephone_Inst_b11c23558f"
+        ADD CONSTRAINT "FK_PostSecondaryInstitutionInstitutionTelephone_Inst_54245ecd69"
         FOREIGN KEY ("InstitutionTelephoneNumberTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21775,14 +21776,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_PostSecondaryInstitutionInternationalAddress_Addr_21e0dba09f'
+        WHERE conname = 'FK_PostSecondaryInstitutionInternationalAddress_Addr_8e7343ba83'
         AND conrelid = to_regclass('"edfi"."PostSecondaryInstitutionInternationalAddress"')
     )
     THEN
         ALTER TABLE "edfi"."PostSecondaryInstitutionInternationalAddress"
-        ADD CONSTRAINT "FK_PostSecondaryInstitutionInternationalAddress_Addr_21e0dba09f"
+        ADD CONSTRAINT "FK_PostSecondaryInstitutionInternationalAddress_Addr_8e7343ba83"
         FOREIGN KEY ("AddressTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21792,14 +21793,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_PostSecondaryInstitutionInternationalAddress_Coun_1e1e3924ee'
+        WHERE conname = 'FK_PostSecondaryInstitutionInternationalAddress_Coun_84ba2f0827'
         AND conrelid = to_regclass('"edfi"."PostSecondaryInstitutionInternationalAddress"')
     )
     THEN
         ALTER TABLE "edfi"."PostSecondaryInstitutionInternationalAddress"
-        ADD CONSTRAINT "FK_PostSecondaryInstitutionInternationalAddress_Coun_1e1e3924ee"
+        ADD CONSTRAINT "FK_PostSecondaryInstitutionInternationalAddress_Coun_84ba2f0827"
         FOREIGN KEY ("CountryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21826,14 +21827,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_PostSecondaryInstitutionMediumOfInstruction_Mediu_23dd3611fd'
+        WHERE conname = 'FK_PostSecondaryInstitutionMediumOfInstruction_Mediu_81c2441cb4'
         AND conrelid = to_regclass('"edfi"."PostSecondaryInstitutionMediumOfInstruction"')
     )
     THEN
         ALTER TABLE "edfi"."PostSecondaryInstitutionMediumOfInstruction"
-        ADD CONSTRAINT "FK_PostSecondaryInstitutionMediumOfInstruction_Mediu_23dd3611fd"
+        ADD CONSTRAINT "FK_PostSecondaryInstitutionMediumOfInstruction_Mediu_81c2441cb4"
         FOREIGN KEY ("MediumOfInstructionDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21935,7 +21936,7 @@ BEGIN
         ALTER TABLE "edfi"."Program"
         ADD CONSTRAINT "FK_Program_ProgramTypeDescriptor"
         FOREIGN KEY ("ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -21969,7 +21970,7 @@ BEGIN
         ALTER TABLE "edfi"."ProgramCharacteristic"
         ADD CONSTRAINT "FK_ProgramCharacteristic_ProgramCharacteristicDescriptor"
         FOREIGN KEY ("ProgramCharacteristicDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22037,7 +22038,7 @@ BEGIN
         ALTER TABLE "edfi"."ProgramSponsor"
         ADD CONSTRAINT "FK_ProgramSponsor_ProgramSponsorDescriptor"
         FOREIGN KEY ("ProgramSponsorDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22088,7 +22089,7 @@ BEGIN
         ALTER TABLE "edfi"."ProgramDimensionReportingTag"
         ADD CONSTRAINT "FK_ProgramDimensionReportingTag_ReportingTagDescriptor"
         FOREIGN KEY ("ReportingTagDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22122,7 +22123,7 @@ BEGIN
         ALTER TABLE "edfi"."ProgramEvaluation"
         ADD CONSTRAINT "FK_ProgramEvaluation_ProgramEvaluationPeriodDescriptor"
         FOREIGN KEY ("ProgramEvaluationPeriodDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22139,7 +22140,7 @@ BEGIN
         ALTER TABLE "edfi"."ProgramEvaluation"
         ADD CONSTRAINT "FK_ProgramEvaluation_ProgramEvaluationTypeDescriptor"
         FOREIGN KEY ("ProgramEvaluationTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22156,7 +22157,7 @@ BEGIN
         ALTER TABLE "edfi"."ProgramEvaluation"
         ADD CONSTRAINT "FK_ProgramEvaluation_ProgramProgram_ProgramTypeDescriptor"
         FOREIGN KEY ("ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22207,7 +22208,7 @@ BEGIN
         ALTER TABLE "edfi"."ProgramEvaluationLevel"
         ADD CONSTRAINT "FK_ProgramEvaluationLevel_RatingLevelDescriptor"
         FOREIGN KEY ("RatingLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22251,14 +22252,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ProgramEvaluationElement_ProgramEvaluationPeriodD_4122be3539'
+        WHERE conname = 'FK_ProgramEvaluationElement_ProgramEvaluationPeriodD_79672756c3'
         AND conrelid = to_regclass('"edfi"."ProgramEvaluationElement"')
     )
     THEN
         ALTER TABLE "edfi"."ProgramEvaluationElement"
-        ADD CONSTRAINT "FK_ProgramEvaluationElement_ProgramEvaluationPeriodD_4122be3539"
+        ADD CONSTRAINT "FK_ProgramEvaluationElement_ProgramEvaluationPeriodD_79672756c3"
         FOREIGN KEY ("ProgramEvaluationPeriodDescriptor_Unified_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22268,14 +22269,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ProgramEvaluationElement_ProgramEvaluationTypeDes_9ed95edefc'
+        WHERE conname = 'FK_ProgramEvaluationElement_ProgramEvaluationTypeDes_acaae689aa'
         AND conrelid = to_regclass('"edfi"."ProgramEvaluationElement"')
     )
     THEN
         ALTER TABLE "edfi"."ProgramEvaluationElement"
-        ADD CONSTRAINT "FK_ProgramEvaluationElement_ProgramEvaluationTypeDes_9ed95edefc"
+        ADD CONSTRAINT "FK_ProgramEvaluationElement_ProgramEvaluationTypeDes_acaae689aa"
         FOREIGN KEY ("ProgramEvaluationTypeDescriptor_Unified_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22309,7 +22310,7 @@ BEGIN
         ALTER TABLE "edfi"."ProgramEvaluationElement"
         ADD CONSTRAINT "FK_ProgramEvaluationElement_ProgramTypeDescriptor_Unified"
         FOREIGN KEY ("ProgramTypeDescriptor_Unified_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22336,14 +22337,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ProgramEvaluationElementProgramEvaluationLevel_Ra_e42bd3a7df'
+        WHERE conname = 'FK_ProgramEvaluationElementProgramEvaluationLevel_Ra_7efec4c471'
         AND conrelid = to_regclass('"edfi"."ProgramEvaluationElementProgramEvaluationLevel"')
     )
     THEN
         ALTER TABLE "edfi"."ProgramEvaluationElementProgramEvaluationLevel"
-        ADD CONSTRAINT "FK_ProgramEvaluationElementProgramEvaluationLevel_Ra_e42bd3a7df"
+        ADD CONSTRAINT "FK_ProgramEvaluationElementProgramEvaluationLevel_Ra_7efec4c471"
         FOREIGN KEY ("RatingLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22370,48 +22371,48 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ProgramEvaluationObjective_ProgramEvaluation_Prog_15c846119c'
+        WHERE conname = 'FK_ProgramEvaluationObjective_ProgramEvaluation_Prog_59e6af295e'
         AND conrelid = to_regclass('"edfi"."ProgramEvaluationObjective"')
     )
     THEN
         ALTER TABLE "edfi"."ProgramEvaluationObjective"
-        ADD CONSTRAINT "FK_ProgramEvaluationObjective_ProgramEvaluation_Prog_15c846119c"
-        FOREIGN KEY ("ProgramEvaluation_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ProgramEvaluationObjective_ProgramEvaluation_Prog_a1a6c22587'
-        AND conrelid = to_regclass('"edfi"."ProgramEvaluationObjective"')
-    )
-    THEN
-        ALTER TABLE "edfi"."ProgramEvaluationObjective"
-        ADD CONSTRAINT "FK_ProgramEvaluationObjective_ProgramEvaluation_Prog_a1a6c22587"
-        FOREIGN KEY ("ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ProgramEvaluationObjective_ProgramEvaluation_Prog_a34603eacd'
-        AND conrelid = to_regclass('"edfi"."ProgramEvaluationObjective"')
-    )
-    THEN
-        ALTER TABLE "edfi"."ProgramEvaluationObjective"
-        ADD CONSTRAINT "FK_ProgramEvaluationObjective_ProgramEvaluation_Prog_a34603eacd"
+        ADD CONSTRAINT "FK_ProgramEvaluationObjective_ProgramEvaluation_Prog_59e6af295e"
         FOREIGN KEY ("ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_ProgramEvaluationObjective_ProgramEvaluation_Prog_64439ae79e'
+        AND conrelid = to_regclass('"edfi"."ProgramEvaluationObjective"')
+    )
+    THEN
+        ALTER TABLE "edfi"."ProgramEvaluationObjective"
+        ADD CONSTRAINT "FK_ProgramEvaluationObjective_ProgramEvaluation_Prog_64439ae79e"
+        FOREIGN KEY ("ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_ProgramEvaluationObjective_ProgramEvaluation_Prog_7b884e6d0d'
+        AND conrelid = to_regclass('"edfi"."ProgramEvaluationObjective"')
+    )
+    THEN
+        ALTER TABLE "edfi"."ProgramEvaluationObjective"
+        ADD CONSTRAINT "FK_ProgramEvaluationObjective_ProgramEvaluation_Prog_7b884e6d0d"
+        FOREIGN KEY ("ProgramEvaluation_ProgramTypeDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22438,14 +22439,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ProgramEvaluationObjectiveProgramEvaluationLevel__67211fc873'
+        WHERE conname = 'FK_ProgramEvaluationObjectiveProgramEvaluationLevel__ece46d8b3f'
         AND conrelid = to_regclass('"edfi"."ProgramEvaluationObjectiveProgramEvaluationLevel"')
     )
     THEN
         ALTER TABLE "edfi"."ProgramEvaluationObjectiveProgramEvaluationLevel"
-        ADD CONSTRAINT "FK_ProgramEvaluationObjectiveProgramEvaluationLevel__67211fc873"
+        ADD CONSTRAINT "FK_ProgramEvaluationObjectiveProgramEvaluationLevel__ece46d8b3f"
         FOREIGN KEY ("RatingLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22513,7 +22514,7 @@ BEGIN
         ALTER TABLE "edfi"."ProjectDimensionReportingTag"
         ADD CONSTRAINT "FK_ProjectDimensionReportingTag_ReportingTagDescriptor"
         FOREIGN KEY ("ReportingTagDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22557,14 +22558,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ReportCard_GradingPeriodGradingPeriod_GradingPeri_5249a8eed7'
+        WHERE conname = 'FK_ReportCard_GradingPeriodGradingPeriod_GradingPeri_02cb641a22'
         AND conrelid = to_regclass('"edfi"."ReportCard"')
     )
     THEN
         ALTER TABLE "edfi"."ReportCard"
-        ADD CONSTRAINT "FK_ReportCard_GradingPeriodGradingPeriod_GradingPeri_5249a8eed7"
+        ADD CONSTRAINT "FK_ReportCard_GradingPeriodGradingPeriod_GradingPeri_02cb641a22"
         FOREIGN KEY ("GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22615,7 +22616,7 @@ BEGIN
         ALTER TABLE "edfi"."ReportCardGradePointAverage"
         ADD CONSTRAINT "FK_ReportCardGradePointAverage_GradePointAverageTypeDescriptor"
         FOREIGN KEY ("GradePointAverageTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22649,7 +22650,7 @@ BEGIN
         ALTER TABLE "edfi"."ReportCardGrade"
         ADD CONSTRAINT "FK_ReportCardGrade_Grade_GradeTypeDescriptor"
         FOREIGN KEY ("Grade_GradeTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22666,7 +22667,7 @@ BEGIN
         ALTER TABLE "edfi"."ReportCardGrade"
         ADD CONSTRAINT "FK_ReportCardGrade_Grade_GradingPeriodDescriptor"
         FOREIGN KEY ("Grade_GradingPeriodDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22744,14 +22745,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ReportCardStudentCompetencyObjective_StudentCompe_54f65e8b4c'
+        WHERE conname = 'FK_ReportCardStudentCompetencyObjective_StudentCompe_8c03903ee9'
         AND conrelid = to_regclass('"edfi"."ReportCardStudentCompetencyObjective"')
     )
     THEN
         ALTER TABLE "edfi"."ReportCardStudentCompetencyObjective"
-        ADD CONSTRAINT "FK_ReportCardStudentCompetencyObjective_StudentCompe_54f65e8b4c"
-        FOREIGN KEY ("StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        ADD CONSTRAINT "FK_ReportCardStudentCompetencyObjective_StudentCompe_8c03903ee9"
+        FOREIGN KEY ("StudentCompetencyObjective_ObjectiveGradeLevelDescri_16507c4e9d")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22761,14 +22762,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_ReportCardStudentCompetencyObjective_StudentCompe_e6e67bce02'
+        WHERE conname = 'FK_ReportCardStudentCompetencyObjective_StudentCompe_f666fc91a9'
         AND conrelid = to_regclass('"edfi"."ReportCardStudentCompetencyObjective"')
     )
     THEN
         ALTER TABLE "edfi"."ReportCardStudentCompetencyObjective"
-        ADD CONSTRAINT "FK_ReportCardStudentCompetencyObjective_StudentCompe_e6e67bce02"
-        FOREIGN KEY ("StudentCompetencyObjective_ObjectiveGradeLevelDescri_16507c4e9d")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        ADD CONSTRAINT "FK_ReportCardStudentCompetencyObjective_StudentCompe_f666fc91a9"
+        FOREIGN KEY ("StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22819,7 +22820,7 @@ BEGIN
         ALTER TABLE "edfi"."RestraintEvent"
         ADD CONSTRAINT "FK_RestraintEvent_EducationalEnvironmentDescriptor"
         FOREIGN KEY ("EducationalEnvironmentDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22870,7 +22871,7 @@ BEGIN
         ALTER TABLE "edfi"."RestraintEventProgram"
         ADD CONSTRAINT "FK_RestraintEventProgram_Program_ProgramTypeDescriptor"
         FOREIGN KEY ("Program_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22938,7 +22939,7 @@ BEGIN
         ALTER TABLE "edfi"."RestraintEventReason"
         ADD CONSTRAINT "FK_RestraintEventReason_RestraintEventReasonDescriptor"
         FOREIGN KEY ("RestraintEventReasonDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22955,7 +22956,7 @@ BEGIN
         ALTER TABLE "edfi"."School"
         ADD CONSTRAINT "FK_School_AdministrativeFundingControlDescriptor"
         FOREIGN KEY ("AdministrativeFundingControlDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -22972,7 +22973,7 @@ BEGIN
         ALTER TABLE "edfi"."School"
         ADD CONSTRAINT "FK_School_CharterApprovalAgencyTypeDescriptor"
         FOREIGN KEY ("CharterApprovalAgencyTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23006,7 +23007,7 @@ BEGIN
         ALTER TABLE "edfi"."School"
         ADD CONSTRAINT "FK_School_CharterStatusDescriptor"
         FOREIGN KEY ("CharterStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23040,7 +23041,7 @@ BEGIN
         ALTER TABLE "edfi"."School"
         ADD CONSTRAINT "FK_School_InternetAccessDescriptor"
         FOREIGN KEY ("InternetAccessDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23074,7 +23075,7 @@ BEGIN
         ALTER TABLE "edfi"."School"
         ADD CONSTRAINT "FK_School_MagnetSpecialProgramEmphasisSchoolDescriptor"
         FOREIGN KEY ("MagnetSpecialProgramEmphasisSchoolDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23091,7 +23092,7 @@ BEGIN
         ALTER TABLE "edfi"."School"
         ADD CONSTRAINT "FK_School_OperationalStatusDescriptor"
         FOREIGN KEY ("OperationalStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23108,7 +23109,7 @@ BEGIN
         ALTER TABLE "edfi"."School"
         ADD CONSTRAINT "FK_School_SchoolTypeDescriptor"
         FOREIGN KEY ("SchoolTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23125,7 +23126,7 @@ BEGIN
         ALTER TABLE "edfi"."School"
         ADD CONSTRAINT "FK_School_TitleIPartASchoolDesignationDescriptor"
         FOREIGN KEY ("TitleIPartASchoolDesignationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23142,7 +23143,7 @@ BEGIN
         ALTER TABLE "edfi"."SchoolAddress"
         ADD CONSTRAINT "FK_SchoolAddress_AddressTypeDescriptor"
         FOREIGN KEY ("AddressTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23159,7 +23160,7 @@ BEGIN
         ALTER TABLE "edfi"."SchoolAddress"
         ADD CONSTRAINT "FK_SchoolAddress_LocaleDescriptor"
         FOREIGN KEY ("LocaleDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23193,7 +23194,7 @@ BEGIN
         ALTER TABLE "edfi"."SchoolAddress"
         ADD CONSTRAINT "FK_SchoolAddress_StateAbbreviationDescriptor"
         FOREIGN KEY ("StateAbbreviationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23203,14 +23204,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_SchoolEducationOrganizationCategory_EducationOrga_f1017a41bd'
+        WHERE conname = 'FK_SchoolEducationOrganizationCategory_EducationOrga_e73eaa5643'
         AND conrelid = to_regclass('"edfi"."SchoolEducationOrganizationCategory"')
     )
     THEN
         ALTER TABLE "edfi"."SchoolEducationOrganizationCategory"
-        ADD CONSTRAINT "FK_SchoolEducationOrganizationCategory_EducationOrga_f1017a41bd"
+        ADD CONSTRAINT "FK_SchoolEducationOrganizationCategory_EducationOrga_e73eaa5643"
         FOREIGN KEY ("EducationOrganizationCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23244,7 +23245,7 @@ BEGIN
         ALTER TABLE "edfi"."SchoolGradeLevel"
         ADD CONSTRAINT "FK_SchoolGradeLevel_GradeLevelDescriptor"
         FOREIGN KEY ("GradeLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23271,14 +23272,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_SchoolIdentificationCode_EducationOrganizationIde_f162b4c6fd'
+        WHERE conname = 'FK_SchoolIdentificationCode_EducationOrganizationIde_7b120e4a75'
         AND conrelid = to_regclass('"edfi"."SchoolIdentificationCode"')
     )
     THEN
         ALTER TABLE "edfi"."SchoolIdentificationCode"
-        ADD CONSTRAINT "FK_SchoolIdentificationCode_EducationOrganizationIde_f162b4c6fd"
+        ADD CONSTRAINT "FK_SchoolIdentificationCode_EducationOrganizationIde_7b120e4a75"
         FOREIGN KEY ("EducationOrganizationIdentificationSystemDescriptor__f63fb21ede")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23312,7 +23313,7 @@ BEGIN
         ALTER TABLE "edfi"."SchoolIndicator"
         ADD CONSTRAINT "FK_SchoolIndicator_IndicatorDescriptor"
         FOREIGN KEY ("IndicatorDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23329,7 +23330,7 @@ BEGIN
         ALTER TABLE "edfi"."SchoolIndicator"
         ADD CONSTRAINT "FK_SchoolIndicator_IndicatorGroupDescriptor"
         FOREIGN KEY ("IndicatorGroupDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23346,7 +23347,7 @@ BEGIN
         ALTER TABLE "edfi"."SchoolIndicator"
         ADD CONSTRAINT "FK_SchoolIndicator_IndicatorLevelDescriptor"
         FOREIGN KEY ("IndicatorLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23373,14 +23374,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_SchoolInstitutionTelephone_InstitutionTelephoneNu_628d8b984e'
+        WHERE conname = 'FK_SchoolInstitutionTelephone_InstitutionTelephoneNu_b90499b9b4'
         AND conrelid = to_regclass('"edfi"."SchoolInstitutionTelephone"')
     )
     THEN
         ALTER TABLE "edfi"."SchoolInstitutionTelephone"
-        ADD CONSTRAINT "FK_SchoolInstitutionTelephone_InstitutionTelephoneNu_628d8b984e"
+        ADD CONSTRAINT "FK_SchoolInstitutionTelephone_InstitutionTelephoneNu_b90499b9b4"
         FOREIGN KEY ("InstitutionTelephoneNumberTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23414,7 +23415,7 @@ BEGIN
         ALTER TABLE "edfi"."SchoolInternationalAddress"
         ADD CONSTRAINT "FK_SchoolInternationalAddress_AddressTypeDescriptor"
         FOREIGN KEY ("AddressTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23431,7 +23432,7 @@ BEGIN
         ALTER TABLE "edfi"."SchoolInternationalAddress"
         ADD CONSTRAINT "FK_SchoolInternationalAddress_CountryDescriptor"
         FOREIGN KEY ("CountryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23482,7 +23483,7 @@ BEGIN
         ALTER TABLE "edfi"."SchoolCategory"
         ADD CONSTRAINT "FK_SchoolCategory_SchoolCategoryDescriptor"
         FOREIGN KEY ("SchoolCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23550,7 +23551,7 @@ BEGIN
         ALTER TABLE "edfi"."Section"
         ADD CONSTRAINT "FK_Section_AvailableCreditTypeDescriptor"
         FOREIGN KEY ("AvailableCreditTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23601,7 +23602,7 @@ BEGIN
         ALTER TABLE "edfi"."Section"
         ADD CONSTRAINT "FK_Section_EducationalEnvironmentDescriptor"
         FOREIGN KEY ("EducationalEnvironmentDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23618,7 +23619,7 @@ BEGIN
         ALTER TABLE "edfi"."Section"
         ADD CONSTRAINT "FK_Section_InstructionLanguageDescriptor"
         FOREIGN KEY ("InstructionLanguageDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23669,7 +23670,7 @@ BEGIN
         ALTER TABLE "edfi"."Section"
         ADD CONSTRAINT "FK_Section_MediumOfInstructionDescriptor"
         FOREIGN KEY ("MediumOfInstructionDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23686,7 +23687,7 @@ BEGIN
         ALTER TABLE "edfi"."Section"
         ADD CONSTRAINT "FK_Section_PopulationServedDescriptor"
         FOREIGN KEY ("PopulationServedDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23703,7 +23704,7 @@ BEGIN
         ALTER TABLE "edfi"."Section"
         ADD CONSTRAINT "FK_Section_SectionTypeDescriptor"
         FOREIGN KEY ("SectionTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23737,7 +23738,7 @@ BEGIN
         ALTER TABLE "edfi"."SectionCharacteristic"
         ADD CONSTRAINT "FK_SectionCharacteristic_SectionCharacteristicDescriptor"
         FOREIGN KEY ("SectionCharacteristicDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23781,14 +23782,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_SectionCourseLevelCharacteristic_CourseLevelChara_fb0f423512'
+        WHERE conname = 'FK_SectionCourseLevelCharacteristic_CourseLevelChara_da69f84f34'
         AND conrelid = to_regclass('"edfi"."SectionCourseLevelCharacteristic"')
     )
     THEN
         ALTER TABLE "edfi"."SectionCourseLevelCharacteristic"
-        ADD CONSTRAINT "FK_SectionCourseLevelCharacteristic_CourseLevelChara_fb0f423512"
+        ADD CONSTRAINT "FK_SectionCourseLevelCharacteristic_CourseLevelChara_da69f84f34"
         FOREIGN KEY ("CourseLevelCharacteristicDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23822,7 +23823,7 @@ BEGIN
         ALTER TABLE "edfi"."SectionOfferedGradeLevel"
         ADD CONSTRAINT "FK_SectionOfferedGradeLevel_GradeLevelDescriptor"
         FOREIGN KEY ("GradeLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -23856,7 +23857,7 @@ BEGIN
         ALTER TABLE "edfi"."SectionProgram"
         ADD CONSTRAINT "FK_SectionProgram_Program_ProgramTypeDescriptor"
         FOREIGN KEY ("Program_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24026,7 +24027,7 @@ BEGIN
         ALTER TABLE "edfi"."Session"
         ADD CONSTRAINT "FK_Session_TermDescriptor"
         FOREIGN KEY ("TermDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24077,7 +24078,7 @@ BEGIN
         ALTER TABLE "edfi"."SessionGradingPeriod"
         ADD CONSTRAINT "FK_SessionGradingPeriod_GradingPeriod_GradingPeriodDescriptor"
         FOREIGN KEY ("GradingPeriod_GradingPeriodDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24145,7 +24146,7 @@ BEGIN
         ALTER TABLE "edfi"."SourceDimensionReportingTag"
         ADD CONSTRAINT "FK_SourceDimensionReportingTag_ReportingTagDescriptor"
         FOREIGN KEY ("ReportingTagDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24179,7 +24180,7 @@ BEGIN
         ALTER TABLE "edfi"."Staff"
         ADD CONSTRAINT "FK_Staff_CitizenshipStatusDescriptor"
         FOREIGN KEY ("CitizenshipStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24213,7 +24214,7 @@ BEGIN
         ALTER TABLE "edfi"."Staff"
         ADD CONSTRAINT "FK_Staff_HighestCompletedLevelOfEducationDescriptor"
         FOREIGN KEY ("HighestCompletedLevelOfEducationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24247,7 +24248,7 @@ BEGIN
         ALTER TABLE "edfi"."Staff"
         ADD CONSTRAINT "FK_Staff_Person_SourceSystemDescriptor"
         FOREIGN KEY ("Person_SourceSystemDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24264,7 +24265,7 @@ BEGIN
         ALTER TABLE "edfi"."Staff"
         ADD CONSTRAINT "FK_Staff_SexDescriptor"
         FOREIGN KEY ("SexDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24281,7 +24282,7 @@ BEGIN
         ALTER TABLE "edfi"."StaffAddress"
         ADD CONSTRAINT "FK_StaffAddress_AddressTypeDescriptor"
         FOREIGN KEY ("AddressTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24298,7 +24299,7 @@ BEGIN
         ALTER TABLE "edfi"."StaffAddress"
         ADD CONSTRAINT "FK_StaffAddress_LocaleDescriptor"
         FOREIGN KEY ("LocaleDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24332,7 +24333,7 @@ BEGIN
         ALTER TABLE "edfi"."StaffAddress"
         ADD CONSTRAINT "FK_StaffAddress_StateAbbreviationDescriptor"
         FOREIGN KEY ("StateAbbreviationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24349,7 +24350,7 @@ BEGIN
         ALTER TABLE "edfi"."StaffAncestryEthnicOrigin"
         ADD CONSTRAINT "FK_StaffAncestryEthnicOrigin_AncestryEthnicOriginDescriptor"
         FOREIGN KEY ("AncestryEthnicOriginDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24393,14 +24394,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffCredential_Credential_StateOfIssueStateAbbre_e2ed7c3d37'
+        WHERE conname = 'FK_StaffCredential_Credential_StateOfIssueStateAbbre_ff7b5af21b'
         AND conrelid = to_regclass('"edfi"."StaffCredential"')
     )
     THEN
         ALTER TABLE "edfi"."StaffCredential"
-        ADD CONSTRAINT "FK_StaffCredential_Credential_StateOfIssueStateAbbre_e2ed7c3d37"
+        ADD CONSTRAINT "FK_StaffCredential_Credential_StateOfIssueStateAbbre_ff7b5af21b"
         FOREIGN KEY ("Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24434,7 +24435,7 @@ BEGIN
         ALTER TABLE "edfi"."StaffElectronicMail"
         ADD CONSTRAINT "FK_StaffElectronicMail_ElectronicMailTypeDescriptor"
         FOREIGN KEY ("ElectronicMailTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24485,7 +24486,7 @@ BEGIN
         ALTER TABLE "edfi"."StaffIdentificationCode"
         ADD CONSTRAINT "FK_StaffIdentificationCode_StaffIdentificationSystemDescriptor"
         FOREIGN KEY ("StaffIdentificationSystemDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24495,14 +24496,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffIdentificationDocument_IdentificationDocumen_99bab8376e'
+        WHERE conname = 'FK_StaffIdentificationDocument_IdentificationDocumen_5d895561f6'
         AND conrelid = to_regclass('"edfi"."StaffIdentificationDocument"')
     )
     THEN
         ALTER TABLE "edfi"."StaffIdentificationDocument"
-        ADD CONSTRAINT "FK_StaffIdentificationDocument_IdentificationDocumen_99bab8376e"
+        ADD CONSTRAINT "FK_StaffIdentificationDocument_IdentificationDocumen_5d895561f6"
         FOREIGN KEY ("IdentificationDocumentUseDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24519,7 +24520,7 @@ BEGIN
         ALTER TABLE "edfi"."StaffIdentificationDocument"
         ADD CONSTRAINT "FK_StaffIdentificationDocument_IssuerCountryDescriptor"
         FOREIGN KEY ("IssuerCountryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24529,14 +24530,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffIdentificationDocument_PersonalInformationVe_84af975c0f'
+        WHERE conname = 'FK_StaffIdentificationDocument_PersonalInformationVe_ebae056b57'
         AND conrelid = to_regclass('"edfi"."StaffIdentificationDocument"')
     )
     THEN
         ALTER TABLE "edfi"."StaffIdentificationDocument"
-        ADD CONSTRAINT "FK_StaffIdentificationDocument_PersonalInformationVe_84af975c0f"
+        ADD CONSTRAINT "FK_StaffIdentificationDocument_PersonalInformationVe_ebae056b57"
         FOREIGN KEY ("PersonalInformationVerificationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24570,7 +24571,7 @@ BEGIN
         ALTER TABLE "edfi"."StaffInternationalAddress"
         ADD CONSTRAINT "FK_StaffInternationalAddress_AddressTypeDescriptor"
         FOREIGN KEY ("AddressTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24587,7 +24588,7 @@ BEGIN
         ALTER TABLE "edfi"."StaffInternationalAddress"
         ADD CONSTRAINT "FK_StaffInternationalAddress_CountryDescriptor"
         FOREIGN KEY ("CountryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24621,7 +24622,7 @@ BEGIN
         ALTER TABLE "edfi"."StaffLanguage"
         ADD CONSTRAINT "FK_StaffLanguage_LanguageDescriptor"
         FOREIGN KEY ("LanguageDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24655,7 +24656,7 @@ BEGIN
         ALTER TABLE "edfi"."StaffOtherName"
         ADD CONSTRAINT "FK_StaffOtherName_OtherNameTypeDescriptor"
         FOREIGN KEY ("OtherNameTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24682,14 +24683,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffPersonalIdentificationDocument_Identificatio_bfe71aaf4c'
+        WHERE conname = 'FK_StaffPersonalIdentificationDocument_Identificatio_08c795ae71'
         AND conrelid = to_regclass('"edfi"."StaffPersonalIdentificationDocument"')
     )
     THEN
         ALTER TABLE "edfi"."StaffPersonalIdentificationDocument"
-        ADD CONSTRAINT "FK_StaffPersonalIdentificationDocument_Identificatio_bfe71aaf4c"
+        ADD CONSTRAINT "FK_StaffPersonalIdentificationDocument_Identificatio_08c795ae71"
         FOREIGN KEY ("IdentificationDocumentUseDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24706,7 +24707,7 @@ BEGIN
         ALTER TABLE "edfi"."StaffPersonalIdentificationDocument"
         ADD CONSTRAINT "FK_StaffPersonalIdentificationDocument_IssuerCountryDescriptor"
         FOREIGN KEY ("IssuerCountryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24716,14 +24717,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffPersonalIdentificationDocument_PersonalInfor_8c0d69aad6'
+        WHERE conname = 'FK_StaffPersonalIdentificationDocument_PersonalInfor_a0265154dc'
         AND conrelid = to_regclass('"edfi"."StaffPersonalIdentificationDocument"')
     )
     THEN
         ALTER TABLE "edfi"."StaffPersonalIdentificationDocument"
-        ADD CONSTRAINT "FK_StaffPersonalIdentificationDocument_PersonalInfor_8c0d69aad6"
+        ADD CONSTRAINT "FK_StaffPersonalIdentificationDocument_PersonalInfor_a0265154dc"
         FOREIGN KEY ("PersonalInformationVerificationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24757,7 +24758,7 @@ BEGIN
         ALTER TABLE "edfi"."StaffRace"
         ADD CONSTRAINT "FK_StaffRace_RaceDescriptor"
         FOREIGN KEY ("RaceDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24791,7 +24792,7 @@ BEGIN
         ALTER TABLE "edfi"."StaffRecognition"
         ADD CONSTRAINT "FK_StaffRecognition_AchievementCategoryDescriptor"
         FOREIGN KEY ("AchievementCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24808,7 +24809,7 @@ BEGIN
         ALTER TABLE "edfi"."StaffRecognition"
         ADD CONSTRAINT "FK_StaffRecognition_RecognitionTypeDescriptor"
         FOREIGN KEY ("RecognitionTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24859,7 +24860,7 @@ BEGIN
         ALTER TABLE "edfi"."StaffTelephone"
         ADD CONSTRAINT "FK_StaffTelephone_TelephoneNumberTypeDescriptor"
         FOREIGN KEY ("TelephoneNumberTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24893,7 +24894,7 @@ BEGIN
         ALTER TABLE "edfi"."StaffTribalAffiliation"
         ADD CONSTRAINT "FK_StaffTribalAffiliation_TribalAffiliationDescriptor"
         FOREIGN KEY ("TribalAffiliationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24927,7 +24928,7 @@ BEGIN
         ALTER TABLE "edfi"."StaffVisa"
         ADD CONSTRAINT "FK_StaffVisa_VisaDescriptor"
         FOREIGN KEY ("VisaDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24961,7 +24962,7 @@ BEGIN
         ALTER TABLE "edfi"."StaffLanguageUs"
         ADD CONSTRAINT "FK_StaffLanguageUs_LanguageUseDescriptor"
         FOREIGN KEY ("LanguageUseDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -24995,7 +24996,7 @@ BEGIN
         ALTER TABLE "edfi"."StaffAbsenceEvent"
         ADD CONSTRAINT "FK_StaffAbsenceEvent_AbsenceEventCategoryDescriptor"
         FOREIGN KEY ("AbsenceEventCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25141,23 +25142,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffDisciplineIncidentAssociationDisciplineIncid_0ba5d9ba90'
-        AND conrelid = to_regclass('"edfi"."StaffDisciplineIncidentAssociationDisciplineIncident_7fa4beae77"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StaffDisciplineIncidentAssociationDisciplineIncident_7fa4beae77"
-        ADD CONSTRAINT "FK_StaffDisciplineIncidentAssociationDisciplineIncid_0ba5d9ba90"
-        FOREIGN KEY ("DisciplineIncidentParticipationCodeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StaffDisciplineIncidentAssociationDisciplineIncid_bb4fcf2747'
         AND conrelid = to_regclass('"edfi"."StaffDisciplineIncidentAssociationDisciplineIncident_7fa4beae77"')
     )
@@ -25175,14 +25159,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffEducationOrganizationAssignmentAssociation_C_402047043c'
-        AND conrelid = to_regclass('"edfi"."StaffEducationOrganizationAssignmentAssociation"')
+        WHERE conname = 'FK_StaffDisciplineIncidentAssociationDisciplineIncid_c3405879b3'
+        AND conrelid = to_regclass('"edfi"."StaffDisciplineIncidentAssociationDisciplineIncident_7fa4beae77"')
     )
     THEN
-        ALTER TABLE "edfi"."StaffEducationOrganizationAssignmentAssociation"
-        ADD CONSTRAINT "FK_StaffEducationOrganizationAssignmentAssociation_C_402047043c"
-        FOREIGN KEY ("Credential_CredentialIdentifier", "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId", "Credential_DocumentId")
-        REFERENCES "edfi"."Credential" ("CredentialIdentifier", "StateOfIssueStateAbbreviationDescriptor_DescriptorId", "DocumentId")
+        ALTER TABLE "edfi"."StaffDisciplineIncidentAssociationDisciplineIncident_7fa4beae77"
+        ADD CONSTRAINT "FK_StaffDisciplineIncidentAssociationDisciplineIncid_c3405879b3"
+        FOREIGN KEY ("DisciplineIncidentParticipationCodeDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25192,14 +25176,31 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffEducationOrganizationAssignmentAssociation_C_d7989bd66c'
+        WHERE conname = 'FK_StaffEducationOrganizationAssignmentAssociation_C_37527b69f1'
         AND conrelid = to_regclass('"edfi"."StaffEducationOrganizationAssignmentAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StaffEducationOrganizationAssignmentAssociation"
-        ADD CONSTRAINT "FK_StaffEducationOrganizationAssignmentAssociation_C_d7989bd66c"
+        ADD CONSTRAINT "FK_StaffEducationOrganizationAssignmentAssociation_C_37527b69f1"
         FOREIGN KEY ("Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StaffEducationOrganizationAssignmentAssociation_C_402047043c'
+        AND conrelid = to_regclass('"edfi"."StaffEducationOrganizationAssignmentAssociation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StaffEducationOrganizationAssignmentAssociation"
+        ADD CONSTRAINT "FK_StaffEducationOrganizationAssignmentAssociation_C_402047043c"
+        FOREIGN KEY ("Credential_CredentialIdentifier", "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId", "Credential_DocumentId")
+        REFERENCES "edfi"."Credential" ("CredentialIdentifier", "StateOfIssueStateAbbreviationDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25243,14 +25244,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffEducationOrganizationAssignmentAssociation_E_ac93af6f23'
+        WHERE conname = 'FK_StaffEducationOrganizationAssignmentAssociation_E_5f7f59a5d7'
         AND conrelid = to_regclass('"edfi"."StaffEducationOrganizationAssignmentAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StaffEducationOrganizationAssignmentAssociation"
-        ADD CONSTRAINT "FK_StaffEducationOrganizationAssignmentAssociation_E_ac93af6f23"
+        ADD CONSTRAINT "FK_StaffEducationOrganizationAssignmentAssociation_E_5f7f59a5d7"
         FOREIGN KEY ("EmploymentStaffEducationOrganizationEmploymentAssoci_48a7f76b56")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25277,14 +25278,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffEducationOrganizationAssignmentAssociation_S_4f39b63a8a'
+        WHERE conname = 'FK_StaffEducationOrganizationAssignmentAssociation_S_696166db54'
         AND conrelid = to_regclass('"edfi"."StaffEducationOrganizationAssignmentAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StaffEducationOrganizationAssignmentAssociation"
-        ADD CONSTRAINT "FK_StaffEducationOrganizationAssignmentAssociation_S_4f39b63a8a"
+        ADD CONSTRAINT "FK_StaffEducationOrganizationAssignmentAssociation_S_696166db54"
         FOREIGN KEY ("StaffClassificationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25311,31 +25312,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffEducationOrganizationContactAssociation_Addr_0a92a30bea'
+        WHERE conname = 'FK_StaffEducationOrganizationContactAssociation_Addr_36d80fba34'
         AND conrelid = to_regclass('"edfi"."StaffEducationOrganizationContactAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StaffEducationOrganizationContactAssociation"
-        ADD CONSTRAINT "FK_StaffEducationOrganizationContactAssociation_Addr_0a92a30bea"
-        FOREIGN KEY ("AddressAddressTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffEducationOrganizationContactAssociation_Addr_0ef78497dd'
-        AND conrelid = to_regclass('"edfi"."StaffEducationOrganizationContactAssociation"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StaffEducationOrganizationContactAssociation"
-        ADD CONSTRAINT "FK_StaffEducationOrganizationContactAssociation_Addr_0ef78497dd"
+        ADD CONSTRAINT "FK_StaffEducationOrganizationContactAssociation_Addr_36d80fba34"
         FOREIGN KEY ("AddressLocaleDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25345,14 +25329,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffEducationOrganizationContactAssociation_Addr_6e1882c118'
+        WHERE conname = 'FK_StaffEducationOrganizationContactAssociation_Addr_503a8a8fa9'
         AND conrelid = to_regclass('"edfi"."StaffEducationOrganizationContactAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StaffEducationOrganizationContactAssociation"
-        ADD CONSTRAINT "FK_StaffEducationOrganizationContactAssociation_Addr_6e1882c118"
+        ADD CONSTRAINT "FK_StaffEducationOrganizationContactAssociation_Addr_503a8a8fa9"
         FOREIGN KEY ("AddressStateAbbreviationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25362,14 +25346,31 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffEducationOrganizationContactAssociation_Cont_a74ddc0365'
+        WHERE conname = 'FK_StaffEducationOrganizationContactAssociation_Addr_7039ef0600'
         AND conrelid = to_regclass('"edfi"."StaffEducationOrganizationContactAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StaffEducationOrganizationContactAssociation"
-        ADD CONSTRAINT "FK_StaffEducationOrganizationContactAssociation_Cont_a74ddc0365"
+        ADD CONSTRAINT "FK_StaffEducationOrganizationContactAssociation_Addr_7039ef0600"
+        FOREIGN KEY ("AddressAddressTypeDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StaffEducationOrganizationContactAssociation_Cont_56d2701439'
+        AND conrelid = to_regclass('"edfi"."StaffEducationOrganizationContactAssociation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StaffEducationOrganizationContactAssociation"
+        ADD CONSTRAINT "FK_StaffEducationOrganizationContactAssociation_Cont_56d2701439"
         FOREIGN KEY ("ContactTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25447,14 +25448,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffEducationOrganizationContactAssociationTelep_15a34e3fd1'
+        WHERE conname = 'FK_StaffEducationOrganizationContactAssociationTelep_755c97de43'
         AND conrelid = to_regclass('"edfi"."StaffEducationOrganizationContactAssociationTelephone"')
     )
     THEN
         ALTER TABLE "edfi"."StaffEducationOrganizationContactAssociationTelephone"
-        ADD CONSTRAINT "FK_StaffEducationOrganizationContactAssociationTelep_15a34e3fd1"
+        ADD CONSTRAINT "FK_StaffEducationOrganizationContactAssociationTelep_755c97de43"
         FOREIGN KEY ("TelephoneNumberTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25481,14 +25482,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffEducationOrganizationEmploymentAssociation_C_1f8c0ffee3'
+        WHERE conname = 'FK_StaffEducationOrganizationEmploymentAssociation_C_5fe29380c4'
         AND conrelid = to_regclass('"edfi"."StaffEducationOrganizationEmploymentAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StaffEducationOrganizationEmploymentAssociation"
-        ADD CONSTRAINT "FK_StaffEducationOrganizationEmploymentAssociation_C_1f8c0ffee3"
-        FOREIGN KEY ("Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        ADD CONSTRAINT "FK_StaffEducationOrganizationEmploymentAssociation_C_5fe29380c4"
+        FOREIGN KEY ("Credential_CredentialIdentifier", "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId", "Credential_DocumentId")
+        REFERENCES "edfi"."Credential" ("CredentialIdentifier", "StateOfIssueStateAbbreviationDescriptor_DescriptorId", "DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25498,14 +25499,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffEducationOrganizationEmploymentAssociation_C_5fe29380c4'
+        WHERE conname = 'FK_StaffEducationOrganizationEmploymentAssociation_C_ca8d1e2541'
         AND conrelid = to_regclass('"edfi"."StaffEducationOrganizationEmploymentAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StaffEducationOrganizationEmploymentAssociation"
-        ADD CONSTRAINT "FK_StaffEducationOrganizationEmploymentAssociation_C_5fe29380c4"
-        FOREIGN KEY ("Credential_CredentialIdentifier", "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId", "Credential_DocumentId")
-        REFERENCES "edfi"."Credential" ("CredentialIdentifier", "StateOfIssueStateAbbreviationDescriptor_DescriptorId", "DocumentId")
+        ADD CONSTRAINT "FK_StaffEducationOrganizationEmploymentAssociation_C_ca8d1e2541"
+        FOREIGN KEY ("Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25532,14 +25533,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffEducationOrganizationEmploymentAssociation_E_c0a3f93ccd'
+        WHERE conname = 'FK_StaffEducationOrganizationEmploymentAssociation_E_c02b59d76c'
         AND conrelid = to_regclass('"edfi"."StaffEducationOrganizationEmploymentAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StaffEducationOrganizationEmploymentAssociation"
-        ADD CONSTRAINT "FK_StaffEducationOrganizationEmploymentAssociation_E_c0a3f93ccd"
+        ADD CONSTRAINT "FK_StaffEducationOrganizationEmploymentAssociation_E_c02b59d76c"
         FOREIGN KEY ("EmploymentStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25566,14 +25567,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffEducationOrganizationEmploymentAssociation_S_c4fab91878'
+        WHERE conname = 'FK_StaffEducationOrganizationEmploymentAssociation_S_20514e8c89'
         AND conrelid = to_regclass('"edfi"."StaffEducationOrganizationEmploymentAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StaffEducationOrganizationEmploymentAssociation"
-        ADD CONSTRAINT "FK_StaffEducationOrganizationEmploymentAssociation_S_c4fab91878"
-        FOREIGN KEY ("SeparationReasonDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        ADD CONSTRAINT "FK_StaffEducationOrganizationEmploymentAssociation_S_20514e8c89"
+        FOREIGN KEY ("SeparationDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25583,14 +25584,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffEducationOrganizationEmploymentAssociation_S_cb303df100'
+        WHERE conname = 'FK_StaffEducationOrganizationEmploymentAssociation_S_3c172ddb5e'
         AND conrelid = to_regclass('"edfi"."StaffEducationOrganizationEmploymentAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StaffEducationOrganizationEmploymentAssociation"
-        ADD CONSTRAINT "FK_StaffEducationOrganizationEmploymentAssociation_S_cb303df100"
-        FOREIGN KEY ("SeparationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        ADD CONSTRAINT "FK_StaffEducationOrganizationEmploymentAssociation_S_3c172ddb5e"
+        FOREIGN KEY ("SeparationReasonDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25641,7 +25642,7 @@ BEGIN
         ALTER TABLE "edfi"."StaffLeave"
         ADD CONSTRAINT "FK_StaffLeave_StaffLeaveEventCategoryDescriptor"
         FOREIGN KEY ("StaffLeaveEventCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25692,7 +25693,7 @@ BEGIN
         ALTER TABLE "edfi"."StaffProgramAssociation"
         ADD CONSTRAINT "FK_StaffProgramAssociation_ProgramProgram_ProgramTypeDescriptor"
         FOREIGN KEY ("ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25777,7 +25778,7 @@ BEGIN
         ALTER TABLE "edfi"."StaffSchoolAssociation"
         ADD CONSTRAINT "FK_StaffSchoolAssociation_ProgramAssignmentDescriptor"
         FOREIGN KEY ("ProgramAssignmentDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25838,14 +25839,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StaffSchoolAssociationAcademicSubject_AcademicSub_1514d5cf4e'
+        WHERE conname = 'FK_StaffSchoolAssociationAcademicSubject_AcademicSub_8525cae389'
         AND conrelid = to_regclass('"edfi"."StaffSchoolAssociationAcademicSubject"')
     )
     THEN
         ALTER TABLE "edfi"."StaffSchoolAssociationAcademicSubject"
-        ADD CONSTRAINT "FK_StaffSchoolAssociationAcademicSubject_AcademicSub_1514d5cf4e"
+        ADD CONSTRAINT "FK_StaffSchoolAssociationAcademicSubject_AcademicSub_8525cae389"
         FOREIGN KEY ("AcademicSubjectDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25879,7 +25880,7 @@ BEGIN
         ALTER TABLE "edfi"."StaffSchoolAssociationGradeLevel"
         ADD CONSTRAINT "FK_StaffSchoolAssociationGradeLevel_GradeLevelDescriptor"
         FOREIGN KEY ("GradeLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25913,7 +25914,7 @@ BEGIN
         ALTER TABLE "edfi"."StaffSectionAssociation"
         ADD CONSTRAINT "FK_StaffSectionAssociation_ClassroomPositionDescriptor"
         FOREIGN KEY ("ClassroomPositionDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -25998,7 +25999,7 @@ BEGIN
         ALTER TABLE "edfi"."StateEducationAgency"
         ADD CONSTRAINT "FK_StateEducationAgency_OperationalStatusDescriptor"
         FOREIGN KEY ("OperationalStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26049,7 +26050,7 @@ BEGIN
         ALTER TABLE "edfi"."StateEducationAgencyAddress"
         ADD CONSTRAINT "FK_StateEducationAgencyAddress_AddressTypeDescriptor"
         FOREIGN KEY ("AddressTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26066,7 +26067,7 @@ BEGIN
         ALTER TABLE "edfi"."StateEducationAgencyAddress"
         ADD CONSTRAINT "FK_StateEducationAgencyAddress_LocaleDescriptor"
         FOREIGN KEY ("LocaleDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26083,7 +26084,7 @@ BEGIN
         ALTER TABLE "edfi"."StateEducationAgencyAddress"
         ADD CONSTRAINT "FK_StateEducationAgencyAddress_StateAbbreviationDescriptor"
         FOREIGN KEY ("StateAbbreviationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26110,14 +26111,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StateEducationAgencyCategory_EducationOrganizatio_f6c5f10c5f'
+        WHERE conname = 'FK_StateEducationAgencyCategory_EducationOrganizatio_b529e5e671'
         AND conrelid = to_regclass('"edfi"."StateEducationAgencyCategory"')
     )
     THEN
         ALTER TABLE "edfi"."StateEducationAgencyCategory"
-        ADD CONSTRAINT "FK_StateEducationAgencyCategory_EducationOrganizatio_f6c5f10c5f"
+        ADD CONSTRAINT "FK_StateEducationAgencyCategory_EducationOrganizatio_b529e5e671"
         FOREIGN KEY ("EducationOrganizationCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26161,14 +26162,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StateEducationAgencyIdentificationCode_EducationO_166e9daa2c'
+        WHERE conname = 'FK_StateEducationAgencyIdentificationCode_EducationO_3fd3fd74a2'
         AND conrelid = to_regclass('"edfi"."StateEducationAgencyIdentificationCode"')
     )
     THEN
         ALTER TABLE "edfi"."StateEducationAgencyIdentificationCode"
-        ADD CONSTRAINT "FK_StateEducationAgencyIdentificationCode_EducationO_166e9daa2c"
+        ADD CONSTRAINT "FK_StateEducationAgencyIdentificationCode_EducationO_3fd3fd74a2"
         FOREIGN KEY ("EducationOrganizationIdentificationSystemDescriptor__f63fb21ede")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26202,7 +26203,7 @@ BEGIN
         ALTER TABLE "edfi"."StateEducationAgencyIndicator"
         ADD CONSTRAINT "FK_StateEducationAgencyIndicator_IndicatorDescriptor"
         FOREIGN KEY ("IndicatorDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26219,7 +26220,7 @@ BEGIN
         ALTER TABLE "edfi"."StateEducationAgencyIndicator"
         ADD CONSTRAINT "FK_StateEducationAgencyIndicator_IndicatorGroupDescriptor"
         FOREIGN KEY ("IndicatorGroupDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26236,7 +26237,7 @@ BEGIN
         ALTER TABLE "edfi"."StateEducationAgencyIndicator"
         ADD CONSTRAINT "FK_StateEducationAgencyIndicator_IndicatorLevelDescriptor"
         FOREIGN KEY ("IndicatorLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26263,14 +26264,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StateEducationAgencyInstitutionTelephone_Institut_84a66c4c0e'
+        WHERE conname = 'FK_StateEducationAgencyInstitutionTelephone_Institut_b627f4c0ee'
         AND conrelid = to_regclass('"edfi"."StateEducationAgencyInstitutionTelephone"')
     )
     THEN
         ALTER TABLE "edfi"."StateEducationAgencyInstitutionTelephone"
-        ADD CONSTRAINT "FK_StateEducationAgencyInstitutionTelephone_Institut_84a66c4c0e"
+        ADD CONSTRAINT "FK_StateEducationAgencyInstitutionTelephone_Institut_b627f4c0ee"
         FOREIGN KEY ("InstitutionTelephoneNumberTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26297,14 +26298,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StateEducationAgencyInternationalAddress_AddressT_1d62f6d374'
+        WHERE conname = 'FK_StateEducationAgencyInternationalAddress_AddressT_4c8cb505ca'
         AND conrelid = to_regclass('"edfi"."StateEducationAgencyInternationalAddress"')
     )
     THEN
         ALTER TABLE "edfi"."StateEducationAgencyInternationalAddress"
-        ADD CONSTRAINT "FK_StateEducationAgencyInternationalAddress_AddressT_1d62f6d374"
+        ADD CONSTRAINT "FK_StateEducationAgencyInternationalAddress_AddressT_4c8cb505ca"
         FOREIGN KEY ("AddressTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26321,7 +26322,7 @@ BEGIN
         ALTER TABLE "edfi"."StateEducationAgencyInternationalAddress"
         ADD CONSTRAINT "FK_StateEducationAgencyInternationalAddress_CountryDescriptor"
         FOREIGN KEY ("CountryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26389,7 +26390,7 @@ BEGIN
         ALTER TABLE "edfi"."Student"
         ADD CONSTRAINT "FK_Student_BirthCountryDescriptor"
         FOREIGN KEY ("BirthCountryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26406,7 +26407,7 @@ BEGIN
         ALTER TABLE "edfi"."Student"
         ADD CONSTRAINT "FK_Student_BirthSexDescriptor"
         FOREIGN KEY ("BirthSexDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26423,7 +26424,7 @@ BEGIN
         ALTER TABLE "edfi"."Student"
         ADD CONSTRAINT "FK_Student_BirthStateAbbreviationDescriptor"
         FOREIGN KEY ("BirthStateAbbreviationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26440,7 +26441,7 @@ BEGIN
         ALTER TABLE "edfi"."Student"
         ADD CONSTRAINT "FK_Student_CitizenshipStatusDescriptor"
         FOREIGN KEY ("CitizenshipStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26491,7 +26492,7 @@ BEGIN
         ALTER TABLE "edfi"."Student"
         ADD CONSTRAINT "FK_Student_Person_SourceSystemDescriptor"
         FOREIGN KEY ("Person_SourceSystemDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26501,14 +26502,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentIdentificationDocument_IdentificationDocum_a4a0f14302'
+        WHERE conname = 'FK_StudentIdentificationDocument_IdentificationDocum_fc83f1888d'
         AND conrelid = to_regclass('"edfi"."StudentIdentificationDocument"')
     )
     THEN
         ALTER TABLE "edfi"."StudentIdentificationDocument"
-        ADD CONSTRAINT "FK_StudentIdentificationDocument_IdentificationDocum_a4a0f14302"
+        ADD CONSTRAINT "FK_StudentIdentificationDocument_IdentificationDocum_fc83f1888d"
         FOREIGN KEY ("IdentificationDocumentUseDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26525,7 +26526,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentIdentificationDocument"
         ADD CONSTRAINT "FK_StudentIdentificationDocument_IssuerCountryDescriptor"
         FOREIGN KEY ("IssuerCountryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26535,14 +26536,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentIdentificationDocument_PersonalInformation_e0f925513b'
+        WHERE conname = 'FK_StudentIdentificationDocument_PersonalInformation_7d4ed0b2a9'
         AND conrelid = to_regclass('"edfi"."StudentIdentificationDocument"')
     )
     THEN
         ALTER TABLE "edfi"."StudentIdentificationDocument"
-        ADD CONSTRAINT "FK_StudentIdentificationDocument_PersonalInformation_e0f925513b"
+        ADD CONSTRAINT "FK_StudentIdentificationDocument_PersonalInformation_7d4ed0b2a9"
         FOREIGN KEY ("PersonalInformationVerificationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26576,7 +26577,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentOtherName"
         ADD CONSTRAINT "FK_StudentOtherName_OtherNameTypeDescriptor"
         FOREIGN KEY ("OtherNameTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26603,14 +26604,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentPersonalIdentificationDocument_Identificat_ff71970519'
+        WHERE conname = 'FK_StudentPersonalIdentificationDocument_Identificat_65848590bc'
         AND conrelid = to_regclass('"edfi"."StudentPersonalIdentificationDocument"')
     )
     THEN
         ALTER TABLE "edfi"."StudentPersonalIdentificationDocument"
-        ADD CONSTRAINT "FK_StudentPersonalIdentificationDocument_Identificat_ff71970519"
+        ADD CONSTRAINT "FK_StudentPersonalIdentificationDocument_Identificat_65848590bc"
         FOREIGN KEY ("IdentificationDocumentUseDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26620,14 +26621,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentPersonalIdentificationDocument_IssuerCount_8a44df7bb1'
+        WHERE conname = 'FK_StudentPersonalIdentificationDocument_IssuerCount_59f6476f6f'
         AND conrelid = to_regclass('"edfi"."StudentPersonalIdentificationDocument"')
     )
     THEN
         ALTER TABLE "edfi"."StudentPersonalIdentificationDocument"
-        ADD CONSTRAINT "FK_StudentPersonalIdentificationDocument_IssuerCount_8a44df7bb1"
+        ADD CONSTRAINT "FK_StudentPersonalIdentificationDocument_IssuerCount_59f6476f6f"
         FOREIGN KEY ("IssuerCountryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26637,14 +26638,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentPersonalIdentificationDocument_PersonalInf_f6d466d57c'
+        WHERE conname = 'FK_StudentPersonalIdentificationDocument_PersonalInf_feda9d121f'
         AND conrelid = to_regclass('"edfi"."StudentPersonalIdentificationDocument"')
     )
     THEN
         ALTER TABLE "edfi"."StudentPersonalIdentificationDocument"
-        ADD CONSTRAINT "FK_StudentPersonalIdentificationDocument_PersonalInf_f6d466d57c"
+        ADD CONSTRAINT "FK_StudentPersonalIdentificationDocument_PersonalInf_feda9d121f"
         FOREIGN KEY ("PersonalInformationVerificationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26695,7 +26696,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentVisa"
         ADD CONSTRAINT "FK_StudentVisa_VisaDescriptor"
         FOREIGN KEY ("VisaDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26705,14 +26706,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAcademicRecord_CumulativeAttemptedCreditTy_1fcb57514b'
+        WHERE conname = 'FK_StudentAcademicRecord_CumulativeAttemptedCreditTy_f3d6bac5d3'
         AND conrelid = to_regclass('"edfi"."StudentAcademicRecord"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAcademicRecord"
-        ADD CONSTRAINT "FK_StudentAcademicRecord_CumulativeAttemptedCreditTy_1fcb57514b"
+        ADD CONSTRAINT "FK_StudentAcademicRecord_CumulativeAttemptedCreditTy_f3d6bac5d3"
         FOREIGN KEY ("CumulativeAttemptedCreditTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26729,7 +26730,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentAcademicRecord"
         ADD CONSTRAINT "FK_StudentAcademicRecord_CumulativeEarnedCreditTypeDescriptor"
         FOREIGN KEY ("CumulativeEarnedCreditTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26797,7 +26798,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentAcademicRecord"
         ADD CONSTRAINT "FK_StudentAcademicRecord_SessionAttemptedCreditTypeDescriptor"
         FOREIGN KEY ("SessionAttemptedCreditTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26814,7 +26815,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentAcademicRecord"
         ADD CONSTRAINT "FK_StudentAcademicRecord_SessionEarnedCreditTypeDescriptor"
         FOREIGN KEY ("SessionEarnedCreditTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26848,7 +26849,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentAcademicRecord"
         ADD CONSTRAINT "FK_StudentAcademicRecord_TermDescriptor"
         FOREIGN KEY ("TermDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26858,14 +26859,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAcademicRecordAcademicHonor_AcademicHonorC_69b992b298'
+        WHERE conname = 'FK_StudentAcademicRecordAcademicHonor_AcademicHonorC_e45d1316c2'
         AND conrelid = to_regclass('"edfi"."StudentAcademicRecordAcademicHonor"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAcademicRecordAcademicHonor"
-        ADD CONSTRAINT "FK_StudentAcademicRecordAcademicHonor_AcademicHonorC_69b992b298"
+        ADD CONSTRAINT "FK_StudentAcademicRecordAcademicHonor_AcademicHonorC_e45d1316c2"
         FOREIGN KEY ("AcademicHonorCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26875,14 +26876,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAcademicRecordAcademicHonor_AchievementCat_4921a4a06c'
+        WHERE conname = 'FK_StudentAcademicRecordAcademicHonor_AchievementCat_182abba945'
         AND conrelid = to_regclass('"edfi"."StudentAcademicRecordAcademicHonor"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAcademicRecordAcademicHonor"
-        ADD CONSTRAINT "FK_StudentAcademicRecordAcademicHonor_AchievementCat_4921a4a06c"
+        ADD CONSTRAINT "FK_StudentAcademicRecordAcademicHonor_AchievementCat_182abba945"
         FOREIGN KEY ("AchievementCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26916,7 +26917,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentAcademicRecordDiploma"
         ADD CONSTRAINT "FK_StudentAcademicRecordDiploma_AchievementCategoryDescriptor"
         FOREIGN KEY ("AchievementCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26933,7 +26934,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentAcademicRecordDiploma"
         ADD CONSTRAINT "FK_StudentAcademicRecordDiploma_DiplomaLevelDescriptor"
         FOREIGN KEY ("DiplomaLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26950,7 +26951,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentAcademicRecordDiploma"
         ADD CONSTRAINT "FK_StudentAcademicRecordDiploma_DiplomaTypeDescriptor"
         FOREIGN KEY ("DiplomaTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -26977,14 +26978,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAcademicRecordGradePointAverage_GradePoint_22087de4d5'
+        WHERE conname = 'FK_StudentAcademicRecordGradePointAverage_GradePoint_4041161d8e'
         AND conrelid = to_regclass('"edfi"."StudentAcademicRecordGradePointAverage"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAcademicRecordGradePointAverage"
-        ADD CONSTRAINT "FK_StudentAcademicRecordGradePointAverage_GradePoint_22087de4d5"
+        ADD CONSTRAINT "FK_StudentAcademicRecordGradePointAverage_GradePoint_4041161d8e"
         FOREIGN KEY ("GradePointAverageTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27011,14 +27012,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAcademicRecordRecognition_AchievementCateg_e50447ff63'
+        WHERE conname = 'FK_StudentAcademicRecordRecognition_AchievementCateg_99f2cec13e'
         AND conrelid = to_regclass('"edfi"."StudentAcademicRecordRecognition"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAcademicRecordRecognition"
-        ADD CONSTRAINT "FK_StudentAcademicRecordRecognition_AchievementCateg_e50447ff63"
+        ADD CONSTRAINT "FK_StudentAcademicRecordRecognition_AchievementCateg_99f2cec13e"
         FOREIGN KEY ("AchievementCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27035,7 +27036,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentAcademicRecordRecognition"
         ADD CONSTRAINT "FK_StudentAcademicRecordRecognition_RecognitionTypeDescriptor"
         FOREIGN KEY ("RecognitionTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27062,14 +27063,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAcademicRecordReportCard_ReportCard_Gradin_2161e893cb'
+        WHERE conname = 'FK_StudentAcademicRecordReportCard_ReportCard_Gradin_16f643e549'
         AND conrelid = to_regclass('"edfi"."StudentAcademicRecordReportCard"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAcademicRecordReportCard"
-        ADD CONSTRAINT "FK_StudentAcademicRecordReportCard_ReportCard_Gradin_2161e893cb"
+        ADD CONSTRAINT "FK_StudentAcademicRecordReportCard_ReportCard_Gradin_16f643e549"
         FOREIGN KEY ("ReportCard_GradingPeriodDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27120,7 +27121,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentAssessment"
         ADD CONSTRAINT "FK_StudentAssessment_AdministrationEnvironmentDescriptor"
         FOREIGN KEY ("AdministrationEnvironmentDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27137,7 +27138,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentAssessment"
         ADD CONSTRAINT "FK_StudentAssessment_AdministrationLanguageDescriptor"
         FOREIGN KEY ("AdministrationLanguageDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27188,7 +27189,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentAssessment"
         ADD CONSTRAINT "FK_StudentAssessment_EventCircumstanceDescriptor"
         FOREIGN KEY ("EventCircumstanceDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27205,7 +27206,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentAssessment"
         ADD CONSTRAINT "FK_StudentAssessment_PeriodAssessmentPeriodDescriptor"
         FOREIGN KEY ("PeriodAssessmentPeriodDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27222,7 +27223,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentAssessment"
         ADD CONSTRAINT "FK_StudentAssessment_PlatformTypeDescriptor"
         FOREIGN KEY ("PlatformTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27239,7 +27240,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentAssessment"
         ADD CONSTRAINT "FK_StudentAssessment_ReasonNotTestedDescriptor"
         FOREIGN KEY ("ReasonNotTestedDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27273,7 +27274,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentAssessment"
         ADD CONSTRAINT "FK_StudentAssessment_RetestIndicatorDescriptor"
         FOREIGN KEY ("RetestIndicatorDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27324,7 +27325,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentAssessment"
         ADD CONSTRAINT "FK_StudentAssessment_WhenAssessedGradeLevelDescriptor"
         FOREIGN KEY ("WhenAssessedGradeLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27341,7 +27342,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentAssessmentAccommodation"
         ADD CONSTRAINT "FK_StudentAssessmentAccommodation_AccommodationDescriptor"
         FOREIGN KEY ("AccommodationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27375,7 +27376,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentAssessmentItem"
         ADD CONSTRAINT "FK_StudentAssessmentItem_AssessmentItemResultDescriptor"
         FOREIGN KEY ("AssessmentItemResultDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27392,7 +27393,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentAssessmentItem"
         ADD CONSTRAINT "FK_StudentAssessmentItem_ResponseIndicatorDescriptor"
         FOREIGN KEY ("ResponseIndicatorDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27436,14 +27437,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentPerformanceLevel_AssessmentRepor_b9c4f7392c'
+        WHERE conname = 'FK_StudentAssessmentPerformanceLevel_AssessmentRepor_6d0417ea9a'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentPerformanceLevel"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentPerformanceLevel"
-        ADD CONSTRAINT "FK_StudentAssessmentPerformanceLevel_AssessmentRepor_b9c4f7392c"
+        ADD CONSTRAINT "FK_StudentAssessmentPerformanceLevel_AssessmentRepor_6d0417ea9a"
         FOREIGN KEY ("AssessmentReportingMethodDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27460,7 +27461,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentAssessmentPerformanceLevel"
         ADD CONSTRAINT "FK_StudentAssessmentPerformanceLevel_PerformanceLevelDescriptor"
         FOREIGN KEY ("PerformanceLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27487,14 +27488,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentScoreResult_AssessmentReportingM_42d7706710'
+        WHERE conname = 'FK_StudentAssessmentScoreResult_AssessmentReportingM_e7b8a42379'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentScoreResult"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentScoreResult"
-        ADD CONSTRAINT "FK_StudentAssessmentScoreResult_AssessmentReportingM_42d7706710"
+        ADD CONSTRAINT "FK_StudentAssessmentScoreResult_AssessmentReportingM_e7b8a42379"
         FOREIGN KEY ("AssessmentReportingMethodDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27511,7 +27512,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentAssessmentScoreResult"
         ADD CONSTRAINT "FK_StudentAssessmentScoreResult_ResultDatatypeTypeDescriptor"
         FOREIGN KEY ("ResultDatatypeTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27572,6 +27573,23 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentAssessmentStudentObjectiveAssessmentPerfor_2ba91bcf8b'
+        AND conrelid = to_regclass('"edfi"."StudentAssessmentStudentObjectiveAssessmentPerformanceLevel"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentAssessmentStudentObjectiveAssessmentPerformanceLevel"
+        ADD CONSTRAINT "FK_StudentAssessmentStudentObjectiveAssessmentPerfor_2ba91bcf8b"
+        FOREIGN KEY ("AssessmentReportingMethodDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentAssessmentStudentObjectiveAssessmentPerfor_3ccc22f916'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentStudentObjectiveAssessmentPerformanceLevel"')
     )
@@ -27589,14 +27607,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentStudentObjectiveAssessmentPerfor_b4fc68546e'
+        WHERE conname = 'FK_StudentAssessmentStudentObjectiveAssessmentPerfor_933e7495fa'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentStudentObjectiveAssessmentPerformanceLevel"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentStudentObjectiveAssessmentPerformanceLevel"
-        ADD CONSTRAINT "FK_StudentAssessmentStudentObjectiveAssessmentPerfor_b4fc68546e"
+        ADD CONSTRAINT "FK_StudentAssessmentStudentObjectiveAssessmentPerfor_933e7495fa"
         FOREIGN KEY ("PerformanceLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27606,31 +27624,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentStudentObjectiveAssessmentPerfor_d179394c1a'
-        AND conrelid = to_regclass('"edfi"."StudentAssessmentStudentObjectiveAssessmentPerformanceLevel"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentAssessmentStudentObjectiveAssessmentPerformanceLevel"
-        ADD CONSTRAINT "FK_StudentAssessmentStudentObjectiveAssessmentPerfor_d179394c1a"
-        FOREIGN KEY ("AssessmentReportingMethodDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentStudentObjectiveAssessmentScoreR_17132e691e'
+        WHERE conname = 'FK_StudentAssessmentStudentObjectiveAssessmentScoreR_a23c0e9da5'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentStudentObjectiveAssessmentScoreResult"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentStudentObjectiveAssessmentScoreResult"
-        ADD CONSTRAINT "FK_StudentAssessmentStudentObjectiveAssessmentScoreR_17132e691e"
+        ADD CONSTRAINT "FK_StudentAssessmentStudentObjectiveAssessmentScoreR_a23c0e9da5"
         FOREIGN KEY ("AssessmentReportingMethodDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27657,14 +27658,31 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentStudentObjectiveAssessmentScoreR_d97e7bb4cb'
+        WHERE conname = 'FK_StudentAssessmentStudentObjectiveAssessmentScoreR_f75478c6d4'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentStudentObjectiveAssessmentScoreResult"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentStudentObjectiveAssessmentScoreResult"
-        ADD CONSTRAINT "FK_StudentAssessmentStudentObjectiveAssessmentScoreR_d97e7bb4cb"
+        ADD CONSTRAINT "FK_StudentAssessmentStudentObjectiveAssessmentScoreR_f75478c6d4"
         FOREIGN KEY ("ResultDatatypeTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentAssessmentEducationOrganizationAssociation_06068f0e58'
+        AND conrelid = to_regclass('"edfi"."StudentAssessmentEducationOrganizationAssociation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentAssessmentEducationOrganizationAssociation"
+        ADD CONSTRAINT "FK_StudentAssessmentEducationOrganizationAssociation_06068f0e58"
+        FOREIGN KEY ("EducationOrganizationAssociationTypeDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27742,23 +27760,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentEducationOrganizationAssociation_f4e190eb0b'
-        AND conrelid = to_regclass('"edfi"."StudentAssessmentEducationOrganizationAssociation"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentAssessmentEducationOrganizationAssociation"
-        ADD CONSTRAINT "FK_StudentAssessmentEducationOrganizationAssociation_f4e190eb0b"
-        FOREIGN KEY ("EducationOrganizationAssociationTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentAssessmentRegistration_AssessmentAdministr_c2d449e41f'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentRegistration"')
     )
@@ -27783,7 +27784,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentAssessmentRegistration"
         ADD CONSTRAINT "FK_StudentAssessmentRegistration_AssessmentGradeLevelDescriptor"
         FOREIGN KEY ("AssessmentGradeLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27817,7 +27818,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentAssessmentRegistration"
         ADD CONSTRAINT "FK_StudentAssessmentRegistration_PlatformTypeDescriptor"
         FOREIGN KEY ("PlatformTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -27929,14 +27930,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentRegistrationAssessmentAccommodat_d1ac0c0fc8'
+        WHERE conname = 'FK_StudentAssessmentRegistrationAssessmentAccommodat_a265284489'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentRegistrationAssessmentAccommodation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentRegistrationAssessmentAccommodation"
-        ADD CONSTRAINT "FK_StudentAssessmentRegistrationAssessmentAccommodat_d1ac0c0fc8"
+        ADD CONSTRAINT "FK_StudentAssessmentRegistrationAssessmentAccommodat_a265284489"
         FOREIGN KEY ("AccommodationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -28014,14 +28015,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentRegistrationBatteryPartAssociati_eb1aa0e0f6'
+        WHERE conname = 'FK_StudentAssessmentRegistrationBatteryPartAssociati_2091992e71'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentRegistrationBatteryPartAssociationA_c87694eb5a"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentRegistrationBatteryPartAssociationA_c87694eb5a"
-        ADD CONSTRAINT "FK_StudentAssessmentRegistrationBatteryPartAssociati_eb1aa0e0f6"
+        ADD CONSTRAINT "FK_StudentAssessmentRegistrationBatteryPartAssociati_2091992e71"
         FOREIGN KEY ("AccommodationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -28082,14 +28083,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentCTEProgramAssociation_ProgramProgram_Progr_312c30b76c'
+        WHERE conname = 'FK_StudentCTEProgramAssociation_ProgramProgram_Progr_f091b6bd9a'
         AND conrelid = to_regclass('"edfi"."StudentCTEProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentCTEProgramAssociation"
-        ADD CONSTRAINT "FK_StudentCTEProgramAssociation_ProgramProgram_Progr_312c30b76c"
+        ADD CONSTRAINT "FK_StudentCTEProgramAssociation_ProgramProgram_Progr_f091b6bd9a"
         FOREIGN KEY ("ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -28123,7 +28124,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentCTEProgramAssociation"
         ADD CONSTRAINT "FK_StudentCTEProgramAssociation_ReasonExitedDescriptor"
         FOREIGN KEY ("ReasonExitedDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -28150,14 +28151,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentCTEProgramAssociation_TechnicalSkillsAsses_8c4684d3df'
+        WHERE conname = 'FK_StudentCTEProgramAssociation_TechnicalSkillsAsses_013dd2fa6a'
         AND conrelid = to_regclass('"edfi"."StudentCTEProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentCTEProgramAssociation"
-        ADD CONSTRAINT "FK_StudentCTEProgramAssociation_TechnicalSkillsAsses_8c4684d3df"
+        ADD CONSTRAINT "FK_StudentCTEProgramAssociation_TechnicalSkillsAsses_013dd2fa6a"
         FOREIGN KEY ("TechnicalSkillsAssessmentDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -28167,14 +28168,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentCTEProgramAssociationCteProgramService_Cte_0189c104c4'
+        WHERE conname = 'FK_StudentCTEProgramAssociationCteProgramService_Cte_c0fb569a95'
         AND conrelid = to_regclass('"edfi"."StudentCTEProgramAssociationCteProgramService"')
     )
     THEN
         ALTER TABLE "edfi"."StudentCTEProgramAssociationCteProgramService"
-        ADD CONSTRAINT "FK_StudentCTEProgramAssociationCteProgramService_Cte_0189c104c4"
+        ADD CONSTRAINT "FK_StudentCTEProgramAssociationCteProgramService_Cte_c0fb569a95"
         FOREIGN KEY ("CteProgramServiceDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -28201,14 +28202,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentCTEProgramAssociationProgramParticipationS_73e85090e2'
+        WHERE conname = 'FK_StudentCTEProgramAssociationProgramParticipationS_391013f972'
         AND conrelid = to_regclass('"edfi"."StudentCTEProgramAssociationProgramParticipationStatus"')
     )
     THEN
         ALTER TABLE "edfi"."StudentCTEProgramAssociationProgramParticipationStatus"
-        ADD CONSTRAINT "FK_StudentCTEProgramAssociationProgramParticipationS_73e85090e2"
+        ADD CONSTRAINT "FK_StudentCTEProgramAssociationProgramParticipationS_391013f972"
         FOREIGN KEY ("ParticipationStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -28327,7 +28328,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentCompetencyObjective"
         ADD CONSTRAINT "FK_StudentCompetencyObjective_CompetencyLevelDescriptor"
         FOREIGN KEY ("CompetencyLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -28354,14 +28355,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentCompetencyObjective_GradingPeriodGradingPe_7c46515c01'
+        WHERE conname = 'FK_StudentCompetencyObjective_GradingPeriodGradingPe_79e1b264dd'
         AND conrelid = to_regclass('"edfi"."StudentCompetencyObjective"')
     )
     THEN
         ALTER TABLE "edfi"."StudentCompetencyObjective"
-        ADD CONSTRAINT "FK_StudentCompetencyObjective_GradingPeriodGradingPe_7c46515c01"
+        ADD CONSTRAINT "FK_StudentCompetencyObjective_GradingPeriodGradingPe_79e1b264dd"
         FOREIGN KEY ("GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -28405,14 +28406,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentCompetencyObjective_ObjectiveCompetencyObj_44364e5355'
+        WHERE conname = 'FK_StudentCompetencyObjective_ObjectiveCompetencyObj_6e3b3277cc'
         AND conrelid = to_regclass('"edfi"."StudentCompetencyObjective"')
     )
     THEN
         ALTER TABLE "edfi"."StudentCompetencyObjective"
-        ADD CONSTRAINT "FK_StudentCompetencyObjective_ObjectiveCompetencyObj_44364e5355"
+        ADD CONSTRAINT "FK_StudentCompetencyObjective_ObjectiveCompetencyObj_6e3b3277cc"
         FOREIGN KEY ("ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -28439,23 +28440,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentCompetencyObjectiveGeneralStudentProgramAs_3ad4c8bec3'
-        AND conrelid = to_regclass('"edfi"."StudentCompetencyObjectiveGeneralStudentProgramAssociation"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentCompetencyObjectiveGeneralStudentProgramAssociation"
-        ADD CONSTRAINT "FK_StudentCompetencyObjectiveGeneralStudentProgramAs_3ad4c8bec3"
-        FOREIGN KEY ("StudentCompetencyObjectiveSectionOrProgramChoiceGene_7c5bfc584c")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentCompetencyObjectiveGeneralStudentProgramAs_7cda3492ef'
         AND conrelid = to_regclass('"edfi"."StudentCompetencyObjectiveGeneralStudentProgramAssociation"')
     )
@@ -28465,6 +28449,23 @@ BEGIN
         FOREIGN KEY ("StudentCompetencyObjective_DocumentId")
         REFERENCES "edfi"."StudentCompetencyObjective" ("DocumentId")
         ON DELETE CASCADE
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentCompetencyObjectiveGeneralStudentProgramAs_b30e6bf1cb'
+        AND conrelid = to_regclass('"edfi"."StudentCompetencyObjectiveGeneralStudentProgramAssociation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentCompetencyObjectiveGeneralStudentProgramAssociation"
+        ADD CONSTRAINT "FK_StudentCompetencyObjectiveGeneralStudentProgramAs_b30e6bf1cb"
+        FOREIGN KEY ("StudentCompetencyObjectiveSectionOrProgramChoiceGene_7c5bfc584c")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
 END $$;
@@ -28565,7 +28566,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentContactAssociation"
         ADD CONSTRAINT "FK_StudentContactAssociation_RelationDescriptor"
         FOREIGN KEY ("RelationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -28592,14 +28593,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentDisciplineIncidentBehaviorAssociation_Beha_9c4e19758e'
+        WHERE conname = 'FK_StudentDisciplineIncidentBehaviorAssociation_Beha_bab8c5a8d5'
         AND conrelid = to_regclass('"edfi"."StudentDisciplineIncidentBehaviorAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentDisciplineIncidentBehaviorAssociation"
-        ADD CONSTRAINT "FK_StudentDisciplineIncidentBehaviorAssociation_Beha_9c4e19758e"
+        ADD CONSTRAINT "FK_StudentDisciplineIncidentBehaviorAssociation_Beha_bab8c5a8d5"
         FOREIGN KEY ("BehaviorDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -28660,14 +28661,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentDisciplineIncidentBehaviorAssociationDisci_7521a56f2b'
+        WHERE conname = 'FK_StudentDisciplineIncidentBehaviorAssociationDisci_c63bce6803'
         AND conrelid = to_regclass('"edfi"."StudentDisciplineIncidentBehaviorAssociationDiscipli_ae6a215eae"')
     )
     THEN
         ALTER TABLE "edfi"."StudentDisciplineIncidentBehaviorAssociationDiscipli_ae6a215eae"
-        ADD CONSTRAINT "FK_StudentDisciplineIncidentBehaviorAssociationDisci_7521a56f2b"
+        ADD CONSTRAINT "FK_StudentDisciplineIncidentBehaviorAssociationDisci_c63bce6803"
         FOREIGN KEY ("DisciplineIncidentParticipationCodeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -28694,6 +28695,23 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentDisciplineIncidentBehaviorAssociationWeapo_4073047ba2'
+        AND conrelid = to_regclass('"edfi"."StudentDisciplineIncidentBehaviorAssociationWeapon"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentDisciplineIncidentBehaviorAssociationWeapon"
+        ADD CONSTRAINT "FK_StudentDisciplineIncidentBehaviorAssociationWeapo_4073047ba2"
+        FOREIGN KEY ("WeaponDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentDisciplineIncidentBehaviorAssociationWeapo_906abeb29f'
         AND conrelid = to_regclass('"edfi"."StudentDisciplineIncidentBehaviorAssociationWeapon"')
     )
@@ -28703,23 +28721,6 @@ BEGIN
         FOREIGN KEY ("StudentDisciplineIncidentBehaviorAssociation_DocumentId")
         REFERENCES "edfi"."StudentDisciplineIncidentBehaviorAssociation" ("DocumentId")
         ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentDisciplineIncidentBehaviorAssociationWeapo_e74e98cbd6'
-        AND conrelid = to_regclass('"edfi"."StudentDisciplineIncidentBehaviorAssociationWeapon"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentDisciplineIncidentBehaviorAssociationWeapon"
-        ADD CONSTRAINT "FK_StudentDisciplineIncidentBehaviorAssociationWeapo_e74e98cbd6"
-        FOREIGN KEY ("WeaponDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
 END $$;
@@ -28779,6 +28780,23 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentDisciplineIncidentNonOffenderAssociationDi_1d9c5ece8c'
+        AND conrelid = to_regclass('"edfi"."StudentDisciplineIncidentNonOffenderAssociationDisci_4c979a9f6d"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentDisciplineIncidentNonOffenderAssociationDisci_4c979a9f6d"
+        ADD CONSTRAINT "FK_StudentDisciplineIncidentNonOffenderAssociationDi_1d9c5ece8c"
+        FOREIGN KEY ("DisciplineIncidentParticipationCodeDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentDisciplineIncidentNonOffenderAssociationDi_26601efedb'
         AND conrelid = to_regclass('"edfi"."StudentDisciplineIncidentNonOffenderAssociationDisci_4c979a9f6d"')
     )
@@ -28788,23 +28806,6 @@ BEGIN
         FOREIGN KEY ("StudentDisciplineIncidentNonOffenderAssociation_DocumentId")
         REFERENCES "edfi"."StudentDisciplineIncidentNonOffenderAssociation" ("DocumentId")
         ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentDisciplineIncidentNonOffenderAssociationDi_a85f2750fb'
-        AND conrelid = to_regclass('"edfi"."StudentDisciplineIncidentNonOffenderAssociationDisci_4c979a9f6d"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentDisciplineIncidentNonOffenderAssociationDisci_4c979a9f6d"
-        ADD CONSTRAINT "FK_StudentDisciplineIncidentNonOffenderAssociationDi_a85f2750fb"
-        FOREIGN KEY ("DisciplineIncidentParticipationCodeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
 END $$;
@@ -28881,14 +28882,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssessmentAccommodati_a914912792'
+        WHERE conname = 'FK_StudentEducationOrganizationAssessmentAccommodati_9126f2d768'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssessmentAccommodationG_d1d10af462"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssessmentAccommodationG_d1d10af462"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssessmentAccommodati_a914912792"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssessmentAccommodati_9126f2d768"
         FOREIGN KEY ("AccommodationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -28898,14 +28899,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociation_BarrierTo_06e7abda5b'
+        WHERE conname = 'FK_StudentEducationOrganizationAssociation_BarrierTo_490040accb'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociation"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociation_BarrierTo_06e7abda5b"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociation_BarrierTo_490040accb"
         FOREIGN KEY ("BarrierToInternetAccessInResidenceDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -28949,14 +28950,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociation_InternetA_2505c6c461'
+        WHERE conname = 'FK_StudentEducationOrganizationAssociation_InternetA_aff72d6b9e'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociation"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociation_InternetA_2505c6c461"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociation_InternetA_aff72d6b9e"
         FOREIGN KEY ("InternetAccessTypeInResidenceDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -28966,14 +28967,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociation_InternetP_3c5453abe5'
+        WHERE conname = 'FK_StudentEducationOrganizationAssociation_InternetP_f0c568d656'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociation"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociation_InternetP_3c5453abe5"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociation_InternetP_f0c568d656"
         FOREIGN KEY ("InternetPerformanceInResidenceDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -28983,14 +28984,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociation_LimitedEn_32c52f7585'
+        WHERE conname = 'FK_StudentEducationOrganizationAssociation_LimitedEn_ec3341f34e'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociation"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociation_LimitedEn_32c52f7585"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociation_LimitedEn_ec3341f34e"
         FOREIGN KEY ("LimitedEnglishProficiencyDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29000,48 +29001,48 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociation_PrimaryLe_2ece3b9ff1'
+        WHERE conname = 'FK_StudentEducationOrganizationAssociation_PrimaryLe_080c3823c8'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociation"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociation_PrimaryLe_2ece3b9ff1"
-        FOREIGN KEY ("PrimaryLearningDeviceProviderDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociation_PrimaryLe_99e69bcbf2'
-        AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociation"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentEducationOrganizationAssociation"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociation_PrimaryLe_99e69bcbf2"
-        FOREIGN KEY ("PrimaryLearningDeviceAwayFromSchoolDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociation_PrimaryLe_af6a450d89'
-        AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociation"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentEducationOrganizationAssociation"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociation_PrimaryLe_af6a450d89"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociation_PrimaryLe_080c3823c8"
         FOREIGN KEY ("PrimaryLearningDeviceAccessDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentEducationOrganizationAssociation_PrimaryLe_ca24cd299c'
+        AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentEducationOrganizationAssociation"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociation_PrimaryLe_ca24cd299c"
+        FOREIGN KEY ("PrimaryLearningDeviceProviderDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentEducationOrganizationAssociation_PrimaryLe_f02915c561'
+        AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentEducationOrganizationAssociation"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociation_PrimaryLe_f02915c561"
+        FOREIGN KEY ("PrimaryLearningDeviceAwayFromSchoolDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29058,7 +29059,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociation"
         ADD CONSTRAINT "FK_StudentEducationOrganizationAssociation_SexDescriptor"
         FOREIGN KEY ("SexDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29085,14 +29086,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociation_Supporter_8eb9b545a9'
+        WHERE conname = 'FK_StudentEducationOrganizationAssociation_Supporter_c50bdc3eae'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociation"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociation_Supporter_8eb9b545a9"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociation_Supporter_c50bdc3eae"
         FOREIGN KEY ("SupporterMilitaryConnectionDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29102,14 +29103,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationAddress_Ad_90eeefdf2b'
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationAddress_Ad_3a225f37fe'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationAddress"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociationAddress"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationAddress_Ad_90eeefdf2b"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationAddress_Ad_3a225f37fe"
         FOREIGN KEY ("AddressTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29119,14 +29120,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationAddress_Lo_277e5a020a'
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationAddress_Lo_d4710dbe95'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationAddress"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociationAddress"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationAddress_Lo_277e5a020a"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationAddress_Lo_d4710dbe95"
         FOREIGN KEY ("LocaleDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29136,14 +29137,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationAddress_St_0fc852e3d8'
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationAddress_St_e7acc19b19'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationAddress"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociationAddress"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationAddress_St_0fc852e3d8"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationAddress_St_e7acc19b19"
         FOREIGN KEY ("StateAbbreviationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29187,14 +29188,31 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationAncestryEt_ceea8fef1b'
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationAncestryEt_6127a13f2c'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationAncestryEthnicOrigin"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociationAncestryEthnicOrigin"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationAncestryEt_ceea8fef1b"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationAncestryEt_6127a13f2c"
         FOREIGN KEY ("AncestryEthnicOriginDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationCohortYear_2483938173'
+        AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationCohortYear"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentEducationOrganizationAssociationCohortYear"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationCohortYear_2483938173"
+        FOREIGN KEY ("TermDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29221,31 +29239,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationCohortYear_60cf457c61'
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationCohortYear_630edf4931'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationCohortYear"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociationCohortYear"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationCohortYear_60cf457c61"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationCohortYear_630edf4931"
         FOREIGN KEY ("CohortYearTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationCohortYear_97bd697e7c'
-        AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationCohortYear"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentEducationOrganizationAssociationCohortYear"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationCohortYear_97bd697e7c"
-        FOREIGN KEY ("TermDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29289,14 +29290,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationDisability_5cd85729bf'
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationDisability_db3b3d6a0c'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationDisability"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociationDisability"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationDisability_5cd85729bf"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationDisability_db3b3d6a0c"
         FOREIGN KEY ("DisabilityDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29306,14 +29307,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationDisability_c7bb771180'
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationDisability_edbfac972e'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationDisability"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociationDisability"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationDisability_c7bb771180"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationDisability_edbfac972e"
         FOREIGN KEY ("DisabilityDeterminationSourceTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29340,14 +29341,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationDisplacedS_80ca6c1fa7'
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationDisplacedS_bc5817a442'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationDisplacedStudent"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociationDisplacedStudent"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationDisplacedS_80ca6c1fa7"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationDisplacedS_bc5817a442"
         FOREIGN KEY ("DisplacedStudentStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29374,23 +29375,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationElectronic_18f3c5c967'
-        AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationElectronicMail"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentEducationOrganizationAssociationElectronicMail"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationElectronic_18f3c5c967"
-        FOREIGN KEY ("ElectronicMailTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentEducationOrganizationAssociationElectronic_2599a8e26a'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationElectronicMail"')
     )
@@ -29408,14 +29392,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationInternatio_3265462e09'
-        AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationInternationalAddress"')
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationElectronic_45bbdac627'
+        AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationElectronicMail"')
     )
     THEN
-        ALTER TABLE "edfi"."StudentEducationOrganizationAssociationInternationalAddress"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationInternatio_3265462e09"
-        FOREIGN KEY ("AddressTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        ALTER TABLE "edfi"."StudentEducationOrganizationAssociationElectronicMail"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationElectronic_45bbdac627"
+        FOREIGN KEY ("ElectronicMailTypeDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29425,14 +29409,31 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationInternatio_3276f53009'
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationInternatio_664fc0a7ca'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationInternationalAddress"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociationInternationalAddress"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationInternatio_3276f53009"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationInternatio_664fc0a7ca"
+        FOREIGN KEY ("AddressTypeDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationInternatio_aace8d002b'
+        AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationInternationalAddress"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentEducationOrganizationAssociationInternationalAddress"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationInternatio_aace8d002b"
         FOREIGN KEY ("CountryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29459,14 +29460,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationLanguage_L_ba256d4b37'
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationLanguage_L_13a4ee20cb'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationLanguage"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociationLanguage"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationLanguage_L_ba256d4b37"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationLanguage_L_13a4ee20cb"
         FOREIGN KEY ("LanguageDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29500,7 +29501,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociationRace"
         ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationRace_RaceDescriptor"
         FOREIGN KEY ("RaceDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29527,14 +29528,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationStudentCha_540e2ef210'
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationStudentCha_d2526e7f30'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationStudentCharacteristic"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociationStudentCharacteristic"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationStudentCha_540e2ef210"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationStudentCha_d2526e7f30"
         FOREIGN KEY ("StudentCharacteristicDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29578,14 +29579,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationStudentIde_df6c867477'
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationStudentIde_e39e2f430d'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationStudentIdenti_c15030660d"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociationStudentIdenti_c15030660d"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationStudentIde_df6c867477"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationStudentIde_e39e2f430d"
         FOREIGN KEY ("StudentIdentificationSystemDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29612,14 +29613,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationTelephone__9433e82d45'
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationTelephone__53d638a56f'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationTelephone"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociationTelephone"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationTelephone__9433e82d45"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationTelephone__53d638a56f"
         FOREIGN KEY ("TelephoneNumberTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29663,14 +29664,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationTribalAffi_31eefd5fbc'
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationTribalAffi_808e329ac4'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationTribalAffiliation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociationTribalAffiliation"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationTribalAffi_31eefd5fbc"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationTribalAffi_808e329ac4"
         FOREIGN KEY ("TribalAffiliationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29697,23 +29698,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationDisability_303ad4acdd'
-        AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationDisabilityDesignation"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentEducationOrganizationAssociationDisabilityDesignation"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationDisability_303ad4acdd"
-        FOREIGN KEY ("DisabilityDesignationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentEducationOrganizationAssociationDisability_544699a9b3'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationDisabilityDesignation"')
     )
@@ -29731,14 +29715,31 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationLanguageUs_93de602f72'
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationDisability_6b2f12df57'
+        AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationDisabilityDesignation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentEducationOrganizationAssociationDisabilityDesignation"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationDisability_6b2f12df57"
+        FOREIGN KEY ("DisabilityDesignationDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationLanguageUs_36c137a7d6'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationLanguageUs"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociationLanguageUs"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationLanguageUs_93de602f72"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationLanguageUs_36c137a7d6"
         FOREIGN KEY ("LanguageUseDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29799,14 +29800,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationResponsibilityAssocia_7da953a3d2'
+        WHERE conname = 'FK_StudentEducationOrganizationResponsibilityAssocia_084a67bc61'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationResponsibilityAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationResponsibilityAssociation"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationResponsibilityAssocia_7da953a3d2"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationResponsibilityAssocia_084a67bc61"
         FOREIGN KEY ("ResponsibilityDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29874,7 +29875,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentGradebookEntry"
         ADD CONSTRAINT "FK_StudentGradebookEntry_AssignmentLateStatusDescriptor"
         FOREIGN KEY ("AssignmentLateStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29891,7 +29892,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentGradebookEntry"
         ADD CONSTRAINT "FK_StudentGradebookEntry_CompetencyLevelDescriptor"
         FOREIGN KEY ("CompetencyLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -29959,7 +29960,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentGradebookEntry"
         ADD CONSTRAINT "FK_StudentGradebookEntry_SubmissionStatusDescriptor"
         FOREIGN KEY ("SubmissionStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -30010,7 +30011,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentHealth"
         ADD CONSTRAINT "FK_StudentHealth_NonMedicalImmunizationExemptionDescriptor"
         FOREIGN KEY ("NonMedicalImmunizationExemptionDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -30061,7 +30062,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentHealthRequiredImmunization"
         ADD CONSTRAINT "FK_StudentHealthRequiredImmunization_ImmunizationTypeDescriptor"
         FOREIGN KEY ("ImmunizationTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -30156,14 +30157,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentHomelessProgramAssociation_HomelessPrimary_1983013dd1'
+        WHERE conname = 'FK_StudentHomelessProgramAssociation_HomelessPrimary_fb87244308'
         AND conrelid = to_regclass('"edfi"."StudentHomelessProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentHomelessProgramAssociation"
-        ADD CONSTRAINT "FK_StudentHomelessProgramAssociation_HomelessPrimary_1983013dd1"
+        ADD CONSTRAINT "FK_StudentHomelessProgramAssociation_HomelessPrimary_fb87244308"
         FOREIGN KEY ("HomelessPrimaryNighttimeResidenceDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -30190,14 +30191,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentHomelessProgramAssociation_ProgramProgram__8f8f5f5586'
+        WHERE conname = 'FK_StudentHomelessProgramAssociation_ProgramProgram__f18f1af6d4'
         AND conrelid = to_regclass('"edfi"."StudentHomelessProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentHomelessProgramAssociation"
-        ADD CONSTRAINT "FK_StudentHomelessProgramAssociation_ProgramProgram__8f8f5f5586"
+        ADD CONSTRAINT "FK_StudentHomelessProgramAssociation_ProgramProgram__f18f1af6d4"
         FOREIGN KEY ("ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -30214,7 +30215,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentHomelessProgramAssociation"
         ADD CONSTRAINT "FK_StudentHomelessProgramAssociation_ReasonExitedDescriptor"
         FOREIGN KEY ("ReasonExitedDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -30241,6 +30242,23 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentHomelessProgramAssociationHomelessProgramS_13edd86890'
+        AND conrelid = to_regclass('"edfi"."StudentHomelessProgramAssociationHomelessProgramService"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentHomelessProgramAssociationHomelessProgramService"
+        ADD CONSTRAINT "FK_StudentHomelessProgramAssociationHomelessProgramS_13edd86890"
+        FOREIGN KEY ("HomelessProgramServiceDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentHomelessProgramAssociationHomelessProgramS_ad9d9c1bf5'
         AND conrelid = to_regclass('"edfi"."StudentHomelessProgramAssociationHomelessProgramService"')
     )
@@ -30250,23 +30268,6 @@ BEGIN
         FOREIGN KEY ("StudentHomelessProgramAssociation_DocumentId")
         REFERENCES "edfi"."StudentHomelessProgramAssociation" ("DocumentId")
         ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentHomelessProgramAssociationHomelessProgramS_db85e3682a'
-        AND conrelid = to_regclass('"edfi"."StudentHomelessProgramAssociationHomelessProgramService"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentHomelessProgramAssociationHomelessProgramService"
-        ADD CONSTRAINT "FK_StudentHomelessProgramAssociationHomelessProgramS_db85e3682a"
-        FOREIGN KEY ("HomelessProgramServiceDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
 END $$;
@@ -30292,14 +30293,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentHomelessProgramAssociationProgramParticipa_a61523ff09'
+        WHERE conname = 'FK_StudentHomelessProgramAssociationProgramParticipa_a0105faed7'
         AND conrelid = to_regclass('"edfi"."StudentHomelessProgramAssociationProgramParticipationStatus"')
     )
     THEN
         ALTER TABLE "edfi"."StudentHomelessProgramAssociationProgramParticipationStatus"
-        ADD CONSTRAINT "FK_StudentHomelessProgramAssociationProgramParticipa_a61523ff09"
+        ADD CONSTRAINT "FK_StudentHomelessProgramAssociationProgramParticipa_a0105faed7"
         FOREIGN KEY ("ParticipationStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -30394,31 +30395,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentInterventionAssociationInterventionEffecti_0bb658c25f'
+        WHERE conname = 'FK_StudentInterventionAssociationInterventionEffecti_284d785edc'
         AND conrelid = to_regclass('"edfi"."StudentInterventionAssociationInterventionEffectiveness"')
     )
     THEN
         ALTER TABLE "edfi"."StudentInterventionAssociationInterventionEffectiveness"
-        ADD CONSTRAINT "FK_StudentInterventionAssociationInterventionEffecti_0bb658c25f"
-        FOREIGN KEY ("DiagnosisDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentInterventionAssociationInterventionEffecti_221a106396'
-        AND conrelid = to_regclass('"edfi"."StudentInterventionAssociationInterventionEffectiveness"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentInterventionAssociationInterventionEffectiveness"
-        ADD CONSTRAINT "FK_StudentInterventionAssociationInterventionEffecti_221a106396"
+        ADD CONSTRAINT "FK_StudentInterventionAssociationInterventionEffecti_284d785edc"
         FOREIGN KEY ("GradeLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -30428,31 +30412,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentInterventionAssociationInterventionEffecti_636ad3e6ff'
+        WHERE conname = 'FK_StudentInterventionAssociationInterventionEffecti_63105b18ed'
         AND conrelid = to_regclass('"edfi"."StudentInterventionAssociationInterventionEffectiveness"')
     )
     THEN
         ALTER TABLE "edfi"."StudentInterventionAssociationInterventionEffectiveness"
-        ADD CONSTRAINT "FK_StudentInterventionAssociationInterventionEffecti_636ad3e6ff"
-        FOREIGN KEY ("InterventionEffectivenessRatingDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentInterventionAssociationInterventionEffecti_9ce1804d89'
-        AND conrelid = to_regclass('"edfi"."StudentInterventionAssociationInterventionEffectiveness"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentInterventionAssociationInterventionEffectiveness"
-        ADD CONSTRAINT "FK_StudentInterventionAssociationInterventionEffecti_9ce1804d89"
+        ADD CONSTRAINT "FK_StudentInterventionAssociationInterventionEffecti_63105b18ed"
         FOREIGN KEY ("PopulationServedDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -30462,14 +30429,48 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentInterventionAttendanceEvent_AttendanceEven_8a1e3b9280'
+        WHERE conname = 'FK_StudentInterventionAssociationInterventionEffecti_c0bc6ea5b9'
+        AND conrelid = to_regclass('"edfi"."StudentInterventionAssociationInterventionEffectiveness"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentInterventionAssociationInterventionEffectiveness"
+        ADD CONSTRAINT "FK_StudentInterventionAssociationInterventionEffecti_c0bc6ea5b9"
+        FOREIGN KEY ("InterventionEffectivenessRatingDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentInterventionAssociationInterventionEffecti_ee4d69ce01'
+        AND conrelid = to_regclass('"edfi"."StudentInterventionAssociationInterventionEffectiveness"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentInterventionAssociationInterventionEffectiveness"
+        ADD CONSTRAINT "FK_StudentInterventionAssociationInterventionEffecti_ee4d69ce01"
+        FOREIGN KEY ("DiagnosisDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentInterventionAttendanceEvent_AttendanceEven_ba49898b97'
         AND conrelid = to_regclass('"edfi"."StudentInterventionAttendanceEvent"')
     )
     THEN
         ALTER TABLE "edfi"."StudentInterventionAttendanceEvent"
-        ADD CONSTRAINT "FK_StudentInterventionAttendanceEvent_AttendanceEven_8a1e3b9280"
+        ADD CONSTRAINT "FK_StudentInterventionAttendanceEvent_AttendanceEven_ba49898b97"
         FOREIGN KEY ("AttendanceEventCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -30496,14 +30497,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentInterventionAttendanceEvent_EducationalEnv_a70364a135'
+        WHERE conname = 'FK_StudentInterventionAttendanceEvent_EducationalEnv_838e958184'
         AND conrelid = to_regclass('"edfi"."StudentInterventionAttendanceEvent"')
     )
     THEN
         ALTER TABLE "edfi"."StudentInterventionAttendanceEvent"
-        ADD CONSTRAINT "FK_StudentInterventionAttendanceEvent_EducationalEnv_a70364a135"
+        ADD CONSTRAINT "FK_StudentInterventionAttendanceEvent_EducationalEnv_838e958184"
         FOREIGN KEY ("EducationalEnvironmentDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -30581,14 +30582,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentLanguageInstructionProgramAssociation_Prog_03d4522463'
+        WHERE conname = 'FK_StudentLanguageInstructionProgramAssociation_Prog_5b2c0ecc89'
         AND conrelid = to_regclass('"edfi"."StudentLanguageInstructionProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentLanguageInstructionProgramAssociation"
-        ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociation_Prog_03d4522463"
+        ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociation_Prog_5b2c0ecc89"
         FOREIGN KEY ("ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -30615,14 +30616,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentLanguageInstructionProgramAssociation_Reas_8cd9500370'
+        WHERE conname = 'FK_StudentLanguageInstructionProgramAssociation_Reas_4986d8c0dd'
         AND conrelid = to_regclass('"edfi"."StudentLanguageInstructionProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentLanguageInstructionProgramAssociation"
-        ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociation_Reas_8cd9500370"
+        ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociation_Reas_4986d8c0dd"
         FOREIGN KEY ("ReasonExitedDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -30649,65 +30650,48 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentLanguageInstructionProgramAssociationEngli_137fa1e00e'
+        WHERE conname = 'FK_StudentLanguageInstructionProgramAssociationEngli_4d9ecc4c25'
         AND conrelid = to_regclass('"edfi"."StudentLanguageInstructionProgramAssociationEnglishL_1ac620866d"')
     )
     THEN
         ALTER TABLE "edfi"."StudentLanguageInstructionProgramAssociationEnglishL_1ac620866d"
-        ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociationEngli_137fa1e00e"
-        FOREIGN KEY ("MonitoredDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentLanguageInstructionProgramAssociationEngli_35172c37b1'
-        AND conrelid = to_regclass('"edfi"."StudentLanguageInstructionProgramAssociationEnglishL_1ac620866d"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentLanguageInstructionProgramAssociationEnglishL_1ac620866d"
-        ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociationEngli_35172c37b1"
-        FOREIGN KEY ("ParticipationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentLanguageInstructionProgramAssociationEngli_6456291783'
-        AND conrelid = to_regclass('"edfi"."StudentLanguageInstructionProgramAssociationEnglishL_1ac620866d"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentLanguageInstructionProgramAssociationEnglishL_1ac620866d"
-        ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociationEngli_6456291783"
-        FOREIGN KEY ("ProgressDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentLanguageInstructionProgramAssociationEngli_9afaaa6d47'
-        AND conrelid = to_regclass('"edfi"."StudentLanguageInstructionProgramAssociationEnglishL_1ac620866d"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentLanguageInstructionProgramAssociationEnglishL_1ac620866d"
-        ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociationEngli_9afaaa6d47"
+        ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociationEngli_4d9ecc4c25"
         FOREIGN KEY ("ProficiencyDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentLanguageInstructionProgramAssociationEngli_6ea1988e33'
+        AND conrelid = to_regclass('"edfi"."StudentLanguageInstructionProgramAssociationEnglishL_1ac620866d"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentLanguageInstructionProgramAssociationEnglishL_1ac620866d"
+        ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociationEngli_6ea1988e33"
+        FOREIGN KEY ("MonitoredDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentLanguageInstructionProgramAssociationEngli_7ff99394a1'
+        AND conrelid = to_regclass('"edfi"."StudentLanguageInstructionProgramAssociationEnglishL_1ac620866d"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentLanguageInstructionProgramAssociationEnglishL_1ac620866d"
+        ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociationEngli_7ff99394a1"
+        FOREIGN KEY ("ParticipationDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -30751,6 +30735,23 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentLanguageInstructionProgramAssociationEngli_f590085393'
+        AND conrelid = to_regclass('"edfi"."StudentLanguageInstructionProgramAssociationEnglishL_1ac620866d"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentLanguageInstructionProgramAssociationEnglishL_1ac620866d"
+        ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociationEngli_f590085393"
+        FOREIGN KEY ("ProgressDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentLanguageInstructionProgramAssociationLangu_648b85b4a0'
         AND conrelid = to_regclass('"edfi"."StudentLanguageInstructionProgramAssociationLanguage_268e074917"')
     )
@@ -30768,31 +30769,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentLanguageInstructionProgramAssociationLangu_93ce9cfcf4'
+        WHERE conname = 'FK_StudentLanguageInstructionProgramAssociationLangu_e9eb85b9ef'
         AND conrelid = to_regclass('"edfi"."StudentLanguageInstructionProgramAssociationLanguage_268e074917"')
     )
     THEN
         ALTER TABLE "edfi"."StudentLanguageInstructionProgramAssociationLanguage_268e074917"
-        ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociationLangu_93ce9cfcf4"
+        ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociationLangu_e9eb85b9ef"
         FOREIGN KEY ("LanguageInstructionProgramServiceDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentLanguageInstructionProgramAssociationProgr_1642dc91d5'
-        AND conrelid = to_regclass('"edfi"."StudentLanguageInstructionProgramAssociationProgramP_e14347f302"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentLanguageInstructionProgramAssociationProgramP_e14347f302"
-        ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociationProgr_1642dc91d5"
-        FOREIGN KEY ("ParticipationStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -30819,14 +30803,31 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentMigrantEducationProgramAssociation_Continu_4eb25b3a61'
+        WHERE conname = 'FK_StudentLanguageInstructionProgramAssociationProgr_274acc1ee0'
+        AND conrelid = to_regclass('"edfi"."StudentLanguageInstructionProgramAssociationProgramP_e14347f302"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentLanguageInstructionProgramAssociationProgramP_e14347f302"
+        ADD CONSTRAINT "FK_StudentLanguageInstructionProgramAssociationProgr_274acc1ee0"
+        FOREIGN KEY ("ParticipationStatusDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentMigrantEducationProgramAssociation_Continu_bef4fd909d'
         AND conrelid = to_regclass('"edfi"."StudentMigrantEducationProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentMigrantEducationProgramAssociation"
-        ADD CONSTRAINT "FK_StudentMigrantEducationProgramAssociation_Continu_4eb25b3a61"
+        ADD CONSTRAINT "FK_StudentMigrantEducationProgramAssociation_Continu_bef4fd909d"
         FOREIGN KEY ("ContinuationOfServicesReasonDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -30887,14 +30888,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentMigrantEducationProgramAssociation_Program_a0d9058689'
+        WHERE conname = 'FK_StudentMigrantEducationProgramAssociation_Program_5f6a70d8fd'
         AND conrelid = to_regclass('"edfi"."StudentMigrantEducationProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentMigrantEducationProgramAssociation"
-        ADD CONSTRAINT "FK_StudentMigrantEducationProgramAssociation_Program_a0d9058689"
+        ADD CONSTRAINT "FK_StudentMigrantEducationProgramAssociation_Program_5f6a70d8fd"
         FOREIGN KEY ("ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -30904,14 +30905,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentMigrantEducationProgramAssociation_ReasonE_790c3440ae'
+        WHERE conname = 'FK_StudentMigrantEducationProgramAssociation_ReasonE_fd1e9fe894'
         AND conrelid = to_regclass('"edfi"."StudentMigrantEducationProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentMigrantEducationProgramAssociation"
-        ADD CONSTRAINT "FK_StudentMigrantEducationProgramAssociation_ReasonE_790c3440ae"
+        ADD CONSTRAINT "FK_StudentMigrantEducationProgramAssociation_ReasonE_fd1e9fe894"
         FOREIGN KEY ("ReasonExitedDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -30955,14 +30956,31 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentMigrantEducationProgramAssociationMigrantE_fbd0f96fc5'
+        WHERE conname = 'FK_StudentMigrantEducationProgramAssociationMigrantE_cbaf229f77'
         AND conrelid = to_regclass('"edfi"."StudentMigrantEducationProgramAssociationMigrantEduc_d9dcd7857a"')
     )
     THEN
         ALTER TABLE "edfi"."StudentMigrantEducationProgramAssociationMigrantEduc_d9dcd7857a"
-        ADD CONSTRAINT "FK_StudentMigrantEducationProgramAssociationMigrantE_fbd0f96fc5"
+        ADD CONSTRAINT "FK_StudentMigrantEducationProgramAssociationMigrantE_cbaf229f77"
         FOREIGN KEY ("MigrantEducationProgramServiceDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentMigrantEducationProgramAssociationProgramP_0d49c2c849'
+        AND conrelid = to_regclass('"edfi"."StudentMigrantEducationProgramAssociationProgramPart_491e79dcd2"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentMigrantEducationProgramAssociationProgramPart_491e79dcd2"
+        ADD CONSTRAINT "FK_StudentMigrantEducationProgramAssociationProgramP_0d49c2c849"
+        FOREIGN KEY ("ParticipationStatusDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -30981,23 +30999,6 @@ BEGIN
         FOREIGN KEY ("StudentMigrantEducationProgramAssociation_DocumentId")
         REFERENCES "edfi"."StudentMigrantEducationProgramAssociation" ("DocumentId")
         ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentMigrantEducationProgramAssociationProgramP_7fd366b77c'
-        AND conrelid = to_regclass('"edfi"."StudentMigrantEducationProgramAssociationProgramPart_491e79dcd2"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentMigrantEducationProgramAssociationProgramPart_491e79dcd2"
-        ADD CONSTRAINT "FK_StudentMigrantEducationProgramAssociationProgramP_7fd366b77c"
-        FOREIGN KEY ("ParticipationStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
 END $$;
@@ -31040,14 +31041,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentNeglectedOrDelinquentProgramAssociation_El_29a6379832'
+        WHERE conname = 'FK_StudentNeglectedOrDelinquentProgramAssociation_El_376ccf1a53'
         AND conrelid = to_regclass('"edfi"."StudentNeglectedOrDelinquentProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentNeglectedOrDelinquentProgramAssociation"
-        ADD CONSTRAINT "FK_StudentNeglectedOrDelinquentProgramAssociation_El_29a6379832"
+        ADD CONSTRAINT "FK_StudentNeglectedOrDelinquentProgramAssociation_El_376ccf1a53"
         FOREIGN KEY ("ElaProgressLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31057,14 +31058,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentNeglectedOrDelinquentProgramAssociation_Ma_48986b4318'
+        WHERE conname = 'FK_StudentNeglectedOrDelinquentProgramAssociation_Ma_bb11e37f8a'
         AND conrelid = to_regclass('"edfi"."StudentNeglectedOrDelinquentProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentNeglectedOrDelinquentProgramAssociation"
-        ADD CONSTRAINT "FK_StudentNeglectedOrDelinquentProgramAssociation_Ma_48986b4318"
+        ADD CONSTRAINT "FK_StudentNeglectedOrDelinquentProgramAssociation_Ma_bb11e37f8a"
         FOREIGN KEY ("MathematicsProgressLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31074,14 +31075,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentNeglectedOrDelinquentProgramAssociation_Ne_66f2fc0ca3'
+        WHERE conname = 'FK_StudentNeglectedOrDelinquentProgramAssociation_Ne_0ab22309f6'
         AND conrelid = to_regclass('"edfi"."StudentNeglectedOrDelinquentProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentNeglectedOrDelinquentProgramAssociation"
-        ADD CONSTRAINT "FK_StudentNeglectedOrDelinquentProgramAssociation_Ne_66f2fc0ca3"
+        ADD CONSTRAINT "FK_StudentNeglectedOrDelinquentProgramAssociation_Ne_0ab22309f6"
         FOREIGN KEY ("NeglectedOrDelinquentProgramDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31108,14 +31109,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentNeglectedOrDelinquentProgramAssociation_Pr_9d77ee0b67'
+        WHERE conname = 'FK_StudentNeglectedOrDelinquentProgramAssociation_Pr_9914393307'
         AND conrelid = to_regclass('"edfi"."StudentNeglectedOrDelinquentProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentNeglectedOrDelinquentProgramAssociation"
-        ADD CONSTRAINT "FK_StudentNeglectedOrDelinquentProgramAssociation_Pr_9d77ee0b67"
+        ADD CONSTRAINT "FK_StudentNeglectedOrDelinquentProgramAssociation_Pr_9914393307"
         FOREIGN KEY ("ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31125,14 +31126,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentNeglectedOrDelinquentProgramAssociation_Re_c83e91cbda'
+        WHERE conname = 'FK_StudentNeglectedOrDelinquentProgramAssociation_Re_f1f924dcd2'
         AND conrelid = to_regclass('"edfi"."StudentNeglectedOrDelinquentProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentNeglectedOrDelinquentProgramAssociation"
-        ADD CONSTRAINT "FK_StudentNeglectedOrDelinquentProgramAssociation_Re_c83e91cbda"
+        ADD CONSTRAINT "FK_StudentNeglectedOrDelinquentProgramAssociation_Re_f1f924dcd2"
         FOREIGN KEY ("ReasonExitedDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31176,14 +31177,31 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentNeglectedOrDelinquentProgramAssociationNeg_d598e62cb1'
+        WHERE conname = 'FK_StudentNeglectedOrDelinquentProgramAssociationNeg_ac8eae63ef'
         AND conrelid = to_regclass('"edfi"."StudentNeglectedOrDelinquentProgramAssociationNeglec_5202518bb9"')
     )
     THEN
         ALTER TABLE "edfi"."StudentNeglectedOrDelinquentProgramAssociationNeglec_5202518bb9"
-        ADD CONSTRAINT "FK_StudentNeglectedOrDelinquentProgramAssociationNeg_d598e62cb1"
+        ADD CONSTRAINT "FK_StudentNeglectedOrDelinquentProgramAssociationNeg_ac8eae63ef"
         FOREIGN KEY ("NeglectedOrDelinquentProgramServiceDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentNeglectedOrDelinquentProgramAssociationPro_01d3c53f50'
+        AND conrelid = to_regclass('"edfi"."StudentNeglectedOrDelinquentProgramAssociationProgra_162f874239"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentNeglectedOrDelinquentProgramAssociationProgra_162f874239"
+        ADD CONSTRAINT "FK_StudentNeglectedOrDelinquentProgramAssociationPro_01d3c53f50"
+        FOREIGN KEY ("ParticipationStatusDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31202,23 +31220,6 @@ BEGIN
         FOREIGN KEY ("StudentNeglectedOrDelinquentProgramAssociation_DocumentId")
         REFERENCES "edfi"."StudentNeglectedOrDelinquentProgramAssociation" ("DocumentId")
         ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentNeglectedOrDelinquentProgramAssociationPro_e7bd6d95b5'
-        AND conrelid = to_regclass('"edfi"."StudentNeglectedOrDelinquentProgramAssociationProgra_162f874239"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentNeglectedOrDelinquentProgramAssociationProgra_162f874239"
-        ADD CONSTRAINT "FK_StudentNeglectedOrDelinquentProgramAssociationPro_e7bd6d95b5"
-        FOREIGN KEY ("ParticipationStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
 END $$;
@@ -31261,14 +31262,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentProgramAssociation_ProgramProgram_ProgramT_c2686cad01'
+        WHERE conname = 'FK_StudentProgramAssociation_ProgramProgram_ProgramT_a79040dba1'
         AND conrelid = to_regclass('"edfi"."StudentProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentProgramAssociation"
-        ADD CONSTRAINT "FK_StudentProgramAssociation_ProgramProgram_ProgramT_c2686cad01"
+        ADD CONSTRAINT "FK_StudentProgramAssociation_ProgramProgram_ProgramT_a79040dba1"
         FOREIGN KEY ("ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31302,7 +31303,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentProgramAssociation"
         ADD CONSTRAINT "FK_StudentProgramAssociation_ReasonExitedDescriptor"
         FOREIGN KEY ("ReasonExitedDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31329,14 +31330,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentProgramAssociationProgramParticipationStat_bbdf6b0844'
+        WHERE conname = 'FK_StudentProgramAssociationProgramParticipationStat_4b19abad10'
         AND conrelid = to_regclass('"edfi"."StudentProgramAssociationProgramParticipationStatus"')
     )
     THEN
         ALTER TABLE "edfi"."StudentProgramAssociationProgramParticipationStatus"
-        ADD CONSTRAINT "FK_StudentProgramAssociationProgramParticipationStat_bbdf6b0844"
+        ADD CONSTRAINT "FK_StudentProgramAssociationProgramParticipationStat_4b19abad10"
         FOREIGN KEY ("ParticipationStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31370,7 +31371,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentProgramAssociationService"
         ADD CONSTRAINT "FK_StudentProgramAssociationService_ServiceDescriptor"
         FOREIGN KEY ("ServiceDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31397,14 +31398,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentProgramAttendanceEvent_AttendanceEventCate_0d71c88ab7'
+        WHERE conname = 'FK_StudentProgramAttendanceEvent_AttendanceEventCate_45840cdb04'
         AND conrelid = to_regclass('"edfi"."StudentProgramAttendanceEvent"')
     )
     THEN
         ALTER TABLE "edfi"."StudentProgramAttendanceEvent"
-        ADD CONSTRAINT "FK_StudentProgramAttendanceEvent_AttendanceEventCate_0d71c88ab7"
+        ADD CONSTRAINT "FK_StudentProgramAttendanceEvent_AttendanceEventCate_45840cdb04"
         FOREIGN KEY ("AttendanceEventCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31448,14 +31449,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentProgramAttendanceEvent_EducationalEnvironm_b3108aa377'
+        WHERE conname = 'FK_StudentProgramAttendanceEvent_EducationalEnvironm_9c6cda20ef'
         AND conrelid = to_regclass('"edfi"."StudentProgramAttendanceEvent"')
     )
     THEN
         ALTER TABLE "edfi"."StudentProgramAttendanceEvent"
-        ADD CONSTRAINT "FK_StudentProgramAttendanceEvent_EducationalEnvironm_b3108aa377"
+        ADD CONSTRAINT "FK_StudentProgramAttendanceEvent_EducationalEnvironm_9c6cda20ef"
         FOREIGN KEY ("EducationalEnvironmentDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31465,14 +31466,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentProgramAttendanceEvent_ProgramProgram_Prog_2006b92af3'
+        WHERE conname = 'FK_StudentProgramAttendanceEvent_ProgramProgram_Prog_34ee940525'
         AND conrelid = to_regclass('"edfi"."StudentProgramAttendanceEvent"')
     )
     THEN
         ALTER TABLE "edfi"."StudentProgramAttendanceEvent"
-        ADD CONSTRAINT "FK_StudentProgramAttendanceEvent_ProgramProgram_Prog_2006b92af3"
+        ADD CONSTRAINT "FK_StudentProgramAttendanceEvent_ProgramProgram_Prog_34ee940525"
         FOREIGN KEY ("ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31550,48 +31551,48 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentProgramEvaluation_ProgramEvaluation_Progra_42c7ee64a0'
+        WHERE conname = 'FK_StudentProgramEvaluation_ProgramEvaluation_Progra_2336876686'
         AND conrelid = to_regclass('"edfi"."StudentProgramEvaluation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentProgramEvaluation"
-        ADD CONSTRAINT "FK_StudentProgramEvaluation_ProgramEvaluation_Progra_42c7ee64a0"
-        FOREIGN KEY ("ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentProgramEvaluation_ProgramEvaluation_Progra_9062aef877'
-        AND conrelid = to_regclass('"edfi"."StudentProgramEvaluation"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentProgramEvaluation"
-        ADD CONSTRAINT "FK_StudentProgramEvaluation_ProgramEvaluation_Progra_9062aef877"
-        FOREIGN KEY ("ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentProgramEvaluation_ProgramEvaluation_Progra_c293fa45db'
-        AND conrelid = to_regclass('"edfi"."StudentProgramEvaluation"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentProgramEvaluation"
-        ADD CONSTRAINT "FK_StudentProgramEvaluation_ProgramEvaluation_Progra_c293fa45db"
+        ADD CONSTRAINT "FK_StudentProgramEvaluation_ProgramEvaluation_Progra_2336876686"
         FOREIGN KEY ("ProgramEvaluation_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentProgramEvaluation_ProgramEvaluation_Progra_b018b1b379'
+        AND conrelid = to_regclass('"edfi"."StudentProgramEvaluation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentProgramEvaluation"
+        ADD CONSTRAINT "FK_StudentProgramEvaluation_ProgramEvaluation_Progra_b018b1b379"
+        FOREIGN KEY ("ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentProgramEvaluation_ProgramEvaluation_Progra_fa0f41f46b'
+        AND conrelid = to_regclass('"edfi"."StudentProgramEvaluation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentProgramEvaluation"
+        ADD CONSTRAINT "FK_StudentProgramEvaluation_ProgramEvaluation_Progra_fa0f41f46b"
+        FOREIGN KEY ("ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31652,14 +31653,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentProgramEvaluation_SummaryEvaluationRatingL_4989e73d62'
+        WHERE conname = 'FK_StudentProgramEvaluation_SummaryEvaluationRatingL_0e1eeff486'
         AND conrelid = to_regclass('"edfi"."StudentProgramEvaluation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentProgramEvaluation"
-        ADD CONSTRAINT "FK_StudentProgramEvaluation_SummaryEvaluationRatingL_4989e73d62"
+        ADD CONSTRAINT "FK_StudentProgramEvaluation_SummaryEvaluationRatingL_0e1eeff486"
         FOREIGN KEY ("SummaryEvaluationRatingLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31686,6 +31687,23 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationElement__173a5f2e5c'
+        AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationElement"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentProgramEvaluationStudentEvaluationElement"
+        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationElement__173a5f2e5c"
+        FOREIGN KEY ("StudentEvaluationElementProgramEvaluationElement_Pro_38d123670f")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationElement__58a3090861'
         AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationElement"')
     )
@@ -31703,14 +31721,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationElement__7642f05d32'
+        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationElement__63c5bda226'
         AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationElement"')
     )
     THEN
         ALTER TABLE "edfi"."StudentProgramEvaluationStudentEvaluationElement"
-        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationElement__7642f05d32"
+        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationElement__63c5bda226"
         FOREIGN KEY ("StudentEvaluationElementProgramEvaluationElement_Pro_ef497c5466")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31720,14 +31738,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationElement__98a4d86359'
+        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationElement__71237e4b22'
         AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationElement"')
     )
     THEN
         ALTER TABLE "edfi"."StudentProgramEvaluationStudentEvaluationElement"
-        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationElement__98a4d86359"
+        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationElement__71237e4b22"
         FOREIGN KEY ("StudentEvaluationElementProgramEvaluationElement_Pro_b27b83c178")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31737,14 +31755,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationElement__c8ab36a265'
+        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationElement__7f03b55fe7'
         AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationElement"')
     )
     THEN
         ALTER TABLE "edfi"."StudentProgramEvaluationStudentEvaluationElement"
-        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationElement__c8ab36a265"
+        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationElement__7f03b55fe7"
         FOREIGN KEY ("EvaluationElementRatingLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31771,23 +31789,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationElement__d57421b9eb'
-        AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationElement"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentProgramEvaluationStudentEvaluationElement"
-        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationElement__d57421b9eb"
-        FOREIGN KEY ("StudentEvaluationElementProgramEvaluationElement_Pro_38d123670f")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationObjectiv_1871d86655'
         AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationObjective"')
     )
@@ -31805,14 +31806,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationObjectiv_1bced26720'
+        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationObjectiv_2017a79138'
         AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationObjective"')
     )
     THEN
         ALTER TABLE "edfi"."StudentProgramEvaluationStudentEvaluationObjective"
-        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationObjectiv_1bced26720"
+        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationObjectiv_2017a79138"
         FOREIGN KEY ("StudentEvaluationObjectiveProgramEvaluationObjective_5c8a926f84")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31822,14 +31823,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationObjectiv_2bd6a5311c'
+        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationObjectiv_3329a6dc14'
         AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationObjective"')
     )
     THEN
         ALTER TABLE "edfi"."StudentProgramEvaluationStudentEvaluationObjective"
-        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationObjectiv_2bd6a5311c"
-        FOREIGN KEY ("StudentEvaluationObjectiveProgramEvaluationObjective_a646232b23")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationObjectiv_3329a6dc14"
+        FOREIGN KEY ("StudentEvaluationObjectiveProgramEvaluationObjective_344bbaad76")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31856,14 +31857,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationObjectiv_4f3ae0ef74'
+        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationObjectiv_4079762b5f'
         AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationObjective"')
     )
     THEN
         ALTER TABLE "edfi"."StudentProgramEvaluationStudentEvaluationObjective"
-        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationObjectiv_4f3ae0ef74"
+        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationObjectiv_4079762b5f"
         FOREIGN KEY ("EvaluationObjectiveRatingLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31873,14 +31874,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationObjectiv_e2e750699a'
+        WHERE conname = 'FK_StudentProgramEvaluationStudentEvaluationObjectiv_7f2b2f9be7'
         AND conrelid = to_regclass('"edfi"."StudentProgramEvaluationStudentEvaluationObjective"')
     )
     THEN
         ALTER TABLE "edfi"."StudentProgramEvaluationStudentEvaluationObjective"
-        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationObjectiv_e2e750699a"
-        FOREIGN KEY ("StudentEvaluationObjectiveProgramEvaluationObjective_344bbaad76")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        ADD CONSTRAINT "FK_StudentProgramEvaluationStudentEvaluationObjectiv_7f2b2f9be7"
+        FOREIGN KEY ("StudentEvaluationObjectiveProgramEvaluationObjective_a646232b23")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31948,7 +31949,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentSchoolAssociation"
         ADD CONSTRAINT "FK_StudentSchoolAssociation_EnrollmentTypeDescriptor"
         FOREIGN KEY ("EnrollmentTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31965,7 +31966,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentSchoolAssociation"
         ADD CONSTRAINT "FK_StudentSchoolAssociation_EntryGradeLevelDescriptor"
         FOREIGN KEY ("EntryGradeLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31982,7 +31983,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentSchoolAssociation"
         ADD CONSTRAINT "FK_StudentSchoolAssociation_EntryGradeLevelReasonDescriptor"
         FOREIGN KEY ("EntryGradeLevelReasonDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -31999,7 +32000,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentSchoolAssociation"
         ADD CONSTRAINT "FK_StudentSchoolAssociation_EntryTypeDescriptor"
         FOREIGN KEY ("EntryTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32016,7 +32017,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentSchoolAssociation"
         ADD CONSTRAINT "FK_StudentSchoolAssociation_ExitWithdrawTypeDescriptor"
         FOREIGN KEY ("ExitWithdrawTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32026,14 +32027,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSchoolAssociation_GraduationPlan_Graduatio_1caf199d51'
+        WHERE conname = 'FK_StudentSchoolAssociation_GraduationPlan_Graduatio_d4aa4812f5'
         AND conrelid = to_regclass('"edfi"."StudentSchoolAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSchoolAssociation"
-        ADD CONSTRAINT "FK_StudentSchoolAssociation_GraduationPlan_Graduatio_1caf199d51"
+        ADD CONSTRAINT "FK_StudentSchoolAssociation_GraduationPlan_Graduatio_d4aa4812f5"
         FOREIGN KEY ("GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32067,7 +32068,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentSchoolAssociation"
         ADD CONSTRAINT "FK_StudentSchoolAssociation_NextYearGradeLevelDescriptor"
         FOREIGN KEY ("NextYearGradeLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32101,7 +32102,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentSchoolAssociation"
         ADD CONSTRAINT "FK_StudentSchoolAssociation_ResidencyStatusDescriptor"
         FOREIGN KEY ("ResidencyStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32118,7 +32119,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentSchoolAssociation"
         ADD CONSTRAINT "FK_StudentSchoolAssociation_SchoolChoiceBasisDescriptor"
         FOREIGN KEY ("SchoolChoiceBasisDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32179,14 +32180,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSchoolAssociationAlternativeGraduationPlan_5d3e0a6492'
+        WHERE conname = 'FK_StudentSchoolAssociationAlternativeGraduationPlan_9457aa098f'
         AND conrelid = to_regclass('"edfi"."StudentSchoolAssociationAlternativeGraduationPlan"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSchoolAssociationAlternativeGraduationPlan"
-        ADD CONSTRAINT "FK_StudentSchoolAssociationAlternativeGraduationPlan_5d3e0a6492"
+        ADD CONSTRAINT "FK_StudentSchoolAssociationAlternativeGraduationPlan_9457aa098f"
         FOREIGN KEY ("AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32230,14 +32231,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSchoolAssociationEducationPlan_EducationPl_2e5ab20cb7'
+        WHERE conname = 'FK_StudentSchoolAssociationEducationPlan_EducationPl_bedfafa4c1'
         AND conrelid = to_regclass('"edfi"."StudentSchoolAssociationEducationPlan"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSchoolAssociationEducationPlan"
-        ADD CONSTRAINT "FK_StudentSchoolAssociationEducationPlan_EducationPl_2e5ab20cb7"
+        ADD CONSTRAINT "FK_StudentSchoolAssociationEducationPlan_EducationPl_bedfafa4c1"
         FOREIGN KEY ("EducationPlanDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32264,14 +32265,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSchoolAttendanceEvent_AttendanceEventCateg_a12965b5ca'
+        WHERE conname = 'FK_StudentSchoolAttendanceEvent_AttendanceEventCateg_8a1e1dcf8f'
         AND conrelid = to_regclass('"edfi"."StudentSchoolAttendanceEvent"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSchoolAttendanceEvent"
-        ADD CONSTRAINT "FK_StudentSchoolAttendanceEvent_AttendanceEventCateg_a12965b5ca"
+        ADD CONSTRAINT "FK_StudentSchoolAttendanceEvent_AttendanceEventCateg_8a1e1dcf8f"
         FOREIGN KEY ("AttendanceEventCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32298,14 +32299,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSchoolAttendanceEvent_EducationalEnvironme_81210f87be'
+        WHERE conname = 'FK_StudentSchoolAttendanceEvent_EducationalEnvironme_bec88bc33d'
         AND conrelid = to_regclass('"edfi"."StudentSchoolAttendanceEvent"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSchoolAttendanceEvent"
-        ADD CONSTRAINT "FK_StudentSchoolAttendanceEvent_EducationalEnvironme_81210f87be"
+        ADD CONSTRAINT "FK_StudentSchoolAttendanceEvent_EducationalEnvironme_bec88bc33d"
         FOREIGN KEY ("EducationalEnvironmentDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32417,14 +32418,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSchoolFoodServiceProgramAssociation_Progra_b48b13eca3'
+        WHERE conname = 'FK_StudentSchoolFoodServiceProgramAssociation_Progra_61844cf2e2'
         AND conrelid = to_regclass('"edfi"."StudentSchoolFoodServiceProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSchoolFoodServiceProgramAssociation"
-        ADD CONSTRAINT "FK_StudentSchoolFoodServiceProgramAssociation_Progra_b48b13eca3"
+        ADD CONSTRAINT "FK_StudentSchoolFoodServiceProgramAssociation_Progra_61844cf2e2"
         FOREIGN KEY ("ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32434,14 +32435,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSchoolFoodServiceProgramAssociation_Reason_7d020edd59'
+        WHERE conname = 'FK_StudentSchoolFoodServiceProgramAssociation_Reason_bf73764f10'
         AND conrelid = to_regclass('"edfi"."StudentSchoolFoodServiceProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSchoolFoodServiceProgramAssociation"
-        ADD CONSTRAINT "FK_StudentSchoolFoodServiceProgramAssociation_Reason_7d020edd59"
+        ADD CONSTRAINT "FK_StudentSchoolFoodServiceProgramAssociation_Reason_bf73764f10"
         FOREIGN KEY ("ReasonExitedDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32468,6 +32469,23 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentSchoolFoodServiceProgramAssociationProgram_732975475a'
+        AND conrelid = to_regclass('"edfi"."StudentSchoolFoodServiceProgramAssociationProgramPar_cd6be86d47"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentSchoolFoodServiceProgramAssociationProgramPar_cd6be86d47"
+        ADD CONSTRAINT "FK_StudentSchoolFoodServiceProgramAssociationProgram_732975475a"
+        FOREIGN KEY ("ParticipationStatusDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentSchoolFoodServiceProgramAssociationProgram_77f98477fa'
         AND conrelid = to_regclass('"edfi"."StudentSchoolFoodServiceProgramAssociationProgramPar_cd6be86d47"')
     )
@@ -32485,31 +32503,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSchoolFoodServiceProgramAssociationProgram_ba8d79e915'
-        AND conrelid = to_regclass('"edfi"."StudentSchoolFoodServiceProgramAssociationProgramPar_cd6be86d47"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentSchoolFoodServiceProgramAssociationProgramPar_cd6be86d47"
-        ADD CONSTRAINT "FK_StudentSchoolFoodServiceProgramAssociationProgram_ba8d79e915"
-        FOREIGN KEY ("ParticipationStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSchoolFoodServiceProgramAssociationSchoolF_3e701b5b9a'
+        WHERE conname = 'FK_StudentSchoolFoodServiceProgramAssociationSchoolF_7e90439e45'
         AND conrelid = to_regclass('"edfi"."StudentSchoolFoodServiceProgramAssociationSchoolFood_85a0eb098c"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSchoolFoodServiceProgramAssociationSchoolFood_85a0eb098c"
-        ADD CONSTRAINT "FK_StudentSchoolFoodServiceProgramAssociationSchoolF_3e701b5b9a"
+        ADD CONSTRAINT "FK_StudentSchoolFoodServiceProgramAssociationSchoolF_7e90439e45"
         FOREIGN KEY ("SchoolFoodServiceProgramServiceDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32570,14 +32571,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSection504ProgramAssociation_ProgramProgra_10d565bf95'
+        WHERE conname = 'FK_StudentSection504ProgramAssociation_ProgramProgra_c74e0a554b'
         AND conrelid = to_regclass('"edfi"."StudentSection504ProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSection504ProgramAssociation"
-        ADD CONSTRAINT "FK_StudentSection504ProgramAssociation_ProgramProgra_10d565bf95"
+        ADD CONSTRAINT "FK_StudentSection504ProgramAssociation_ProgramProgra_c74e0a554b"
         FOREIGN KEY ("ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32611,7 +32612,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentSection504ProgramAssociation"
         ADD CONSTRAINT "FK_StudentSection504ProgramAssociation_ReasonExitedDescriptor"
         FOREIGN KEY ("ReasonExitedDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32621,14 +32622,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSection504ProgramAssociation_Section504Dis_9fc23ff05e'
+        WHERE conname = 'FK_StudentSection504ProgramAssociation_Section504Dis_2b32bf6ca0'
         AND conrelid = to_regclass('"edfi"."StudentSection504ProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSection504ProgramAssociation"
-        ADD CONSTRAINT "FK_StudentSection504ProgramAssociation_Section504Dis_9fc23ff05e"
+        ADD CONSTRAINT "FK_StudentSection504ProgramAssociation_Section504Dis_2b32bf6ca0"
         FOREIGN KEY ("Section504DisabilityDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32655,14 +32656,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSection504ProgramAssociationProgramPartici_16c7288d8e'
+        WHERE conname = 'FK_StudentSection504ProgramAssociationProgramPartici_128b66182d'
         AND conrelid = to_regclass('"edfi"."StudentSection504ProgramAssociationProgramParticipationStatus"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSection504ProgramAssociationProgramParticipationStatus"
-        ADD CONSTRAINT "FK_StudentSection504ProgramAssociationProgramPartici_16c7288d8e"
+        ADD CONSTRAINT "FK_StudentSection504ProgramAssociationProgramPartici_128b66182d"
         FOREIGN KEY ("ParticipationStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32696,7 +32697,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentSectionAssociation"
         ADD CONSTRAINT "FK_StudentSectionAssociation_AttemptStatusDescriptor"
         FOREIGN KEY ("AttemptStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32747,7 +32748,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentSectionAssociation"
         ADD CONSTRAINT "FK_StudentSectionAssociation_DualCreditInstitutionDescriptor"
         FOREIGN KEY ("DualCreditInstitutionDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32764,7 +32765,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentSectionAssociation"
         ADD CONSTRAINT "FK_StudentSectionAssociation_DualCreditTypeDescriptor"
         FOREIGN KEY ("DualCreditTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32781,7 +32782,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentSectionAssociation"
         ADD CONSTRAINT "FK_StudentSectionAssociation_RepeatIdentifierDescriptor"
         FOREIGN KEY ("RepeatIdentifierDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32825,14 +32826,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSectionAssociationProgram_Program_ProgramT_3934919190'
+        WHERE conname = 'FK_StudentSectionAssociationProgram_Program_ProgramT_249ef1401a'
         AND conrelid = to_regclass('"edfi"."StudentSectionAssociationProgram"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSectionAssociationProgram"
-        ADD CONSTRAINT "FK_StudentSectionAssociationProgram_Program_ProgramT_3934919190"
+        ADD CONSTRAINT "FK_StudentSectionAssociationProgram_Program_ProgramT_249ef1401a"
         FOREIGN KEY ("Program_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32876,14 +32877,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSectionAttendanceEvent_AttendanceEventCate_4e912cb39e'
+        WHERE conname = 'FK_StudentSectionAttendanceEvent_AttendanceEventCate_5341ff6179'
         AND conrelid = to_regclass('"edfi"."StudentSectionAttendanceEvent"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSectionAttendanceEvent"
-        ADD CONSTRAINT "FK_StudentSectionAttendanceEvent_AttendanceEventCate_4e912cb39e"
+        ADD CONSTRAINT "FK_StudentSectionAttendanceEvent_AttendanceEventCate_5341ff6179"
         FOREIGN KEY ("AttendanceEventCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -32910,14 +32911,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSectionAttendanceEvent_EducationalEnvironm_3675467f13'
+        WHERE conname = 'FK_StudentSectionAttendanceEvent_EducationalEnvironm_9ac3ff05bc'
         AND conrelid = to_regclass('"edfi"."StudentSectionAttendanceEvent"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSectionAttendanceEvent"
-        ADD CONSTRAINT "FK_StudentSectionAttendanceEvent_EducationalEnvironm_3675467f13"
+        ADD CONSTRAINT "FK_StudentSectionAttendanceEvent_EducationalEnvironm_9ac3ff05bc"
         FOREIGN KEY ("EducationalEnvironmentDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33029,14 +33030,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramAssociation_Program_4dbe430986'
+        WHERE conname = 'FK_StudentSpecialEducationProgramAssociation_Program_775c0fb671'
         AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSpecialEducationProgramAssociation"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociation_Program_4dbe430986"
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociation_Program_775c0fb671"
         FOREIGN KEY ("ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33063,14 +33064,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramAssociation_ReasonE_0e051066cb'
+        WHERE conname = 'FK_StudentSpecialEducationProgramAssociation_ReasonE_5bf276b108'
         AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSpecialEducationProgramAssociation"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociation_ReasonE_0e051066cb"
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociation_ReasonE_5bf276b108"
         FOREIGN KEY ("ReasonExitedDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33080,14 +33081,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramAssociation_Special_9b591a86e4'
+        WHERE conname = 'FK_StudentSpecialEducationProgramAssociation_Special_09cdaa2821'
         AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSpecialEducationProgramAssociation"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociation_Special_9b591a86e4"
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociation_Special_09cdaa2821"
         FOREIGN KEY ("SpecialEducationSettingDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33097,14 +33098,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramAssociation_Special_b77641cc17'
+        WHERE conname = 'FK_StudentSpecialEducationProgramAssociation_Special_d27f4bf144'
         AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSpecialEducationProgramAssociation"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociation_Special_b77641cc17"
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociation_Special_d27f4bf144"
         FOREIGN KEY ("SpecialEducationExitReasonDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33131,14 +33132,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramAssociationDisabili_cc4dcb1f21'
+        WHERE conname = 'FK_StudentSpecialEducationProgramAssociationDisabili_8c6ee88fb3'
         AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramAssociationDisability"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSpecialEducationProgramAssociationDisability"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociationDisabili_cc4dcb1f21"
-        FOREIGN KEY ("DisabilityDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociationDisabili_8c6ee88fb3"
+        FOREIGN KEY ("DisabilityDeterminationSourceTypeDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33165,14 +33166,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramAssociationDisabili_e97d207f37'
+        WHERE conname = 'FK_StudentSpecialEducationProgramAssociationDisabili_dde5358f2e'
         AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramAssociationDisability"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSpecialEducationProgramAssociationDisability"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociationDisabili_e97d207f37"
-        FOREIGN KEY ("DisabilityDeterminationSourceTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociationDisabili_dde5358f2e"
+        FOREIGN KEY ("DisabilityDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33199,14 +33200,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramAssociationProgramP_8df9fb46fb'
+        WHERE conname = 'FK_StudentSpecialEducationProgramAssociationProgramP_fbc21d8f9e'
         AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramAssociationProgramPart_63017127ef"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSpecialEducationProgramAssociationProgramPart_63017127ef"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociationProgramP_8df9fb46fb"
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociationProgramP_fbc21d8f9e"
         FOREIGN KEY ("ParticipationStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33267,31 +33268,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramAssociationSpecialE_aedd582257'
+        WHERE conname = 'FK_StudentSpecialEducationProgramAssociationSpecialE_719a622220'
         AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramAssociationSpecialEduc_a51ff9be2b"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSpecialEducationProgramAssociationSpecialEduc_a51ff9be2b"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociationSpecialE_aedd582257"
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociationSpecialE_719a622220"
         FOREIGN KEY ("SpecialEducationProgramServiceDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramAssociationDisabili_50a3798e8f'
-        AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramAssociationDisabilityDesignation"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentSpecialEducationProgramAssociationDisabilityDesignation"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociationDisabili_50a3798e8f"
-        FOREIGN KEY ("DisabilityDesignationDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33310,6 +33294,23 @@ BEGIN
         FOREIGN KEY ("ParentCollectionItemId", "StudentSpecialEducationProgramAssociation_DocumentId")
         REFERENCES "edfi"."StudentSpecialEducationProgramAssociationDisability" ("CollectionItemId", "StudentSpecialEducationProgramAssociation_DocumentId")
         ON DELETE CASCADE
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentSpecialEducationProgramAssociationDisabili_d7108f3e80'
+        AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramAssociationDisabilityDesignation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentSpecialEducationProgramAssociationDisabilityDesignation"
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociationDisabili_d7108f3e80"
+        FOREIGN KEY ("DisabilityDesignationDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
 END $$;
@@ -33352,6 +33353,23 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentSpecialEducationProgramEligibilityAssociat_0e18724cb8'
+        AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramEligibilityAssociation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentSpecialEducationProgramEligibilityAssociation"
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramEligibilityAssociat_0e18724cb8"
+        FOREIGN KEY ("EligibilityDelayReasonDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentSpecialEducationProgramEligibilityAssociat_2733183bf3'
         AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramEligibilityAssociation"')
     )
@@ -33369,6 +33387,23 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentSpecialEducationProgramEligibilityAssociat_2c0e9938a0'
+        AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramEligibilityAssociation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentSpecialEducationProgramEligibilityAssociation"
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramEligibilityAssociat_2c0e9938a0"
+        FOREIGN KEY ("IdeaPartDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_StudentSpecialEducationProgramEligibilityAssociat_494ff3ccf6'
         AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramEligibilityAssociation"')
     )
@@ -33378,23 +33413,6 @@ BEGIN
         FOREIGN KEY ("DocumentId")
         REFERENCES "dms"."Document" ("DocumentId")
         ON DELETE RESTRICT
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramEligibilityAssociat_50bddc2fbe'
-        AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramEligibilityAssociation"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentSpecialEducationProgramEligibilityAssociation"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramEligibilityAssociat_50bddc2fbe"
-        FOREIGN KEY ("EligibilityDelayReasonDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
 END $$;
@@ -33420,14 +33438,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramEligibilityAssociat_8eb61aef70'
+        WHERE conname = 'FK_StudentSpecialEducationProgramEligibilityAssociat_7406d43c8d'
         AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramEligibilityAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSpecialEducationProgramEligibilityAssociation"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramEligibilityAssociat_8eb61aef70"
-        FOREIGN KEY ("IdeaPartDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramEligibilityAssociat_7406d43c8d"
+        FOREIGN KEY ("ProgramProgram_ProgramTypeDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33437,14 +33455,31 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramEligibilityAssociat_8eea501b05'
+        WHERE conname = 'FK_StudentSpecialEducationProgramEligibilityAssociat_8134a013d5'
         AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramEligibilityAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSpecialEducationProgramEligibilityAssociation"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramEligibilityAssociat_8eea501b05"
-        FOREIGN KEY ("ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramEligibilityAssociat_8134a013d5"
+        FOREIGN KEY ("EligibilityEvaluationTypeDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentSpecialEducationProgramEligibilityAssociat_997486fcdd'
+        AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramEligibilityAssociation"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentSpecialEducationProgramEligibilityAssociation"
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramEligibilityAssociat_997486fcdd"
+        FOREIGN KEY ("EvaluationDelayReasonDescriptor_DescriptorId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33462,40 +33497,6 @@ BEGIN
         ADD CONSTRAINT "FK_StudentSpecialEducationProgramEligibilityAssociat_baeccdb5c1"
         FOREIGN KEY ("Student_StudentUniqueId", "Student_DocumentId")
         REFERENCES "edfi"."Student" ("StudentUniqueId", "DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramEligibilityAssociat_be69720654'
-        AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramEligibilityAssociation"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentSpecialEducationProgramEligibilityAssociation"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramEligibilityAssociat_be69720654"
-        FOREIGN KEY ("EligibilityEvaluationTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
-        ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramEligibilityAssociat_e512ab86de'
-        AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramEligibilityAssociation"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentSpecialEducationProgramEligibilityAssociation"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramEligibilityAssociat_e512ab86de"
-        FOREIGN KEY ("EvaluationDelayReasonDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33539,14 +33540,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentTitleIPartAProgramAssociation_ProgramProgr_f1af062f8f'
+        WHERE conname = 'FK_StudentTitleIPartAProgramAssociation_ProgramProgr_9fa5e1be7c'
         AND conrelid = to_regclass('"edfi"."StudentTitleIPartAProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentTitleIPartAProgramAssociation"
-        ADD CONSTRAINT "FK_StudentTitleIPartAProgramAssociation_ProgramProgr_f1af062f8f"
+        ADD CONSTRAINT "FK_StudentTitleIPartAProgramAssociation_ProgramProgr_9fa5e1be7c"
         FOREIGN KEY ("ProgramProgram_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33580,7 +33581,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentTitleIPartAProgramAssociation"
         ADD CONSTRAINT "FK_StudentTitleIPartAProgramAssociation_ReasonExitedDescriptor"
         FOREIGN KEY ("ReasonExitedDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33607,14 +33608,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentTitleIPartAProgramAssociation_TitleIPartAP_4858043005'
+        WHERE conname = 'FK_StudentTitleIPartAProgramAssociation_TitleIPartAP_c1b299f2d8'
         AND conrelid = to_regclass('"edfi"."StudentTitleIPartAProgramAssociation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentTitleIPartAProgramAssociation"
-        ADD CONSTRAINT "FK_StudentTitleIPartAProgramAssociation_TitleIPartAP_4858043005"
+        ADD CONSTRAINT "FK_StudentTitleIPartAProgramAssociation_TitleIPartAP_c1b299f2d8"
         FOREIGN KEY ("TitleIPartAParticipantDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33641,14 +33642,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentTitleIPartAProgramAssociationProgramPartic_be960b1ae4'
+        WHERE conname = 'FK_StudentTitleIPartAProgramAssociationProgramPartic_62c52332a8'
         AND conrelid = to_regclass('"edfi"."StudentTitleIPartAProgramAssociationProgramParticipationStatus"')
     )
     THEN
         ALTER TABLE "edfi"."StudentTitleIPartAProgramAssociationProgramParticipationStatus"
-        ADD CONSTRAINT "FK_StudentTitleIPartAProgramAssociationProgramPartic_be960b1ae4"
+        ADD CONSTRAINT "FK_StudentTitleIPartAProgramAssociationProgramPartic_62c52332a8"
         FOREIGN KEY ("ParticipationStatusDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33675,14 +33676,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentTitleIPartAProgramAssociationTitleIPartAPr_82f39e33d8'
+        WHERE conname = 'FK_StudentTitleIPartAProgramAssociationTitleIPartAPr_b7e4a4d176'
         AND conrelid = to_regclass('"edfi"."StudentTitleIPartAProgramAssociationTitleIPartAProgramService"')
     )
     THEN
         ALTER TABLE "edfi"."StudentTitleIPartAProgramAssociationTitleIPartAProgramService"
-        ADD CONSTRAINT "FK_StudentTitleIPartAProgramAssociationTitleIPartAPr_82f39e33d8"
+        ADD CONSTRAINT "FK_StudentTitleIPartAProgramAssociationTitleIPartAPr_b7e4a4d176"
         FOREIGN KEY ("TitleIPartAProgramServiceDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33716,7 +33717,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentTransportation"
         ADD CONSTRAINT "FK_StudentTransportation_StudentBusDetailsBusRouteDescriptor"
         FOREIGN KEY ("StudentBusDetailsBusRouteDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33760,14 +33761,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentTransportation_TransportationPublicExpense_4ea9778e67'
+        WHERE conname = 'FK_StudentTransportation_TransportationPublicExpense_d409a207e7'
         AND conrelid = to_regclass('"edfi"."StudentTransportation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentTransportation"
-        ADD CONSTRAINT "FK_StudentTransportation_TransportationPublicExpense_4ea9778e67"
+        ADD CONSTRAINT "FK_StudentTransportation_TransportationPublicExpense_d409a207e7"
         FOREIGN KEY ("TransportationPublicExpenseEligibilityTypeDescriptor_16bbab4652")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33784,7 +33785,7 @@ BEGIN
         ALTER TABLE "edfi"."StudentTransportation"
         ADD CONSTRAINT "FK_StudentTransportation_TransportationTypeDescriptor"
         FOREIGN KEY ("TransportationTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33811,14 +33812,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentTransportationTravelDayofWeek_TravelDayofW_c0366b98bb'
+        WHERE conname = 'FK_StudentTransportationTravelDayofWeek_TravelDayofW_f5641919fd'
         AND conrelid = to_regclass('"edfi"."StudentTransportationTravelDayofWeek"')
     )
     THEN
         ALTER TABLE "edfi"."StudentTransportationTravelDayofWeek"
-        ADD CONSTRAINT "FK_StudentTransportationTravelDayofWeek_TravelDayofW_c0366b98bb"
+        ADD CONSTRAINT "FK_StudentTransportationTravelDayofWeek_TravelDayofW_f5641919fd"
         FOREIGN KEY ("TravelDayofWeekDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33845,14 +33846,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentTransportationTravelDirection_TravelDirect_6f0d64af48'
+        WHERE conname = 'FK_StudentTransportationTravelDirection_TravelDirect_4ca0a3f799'
         AND conrelid = to_regclass('"edfi"."StudentTransportationTravelDirection"')
     )
     THEN
         ALTER TABLE "edfi"."StudentTransportationTravelDirection"
-        ADD CONSTRAINT "FK_StudentTransportationTravelDirection_TravelDirect_6f0d64af48"
+        ADD CONSTRAINT "FK_StudentTransportationTravelDirection_TravelDirect_4ca0a3f799"
         FOREIGN KEY ("TravelDirectionDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -33937,7 +33938,7 @@ BEGIN
         ALTER TABLE "edfi"."Survey"
         ADD CONSTRAINT "FK_Survey_SurveyCategoryDescriptor"
         FOREIGN KEY ("SurveyCategoryDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -34022,7 +34023,7 @@ BEGIN
         ALTER TABLE "edfi"."SurveyProgramAssociation"
         ADD CONSTRAINT "FK_SurveyProgramAssociation_Program_ProgramTypeDescriptor"
         FOREIGN KEY ("Program_ProgramTypeDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -34090,7 +34091,7 @@ BEGIN
         ALTER TABLE "edfi"."SurveyQuestion"
         ADD CONSTRAINT "FK_SurveyQuestion_QuestionFormDescriptor"
         FOREIGN KEY ("QuestionFormDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -34345,7 +34346,7 @@ BEGIN
         ALTER TABLE "edfi"."SurveyResponseSurveyLevel"
         ADD CONSTRAINT "FK_SurveyResponseSurveyLevel_SurveyLevelDescriptor"
         FOREIGN KEY ("SurveyLevelDescriptor_DescriptorId")
-        REFERENCES "dms"."Descriptor" ("DocumentId")
+        REFERENCES "dms"."Descriptor" ("DescriptorId")
         ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
@@ -34743,8 +34744,6 @@ BEGIN
 END $$;
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationIdToEducationOrganizationId_Target" ON "auth"."EducationOrganizationIdToEducationOrganizationId" ("TargetEducationOrganizationId") INCLUDE ("SourceEducationOrganizationId");
-
-CREATE INDEX IF NOT EXISTS "IX_Descriptor_Discriminator_ContentVersion" ON "dms"."Descriptor" ("Discriminator", "ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_Descriptor_Namespace_Auth" ON "dms"."Descriptor" ("Namespace");
 
@@ -37187,6 +37186,8 @@ CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseStaffTargetAssociation_Names
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseStaffTargetAssociation_Staff_6a3e167ec0" ON "edfi"."SurveySectionResponseStaffTargetAssociation" ("Staff_StaffUniqueId", "Staff_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponseStaffTargetAssociation_Staff_f3b222f077" ON "edfi"."SurveySectionResponseStaffTargetAssociation" ("Staff_DocumentId") INCLUDE ("DocumentId");
+
+CREATE INDEX IF NOT EXISTS "IX_Descriptor_ResourceKeyId_ChangeVersion" ON "tracked_changes_edfi"."Descriptor" ("ResourceKeyId", "ChangeVersion");
 
 CREATE OR REPLACE VIEW "edfi"."EducationOrganization_View" AS
 SELECT "DocumentId" AS "DocumentId", "CommunityOrganizationId" AS "EducationOrganizationId", 'Ed-Fi:CommunityOrganization'::varchar(256) AS "Discriminator"
@@ -43520,7 +43521,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 54;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCompetencyObjective' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.objective=' || NEW."Objective"::text || '#' || '$.objectiveGradeLevelDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ObjectiveGradeLevelDescriptor_DescriptorId"))), NEW."DocumentId", 54);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCompetencyObjective' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.objective=' || NEW."Objective"::text || '#' || '$.objectiveGradeLevelDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ObjectiveGradeLevelDescriptor_DescriptorId"))), NEW."DocumentId", 54);
     END IF;
     RETURN NEW;
 END;
@@ -43560,7 +43561,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ObjectiveGradeLevelDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ObjectiveGradeLevelDescriptor_DescriptorId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -43609,8 +43610,8 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ObjectiveGradeLevelDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."ObjectiveGradeLevelDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ObjectiveGradeLevelDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."ObjectiveGradeLevelDescriptor_DescriptorId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -45685,7 +45686,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 69;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCourseTranscript' || '$.courseAttemptResultDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."CourseAttemptResultDescriptor_DescriptorId")) || '#' || '$.courseReference.courseCode=' || NEW."CourseCourse_CourseCode"::text || '#' || '$.courseReference.educationOrganizationId=' || NEW."CourseCourse_EducationOrganizationId"::text || '#' || '$.studentAcademicRecordReference.educationOrganizationId=' || NEW."StudentAcademicRecord_EducationOrganizationId"::text || '#' || '$.studentAcademicRecordReference.schoolYear=' || NEW."StudentAcademicRecord_SchoolYear"::text || '#' || '$.studentAcademicRecordReference.studentUniqueId=' || NEW."StudentAcademicRecord_StudentUniqueId"::text || '#' || '$.studentAcademicRecordReference.termDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."StudentAcademicRecord_TermDescriptor_DescriptorId"))), NEW."DocumentId", 69);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCourseTranscript' || '$.courseAttemptResultDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."CourseAttemptResultDescriptor_DescriptorId")) || '#' || '$.courseReference.courseCode=' || NEW."CourseCourse_CourseCode"::text || '#' || '$.courseReference.educationOrganizationId=' || NEW."CourseCourse_EducationOrganizationId"::text || '#' || '$.studentAcademicRecordReference.educationOrganizationId=' || NEW."StudentAcademicRecord_EducationOrganizationId"::text || '#' || '$.studentAcademicRecordReference.schoolYear=' || NEW."StudentAcademicRecord_SchoolYear"::text || '#' || '$.studentAcademicRecordReference.studentUniqueId=' || NEW."StudentAcademicRecord_StudentUniqueId"::text || '#' || '$.studentAcademicRecordReference.termDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."StudentAcademicRecord_TermDescriptor_DescriptorId"))), NEW."DocumentId", 69);
     END IF;
     RETURN NEW;
 END;
@@ -45737,8 +45738,8 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."CourseAttemptResultDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."StudentAcademicRecord_TermDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."CourseAttemptResultDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DescriptorId" = OLD."StudentAcademicRecord_TermDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."StudentAcademicRecord_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -45812,11 +45813,11 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."CourseAttemptResultDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."StudentAcademicRecord_TermDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."CourseAttemptResultDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DescriptorId" = OLD."StudentAcademicRecord_TermDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."StudentAcademicRecord_StudentUniqueId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."CourseAttemptResultDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" newDj1 ON newDj1."DocumentId" = NEW."StudentAcademicRecord_TermDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."CourseAttemptResultDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj1 ON newDj1."DescriptorId" = NEW."StudentAcademicRecord_TermDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."StudentAcademicRecord_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -46523,7 +46524,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 70;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCredential' || '$.credentialIdentifier=' || NEW."CredentialIdentifier"::text || '#' || '$.stateOfIssueStateAbbreviationDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."StateOfIssueStateAbbreviationDescriptor_DescriptorId"))), NEW."DocumentId", 70);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCredential' || '$.credentialIdentifier=' || NEW."CredentialIdentifier"::text || '#' || '$.stateOfIssueStateAbbreviationDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."StateOfIssueStateAbbreviationDescriptor_DescriptorId"))), NEW."DocumentId", 70);
     END IF;
     RETURN NEW;
 END;
@@ -46563,7 +46564,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."StateOfIssueStateAbbreviationDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."StateOfIssueStateAbbreviationDescriptor_DescriptorId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -46612,8 +46613,8 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."StateOfIssueStateAbbreviationDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."StateOfIssueStateAbbreviationDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."StateOfIssueStateAbbreviationDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."StateOfIssueStateAbbreviationDescriptor_DescriptorId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -50994,7 +50995,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 114;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEvaluationRubricDimension' || '$.evaluationRubricRating=' || NEW."EvaluationRubricRating"::text || '#' || '$.programEvaluationElementReference.programEducationOrganizationId=' || NEW."ProgramEvaluationElement_ProgramEducationOrganizationId"::text || '#' || '$.programEvaluationElementReference.programEvaluationElementTitle=' || NEW."ProgramEvaluationElement_ProgramEvaluationElementTitle"::text || '#' || '$.programEvaluationElementReference.programEvaluationPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706")) || '#' || '$.programEvaluationElementReference.programEvaluationTitle=' || NEW."ProgramEvaluationElement_ProgramEvaluationTitle"::text || '#' || '$.programEvaluationElementReference.programEvaluationTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71")) || '#' || '$.programEvaluationElementReference.programName=' || NEW."ProgramEvaluationElement_ProgramName"::text || '#' || '$.programEvaluationElementReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId"))), NEW."DocumentId", 114);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEvaluationRubricDimension' || '$.evaluationRubricRating=' || NEW."EvaluationRubricRating"::text || '#' || '$.programEvaluationElementReference.programEducationOrganizationId=' || NEW."ProgramEvaluationElement_ProgramEducationOrganizationId"::text || '#' || '$.programEvaluationElementReference.programEvaluationElementTitle=' || NEW."ProgramEvaluationElement_ProgramEvaluationElementTitle"::text || '#' || '$.programEvaluationElementReference.programEvaluationPeriodDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706")) || '#' || '$.programEvaluationElementReference.programEvaluationTitle=' || NEW."ProgramEvaluationElement_ProgramEvaluationTitle"::text || '#' || '$.programEvaluationElementReference.programEvaluationTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71")) || '#' || '$.programEvaluationElementReference.programName=' || NEW."ProgramEvaluationElement_ProgramName"::text || '#' || '$.programEvaluationElementReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId"))), NEW."DocumentId", 114);
     END IF;
     RETURN NEW;
 END;
@@ -51048,9 +51049,9 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706"
-        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71"
-        INNER JOIN "dms"."Descriptor" oldDj2 ON oldDj2."DocumentId" = OLD."ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706"
+        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DescriptorId" = OLD."ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71"
+        INNER JOIN "dms"."Descriptor" oldDj2 ON oldDj2."DescriptorId" = OLD."ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -51127,12 +51128,12 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706"
-        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71"
-        INNER JOIN "dms"."Descriptor" oldDj2 ON oldDj2."DocumentId" = OLD."ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706"
-        INNER JOIN "dms"."Descriptor" newDj1 ON newDj1."DocumentId" = NEW."ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71"
-        INNER JOIN "dms"."Descriptor" newDj2 ON newDj2."DocumentId" = NEW."ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706"
+        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DescriptorId" = OLD."ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71"
+        INNER JOIN "dms"."Descriptor" oldDj2 ON oldDj2."DescriptorId" = OLD."ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706"
+        INNER JOIN "dms"."Descriptor" newDj1 ON newDj1."DescriptorId" = NEW."ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71"
+        INNER JOIN "dms"."Descriptor" newDj2 ON newDj2."DescriptorId" = NEW."ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -51639,7 +51640,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 122;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGrade' || '$.gradeTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."GradeTypeDescriptor_DescriptorId")) || '#' || '$.gradingPeriodReference.gradingPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId")) || '#' || '$.gradingPeriodReference.gradingPeriodName=' || NEW."GradingPeriodGradingPeriod_GradingPeriodName"::text || '#' || '$.gradingPeriodReference.schoolId=' || NEW."GradingPeriodGradingPeriod_SchoolId"::text || '#' || '$.gradingPeriodReference.schoolYear=' || NEW."GradingPeriodGradingPeriod_SchoolYear"::text || '#' || '$.studentSectionAssociationReference.beginDate=' || NEW."StudentSectionAssociation_BeginDate"::text || '#' || '$.studentSectionAssociationReference.localCourseCode=' || NEW."StudentSectionAssociation_LocalCourseCode"::text || '#' || '$.studentSectionAssociationReference.schoolId=' || NEW."StudentSectionAssociation_SchoolId"::text || '#' || '$.studentSectionAssociationReference.schoolYear=' || NEW."StudentSectionAssociation_SchoolYear"::text || '#' || '$.studentSectionAssociationReference.sectionIdentifier=' || NEW."StudentSectionAssociation_SectionIdentifier"::text || '#' || '$.studentSectionAssociationReference.sessionName=' || NEW."StudentSectionAssociation_SessionName"::text || '#' || '$.studentSectionAssociationReference.studentUniqueId=' || NEW."StudentSectionAssociation_StudentUniqueId"::text), NEW."DocumentId", 122);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGrade' || '$.gradeTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."GradeTypeDescriptor_DescriptorId")) || '#' || '$.gradingPeriodReference.gradingPeriodDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId")) || '#' || '$.gradingPeriodReference.gradingPeriodName=' || NEW."GradingPeriodGradingPeriod_GradingPeriodName"::text || '#' || '$.gradingPeriodReference.schoolId=' || NEW."GradingPeriodGradingPeriod_SchoolId"::text || '#' || '$.gradingPeriodReference.schoolYear=' || NEW."GradingPeriodGradingPeriod_SchoolYear"::text || '#' || '$.studentSectionAssociationReference.beginDate=' || NEW."StudentSectionAssociation_BeginDate"::text || '#' || '$.studentSectionAssociationReference.localCourseCode=' || NEW."StudentSectionAssociation_LocalCourseCode"::text || '#' || '$.studentSectionAssociationReference.schoolId=' || NEW."StudentSectionAssociation_SchoolId"::text || '#' || '$.studentSectionAssociationReference.schoolYear=' || NEW."StudentSectionAssociation_SchoolYear"::text || '#' || '$.studentSectionAssociationReference.sectionIdentifier=' || NEW."StudentSectionAssociation_SectionIdentifier"::text || '#' || '$.studentSectionAssociationReference.sessionName=' || NEW."StudentSectionAssociation_SessionName"::text || '#' || '$.studentSectionAssociationReference.studentUniqueId=' || NEW."StudentSectionAssociation_StudentUniqueId"::text), NEW."DocumentId", 122);
     END IF;
     RETURN NEW;
 END;
@@ -51697,8 +51698,8 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."GradeTypeDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."GradeTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DescriptorId" = OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."StudentSectionAssociation_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -51784,11 +51785,11 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."GradeTypeDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."GradeTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DescriptorId" = OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."StudentSectionAssociation_StudentUniqueId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."GradeTypeDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" newDj1 ON newDj1."DocumentId" = NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."GradeTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj1 ON newDj1."DescriptorId" = NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."StudentSectionAssociation_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -52100,7 +52101,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 128;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGradingPeriod' || '$.gradingPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."GradingPeriodDescriptor_DescriptorId")) || '#' || '$.gradingPeriodName=' || NEW."GradingPeriodName"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$.schoolYearTypeReference.schoolYear=' || NEW."SchoolYear_SchoolYear"::text), NEW."DocumentId", 128);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGradingPeriod' || '$.gradingPeriodDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."GradingPeriodDescriptor_DescriptorId")) || '#' || '$.gradingPeriodName=' || NEW."GradingPeriodName"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$.schoolYearTypeReference.schoolYear=' || NEW."SchoolYear_SchoolYear"::text), NEW."DocumentId", 128);
     END IF;
     RETURN NEW;
 END;
@@ -52142,7 +52143,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."GradingPeriodDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."GradingPeriodDescriptor_DescriptorId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -52195,8 +52196,8 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."GradingPeriodDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."GradingPeriodDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."GradingPeriodDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."GradingPeriodDescriptor_DescriptorId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -52216,7 +52217,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 130;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGraduationPlan' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.graduationPlanTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."GraduationPlanTypeDescriptor_DescriptorId")) || '#' || '$.graduationSchoolYearTypeReference.schoolYear=' || NEW."GraduationSchoolYear_GraduationSchoolYear"::text), NEW."DocumentId", 130);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGraduationPlan' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.graduationPlanTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."GraduationPlanTypeDescriptor_DescriptorId")) || '#' || '$.graduationSchoolYearTypeReference.schoolYear=' || NEW."GraduationSchoolYear_GraduationSchoolYear"::text), NEW."DocumentId", 130);
     END IF;
     RETURN NEW;
 END;
@@ -52256,7 +52257,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."GraduationPlanTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."GraduationPlanTypeDescriptor_DescriptorId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -52305,8 +52306,8 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."GraduationPlanTypeDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."GraduationPlanTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."GraduationPlanTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."GraduationPlanTypeDescriptor_DescriptorId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -60520,7 +60521,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 195;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiPerson' || '$.personId=' || NEW."PersonId"::text || '#' || '$.sourceSystemDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."SourceSystemDescriptor_DescriptorId"))), NEW."DocumentId", 195);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiPerson' || '$.personId=' || NEW."PersonId"::text || '#' || '$.sourceSystemDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."SourceSystemDescriptor_DescriptorId"))), NEW."DocumentId", 195);
     END IF;
     RETURN NEW;
 END;
@@ -60558,7 +60559,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."SourceSystemDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."SourceSystemDescriptor_DescriptorId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -60603,8 +60604,8 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."SourceSystemDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."SourceSystemDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."SourceSystemDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."SourceSystemDescriptor_DescriptorId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -60624,7 +60625,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 199;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiPostSecondaryEvent' || '$.eventDate=' || NEW."EventDate"::text || '#' || '$.postSecondaryEventCategoryDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."PostSecondaryEventCategoryDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 199);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiPostSecondaryEvent' || '$.eventDate=' || NEW."EventDate"::text || '#' || '$.postSecondaryEventCategoryDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."PostSecondaryEventCategoryDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 199);
     END IF;
     RETURN NEW;
 END;
@@ -60666,7 +60667,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."PostSecondaryEventCategoryDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."PostSecondaryEventCategoryDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -60720,9 +60721,9 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."PostSecondaryEventCategoryDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."PostSecondaryEventCategoryDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."PostSecondaryEventCategoryDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."PostSecondaryEventCategoryDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -61750,7 +61751,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 208;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProgram' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programName=' || NEW."ProgramName"::text || '#' || '$.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramTypeDescriptor_DescriptorId"))), NEW."DocumentId", 208);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProgram' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programName=' || NEW."ProgramName"::text || '#' || '$.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramTypeDescriptor_DescriptorId"))), NEW."DocumentId", 208);
     END IF;
     RETURN NEW;
 END;
@@ -61790,7 +61791,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramTypeDescriptor_DescriptorId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -61839,8 +61840,8 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."ProgramTypeDescriptor_DescriptorId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -62151,7 +62152,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 212;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProgramEvaluation' || '$.programEvaluationPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluationPeriodDescriptor_DescriptorId")) || '#' || '$.programEvaluationTitle=' || NEW."ProgramEvaluationTitle"::text || '#' || '$.programEvaluationTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluationTypeDescriptor_DescriptorId")) || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"))), NEW."DocumentId", 212);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProgramEvaluation' || '$.programEvaluationPeriodDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramEvaluationPeriodDescriptor_DescriptorId")) || '#' || '$.programEvaluationTitle=' || NEW."ProgramEvaluationTitle"::text || '#' || '$.programEvaluationTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramEvaluationTypeDescriptor_DescriptorId")) || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"))), NEW."DocumentId", 212);
     END IF;
     RETURN NEW;
 END;
@@ -62201,9 +62202,9 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramEvaluationPeriodDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ProgramEvaluationTypeDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" oldDj2 ON oldDj2."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramEvaluationPeriodDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DescriptorId" = OLD."ProgramEvaluationTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj2 ON oldDj2."DescriptorId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -62272,12 +62273,12 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramEvaluationPeriodDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ProgramEvaluationTypeDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" oldDj2 ON oldDj2."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."ProgramEvaluationPeriodDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" newDj1 ON newDj1."DocumentId" = NEW."ProgramEvaluationTypeDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" newDj2 ON newDj2."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramEvaluationPeriodDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DescriptorId" = OLD."ProgramEvaluationTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj2 ON oldDj2."DescriptorId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."ProgramEvaluationPeriodDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj1 ON newDj1."DescriptorId" = NEW."ProgramEvaluationTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj2 ON newDj2."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -62297,7 +62298,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 213;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProgramEvaluationElement' || '$.programEvaluationElementTitle=' || NEW."ProgramEvaluationElementTitle"::text || '#' || '$.programEvaluationReference.programEducationOrganizationId=' || NEW."ProgramEvaluation_ProgramEducationOrganizationId"::text || '#' || '$.programEvaluationReference.programEvaluationPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e")) || '#' || '$.programEvaluationReference.programEvaluationTitle=' || NEW."ProgramEvaluation_ProgramEvaluationTitle"::text || '#' || '$.programEvaluationReference.programEvaluationTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId")) || '#' || '$.programEvaluationReference.programName=' || NEW."ProgramEvaluation_ProgramName"::text || '#' || '$.programEvaluationReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"))), NEW."DocumentId", 213);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProgramEvaluationElement' || '$.programEvaluationElementTitle=' || NEW."ProgramEvaluationElementTitle"::text || '#' || '$.programEvaluationReference.programEducationOrganizationId=' || NEW."ProgramEvaluation_ProgramEducationOrganizationId"::text || '#' || '$.programEvaluationReference.programEvaluationPeriodDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e")) || '#' || '$.programEvaluationReference.programEvaluationTitle=' || NEW."ProgramEvaluation_ProgramEvaluationTitle"::text || '#' || '$.programEvaluationReference.programEvaluationTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId")) || '#' || '$.programEvaluationReference.programName=' || NEW."ProgramEvaluation_ProgramName"::text || '#' || '$.programEvaluationReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"))), NEW."DocumentId", 213);
     END IF;
     RETURN NEW;
 END;
@@ -62349,9 +62350,9 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
-        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" oldDj2 ON oldDj2."DocumentId" = OLD."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
+        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DescriptorId" = OLD."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj2 ON oldDj2."DescriptorId" = OLD."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -62424,12 +62425,12 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
-        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" oldDj2 ON oldDj2."DocumentId" = OLD."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
-        INNER JOIN "dms"."Descriptor" newDj1 ON newDj1."DocumentId" = NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" newDj2 ON newDj2."DocumentId" = NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
+        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DescriptorId" = OLD."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj2 ON oldDj2."DescriptorId" = OLD."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
+        INNER JOIN "dms"."Descriptor" newDj1 ON newDj1."DescriptorId" = NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj2 ON newDj2."DescriptorId" = NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -62645,7 +62646,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 214;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProgramEvaluationObjective' || '$.programEvaluationObjectiveTitle=' || NEW."ProgramEvaluationObjectiveTitle"::text || '#' || '$.programEvaluationReference.programEducationOrganizationId=' || NEW."ProgramEvaluation_ProgramEducationOrganizationId"::text || '#' || '$.programEvaluationReference.programEvaluationPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e")) || '#' || '$.programEvaluationReference.programEvaluationTitle=' || NEW."ProgramEvaluation_ProgramEvaluationTitle"::text || '#' || '$.programEvaluationReference.programEvaluationTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId")) || '#' || '$.programEvaluationReference.programName=' || NEW."ProgramEvaluation_ProgramName"::text || '#' || '$.programEvaluationReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"))), NEW."DocumentId", 214);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiProgramEvaluationObjective' || '$.programEvaluationObjectiveTitle=' || NEW."ProgramEvaluationObjectiveTitle"::text || '#' || '$.programEvaluationReference.programEducationOrganizationId=' || NEW."ProgramEvaluation_ProgramEducationOrganizationId"::text || '#' || '$.programEvaluationReference.programEvaluationPeriodDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e")) || '#' || '$.programEvaluationReference.programEvaluationTitle=' || NEW."ProgramEvaluation_ProgramEvaluationTitle"::text || '#' || '$.programEvaluationReference.programEvaluationTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId")) || '#' || '$.programEvaluationReference.programName=' || NEW."ProgramEvaluation_ProgramName"::text || '#' || '$.programEvaluationReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"))), NEW."DocumentId", 214);
     END IF;
     RETURN NEW;
 END;
@@ -62697,9 +62698,9 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
-        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" oldDj2 ON oldDj2."DocumentId" = OLD."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
+        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DescriptorId" = OLD."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj2 ON oldDj2."DescriptorId" = OLD."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -62772,12 +62773,12 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
-        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" oldDj2 ON oldDj2."DocumentId" = OLD."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
-        INNER JOIN "dms"."Descriptor" newDj1 ON newDj1."DocumentId" = NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" newDj2 ON newDj2."DocumentId" = NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
+        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DescriptorId" = OLD."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj2 ON oldDj2."DescriptorId" = OLD."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
+        INNER JOIN "dms"."Descriptor" newDj1 ON newDj1."DescriptorId" = NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj2 ON newDj2."DescriptorId" = NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
@@ -63284,7 +63285,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 234;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiReportCard' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.gradingPeriodReference.gradingPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId")) || '#' || '$.gradingPeriodReference.gradingPeriodName=' || NEW."GradingPeriodGradingPeriod_GradingPeriodName"::text || '#' || '$.gradingPeriodReference.schoolId=' || NEW."GradingPeriodGradingPeriod_SchoolId"::text || '#' || '$.gradingPeriodReference.schoolYear=' || NEW."GradingPeriodGradingPeriod_SchoolYear"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 234);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiReportCard' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.gradingPeriodReference.gradingPeriodDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId")) || '#' || '$.gradingPeriodReference.gradingPeriodName=' || NEW."GradingPeriodGradingPeriod_GradingPeriodName"::text || '#' || '$.gradingPeriodReference.schoolId=' || NEW."GradingPeriodGradingPeriod_SchoolId"::text || '#' || '$.gradingPeriodReference.schoolYear=' || NEW."GradingPeriodGradingPeriod_SchoolYear"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 234);
     END IF;
     RETURN NEW;
 END;
@@ -63332,7 +63333,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -63398,9 +63399,9 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -66606,7 +66607,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 267;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffAbsenceEvent' || '$.absenceEventCategoryDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."AbsenceEventCategoryDescriptor_DescriptorId")) || '#' || '$.eventDate=' || NEW."EventDate"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 267);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffAbsenceEvent' || '$.absenceEventCategoryDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."AbsenceEventCategoryDescriptor_DescriptorId")) || '#' || '$.eventDate=' || NEW."EventDate"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 267);
     END IF;
     RETURN NEW;
 END;
@@ -66648,7 +66649,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."AbsenceEventCategoryDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."AbsenceEventCategoryDescriptor_DescriptorId"
         INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -66702,9 +66703,9 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."AbsenceEventCategoryDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."AbsenceEventCategoryDescriptor_DescriptorId"
         INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."AbsenceEventCategoryDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."AbsenceEventCategoryDescriptor_DescriptorId"
         INNER JOIN "edfi"."Staff" newPj0 ON newPj0."StaffUniqueId" = NEW."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -67441,7 +67442,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 271;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffEducationOrganizationAssignmentAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.staffClassificationDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."StaffClassificationDescriptor_DescriptorId")) || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 271);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffEducationOrganizationAssignmentAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.staffClassificationDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."StaffClassificationDescriptor_DescriptorId")) || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 271);
     END IF;
     RETURN NEW;
 END;
@@ -67485,7 +67486,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."StaffClassificationDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."StaffClassificationDescriptor_DescriptorId"
         INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."StaffUniqueId_Unified"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -67543,9 +67544,9 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."StaffClassificationDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."StaffClassificationDescriptor_DescriptorId"
         INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."StaffUniqueId_Unified"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."StaffClassificationDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."StaffClassificationDescriptor_DescriptorId"
         INNER JOIN "edfi"."Staff" newPj0 ON newPj0."StaffUniqueId" = NEW."StaffUniqueId_Unified"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -67872,7 +67873,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 273;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffEducationOrganizationEmploymentAssociation' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.employmentStatusDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."EmploymentStatusDescriptor_DescriptorId")) || '#' || '$.hireDate=' || NEW."HireDate"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 273);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffEducationOrganizationEmploymentAssociation' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.employmentStatusDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."EmploymentStatusDescriptor_DescriptorId")) || '#' || '$.hireDate=' || NEW."HireDate"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 273);
     END IF;
     RETURN NEW;
 END;
@@ -67916,7 +67917,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."EmploymentStatusDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."EmploymentStatusDescriptor_DescriptorId"
         INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -67974,9 +67975,9 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."EmploymentStatusDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."EmploymentStatusDescriptor_DescriptorId"
         INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."EmploymentStatusDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."EmploymentStatusDescriptor_DescriptorId"
         INNER JOIN "edfi"."Staff" newPj0 ON newPj0."StaffUniqueId" = NEW."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -68585,7 +68586,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 275;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffLeave' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.staffLeaveEventCategoryDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."StaffLeaveEventCategoryDescriptor_DescriptorId")) || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 275);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffLeave' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.staffLeaveEventCategoryDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."StaffLeaveEventCategoryDescriptor_DescriptorId")) || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 275);
     END IF;
     RETURN NEW;
 END;
@@ -68627,7 +68628,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."StaffLeaveEventCategoryDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."StaffLeaveEventCategoryDescriptor_DescriptorId"
         INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -68681,9 +68682,9 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."StaffLeaveEventCategoryDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."StaffLeaveEventCategoryDescriptor_DescriptorId"
         INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."StaffLeaveEventCategoryDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."StaffLeaveEventCategoryDescriptor_DescriptorId"
         INNER JOIN "edfi"."Staff" newPj0 ON newPj0."StaffUniqueId" = NEW."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -68900,7 +68901,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 277;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 277);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 277);
     END IF;
     RETURN NEW;
 END;
@@ -68946,7 +68947,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
         INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -69008,9 +69009,9 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
         INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
         INNER JOIN "edfi"."Staff" newPj0 ON newPj0."StaffUniqueId" = NEW."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -69227,7 +69228,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 278;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffSchoolAssociation' || '$.programAssignmentDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramAssignmentDescriptor_DescriptorId")) || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 278);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStaffSchoolAssociation' || '$.programAssignmentDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramAssignmentDescriptor_DescriptorId")) || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$.staffReference.staffUniqueId=' || NEW."Staff_StaffUniqueId"::text), NEW."DocumentId", 278);
     END IF;
     RETURN NEW;
 END;
@@ -69269,7 +69270,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramAssignmentDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramAssignmentDescriptor_DescriptorId"
         INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -69323,9 +69324,9 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramAssignmentDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramAssignmentDescriptor_DescriptorId"
         INNER JOIN "edfi"."Staff" oldPj0 ON oldPj0."StaffUniqueId" = OLD."Staff_StaffUniqueId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."ProgramAssignmentDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."ProgramAssignmentDescriptor_DescriptorId"
         INNER JOIN "edfi"."Staff" newPj0 ON newPj0."StaffUniqueId" = NEW."Staff_StaffUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -71164,7 +71165,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 283;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentAcademicRecord' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.schoolYearTypeReference.schoolYear=' || NEW."SchoolYear_SchoolYear"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text || '#' || '$.termDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."TermDescriptor_DescriptorId"))), NEW."DocumentId", 283);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentAcademicRecord' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.schoolYearTypeReference.schoolYear=' || NEW."SchoolYear_SchoolYear"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text || '#' || '$.termDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."TermDescriptor_DescriptorId"))), NEW."DocumentId", 283);
     END IF;
     RETURN NEW;
 END;
@@ -71208,7 +71209,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."TermDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."TermDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -71266,9 +71267,9 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."TermDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."TermDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."TermDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."TermDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -71999,7 +72000,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 285;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentAssessmentEducationOrganizationAssociation' || '$.educationOrganizationAssociationTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."EducationOrganizationAssociationTypeDescriptor_DescriptorId")) || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.studentAssessmentReference.assessmentIdentifier=' || NEW."StudentAssessment_AssessmentIdentifier"::text || '#' || '$.studentAssessmentReference.namespace=' || NEW."StudentAssessment_Namespace"::text || '#' || '$.studentAssessmentReference.studentAssessmentIdentifier=' || NEW."StudentAssessment_StudentAssessmentIdentifier"::text || '#' || '$.studentAssessmentReference.studentUniqueId=' || NEW."StudentAssessment_StudentUniqueId"::text), NEW."DocumentId", 285);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentAssessmentEducationOrganizationAssociation' || '$.educationOrganizationAssociationTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."EducationOrganizationAssociationTypeDescriptor_DescriptorId")) || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.studentAssessmentReference.assessmentIdentifier=' || NEW."StudentAssessment_AssessmentIdentifier"::text || '#' || '$.studentAssessmentReference.namespace=' || NEW."StudentAssessment_Namespace"::text || '#' || '$.studentAssessmentReference.studentAssessmentIdentifier=' || NEW."StudentAssessment_StudentAssessmentIdentifier"::text || '#' || '$.studentAssessmentReference.studentUniqueId=' || NEW."StudentAssessment_StudentUniqueId"::text), NEW."DocumentId", 285);
     END IF;
     RETURN NEW;
 END;
@@ -72047,7 +72048,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."EducationOrganizationAssociationTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."EducationOrganizationAssociationTypeDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."StudentAssessment_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -72113,9 +72114,9 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."EducationOrganizationAssociationTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."EducationOrganizationAssociationTypeDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."StudentAssessment_StudentUniqueId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."EducationOrganizationAssociationTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."EducationOrganizationAssociationTypeDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."StudentAssessment_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -73299,11 +73300,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 288;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentCTEProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 288);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentCTEProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 288);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
     END IF;
     RETURN NEW;
 END;
@@ -73351,7 +73352,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -73801,7 +73802,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 291;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentCompetencyObjective' || '$.gradingPeriodReference.gradingPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId")) || '#' || '$.gradingPeriodReference.gradingPeriodName=' || NEW."GradingPeriodGradingPeriod_GradingPeriodName"::text || '#' || '$.gradingPeriodReference.schoolId=' || NEW."GradingPeriodGradingPeriod_SchoolId"::text || '#' || '$.gradingPeriodReference.schoolYear=' || NEW."GradingPeriodGradingPeriod_SchoolYear"::text || '#' || '$.objectiveCompetencyObjectiveReference.educationOrganizationId=' || NEW."ObjectiveCompetencyObjective_EducationOrganizationId"::text || '#' || '$.objectiveCompetencyObjectiveReference.objective=' || NEW."ObjectiveCompetencyObjective_Objective"::text || '#' || '$.objectiveCompetencyObjectiveReference.objectiveGradeLevelDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 291);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentCompetencyObjective' || '$.gradingPeriodReference.gradingPeriodDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId")) || '#' || '$.gradingPeriodReference.gradingPeriodName=' || NEW."GradingPeriodGradingPeriod_GradingPeriodName"::text || '#' || '$.gradingPeriodReference.schoolId=' || NEW."GradingPeriodGradingPeriod_SchoolId"::text || '#' || '$.gradingPeriodReference.schoolYear=' || NEW."GradingPeriodGradingPeriod_SchoolYear"::text || '#' || '$.objectiveCompetencyObjectiveReference.educationOrganizationId=' || NEW."ObjectiveCompetencyObjective_EducationOrganizationId"::text || '#' || '$.objectiveCompetencyObjectiveReference.objective=' || NEW."ObjectiveCompetencyObjective_Objective"::text || '#' || '$.objectiveCompetencyObjectiveReference.objectiveGradeLevelDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 291);
     END IF;
     RETURN NEW;
 END;
@@ -73855,8 +73856,8 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DescriptorId" = OLD."ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -73934,11 +73935,11 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DescriptorId" = OLD."ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" newDj1 ON newDj1."DocumentId" = NEW."ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj1 ON newDj1."DescriptorId" = NEW."ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e"
         INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -74268,7 +74269,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 293;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentDisciplineIncidentBehaviorAssociation' || '$.behaviorDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."BehaviorDescriptor_DescriptorId")) || '#' || '$.disciplineIncidentReference.incidentIdentifier=' || NEW."DisciplineIncident_IncidentIdentifier"::text || '#' || '$.disciplineIncidentReference.schoolId=' || NEW."DisciplineIncident_SchoolId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 293);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentDisciplineIncidentBehaviorAssociation' || '$.behaviorDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."BehaviorDescriptor_DescriptorId")) || '#' || '$.disciplineIncidentReference.incidentIdentifier=' || NEW."DisciplineIncident_IncidentIdentifier"::text || '#' || '$.disciplineIncidentReference.schoolId=' || NEW."DisciplineIncident_SchoolId"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 293);
     END IF;
     RETURN NEW;
 END;
@@ -74312,7 +74313,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."BehaviorDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."BehaviorDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -74370,9 +74371,9 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."BehaviorDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."BehaviorDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."BehaviorDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."BehaviorDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -76965,7 +76966,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 297;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentEducationOrganizationResponsibilityAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.responsibilityDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ResponsibilityDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 297);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentEducationOrganizationResponsibilityAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.responsibilityDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ResponsibilityDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 297);
     END IF;
     RETURN NEW;
 END;
@@ -77009,7 +77010,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ResponsibilityDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ResponsibilityDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -77067,9 +77068,9 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ResponsibilityDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ResponsibilityDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."ResponsibilityDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."ResponsibilityDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -77715,11 +77716,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 300;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentHomelessProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 300);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentHomelessProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 300);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
     END IF;
     RETURN NEW;
 END;
@@ -77767,7 +77768,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -78309,7 +78310,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 303;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentInterventionAttendanceEvent' || '$.attendanceEventCategoryDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."AttendanceEventCategoryDescriptor_DescriptorId")) || '#' || '$.eventDate=' || NEW."EventDate"::text || '#' || '$.interventionReference.educationOrganizationId=' || NEW."Intervention_EducationOrganizationId"::text || '#' || '$.interventionReference.interventionIdentificationCode=' || NEW."Intervention_InterventionIdentificationCode"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 303);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentInterventionAttendanceEvent' || '$.attendanceEventCategoryDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."AttendanceEventCategoryDescriptor_DescriptorId")) || '#' || '$.eventDate=' || NEW."EventDate"::text || '#' || '$.interventionReference.educationOrganizationId=' || NEW."Intervention_EducationOrganizationId"::text || '#' || '$.interventionReference.interventionIdentificationCode=' || NEW."Intervention_InterventionIdentificationCode"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 303);
     END IF;
     RETURN NEW;
 END;
@@ -78355,7 +78356,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."AttendanceEventCategoryDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."AttendanceEventCategoryDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -78417,9 +78418,9 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."AttendanceEventCategoryDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."AttendanceEventCategoryDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."AttendanceEventCategoryDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."AttendanceEventCategoryDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -78459,11 +78460,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 304;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentLanguageInstructionProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 304);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentLanguageInstructionProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 304);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
     END IF;
     RETURN NEW;
 END;
@@ -78511,7 +78512,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -78864,11 +78865,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 305;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentMigrantEducationProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 305);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentMigrantEducationProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 305);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
     END IF;
     RETURN NEW;
 END;
@@ -78916,7 +78917,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -79171,11 +79172,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 306;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentNeglectedOrDelinquentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 306);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentNeglectedOrDelinquentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 306);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
     END IF;
     RETURN NEW;
 END;
@@ -79223,7 +79224,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -79674,11 +79675,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 307;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 307);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 307);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
     END IF;
     RETURN NEW;
 END;
@@ -79726,7 +79727,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -79962,7 +79963,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 308;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentProgramAttendanceEvent' || '$.attendanceEventCategoryDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."AttendanceEventCategoryDescriptor_DescriptorId")) || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.eventDate=' || NEW."EventDate"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 308);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentProgramAttendanceEvent' || '$.attendanceEventCategoryDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."AttendanceEventCategoryDescriptor_DescriptorId")) || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.eventDate=' || NEW."EventDate"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 308);
     END IF;
     RETURN NEW;
 END;
@@ -80014,8 +80015,8 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."AttendanceEventCategoryDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."AttendanceEventCategoryDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DescriptorId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -80089,11 +80090,11 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."AttendanceEventCategoryDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."AttendanceEventCategoryDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DescriptorId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."AttendanceEventCategoryDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" newDj1 ON newDj1."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."AttendanceEventCategoryDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj1 ON newDj1."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -80114,7 +80115,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 309;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentProgramEvaluation' || '$.evaluationDate=' || NEW."EvaluationDate"::text || '#' || '$.programEvaluationReference.programEducationOrganizationId=' || NEW."ProgramEvaluation_ProgramEducationOrganizationId"::text || '#' || '$.programEvaluationReference.programEvaluationPeriodDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e")) || '#' || '$.programEvaluationReference.programEvaluationTitle=' || NEW."ProgramEvaluation_ProgramEvaluationTitle"::text || '#' || '$.programEvaluationReference.programEvaluationTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId")) || '#' || '$.programEvaluationReference.programName=' || NEW."ProgramEvaluation_ProgramName"::text || '#' || '$.programEvaluationReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 309);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentProgramEvaluation' || '$.evaluationDate=' || NEW."EvaluationDate"::text || '#' || '$.programEvaluationReference.programEducationOrganizationId=' || NEW."ProgramEvaluation_ProgramEducationOrganizationId"::text || '#' || '$.programEvaluationReference.programEvaluationPeriodDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e")) || '#' || '$.programEvaluationReference.programEvaluationTitle=' || NEW."ProgramEvaluation_ProgramEvaluationTitle"::text || '#' || '$.programEvaluationReference.programEvaluationTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId")) || '#' || '$.programEvaluationReference.programName=' || NEW."ProgramEvaluation_ProgramName"::text || '#' || '$.programEvaluationReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 309);
     END IF;
     RETURN NEW;
 END;
@@ -80170,9 +80171,9 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
-        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" oldDj2 ON oldDj2."DocumentId" = OLD."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
+        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DescriptorId" = OLD."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj2 ON oldDj2."DescriptorId" = OLD."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -80254,13 +80255,13 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
-        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DocumentId" = OLD."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" oldDj2 ON oldDj2."DocumentId" = OLD."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
+        INNER JOIN "dms"."Descriptor" oldDj1 ON oldDj1."DescriptorId" = OLD."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj2 ON oldDj2."DescriptorId" = OLD."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
-        INNER JOIN "dms"."Descriptor" newDj1 ON newDj1."DocumentId" = NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" newDj2 ON newDj2."DocumentId" = NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
+        INNER JOIN "dms"."Descriptor" newDj1 ON newDj1."DescriptorId" = NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj2 ON newDj2."DescriptorId" = NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -80881,7 +80882,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 311;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSchoolAttendanceEvent' || '$.attendanceEventCategoryDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."AttendanceEventCategoryDescriptor_DescriptorId")) || '#' || '$.eventDate=' || NEW."EventDate"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$.sessionReference.schoolId=' || NEW."Session_SchoolId"::text || '#' || '$.sessionReference.schoolYear=' || NEW."Session_SchoolYear"::text || '#' || '$.sessionReference.sessionName=' || NEW."Session_SessionName"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 311);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSchoolAttendanceEvent' || '$.attendanceEventCategoryDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."AttendanceEventCategoryDescriptor_DescriptorId")) || '#' || '$.eventDate=' || NEW."EventDate"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$.sessionReference.schoolId=' || NEW."Session_SchoolId"::text || '#' || '$.sessionReference.schoolYear=' || NEW."Session_SchoolYear"::text || '#' || '$.sessionReference.sessionName=' || NEW."Session_SessionName"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 311);
     END IF;
     RETURN NEW;
 END;
@@ -80929,7 +80930,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."AttendanceEventCategoryDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."AttendanceEventCategoryDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -80995,9 +80996,9 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."AttendanceEventCategoryDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."AttendanceEventCategoryDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."AttendanceEventCategoryDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."AttendanceEventCategoryDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -81037,11 +81038,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 312;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSchoolFoodServiceProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 312);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSchoolFoodServiceProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 312);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
     END IF;
     RETURN NEW;
 END;
@@ -81089,7 +81090,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -81344,11 +81345,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 313;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSection504ProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 313);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSection504ProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 313);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
     END IF;
     RETURN NEW;
 END;
@@ -81396,7 +81397,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -81766,7 +81767,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 315;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSectionAttendanceEvent' || '$.attendanceEventCategoryDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."AttendanceEventCategoryDescriptor_DescriptorId")) || '#' || '$.eventDate=' || NEW."EventDate"::text || '#' || '$.sectionReference.localCourseCode=' || NEW."Section_LocalCourseCode"::text || '#' || '$.sectionReference.schoolId=' || NEW."Section_SchoolId"::text || '#' || '$.sectionReference.schoolYear=' || NEW."Section_SchoolYear"::text || '#' || '$.sectionReference.sectionIdentifier=' || NEW."Section_SectionIdentifier"::text || '#' || '$.sectionReference.sessionName=' || NEW."Section_SessionName"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 315);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSectionAttendanceEvent' || '$.attendanceEventCategoryDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."AttendanceEventCategoryDescriptor_DescriptorId")) || '#' || '$.eventDate=' || NEW."EventDate"::text || '#' || '$.sectionReference.localCourseCode=' || NEW."Section_LocalCourseCode"::text || '#' || '$.sectionReference.schoolId=' || NEW."Section_SchoolId"::text || '#' || '$.sectionReference.schoolYear=' || NEW."Section_SchoolYear"::text || '#' || '$.sectionReference.sectionIdentifier=' || NEW."Section_SectionIdentifier"::text || '#' || '$.sectionReference.sessionName=' || NEW."Section_SessionName"::text || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 315);
     END IF;
     RETURN NEW;
 END;
@@ -81818,7 +81819,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."AttendanceEventCategoryDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."AttendanceEventCategoryDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -81892,9 +81893,9 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."AttendanceEventCategoryDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."AttendanceEventCategoryDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."AttendanceEventCategoryDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."AttendanceEventCategoryDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -82032,11 +82033,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 316;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSpecialEducationProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 316);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSpecialEducationProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 316);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
     END IF;
     RETURN NEW;
 END;
@@ -82084,7 +82085,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -82712,7 +82713,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 317;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSpecialEducationProgramEligibilityAssociation' || '$.consentToEvaluationReceivedDate=' || NEW."ConsentToEvaluationReceivedDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 317);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSpecialEducationProgramEligibilityAssociation' || '$.consentToEvaluationReceivedDate=' || NEW."ConsentToEvaluationReceivedDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 317);
     END IF;
     RETURN NEW;
 END;
@@ -82760,7 +82761,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -82826,9 +82827,9 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" newPj0 ON newPj0."StudentUniqueId" = NEW."Student_StudentUniqueId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
@@ -82868,11 +82869,11 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 318;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentTitleIPartAProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 318);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentTitleIPartAProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 318);
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 121;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiGeneralStudentProgramAssociation' || '$.beginDate=' || NEW."BeginDate"::text || '#' || '$.educationOrganizationReference.educationOrganizationId=' || NEW."EducationOrganization_EducationOrganizationId"::text || '#' || '$.programReference.educationOrganizationId=' || NEW."ProgramProgram_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."ProgramProgram_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.studentReference.studentUniqueId=' || NEW."Student_StudentUniqueId"::text), NEW."DocumentId", 121);
     END IF;
     RETURN NEW;
 END;
@@ -82920,7 +82921,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId"
         INNER JOIN "edfi"."Student" oldPj0 ON oldPj0."StudentUniqueId" = OLD."Student_StudentUniqueId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
@@ -83756,7 +83757,7 @@ BEGIN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 326;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveyProgramAssociation' || '$.programReference.educationOrganizationId=' || NEW."Program_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."Program_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Uri" FROM "dms"."Descriptor" descriptor WHERE descriptor."DocumentId" = NEW."Program_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.surveyReference.namespace=' || NEW."Survey_Namespace"::text || '#' || '$.surveyReference.surveyIdentifier=' || NEW."Survey_SurveyIdentifier"::text), NEW."DocumentId", 326);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSurveyProgramAssociation' || '$.programReference.educationOrganizationId=' || NEW."Program_EducationOrganizationId"::text || '#' || '$.programReference.programName=' || NEW."Program_ProgramName"::text || '#' || '$.programReference.programTypeDescriptor=' || lower((SELECT descriptor."Namespace" || '#' || descriptor."CodeValue" FROM "dms"."Descriptor" descriptor WHERE descriptor."DescriptorId" = NEW."Program_ProgramTypeDescriptor_DescriptorId")) || '#' || '$.surveyReference.namespace=' || NEW."Survey_Namespace"::text || '#' || '$.surveyReference.surveyIdentifier=' || NEW."Survey_SurveyIdentifier"::text), NEW."DocumentId", 326);
     END IF;
     RETURN NEW;
 END;
@@ -83800,7 +83801,7 @@ BEGIN
             doc."ContentVersion",
             OLD."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."Program_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."Program_ProgramTypeDescriptor_DescriptorId"
         WHERE doc."DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -83857,8 +83858,8 @@ BEGIN
             _stampedContentVersion,
             NEW."DocumentId"
         FROM "dms"."Document" doc
-        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DocumentId" = OLD."Program_ProgramTypeDescriptor_DescriptorId"
-        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DocumentId" = NEW."Program_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" oldDj0 ON oldDj0."DescriptorId" = OLD."Program_ProgramTypeDescriptor_DescriptorId"
+        INNER JOIN "dms"."Descriptor" newDj0 ON newDj0."DescriptorId" = NEW."Program_ProgramTypeDescriptor_DescriptorId"
         WHERE doc."DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;

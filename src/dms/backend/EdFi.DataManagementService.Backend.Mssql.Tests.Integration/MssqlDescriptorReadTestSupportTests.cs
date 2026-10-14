@@ -166,7 +166,9 @@ public class Given_A_Mssql_DescriptorRead_Test_Support
         GetRequiredString(descriptorRow, "Description").Should().Be(seed.Description);
         GetRequiredDateOnly(descriptorRow, "EffectiveBeginDate").Should().Be(seed.EffectiveBeginDate);
         GetRequiredDateOnly(descriptorRow, "EffectiveEndDate").Should().Be(seed.EffectiveEndDate);
-        GetRequiredString(descriptorRow, "Discriminator").Should().Be("SchoolTypeDescriptor");
+        GetRequiredInt64(descriptorRow, "DocumentId").Should().Be(documentId);
+        ((long)descriptorRow["DescriptorId"].Should().BeOfType<int>().Subject).Should().NotBe(documentId);
+        GetRequiredInt16(descriptorRow, "ResourceKeyId").Should().Be(expectedResourceKeyId);
         GetRequiredString(descriptorRow, "Uri").Should().Be(seed.Uri);
     }
 

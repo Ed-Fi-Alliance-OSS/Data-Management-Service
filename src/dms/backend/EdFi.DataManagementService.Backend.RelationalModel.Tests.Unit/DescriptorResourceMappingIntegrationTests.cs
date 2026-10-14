@@ -95,11 +95,17 @@ public class Given_A_Complete_Model_Set_With_Descriptors
         {
             descriptorResource.DescriptorMetadata.Should().NotBeNull();
             descriptorResource
-                .DescriptorMetadata!.DiscriminatorStrategy.Should()
-                .Be(DiscriminatorStrategy.ResourceKeyId);
-            descriptorResource.DescriptorMetadata.ColumnContract.Should().NotBeNull();
-            descriptorResource.DescriptorMetadata.ColumnContract.Namespace.Value.Should().Be("Namespace");
-            descriptorResource.DescriptorMetadata.ColumnContract.CodeValue.Value.Should().Be("CodeValue");
+                .DescriptorMetadata!.ColumnContract.Should()
+                .Be(
+                    new DescriptorColumnContract(
+                        Namespace: new DbColumnName("Namespace"),
+                        CodeValue: new DbColumnName("CodeValue"),
+                        ShortDescription: new DbColumnName("ShortDescription"),
+                        Description: new DbColumnName("Description"),
+                        EffectiveBeginDate: new DbColumnName("EffectiveBeginDate"),
+                        EffectiveEndDate: new DbColumnName("EffectiveEndDate")
+                    )
+                );
         }
     }
 
