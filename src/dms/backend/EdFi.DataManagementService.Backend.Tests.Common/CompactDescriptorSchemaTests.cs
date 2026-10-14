@@ -259,13 +259,18 @@ public abstract class CompactDescriptorSchemaTests
             .Be(2);
     }
 
-    [TestCase("uri://case", "A#B", false)]
-    [TestCase("uri://Case", "A#B ", false)]
-    [TestCase("uri://Case ", "A#B", true)]
+    // Verdicts against a seeded ("uri://Case", "A#B") under the same type. A case variant collides on both
+    // engines through the lowered whole-URI index; trailing-space equality is SQL Server's padded comparison
+    // only; an internal pre-delimiter space is a different URI everywhere.
+    [TestCase("uri://case", "A#B", false, true, true)]
+    [TestCase("uri://Case", "A#B ", false, false, true)]
+    [TestCase("uri://Case ", "A#B", true, false, false)]
     public async Task It_applies_provider_uri_collation_verdicts_and_internal_pre_delimiter_spaces(
         string ns,
         string code,
-        bool alwaysDistinct
+        bool alwaysDistinct,
+        bool collidesOnPostgresql,
+        bool collidesOnSqlServer
     )
     {
         await SeedAsync();
@@ -286,10 +291,15 @@ public abstract class CompactDescriptorSchemaTests
         );
         equal.Should().Be(IsPgsql || alwaysDistinct ? 0 : 1);
         var id = await InsertDocumentAsync(_resourceKeyId);
-        if (equal == 1)
+        if (IsPgsql ? collidesOnPostgresql : collidesOnSqlServer)
         {
             Func<Task> insert = async () => await InsertDescriptorAsync(id, _resourceKeyId, ns, code);
-            await insert.Should().ThrowAsync<DbException>();
+            var rejection = await insert.Should().ThrowAsync<DbException>();
+            if (IsPgsql)
+            {
+                // The unlowered index keeps case variants distinct on PostgreSQL; only the lowered index rejects.
+                rejection.WithMessage("*UX_Descriptor_UriLowered_ResourceKeyId*");
+            }
         }
         else
         {
@@ -312,6 +322,8 @@ public abstract class CompactDescriptorSchemaTests
     [TestCase("missing_document_fk")]
     [TestCase("cascading_document_fk")]
     [TestCase("missing_uri_index")]
+    [TestCase("missing_lowered_uri_index")]
+    [TestCase("stale_lowered_uri")]
     [TestCase("wrong_uri_expression")]
     [TestCase("history_live_fk")]
     [TestCase("unpinned_identity_collation")]
