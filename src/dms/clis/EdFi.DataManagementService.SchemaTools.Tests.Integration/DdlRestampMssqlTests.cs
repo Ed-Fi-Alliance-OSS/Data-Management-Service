@@ -80,7 +80,7 @@ public class Given_SchemaRestamp_Mssql_Compatible_Transition
     {
         using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
-        ProvisionTestHelper.InsertRowsThatMustSurviveRerun(connection, "mssql");
+        SchemaRestampTestHelper.SeedPreservedWidget(connection, "mssql");
         var before = SchemaRestampTestHelper.Capture(connection, "mssql");
         var mutableStateBefore = ProvisionTestHelper.ReadDocumentCacheMutableStateSnapshot(
             connection,
@@ -151,6 +151,7 @@ public class Given_SchemaRestamp_Mssql_Compatible_Transition
         after.AppliedAt.Should().Be(before.AppliedAt);
         after.Keys.Should().Equal(before.Keys);
         after.Documents.Should().Equal(before.Documents);
+        after.Widgets.Should().Equal(before.Widgets);
         after.CacheRows.Should().Equal(before.CacheRows);
         after.ProjectionWork.Should().Equal(before.ProjectionWork);
         ProvisionTestHelper

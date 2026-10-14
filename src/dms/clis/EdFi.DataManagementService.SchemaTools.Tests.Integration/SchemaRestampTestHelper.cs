@@ -76,6 +76,76 @@ internal static class SchemaRestampTestHelper
         command.ExecuteNonQuery();
     }
 
+    internal static void SeedPreservedWidget(DbConnection connection, string dialect)
+    {
+        // This suite provisions TestProject, not the authoritative Ed-Fi descriptor inventory.
+        // Seed a concrete owner so cache timestamps remain valid after DMS-1401 as well.
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            dialect == "pgsql"
+                ? """
+                    UPDATE dms."DocumentCacheState"
+                    SET "ProjectionLifecycleState" = 'Tracking', "CacheAheadRecoveryRequired" = TRUE
+                    WHERE "StateId" = 1;
+
+                    INSERT INTO dms."Document" ("DocumentUuid", "ResourceKeyId")
+                    SELECT gen_random_uuid(), "ResourceKeyId"
+                    FROM dms."ResourceKey"
+                    WHERE "ProjectName" = 'TestProject' AND "ResourceName" = 'Widget';
+
+                    INSERT INTO testproject."Widget" ("DocumentId", "WidgetId", "WidgetName")
+                    SELECT document."DocumentId", 1, 'preserved'
+                    FROM dms."Document" document
+                    INNER JOIN dms."ResourceKey" resource_key ON resource_key."ResourceKeyId" = document."ResourceKeyId"
+                    WHERE resource_key."ProjectName" = 'TestProject' AND resource_key."ResourceName" = 'Widget';
+
+                    INSERT INTO dms."DocumentCache" (
+                        "DocumentId", "DocumentUuid", "ProjectName", "ResourceName", "ResourceVersion",
+                        "ContentVersion", "StreamEtag", "LastModifiedAt", "DocumentJson"
+                    )
+                    SELECT document."DocumentId", document."DocumentUuid", resource_key."ProjectName",
+                        resource_key."ResourceName", resource_key."ResourceVersion", document."ContentVersion",
+                        'preserved-etag-' || document."ContentVersion"::text,
+                        widget."ContentLastModifiedAt", '{"id":"preserved"}'::jsonb
+                    FROM dms."Document" document
+                    INNER JOIN testproject."Widget" widget ON widget."DocumentId" = document."DocumentId"
+                    INNER JOIN dms."ResourceKey" resource_key ON resource_key."ResourceKeyId" = document."ResourceKeyId"
+                    WHERE widget."WidgetId" = 1;
+                    """
+                : """
+                    UPDATE [dms].[DocumentCacheState]
+                    SET [ProjectionLifecycleState] = 'Tracking', [CacheAheadRecoveryRequired] = 1
+                    WHERE [StateId] = 1;
+
+                    INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
+                    SELECT NEWID(), [ResourceKeyId]
+                    FROM [dms].[ResourceKey]
+                    WHERE [ProjectName] = N'TestProject' AND [ResourceName] = N'Widget';
+
+                    INSERT INTO [testproject].[Widget] ([DocumentId], [WidgetId], [WidgetName])
+                    SELECT document.[DocumentId], 1, N'preserved'
+                    FROM [dms].[Document] document
+                    INNER JOIN [dms].[ResourceKey] resource_key ON resource_key.[ResourceKeyId] = document.[ResourceKeyId]
+                    WHERE resource_key.[ProjectName] = N'TestProject' AND resource_key.[ResourceName] = N'Widget';
+
+                    INSERT INTO [dms].[DocumentCache] (
+                        [DocumentId], [DocumentUuid], [ProjectName], [ResourceName], [ResourceVersion],
+                        [ContentVersion], [StreamEtag], [LastModifiedAt], [DocumentJson]
+                    )
+                    SELECT document.[DocumentId], document.[DocumentUuid], resource_key.[ProjectName],
+                        resource_key.[ResourceName], resource_key.[ResourceVersion], document.[ContentVersion],
+                        CONCAT(N'preserved-etag-', CONVERT(varchar(20), document.[ContentVersion])),
+                        widget.[ContentLastModifiedAt], N'{"id":"preserved"}'
+                    FROM [dms].[Document] document
+                    INNER JOIN [testproject].[Widget] widget ON widget.[DocumentId] = document.[DocumentId]
+                    INNER JOIN [dms].[ResourceKey] resource_key ON resource_key.[ResourceKeyId] = document.[ResourceKeyId]
+                    WHERE widget.[WidgetId] = 1;
+                    """;
+        command.ExecuteNonQuery();
+        ProvisionTestHelper.GetDmsTableCount(connection, dialect, "Document").Should().Be(1);
+        ProvisionTestHelper.GetDmsTableCount(connection, dialect, "DocumentCache").Should().Be(1);
+    }
+
     internal static void InsertComponents(
         DbConnection connection,
         string dialect,
@@ -241,6 +311,7 @@ internal static class SchemaRestampTestHelper
         string[] Components,
         string[] Keys,
         string[] Documents,
+        string[] Widgets,
         string[] CacheRows,
         string[] ProjectionWork
     ) Capture(DbConnection connection, string dialect)
@@ -264,10 +335,11 @@ internal static class SchemaRestampTestHelper
         );
         parentReader.Close();
 
-        string[] ReadRows(string table, string columns, string orderBy)
+        string[] ReadRows(string table, string columns, string orderBy, string schema = "dms")
         {
             using var command = connection.CreateCommand();
-            command.CommandText = $"SELECT {columns} FROM {Table(dialect, table)} ORDER BY {orderBy};";
+            command.CommandText =
+                $"SELECT {columns} FROM {Table(dialect, table, schema)} ORDER BY {orderBy};";
             using var reader = command.ExecuteReader();
             List<string> rows = [];
             while (reader.Read())
@@ -278,10 +350,18 @@ internal static class SchemaRestampTestHelper
                         Enumerable
                             .Range(0, reader.FieldCount)
                             .Select(i =>
-                                Convert.ToString(
-                                    reader.GetValue(i),
-                                    System.Globalization.CultureInfo.InvariantCulture
-                                )
+                                reader.GetValue(i) switch
+                                {
+                                    DateTime timestamp => timestamp.ToString(
+                                        "O",
+                                        System.Globalization.CultureInfo.InvariantCulture
+                                    ),
+                                    byte[] bytes => Convert.ToHexString(bytes),
+                                    var value => Convert.ToString(
+                                        value,
+                                        System.Globalization.CultureInfo.InvariantCulture
+                                    ),
+                                }
                             )
                     )
                 );
@@ -314,21 +394,8 @@ internal static class SchemaRestampTestHelper
             ),
             Column(dialect, "ResourceKeyId")
         );
-        var documents = ReadRows(
-            "Document",
-            string.Join(
-                ", ",
-                new[]
-                {
-                    "DocumentId",
-                    "DocumentUuid",
-                    "ResourceKeyId",
-                    "ContentVersion",
-                    "ContentLastModifiedAt",
-                }.Select(name => Column(dialect, name))
-            ),
-            Column(dialect, "DocumentId")
-        );
+        var documents = ReadRows("Document", "*", Column(dialect, "DocumentId"));
+        var widgets = ReadRows("Widget", "*", Column(dialect, "DocumentId"), "testproject");
         var cacheRows = ReadRows(
             "DocumentCache",
             string.Join(
@@ -368,13 +435,14 @@ internal static class SchemaRestampTestHelper
             components,
             keys,
             documents,
+            widgets,
             cacheRows,
             projectionWork
         );
     }
 
-    private static string Table(string dialect, string name) =>
-        dialect == "pgsql" ? $"dms.\"{name}\"" : $"[dms].[{name}]";
+    private static string Table(string dialect, string name, string schema = "dms") =>
+        dialect == "pgsql" ? $"\"{schema}\".\"{name}\"" : $"[{schema}].[{name}]";
 
     private static string Column(string dialect, string name) =>
         dialect == "pgsql" ? $"\"{name}\"" : $"[{name}]";

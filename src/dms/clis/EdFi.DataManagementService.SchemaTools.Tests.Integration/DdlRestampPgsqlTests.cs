@@ -66,7 +66,7 @@ public class Given_SchemaRestamp_Pgsql_Compatible_Transition
     {
         using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
-        ProvisionTestHelper.InsertRowsThatMustSurviveRerun(connection, "pgsql");
+        SchemaRestampTestHelper.SeedPreservedWidget(connection, "pgsql");
         var before = SchemaRestampTestHelper.Capture(connection, "pgsql");
         var mutableStateBefore = ProvisionTestHelper.ReadDocumentCacheMutableStateSnapshot(
             connection,
@@ -90,6 +90,7 @@ public class Given_SchemaRestamp_Pgsql_Compatible_Transition
         after.AppliedAt.Should().Be(before.AppliedAt);
         after.Keys.Should().Equal(before.Keys);
         after.Documents.Should().Equal(before.Documents);
+        after.Widgets.Should().Equal(before.Widgets);
         after.CacheRows.Should().Equal(before.CacheRows);
         after.ProjectionWork.Should().Equal(before.ProjectionWork);
         ProvisionTestHelper
