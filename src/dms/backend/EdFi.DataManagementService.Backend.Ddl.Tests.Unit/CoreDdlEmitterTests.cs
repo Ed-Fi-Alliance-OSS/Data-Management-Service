@@ -759,22 +759,29 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     // ── Foreign keys ────────────────────────────────────────────────
 
     [Test]
-    public void It_should_have_fk_descriptor_document_with_restrict_delete_action()
+    public void It_should_have_composite_fk_descriptor_document_resource_key_with_restrict_delete_action()
     {
         // dms.Descriptor is a safety-net FK on dms.Document like the resource roots: the write path
         // deletes the Descriptor row first, so it must not cascade, and PostgreSQL RESTRICT is the
-        // single-probe check (NO ACTION would re-check the parent key before every probe).
-        var fkStatement = CoreDdlStatements.Extract(_ddl, "ADD CONSTRAINT \"FK_Descriptor_Document\"");
+        // single-probe check (NO ACTION would re-check the parent key before every probe). The
+        // composite key also pins the denormalized ResourceKeyId to the owning document.
+        var fkStatement = CoreDdlStatements.Extract(
+            _ddl,
+            "ADD CONSTRAINT \"FK_Descriptor_DocumentResourceKey\""
+        );
 
-        fkStatement.Should().Contain("REFERENCES \"dms\".\"Document\"");
+        fkStatement.Should().Contain("FOREIGN KEY (\"DocumentId\", \"ResourceKeyId\")");
+        fkStatement.Should().Contain("REFERENCES \"dms\".\"Document\" (\"DocumentId\", \"ResourceKeyId\")");
         fkStatement.Should().Contain("ON DELETE RESTRICT");
         fkStatement.Should().NotContain("ON DELETE CASCADE");
     }
 
     [Test]
-    public void It_should_have_fk_descriptor_resource_key()
+    public void It_should_not_emit_the_single_column_descriptor_foreign_keys()
     {
-        _ddl.Should().Contain("\"FK_Descriptor_ResourceKey\"");
+        // Exact quoted identifiers: FK_Descriptor_Document is a prefix of the composite FK's name.
+        _ddl.Should().NotContain("\"FK_Descriptor_Document\"");
+        _ddl.Should().NotContain("\"FK_Descriptor_ResourceKey\"");
     }
 
     [Test]
@@ -969,28 +976,19 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_emit_resource_key_equality_guard_before_the_no_op_guard()
+    public void It_should_open_the_stamping_function_with_the_no_op_guard()
     {
-        // The denormalized dms.Descriptor.ResourceKeyId feeds descriptor list paging while
-        // GET-by-id trusts dms.Document.ResourceKeyId, and no FK ties the two copies together.
-        // The equality guard must cover INSERT and UPDATE, and must precede the no-op diff
-        // (which deliberately excludes ResourceKeyId) so a ResourceKeyId-only UPDATE cannot
-        // short-circuit past validation.
-        _ddl.Should().Contain("IF TG_OP IN ('INSERT', 'UPDATE') THEN");
-        _ddl.Should().Contain("AND \"ResourceKeyId\" = NEW.\"ResourceKeyId\"");
+        // FK_Descriptor_DocumentResourceKey owns the ResourceKeyId invariant, so the function carries
+        // no equality guard ahead of the no-op guard.
         _ddl.Should()
             .Contain(
-                "RAISE EXCEPTION 'dms.Descriptor.ResourceKeyId % diverges from the owning "
-                    + "dms.Document row for DocumentId %', NEW.\"ResourceKeyId\", NEW.\"DocumentId\";"
+                "CREATE OR REPLACE FUNCTION \"dms\".\"TF_Descriptor_Stamp_Document\"()\n"
+                    + "RETURNS TRIGGER AS $func$\n"
+                    + "BEGIN\n"
+                    + "    IF TG_OP = 'UPDATE' THEN\n"
             );
-
-        var equalityGuardIndex = _ddl.IndexOf(
-            "IF TG_OP IN ('INSERT', 'UPDATE') THEN",
-            StringComparison.Ordinal
-        );
-        var noOpGuardIndex = _ddl.IndexOf("IF TG_OP = 'UPDATE' THEN", StringComparison.Ordinal);
-        equalityGuardIndex.Should().BeGreaterOrEqualTo(0);
-        noOpGuardIndex.Should().BeGreaterThan(equalityGuardIndex);
+        _ddl.Should().NotContain("IF TG_OP IN ('INSERT', 'UPDATE')");
+        _ddl.Should().NotContain("dms.Descriptor.ResourceKeyId");
     }
 
     [Test]
@@ -1069,8 +1067,9 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         // The change-version mirror columns are stamp targets, not client content, so they are
         // intentionally excluded from the no-op diff (see change-queries.md invariant #5).
         // ResourceKeyId is denormalized at insert and immutable, so it is likewise excluded:
-        // a migration backfill UPDATE of that column must not bump stamps. The trigger's
-        // separate equality guard still rejects values that diverge from dms.Document.
+        // a migration backfill UPDATE of that column must not bump stamps.
+        // FK_Descriptor_DocumentResourceKey, not the trigger, rejects values that diverge from
+        // dms.Document.
         string[] stampColumns = ["ContentVersion", "ContentLastModifiedAt"];
         string[] immutableColumns = ["DescriptorId", "DocumentId", "ResourceKeyId"];
         var columns = DescriptorTableColumnExtractor.ExtractPgColumns(_ddl);
@@ -1824,11 +1823,11 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
-    public void It_should_keep_the_descriptor_foreign_key_on_the_owning_document()
+    public void It_should_key_the_descriptor_foreign_key_on_the_owning_document_and_resource_key()
     {
         _ddl.Should()
             .Contain(
-                "ADD CONSTRAINT [FK_Descriptor_Document]\nFOREIGN KEY ([DocumentId])\nREFERENCES [dms].[Document] ([DocumentId])\nON DELETE NO ACTION"
+                "ADD CONSTRAINT [FK_Descriptor_DocumentResourceKey]\nFOREIGN KEY ([DocumentId], [ResourceKeyId])\nREFERENCES [dms].[Document] ([DocumentId], [ResourceKeyId])\nON DELETE NO ACTION"
             );
     }
 
@@ -2007,10 +2006,9 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     // ── Foreign keys ────────────────────────────────────────────────
 
     [Test]
-    public void It_should_have_all_eight_foreign_keys()
+    public void It_should_have_all_seven_foreign_keys()
     {
-        _ddl.Should().Contain("[FK_Descriptor_Document]");
-        _ddl.Should().Contain("[FK_Descriptor_ResourceKey]");
+        _ddl.Should().Contain("[FK_Descriptor_DocumentResourceKey]");
         _ddl.Should().Contain("[FK_Document_ResourceKey]");
         _ddl.Should().Contain("[FK_DocumentCache_Document]");
         _ddl.Should().Contain("[FK_DocumentProjectionWork_Document]");
@@ -2020,15 +2018,27 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
-    public void It_should_have_fk_descriptor_document_with_no_action_delete_action()
+    public void It_should_have_composite_fk_descriptor_document_resource_key_with_no_action_delete_action()
     {
         // Same safety-net rule as the resource roots. SQL Server has no RESTRICT; its NO ACTION is the
         // single-probe check, whereas CASCADE compiles the Descriptor delete into the Document DELETE plan.
-        var fkStatement = CoreDdlStatements.Extract(_ddl, "ADD CONSTRAINT [FK_Descriptor_Document]");
+        var fkStatement = CoreDdlStatements.Extract(
+            _ddl,
+            "ADD CONSTRAINT [FK_Descriptor_DocumentResourceKey]"
+        );
 
-        fkStatement.Should().Contain("REFERENCES [dms].[Document]");
+        fkStatement.Should().Contain("FOREIGN KEY ([DocumentId], [ResourceKeyId])");
+        fkStatement.Should().Contain("REFERENCES [dms].[Document] ([DocumentId], [ResourceKeyId])");
         fkStatement.Should().Contain("ON DELETE NO ACTION");
         fkStatement.Should().NotContain("CASCADE");
+    }
+
+    [Test]
+    public void It_should_not_emit_the_single_column_descriptor_foreign_keys()
+    {
+        // Exact quoted identifiers: FK_Descriptor_Document is a prefix of the composite FK's name.
+        _ddl.Should().NotContain("[FK_Descriptor_Document]");
+        _ddl.Should().NotContain("[FK_Descriptor_ResourceKey]");
     }
 
     [Test]
@@ -2237,27 +2247,16 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
-    public void It_should_emit_resource_key_equality_guard_before_any_stamping()
+    public void It_should_open_the_stamping_trigger_with_the_stamp_workset()
     {
-        // Same intent as the PG sibling guard: the denormalized dms.Descriptor.ResourceKeyId
-        // feeds descriptor list paging while GET-by-id trusts dms.Document.ResourceKeyId, and
-        // no FK ties the two copies together. THROW aborts the batch before any row is
-        // stamped or mirrored; the inserted pseudo-table is empty on DELETE, so pure
-        // deletes skip the guard.
-        _ddl.Should().Contain("INNER JOIN [dms].[Document] d ON d.[DocumentId] = i.[DocumentId]");
-        _ddl.Should().Contain("WHERE i.[ResourceKeyId] <> d.[ResourceKeyId]");
-        _ddl.Should()
-            .Contain(
-                "THROW 50000, N'dms.Descriptor.ResourceKeyId diverges from the owning dms.Document row.', 1;"
-            );
+        // FK_Descriptor_DocumentResourceKey owns the ResourceKeyId invariant, so the trigger carries
+        // no equality guard ahead of the stamp workset.
+        var triggerBody = ExtractMssqlTriggerBody(_ddl, "TR_Descriptor_Stamp_Document");
 
-        var equalityGuardIndex = _ddl.IndexOf(
-            "WHERE i.[ResourceKeyId] <> d.[ResourceKeyId]",
-            StringComparison.Ordinal
-        );
-        var stampedDeclarationIndex = _ddl.IndexOf("DECLARE @stamped TABLE (", StringComparison.Ordinal);
-        equalityGuardIndex.Should().BeGreaterOrEqualTo(0);
-        stampedDeclarationIndex.Should().BeGreaterThan(equalityGuardIndex);
+        triggerBody.Should().Contain("SET NOCOUNT ON;\n    DECLARE @stamped TABLE (");
+        triggerBody.Should().NotContain("<> d.[ResourceKeyId]");
+        triggerBody.Should().NotContain("THROW 50000");
+        _ddl.Should().NotContain("dms.Descriptor.ResourceKeyId");
     }
 
     [Test]
@@ -2347,10 +2346,6 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     {
         var triggerBody = ExtractMssqlTriggerBody(_ddl, "TR_Descriptor_Stamp_Document");
 
-        var resourceKeyGuardStart = triggerBody.IndexOf(
-            "WHERE i.[ResourceKeyId] <> d.[ResourceKeyId]",
-            StringComparison.Ordinal
-        );
         var stampedPrepopulationStart = triggerBody.IndexOf(
             "INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])",
             StringComparison.Ordinal
@@ -2371,12 +2366,8 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
 
         guardStart.Should().BeGreaterThan(0);
 
-        // Both of these must keep running for a pure INSERT, which the guard skips: the divergence
-        // check is a correctness gate, and the pre-population is what carries the document's existing
-        // stamps into the mirror.
-        resourceKeyGuardStart
-            .Should()
-            .BeInRange(0, guardStart, "the ResourceKeyId divergence check must stay outside the guard");
+        // The pre-population must keep running for a pure INSERT, which the guard skips: it is what
+        // carries the document's existing stamps into the mirror.
         stampedPrepopulationStart
             .Should()
             .BeInRange(0, guardStart, "@stamped pre-population must stay outside the guard");
@@ -2398,8 +2389,9 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         // The change-version mirror columns are stamp targets, not client content, so they are
         // intentionally excluded from the no-op diff (see change-queries.md invariant #5).
         // ResourceKeyId is denormalized at insert and immutable, so it is likewise excluded:
-        // a migration backfill UPDATE of that column must not bump stamps. The trigger's
-        // separate equality guard still rejects values that diverge from dms.Document.
+        // a migration backfill UPDATE of that column must not bump stamps.
+        // FK_Descriptor_DocumentResourceKey, not the trigger, rejects values that diverge from
+        // dms.Document.
         string[] stampColumns = ["ContentVersion", "ContentLastModifiedAt"];
         string[] immutableColumns = ["DescriptorId", "DocumentId", "ResourceKeyId"];
         var descriptorTriggerBody = ExtractMssqlTriggerBody(_ddl, "TR_Descriptor_Stamp_Document");
