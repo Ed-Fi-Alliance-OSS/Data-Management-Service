@@ -1,10 +1,10 @@
-# Product Requirements Document: Ed-Fi Configuration Management Service (CMS) v8.2
+# Product Requirements Document: Ed-Fi Configuration Management Service (CS) v8.2
 
 > **Status**: Draft \
 > **Owner**: Vinaya Mayya \
-> **Product**: Ed-Fi Configuration Management Service (CMS) \
+> **Product**: Ed-Fi API Configuration Service (CS) \
 > **Repository**: `Ed-Fi-Alliance-OSS/Data-Management-Service` (`src/config`) \
-> **Companion document**: [CMS v8.1 Product Requirements](./PRD-CMS-v8.1.md)
+> **Companion document**: [CS v8.1 Product Requirements](./PRD-CS-v8.1.md)
 
 ## 1. Purpose
 
@@ -23,8 +23,8 @@ Early draft of potential 8.2 requirements.
 - **FR-ERROR-9**: Decide whether unresolved caller-supplied references should
   remain `400 Bad Request` validation failures or move to `409 Conflict` for
   closer ODS Admin API parity, and apply that decision consistently across
-  CMS endpoints.
-- **FR-ERROR-10**: CMS SHOULD accept a client-supplied correlation ID through a
+  CS endpoints.
+- **FR-ERROR-10**: CS SHOULD accept a client-supplied correlation ID through a
   configurable request header, applying the same character allowlist, maximum
   length, and invalid-value handling as the DMS resource API (DMS v8.1
   FR-LOG-3 through FR-LOG-5), and SHOULD use it as the `correlationId` in
@@ -40,7 +40,7 @@ Early draft of potential 8.2 requirements.
 
 ### 3.2 Reliability and Operations
 
-- **NFR-REL-7**: CMS SHOULD expose a health endpoint reflecting the status of
+- **NFR-REL-7**: CS SHOULD expose a health endpoint reflecting the status of
   its own dependencies, at minimum the configuration database, extending the
   basic anonymous liveness endpoint v8.0 already provides (NFR-REL-1) without
   breaking the existing `/health` liveness contract.
@@ -54,8 +54,8 @@ Early draft of potential 8.2 requirements.
 - **OpenAPI disablement**: Decide whether API metadata exposure should be
   controlled by configuration, environment, or deployment topology.
 - **Dependency-aware health reporting**: Decide which dependencies (database,
-  identity provider, others) the CMS health endpoint should check, and how
-  CMS should report partial dependency failures without breaking existing
+  identity provider, others) the CS health endpoint should check, and how
+  CS should report partial dependency failures without breaking existing
   health-probe contracts.
 - **Secret expiration/rotation**: Decide whether to implement
   `secret_expires_on` tracking and rotation tooling, or leave rotation as a
