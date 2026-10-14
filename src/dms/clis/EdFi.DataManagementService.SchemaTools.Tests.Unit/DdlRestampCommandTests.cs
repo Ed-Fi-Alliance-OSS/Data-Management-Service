@@ -687,13 +687,16 @@ public abstract class DdlRestampCommandTests
     }
 }
 
-[TestFixture("missing", "not found")]
-[TestFixture("unreadable", "could not be read")]
-[TestFixture("json", "Invalid JSON")]
-[TestFixture("project", "missing or malformed")]
-[TestFixture("version", "versions do not match")]
-[TestFixture("collision", "endpoint names collide")]
-public sealed class Given_SchemaRestamp_Input_Failure(string kind, string expectedCategory)
+[TestFixture("missing", "Schema file not found: schema[31m.json")]
+[TestFixture(
+    "unreadable",
+    "Schema file could not be read: schema[31m.json. Check access and file permissions."
+)]
+[TestFixture("json", "Invalid JSON in schema file: schema[31m.json.")]
+[TestFixture("project", "Schema project metadata is missing or malformed.")]
+[TestFixture("version", "Schema input format versions do not match.")]
+[TestFixture("collision", "Schema project endpoint names collide.")]
+public sealed class Given_SchemaRestamp_Input_Failure(string kind, string expectedDiagnostic)
     : DdlRestampCommandTests
 {
     private int _exitCode;
@@ -701,7 +704,7 @@ public sealed class Given_SchemaRestamp_Input_Failure(string kind, string expect
     [SetUp]
     public async Task Setup()
     {
-        const string path = "schema\u001b[31m.json";
+        const string path = "schema\u001b[31m\r\n\t.json";
         const string privateDetail = "private-detail-sentinel";
         ApiSchemaFileLoadResult result = kind switch
         {
@@ -747,8 +750,11 @@ public sealed class Given_SchemaRestamp_Input_Failure(string kind, string expect
     public void It_reports_failure() => _exitCode.Should().Be(1);
 
     [Test]
-    public void It_identifies_the_input_failure_category() =>
-        _error.ToString().Should().Contain(expectedCategory);
+    public void It_reports_only_the_typed_sanitized_diagnostic() =>
+        _error.ToString().Should().Be($"{expectedDiagnostic}{Environment.NewLine}");
+
+    [Test]
+    public void It_writes_no_output() => _output.ToString().Should().BeEmpty();
 
     [Test]
     public void It_sanitizes_paths() => _error.ToString().Should().NotContain("\u001b");
