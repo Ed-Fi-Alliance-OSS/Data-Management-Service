@@ -476,7 +476,7 @@ public class ApiServiceOpenApiTests
         public void It_should_publish_the_configured_maximum_page_size_in_the_resource_document()
         {
             JsonNode limitSchema = ParameterSchema(resourceSpecification, "limit");
-            limitSchema["default"]!.GetValue<int>().Should().Be(ConfiguredMaximumPageSize);
+            limitSchema.AsObject().Should().NotContainKey("default");
             limitSchema["maximum"]!.GetValue<int>().Should().Be(ConfiguredMaximumPageSize);
 
             JsonNode pageSizeSchema = ParameterSchema(resourceSpecification, "pageSize");
@@ -497,7 +497,7 @@ public class ApiServiceOpenApiTests
         public void It_should_publish_the_configured_maximum_page_size_in_the_descriptor_document()
         {
             JsonNode limitSchema = ParameterSchema(descriptorSpecification, "limit");
-            limitSchema["default"]!.GetValue<int>().Should().Be(ConfiguredMaximumPageSize);
+            limitSchema.AsObject().Should().NotContainKey("default");
             limitSchema["maximum"]!.GetValue<int>().Should().Be(ConfiguredMaximumPageSize);
 
             JsonNode pageSizeSchema = ParameterSchema(descriptorSpecification, "pageSize");
@@ -508,6 +508,10 @@ public class ApiServiceOpenApiTests
         [Test]
         public void It_should_publish_the_page_size_maximum_without_a_default_in_the_profile_base_document()
         {
+            JsonNode limitSchema = ParameterSchema(profileSpecification, "limit");
+            limitSchema.AsObject().Should().NotContainKey("default");
+            limitSchema["maximum"]!.GetValue<int>().Should().Be(ConfiguredMaximumPageSize);
+
             JsonNode pageSizeSchema = ParameterSchema(profileSpecification, "pageSize");
             pageSizeSchema.AsObject().Should().NotContainKey("default");
             pageSizeSchema["maximum"]!.GetValue<int>().Should().Be(ConfiguredMaximumPageSize);

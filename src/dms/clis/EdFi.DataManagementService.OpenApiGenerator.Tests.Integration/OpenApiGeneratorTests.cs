@@ -593,11 +593,16 @@ public class OpenApiGeneratorTests
         public void It_should_publish_the_shipped_maximum_page_size()
         {
             JsonNode limitSchema = ParameterSchema("limit");
-            limitSchema["default"]!.GetValue<int>().Should().Be(ShippedMaximumPageSize);
             limitSchema["maximum"]!.GetValue<int>().Should().Be(ShippedMaximumPageSize);
 
             JsonNode pageSizeSchema = ParameterSchema("pageSize");
             pageSizeSchema["maximum"]!.GetValue<int>().Should().Be(ShippedMaximumPageSize);
+        }
+
+        [Test]
+        public void It_should_remove_the_inherited_limit_default()
+        {
+            ParameterSchema("limit").AsObject().Should().NotContainKey("default");
         }
 
         [Test]

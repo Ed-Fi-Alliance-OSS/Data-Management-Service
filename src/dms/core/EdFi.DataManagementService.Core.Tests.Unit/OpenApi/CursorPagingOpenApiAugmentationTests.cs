@@ -380,7 +380,6 @@ public class CursorPagingOpenApiAugmentationTests
         {
             JsonNode schema = _resources["components"]!["parameters"]!["limit"]!["schema"]!;
 
-            schema["default"]!.GetValue<int>().Should().Be(500);
             schema["maximum"]!.GetValue<int>().Should().Be(500);
             schema["minimum"]!.GetValue<int>().Should().Be(0);
             schema["format"]!.GetValue<string>().Should().Be("int32");
@@ -409,6 +408,32 @@ public class CursorPagingOpenApiAugmentationTests
                 );
 
             _resources["components"]!["parameters"]!["pageSize"]!["schema"]!
+                .AsObject()
+                .Should()
+                .NotContainKey("default");
+        }
+
+        [Test]
+        public void It_should_remove_the_inherited_limit_default()
+        {
+            ApiSchemaBuilder.CursorPagingParameterComponents()["limit"]!["schema"]!
+                .AsObject()
+                .Should()
+                .ContainKey(
+                    "default",
+                    "the base document fixture must carry a default for removal to be tested"
+                );
+
+            _resources["components"]!["parameters"]!["limit"]!["schema"]!
+                .AsObject()
+                .Should()
+                .NotContainKey("default");
+        }
+
+        [Test]
+        public void It_should_remove_the_inherited_limit_default_for_descriptors()
+        {
+            _descriptors["components"]!["parameters"]!["limit"]!["schema"]!
                 .AsObject()
                 .Should()
                 .NotContainKey("default");
@@ -475,10 +500,6 @@ public class CursorPagingOpenApiAugmentationTests
         public void It_should_publish_the_same_values_in_the_descriptor_document()
         {
             _descriptors["components"]!["parameters"]!["limit"]!["schema"]!["maximum"]!
-                .GetValue<int>()
-                .Should()
-                .Be(500);
-            _descriptors["components"]!["parameters"]!["limit"]!["schema"]!["default"]!
                 .GetValue<int>()
                 .Should()
                 .Be(500);
@@ -625,7 +646,7 @@ public class CursorPagingOpenApiAugmentationTests
         {
             JsonNode parameters = _resources["components"]!["parameters"]!;
 
-            parameters["limit"]!["schema"]!["default"]!.GetValue<int>().Should().Be(250);
+            parameters["limit"]!["schema"]!.AsObject().Should().NotContainKey("default");
             parameters["limit"]!["schema"]!["maximum"]!.GetValue<int>().Should().Be(250);
             parameters["pageSize"]!["schema"]!.AsObject().Should().NotContainKey("default");
             parameters["pageSize"]!["schema"]!["maximum"]!.GetValue<int>().Should().Be(250);

@@ -284,7 +284,6 @@ public class OpenApiDocumentTests
                         "in": "query",
                         "name": "limit",
                         "schema": {
-                          "default": 500,
                           "format": "int32",
                           "maximum": 500,
                           "minimum": 0,
@@ -410,7 +409,6 @@ public class OpenApiDocumentTests
                         "in": "query",
                         "name": "limit",
                         "schema": {
-                          "default": 500,
                           "format": "int32",
                           "maximum": 500,
                           "minimum": 0,

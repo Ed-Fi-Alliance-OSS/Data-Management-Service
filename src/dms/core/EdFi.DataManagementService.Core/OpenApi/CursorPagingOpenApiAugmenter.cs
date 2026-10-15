@@ -568,10 +568,12 @@ internal static class CursorPagingOpenApiAugmenter
     /// separately authored bound would let the served contract disagree with what the pipeline accepts.
     /// </summary>
     /// <remarks>
-    /// pageSize publishes no default, and any inherited one is removed. Clients and Swagger UI send an
-    /// advertised default, and the pipeline rejects pageSize without pageToken, so a published default
-    /// would make every collection GET such a client issues fail. An omitted pageSize on a cursor
-    /// request still uses the maximum page size at runtime.
+    /// Neither limit nor pageSize publishes a default, and any inherited one is removed. Clients and
+    /// Swagger UI send an advertised default, and the pipeline accepts each of the two only on the
+    /// paging path it belongs to: it rejects pageSize without pageToken, and limit with pageToken. A
+    /// published pageSize default would make every collection GET such a client issues fail, and a
+    /// published limit default would make every cursor request it issues fail. An omitted limit or
+    /// pageSize still uses the maximum page size at runtime.
     /// </remarks>
     private static void PublishRuntimePagingValues(
         JsonObject componentParameters,
@@ -579,7 +581,7 @@ internal static class CursorPagingOpenApiAugmenter
     )
     {
         JsonObject limitSchema = ComponentSchema(componentParameters, LimitComponent);
-        limitSchema["default"] = pagingSettings.MaximumPageSize;
+        limitSchema.Remove("default");
         limitSchema["maximum"] = pagingSettings.MaximumPageSize;
 
         JsonObject pageSizeSchema = ComponentSchema(componentParameters, PageSizeComponent);
