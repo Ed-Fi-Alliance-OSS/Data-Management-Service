@@ -145,7 +145,8 @@ IF NOT EXISTS (SELECT 1 FROM sys.identity_columns WHERE object_id = @relation AN
     AND system_type_id = 56 AND CONVERT(bigint, seed_value) = 1 AND CONVERT(bigint, increment_value) = 1)
     THROW 51000, 'Compact descriptor baseline: DescriptorId needs independent int IDENTITY(1,1)', 1;
 IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id IN (@relation, OBJECT_ID(N'tracked_changes_edfi.Descriptor'))
-    AND name IN (N'Discriminator', N'UriLowered', N'NamespaceLowered', N'CodeValueLowered'))
+    AND name IN (N'Discriminator', N'NamespaceLowered', N'CodeValueLowered'))
+    OR EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'tracked_changes_edfi.Descriptor') AND name = N'UriLowered')
     OR EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = @relation AND name IN (N'UX_Descriptor_Uri_Discriminator', N'IX_Descriptor_Discriminator_ContentVersion'))
     THROW 51000, 'Compact descriptor baseline: obsolete descriptor storage/index remains', 1;
 IF NOT EXISTS (SELECT 1 FROM sys.computed_columns WHERE object_id = @relation AND name = N'Uri'
@@ -163,6 +164,18 @@ FROM sys.index_columns k JOIN sys.columns c ON c.object_id = k.object_id AND c.c
 WHERE k.object_id = @relation AND k.index_id = @index AND k.key_ordinal > 0;
 IF @index IS NULL OR @actual IS NULL OR @actual COLLATE Latin1_General_100_BIN2 <> N'ResourceKeyId,Uri'
     THROW 51000, 'Compact descriptor baseline: required whole-URI unique index missing', 1;
+IF NOT EXISTS (SELECT 1 FROM sys.computed_columns WHERE object_id = @relation AND name = N'UriLowered'
+    AND is_persisted = 0 AND system_type_id = 231 AND max_length = 612
+    AND collation_name = N'SQL_Latin1_General_CP1_CI_AS'
+    AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(definition, N'(', N''), N')', N''), N'[', N''), N']', N''), N' ', N'') COLLATE Latin1_General_100_BIN2 = N'lowerNamespace+N''#''+CodeValuecollateSQL_Latin1_General_CP1_CI_AS')
+    THROW 51000, 'Compact descriptor baseline: UriLowered must be non-persisted, lowered from the components, nvarchar(306), with the DMS identity collation', 1;
+SET @index = NULL;
+SELECT @index = index_id FROM sys.indexes WHERE object_id = @relation AND name = N'UX_Descriptor_UriLowered_ResourceKeyId' AND is_unique = 1 AND is_disabled = 0 AND has_filter = 0;
+SELECT @actual = STRING_AGG(CONVERT(nvarchar(max), c.name), N',') WITHIN GROUP (ORDER BY k.key_ordinal)
+FROM sys.index_columns k JOIN sys.columns c ON c.object_id = k.object_id AND c.column_id = k.column_id
+WHERE k.object_id = @relation AND k.index_id = @index AND k.key_ordinal > 0;
+IF @index IS NULL OR @actual IS NULL OR @actual COLLATE Latin1_General_100_BIN2 <> N'UriLowered,ResourceKeyId'
+    THROW 51000, 'Compact descriptor baseline: required lowered whole-URI unique index missing', 1;
 IF EXISTS (SELECT 1 FROM sys.indexes i JOIN sys.index_columns k ON k.object_id = i.object_id AND k.index_id = i.index_id
     JOIN sys.columns c ON c.object_id = k.object_id AND c.column_id = k.column_id
     WHERE i.object_id = @relation AND i.is_unique = 1 AND k.key_ordinal > 0 AND c.name IN (N'Namespace', N'CodeValue'))

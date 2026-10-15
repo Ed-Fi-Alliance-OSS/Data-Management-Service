@@ -201,8 +201,7 @@ public class Given_Ds52_Identity_Conflicts_Without_Trigger_Metadata(SqlDialect d
     }
 
     // The every-resource check that root natural-key classification depends on: the own-key probe's distinct
-    // columns must equal the emitted UX_<R>_NK columns, in order. It reads no trigger metadata, so it outlives
-    // the DMS-1445 parity guard that DMS-1456 deletes with the RI triggers.
+    // columns must equal the emitted UX_<R>_NK columns, in order, without reading trigger metadata.
     [Test]
     public void It_classifies_every_root_natural_key_constraint_as_a_root_natural_key_conflict()
     {
