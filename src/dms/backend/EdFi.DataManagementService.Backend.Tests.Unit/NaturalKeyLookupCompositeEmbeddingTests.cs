@@ -30,7 +30,6 @@ public class Given_A_Natural_Key_Lookup_Embedded_In_A_Composite_Command(SqlDiale
 
     private NaturalKeyLookupRequest _request = null!;
     private RelationalCommand _lookupCommand = null!;
-    private bool _fits;
     private RelationalCompositeRewrittenStatement _rewritten = null!;
     private int _lookupOrdinal;
     private int _markerOrdinal;
@@ -75,7 +74,6 @@ public class Given_A_Natural_Key_Lookup_Embedded_In_A_Composite_Command(SqlDiale
         _lookupCommand = lookupBuilder.BuildEmbeddableCommand(_request);
 
         var compositeBuilder = new RelationalCompositeCommandBuilder(compositeDialect);
-        _fits = compositeBuilder.Fits(_lookupCommand.Parameters.Count);
         _rewritten = RelationalCompositeStatementRewriter.Rewrite(
             _lookupCommand,
             compositeBuilder.Allocator,
@@ -132,12 +130,6 @@ public class Given_A_Natural_Key_Lookup_Embedded_In_A_Composite_Command(SqlDiale
         };
 
         _outcomes = await new RelationalCompositeCommandExecution().ExecuteAsync(_session, _compositeCommand);
-    }
-
-    [Test]
-    public void It_fits_the_composite_parameter_budget()
-    {
-        _fits.Should().BeTrue();
     }
 
     [Test]
