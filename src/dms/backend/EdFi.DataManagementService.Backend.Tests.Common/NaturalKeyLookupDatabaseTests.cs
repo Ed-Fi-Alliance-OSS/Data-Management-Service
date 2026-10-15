@@ -407,6 +407,35 @@ public abstract class NaturalKeyLookupDatabaseTests
     }
 
     [Test]
+    public async Task It_follows_the_engine_verdict_for_a_uri_longer_than_any_stored_one()
+    {
+        // Longer than any stored URI only by emoji, which SQL Server's identity collation ignores.
+        var aliasUri = CareerUri + string.Concat(Enumerable.Repeat(char.ConvertFromUtf32(0x1F600), 240));
+
+        var result = await ResolveAsync(
+            [ProgramReference(ProgramName, aliasUri, "$.programReference")],
+            [DescriptorReference(_programTypeDescriptor, aliasUri)]
+        );
+
+        if (IsPgsql)
+        {
+            result.SuccessfulDocumentReferencesByPath.Should().BeEmpty();
+            result.SuccessfulDescriptorReferencesByPath.Should().BeEmpty();
+            return;
+        }
+
+        result.HasFailures.Should().BeFalse();
+        result
+            .SuccessfulDocumentReferencesByPath[new JsonPath("$.programReference")]
+            .DocumentId.Should()
+            .Be(_programDocumentId);
+        result
+            .SuccessfulDescriptorReferencesByPath[new JsonPath("$.programTypeDescriptor")]
+            .DescriptorId.Should()
+            .Be(CareerDescriptorId);
+    }
+
+    [Test]
     public async Task It_resolves_a_descriptor_valued_identity_through_the_compact_descriptor_id()
     {
         var result = await ResolveAsync(

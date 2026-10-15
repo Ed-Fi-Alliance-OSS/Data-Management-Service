@@ -450,8 +450,17 @@ internal sealed class NaturalKeyReferenceResolver(
     private static int StoredLength(SqlDialect dialect, string value) =>
         dialect == SqlDialect.Mssql ? value.Length : value.EnumerateRunes().Count();
 
+    /// <summary>
+    /// Whether a descriptor URI can match a stored one. SQL Server's identity collation ignores unweighted
+    /// characters, so there the database decides any URI its lookup can read.
+    /// </summary>
     private static bool FitsDescriptorUri(SqlDialect dialect, string uri) =>
-        StoredLength(dialect, uri) <= NaturalKeyLookupLimits.MaxDescriptorUriLength;
+        StoredLength(dialect, uri)
+        <= (
+            dialect == SqlDialect.Mssql
+                ? NaturalKeyLookupLimits.MaxMssqlDescriptorUriProbeLength
+                : NaturalKeyLookupLimits.MaxDescriptorUriLength
+        );
 
     private static string DescriptorUri(DescriptorReference reference) =>
         reference.DocumentIdentity.DocumentIdentityElements is [var element]

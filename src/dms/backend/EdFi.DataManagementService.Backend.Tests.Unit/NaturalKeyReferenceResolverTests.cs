@@ -126,7 +126,7 @@ public class Given_Natural_Key_Reference_Resolver(SqlDialect dialect)
                 ProgramReference(new string('x', 61), CareerUri, "$.longProgramReference"),
                 SchoolReference("255901"),
             ],
-            [DescriptorReference("uri://ed-fi.org/" + new string('x', 291), "$.longDescriptor")]
+            []
         );
 
         result
@@ -136,11 +136,6 @@ public class Given_Natural_Key_Reference_Resolver(SqlDialect dialect)
                 ("$.badSchoolReference", DocumentReferenceFailureReason.Missing),
                 ("$.longProgramReference", DocumentReferenceFailureReason.Missing)
             );
-        result
-            .InvalidDescriptorReferences.Should()
-            .ContainSingle()
-            .Which.Reason.Should()
-            .Be(DescriptorReferenceFailureReason.Missing);
         _builder.Requests.Single().Groups.Should().ContainSingle().Which.Entries.Should().ContainSingle();
         _builder.Requests.Single().Groups[0].Entries[0].KeyValues.Should().Equal(255901L);
     }
@@ -173,6 +168,38 @@ public class Given_Natural_Key_Reference_Resolver(SqlDialect dialect)
             .ContainSingle()
             .Which.Reason.Should()
             .Be(DocumentReferenceFailureReason.Missing);
+    }
+
+    [Test]
+    public async Task It_leaves_a_descriptor_uri_longer_than_any_stored_one_to_sql_server()
+    {
+        // 308 code points, longer than any stored URI. SQL Server's identity collation ignores the unweighted
+        // emoji, so only the database can tell whether it matches; PostgreSQL compares code points, so it cannot.
+        var uri = CareerUri + string.Concat(Enumerable.Repeat(char.ConvertFromUtf32(0x1F600), 240));
+
+        // Wider than the SQL Server lookup reads, so OPENJSON would truncate it: never bound on either engine.
+        var unreadableUri = "uri://ed-fi.org/" + new string('x', 3985);
+
+        var result = await ResolveAsync(
+            [ProgramReference("Career Prep", uri, "$.programReference")],
+            [DescriptorReference(uri), DescriptorReference(unreadableUri, "$.unreadableDescriptor")]
+        );
+
+        if (dialect == SqlDialect.Pgsql)
+        {
+            _executor.CommandCount.Should().Be(0);
+        }
+        else
+        {
+            _builder
+                .Requests.Single()
+                .Groups.Select(group => group.Entries.Single().KeyValues[^1])
+                .Should()
+                .Equal(uri, uri);
+        }
+
+        result.InvalidDocumentReferences.Should().ContainSingle();
+        result.InvalidDescriptorReferences.Should().HaveCount(2);
     }
 
     [Test]

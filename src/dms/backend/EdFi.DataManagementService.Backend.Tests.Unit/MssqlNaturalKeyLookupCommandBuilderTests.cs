@@ -106,7 +106,7 @@ public class Given_Mssql_Natural_Key_Lookup_Command_Builder
                 string.Join(
                     Environment.NewLine,
                     $"SELECT CAST(3 AS int) AS [GroupOrdinal], keys.o AS [Ordinal], target.[DocumentId] AS [DocumentId], CAST(NULL AS int) AS [DescriptorId], CAST({programResourceKeyId} AS smallint) AS [ResourceKeyId]",
-                    "FROM OPENJSON(@g3_keys) WITH (o int '$.o', k1 bigint '$.k1', k2 nvarchar(60) '$.k2', k3 nvarchar(306) '$.k3') AS keys",
+                    "FROM OPENJSON(@g3_keys) WITH (o int '$.o', k1 bigint '$.k1', k2 nvarchar(60) '$.k2', k3 nvarchar(4000) '$.k3') AS keys",
                     "INNER JOIN [dms].[Descriptor] AS d1",
                     $"    ON d1.[UriLowered] = LOWER(keys.k3 COLLATE {Collation})",
                     $"   AND d1.[ResourceKeyId] = CAST({programTypeResourceKeyId} AS smallint)",

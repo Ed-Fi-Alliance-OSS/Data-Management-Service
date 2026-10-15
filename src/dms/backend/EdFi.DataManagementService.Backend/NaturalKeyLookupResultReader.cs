@@ -188,7 +188,7 @@ internal static class NaturalKeyLookupResultReader
 
     /// <summary>
     /// Keeps the two document keys in their roles: only descriptor groups return a compact
-    /// <c>DescriptorId</c>, and groups that project a literal key must return that key.
+    /// <c>DescriptorId</c>, and concrete and descriptor groups must return the target's own key.
     /// </summary>
     private static void EnsureIdRoles(NaturalKeyLookupGroup group, int ordinal, NaturalKeyLookupMatch match)
     {
@@ -211,15 +211,15 @@ internal static class NaturalKeyLookupResultReader
             );
         }
 
-        var projectsLiteralKey =
+        var requiresTargetKey =
             target.IsDescriptor || target.Probe!.Kind is NaturalKeyProbeTargetKind.Concrete;
 
-        if (projectsLiteralKey && match.ResourceKeyId != target.ResourceKeyId)
+        if (requiresTargetKey && match.ResourceKeyId != target.ResourceKeyId)
         {
             throw new InvalidOperationException(
                 $"Natural-key lookup row for ordinal {ordinal} of group {group.GroupOrdinal} "
                     + $"('{RelationalWriteSupport.FormatResource(target.Resource)}') returned ResourceKeyId {match.ResourceKeyId}, but the "
-                    + $"group projects {target.ResourceKeyId}."
+                    + $"group requires {target.ResourceKeyId}."
             );
         }
     }

@@ -31,9 +31,10 @@ internal sealed record NaturalKeyLookupTarget
     public QualifiedResourceName Resource { get; }
 
     /// <summary>
-    /// The probed resource's own key. Concrete and descriptor groups project it as a compile-time literal, and
-    /// the result reader requires every returned row to carry it. Abstract groups project the concrete member
-    /// key stored on the identity row instead, so this value is never compared for them.
+    /// The probed resource's own key. Concrete groups project it as a compile-time literal. Descriptor groups
+    /// filter the descriptor join on it and project the matched row's own key, which therefore equals it. The
+    /// result reader requires every row of both kinds of group to carry it. Abstract groups project the concrete
+    /// member key stored on the identity row instead, so this value is never compared for them.
     /// </summary>
     public short ResourceKeyId { get; }
 
@@ -115,10 +116,18 @@ internal sealed record NaturalKeyLookupMatch(long DocumentId, int? DescriptorId,
 internal static class NaturalKeyLookupLimits
 {
     /// <summary>
-    /// The longest stored descriptor URI: <c>Namespace</c> (255) + <c>'#'</c> + <c>CodeValue</c> (50). A longer
-    /// URI cannot match any stored descriptor, and SQL Server's OPENJSON would truncate it to this length.
+    /// The longest stored descriptor URI: <c>Namespace</c> (255) + <c>'#'</c> + <c>CodeValue</c> (50). On
+    /// PostgreSQL a longer URI cannot match any stored descriptor.
     /// </summary>
     public const int MaxDescriptorUriLength = 306;
+
+    /// <summary>
+    /// The longest descriptor URI, in UTF-16 code units, that a SQL Server lookup reads. Its identity collation
+    /// ignores unweighted characters, so a URI longer than any stored one can still match; this width leaves room
+    /// for that while staying below <c>nvarchar(max)</c>, which would weaken the index seek. OPENJSON would
+    /// truncate a longer URI into a false match, so it is never bound.
+    /// </summary>
+    public const int MaxMssqlDescriptorUriProbeLength = 4000;
 }
 
 /// <summary>

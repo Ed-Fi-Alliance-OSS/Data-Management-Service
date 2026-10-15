@@ -34,7 +34,7 @@ internal sealed class MssqlNaturalKeyLookupCommandBuilder : INaturalKeyLookupCom
     private const string UriLoweredColumn = "UriLowered";
 
     private static readonly string DescriptorUriType =
-        $"nvarchar({NaturalKeyLookupLimits.MaxDescriptorUriLength.ToString(CultureInfo.InvariantCulture)})";
+        $"nvarchar({NaturalKeyLookupLimits.MaxMssqlDescriptorUriProbeLength.ToString(CultureInfo.InvariantCulture)})";
 
     private static readonly string IdentityCollation =
         IdentityEqualityContract.SqlServer.IdentityTextCollation
