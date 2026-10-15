@@ -383,8 +383,10 @@ The approved intentional ODS differences are:
   `limit` is also sent and ignores it beside `limit`, so a client that sends the advertised default
   without `limit` fails, and one that sends it beside `limit` gains nothing; DMS omits it, and an
   omitted `pageSize` on a cursor request still uses `MaximumPageSize` at runtime. DMS likewise omits
-  the `limit` default, because both runtimes reject `limit` with `pageToken`; an omitted `limit`
-  still uses `MaximumPageSize`. ODS's runtime maximum for both
+  the `limit` default, because DMS always rejects `limit` with `pageToken`, so a client that sends
+  an advertised `limit` default on a cursor request would fail. ODS 7.3.2 rejects `limit` with
+  `pageToken` only when `pageSize` is absent and accepts all three together (the first approved
+  difference above). An omitted `limit` still uses `MaximumPageSize`. ODS's runtime maximum for both
   parameters is likewise a configurable setting already defaulting to `500`, so this difference is
   confined to published metadata rather than runtime enforcement;
 - publish the runtime `DefaultPartitionCount` as the OpenAPI `numberOfPartitions` default, which
