@@ -43,7 +43,7 @@ So an unauthenticated request still gets its `401`, and a request with a malform
 
 ## What a client sees
 
-Problem responses are `application/problem+json`, except the `400` for a malformed or empty body or a duplicate property, which DMS sends as `application/json` with the same problem body.
+Problem responses are `application/problem+json`.
 The table lists the statuses a client can see and where each comes from.
 The implementer guide's [results and status codes](../src/dms/core/EdFi.DataManagementService.Identity/IDENTITY.md#results-and-status-codes) section is the complete table, including the statuses that come from the provider's own results.
 
