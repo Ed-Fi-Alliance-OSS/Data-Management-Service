@@ -5,7 +5,9 @@
 
 using System.Diagnostics;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Extraction;
 using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
 
 namespace EdFi.DataManagementService.Core.Model;
@@ -19,7 +21,9 @@ internal class DescriptorDocument(JsonNode _document)
     public static readonly JsonPath DescriptorIdentityPath = new("$.descriptor");
 
     /// <summary>
-    /// Creates a new DocumentIdentity from the DescriptorDocument
+    /// Creates a new DocumentIdentity from the DescriptorDocument. Throws
+    /// <see cref="ReferenceExtractionValidationException"/> with one failure per identity field that
+    /// contains NUL or an unpaired surrogate.
     /// </summary>
     public DocumentIdentity ToDocumentIdentity()
     {
@@ -36,6 +40,20 @@ internal class DescriptorDocument(JsonNode _document)
             "Failed getting codeValue field, JSON schema validation not in pipeline?",
             ""
         );
+
+        List<WriteValidationFailure> failures = [];
+        if (!DescriptorText.IsWellFormedWithoutNul(namespaceName))
+        {
+            failures.Add(new(new JsonPath("$.namespace"), DescriptorText.InvalidValueMessage));
+        }
+        if (!DescriptorText.IsWellFormedWithoutNul(codeValue))
+        {
+            failures.Add(new(new JsonPath("$.codeValue"), DescriptorText.InvalidValueMessage));
+        }
+        if (failures.Count > 0)
+        {
+            throw new ReferenceExtractionValidationException([.. failures]);
+        }
 
         DocumentIdentityElement[] descriptorElement =
         [

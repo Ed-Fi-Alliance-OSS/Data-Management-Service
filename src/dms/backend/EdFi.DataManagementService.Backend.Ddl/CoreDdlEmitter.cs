@@ -74,6 +74,11 @@ public sealed class CoreDdlEmitter
     }
 
     private const string DescriptorStampingTriggerName = "TR_Descriptor_Stamp_Document";
+
+    /// <summary>
+    /// The PostgreSQL collation that folds the lowered descriptor URI independently of the database default.
+    /// </summary>
+    private const string PgsqlUriFoldingCollation = "pg_c_utf8";
     private const string DocumentCacheUuidValidationTriggerName = DocumentCacheInventoryDefinition
         .DocumentCacheTriggers
         .ValidateDocumentUuid;
@@ -441,8 +446,8 @@ public sealed class CoreDdlEmitter
             );
             // Denormalized from dms.Document at insert time and immutable thereafter, so descriptor
             // paging can root on this table without touching dms.Document. Excluded from the
-            // stamping trigger's no-op diff (_descriptorStoredColumns); the same trigger rejects
-            // INSERT/UPDATE rows whose value diverges from the owning dms.Document row.
+            // stamping trigger's no-op diff (_descriptorStoredColumns); FK_Descriptor_DocumentResourceKey
+            // pins it to the owning dms.Document row.
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinition(Col("ResourceKeyId"), _dialect.SmallintColumnType, false)},"
             );
@@ -467,6 +472,13 @@ public sealed class CoreDdlEmitter
                 // The index stores the reconstructed URI; the base row does not. Both components
                 // carry the identity text collation, which the computed Uri inherits.
                 writer.AppendLine($"{Quote("Uri")} AS ({Quote("Namespace")} + N'#' + {Quote("CodeValue")}),");
+                // Lowered whole URI for UX_Descriptor_UriLowered_ResourceKeyId. Computed from the stored
+                // components, never from Uri, and non-persisted like Uri.
+                var uriExpression = $"({Quote("Namespace")} + N'#' + {Quote("CodeValue")})";
+                var collatedUri = _dialect.Rules.IdentityEquality.IdentityTextCollation is { } collation
+                    ? $"{uriExpression} COLLATE {collation}"
+                    : uriExpression;
+                writer.AppendLine($"{Quote("UriLowered")} AS LOWER({collatedUri}),");
             }
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ContentVersion"), "bigint", false, "DF_Descriptor_ContentVersion", "0")},"
@@ -497,8 +509,9 @@ public sealed class CoreDdlEmitter
         );
         writer.AppendLine();
 
-        // Candidate key referenced by each abstract identity table's FK_<T>_DocumentResourceKey, so the
-        // database enforces that an abstract identity row's ResourceKeyId matches its owning document.
+        // Candidate key referenced by FK_Descriptor_DocumentResourceKey and by each abstract identity
+        // table's FK_<T>_DocumentResourceKey, so the database enforces that a descriptor or abstract
+        // identity row's ResourceKeyId matches its owning document.
         writer.AppendLine(
             _dialect.AddUniqueConstraint(
                 _documentTable,
@@ -933,26 +946,17 @@ public sealed class CoreDdlEmitter
         // dms.Descriptor follows the resource-root rule (DeriveTableScopesAndKeysStep): the write path
         // deletes the Descriptor row before its dms.Document row, so this FK is a safety net and must
         // not cascade. Restrict = single probe on both engines (RESTRICT on PostgreSQL, NO ACTION on
-        // SQL Server). The dms.* cascades below stay: their rows are cascade-maintained.
+        // SQL Server). Through UX_Document_DocumentId_ResourceKeyId it also pins the denormalized
+        // ResourceKeyId to the owning document. The dms.* cascades below stay: their rows are
+        // cascade-maintained.
         writer.AppendLine(
             _dialect.AddForeignKeyConstraint(
                 _descriptorTable,
-                "FK_Descriptor_Document",
-                [Col("DocumentId")],
+                "FK_Descriptor_DocumentResourceKey",
+                [Col("DocumentId"), Col("ResourceKeyId")],
                 _documentTable,
-                [Col("DocumentId")],
+                [Col("DocumentId"), Col("ResourceKeyId")],
                 onDelete: ReferentialAction.Restrict
-            )
-        );
-        writer.AppendLine();
-
-        writer.AppendLine(
-            _dialect.AddForeignKeyConstraint(
-                _descriptorTable,
-                "FK_Descriptor_ResourceKey",
-                [Col("ResourceKeyId")],
-                _resourceKeyTable,
-                [Col("ResourceKeyId")]
             )
         );
         writer.AppendLine();
@@ -1045,6 +1049,8 @@ public sealed class CoreDdlEmitter
         //   query path filters dms.Document by ResourceKeyId. FK_Document_ResourceKey
         //   needs no referencing-side index because dms.ResourceKey rows are never
         //   deleted or updated at runtime.
+        // - dms.Descriptor (DocumentId, ResourceKeyId) for FK_Descriptor_DocumentResourceKey: the
+        //   referencing-side lookup is served by UX_Descriptor_DocumentId, which leads with DocumentId.
         // - dms.DocumentCache (DocumentUuid): DocumentUuid is trigger-validated against
         //   the owning dms.Document row by DocumentId and remains deliberately non-indexed.
         // - dms.DocumentProjectionWork (DocumentId): covered by PK_DocumentProjectionWork.
@@ -1071,6 +1077,21 @@ public sealed class CoreDdlEmitter
                     _descriptorTable,
                     "UX_Descriptor_ResourceKeyId_Uri",
                     [Col("ResourceKeyId"), Col("Uri")],
+                    isUnique: true
+                )
+        );
+        writer.AppendLine();
+
+        // Lowered whole-URI uniqueness per descriptor type. Case folding is engine-owned: SQL Server folds
+        // under the identity text collation through the computed UriLowered column, and PostgreSQL pins
+        // pg_c_utf8 instead of following the database default collation.
+        writer.AppendLine(
+            _dialect.Rules.Dialect == SqlDialect.Pgsql
+                ? $"CREATE UNIQUE INDEX IF NOT EXISTS {Quote("UX_Descriptor_UriLowered_ResourceKeyId")} ON {_dialect.QualifyTable(_descriptorTable)} (lower(({Quote("Namespace")} || '#' || {Quote("CodeValue")}) COLLATE {Quote(PgsqlUriFoldingCollation)}), {Quote("ResourceKeyId")});"
+                : _dialect.CreateIndexIfNotExists(
+                    _descriptorTable,
+                    "UX_Descriptor_UriLowered_ResourceKeyId",
+                    [Col("UriLowered"), Col("ResourceKeyId")],
                     isUnique: true
                 )
         );
@@ -1638,10 +1659,6 @@ public sealed class CoreDdlEmitter
     /// descriptor row is gone.
     /// A DB-level no-op guard (<c>IS DISTINCT FROM</c> across every stored column)
     /// short-circuits same-value UPDATEs so unchanged PUTs do not bump the stamps.
-    /// Before the guard, INSERT/UPDATE rows are validated so the denormalized
-    /// <c>ResourceKeyId</c> cannot diverge from the owning <c>dms.Document</c> row -
-    /// list paging trusts the descriptor copy while GET-by-id trusts the document copy,
-    /// and no FK ties the two together.
     /// </summary>
     private void EmitPgsqlDescriptorStampingTrigger(SqlWriter writer)
     {
@@ -1656,42 +1673,6 @@ public sealed class CoreDdlEmitter
         writer.AppendLine("BEGIN");
         using (writer.Indent())
         {
-            // Equality guard: reject a descriptor row whose denormalized ResourceKeyId
-            // diverges from the owning dms.Document row. Runs before the no-op guard so a
-            // ResourceKeyId-only UPDATE cannot short-circuit past validation.
-            writer.AppendLine("IF TG_OP IN ('INSERT', 'UPDATE') THEN");
-            using (writer.Indent())
-            {
-                writer.AppendLine("IF NOT EXISTS (");
-                using (writer.Indent())
-                {
-                    writer.AppendLine("SELECT 1");
-                    writer.Append("FROM ");
-                    writer.AppendLine(documentTable);
-                    writer.Append("WHERE ");
-                    writer.Append(Quote("DocumentId"));
-                    writer.Append(" = NEW.");
-                    writer.AppendLine(Quote("DocumentId"));
-                    using (writer.Indent())
-                    {
-                        writer.Append("AND ");
-                        writer.Append(Quote("ResourceKeyId"));
-                        writer.Append(" = NEW.");
-                        writer.AppendLine(Quote("ResourceKeyId"));
-                    }
-                }
-                writer.AppendLine(") THEN");
-                using (writer.Indent())
-                {
-                    writer.AppendLine(
-                        "RAISE EXCEPTION 'dms.Descriptor.ResourceKeyId % diverges from the owning "
-                            + $"dms.Document row for DocumentId %', NEW.{Quote("ResourceKeyId")}, NEW.{Quote("DocumentId")};"
-                    );
-                }
-                writer.AppendLine("END IF;");
-            }
-            writer.AppendLine("END IF;");
-
             // No-op guard: if no stored column actually changed, skip the stamp.
             writer.AppendLine("IF TG_OP = 'UPDATE' THEN");
             using (writer.Indent())
@@ -1831,10 +1812,6 @@ public sealed class CoreDdlEmitter
     /// through the null-safe per-column diff predicates across every stored descriptor
     /// column, so no-op UPDATEs produce no CTE rows and the downstream owner stamp
     /// updates stamp nothing. DELETE rows stamp the owning document before it is removed.
-    /// Before any stamping, INSERT/UPDATE rows are validated so the denormalized
-    /// <c>ResourceKeyId</c> cannot diverge from the owning <c>dms.Document</c> row -
-    /// list paging trusts the descriptor copy while GET-by-id trusts the document copy,
-    /// and no FK ties the two together.
     /// </summary>
     private void EmitMssqlDescriptorStampingTrigger(SqlWriter writer)
     {
@@ -1856,35 +1833,6 @@ public sealed class CoreDdlEmitter
         using (writer.Indent())
         {
             writer.AppendLine("SET NOCOUNT ON;");
-            // Equality guard: reject descriptor rows whose denormalized ResourceKeyId diverges
-            // from the owning dms.Document row. THROW aborts the batch and rolls back the
-            // statement's transaction, so no divergent row is ever stamped or mirrored. The
-            // inserted pseudo-table is empty on DELETE, so pure deletes skip the guard.
-            writer.AppendLine("IF EXISTS (");
-            using (writer.Indent())
-            {
-                writer.AppendLine("SELECT 1");
-                writer.AppendLine("FROM inserted i");
-                writer.Append("INNER JOIN ");
-                writer.Append(documentTable);
-                writer.Append(" d ON d.");
-                writer.Append(quotedDocumentKeyColumn);
-                writer.Append(" = i.");
-                writer.AppendLine(quotedDocumentKeyColumn);
-                writer.Append("WHERE i.");
-                writer.Append(Quote("ResourceKeyId"));
-                writer.Append(" <> d.");
-                writer.AppendLine(Quote("ResourceKeyId"));
-            }
-            writer.AppendLine(")");
-            writer.AppendLine("BEGIN");
-            using (writer.Indent())
-            {
-                writer.AppendLine(
-                    "THROW 50000, N'dms.Descriptor.ResourceKeyId diverges from the owning dms.Document row.', 1;"
-                );
-            }
-            writer.AppendLine("END");
             writer.AppendLine("DECLARE @stamped TABLE (");
             using (writer.Indent())
             {

@@ -135,6 +135,17 @@ BEGIN
     ) THEN
         RAISE EXCEPTION 'Compact descriptor baseline: required unlowered whole-URI expression index/collation missing';
     END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+        JOIN pg_attribute r ON r.attrelid = relation AND r.attname = 'ResourceKeyId'
+        WHERE i.indrelid = relation AND c.relname = 'UX_Descriptor_UriLowered_ResourceKeyId'
+          AND i.indisunique AND i.indisvalid AND i.indpred IS NULL AND i.indnkeyatts = 2
+          AND i.indkey[0] = 0 AND i.indkey[1] = r.attnum
+          AND i.indcollation[0] = (SELECT oid FROM pg_collation WHERE collname = 'pg_c_utf8' AND collnamespace = 'pg_catalog'::regnamespace)
+          AND regexp_replace(pg_get_expr(i.indexprs, i.indrelid), '\s+|::text|[()]', '', 'g') = 'lower"Namespace"||''#''||"CodeValue"COLLATEpg_c_utf8'
+    ) THEN
+        RAISE EXCEPTION 'Compact descriptor baseline: required lowered whole-URI expression index pinned to pg_c_utf8 missing';
+    END IF;
     IF EXISTS (
         SELECT 1 FROM pg_index i JOIN pg_attribute a ON a.attrelid = relation AND a.attnum = ANY(i.indkey)
         WHERE i.indrelid = relation AND i.indisunique AND a.attname IN ('Namespace', 'CodeValue')

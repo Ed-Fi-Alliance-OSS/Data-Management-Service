@@ -35,8 +35,8 @@ Source documents:
 - DMS remains schema/behavior-driven by `ApiSchema.json` (no handwritten per-resource code; no checked-in per-resource SQL artifacts).
 - Document relationships are stored as stable `bigint DocumentId` foreign keys; descriptor relationships use independent `int DescriptorId` foreign keys, with referenced identity natural-key fields available locally for query/reconstitution and kept consistent via dialect-specific propagation rules (no FK rewrites): PostgreSQL uses `ON UPDATE CASCADE` for abstract targets and transitively mutable concrete targets (`ON UPDATE NO ACTION` otherwise); SQL Server retains native cascades where legal and uses safe full-composite `NO ACTION` cuts selected by `sql-server-pruning.md`. That document supersedes the blanket SQL Server `ON UPDATE NO ACTION` plus `MssqlIdentityPropagationTrigger` design. Under key unification, equality-constrained per-site/per-path bindings may be generated/persisted, presence-gated aliases of canonical stored columns (see `key-unification.md`).
 - Current references and POST upserts retain RI calculation, lookup and maintenance. Generated
-  natural-key/lowered-URI probes and their equality, validation and platform changes are future
-  work in [natural-key-resolution.md](natural-key-resolution.md).
+  natural-key/lowered-URI probes, their equality changes and query-side descriptor validation are
+  future work in [natural-key-resolution.md](natural-key-resolution.md).
 - SQL Server identity string columns carry the explicit DMS collation
   `SQL_Latin1_General_CP1_CI_AS`, independent of the database default; PostgreSQL keeps its
   existing collation verdicts. Compact descriptor storage introduces no normalization.
@@ -76,8 +76,9 @@ Source documents:
   - Holds `DocumentId`, `DocumentUuid`, `ResourceKeyId` (resource type), and update-tracking token columns (see below).
   - Stores ownership-based authorization stamping (`CreatedByOwnershipTokenId`; see `auth.md`).
   - `DocumentUuid` is unique and stable across identity updates.
-  - Descriptor type agreement is checked by its stamping trigger; a composite document/resource
-    candidate key is a later invariant proposal, not a descriptor resource-type scan path.
+  - `UX_Document_DocumentId_ResourceKeyId` is the candidate key that `FK_Descriptor_DocumentResourceKey`
+    references, so the database enforces descriptor type agreement; it is not a descriptor
+    resource-type scan path.
 
 - `dms.Descriptor` (unified)
   - Shared table with native `int DescriptorId` primary key: PostgreSQL `GENERATED ALWAYS AS IDENTITY`
@@ -88,12 +89,16 @@ Source documents:
     PostgreSQL expression `(ResourceKeyId, (Namespace || '#' || CodeValue))` under the database-default
     collation; SQL Server non-persisted computed `Uri AS ([Namespace] + N'#' + [CodeValue])`, indexed
     with `ResourceKeyId`, which inherits the `SQL_Latin1_General_CP1_CI_AS` identity collation of its
-    `Namespace` and `CodeValue` components.
+    `Namespace` and `CodeValue` components. `UX_Descriptor_UriLowered_ResourceKeyId` adds lowered
+    whole-URI uniqueness within the type: PostgreSQL expression
+    `lower((Namespace || '#' || CodeValue) COLLATE "pg_c_utf8"), ResourceKeyId`; SQL Server
+    non-persisted `UriLowered AS LOWER(([Namespace] + N'#' + [CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS)`
+    indexed with `ResourceKeyId`.
   - Current RI lookup returns both IDs through the existing join. URI witnesses and original-case
     responses reconstruct the whole string; stored reference joins use the compact key.
-  - The descriptor stamping trigger rejects `ResourceKeyId` drift from the owning document;
-    the `NO ACTION` resource-key FK retains catalog integrity. `FK_Descriptor_Document` is a
-    safety-net FK with `RESTRICT` on PostgreSQL and `NO ACTION` on SQL Server. Delete the
+  - The composite `FK_Descriptor_DocumentResourceKey (DocumentId, ResourceKeyId)` rejects
+    `ResourceKeyId` drift from the owning document and is the safety-net FK, with `RESTRICT` on
+    PostgreSQL and `NO ACTION` on SQL Server. Delete the
     descriptor before its owning document in the same transaction so stamping and tombstone
     capture can read the document metadata before it is removed.
 

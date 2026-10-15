@@ -108,12 +108,17 @@ public sealed class PostgresqlGeneratedDdlTestDatabase : IAsyncDisposable
     /// </summary>
     public int CommandTimeoutSeconds { get; set; } = DefaultCommandTimeoutSeconds;
 
-    public static async Task<PostgresqlGeneratedDdlTestDatabase> CreateEmptyAsync()
+    /// <param name="createDatabaseOptions">
+    /// Optional clauses appended to <c>CREATE DATABASE</c>, such as a template, encoding or locale.
+    /// </param>
+    public static async Task<PostgresqlGeneratedDdlTestDatabase> CreateEmptyAsync(
+        string? createDatabaseOptions = null
+    )
     {
         var databaseName = GenerateUniqueDatabaseName();
         var connectionString = BuildConnectionString(databaseName);
 
-        await CreateDatabaseAsync(databaseName);
+        await CreateDatabaseAsync(databaseName, createDatabaseOptions: createDatabaseOptions);
 
         return new(databaseName, connectionString, NpgsqlDataSource.Create(connectionString));
     }
@@ -135,10 +140,11 @@ public sealed class PostgresqlGeneratedDdlTestDatabase : IAsyncDisposable
 
     public static async Task<PostgresqlGeneratedDdlTestDatabase> CreateProvisionedAsync(
         string generatedDdl,
-        int commandTimeoutSeconds = DefaultCommandTimeoutSeconds
+        int commandTimeoutSeconds = DefaultCommandTimeoutSeconds,
+        string? createDatabaseOptions = null
     )
     {
-        var database = await CreateEmptyAsync();
+        var database = await CreateEmptyAsync(createDatabaseOptions);
 
         try
         {
@@ -439,7 +445,8 @@ public sealed class PostgresqlGeneratedDdlTestDatabase : IAsyncDisposable
     private static async Task CreateDatabaseAsync(
         string databaseName,
         string? templateDatabaseName = null,
-        int commandTimeoutSeconds = DefaultCommandTimeoutSeconds
+        int commandTimeoutSeconds = DefaultCommandTimeoutSeconds,
+        string? createDatabaseOptions = null
     )
     {
         await using var connection = new NpgsqlConnection(BuildAdminConnectionString());
@@ -452,6 +459,10 @@ public sealed class PostgresqlGeneratedDdlTestDatabase : IAsyncDisposable
                 CREATE DATABASE {QuoteIdentifier(databaseName)}
                 TEMPLATE {QuoteIdentifier(templateDatabaseName)}
                 """;
+        if (createDatabaseOptions is not null)
+        {
+            command.CommandText += $" {createDatabaseOptions}";
+        }
         command.CommandTimeout = commandTimeoutSeconds;
         await command.ExecuteNonQueryAsync();
     }

@@ -572,32 +572,15 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_Descriptor_Document'
+        WHERE conname = 'FK_Descriptor_DocumentResourceKey'
         AND conrelid = to_regclass('"dms"."Descriptor"')
     )
     THEN
         ALTER TABLE "dms"."Descriptor"
-        ADD CONSTRAINT "FK_Descriptor_Document"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
+        ADD CONSTRAINT "FK_Descriptor_DocumentResourceKey"
+        FOREIGN KEY ("DocumentId", "ResourceKeyId")
+        REFERENCES "dms"."Document" ("DocumentId", "ResourceKeyId")
         ON DELETE RESTRICT
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_Descriptor_ResourceKey'
-        AND conrelid = to_regclass('"dms"."Descriptor"')
-    )
-    THEN
-        ALTER TABLE "dms"."Descriptor"
-        ADD CONSTRAINT "FK_Descriptor_ResourceKey"
-        FOREIGN KEY ("ResourceKeyId")
-        REFERENCES "dms"."ResourceKey" ("ResourceKeyId")
-        ON DELETE NO ACTION
         ON UPDATE NO ACTION;
     END IF;
 END $$;
@@ -712,6 +695,8 @@ CREATE INDEX IF NOT EXISTS "IX_Descriptor_ResourceKeyId_DocumentId" ON "dms"."De
 
 CREATE UNIQUE INDEX IF NOT EXISTS "UX_Descriptor_ResourceKeyId_Uri" ON "dms"."Descriptor" ("ResourceKeyId", ("Namespace" || '#' || "CodeValue"));
 
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_Descriptor_UriLowered_ResourceKeyId" ON "dms"."Descriptor" (lower(("Namespace" || '#' || "CodeValue") COLLATE "pg_c_utf8"), "ResourceKeyId");
+
 CREATE INDEX IF NOT EXISTS "IX_Document_CreatedByOwnershipTokenId" ON "dms"."Document" ("CreatedByOwnershipTokenId") WHERE "CreatedByOwnershipTokenId" IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS "IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId" ON "dms"."DocumentProjectionWork" ("FirstEnqueuedAt", "DocumentId");
@@ -723,16 +708,6 @@ CREATE INDEX IF NOT EXISTS "IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId
 CREATE OR REPLACE FUNCTION "dms"."TF_Descriptor_Stamp_Document"()
 RETURNS TRIGGER AS $func$
 BEGIN
-    IF TG_OP IN ('INSERT', 'UPDATE') THEN
-        IF NOT EXISTS (
-            SELECT 1
-            FROM "dms"."Document"
-            WHERE "DocumentId" = NEW."DocumentId"
-                AND "ResourceKeyId" = NEW."ResourceKeyId"
-        ) THEN
-            RAISE EXCEPTION 'dms.Descriptor.ResourceKeyId % diverges from the owning dms.Document row for DocumentId %', NEW."ResourceKeyId", NEW."DocumentId";
-        END IF;
-    END IF;
     IF TG_OP = 'UPDATE' THEN
         IF NOT (OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."CodeValue" IS DISTINCT FROM NEW."CodeValue" OR OLD."ShortDescription" IS DISTINCT FROM NEW."ShortDescription" OR OLD."Description" IS DISTINCT FROM NEW."Description" OR OLD."EffectiveBeginDate" IS DISTINCT FROM NEW."EffectiveBeginDate" OR OLD."EffectiveEndDate" IS DISTINCT FROM NEW."EffectiveEndDate") THEN
             RETURN NEW;

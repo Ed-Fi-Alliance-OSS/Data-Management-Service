@@ -103,15 +103,15 @@ owner document allocates the version; the descriptor trigger copies that version
 `dms.Descriptor.ContentLastModifiedAt`. Changed stored representation fields advance the document
 version and update the descriptor's version mirror and authoritative timestamp in one transaction.
 SQL Server pairs descriptor `inserted`/`deleted` rows by `DescriptorId` while locating the document
-and stamp owner through `DocumentId`. The trigger also rejects descriptor `ResourceKeyId` drift
-from the document; the resource-key catalog FK remains. `FK_Descriptor_Document` is a
-safety-net FK with `RESTRICT` on PostgreSQL and `NO ACTION` on SQL Server. Delete the
+and stamp owner through `DocumentId`. The composite `FK_Descriptor_DocumentResourceKey
+(DocumentId, ResourceKeyId)` rejects descriptor `ResourceKeyId` drift from the document and is
+the safety-net FK, with `RESTRICT` on PostgreSQL and `NO ACTION` on SQL Server. Delete the
 descriptor before its owning document in the same transaction so stamping and tombstone
 capture can read the document metadata before it is removed.
 
 There is no live descriptor discriminator or physically stored URI. URI consumers reconstruct
-the whole `Namespace + '#' + CodeValue`; SQL Server's non-persisted computed URI exists for
-indexing. Namespace and code value remain independently compared stored representation fields.
+the whole `Namespace + '#' + CodeValue`; SQL Server's non-persisted computed `Uri` and `UriLowered`
+exist for indexing. Namespace and code value remain independently compared stored representation fields.
 An RI-matched POST applies incoming components, including case changes. PUT rejects differing
 whole-URI text ordinally (including case-only text), but accepts changed component pairs that
 reconstruct exactly the same URI. Such accepted component changes receive stamps/ETag changes;
