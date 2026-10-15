@@ -4,8 +4,11 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Globalization;
 using EdFi.DataManagementService.Backend.Composite;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -13,7 +16,8 @@ namespace EdFi.DataManagementService.Backend.Tests.Common;
 
 /// <summary>
 /// Runs the natural-key lookup builders against a database provisioned from the authoritative DS 5.2 DDL, through
-/// the builder, a real command executor and <see cref="NaturalKeyLookupResultReader"/>, with no resolver.
+/// the builder, a real command executor and <see cref="NaturalKeyLookupResultReader"/>, and then through
+/// <see cref="NaturalKeyReferenceResolver"/>.
 /// </summary>
 /// <remarks>
 /// Seeding uses raw SQL with every trigger enabled, so the generated triggers maintain the abstract identity
@@ -44,6 +48,11 @@ public abstract class NaturalKeyLookupDatabaseTests
     private const int DecoyDescriptorId = (int)CareerDescriptorDocumentId;
     private const long OtherTypeDescriptorDocumentId = 900003;
     private const int OtherTypeDescriptorId = 8;
+
+    // Below the explicit range: SQL Server's IDENTITY_INSERT advances the counter past 900003, so seeded documents
+    // take the ids after it.
+    private const long DuplicateDescriptorDocumentId = 800001;
+    private const int DuplicateDescriptorId = 9;
 
     private static readonly DateOnly _beginDate = new(2026, 8, 20);
 
@@ -360,6 +369,332 @@ public abstract class NaturalKeyLookupDatabaseTests
         outcomes.Single(outcome => outcome.Ordinal == markerOrdinal).Value.Should().Be(7);
     }
 
+    [Test]
+    public async Task It_resolves_a_concrete_school_reference()
+    {
+        var result = await ResolveAsync([SchoolReference(SchoolId)], []);
+
+        result.HasFailures.Should().BeFalse();
+        var resolved = result.SuccessfulDocumentReferencesByPath[new JsonPath("$.schoolReference")];
+        resolved.DocumentId.Should().Be(_schoolDocumentId);
+        resolved.ResourceKeyId.Should().Be(ResourceKeyId(_school));
+    }
+
+    [Test]
+    public async Task It_resolves_an_abstract_reference_to_the_concrete_member()
+    {
+        var result = await ResolveAsync([EducationOrganizationReference(SchoolId)], []);
+
+        var resolved = result.SuccessfulDocumentReferencesByPath[
+            new JsonPath("$.educationOrganizationReference")
+        ];
+        resolved.DocumentId.Should().Be(_schoolDocumentId);
+        resolved.ResourceKeyId.Should().Be(ResourceKeyId(_school));
+    }
+
+    [Test]
+    public async Task It_retains_unequal_descriptor_and_document_ids_for_a_descriptor_reference()
+    {
+        var result = await ResolveAsync(
+            [],
+            [DescriptorReference(_programTypeDescriptor, CareerUri.ToUpperInvariant())]
+        );
+
+        var resolved = result.SuccessfulDescriptorReferencesByPath[new JsonPath("$.programTypeDescriptor")];
+        resolved.DescriptorId.Should().Be(CareerDescriptorId);
+        resolved.DocumentId.Should().Be(CareerDescriptorDocumentId);
+        resolved.ResourceKeyId.Should().Be(ResourceKeyId(_programTypeDescriptor));
+    }
+
+    [Test]
+    public async Task It_resolves_a_descriptor_valued_identity_through_the_compact_descriptor_id()
+    {
+        var result = await ResolveAsync(
+            [
+                ProgramReference(ProgramName, CareerUri, "$.programReference"),
+                ProgramReference(DecoyProgramName, CareerUri, "$.decoyProgramReference"),
+            ],
+            []
+        );
+
+        result
+            .SuccessfulDocumentReferencesByPath[new JsonPath("$.programReference")]
+            .DocumentId.Should()
+            .Be(_programDocumentId);
+
+        // The decoy stores DescriptorId 900001, the career descriptor's DocumentId, so only a DocumentId join hits.
+        var failure = result.InvalidDocumentReferences.Should().ContainSingle().Subject;
+        failure.Path.Value.Should().Be("$.decoyProgramReference");
+        failure.Reason.Should().Be(DocumentReferenceFailureReason.Missing);
+    }
+
+    [Test]
+    public async Task It_resolves_a_copied_descriptor_identity_through_an_abstract_target()
+    {
+        var result = await ResolveAsync([AssociationReference(CareerUri)], []);
+
+        var resolved = result.SuccessfulDocumentReferencesByPath[
+            new JsonPath("$.generalStudentProgramAssociationReference")
+        ];
+        resolved.DocumentId.Should().Be(_associationDocumentId);
+        resolved.ResourceKeyId.Should().Be(ResourceKeyId(_studentProgramAssociation));
+    }
+
+    [Test]
+    public async Task It_classifies_unknown_references_and_a_uri_under_the_wrong_type_as_missing()
+    {
+        var result = await ResolveAsync(
+            [SchoolReference(UnknownSchoolId)],
+            [
+                DescriptorReference(
+                    _programTypeDescriptor,
+                    $"{ProgramTypeNamespace}#Unknown",
+                    "$.unknownDescriptor"
+                ),
+                // The decoy URI is stored only as a ProgramTypeDescriptor.
+                DescriptorReference(_academicSubjectDescriptor, DecoyUri, "$.academicSubjectDescriptor"),
+            ]
+        );
+
+        result
+            .InvalidDocumentReferences.Should()
+            .ContainSingle()
+            .Which.Reason.Should()
+            .Be(DocumentReferenceFailureReason.Missing);
+        result
+            .InvalidDescriptorReferences.Select(failure => failure.Path.Value)
+            .Should()
+            .BeEquivalentTo("$.unknownDescriptor", "$.academicSubjectDescriptor");
+        result
+            .InvalidDescriptorReferences.Should()
+            .OnlyContain(failure => failure.Reason == DescriptorReferenceFailureReason.Missing);
+    }
+
+    [Test]
+    public async Task It_classifies_an_identity_row_owned_by_another_resource_as_an_incompatible_target()
+    {
+        const long studentEducationOrganizationId = 255999;
+        var studentDocumentId = await InsertDocumentAsync(_connection, _student, _transaction);
+        await ExecuteAsync(
+            _connection,
+            _transaction,
+            $"INSERT INTO {Table("edfi", "EducationOrganizationIdentity")} ({Q("DocumentId")}, {Q("EducationOrganizationId")}, {Q("ResourceKeyId")}, {Q("Discriminator")}) VALUES (@documentId, @educationOrganizationId, @key, 'Ed-Fi:Student');",
+            ("documentId", studentDocumentId),
+            ("educationOrganizationId", studentEducationOrganizationId),
+            ("key", ResourceKeyId(_student))
+        );
+
+        var result = await ResolveAsync([EducationOrganizationReference(studentEducationOrganizationId)], []);
+
+        result.SuccessfulDocumentReferencesByPath.Should().BeEmpty();
+        result
+            .InvalidDocumentReferences.Should()
+            .ContainSingle()
+            .Which.Reason.Should()
+            .Be(DocumentReferenceFailureReason.IncompatibleTargetType);
+    }
+
+    [Test]
+    public async Task It_rejects_a_descriptor_uri_that_matches_more_than_one_row()
+    {
+        var descriptor = Table("dms", "Descriptor");
+        await ExecuteAsync(
+            _connection,
+            _transaction,
+            IsPgsql
+                ? """
+                DROP INDEX "dms"."UX_Descriptor_UriLowered_ResourceKeyId";
+                DROP INDEX "dms"."UX_Descriptor_ResourceKeyId_Uri";
+                """
+                : $"""
+                DROP INDEX [UX_Descriptor_UriLowered_ResourceKeyId] ON {descriptor};
+                DROP INDEX [UX_Descriptor_ResourceKeyId_Uri] ON {descriptor};
+                """
+        );
+        await InsertDescriptorAsync(
+            _connection,
+            DuplicateDescriptorDocumentId,
+            DuplicateDescriptorId,
+            _programTypeDescriptor,
+            ProgramTypeNamespace.ToUpperInvariant(),
+            CareerCodeValue,
+            _transaction
+        );
+
+        var act = () => ResolveAsync([], [DescriptorReference(_programTypeDescriptor, CareerUri)]);
+
+        await act.Should().ThrowAsync<ReferenceLookupCorruptionException>();
+    }
+
+    [Test]
+    public async Task It_resolves_from_rows_decoded_out_of_a_composite_command_on_a_real_session()
+    {
+        DocumentReference[] documents =
+        [
+            SchoolReference(SchoolId),
+            ProgramReference(ProgramName, CareerUri, "$.programReference"),
+            SchoolReference(UnknownSchoolId, "$.unknownSchoolReference"),
+        ];
+        DescriptorReference[] descriptors = [DescriptorReference(_programTypeDescriptor, CareerUri)];
+        var request = ResolverRequest(documents, descriptors);
+        var resolver = CreateResolver();
+        var batch = resolver.TryBuildLookupRequest(request)!;
+        var lookupRequest = batch.LookupRequest!;
+
+        IRelationalCompositeCommandDialect compositeDialect = IsPgsql
+            ? PgsqlCompositeCommandDialect.Instance
+            : MssqlCompositeCommandDialect.Instance;
+        var compositeBuilder = new RelationalCompositeCommandBuilder(compositeDialect);
+        var rewritten = RelationalCompositeStatementRewriter.Rewrite(
+            _builder.BuildEmbeddableCommand(lookupRequest),
+            compositeBuilder.Allocator,
+            compositeBuilder.NextOrdinal
+        );
+        var lookupOrdinal = compositeBuilder.Append(
+            "natural-key-lookup",
+            rewritten.Sql,
+            rewritten.Parameters,
+            RelationalCompositeResultShape.Rows,
+            (reader, cancellationToken) =>
+                NaturalKeyLookupResultReader.ReadCompositeResultSetAsync(
+                    reader,
+                    lookupRequest,
+                    cancellationToken
+                )
+        );
+        var markerOrdinal = compositeBuilder.Append(
+            "marker",
+            $"SELECT 7 AS {Q("Marker")}",
+            [],
+            RelationalCompositeResultShape.Rows,
+            static async (reader, cancellationToken) =>
+                await reader.ReadAsync(cancellationToken) ? reader.GetInt32(0) : null
+        );
+
+        var outcomes = await new RelationalCompositeCommandExecution().ExecuteAsync(
+            new RelationalWriteSession(_connection, _transaction),
+            compositeBuilder.Seal()
+        );
+        var replayed = resolver.ResolveFromRows(
+            request,
+            batch,
+            (NaturalKeyLookupMatch?[][])outcomes.Single(outcome => outcome.Ordinal == lookupOrdinal).Value!
+        );
+        var standalone = await ResolveAsync(documents, descriptors);
+
+        replayed
+            .SuccessfulDocumentReferencesByPath[new JsonPath("$.programReference")]
+            .DocumentId.Should()
+            .Be(_programDocumentId);
+        replayed
+            .SuccessfulDescriptorReferencesByPath[new JsonPath("$.programTypeDescriptor")]
+            .DescriptorId.Should()
+            .Be(CareerDescriptorId);
+        replayed
+            .InvalidDocumentReferences.Should()
+            .ContainSingle()
+            .Which.Path.Value.Should()
+            .Be("$.unknownSchoolReference");
+        replayed
+            .SuccessfulDocumentReferencesByPath.Should()
+            .BeEquivalentTo(standalone.SuccessfulDocumentReferencesByPath);
+        replayed
+            .SuccessfulDescriptorReferencesByPath.Should()
+            .BeEquivalentTo(standalone.SuccessfulDescriptorReferencesByPath);
+        outcomes.Single(outcome => outcome.Ordinal == markerOrdinal).Value.Should().Be(7);
+    }
+
+    private NaturalKeyReferenceResolver CreateResolver() =>
+        new(_builder, new ResolvedDocumentReferenceMapFactory());
+
+    private Task<NaturalKeyResolvedReferences> ResolveAsync(
+        IReadOnlyList<DocumentReference> documents,
+        IReadOnlyList<DescriptorReference> descriptors
+    )
+    {
+        IRelationalWriteSession session = new RelationalWriteSession(_connection, _transaction);
+
+        return CreateResolver()
+            .ResolveAsync(ResolverRequest(documents, descriptors), session.CreateCommandExecutor());
+    }
+
+    private ReferenceResolverRequest ResolverRequest(
+        IReadOnlyList<DocumentReference> documents,
+        IReadOnlyList<DescriptorReference> descriptors
+    ) => new(_mappingSet, _studentProgramAssociation, documents, descriptors);
+
+    private static string Text(long value) => value.ToString(CultureInfo.InvariantCulture);
+
+    private static DocumentReference SchoolReference(long schoolId, string path = "$.schoolReference") =>
+        DocumentReference(_school, path, ("$.schoolId", Text(schoolId)));
+
+    private static DocumentReference EducationOrganizationReference(long educationOrganizationId) =>
+        DocumentReference(
+            _educationOrganization,
+            "$.educationOrganizationReference",
+            ("$.educationOrganizationId", Text(educationOrganizationId))
+        );
+
+    private static DocumentReference ProgramReference(
+        string programName,
+        string programTypeUri,
+        string path
+    ) =>
+        DocumentReference(
+            _program,
+            path,
+            ("$.educationOrganizationReference.educationOrganizationId", Text(SchoolId)),
+            ("$.programName", programName),
+            ("$.programTypeDescriptor", programTypeUri)
+        );
+
+    private static DocumentReference AssociationReference(string programTypeUri) =>
+        DocumentReference(
+            _generalStudentProgramAssociation,
+            "$.generalStudentProgramAssociationReference",
+            ("$.beginDate", _beginDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+            ("$.educationOrganizationReference.educationOrganizationId", Text(SchoolId)),
+            ("$.programReference.educationOrganizationId", Text(SchoolId)),
+            ("$.programReference.programName", ProgramName),
+            ("$.programReference.programTypeDescriptor", programTypeUri),
+            ("$.studentReference.studentUniqueId", StudentUniqueId)
+        );
+
+    private static DocumentReference DocumentReference(
+        QualifiedResourceName target,
+        string path,
+        params (string Path, string Value)[] elements
+    ) =>
+        new(
+            ResourceInfo(target, isDescriptor: false),
+            Identity(elements),
+            new ReferentialId(Guid.NewGuid()),
+            new JsonPath(path)
+        );
+
+    private static DescriptorReference DescriptorReference(
+        QualifiedResourceName descriptorResource,
+        string uri,
+        string path = "$.programTypeDescriptor"
+    ) =>
+        new(
+            ResourceInfo(descriptorResource, isDescriptor: true),
+            Identity((DocumentIdentity.DescriptorIdentityJsonPath.Value, uri)),
+            new ReferentialId(Guid.NewGuid()),
+            new JsonPath(path)
+        );
+
+    private static BaseResourceInfo ResourceInfo(QualifiedResourceName resource, bool isDescriptor) =>
+        new(new ProjectName(resource.ProjectName), new ResourceName(resource.ResourceName), isDescriptor);
+
+    private static DocumentIdentity Identity(params (string Path, string Value)[] elements) =>
+        new([
+            .. elements.Select(element => new DocumentIdentityElement(
+                new JsonPath(element.Path),
+                element.Value
+            )),
+        ]);
+
     private Task<NaturalKeyLookupMatch?[][]> LookupAsync(params NaturalKeyLookupGroup[] groups)
     {
         var request = Request(groups);
@@ -544,7 +879,11 @@ public abstract class NaturalKeyLookupDatabaseTests
         return documentId;
     }
 
-    private async Task<long> InsertDocumentAsync(DbConnection connection, QualifiedResourceName resource)
+    private async Task<long> InsertDocumentAsync(
+        DbConnection connection,
+        QualifiedResourceName resource,
+        DbTransaction? transaction = null
+    )
     {
         var insert = $"INSERT INTO {Table("dms", "Document")} ({Q("DocumentUuid")}, {Q("ResourceKeyId")})";
         var sql = IsPgsql
@@ -553,7 +892,7 @@ public abstract class NaturalKeyLookupDatabaseTests
 
         var rows = await RowsAsync(
             connection,
-            null,
+            transaction,
             sql,
             ("uuid", Guid.NewGuid()),
             ("key", ResourceKeyId(resource))
@@ -567,7 +906,8 @@ public abstract class NaturalKeyLookupDatabaseTests
         int descriptorId,
         QualifiedResourceName descriptorResource,
         string ns,
-        string codeValue
+        string codeValue,
+        DbTransaction? transaction = null
     )
     {
         var document = Table("dms", "Document");
@@ -592,6 +932,7 @@ public abstract class NaturalKeyLookupDatabaseTests
 
         await ExecuteAsync(
             connection,
+            transaction,
             sql,
             ("documentId", documentId),
             ("uuid", Guid.NewGuid()),
@@ -602,13 +943,20 @@ public abstract class NaturalKeyLookupDatabaseTests
         );
     }
 
+    private static Task ExecuteAsync(
+        DbConnection connection,
+        string sql,
+        params (string Name, object Value)[] values
+    ) => ExecuteAsync(connection, null, sql, values);
+
     private static async Task ExecuteAsync(
         DbConnection connection,
+        DbTransaction? transaction,
         string sql,
         params (string Name, object Value)[] values
     )
     {
-        await using var command = CreateCommand(connection, null, sql, values);
+        await using var command = CreateCommand(connection, transaction, sql, values);
         await command.ExecuteNonQueryAsync();
     }
 
