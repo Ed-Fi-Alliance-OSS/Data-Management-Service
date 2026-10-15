@@ -461,6 +461,28 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
         (await act.Should().ThrowAsync<FakeDbException>()).Which.Should().BeSameAs(providerFailure);
     }
 
+    [Test]
+    public async Task It_preserves_the_original_stack_of_a_namespace_only_failure_that_is_not_an_authorization_denial()
+    {
+        var request = CreateRequest(withNamespace: true, withRelationship: false);
+        var providerFailure = new FakeDbException("duplicate key", "23505");
+        var session = new ScriptedWriteSession(providerFailure);
+        var sut = CreateSut(new StubProviderFailureExtractor("23505", "duplicate key"));
+
+        var act = async () =>
+            await sut.ResolveAsync(
+                request,
+                CreateMergeResult(request),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
+
+        var thrown = (await act.Should().ThrowAsync<FakeDbException>()).Which;
+
+        thrown.Should().BeSameAs(providerFailure);
+        thrown.StackTrace.Should().Contain("ScriptedDbCommand.ExecuteDbDataReader");
+    }
+
     private static CompositeRelationalWriteSecondCommand CreateSut(
         IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null,
         RelationalCommandBudget? commandBudget = null

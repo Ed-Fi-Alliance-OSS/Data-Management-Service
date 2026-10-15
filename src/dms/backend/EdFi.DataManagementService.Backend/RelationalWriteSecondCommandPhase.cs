@@ -4,7 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.ExceptionServices;
 using EdFi.DataManagementService.Backend.Composite;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
@@ -2391,7 +2393,9 @@ internal sealed class CompositeRelationalWriteSecondCommand(
             );
         }
 
-        throw exception;
+        // Rethrow through dispatch info so the provider frames of the original failure survive.
+        ExceptionDispatchInfo.Capture(exception).Throw();
+        throw new UnreachableException();
     }
 
     /// <summary>
