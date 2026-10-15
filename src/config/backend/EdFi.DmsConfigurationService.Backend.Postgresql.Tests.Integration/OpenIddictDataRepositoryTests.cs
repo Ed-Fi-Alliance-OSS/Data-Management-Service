@@ -10,6 +10,8 @@ using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositories;
+using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.Secrets;
 using FakeItEasy;
 using FluentAssertions;
@@ -1757,5 +1759,279 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                     EncryptionKey = Configuration.DatabaseOptions.Value.EncryptionKey,
                 }
             );
+    }
+
+    /// <summary>
+    /// The whole <c>OpenIddictApplication</c> row rendered as one JSON document, so a before/after
+    /// comparison covers every column rather than only the ones a fixture happens to read.
+    /// </summary>
+    protected async Task<string?> ApplicationRowJsonAsync(Guid applicationId)
+    {
+        await using NpgsqlConnection connection = await DataSource!.OpenConnectionAsync();
+        return await connection.ExecuteScalarAsync<string>(
+            @"SELECT row_to_json(a)::text FROM ""dmscs"".""OpenIddictApplication"" a WHERE ""Id"" = @Id",
+            new { Id = applicationId }
+        );
+    }
+
+    protected async Task<int> ApplicationRowCountForClientIdAsync(string clientId)
+    {
+        await using NpgsqlConnection connection = await DataSource!.OpenConnectionAsync();
+        return await connection.ExecuteScalarAsync<int>(
+            @"SELECT COUNT(*) FROM ""dmscs"".""OpenIddictApplication"" WHERE ""ClientId"" = @ClientId",
+            new { ClientId = clientId }
+        );
+    }
+
+    protected async Task<int> ApplicationScopeRowCountAsync(Guid applicationId)
+    {
+        await using NpgsqlConnection connection = await DataSource!.OpenConnectionAsync();
+        return await connection.ExecuteScalarAsync<int>(
+            @"SELECT COUNT(*) FROM ""dmscs"".""OpenIddictApplicationScope"" WHERE ""ApplicationId"" = @ApplicationId",
+            new { ApplicationId = applicationId }
+        );
+    }
+
+    protected async Task<(int Roles, int ClientRoles)> RoleRowCountsAsync(string roleName)
+    {
+        await using NpgsqlConnection connection = await DataSource!.OpenConnectionAsync();
+        int roles = await connection.ExecuteScalarAsync<int>(
+            @"SELECT COUNT(*) FROM ""dmscs"".""OpenIddictRole"" WHERE ""Name"" = @Name",
+            new { Name = roleName }
+        );
+        int clientRoles = await connection.ExecuteScalarAsync<int>(
+            @"SELECT COUNT(*)
+              FROM ""dmscs"".""OpenIddictClientRole"" cr
+              JOIN ""dmscs"".""OpenIddictRole"" r ON cr.""RoleId"" = r.""Id""
+              WHERE r.""Name"" = @Name",
+            new { Name = roleName }
+        );
+        return (roles, clientRoles);
+    }
+
+    protected async Task<(int Scopes, int ApplicationScopes)> ScopeRowCountsAsync(string scopeName)
+    {
+        await using NpgsqlConnection connection = await DataSource!.OpenConnectionAsync();
+        int scopes = await connection.ExecuteScalarAsync<int>(
+            @"SELECT COUNT(*) FROM ""dmscs"".""OpenIddictScope"" WHERE ""Name"" = @Name",
+            new { Name = scopeName }
+        );
+        int applicationScopes = await connection.ExecuteScalarAsync<int>(
+            @"SELECT COUNT(*)
+              FROM ""dmscs"".""OpenIddictApplicationScope"" aps
+              JOIN ""dmscs"".""OpenIddictScope"" s ON aps.""ScopeId"" = s.""Id""
+              WHERE s.""Name"" = @Name",
+            new { Name = scopeName }
+        );
+        return (scopes, applicationScopes);
+    }
+
+    /// <summary>
+    /// DMS-1529 D-5: the data repository reports a collision on
+    /// <c>UX_OpenIddictApplication_ClientId</c> as an outcome and writes nothing. Fails against the
+    /// implementation that let the engine exception escape.
+    /// </summary>
+    [TestFixture]
+    public class Given_An_Application_Insert_That_Repeats_A_Client_Id : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private string _clientId = null!;
+        private Guid _seededApplicationId;
+        private string? _seededRowBefore;
+        private OpenIddictApplicationInsertOutcome _outcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new OpenIddictDataRepository(Configuration.DatabaseOptions);
+            _clientId = $"repeat-key-{Guid.NewGuid():N}";
+            _seededApplicationId = await RegisterApplicationAsync(
+                _repository,
+                _clientId,
+                "edfi_admin_api/full_access"
+            );
+            _seededRowBefore = await ApplicationRowJsonAsync(_seededApplicationId);
+
+            using var connection = await _repository.CreateConnectionAsync();
+            using var transaction = await _repository.BeginTransactionAsync(connection);
+            _outcome = await _repository.InsertApplicationAsync(
+                Guid.NewGuid(),
+                _clientId,
+                "other-hashed-secret",
+                "Repeat Key Client",
+                ["token"],
+                [],
+                "confidential",
+                "[]",
+                connection,
+                transaction
+            );
+            transaction.Rollback();
+        }
+
+        [Test]
+        public void It_reports_duplicate_client_id() =>
+            _outcome.Should().Be(OpenIddictApplicationInsertOutcome.DuplicateClientId);
+
+        [Test]
+        public async Task It_leaves_the_seeded_row_unchanged()
+        {
+            _seededRowBefore.Should().NotBeNull();
+            (await ApplicationRowJsonAsync(_seededApplicationId)).Should().Be(_seededRowBefore);
+        }
+
+        [Test]
+        public async Task It_leaves_exactly_one_row_under_the_key() =>
+            (await ApplicationRowCountForClientIdAsync(_clientId)).Should().Be(1);
+    }
+
+    /// <summary>
+    /// Only the client-key constraint is classified. A primary-key collision on the same table and
+    /// a role-name collision propagate as the engine exception, which the provider repository
+    /// reports as an unknown failure.
+    /// </summary>
+    [TestFixture]
+    public class Given_OpenIddict_Inserts_That_Violate_Other_Constraints : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private Guid _seededApplicationId;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new OpenIddictDataRepository(Configuration.DatabaseOptions);
+            _seededApplicationId = await RegisterApplicationAsync(
+                _repository,
+                $"other-constraints-{Guid.NewGuid():N}"
+            );
+        }
+
+        [Test]
+        public async Task It_propagates_a_primary_key_collision()
+        {
+            using var connection = await _repository.CreateConnectionAsync();
+            using var transaction = await _repository.BeginTransactionAsync(connection);
+            Func<Task> act = () =>
+                _repository.InsertApplicationAsync(
+                    _seededApplicationId,
+                    $"fresh-key-{Guid.NewGuid():N}",
+                    "hashed-secret",
+                    "Fresh Key Client",
+                    ["token"],
+                    [],
+                    "confidential",
+                    "[]",
+                    connection,
+                    transaction
+                );
+
+            (await act.Should().ThrowAsync<PostgresException>())
+                .Which.ConstraintName.Should()
+                .Be("PK_OpenIddictApplication");
+            transaction.Rollback();
+        }
+
+        [Test]
+        public async Task It_propagates_a_role_name_collision()
+        {
+            string roleName = $"repeat-role-{Guid.NewGuid():N}";
+            using var connection = await _repository.CreateConnectionAsync();
+            using var transaction = await _repository.BeginTransactionAsync(connection);
+            await _repository.InsertRoleAsync(Guid.NewGuid(), roleName, connection, transaction);
+            Func<Task> act = () =>
+                _repository.InsertRoleAsync(Guid.NewGuid(), roleName, connection, transaction);
+
+            (await act.Should().ThrowAsync<PostgresException>())
+                .Which.ConstraintName.Should()
+                .Be("UX_OpenIddictRole_Name");
+            transaction.Rollback();
+        }
+    }
+
+    /// <summary>
+    /// DMS-1529 §8 [R3]: the provider path through the production caller,
+    /// <c>OpenIddictClientRepository.CreateClientAsync</c>, against the real engine repository. The
+    /// seeded provider client holds the key, and the role and scope names are fresh so the attempt
+    /// has to create them; the assertions prove the whole attempt rolled back and the seeded row
+    /// is untouched.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Provider_Client_Creation_Whose_Key_Is_Already_Registered
+        : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _dataRepository = null!;
+        private string _clientId = null!;
+        private string _roleName = null!;
+        private string _scopeName = null!;
+        private Guid _seededApplicationId;
+        private string? _seededRowBefore;
+        private int _seededScopeRowsBefore;
+        private ClientCreateResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _dataRepository = new OpenIddictDataRepository(Configuration.DatabaseOptions);
+            _clientId = $"provider-taken-key-{Guid.NewGuid():N}";
+            _roleName = $"provider-taken-role-{Guid.NewGuid():N}";
+            _scopeName = $"provider-taken-scope-{Guid.NewGuid():N}";
+            _seededApplicationId = await RegisterApplicationAsync(
+                _dataRepository,
+                _clientId,
+                "edfi_admin_api/full_access"
+            );
+            _seededRowBefore = await ApplicationRowJsonAsync(_seededApplicationId);
+            _seededScopeRowsBefore = await ApplicationScopeRowCountAsync(_seededApplicationId);
+
+            IClientSecretHasher secretHasher = A.Fake<IClientSecretHasher>();
+            A.CallTo(() => secretHasher.HashSecretAsync(A<string>._)).Returns("hashed-attempt-secret");
+            OpenIddictClientRepository provider = new(
+                NullLogger<OpenIddictClientRepository>.Instance,
+                secretHasher,
+                _dataRepository,
+                Options.Create(new ClientSecretValidationOptions())
+            );
+
+            _result = await provider.CreateClientAsync(
+                _clientId,
+                "attempt-secret",
+                _roleName,
+                "Provider Taken Key Client",
+                _scopeName,
+                "uri://ed-fi.org",
+                "255901",
+                [1]
+            );
+        }
+
+        [Test]
+        public void It_returns_failure_duplicate_client_id() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureDuplicateClientId>();
+
+        [Test]
+        public async Task It_leaves_the_seeded_provider_client_unchanged()
+        {
+            _seededRowBefore.Should().NotBeNull();
+            (await ApplicationRowJsonAsync(_seededApplicationId)).Should().Be(_seededRowBefore);
+        }
+
+        [Test]
+        public async Task It_leaves_exactly_one_provider_client_under_the_key() =>
+            (await ApplicationRowCountForClientIdAsync(_clientId)).Should().Be(1);
+
+        [Test]
+        public async Task It_leaves_no_role_or_client_role_from_the_attempt() =>
+            (await RoleRowCountsAsync(_roleName)).Should().Be((0, 0));
+
+        [Test]
+        public async Task It_leaves_no_scope_or_application_scope_from_the_attempt() =>
+            (await ScopeRowCountsAsync(_scopeName)).Should().Be((0, 0));
+
+        [Test]
+        public async Task It_leaves_the_seeded_scope_assignments_unchanged()
+        {
+            _seededScopeRowsBefore.Should().Be(1);
+            (await ApplicationScopeRowCountAsync(_seededApplicationId)).Should().Be(_seededScopeRowsBefore);
+        }
     }
 }

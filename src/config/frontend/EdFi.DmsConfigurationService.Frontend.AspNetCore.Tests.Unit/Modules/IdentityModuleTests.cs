@@ -354,6 +354,104 @@ public class RegisterEndpointTests
             .Contain("Client with the same Client Id already exists. Please provide different Client Id.");
     }
 
+    /// <summary>
+    /// The uniqueness precheck is not atomic: a client registered between it and the creation
+    /// reaches the provider, which refuses the key. The answer is the precheck's own 400 body, not
+    /// the insert endpoints' 409 (DMS-1529 D-5), so the two bodies are compared outright. Fails
+    /// against the implementation whose create switch let the variant fall through to the 500
+    /// default.
+    /// </summary>
+    [Test]
+    public async Task Given_a_client_whose_key_the_provider_reports_already_registered()
+    {
+        // Arrange: the precheck sees no client under the key, and the provider refuses the creation.
+        var providerConflictRepository = A.Fake<IIdentityProviderRepository>();
+        A.CallTo(() => providerConflictRepository.GetAllClientsAsync())
+            .Returns(new ClientClientsResult.Success([]));
+        A.CallTo(() =>
+                providerConflictRepository.CreateClientAsync(
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<int[]?>.Ignored,
+                    A<bool>.Ignored
+                )
+            )
+            .Returns(new ClientCreateResult.FailureDuplicateClientId());
+
+        // The precheck path, for the body the provider-detected conflict has to match.
+        var precheckRepository = A.Fake<IIdentityProviderRepository>();
+        A.CallTo(() => precheckRepository.GetAllClientsAsync())
+            .Returns(new ClientClientsResult.Success(["CSClient4"]));
+
+        // Act
+        using HttpResponseMessage providerConflictResponse = await RegisterAsync(providerConflictRepository);
+        using HttpResponseMessage precheckResponse = await RegisterAsync(precheckRepository);
+        JsonNode providerConflictBody = JsonNode.Parse(
+            await providerConflictResponse.Content.ReadAsStringAsync()
+        )!;
+        JsonNode precheckBody = JsonNode.Parse(await precheckResponse.Content.ReadAsStringAsync())!;
+
+        // Assert
+        providerConflictResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        providerConflictResponse
+            .Content.Headers.ContentType?.MediaType.Should()
+            .Be("application/problem+json");
+        providerConflictBody["validationErrors"]!["ClientId"]![0]!
+            .GetValue<string>()
+            .Should()
+            .Be("Client with the same Client Id already exists. Please provide different Client Id.");
+
+        precheckResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        providerConflictBody["correlationId"] = precheckBody["correlationId"]!.GetValue<string>();
+        JsonNode.DeepEquals(providerConflictBody, precheckBody).Should().Be(true);
+
+        A.CallTo(() =>
+                providerConflictRepository.CreateClientAsync(
+                    "CSClient4",
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<int[]?>.Ignored,
+                    A<bool>.Ignored
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+
+        static async Task<HttpResponseMessage> RegisterAsync(IIdentityProviderRepository clientRepository)
+        {
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(
+                    (collection) =>
+                    {
+                        collection.AddTransient((_) => CreateRegisterRequestValidator());
+                        collection.AddTransient((_) => clientRepository);
+                    }
+                );
+            });
+            using var client = factory.CreateClient();
+
+            var requestContent = new FormUrlEncodedContent([
+                new KeyValuePair<string, string>("clientid", "CSClient4"),
+                new KeyValuePair<string, string>("clientsecret", "test123@Puiu"),
+                new KeyValuePair<string, string>("displayname", "CSClient4"),
+            ]);
+            HttpResponseMessage response = await client.PostAsync("/connect/register", requestContent);
+            // The body is read before the factory is disposed, so the caller can parse it freely.
+            await response.Content.LoadIntoBufferAsync();
+            return response;
+        }
+    }
+
     [Test]
     public async Task When_allow_registration_is_disabled()
     {

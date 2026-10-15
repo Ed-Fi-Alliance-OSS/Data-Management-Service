@@ -7,6 +7,7 @@ API client credentials for the Data Management Service.
 Detailed design notes:
 
 * [API Client GET Identifier Semantics (DMS-1343)](./DMS-1343-apiclient-get-identifier-semantics.md)
+* [API Client Identifier Uniqueness (DMS-1529)](./DMS-1529-apiclient-identifier-uniqueness.md)
 * [Authorization in the Configuration Service](./CS-AUTH.md)
 * [Claimset Management](./CLAIMSET-MGMT.md)
 * [CMS Token Revocation: Keycloak Support and OAuth Failure Handling (DMS-1327)](./DMS-1327-cms-token-revocation.md)

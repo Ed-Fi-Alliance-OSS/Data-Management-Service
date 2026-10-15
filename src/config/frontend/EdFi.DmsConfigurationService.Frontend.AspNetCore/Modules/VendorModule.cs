@@ -384,6 +384,18 @@ public class VendorModule : IEndpointModule
                         reportedClientUuid,
                         acceptMissing: true
                     );
+                case ApiClientUuidSyncResult.FailureNewUuidInUse:
+                    // The UUID the provider reported is already held by another ApiClient row: a
+                    // provider inconsistency. That provider client belongs to the other row, so it
+                    // is neither restored, deleted nor synchronized again; only the clients this
+                    // request changed before it are compensated.
+                    logger.LogError(
+                        "The reported client UUID {ClientUuid} for ApiClient {ApiClientId} of Vendor {Id} is already held by another API client; stored client state is inconsistent; it was neither restored nor deleted",
+                        reportedClientUuid,
+                        client.Id,
+                        id
+                    );
+                    return await FinishCompensationAsync(FailureResults.Unknown(httpContext.TraceIdentifier));
                 case ApiClientUuidSyncResult.FailureUnknown syncFailure:
                     logger.LogError(
                         "Failed to persist the identity-provider client UUID for ApiClient {ApiClientId} of Vendor {Id}: {Message}",
@@ -648,6 +660,17 @@ public class VendorModule : IEndpointModule
                     return acceptMissing;
                 case ApiClientUuidSyncResult.FailureNotExists:
                     return acceptMissing;
+                case ApiClientUuidSyncResult.FailureNewUuidInUse:
+                    // The rollback UUID the provider reported is already held by another ApiClient
+                    // row: a provider inconsistency. That provider client belongs to the other row,
+                    // so it is not deleted or synchronized again.
+                    logger.LogError(
+                        "The rollback client UUID {ClientUuid} for ApiClient {ApiClientId} of Vendor {Id} is already held by another API client; stored client state is inconsistent; nothing was deleted",
+                        rollbackSuccess.ClientUuid,
+                        client.Id,
+                        id
+                    );
+                    return false;
                 default:
                     return false;
             }

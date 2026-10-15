@@ -141,10 +141,29 @@ public class KeycloakClientRepository(
             }
 
             creationOutcome = CreationOutcomeUnconfirmed;
-            string? createdClientUuid = await keycloakClientFacade.CreateClientAndRetrieveClientIdAsync(
-                _realm,
-                client
-            );
+            string? createdClientUuid;
+            try
+            {
+                createdClientUuid = await keycloakClientFacade.CreateClientAndRetrieveClientIdAsync(
+                    _realm,
+                    client
+                );
+            }
+            catch (FlurlHttpException ex) when (ex.StatusCode == 409)
+            {
+                // Keycloak answers a clientId already registered in the realm with 409 and persists
+                // nothing, so there is no client to compensate and no service account to provision.
+                // Only the creation call is classified this way: a 409 from the preflight or from the
+                // post-creation phases keeps its provider-failure handling below. The exception is
+                // not attached because its message carries the provider's response text.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - deliberately omitted, see comment above
+                logger.LogWarning(
+                    "The client key {ClientId} is already registered at the identity provider; no client was created",
+                    SanitizeForLog(clientId)
+                );
+#pragma warning restore S6667
+                return new ClientCreateResult.FailureDuplicateClientId();
+            }
 
             if (string.IsNullOrEmpty(createdClientUuid))
             {

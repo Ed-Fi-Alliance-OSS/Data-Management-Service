@@ -217,6 +217,15 @@ The following parameters apply to the Configuration Service (`appsettings.json`)
 | ReverseProxy:KnownProxies    | Comma-separated list of exact trusted reverse-proxy IP addresses (IPv4 or IPv6) whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.5,10.0.0.6`                                                  |
 | ReverseProxy:KnownNetworks   | Comma-separated list of trusted reverse-proxy networks in CIDR notation whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.0/8,172.16.0.0/12`                                                  |
 
+> [!NOTE]
+> **SQL Server session language.** With `Datastore` set to `mssql`, the Configuration Service
+> opens every database session with `Current Language=us_english`, overriding any
+> `Current Language` (or `Language`) in `DatabaseSettings:DatabaseConnection` and the login's
+> default language. It recognizes constraint violations, such as a duplicate name or client key,
+> by the constraint name in SQL Server's error message, and SQL Server localizes those messages
+> to the session language. Settings that follow from the session language, such as `DATEFORMAT`
+> (`mdy`) and `DATEFIRST` (`7`), are the `us_english` ones as well.
+
 ## JobSettings
 
 The Configuration Service runs durable background jobs: a worker that claims and runs jobs, a dispatcher that turns recurring schedules into jobs, and a retention sweep that deletes old finished jobs. These settings control them (`appsettings.json` section `JobSettings`; in the provided Docker Compose files, `JobSettings__<Parameter>` is set from `CONFIGURATION_SERVICE_JOBS_<PARAMETER>`, for example `CONFIGURATION_SERVICE_JOBS_POLL_INTERVAL`). Durations use the `[d.]hh:mm:ss` format. The service validates every value at startup and refuses to start, naming `JobSettings:<Parameter>` and the accepted range, when one is out of bounds.
