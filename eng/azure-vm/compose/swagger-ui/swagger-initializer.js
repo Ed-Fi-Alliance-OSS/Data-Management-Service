@@ -116,24 +116,7 @@ window.EdFiReviewSwagger = (function () {
         return request;
     }
 
-    // The DMS specs give pageSize a default, and Swagger UI sends every default, but the DMS
-    // rejects pageSize without a pageToken (400). Drop the default so "Try it out" works as
-    // offered; pageSize stays available for cursor paging.
-    function withoutPageSizeDefault(spec, specUrl) {
-        if (!/^\/(st|mt)-dms\//.test(toPath(specUrl || "")) || !spec || typeof spec !== "object") {
-            return spec;
-        }
-        const operationParameters = Object.values(spec.paths || {}).flatMap(item =>
-            Object.values(item || {}).flatMap(operation => Array.isArray(operation) ? operation : (operation && operation.parameters) || []));
-        for (const parameter of [...Object.values((spec.components || {}).parameters || {}), ...operationParameters]) {
-            if (parameter && parameter.name === "pageSize" && parameter.in === "query" && parameter.schema) {
-                delete parameter.schema.default;
-            }
-        }
-        return spec;
-    }
-
-    return { buildDefinitions, withConfigurationServiceSecurity, tenantForRequest, withClientCredentialsInBody, withoutPageSizeDefault };
+    return { buildDefinitions, withConfigurationServiceSecurity, tenantForRequest, withClientCredentialsInBody };
 })();
 
 window.onload = function () {
@@ -152,7 +135,7 @@ window.onload = function () {
         }
     }
 
-    // Applies withConfigurationServiceSecurity and withoutPageSizeDefault to every spec as it loads.
+    // Applies withConfigurationServiceSecurity to every spec as it loads.
     function specPatchPlugin() {
         return {
             statePlugins: {
@@ -168,8 +151,7 @@ window.onload = function () {
                                 return originalAction(spec, ...rest);
                             }
                             const url = system.specSelectors.url();
-                            const patched = helpers.withoutPageSizeDefault(
-                                helpers.withConfigurationServiceSecurity(parsed, url, window.location.origin), url);
+                            const patched = helpers.withConfigurationServiceSecurity(parsed, url, window.location.origin);
                             return originalAction(isString ? JSON.stringify(patched) : patched, ...rest);
                         }
                     }
