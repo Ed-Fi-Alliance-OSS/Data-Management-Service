@@ -12,6 +12,10 @@
 # that leaked outside RUNNER_TEMP. Following DmsPullRequestMssqlWorkflow.Tests.ps1, no YAML
 # parser is assumed: assertions run over the raw workflow text.
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification = 'The publication stubs replace dotnet and the web cmdlets as global functions that the extracted workflow script resolves; global variables carry the model feed between them and are removed in AfterEach.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Pester stubs intentionally keep production-compatible signatures.')]
+param()
+
 Describe "template build workflow attestation wiring (<WorkflowFile>)" -ForEach @(
     @{ WorkflowFile = "build-minimal-template.yml"; GenerateStepName = "Generate Minimal Template package"; PushStepName = "Push Minimal Template Package to Azure" }
     @{ WorkflowFile = "build-populated-template.yml"; GenerateStepName = "Generate Populated Template package"; PushStepName = "Push Populated Template Package to Azure" }
@@ -76,8 +80,8 @@ Describe "template build workflow attestation wiring (<WorkflowFile>)" -ForEach 
         # companion already has.
         $pushStep.Contains('@($companionPackages) + @($templatePackages) | ForEach-Object') | Should -BeTrue
 
-        # Every push is individually failure-visible AND retry-safe: --skip-duplicate keeps
-        # a rerun from failing on an already-published companion before the template pushes.
+        # Every push is individually failure-visible. Duplicate handling is exercised by the
+        # publication Describe below, which runs this step's script.
         $pushStep.Contains("Package push failed for") | Should -BeTrue
         $pushStep.Contains("--skip-duplicate") | Should -BeTrue
     }
@@ -102,6 +106,173 @@ Describe "template build workflow attestation wiring (<WorkflowFile>)" -ForEach 
 
         # Both promotions go through Invoke-Promote.
         ([regex]::Matches($promoteStep, [regex]::Escape("Invoke-Promote @arguments"))).Count | Should -Be 2
+    }
+}
+
+Describe "template publication keeps each template with its own attestation on duplicates (<WorkflowFile>)" -ForEach @(
+    @{ WorkflowFile = "build-minimal-template.yml"; PushStepName = "Push Minimal Template Package to Azure" }
+    @{ WorkflowFile = "build-populated-template.yml"; PushStepName = "Push Populated Template Package to Azure" }
+) {
+    # Runs the push step's own script. Its run block is cut from the workflow text and its
+    # expressions are bound to test values; dotnet and the two feed reads are replaced by a model
+    # feed keyed by package file name, where a duplicate push without --skip-duplicate fails.
+    BeforeAll {
+        $workflowLines = @(Get-Content -LiteralPath ([System.IO.Path]::GetFullPath(
+                    (Join-Path $PSScriptRoot "../../../.github/workflows/$WorkflowFile"))))
+        $stepIndex = [array]::IndexOf($workflowLines, "      - name: $PushStepName")
+        $stepIndex | Should -BeGreaterThan 0
+        $workflowLines[$stepIndex + 1] | Should -Be "        run: |"
+        $bodyLines = [System.Collections.Generic.List[string]]::new()
+        foreach ($line in $workflowLines[($stepIndex + 2)..($workflowLines.Count - 1)]) {
+            if ($line.Trim().Length -gt 0 -and -not $line.StartsWith("          ")) {
+                break
+            }
+            $bodyLines.Add($(if ($line.Length -ge 10) { $line.Substring(10) } else { "" }))
+        }
+
+        $script:packageId = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0"
+        $script:feedUrl = "https://feed.test/nuget/v3/index.json"
+        $script:pushScript = ($bodyLines -join "`n").
+            Replace('${{ env.ARTIFACTS_FEED_URL }}', $script:feedUrl).
+            Replace('${{ env.ARTIFACTS_API_KEY }}', "test-key").
+            Replace('${{ inputs.package_name }}', $script:packageId)
+        $script:pushScript | Should -Not -Match '\$\{\{'
+
+        $script:templateFile = "$script:packageId.1.2.3-alpha.4.nupkg"
+        $script:companionFile = "$script:packageId.Attestation.1.2.3-alpha.4.nupkg"
+    }
+
+    BeforeEach {
+        $script:packageDirectory = Join-Path $TestDrive "publish-$([Guid]::NewGuid().ToString('n'))"
+        New-Item -ItemType Directory -Path $script:packageDirectory | Out-Null
+        [System.IO.File]::WriteAllBytes((Join-Path $script:packageDirectory $script:templateFile), [byte[]](1, 1, 1))
+        [System.IO.File]::WriteAllBytes((Join-Path $script:packageDirectory $script:companionFile), [byte[]](2, 2, 2))
+        Set-Content -LiteralPath (Join-Path $script:packageDirectory "$script:templateFile.attestation.json") -Value "{}"
+
+        $global:TemplatePublishFeed = @{}
+        $global:TemplatePublishCalls = [System.Collections.Generic.List[string]]::new()
+        $global:TemplatePublishProbeStatus = 0
+        $script:savedEnvironment = @{}
+        foreach ($name in @("ARTIFACTS_FEED_URL", "ARTIFACTS_API_KEY", "RUNNER_TEMP")) {
+            $script:savedEnvironment[$name] = [System.Environment]::GetEnvironmentVariable($name)
+        }
+        $env:ARTIFACTS_FEED_URL = $script:feedUrl
+        $env:ARTIFACTS_API_KEY = "test-key"
+        $env:RUNNER_TEMP = (New-Item -ItemType Directory -Path (Join-Path $TestDrive "runner-temp-$([Guid]::NewGuid().ToString('n'))")).FullName
+
+        Set-Item function:global:Invoke-RestMethod {
+            param($Uri, $Headers)
+            $global:TemplatePublishCalls.Add("index $Uri")
+            [pscustomobject]@{ resources = @([pscustomobject]@{ '@id' = "https://feed.test/flat/"; '@type' = "PackageBaseAddress/3.0.0" }) }
+        }
+        Set-Item function:global:Invoke-WebRequest {
+            param($Uri, $Headers, $OutFile, [switch]$SkipHttpErrorCheck, [switch]$PassThru)
+            $global:TemplatePublishCalls.Add("probe $Uri")
+            if ($global:TemplatePublishProbeStatus -ne 0) {
+                return [pscustomobject]@{ StatusCode = $global:TemplatePublishProbeStatus }
+            }
+            $fileName = ([string]$Uri).Split("/")[-1]
+            if (-not $global:TemplatePublishFeed.ContainsKey($fileName)) {
+                return [pscustomobject]@{ StatusCode = 404 }
+            }
+            [System.IO.File]::WriteAllBytes($OutFile, $global:TemplatePublishFeed[$fileName])
+            [pscustomobject]@{ StatusCode = 200 }
+        }
+        Set-Item function:global:dotnet {
+            $global:TemplatePublishCalls.Add("dotnet $($args -join ' ')")
+            $fileName = ([string]$args[2]).ToLowerInvariant()
+            $global:LASTEXITCODE = 0
+            if ($global:TemplatePublishFeed.ContainsKey($fileName)) {
+                if ($args -notcontains "--skip-duplicate") {
+                    $global:LASTEXITCODE = 1
+                }
+                return
+            }
+            $global:TemplatePublishFeed[$fileName] = [System.IO.File]::ReadAllBytes((Join-Path (Get-Location) $args[2]))
+        }
+
+        function script:Invoke-PushStep {
+            Push-Location -LiteralPath $script:packageDirectory
+            try {
+                & ([scriptblock]::Create($script:pushScript))
+            }
+            finally {
+                Pop-Location
+            }
+        }
+    }
+
+    AfterEach {
+        foreach ($name in @("Invoke-RestMethod", "Invoke-WebRequest", "dotnet")) {
+            Remove-Item "function:global:$name" -ErrorAction SilentlyContinue
+        }
+        foreach ($name in $script:savedEnvironment.Keys) {
+            if ($null -eq $script:savedEnvironment[$name]) {
+                Remove-Item "Env:\$name" -ErrorAction SilentlyContinue
+            }
+            else {
+                [System.Environment]::SetEnvironmentVariable($name, $script:savedEnvironment[$name])
+            }
+        }
+        Remove-Variable -Name TemplatePublishFeed, TemplatePublishCalls, TemplatePublishProbeStatus -Scope Global -ErrorAction SilentlyContinue
+    }
+
+    It "refuses a rebuilt retry after a partial publication left another build's companion on the feed, before any push" {
+        $global:TemplatePublishFeed[$script:companionFile.ToLowerInvariant()] = [byte[]](9, 9, 9)
+
+        { Invoke-PushStep } | Should -Throw "*already holds $script:packageId.Attestation 1.2.3-alpha.4 with different bytes*"
+
+        @($global:TemplatePublishCalls | Where-Object { $_ -like "dotnet *" }) | Should -BeNullOrEmpty
+        $global:TemplatePublishFeed.ContainsKey($script:templateFile.ToLowerInvariant()) | Should -BeFalse
+    }
+
+    It "refuses when the feed already holds another build's template, before pushing the companion" {
+        $global:TemplatePublishFeed[$script:templateFile.ToLowerInvariant()] = [byte[]](9, 9, 9)
+
+        { Invoke-PushStep } | Should -Throw "*already holds $script:packageId 1.2.3-alpha.4 with different bytes*"
+
+        @($global:TemplatePublishCalls | Where-Object { $_ -like "dotnet *" }) | Should -BeNullOrEmpty
+        $global:TemplatePublishFeed.ContainsKey($script:companionFile.ToLowerInvariant()) | Should -BeFalse
+    }
+
+    It "completes a retry of the same artifact after a partial publication by pushing only the template" {
+        $global:TemplatePublishFeed[$script:companionFile.ToLowerInvariant()] = [byte[]](2, 2, 2)
+
+        Invoke-PushStep
+
+        @($global:TemplatePublishCalls | Where-Object { $_ -like "dotnet *" }) |
+            Should -Be @("dotnet nuget push $script:templateFile --api-key test-key --source $script:feedUrl")
+        $global:TemplatePublishFeed[$script:templateFile.ToLowerInvariant()] | Should -Be ([byte[]](1, 1, 1))
+    }
+
+    It "probes the flat-container address of each package, then pushes a fresh pair companion first without --skip-duplicate" {
+        Invoke-PushStep
+
+        $lowerId = $script:packageId.ToLowerInvariant()
+        @($global:TemplatePublishCalls) | Should -Be @(
+            "index $script:feedUrl"
+            "probe https://feed.test/flat/$lowerId.attestation/1.2.3-alpha.4/$lowerId.attestation.1.2.3-alpha.4.nupkg"
+            "probe https://feed.test/flat/$lowerId/1.2.3-alpha.4/$lowerId.1.2.3-alpha.4.nupkg"
+            "dotnet nuget push $script:companionFile --api-key test-key --source $script:feedUrl"
+            "dotnet nuget push $script:templateFile --api-key test-key --source $script:feedUrl"
+        )
+    }
+
+    It "fails closed, pushing nothing, when the feed check answers neither 200 nor 404" {
+        $global:TemplatePublishProbeStatus = 500
+
+        { Invoke-PushStep } | Should -Throw "*failed with HTTP 500*"
+
+        @($global:TemplatePublishCalls | Where-Object { $_ -like "dotnet *" }) | Should -BeNullOrEmpty
+    }
+
+    It "leaves unattested publication as it was: no feed check, and the template pushes with --skip-duplicate" {
+        Remove-Item -LiteralPath (Join-Path $script:packageDirectory $script:companionFile), (Join-Path $script:packageDirectory "$script:templateFile.attestation.json")
+        $global:TemplatePublishFeed[$script:templateFile.ToLowerInvariant()] = [byte[]](9, 9, 9)
+
+        Invoke-PushStep
+
+        @($global:TemplatePublishCalls) | Should -Be @("dotnet nuget push $script:templateFile --api-key test-key --source $script:feedUrl --skip-duplicate")
     }
 }
 

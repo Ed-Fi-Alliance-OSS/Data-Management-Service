@@ -1022,13 +1022,18 @@ function Invoke-BootstrapWrapper {
 
                     # Candidate workspace via the prepare phases under the root override (D5), then
                     # the package<->candidate cross-check (D9). Still no Docker activity.
+                    # prepare-dms-schema.ps1 defaults its tool to DMS_SCHEMA_TOOL_PATH; the cross-check
+                    # and the scratch inventory derivation get the same value, so all three run one
+                    # tool (empty keeps the resolver's default discovery).
+                    $restoreSchemaToolPath = $env:DMS_SCHEMA_TOOL_PATH
                     $restoreCandidate = New-RestoreCandidateWorkspace -EnvironmentFile $effectiveEnvFile
                     $restoreCandidateDirectory = $restoreCandidate.CandidateDirectory
                     $restoreCandidateFact = Invoke-RestoreCandidateCrossCheck `
                         -Manifest $restoreStage.Manifest `
                         -CandidateDirectory $restoreCandidateDirectory `
                         -DatabaseEngine $DatabaseEngine `
-                        -StageDirectory $restoreStage.StageDirectory
+                        -StageDirectory $restoreStage.StageDirectory `
+                        -SchemaToolPath $restoreSchemaToolPath
 
                     # Stop proof #1 (D6): no container of either compose project may be running.
                     Assert-DmsComposeProjectStopped -ProjectName "dms-local"
@@ -1080,6 +1085,7 @@ function Invoke-BootstrapWrapper {
                         -CandidateFact $restoreCandidateFact `
                         -RestoreTemplate $RestoreTemplate `
                         -DatabaseEngine $DatabaseEngine `
+                        -SchemaToolPath $restoreSchemaToolPath `
                         -MssqlPassword $restoreMssqlPassword `
                         -PostgresUser $restorePostgresUser
 

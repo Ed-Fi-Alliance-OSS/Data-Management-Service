@@ -586,10 +586,51 @@ jobs:
             throw "Build artifact carries a companion attestation package but no attestation document; refusing to publish an inconsistent artifact."
           }
 
+          # Duplicate coupling: a rebuild of the same version has different bytes, and
+          # --skip-duplicate would keep a companion left by an earlier partial publication and
+          # pair it with this run's template. With a companion, every package the feed already
+          # holds at this version must be this run's exact bytes, checked before any push; those
+          # are not pushed again, the rest push without --skip-duplicate so a racing push fails.
+          $packagesOnFeed = @()
+          $duplicateHandling = @("--skip-duplicate")
+          if ($companionPackages.Count -gt 0) {
+            $duplicateHandling = @()
+            $feedHeaders = @{ Authorization = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(":$env:ARTIFACTS_API_KEY")) }
+            $packageBaseAddress = @((Invoke-RestMethod -Uri $env:ARTIFACTS_FEED_URL -Headers $feedHeaders).resources |
+                Where-Object { $_.'@type' -like 'PackageBaseAddress/3.0.0*' } | ForEach-Object { $_.'@id' })[0]
+            if ([string]::IsNullOrWhiteSpace($packageBaseAddress)) {
+              throw "The feed's service index advertises no PackageBaseAddress/3.0.0 resource; cannot check for packages already published at this version."
+            }
+            foreach ($package in @($companionPackages) + @($templatePackages)) {
+              $packageId = if ($package -like "*.Attestation.*") { "${{ inputs.package_name }}.Attestation" } else { "${{ inputs.package_name }}" }
+              if (-not $package.StartsWith("$packageId.", [StringComparison]::OrdinalIgnoreCase)) {
+                throw "Package file '$package' is not named for package id '$packageId'."
+              }
+              $lowerId = $packageId.ToLowerInvariant()
+              $lowerVersion = $package.Substring($packageId.Length + 1, $package.Length - $packageId.Length - 7).ToLowerInvariant()
+              $feedCopy = Join-Path $env:RUNNER_TEMP "feed-copy-$lowerId.$lowerVersion.nupkg"
+              $response = Invoke-WebRequest -Uri "$packageBaseAddress$lowerId/$lowerVersion/$lowerId.$lowerVersion.nupkg" -Headers $feedHeaders -OutFile $feedCopy -SkipHttpErrorCheck -PassThru
+              if ($response.StatusCode -eq 404) {
+                continue
+              }
+              if ($response.StatusCode -ne 200) {
+                throw "Checking the feed for $packageId $lowerVersion failed with HTTP $($response.StatusCode)."
+              }
+              if ((Get-FileHash -LiteralPath $feedCopy -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash) {
+                throw "The feed already holds $packageId $lowerVersion with different bytes than this run's package; refusing to publish, because the template and its companion attestation must come from the same build."
+              }
+              $packagesOnFeed += $package
+            }
+          }
+
           @($companionPackages) + @($templatePackages) | ForEach-Object {
+              if ($packagesOnFeed -contains $_) {
+                Write-Host "$_ is already on the feed with identical bytes; not pushing it again."
+                return
+              }
               Write-Host "Pushing $_ to ${{ env.ARTIFACTS_FEED_URL }}"
               $global:LASTEXITCODE = 0
-              dotnet nuget push $_ --api-key "${{ env.ARTIFACTS_API_KEY }}" --source "${{ env.ARTIFACTS_FEED_URL }}" --skip-duplicate
+              dotnet nuget push $_ --api-key "${{ env.ARTIFACTS_API_KEY }}" --source "${{ env.ARTIFACTS_FEED_URL }}" @duplicateHandling
               if ($LASTEXITCODE -ne 0) {
                 throw "Package push failed for '$_' with exit code $LASTEXITCODE."
               }

@@ -2326,6 +2326,83 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed args=[`$(`$args -join
             }
         }
 
+        It "runs the DMS_SCHEMA_TOOL_PATH tool the candidate prepare phase sees in the real cross-check and hands it to scratch validation" {
+            # An external tool outside every default discovery location. The candidate schema stub
+            # writes a complete candidate, so the REAL cross-check reads it and runs the tool.
+            $externalTool = Join-Path $script:repo.RepoRoot "external-tools/api-schema-tools.ps1"
+            New-Item -ItemType Directory -Path (Split-Path -Parent $externalTool) -Force | Out-Null
+            @"
+Add-Content -LiteralPath '$script:restoreLog' -Value "external-tool `$(`$args[0]) `$(`$args[1])"
+`$outputDirectory = `$args[[array]::IndexOf(`$args, '--output') + 1]
+New-Item -ItemType Directory -Path `$outputDirectory -Force | Out-Null
+Set-Content -LiteralPath (Join-Path `$outputDirectory 'ddl.manifest.json') -Value '{"relational_mapping_version":"v-external"}'
+exit 0
+"@ | Set-Content -LiteralPath $externalTool -Encoding utf8
+
+            New-OverrideRecordingStartScriptStub -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreLog
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
+            $realModule = Install-RealRestoreCandidateAndTarget -LogPath $script:restoreLog -DockerComposeRoot $script:repo.DockerComposeRoot
+            @"
+param([string]`$EnvironmentFile)
+Add-Content -LiteralPath '$script:restoreLog' -Value "candidate-prepare-schema tool=[`$env:DMS_SCHEMA_TOOL_PATH]"
+`$schemaDirectory = Join-Path `$env:DMS_BOOTSTRAP_ROOT_OVERRIDE 'ApiSchema/schemas/Ed-Fi'
+New-Item -ItemType Directory -Path `$schemaDirectory -Force | Out-Null
+Set-Content -LiteralPath (Join-Path `$schemaDirectory 'ApiSchema.json') -Value '{}'
+Set-Content -LiteralPath (Join-Path `$env:DMS_BOOTSTRAP_ROOT_OVERRIDE 'ApiSchema/bootstrap-api-schema-manifest.json') -Value '{"version":1,"projects":[{"projectEndpointName":"ed-fi","isExtensionProject":false,"schemaPath":"schemas/Ed-Fi/ApiSchema.json"}]}'
+Set-Content -LiteralPath (Join-Path `$env:DMS_BOOTSTRAP_ROOT_OVERRIDE 'bootstrap-manifest.json') -Value '{"version":1,"schema":{"dataStandardVersion":"5.2.0","apiSchemaFormatVersion":"1.0.0","effectiveSchemaHash":"$("ab" * 32)","apiSchemaManifestPath":"ApiSchema/bootstrap-api-schema-manifest.json","selectedExtensions":[]}}'
+"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "t1-prepare-dms-schema.ps1") -Encoding utf8
+
+            $log = $script:restoreLog
+            $stageDirectory = Join-Path $script:repo.RepoRoot "stage"
+            Set-Item function:global:Initialize-RestorePackageStage {
+                param($Package, $AuthenticatedPackageSha256, $Producer, $DatabaseEngine, $RestoreTemplate)
+                Add-Content -LiteralPath $log -Value "restore:stage"
+                New-Item -ItemType Directory -Path $stageDirectory -Force | Out-Null
+                [pscustomobject]@{
+                    StageDirectory = $stageDirectory
+                    Manifest       = [pscustomobject]@{
+                        databaseEngine = "postgresql"; documentJsonColumnType = "jsonb"; dataStandardVersion = "5.2.0"
+                        apiSchemaFormatVersion = "1.0.0"; effectiveSchemaHash = ("ab" * 32); relationalMappingVersion = "v-external"; projects = @("edfi")
+                    }
+                }
+            }.GetNewClosure()
+            Set-Item function:global:Invoke-RestoreCandidateCrossCheck {
+                param($Manifest, $CandidateDirectory, $DatabaseEngine, $StageDirectory, $SchemaToolPath)
+                Add-Content -LiteralPath $log -Value "restore:crosscheck"
+                $crossCheckArguments = $PSBoundParameters
+                & $realModule { param($arguments) Invoke-RestoreCandidateCrossCheck @arguments } $crossCheckArguments
+            }.GetNewClosure()
+            Set-Item function:global:Invoke-RestoreScratchValidation {
+                param($Stage, $CandidateFact, $RestoreTemplate, $DatabaseEngine, $SchemaToolPath, $MssqlPassword, $PostgresUser)
+                Add-Content -LiteralPath $log -Value "restore:scratch tool=[$SchemaToolPath] schema-files=[$(@($CandidateFact.SchemaFilePaths).Count)]"
+                [pscustomobject]@{ PackageSourceIdentity = "11111111-1111-1111-1111-111111111111"; ScratchFacts = $null; ProjectSchemaNames = @("edfi") }
+            }.GetNewClosure()
+
+            $callerToolPath = [System.Environment]::GetEnvironmentVariable("DMS_SCHEMA_TOOL_PATH")
+            $env:DMS_SCHEMA_TOOL_PATH = $externalTool
+            try {
+                & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Minimal
+
+                $lines = @(Get-Content -LiteralPath $script:restoreLog)
+                @($lines | Where-Object { $_ -like "candidate-prepare-schema *" }) | Should -Be @("candidate-prepare-schema tool=[$externalTool]")
+                @($lines | Where-Object { $_ -like "external-tool *" }) |
+                    Should -Be @("external-tool ddl emit") -Because "the cross-check must run the configured tool, not a default-discovered build"
+                @($lines | Where-Object { $_ -like "restore:scratch *" }) |
+                    Should -Be @("restore:scratch tool=[$externalTool] schema-files=[1]") -Because "the scratch inventory derivation must receive the configured tool"
+                Get-RestoreLogIndex -Log $lines -Pattern "restore:replacement*" | Should -BeGreaterThan (Get-RestoreLogIndex -Log $lines -Pattern "external-tool *")
+            }
+            finally {
+                if ($null -eq $callerToolPath) {
+                    Remove-Item Env:\DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue
+                }
+                else {
+                    $env:DMS_SCHEMA_TOOL_PATH = $callerToolPath
+                }
+                Remove-Module -ModuleInfo $realModule -Force -ErrorAction SilentlyContinue
+                Remove-Item Env:\DMS_BOOTSTRAP_ROOT_OVERRIDE -ErrorAction SilentlyContinue
+            }
+        }
+
         It "restores twice in a row into the same configured target, each run the full D12 sequence, neither provisioning" {
             # A non-default target name, so a run that fell back to the default would show.
             $repeatEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.repeat-target"

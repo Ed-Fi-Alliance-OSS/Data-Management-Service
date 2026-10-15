@@ -1705,6 +1705,14 @@ Describe "Invoke-RestoreScratchValidation" {
         Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql rm -f /tmp/restore-scratch-*.sql" }
     }
 
+    It "derives the authoritative inventory with the schema tool it was given" {
+        $stage = New-ScratchStage -Directory $script:scratchRoot
+
+        Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Minimal -DatabaseEngine postgresql -SchemaToolPath "/opt/external/api-schema-tools" | Out-Null
+
+        Should -Invoke Get-RestoreAuthoritativeObjectInventory -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $SchemaToolPath -ceq "/opt/external/api-schema-tools" }
+    }
+
     It "SQL Server: cp, FILELISTONLY, then RESTORE with MOVE clauses derived from the scratch name" {
         $stage = New-ScratchStage -Directory $script:scratchRoot -DatabaseEngine mssql
         $global:ScratchFactToReturn = New-ScratchCatalogFact -DatabaseEngine mssql
