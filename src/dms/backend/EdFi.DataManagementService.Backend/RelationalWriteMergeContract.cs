@@ -68,4 +68,13 @@ internal sealed record RelationalWriteMergeResult
     public bool SupportsGuardedNoOp { get; init; }
 
     public ProposedRelationshipAuthorizationRuntimeCheck? ProposedRelationshipAuthorizationRuntimeCheck { get; init; }
+
+    /// <summary>
+    /// Concrete JSON paths (for example <c>$.assessmentReference</c>) of document references whose
+    /// <c>Missing</c> failure was deferred so authorization can be evaluated before the missing-reference
+    /// conflict is reported. Compared ordinally. Empty unless the no-profile merge ran with
+    /// missing-reference deferral enabled.
+    /// </summary>
+    public IReadOnlySet<string> DeferredMissingDocumentReferencePaths { get; init; } =
+        new HashSet<string>(StringComparer.Ordinal);
 }

@@ -14,6 +14,7 @@ using EdFi.DataManagementService.Backend.Tests.Unit.Composite;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
+using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -111,6 +112,34 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
         resolution.ImmediateResult.Should().BeNull();
         session.Commands.Should().ContainSingle();
         session.Commands[0].Parameters.Should().OnlyContain(parameter => parameter.Name.Contains("_s0"));
+    }
+
+    [Test]
+    public async Task It_keeps_the_string_type_on_the_rewritten_proposed_namespace_parameter()
+    {
+        var request = CreateRequest(withNamespace: true, withRelationship: false);
+        var session = new ScriptedWriteSession(CreateReader(CreateAuthorizedTable()));
+
+        await CreateSut()
+            .ResolveAsync(
+                request,
+                CreateMergeResult(request),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
+
+        var proposed = session
+            .Commands.Should()
+            .ContainSingle()
+            .Subject.Parameters.Should()
+            .ContainSingle(parameter =>
+                parameter.Name.Contains("proposedNamespace_s0", StringComparison.Ordinal)
+            )
+            .Subject;
+        var native = new NpgsqlParameter { Value = DBNull.Value };
+        proposed.ConfigureParameter.Should().NotBeNull();
+        proposed.ConfigureParameter!(native);
+        native.DbType.Should().Be(DbType.String);
     }
 
     [Test]

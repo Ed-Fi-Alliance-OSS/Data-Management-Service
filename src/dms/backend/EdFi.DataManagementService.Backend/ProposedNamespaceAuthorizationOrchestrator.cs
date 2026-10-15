@@ -45,7 +45,9 @@ internal sealed class ProposedNamespaceAuthorizationOrchestrator(
 
         var extraction = ProposedNamespaceValueExtractor.Extract(
             namespaceAuthorization.Checks,
-            RelationalWriteFinalizedRootRow.Build(request, mergeResult)
+            RelationalWriteFinalizedRootRow.Build(request, mergeResult),
+            request.SelectedBody,
+            mergeResult.DeferredMissingDocumentReferencePaths
         );
 
         if (extraction is ProposedNamespaceValueExtractionResult.InvalidAuthorizationPlan invalid)

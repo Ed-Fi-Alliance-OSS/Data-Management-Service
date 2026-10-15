@@ -2013,8 +2013,11 @@ internal sealed class CompositeRelationalWriteSecondCommand(
             : null;
 
     /// <summary>
-    /// Extracts the proposed namespace value from the finalized merged root row — never the raw request
-    /// body — so the <c>LIKE</c> semantics and the AUTH1 failure mapping stay identical to the read path.
+    /// Extracts the proposed namespace value from the finalized merged root row so the <c>LIKE</c>
+    /// semantics and the AUTH1 failure mapping stay identical to the read path. The one exception is a
+    /// namespace derived from a reference whose missing-document failure was deferred: the finalized row
+    /// has no value for an unresolved reference, so the value the request body carries is authorized
+    /// instead, mirroring ODS and the namespace authorization strategy design.
     /// Returns the security-configuration failure when the plan cannot be reconciled with that row.
     /// </summary>
     private static RelationalWriteExecutorResult? TryPlanNamespace(
@@ -2032,7 +2035,9 @@ internal sealed class CompositeRelationalWriteSecondCommand(
 
         var extraction = ProposedNamespaceValueExtractor.Extract(
             namespaceAuthorization.Checks,
-            RelationalWriteFinalizedRootRow.Build(request, mergeResult)
+            RelationalWriteFinalizedRootRow.Build(request, mergeResult),
+            request.SelectedBody,
+            mergeResult.DeferredMissingDocumentReferencePaths
         );
 
         if (extraction is ProposedNamespaceValueExtractionResult.InvalidAuthorizationPlan invalid)
