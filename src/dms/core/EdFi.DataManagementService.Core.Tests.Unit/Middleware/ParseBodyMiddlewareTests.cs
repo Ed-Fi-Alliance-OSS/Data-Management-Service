@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -440,6 +441,55 @@ public class ParseBodyMiddlewareTests
         public void It_does_not_continue_the_pipeline()
         {
             _nextWasCalled.Should().BeFalse();
+        }
+    }
+
+    // The path in the malformed-string message is built from client property names, so a name holding
+    // CR/LF must reach the log sanitized while the client response keeps the path as is.
+    [TestFixture(true)]
+    [TestFixture(false)]
+    [Parallelizable]
+    public class Given_A_Malformed_String_Value_Under_A_Property_Name_With_Control_Characters(
+        bool frontendParsed
+    ) : ParseBodyMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private RecordingLogger _logger = new();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _logger = new RecordingLogger();
+            _requestInfo = RequestFor("""{"a\r\nFORGED":"\uD800"}""", frontendParsed);
+            await new ParseBodyMiddleware(_logger).Execute(_requestInfo, () => Task.CompletedTask);
+        }
+
+        private LogRecord MalformedStringRecord() =>
+            _logger.Records.Single(record =>
+                record.Message.StartsWith("The request body contains a malformed string")
+            );
+
+        [Test]
+        public void It_does_not_attach_the_exception_to_the_log_record()
+        {
+            MalformedStringRecord().Exception.Should().BeNull();
+        }
+
+        [Test]
+        public void It_logs_the_path_without_control_characters()
+        {
+            string message = MalformedStringRecord().Message;
+            message.Should().NotContain("\r").And.NotContain("\n");
+            message.Should().Contain("Path: $['aFORGED']");
+        }
+
+        [Test]
+        public void It_keeps_the_unsanitized_path_in_the_response()
+        {
+            _requestInfo.FrontendResponse.Body!["validationErrors"]!["$."]![0]!
+                .GetValue<string>()
+                .Should()
+                .EndWith(" Path: $['a\r\nFORGED']");
         }
     }
 

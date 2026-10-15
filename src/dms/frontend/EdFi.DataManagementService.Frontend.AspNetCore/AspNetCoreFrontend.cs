@@ -245,7 +245,20 @@ public static class AspNetCoreFrontend
                     break;
 
                 case JsonTokenType.PropertyName:
-                    string propertyName = reader.GetString()!;
+                    string propertyName;
+                    try
+                    {
+                        propertyName = reader.GetString()!;
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        // A malformed property name, such as an unpaired surrogate escape. Report the
+                        // object that holds it so the malformed-body 400 names the path.
+                        throw new InvalidOperationException(
+                            $"{ex.Message} Path: {BuildContainingPath(pathStack)}",
+                            ex
+                        );
+                    }
 
                     if (propertyNamesStack.Count > 0)
                     {
@@ -292,7 +305,10 @@ public static class AspNetCoreFrontend
         }
     }
 
-    private static string BuildJsonPath(Stack<JsonPathSegment> pathStack, string duplicatePropertyName)
+    private static string BuildJsonPath(Stack<JsonPathSegment> pathStack, string duplicatePropertyName) =>
+        $"{BuildContainingPath(pathStack)}.{duplicatePropertyName}";
+
+    private static string BuildContainingPath(Stack<JsonPathSegment> pathStack)
     {
         var segments = pathStack.ToArray();
         Array.Reverse(segments);
@@ -313,7 +329,6 @@ public static class AspNetCoreFrontend
             }
         }
 
-        pathBuilder.Append($".{duplicatePropertyName}");
         return pathBuilder.ToString();
     }
 

@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
 
@@ -15,6 +16,8 @@ namespace EdFi.DataManagementService.Core.Middleware
 {
     internal class ParseBodyMiddleware(ILogger _logger) : IPipelineStep
     {
+        private const int MaxLoggedMalformedStringLength = 256;
+
         private static JsonNode GenerateFrontendErrorResponse(string errorDetail, TraceId traceId)
         {
             string[] errors = [errorDetail];
@@ -147,11 +150,16 @@ namespace EdFi.DataManagementService.Core.Middleware
             }
             catch (InvalidOperationException ex)
             {
+                // S6667 asks for the caught exception to be passed to the logger. Its message ends in
+                // a JSON path built from client property names, which can carry control characters,
+                // so only the sanitized, bounded message is logged. The client response keeps the path.
+#pragma warning disable S6667
                 _logger.LogDebug(
-                    ex,
-                    "The request body contains a malformed string - {TraceId}",
-                    requestInfo.FrontendRequest.TraceId.Value
+                    "The request body contains a malformed string - {TraceId} - {Detail}",
+                    requestInfo.FrontendRequest.TraceId.Value,
+                    LoggingSanitizer.SanitizeFreeTextForLogging(ex.Message, MaxLoggedMalformedStringLength)
                 );
+#pragma warning restore S6667
 
                 SetValidationErrorResponse(requestInfo, ex.Message);
 
