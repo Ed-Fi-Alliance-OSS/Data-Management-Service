@@ -228,10 +228,7 @@ public static class AspNetCoreFrontend
                         propertyNamesStack.Pop();
                     }
 
-                    if (pathStack.Count > 0 && !pathStack.Peek().IsArray)
-                    {
-                        pathStack.Pop();
-                    }
+                    CompleteValue(pathStack);
                     break;
 
                 case JsonTokenType.StartArray:
@@ -244,14 +241,24 @@ public static class AspNetCoreFrontend
                         pathStack.Pop();
                     }
 
-                    if (pathStack.Count > 0 && !pathStack.Peek().IsArray)
-                    {
-                        pathStack.Pop();
-                    }
+                    CompleteValue(pathStack);
                     break;
 
                 case JsonTokenType.PropertyName:
-                    string propertyName = reader.GetString()!;
+                    string propertyName;
+                    try
+                    {
+                        propertyName = reader.GetString()!;
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        // A malformed property name, such as an unpaired surrogate escape. Report the
+                        // object that holds it so the malformed-body 400 names the path.
+                        throw new InvalidOperationException(
+                            $"{ex.Message} Path: {BuildContainingPath(pathStack)}",
+                            ex
+                        );
+                    }
 
                     if (propertyNamesStack.Count > 0)
                     {
@@ -272,34 +279,36 @@ public static class AspNetCoreFrontend
                 case JsonTokenType.True:
                 case JsonTokenType.False:
                 case JsonTokenType.Null:
-                    if (pathStack.Count > 0 && !pathStack.Peek().IsArray)
-                    {
-                        pathStack.Pop();
-                    }
-
-                    if (pathStack.Count > 0 && pathStack.Peek().IsArray)
-                    {
-                        var arraySegment = pathStack.Pop();
-                        pathStack.Push(arraySegment with { ArrayIndex = arraySegment.ArrayIndex + 1 });
-                    }
+                    CompleteValue(pathStack);
                     break;
-            }
-
-            if (
-                (reader.TokenType == JsonTokenType.EndObject || reader.TokenType == JsonTokenType.EndArray)
-                && pathStack.Count > 0
-                && pathStack.Peek().IsArray
-            )
-            {
-                var arraySegment = pathStack.Pop();
-                pathStack.Push(arraySegment with { ArrayIndex = arraySegment.ArrayIndex + 1 });
             }
         }
 
         return null;
     }
 
-    private static string BuildJsonPath(Stack<JsonPathSegment> pathStack, string duplicatePropertyName)
+    /// <summary>
+    /// Records that a value just finished. A value that belongs to a property pops that property's
+    /// segment; only a value that is itself an array element advances the array index.
+    /// </summary>
+    private static void CompleteValue(Stack<JsonPathSegment> pathStack)
+    {
+        if (pathStack.Count == 0)
+        {
+            return;
+        }
+
+        var segment = pathStack.Pop();
+        if (segment.IsArray)
+        {
+            pathStack.Push(segment with { ArrayIndex = segment.ArrayIndex + 1 });
+        }
+    }
+
+    private static string BuildJsonPath(Stack<JsonPathSegment> pathStack, string duplicatePropertyName) =>
+        $"{BuildContainingPath(pathStack)}.{duplicatePropertyName}";
+
+    private static string BuildContainingPath(Stack<JsonPathSegment> pathStack)
     {
         var segments = pathStack.ToArray();
         Array.Reverse(segments);
@@ -320,7 +329,6 @@ public static class AspNetCoreFrontend
             }
         }
 
-        pathBuilder.Append($".{duplicatePropertyName}");
         return pathBuilder.ToString();
     }
 

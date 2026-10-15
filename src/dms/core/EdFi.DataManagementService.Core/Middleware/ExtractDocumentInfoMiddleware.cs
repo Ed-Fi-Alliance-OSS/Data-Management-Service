@@ -36,17 +36,27 @@ internal class ExtractDocumentInfoMiddleware(ILogger _logger) : IPipelineStep
                 "MappingSet must be resolved before ExtractDocumentInfoMiddleware."
             );
 
-        var (documentIdentity, superclassIdentity) = requestInfo.ResourceSchema.ExtractIdentities(
-            requestInfo.ParsedBody,
-            _logger
-        );
-
+        DocumentIdentity documentIdentity;
+        SuperclassIdentity? superclassIdentity;
         DocumentReference[] documentReferences;
         DocumentReferenceArray[] documentReferenceArrays;
+        DescriptorReference[] descriptorReferences;
 
         try
         {
+            (documentIdentity, superclassIdentity) = requestInfo.ResourceSchema.ExtractIdentities(
+                requestInfo.ParsedBody,
+                _logger
+            );
+
             (documentReferences, documentReferenceArrays) = requestInfo.ResourceSchema.ExtractReferences(
+                requestInfo.ParsedBody,
+                _logger
+            );
+
+            descriptorReferences = requestInfo.ResourceSchema.ExtractRelationalDescriptors(
+                requestInfo.ResourceInfo,
+                mappingSet,
                 requestInfo.ParsedBody,
                 _logger
             );
@@ -59,13 +69,6 @@ internal class ExtractDocumentInfoMiddleware(ILogger _logger) : IPipelineStep
             );
             return;
         }
-
-        var descriptorReferences = requestInfo.ResourceSchema.ExtractRelationalDescriptors(
-            requestInfo.ResourceInfo,
-            mappingSet,
-            requestInfo.ParsedBody,
-            _logger
-        );
 
         requestInfo.DocumentInfo = new(
             DocumentReferences: documentReferences,

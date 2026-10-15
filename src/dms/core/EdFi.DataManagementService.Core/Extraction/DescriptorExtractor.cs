@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Helpers;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
@@ -39,36 +40,38 @@ internal static class DescriptorExtractor
 
         logger.LogDebug("DescriptorExtractor.ExtractRelationalDescriptors");
 
-        Dictionary<string, DescriptorReference> descriptorReferencesByPath = new(StringComparer.Ordinal);
+        // Every raw value from both passes is validated before any DescriptorReference is built, so
+        // one request reports all of its invalid descriptor values together.
+        List<RawDescriptorValue> rawValues =
+        [
+            .. CollectSchemaPathValues(resourceSchema, documentBody, logger),
+        ];
 
-        AddDescriptorReferences(
-            descriptorReferencesByPath,
-            resourceSchema.ExtractDescriptors(documentBody, logger)
-        );
-
-        if (resourceInfo.IsDescriptor)
+        if (!resourceInfo.IsDescriptor)
         {
-            return [.. descriptorReferencesByPath.Values];
-        }
-
-        var resource = new QualifiedResourceName(
-            resourceInfo.ProjectName.Value,
-            resourceInfo.ResourceName.Value
-        );
-        var resourceModel = mappingSet.GetConcreteResourceModelOrThrow(resource).RelationalModel;
-
-        foreach (var descriptorEdgeSource in resourceModel.DescriptorEdgeSources)
-        {
-            AddDescriptorReferences(
-                descriptorReferencesByPath,
-                ExtractDescriptorReferences(
-                    CreateDescriptorResourceInfo(descriptorEdgeSource.DescriptorResource),
-                    descriptorEdgeSource.DescriptorValuePath.Canonical,
-                    documentBody,
-                    logger
-                )
+            var resource = new QualifiedResourceName(
+                resourceInfo.ProjectName.Value,
+                resourceInfo.ResourceName.Value
             );
+            var resourceModel = mappingSet.GetConcreteResourceModelOrThrow(resource).RelationalModel;
+
+            foreach (var descriptorEdgeSource in resourceModel.DescriptorEdgeSources)
+            {
+                rawValues.AddRange(
+                    CollectValues(
+                        CreateDescriptorResourceInfo(descriptorEdgeSource.DescriptorResource),
+                        descriptorEdgeSource.DescriptorValuePath.Canonical,
+                        documentBody,
+                        logger
+                    )
+                );
+            }
         }
+
+        ThrowIfAnyInvalid(rawValues);
+
+        Dictionary<string, DescriptorReference> descriptorReferencesByPath = new(StringComparer.Ordinal);
+        AddDescriptorReferences(descriptorReferencesByPath, rawValues.Select(CreateDescriptorReference));
 
         return [.. descriptorReferencesByPath.Values];
     }
@@ -84,8 +87,30 @@ internal static class DescriptorExtractor
     {
         logger.LogDebug("DescriptorExtractor.ExtractDescriptors");
 
-        List<DescriptorReference> result = [];
+        List<RawDescriptorValue> rawValues =
+        [
+            .. CollectSchemaPathValues(resourceSchema, documentBody, logger),
+        ];
+        ThrowIfAnyInvalid(rawValues);
 
+        return [.. rawValues.Select(CreateDescriptorReference)];
+    }
+
+    /// <summary>
+    /// A descriptor value as found in the body, at its concrete JSON path, before validation.
+    /// </summary>
+    private sealed record RawDescriptorValue(
+        BaseResourceInfo ResourceInfo,
+        string? Value,
+        string ConcretePath
+    );
+
+    private static IEnumerable<RawDescriptorValue> CollectSchemaPathValues(
+        ResourceSchema resourceSchema,
+        JsonNode documentBody,
+        ILogger logger
+    )
+    {
         foreach (DocumentPath documentPath in resourceSchema.DocumentPaths)
         {
             if (!documentPath.IsReference)
@@ -104,15 +129,16 @@ internal static class DescriptorExtractor
                 documentPath.IsDescriptor
             );
 
-            result.AddRange(
-                ExtractDescriptorReferences(resourceInfo, documentPath.Path.Value, documentBody, logger)
-            );
+            foreach (
+                var rawValue in CollectValues(resourceInfo, documentPath.Path.Value, documentBody, logger)
+            )
+            {
+                yield return rawValue;
+            }
         }
-
-        return result.ToArray();
     }
 
-    private static IEnumerable<DescriptorReference> ExtractDescriptorReferences(
+    private static IEnumerable<RawDescriptorValue> CollectValues(
         BaseResourceInfo resourceInfo,
         string descriptorPath,
         JsonNode documentBody,
@@ -126,18 +152,44 @@ internal static class DescriptorExtractor
             )
         )
         {
-            yield return CreateDescriptorReference(resourceInfo, descriptorUri.value, descriptorUri.jsonPath);
+            yield return new RawDescriptorValue(resourceInfo, descriptorUri.value, descriptorUri.jsonPath);
         }
     }
 
-    private static DescriptorReference CreateDescriptorReference(
-        BaseResourceInfo resourceInfo,
-        string? descriptorUri,
-        string concretePath
-    )
+    /// <summary>
+    /// Throws <see cref="ReferenceExtractionValidationException"/> with one failure per concrete path whose
+    /// value contains NUL or an unpaired surrogate.
+    /// </summary>
+    private static void ThrowIfAnyInvalid(IEnumerable<RawDescriptorValue> rawValues)
     {
+        WriteValidationFailure[] failures =
+        [
+            .. rawValues
+                .Where(rawValue =>
+                    rawValue.Value is not null && !DescriptorText.IsWellFormedWithoutNul(rawValue.Value)
+                )
+                .Select(rawValue => rawValue.ConcretePath)
+                .Distinct(StringComparer.Ordinal)
+                .Select(path => new WriteValidationFailure(
+                    new JsonPath(path),
+                    DescriptorText.InvalidValueMessage
+                )),
+        ];
+
+        if (failures.Length > 0)
+        {
+            throw new ReferenceExtractionValidationException(failures);
+        }
+    }
+
+    private static DescriptorReference CreateDescriptorReference(RawDescriptorValue rawValue)
+    {
+        var (resourceInfo, descriptorUri, concretePath) = rawValue;
+
         // Normalize the entire URI to lowercase for case-insensitive matching.
-        var normalizedDescriptorUriValue = descriptorUri?.ToLowerInvariant() ?? string.Empty;
+        var normalizedDescriptorUriValue = descriptorUri is null
+            ? string.Empty
+            : DescriptorText.AssertWellFormedWithoutNul(descriptorUri).ToLowerInvariant();
         DocumentIdentity documentIdentity = new([
             new DocumentIdentityElement(
                 DocumentIdentity.DescriptorIdentityJsonPath,

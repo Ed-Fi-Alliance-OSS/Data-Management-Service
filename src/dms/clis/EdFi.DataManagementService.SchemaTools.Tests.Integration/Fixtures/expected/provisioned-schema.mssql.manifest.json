@@ -2797,7 +2797,7 @@
       "schema_name": "dms",
       "table_name": "Descriptor",
       "column_name": "ContentLastModifiedAt",
-      "ordinal_position": 12,
+      "ordinal_position": 13,
       "data_type": "datetime2",
       "is_nullable": false,
       "default_expression": "(sysutcdatetime())",
@@ -2807,7 +2807,7 @@
       "schema_name": "dms",
       "table_name": "Descriptor",
       "column_name": "ContentVersion",
-      "ordinal_position": 11,
+      "ordinal_position": 12,
       "data_type": "bigint",
       "is_nullable": false,
       "default_expression": "((0))",
@@ -2900,6 +2900,16 @@
       "ordinal_position": 10,
       "data_type": "nvarchar(306)",
       "is_nullable": false,
+      "default_expression": null,
+      "is_computed": true
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "Descriptor",
+      "column_name": "UriLowered",
+      "ordinal_position": 11,
+      "data_type": "nvarchar(306)",
+      "is_nullable": true,
       "default_expression": null,
       "is_computed": true
     },
@@ -67485,28 +67495,16 @@
     {
       "schema_name": "dms",
       "table_name": "Descriptor",
-      "constraint_name": "FK_Descriptor_Document",
+      "constraint_name": "FK_Descriptor_DocumentResourceKey",
       "constraint_type": "FOREIGN KEY",
       "columns": [
-        "DocumentId"
+        "DocumentId",
+        "ResourceKeyId"
       ],
       "referenced_schema": "dms",
       "referenced_table": "Document",
       "referenced_columns": [
-        "DocumentId"
-      ]
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "Descriptor",
-      "constraint_name": "FK_Descriptor_ResourceKey",
-      "constraint_type": "FOREIGN KEY",
-      "columns": [
-        "ResourceKeyId"
-      ],
-      "referenced_schema": "dms",
-      "referenced_table": "ResourceKey",
-      "referenced_columns": [
+        "DocumentId",
         "ResourceKeyId"
       ]
     },
@@ -114713,6 +114711,16 @@
     },
     {
       "schema_name": "dms",
+      "table_name": "Descriptor",
+      "index_name": "UX_Descriptor_UriLowered_ResourceKeyId",
+      "is_unique": true,
+      "columns": [
+        "UriLowered",
+        "ResourceKeyId"
+      ]
+    },
+    {
+      "schema_name": "dms",
       "table_name": "Document",
       "index_name": "IX_Document_CreatedByOwnershipTokenId",
       "is_unique": false,
@@ -127014,7 +127022,7 @@
       "trigger_name": "TR_Descriptor_Stamp_Document",
       "event_manipulation": "DELETE OR INSERT OR UPDATE",
       "action_timing": "AFTER",
-      "definition": "CREATE   TRIGGER [dms].[TR_Descriptor_Stamp_Document]\nON [dms].[Descriptor]\nAFTER INSERT, UPDATE, DELETE\nAS\nBEGIN\n    SET NOCOUNT ON;\n    IF EXISTS (\n        SELECT 1\n        FROM inserted i\n        INNER JOIN [dms].[Document] d ON d.[DocumentId] = i.[DocumentId]\n        WHERE i.[ResourceKeyId] \u003C\u003E d.[ResourceKeyId]\n    )\n    BEGIN\n        THROW 50000, N\u0027dms.Descriptor.ResourceKeyId diverges from the owning dms.Document row.\u0027, 1;\n    END\n    DECLARE @stamped TABLE (\n        [DocumentId] bigint NOT NULL PRIMARY KEY,\n        [ContentVersion] bigint NOT NULL\n    );\n    INSERT INTO @stamped ([DocumentId], [ContentVersion])\n    SELECT d.[DocumentId], d.[ContentVersion]\n    FROM [dms].[Document] d\n    INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]\n    LEFT JOIN deleted del ON del.[DescriptorId] = i.[DescriptorId]\n    WHERE del.[DescriptorId] IS NULL;\n    IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE([Namespace]) OR UPDATE([CodeValue]) OR UPDATE([ShortDescription]) OR UPDATE([Description]) OR UPDATE([EffectiveBeginDate]) OR UPDATE([EffectiveEndDate]))\n    BEGIN\n        ;WITH affectedDocs AS (\n            SELECT i.[DocumentId]\n            FROM inserted i\n            LEFT JOIN deleted del ON del.[DescriptorId] = i.[DescriptorId]\n            WHERE del.[DescriptorId] IS NOT NULL AND ((CAST(i.[Namespace] AS varbinary(max)) \u003C\u003E CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)) OR (CAST(i.[CodeValue] AS varbinary(max)) \u003C\u003E CAST(del.[CodeValue] AS varbinary(max)) OR (i.[CodeValue] IS NULL AND del.[CodeValue] IS NOT NULL) OR (i.[CodeValue] IS NOT NULL AND del.[CodeValue] IS NULL)) OR (CAST(i.[ShortDescription] AS varbinary(max)) \u003C\u003E CAST(del.[ShortDescription] AS varbinary(max)) OR (i.[ShortDescription] IS NULL AND del.[ShortDescription] IS NOT NULL) OR (i.[ShortDescription] IS NOT NULL AND del.[ShortDescription] IS NULL)) OR (CAST(i.[Description] AS varbinary(max)) \u003C\u003E CAST(del.[Description] AS varbinary(max)) OR (i.[Description] IS NULL AND del.[Description] IS NOT NULL) OR (i.[Description] IS NOT NULL AND del.[Description] IS NULL)) OR (i.[EffectiveBeginDate] \u003C\u003E del.[EffectiveBeginDate] OR (i.[EffectiveBeginDate] IS NULL AND del.[EffectiveBeginDate] IS NOT NULL) OR (i.[EffectiveBeginDate] IS NOT NULL AND del.[EffectiveBeginDate] IS NULL)) OR (i.[EffectiveEndDate] \u003C\u003E del.[EffectiveEndDate] OR (i.[EffectiveEndDate] IS NULL AND del.[EffectiveEndDate] IS NOT NULL) OR (i.[EffectiveEndDate] IS NOT NULL AND del.[EffectiveEndDate] IS NULL)))\n            UNION ALL\n            SELECT del.[DocumentId]\n            FROM deleted del\n            LEFT JOIN inserted i ON i.[DescriptorId] = del.[DescriptorId]\n            WHERE i.[DescriptorId] IS NULL\n        )\n        UPDATE d\n        SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]\n        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped\n        FROM [dms].[Document] d\n        INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];\n    END\n    IF EXISTS (SELECT 1 FROM @stamped)\n    BEGIN\n        UPDATE r\n        SET r.[ContentVersion] = s.[ContentVersion],\n            r.[ContentLastModifiedAt] = sysutcdatetime()\n        FROM [dms].[Descriptor] r WITH (FORCESEEK)\n        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];\n    END\n    IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)\n    BEGIN\n        INSERT INTO [tracked_changes_edfi].[Descriptor] (\n            [ResourceKeyId],\n            [OldNamespace],\n            [OldCodeValue],\n            [Id],\n            [ChangeVersion],\n            [DocumentId]\n        )\n        SELECT\n            del.[ResourceKeyId],\n            del.[Namespace],\n            del.[CodeValue],\n            doc.[DocumentUuid],\n            doc.[ContentVersion],\n            del.[DocumentId]\n        FROM deleted del\n        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];\n    END\nEND;",
+      "definition": "CREATE   TRIGGER [dms].[TR_Descriptor_Stamp_Document]\nON [dms].[Descriptor]\nAFTER INSERT, UPDATE, DELETE\nAS\nBEGIN\n    SET NOCOUNT ON;\n    DECLARE @stamped TABLE (\n        [DocumentId] bigint NOT NULL PRIMARY KEY,\n        [ContentVersion] bigint NOT NULL\n    );\n    INSERT INTO @stamped ([DocumentId], [ContentVersion])\n    SELECT d.[DocumentId], d.[ContentVersion]\n    FROM [dms].[Document] d\n    INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]\n    LEFT JOIN deleted del ON del.[DescriptorId] = i.[DescriptorId]\n    WHERE del.[DescriptorId] IS NULL;\n    IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE([Namespace]) OR UPDATE([CodeValue]) OR UPDATE([ShortDescription]) OR UPDATE([Description]) OR UPDATE([EffectiveBeginDate]) OR UPDATE([EffectiveEndDate]))\n    BEGIN\n        ;WITH affectedDocs AS (\n            SELECT i.[DocumentId]\n            FROM inserted i\n            LEFT JOIN deleted del ON del.[DescriptorId] = i.[DescriptorId]\n            WHERE del.[DescriptorId] IS NOT NULL AND ((CAST(i.[Namespace] AS varbinary(max)) \u003C\u003E CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)) OR (CAST(i.[CodeValue] AS varbinary(max)) \u003C\u003E CAST(del.[CodeValue] AS varbinary(max)) OR (i.[CodeValue] IS NULL AND del.[CodeValue] IS NOT NULL) OR (i.[CodeValue] IS NOT NULL AND del.[CodeValue] IS NULL)) OR (CAST(i.[ShortDescription] AS varbinary(max)) \u003C\u003E CAST(del.[ShortDescription] AS varbinary(max)) OR (i.[ShortDescription] IS NULL AND del.[ShortDescription] IS NOT NULL) OR (i.[ShortDescription] IS NOT NULL AND del.[ShortDescription] IS NULL)) OR (CAST(i.[Description] AS varbinary(max)) \u003C\u003E CAST(del.[Description] AS varbinary(max)) OR (i.[Description] IS NULL AND del.[Description] IS NOT NULL) OR (i.[Description] IS NOT NULL AND del.[Description] IS NULL)) OR (i.[EffectiveBeginDate] \u003C\u003E del.[EffectiveBeginDate] OR (i.[EffectiveBeginDate] IS NULL AND del.[EffectiveBeginDate] IS NOT NULL) OR (i.[EffectiveBeginDate] IS NOT NULL AND del.[EffectiveBeginDate] IS NULL)) OR (i.[EffectiveEndDate] \u003C\u003E del.[EffectiveEndDate] OR (i.[EffectiveEndDate] IS NULL AND del.[EffectiveEndDate] IS NOT NULL) OR (i.[EffectiveEndDate] IS NOT NULL AND del.[EffectiveEndDate] IS NULL)))\n            UNION ALL\n            SELECT del.[DocumentId]\n            FROM deleted del\n            LEFT JOIN inserted i ON i.[DescriptorId] = del.[DescriptorId]\n            WHERE i.[DescriptorId] IS NULL\n        )\n        UPDATE d\n        SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]\n        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped\n        FROM [dms].[Document] d\n        INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];\n    END\n    IF EXISTS (SELECT 1 FROM @stamped)\n    BEGIN\n        UPDATE r\n        SET r.[ContentVersion] = s.[ContentVersion],\n            r.[ContentLastModifiedAt] = sysutcdatetime()\n        FROM [dms].[Descriptor] r WITH (FORCESEEK)\n        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];\n    END\n    IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)\n    BEGIN\n        INSERT INTO [tracked_changes_edfi].[Descriptor] (\n            [ResourceKeyId],\n            [OldNamespace],\n            [OldCodeValue],\n            [Id],\n            [ChangeVersion],\n            [DocumentId]\n        )\n        SELECT\n            del.[ResourceKeyId],\n            del.[Namespace],\n            del.[CodeValue],\n            doc.[DocumentUuid],\n            doc.[ContentVersion],\n            del.[DocumentId]\n        FROM deleted del\n        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];\n    END\nEND;",
       "function_name": null
     },
     {

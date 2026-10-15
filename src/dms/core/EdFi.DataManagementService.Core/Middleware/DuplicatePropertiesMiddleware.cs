@@ -65,8 +65,10 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
     /// <summary>
     /// Scans the raw JSON string using Utf8JsonReader to find duplicate property names.
     /// Returns the JSON path of the first duplicate found, or null if no duplicates exist.
+    /// Throws <see cref="InvalidOperationException"/> with the containing object's path when a
+    /// property name is malformed.
     /// </summary>
-    private static string? FindDuplicatePropertyPath(string json)
+    internal static string? FindDuplicatePropertyPath(string json)
     {
         var bytes = Encoding.UTF8.GetBytes(json);
         var reader = new Utf8JsonReader(
@@ -92,11 +94,7 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
                     {
                         propertyNamesStack.Pop();
                     }
-                    // Pop the property segment that led to this object (if any)
-                    if (pathStack.Count > 0 && !pathStack.Peek().IsArray)
-                    {
-                        pathStack.Pop();
-                    }
+                    CompleteValue(pathStack);
                     break;
 
                 case JsonTokenType.StartArray:
@@ -105,20 +103,29 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
                     break;
 
                 case JsonTokenType.EndArray:
-                    // Pop the array segment
+                    // Pop the array segment, then complete the array as a value
                     if (pathStack.Count > 0 && pathStack.Peek().IsArray)
                     {
                         pathStack.Pop();
                     }
-                    // Pop the property that led to this array (if any)
-                    if (pathStack.Count > 0 && !pathStack.Peek().IsArray)
-                    {
-                        pathStack.Pop();
-                    }
+                    CompleteValue(pathStack);
                     break;
 
                 case JsonTokenType.PropertyName:
-                    string propertyName = reader.GetString()!;
+                    string propertyName;
+                    try
+                    {
+                        propertyName = reader.GetString()!;
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        // A malformed property name, such as an unpaired surrogate escape. Report the
+                        // object that holds it so the caller can answer with a path-attributed 400.
+                        throw new InvalidOperationException(
+                            $"{ex.Message} Path: {BuildContainingPath(pathStack)}",
+                            ex
+                        );
+                    }
 
                     // Check for duplicate in current object BEFORE adding to path
                     if (propertyNamesStack.Count > 0)
@@ -142,29 +149,8 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
                 case JsonTokenType.True:
                 case JsonTokenType.False:
                 case JsonTokenType.Null:
-                    // Primitive value encountered - pop the property that led here
-                    if (pathStack.Count > 0 && !pathStack.Peek().IsArray)
-                    {
-                        pathStack.Pop();
-                    }
-                    // If we're in an array, increment the index for the next element
-                    if (pathStack.Count > 0 && pathStack.Peek().IsArray)
-                    {
-                        var arraySegment = pathStack.Pop();
-                        pathStack.Push(arraySegment with { ArrayIndex = arraySegment.ArrayIndex + 1 });
-                    }
+                    CompleteValue(pathStack);
                     break;
-            }
-
-            // After completing an object or array that was an array element, increment the array index
-            if (
-                (reader.TokenType == JsonTokenType.EndObject || reader.TokenType == JsonTokenType.EndArray)
-                && pathStack.Count > 0
-                && pathStack.Peek().IsArray
-            )
-            {
-                var arraySegment = pathStack.Pop();
-                pathStack.Push(arraySegment with { ArrayIndex = arraySegment.ArrayIndex + 1 });
             }
         }
 
@@ -172,9 +158,33 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
     }
 
     /// <summary>
+    /// Records that a value just finished. A value that belongs to a property pops that property's
+    /// segment; only a value that is itself an array element advances the array index.
+    /// </summary>
+    private static void CompleteValue(Stack<PathSegment> pathStack)
+    {
+        if (pathStack.Count == 0)
+        {
+            return;
+        }
+
+        var segment = pathStack.Pop();
+        if (segment.IsArray)
+        {
+            pathStack.Push(segment with { ArrayIndex = segment.ArrayIndex + 1 });
+        }
+    }
+
+    /// <summary>
     /// Builds a JSON path string from the path stack and the duplicate property name.
     /// </summary>
-    private static string BuildJsonPath(Stack<PathSegment> pathStack, string duplicatePropertyName)
+    private static string BuildJsonPath(Stack<PathSegment> pathStack, string duplicatePropertyName) =>
+        $"{BuildContainingPath(pathStack)}.{duplicatePropertyName}";
+
+    /// <summary>
+    /// Builds the JSON path of the current location from the path stack.
+    /// </summary>
+    private static string BuildContainingPath(Stack<PathSegment> pathStack)
     {
         var segments = pathStack.ToArray();
         Array.Reverse(segments);
@@ -193,7 +203,6 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
             }
         }
 
-        pathBuilder.Append($".{duplicatePropertyName}");
         return pathBuilder.ToString();
     }
 

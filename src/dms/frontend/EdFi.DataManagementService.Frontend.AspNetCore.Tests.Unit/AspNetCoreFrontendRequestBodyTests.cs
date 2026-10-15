@@ -165,6 +165,47 @@ public class Given_AspNetCoreFrontend_Request_Body_Extraction
         capturedRequest.DuplicatePropertyPath.Should().Be("$.schoolId");
     }
 
+    // A finished property value inside an array element must not advance the element's index; only a
+    // finished element does.
+    [TestCase("""{"items":[{"id":1,"x":1,"x":2}]}""", "$.items[0].x")]
+    [TestCase("""{"items":[{"ref":{"a":1},"x":1,"x":2}]}""", "$.items[0].x")]
+    [TestCase("""{"items":[{"id":1},{"id":2,"x":1,"x":2}]}""", "$.items[1].x")]
+    public async Task It_reports_duplicate_property_paths_inside_array_elements_at_their_own_index(
+        string body,
+        string expectedPath
+    )
+    {
+        FrontendRequest? capturedRequest = null;
+        var httpContext = CreateHttpContext(body);
+        var apiService = CreateApiServiceForUpsert(request => capturedRequest = request);
+
+        await AspNetCoreFrontend.Upsert(httpContext, apiService, "ed-fi/schools", AppSettings());
+
+        capturedRequest.Should().NotBeNull();
+        capturedRequest!.DuplicatePropertyPath.Should().Be(expectedPath);
+    }
+
+    // A malformed property name is read by the duplicate scan, so its parse error names the object
+    // that holds it.
+    [TestCase("""{"outer":{"\uD800":1}}""", "$.outer")]
+    [TestCase("""{"\uD800":1}""", "$")]
+    [TestCase("""{"items":[{"id":1},{"id":2,"\uD800":1}]}""", "$.items[1]")]
+    public async Task It_names_the_containing_object_of_a_malformed_property_name(
+        string body,
+        string expectedPath
+    )
+    {
+        FrontendRequest? capturedRequest = null;
+        var httpContext = CreateHttpContext(body);
+        var apiService = CreateApiServiceForUpsert(request => capturedRequest = request);
+
+        await AspNetCoreFrontend.Upsert(httpContext, apiService, "ed-fi/schools", AppSettings());
+
+        capturedRequest.Should().NotBeNull();
+        capturedRequest!.ParsedBody.Should().BeNull();
+        capturedRequest.BodyParseErrorMessage.Should().EndWith($" Path: {expectedPath}");
+    }
+
     [Test]
     public async Task It_keeps_form_url_encoded_bodies_out_of_the_json_parse_path()
     {
