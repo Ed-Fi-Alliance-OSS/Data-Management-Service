@@ -160,10 +160,17 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
     private const int MaxLoggedUpstreamContentLength = 2048;
 
     /// <summary>
-    /// The <c>type</c> a CMS token-limit rejection carries. Matched exactly, and it must stay in
-    /// step with what <see cref="Response.FailureResponse.ForTooManyTokens"/> emits.
+    /// The <c>type</c> a Configuration Service token-limit rejection carries. Before DMS-1586 the
+    /// Configuration Service used the <c>urn:ed-fi:api</c> prefix; from DMS-1586 on it uses the
+    /// Management API's <c>urn:ed-fi:management-api</c> prefix. Both are matched exactly, so a DMS
+    /// deployed beside either version still recognizes the rejection. Neither value is DMS's own
+    /// response type, which <see cref="Response.FailureResponse.ForTooManyTokens"/> sets and
+    /// DMS-1586 does not change.
     /// </summary>
-    private const string TooManyTokensType = "urn:ed-fi:api:security:authentication:too-many-tokens";
+    private const string LegacyTooManyTokensType = "urn:ed-fi:api:security:authentication:too-many-tokens";
+
+    private const string ManagementApiTooManyTokensType =
+        "urn:ed-fi:management-api:security:authentication:too-many-tokens";
 
     /// <summary>
     /// The canonical token-limit message, split either side of the limit it carries. Each half is
@@ -400,11 +407,11 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         }
 
         // The limit carried by a canonical token-limit body, or null when the body deviates from
-        // that shape in any way at all - unparseable, a different type, a mismatched status, an
-        // errors array that is missing or holds anything other than one string, a message that is
-        // not the canonical one, or a limit that is absent, non-numeric, zero, negative or too
-        // large for an int. Every one of those falls back to the generic 429 rather than being
-        // partially believed.
+        // that shape in any way at all - unparseable, a type other than the two accepted ones, a
+        // mismatched status, an errors array that is missing or holds anything other than one
+        // string, a message that is not the canonical one, or a limit that is absent, non-numeric,
+        // zero, negative or too large for an int. Every one of those falls back to the generic 429
+        // rather than being partially believed.
         static int? TokenLimitFromUpstreamBody(string body)
         {
             if (JsonObjectOrNull(body) is not JsonObject obj)
@@ -412,7 +419,15 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                 return null;
             }
 
-            if (!string.Equals(ScalarValueOrNull(obj["type"]), TooManyTokensType, StringComparison.Ordinal))
+            if (ScalarValueOrNull(obj["type"]) is not string type)
+            {
+                return null;
+            }
+
+            if (
+                !string.Equals(type, LegacyTooManyTokensType, StringComparison.Ordinal)
+                && !string.Equals(type, ManagementApiTooManyTokensType, StringComparison.Ordinal)
+            )
             {
                 return null;
             }

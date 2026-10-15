@@ -960,7 +960,7 @@ relevant environment variables or appsettings to set `IdentityProvider` to
 | `IdentitySettings.EncryptionKey`    | Key used for token encryption (self-contained only)              | _(not used)_                                         | `QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz` |
 | `IdentitySettings.TokenCleanupEnabled` | Enables the background sweep that deletes expired OpenIddict access tokens (self-contained only) | _(not used)_                                         | `true`              |
 | `IdentitySettings.TokenCleanupIntervalMinutes` | Interval, in minutes, between expired-token cleanup sweeps (self-contained only)           | _(not used)_                                         | `30`              |
-| `IdentitySettings.BearerTokenPerClientLimit` | Maximum number of active (unexpired, unrevoked) access tokens a limited client may hold (self-contained only; default `15`). Exemption requires no live `dmscs.ApiClient` row and a nonempty set of registered scopes consisting only of recognized Configuration Service admin scopes. Ed-Fi API clients remain limited. A grant beyond the limit is rejected with HTTP 429 and a `Too Many Tokens` problem response of type `urn:ed-fi:api:security:authentication:too-many-tokens`; the client should reuse its existing token until it expires. Any value below 1, conventionally `-1`, disables enforcement globally. | _(not used)_ | `15` |
+| `IdentitySettings.BearerTokenPerClientLimit` | Maximum number of active (unexpired, unrevoked) access tokens a limited client may hold (self-contained only; default `15`). Exemption requires no live `dmscs.ApiClient` row and a nonempty set of registered scopes consisting only of recognized Configuration Service admin scopes. Ed-Fi API clients remain limited. A grant beyond the limit is rejected with HTTP 429 and a `Too Many Tokens` problem response of type `urn:ed-fi:management-api:security:authentication:too-many-tokens`; the client should reuse its existing token until it expires. Any value below 1, conventionally `-1`, disables enforcement globally. | _(not used)_ | `15` |
 | `IdentitySettings.ClientSecretHashingIterations` | Number of PBKDF2-SHA256 iterations used to hash and verify client secrets (self-contained only). Must be greater than zero; startup fails otherwise. Default: `210000`. Set in Docker Compose through `CONFIGURATION_SERVICE_IDENTITY_HASHING_ITERATIONS`, which also sets the count `setup-openiddict.ps1` hashes bootstrap client secrets with. | _(not used)_ | `210000` |
 
 > **Before upgrading an existing deployment:** a positive limit takes effect immediately, so an Ed-Fi API client
@@ -995,10 +995,18 @@ tokens should revoke each one as it finishes with it rather than letting it sit 
 This only helps a caller that still has the token string — one that has lost track of its tokens,
 after a crash loop for instance, has to wait for them to expire.
 
-DMS `/oauth/token` retains the canonical HTTP 429 contract for limited clients: type
+The Configuration Service's `/connect/token` rejects a grant beyond the limit with type
+`urn:ed-fi:management-api:security:authentication:too-many-tokens`; every Configuration Service
+problem type uses the Management API prefix.
+
+DMS `/oauth/token` retains its canonical HTTP 429 contract for limited clients: DMS's own type
 `urn:ed-fi:api:security:authentication:too-many-tokens`, title `Too Many Tokens`, and message
 `Too many access tokens have been requested (limit is {n}). Access tokens should be reused until they expire.`
-DMS parses the Configuration Service response and rebuilds its external response as before.
+DMS parses the Configuration Service response, under either the `urn:ed-fi:management-api:` type
+or the `urn:ed-fi:api:` type an earlier Configuration Service returns, and rebuilds its external
+response as before. Upgrade DMS before, or together with, the Configuration Service: an earlier
+DMS does not recognize the new type and answers a generic 429 of type
+`urn:ed-fi:api:too-many-requests` without the limit message.
 
 > **Changing `ClientSecretHashingIterations` invalidates existing client secrets.** The iteration
 > count is not stored with a hashed secret, so verification always derives at the currently

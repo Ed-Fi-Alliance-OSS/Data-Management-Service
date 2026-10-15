@@ -10,7 +10,7 @@ namespace EdFi.DmsConfigurationService.DataModel.Infrastructure;
 
 /// <summary>
 /// Thrown by a paging/query-parameter validator guard (as opposed to a body-command validator) so the
-/// CMS exception handler can classify the failure as urn:ed-fi:api:bad-request:parameter instead of the
+/// CMS exception handler can classify the failure as urn:ed-fi:management-api:bad-request:parameter instead of the
 /// body/data-validation taxonomy, without inspecting exception messages. Derives from
 /// <see cref="ValidationException"/> so callers that only expect the generic FluentValidation type still
 /// catch it; the exception handler matches this more specific subtype first.

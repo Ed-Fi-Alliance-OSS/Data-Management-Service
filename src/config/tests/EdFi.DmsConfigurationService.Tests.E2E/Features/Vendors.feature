@@ -223,7 +223,7 @@ Feature: Vendors endpoints
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
@@ -249,7 +249,7 @@ Feature: Vendors endpoints
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
@@ -275,7 +275,7 @@ Feature: Vendors endpoints
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
@@ -301,7 +301,7 @@ Feature: Vendors endpoints
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
@@ -422,7 +422,7 @@ Feature: Vendors endpoints
                   """
                   {
                       "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data",
+                      "type": "urn:ed-fi:management-api:bad-request:data",
                       "title": "Data Validation Failed",
                       "status": 400,
                       "validationErrors": {
@@ -777,7 +777,7 @@ Feature: Vendors endpoints
                   """
                   {
                       "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data",
+                      "type": "urn:ed-fi:management-api:bad-request:data",
                       "title": "Data Validation Failed",
                       "status": 400,
                       "validationErrors": {
