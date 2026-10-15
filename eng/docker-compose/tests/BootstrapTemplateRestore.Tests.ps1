@@ -972,6 +972,12 @@ Describe "Assert-RestoreTargetDatabaseNameSafe" {
             Should -Throw "*unsupported characters*"
     }
 
+    It "rejects a PostgreSQL target PostgreSQL would truncate, at parameter time" {
+        { Assert-RestoreTargetDatabaseNameSafe -DatabaseEngine postgresql -TargetDatabaseName ("t" * 63) } | Should -Not -Throw
+        { Assert-RestoreTargetDatabaseNameSafe -DatabaseEngine postgresql -TargetDatabaseName ("t" * 64) } |
+            Should -Throw "*restore target database name is 64 characters long*"
+    }
+
     It "never allows the separate Configuration Service database as a restore target, case-insensitively" {
         { Assert-RestoreTargetDatabaseNameSafe -DatabaseEngine mssql -TargetDatabaseName "edfi_configurationservice" -SeparateConfigDatabase -EffectiveConfigDatabaseName "edfi_configurationservice" } |
             Should -Throw "*never replaces a separate CMS database*"

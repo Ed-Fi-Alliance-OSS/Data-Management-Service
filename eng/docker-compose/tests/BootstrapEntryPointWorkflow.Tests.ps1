@@ -504,8 +504,9 @@ $failureStatement
                 & $stubThrow "Assert-DmsComposeProjectStopped"
             }.GetNewClosure()
             Set-Item function:global:New-RestorePreflightEnvironment {
-                param($EnvironmentFile, $DatabaseEngine, $TargetDatabaseName)
+                param($EnvironmentFile, $DatabaseEngine, $TargetDatabaseName, $PostgresUser)
                 Add-Content -LiteralPath $log -Value "restore:preflight-env"
+                Add-Content -LiteralPath $postgresUserLog -Value "preflight-env user=[$PostgresUser]"
                 & $stubThrow "New-RestorePreflightEnvironment"
                 $preflightEnvironmentPath = Join-Path $root "preflight.env"
                 Set-Content -LiteralPath $preflightEnvironmentPath -Value "POSTGRES_DB_NAME=edfi_dms_restore_preflight_0123456789ab" -Encoding utf8
@@ -2892,10 +2893,10 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "configure dataStore=[`$Dat
 
             $expectedLines = if ($ThrowAt.Count -gt 0) {
                 # The scratch failure leaves only the finally's best-effort preflight drop.
-                @("target-safety user=[$Expected]", "scratch user=[$Expected]", "preflight-drop user=[$Expected]")
+                @("preflight-env user=[$Expected]", "target-safety user=[$Expected]", "scratch user=[$Expected]", "preflight-drop user=[$Expected]")
             }
             else {
-                @("target-safety user=[$Expected]", "scratch user=[$Expected]", "preflight-drop user=[$Expected]", "replacement user=[$Expected]", "preflight-drop user=[$Expected]")
+                @("preflight-env user=[$Expected]", "target-safety user=[$Expected]", "scratch user=[$Expected]", "preflight-drop user=[$Expected]", "replacement user=[$Expected]", "preflight-drop user=[$Expected]")
             }
             @(Get-Content -LiteralPath "$script:restoreLog.postgres-users") | Should -Be $expectedLines
         }

@@ -1287,6 +1287,13 @@ function Publish-RestoreCandidateWorkspace {
             }
         }
 
+        # Retained CDC configuration and nested source state of EITHER compose project outlive a
+        # full stop, so the stop proofs above cannot protect them; the shared CDC guard decides.
+        Import-Module (Join-Path $PSScriptRoot "cdc-lifecycle.psm1")
+        if (Test-CdcBootstrapWorkspaceProtected -BootstrapRoot $ActiveBootstrapRoot) {
+            throw "Refusing to replace the active bootstrap workspace: it holds retained CDC configuration or state for dms-local or dms-published. Nothing was replaced and the restore target was not touched. Reconcile or retire that CDC deployment through its own lifecycle, then rerun the restore."
+        }
+
         Remove-Item -LiteralPath $ActiveBootstrapRoot -Recurse -Force
     }
 
@@ -1346,6 +1353,9 @@ function New-RestorePreflightEnvironment {
         [Parameter(Mandatory = $true)]
         [string]$TargetDatabaseName,
 
+        # The PostgreSQL administrator the container is initialized with (POSTGRES_USER).
+        [string]$PostgresUser = "postgres",
+
         # Test seam; production default is a derived-file area inside the restore workspace.
         [string]$DerivedDirectory = ""
     )
@@ -1356,6 +1366,17 @@ function New-RestorePreflightEnvironment {
             PreflightDatabaseName  = ""
             IsDerived              = $false
         }
+    }
+
+    # The image's own initialization also creates POSTGRES_DB, which postgresql.yml does not set,
+    # so it defaults to the POSTGRES_USER name; a target spelled like the administrator would be
+    # created by fresh-volume initialization no matter what POSTGRES_DB_NAME says. PostgreSQL
+    # truncates names past 63 bytes, so a longer administrator name could still create the target.
+    if ([System.Text.Encoding]::UTF8.GetByteCount($PostgresUser) -gt 63) {
+        throw "The PostgreSQL administrator name (POSTGRES_USER) is longer than 63 bytes, and PostgreSQL truncates the database the image creates with that name, so preflight could create the restore target. Nothing was restored. Use a POSTGRES_USER of at most 63 bytes. The value is withheld."
+    }
+    if ($PostgresUser.Trim().Equals($TargetDatabaseName.Trim(), [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "The restore target database has the same name as the PostgreSQL administrator (POSTGRES_USER), and the PostgreSQL image creates a database with that name when it initializes a fresh volume, so preflight could create the target. Nothing was restored. Use a different POSTGRES_USER or restore target. Both values are withheld."
     }
 
     if ([string]::IsNullOrWhiteSpace($DerivedDirectory)) {

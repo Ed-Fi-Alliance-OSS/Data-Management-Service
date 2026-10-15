@@ -111,6 +111,12 @@ function Assert-SafeRestoreDatabaseName {
         throw "The $Purpose database name contains unsupported characters. Only letters, digits, and underscores are allowed."
     }
 
+    # PostgreSQL truncates a longer identifier with only a NOTICE, so CREATE DATABASE would create
+    # a different database than later commands name. The charset above is ASCII, so chars = bytes.
+    if ($DatabaseEngine -eq "postgresql" -and $DatabaseName.Length -gt 63) {
+        throw "The $Purpose database name is $($DatabaseName.Length) characters long; PostgreSQL database names are limited to 63 characters, and a longer name would be silently truncated."
+    }
+
     if (Test-ReservedDatabaseName -DatabaseEngine $DatabaseEngine -DatabaseName $DatabaseName) {
         $reservedList = $script:ReservedDatabaseNames[$DatabaseEngine] -join ", "
         throw "The $Purpose database name '$DatabaseName' is a reserved $DatabaseEngine system database name ($reservedList) and can never be created, dropped, or restored by template restore."

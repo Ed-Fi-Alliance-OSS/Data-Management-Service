@@ -147,6 +147,15 @@ Describe "Assert-SafeRestoreDatabaseName" {
         }
     }
 
+    It "PostgreSQL: accepts a 63-character name and rejects longer ones; SQL Server keeps its own limit" {
+        { Assert-SafeRestoreDatabaseName -DatabaseEngine postgresql -DatabaseName ("a" * 63) } | Should -Not -Throw
+        foreach ($length in @(64, 100)) {
+            { Assert-SafeRestoreDatabaseName -DatabaseEngine postgresql -DatabaseName ("a" * $length) } |
+                Should -Throw "*is $length characters long; PostgreSQL database names are limited to 63 characters*"
+        }
+        { Assert-SafeRestoreDatabaseName -DatabaseEngine mssql -DatabaseName ("a" * 64) } | Should -Not -Throw
+    }
+
     It "names the caller-supplied purpose in the failure so a refusal identifies which selection was rejected" {
         { Assert-SafeRestoreDatabaseName -DatabaseEngine mssql -DatabaseName "master" -Purpose "restore target" } | Should -Throw "*restore target database name 'master' is a reserved*"
     }

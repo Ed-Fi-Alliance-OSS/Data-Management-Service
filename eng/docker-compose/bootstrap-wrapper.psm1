@@ -1039,7 +1039,8 @@ function Invoke-BootstrapWrapper {
                     $restorePreflight = New-RestorePreflightEnvironment `
                         -EnvironmentFile $effectiveEnvFile `
                         -DatabaseEngine $DatabaseEngine `
-                        -TargetDatabaseName $restoreTargetDatabaseName
+                        -TargetDatabaseName $restoreTargetDatabaseName `
+                        -PostgresUser $restorePostgresUser
                     $restorePreflightDatabaseName = $restorePreflight.PreflightDatabaseName
                     if ($restorePreflight.IsDerived) {
                         $restorePreflightEnvironmentPath = $restorePreflight.EnvironmentFile

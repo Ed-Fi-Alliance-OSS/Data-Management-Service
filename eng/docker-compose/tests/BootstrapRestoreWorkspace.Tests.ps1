@@ -1059,6 +1059,49 @@ Describe "Publish-RestoreCandidateWorkspace (whole-tree commit)" {
         Get-Content -LiteralPath (Join-Path $script:candidateUnderTest ".hidden-marker") -Raw | Should -Be "dot"
     }
 
+    It "refuses to replace an active tree holding another project's retained CDC configuration, even with every project stopped" {
+        $peerConfiguration = "cdc-runtime/bootstrap-0123456789abcdef0123456789abcdef.settings.json"
+        New-WorkspaceTree -Path $script:activeRootUnderTest -File @{
+            "bootstrap-manifest.json" = "old"
+            $peerConfiguration        = "published-cdc-settings"
+        } | Out-Null
+        New-WorkspaceTree -Path $script:candidateUnderTest | Out-Null
+
+        { Publish-RestoreCandidateWorkspace -CandidateDirectory $script:candidateUnderTest -ActiveBootstrapRoot $script:activeRootUnderTest } |
+            Should -Throw "*holds retained CDC configuration or state for dms-local or dms-published*"
+
+        Get-Content -LiteralPath (Join-Path $script:activeRootUnderTest $peerConfiguration) -Raw | Should -Be "published-cdc-settings"
+        Get-Content -LiteralPath (Join-Path $script:activeRootUnderTest "bootstrap-manifest.json") -Raw | Should -Be "old"
+        $script:candidateUnderTest | Should -Exist
+    }
+
+    It "refuses to replace an active tree that nests a retained dms-published deployment's source-state journals" {
+        $journal = Join-Path $script:activeRootUnderTest "cdc-state/published/journal.json"
+        New-WorkspaceTree -Path $script:activeRootUnderTest -File @{
+            "bootstrap-manifest.json"            = "old"
+            "cdc-state/published/journal.json"   = "journal"
+        } | Out-Null
+        New-WorkspaceTree -Path $script:candidateUnderTest | Out-Null
+        $deploymentDirectory = Join-Path $script:publishRoot ".cdc-deployments"
+        New-Item -ItemType Directory -Path $deploymentDirectory -Force | Out-Null
+        $deploymentPath = Join-Path $deploymentDirectory "dms-published.json"
+        @{ Version = 1; Project = "dms-published"; Entries = @(@{ StatePath = (Split-Path -Parent $journal) }) } |
+            ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $deploymentPath -Encoding utf8
+        if ($IsLinux) {
+            [System.IO.File]::SetUnixFileMode($deploymentDirectory, [System.IO.UnixFileMode]448)
+            [System.IO.File]::SetUnixFileMode($deploymentPath, [System.IO.UnixFileMode]384)
+        }
+        # The CDC guard qualifies the inventory only on Linux (owner-only files); elsewhere it
+        # cannot read it and refuses as unreadable. Either way nothing may be removed.
+        $expectedRefusal = if ($IsLinux) { "*blocked by a surviving protected source-state root*" } else { "*protection inventory is unreadable*" }
+
+        { Publish-RestoreCandidateWorkspace -CandidateDirectory $script:candidateUnderTest -ActiveBootstrapRoot $script:activeRootUnderTest } |
+            Should -Throw $expectedRefusal
+
+        Get-Content -LiteralPath $journal -Raw | Should -Be "journal"
+        $script:candidateUnderTest | Should -Exist
+    }
+
     It "refuses a candidate without a bootstrap manifest before any stop proof or workspace read" {
         New-Item -ItemType Directory -Path $script:candidateUnderTest -Force | Out-Null
         New-WorkspaceTree -Path $script:activeRootUnderTest | Out-Null
@@ -1106,6 +1149,48 @@ Describe "New-RestorePreflightEnvironment" {
             Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and $_ -notlike "POSTGRES_DB_NAME=*" }
         $derivedOtherLines = @($derivedLines | Where-Object { $_ -notlike "POSTGRES_DB_NAME=*" })
         $derivedOtherLines | Should -Be $baselineOtherLines
+    }
+
+    It "PostgreSQL: refuses a target spelled like POSTGRES_USER (<User>) before writing any derived env" -ForEach @(
+        @{ User = "edfi_datamanagementservice" }
+        @{ User = "EDFI_DataManagementService" }
+    ) {
+        { New-RestorePreflightEnvironment `
+                -EnvironmentFile $script:baseEnvironmentFile `
+                -DatabaseEngine postgresql `
+                -TargetDatabaseName "edfi_datamanagementservice" `
+                -PostgresUser $User `
+                -DerivedDirectory $script:derivedDirectory } |
+            Should -Throw "*same name as the PostgreSQL administrator (POSTGRES_USER)*"
+
+        Test-Path -LiteralPath $script:derivedDirectory | Should -BeFalse
+    }
+
+    It "PostgreSQL: refuses a POSTGRES_USER over 63 bytes, which PostgreSQL would truncate (<Case>), before writing any derived env" -ForEach @(
+        @{ Case = "64 ASCII bytes"; User = ("a" * 64) }
+        @{ Case = "64 UTF-8 bytes in 32 characters"; User = ([string][char]0xE9 * 32) }
+    ) {
+        { New-RestorePreflightEnvironment `
+                -EnvironmentFile $script:baseEnvironmentFile `
+                -DatabaseEngine postgresql `
+                -TargetDatabaseName ("a" * 63) `
+                -PostgresUser $User `
+                -DerivedDirectory $script:derivedDirectory } |
+            Should -Throw "*administrator name (POSTGRES_USER) is longer than 63 bytes*"
+
+        Test-Path -LiteralPath $script:derivedDirectory | Should -BeFalse
+    }
+
+    It "PostgreSQL: a custom POSTGRES_USER that differs from the target still derives the preflight env" {
+        $preflight = New-RestorePreflightEnvironment `
+            -EnvironmentFile $script:baseEnvironmentFile `
+            -DatabaseEngine postgresql `
+            -TargetDatabaseName "edfi_datamanagementservice" `
+            -PostgresUser "dmsadmin" `
+            -DerivedDirectory $script:derivedDirectory
+
+        $preflight.IsDerived | Should -BeTrue
+        @(Get-Content -LiteralPath $preflight.EnvironmentFile) | Should -Contain "POSTGRES_DB_NAME=$($preflight.PreflightDatabaseName)"
     }
 
     It "SQL Server: passes the effective env through unchanged and writes no derived file" {
