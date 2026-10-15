@@ -362,10 +362,15 @@ public class Given_MaterializedDocumentFixtureSeeder
         // The document row carries no timestamp. The SQL Server timestamp conversion now applies where the
         // authoritative stamp is seeded: the resource root's stamp update.
         documentInsert.Parameters.Should().NotContain(parameter => parameter.Value is DateTime);
-        var rootStampUpdate = new MaterializedDocumentFixtureSeeder(MaterializedDocumentFixtureSqlDialect.Mssql)
+        var rootStampUpdate = new MaterializedDocumentFixtureSeeder(
+            MaterializedDocumentFixtureSqlDialect.Mssql
+        )
             .BuildSetupCommands(_ordinaryFixture)
             .Single(command =>
-                command.CommandText.StartsWith("UPDATE [edfi].[StudentSchoolAssociation]", StringComparison.Ordinal)
+                command.CommandText.StartsWith(
+                    "UPDATE [edfi].[StudentSchoolAssociation]",
+                    StringComparison.Ordinal
+                )
             );
         rootStampUpdate
             .Parameters.Any(parameter =>
