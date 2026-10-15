@@ -182,8 +182,7 @@ public sealed class MaterializedDocumentFixtureSeeder(
                     {_dialect.Quote("DocumentUuid")} {_dialect.UuidColumnType} NOT NULL,
                     {_dialect.Quote("ResourceKeyId")} smallint NOT NULL,
                     {_dialect.Quote("CreatedByOwnershipTokenId")} smallint NULL,
-                    {_dialect.Quote("ContentVersion")} bigint NOT NULL,
-                    {_dialect.Quote("CreatedAt")} {_dialect.TimestampWithOffsetColumnType} NOT NULL
+                    {_dialect.Quote("ContentVersion")} bigint NOT NULL
                     """
                 ),
                 []
@@ -328,7 +327,6 @@ public sealed class MaterializedDocumentFixtureSeeder(
                 new(_dialect.ParameterName(1), Guid.Parse(document.DocumentUuid)),
                 new(_dialect.ParameterName(2), document.ResourceKeyId),
                 new(_dialect.ParameterName(3), document.ContentVersion),
-                DocumentTimestampParameter(4, document.ContentLastModifiedAt),
             };
 
             commands.Add(
@@ -342,7 +340,6 @@ public sealed class MaterializedDocumentFixtureSeeder(
                             "ResourceKeyId",
                             "CreatedByOwnershipTokenId",
                             "ContentVersion",
-                            "CreatedAt",
                         ],
                         [
                             parameters[0].Name,
@@ -350,7 +347,6 @@ public sealed class MaterializedDocumentFixtureSeeder(
                             parameters[2].Name,
                             "NULL",
                             parameters[3].Name,
-                            parameters[4].Name,
                         ],
                         useExplicitIdentityInsert: !_options.CreateSchemasAndTables
                     ),

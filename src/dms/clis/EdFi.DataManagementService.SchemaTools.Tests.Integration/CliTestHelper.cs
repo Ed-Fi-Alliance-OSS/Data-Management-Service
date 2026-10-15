@@ -51,17 +51,50 @@ public static class CliTestHelper
             var partialOut = outputTask.IsCompleted ? outputTask.Result : "(not captured)";
             var partialErr = errorTask.IsCompleted ? errorTask.Result : "(not captured)";
 
-            Assert.Fail(
-                $"Process '{fileName}' timed out after {_processTimeout.TotalSeconds}s."
-                    + $"\nArgs: {string.Join(" ", arguments)}"
-                    + $"\nstdout: {partialOut}\nstderr: {partialErr}"
-            );
+            Assert.Fail(FormatTimeoutDiagnostic(fileName, startInfo.ArgumentList, partialOut, partialErr));
         }
 
         var output = outputTask.GetAwaiter().GetResult();
         var error = errorTask.GetAwaiter().GetResult();
 
         return (process.ExitCode, output, error);
+    }
+
+    internal static string FormatTimeoutDiagnostic(
+        string fileName,
+        IEnumerable<string> arguments,
+        string output,
+        string error
+    )
+    {
+        var safeArguments = arguments.ToArray();
+        for (var index = 0; index < safeArguments.Length; index++)
+        {
+            string argument = safeArguments[index];
+            string connectionString = string.Empty;
+            if (argument is "--connection-string" or "-c" && index + 1 < safeArguments.Length)
+            {
+                connectionString = safeArguments[index + 1];
+                safeArguments[index + 1] = "[redacted]";
+            }
+            else if (argument.StartsWith("--connection-string=", StringComparison.Ordinal))
+            {
+                connectionString = argument["--connection-string=".Length..];
+                safeArguments[index] = "--connection-string=[redacted]";
+            }
+            else if (argument.StartsWith("-c=", StringComparison.Ordinal))
+            {
+                connectionString = argument[3..];
+                safeArguments[index] = "-c=[redacted]";
+            }
+            if (connectionString.Length > 0)
+            {
+                output = output.Replace(connectionString, "[redacted]", StringComparison.Ordinal);
+                error = error.Replace(connectionString, "[redacted]", StringComparison.Ordinal);
+            }
+        }
+        return $"Process '{fileName}' timed out after {_processTimeout.TotalSeconds}s."
+            + $"\nArgs: {string.Join(" ", safeArguments)}\nstdout: {output}\nstderr: {error}";
     }
 
     public static string GetExecutablePath()

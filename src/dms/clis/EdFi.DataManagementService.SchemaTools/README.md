@@ -180,7 +180,7 @@ schema/query integration is owned by
 and the `CDC-INV-02` / `CDC-INV-03` traceability rows live under
 [`Contract-to-Evidence Traceability`](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-to-evidence-traceability).
 
-This command is create-only. Its phase-zero checks are limited to the effective-schema
+Provisioning is create-only. Its phase-zero checks are limited to the effective-schema
 hash, `dms.DataStoreIdentity` and `dms.DocumentCacheState` singleton safety, known legacy
 DocumentCache artifacts (`DocumentCache.Etag`, `UX_DocumentCache_DocumentUuid`, and
 `IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt`), and PostgreSQL
@@ -198,6 +198,77 @@ execution over the referenced `dms` tables and emits no `EXECUTE AS`, enqueue us
 enqueue role. Runtime projection, projection administration, health/readiness,
 cache-backed reads, complete target eligibility validation, CDC capture objects, and CDC
 reader grants are outside this CLI provisioning contract.
+
+### `ddl re-stamp` — Record a validated physical schema migration
+
+This administrative operation changes the effective schema fingerprint metadata
+after an operator has independently completed and validated a physical,
+data-preserving migration. It does not execute migration DDL or certify that the
+database's physical objects match the supplied schema.
+
+Supported transitions require the same ApiSchema format version, resource-key
+count and seed hash, every ResourceKey ID/name/version mapping, and every
+component endpoint/name/version/extension flag. Only the effective hash and its
+component associations may change. Adding or removing resources or projects,
+changing their versions, or converting schema formats requires a separately
+supported migration; this command rejects those metadata changes.
+
+```bash
+api-schema-tools ddl re-stamp --schema <paths...> --connection-string <connstr> --dialect <dialect> [--migration-completed] [--timeout <seconds>]
+```
+
+Use `api-schema-tools` from the same release/build as the target DMS, with that
+DMS deployment's exact core and extension schema inputs. The computed hash also
+depends on the tool's compiled relational mapping version; schema files alone
+do not select the target release. Both a committed re-stamp and an already
+matching no-op print the target effective schema hash. Compare it with the
+expected hash in the target DMS preflight error before restarting services. If
+they differ, keep services stopped and correct the tool build or schema inputs;
+a successful no-op from an older tool does not establish target compatibility.
+
+The command validates the existing fingerprint, resource-key seed and schema
+component metadata before it acts. A valid matching fingerprint is a read-only
+success and needs no confirmation. A changed fingerprint requires
+`--migration-completed`; it updates the parent hash and associated component
+hashes atomically while preserving the other metadata. It never creates or
+repairs missing metadata. A commit transport failure may leave the result
+uncertain; inspect the database and retry with the same schema inputs while
+services remain offline. A retry from a fully validated old stamp can apply the
+transition; a retry from the target stamp is a no-op.
+
+The connection role needs access to the existing database and schema, `SELECT`
+on `dms.EffectiveSchema`, `dms.ResourceKey`, and `dms.SchemaComponent`, `UPDATE`
+on `dms.EffectiveSchema`, and `DELETE`/`INSERT` on `dms.SchemaComponent`.
+PostgreSQL also requires permission to take `SHARE ROW EXCLUSIVE` table locks
+on all three tables, including the read-only `ResourceKey` check: table
+ownership or one of `MAINTAIN`, `UPDATE`, `DELETE`, or `TRUNCATE` grants permits
+that lock. Prefer `MAINTAIN` on `ResourceKey` where available rather than a data
+mutation grant. These lock privileges are needed even for a no-op or an
+invocation without `--migration-completed`; locks keep validation and mutation
+on the same stable metadata snapshot. See PostgreSQL's
+[LOCK privilege rules](https://www.postgresql.org/docs/18/sql-lock.html#SQL-LOCK-NOTES).
+The separate physical migration and provision steps need their own DDL privileges.
+
+For a changed stamp, keep DMS and workers stopped, apply and validate the
+provider-specific physical migration, run `ddl re-stamp`, run ordinary
+`ddl provision` separately, then restart DMS and workers. Provisioning remains
+create-only and rejects an ordinary mismatched fingerprint. The operation does
+not verify every existing physical object: provision can succeed even when a
+required migration was omitted, including a missing column on an existing
+table. Independently validate the migrated physical shape before re-stamping
+and verify affected API operations before reopening traffic. If provision
+fails, the re-stamp remains committed; keep services offline and resolve the
+failure through the migration's recovery procedure. The operation does
+not guarantee rollback of the physical migration and makes no claim about CDC
+continuity. See the [schema fingerprint operations guide](../../../../docs/RELATIONAL-BACKEND.md#re-stamping-after-a-validated-physical-migration).
+
+Re-stamp preserves `dms.DocumentCache` and document versions. If the migration
+changes API document representations, include the supported offline
+[DocumentCacheAdmin representation-restamp procedure](../EdFi.DataManagementService.DocumentCacheAdmin/README.md#representation-restamp)
+in the migration plan before reopening traffic, then validate affected reads.
+Restarting alone does not invalidate stored cache entries. A cache rebuild
+alone does not perform the document-version and publication changes required
+by a representation correction.
 
 ## Determinism guarantee
 

@@ -11,8 +11,7 @@ internal sealed record ProfileGuardedNoOpDocumentRow(
     long DocumentId,
     Guid DocumentUuid,
     short ResourceKeyId,
-    long ContentVersion,
-    DateTime CreatedAt
+    long ContentVersion
 );
 
 internal sealed record ProfileGuardedNoOpPersistedState(
@@ -63,8 +62,7 @@ internal static class ProfileGuardedNoOpPersistedStateSupport
             DocumentId: Convert.ToInt64(row["DocumentId"], CultureInfo.InvariantCulture),
             DocumentUuid: (Guid)row["DocumentUuid"]!,
             ResourceKeyId: Convert.ToInt16(row["ResourceKeyId"], CultureInfo.InvariantCulture),
-            ContentVersion: Convert.ToInt64(row["ContentVersion"], CultureInfo.InvariantCulture),
-            CreatedAt: Convert.ToDateTime(row["CreatedAt"], CultureInfo.InvariantCulture)
+            ContentVersion: Convert.ToInt64(row["ContentVersion"], CultureInfo.InvariantCulture)
         );
     }
 }

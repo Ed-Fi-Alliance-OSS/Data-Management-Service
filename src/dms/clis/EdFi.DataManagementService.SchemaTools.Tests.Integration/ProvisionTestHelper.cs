@@ -44,8 +44,7 @@ internal static partial class ProvisionTestHelper
                 "DocumentUuid",
                 "ResourceKeyId",
                 "CreatedByOwnershipTokenId",
-                "ContentVersion",
-                "CreatedAt"
+                "ContentVersion"
             );
         var documentVersion = documentColumns.Single(c => c.ColumnName == "ContentVersion");
         documentVersion.IsNullable.Should().BeFalse();

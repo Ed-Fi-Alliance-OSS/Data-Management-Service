@@ -139,13 +139,14 @@ type identity before retrying. Live rows accept those same qualified forms or an
 resource name matching the owning document's type; their `ResourceKeyId` comes from that document.
 
 Document IDs/UUIDs, document-level RI rows, content stamps and history IDs/versions remain intact.
-The current combined target omits `dms.Document.ContentLastModifiedAt`; legacy source-shaped
-staging can still contain it, but the target insert omits it. Document `ContentVersion` and
-`CreatedAt` checks remain. Authoritative descriptor and sampled stamp-bearing root rows retain
-their exact timestamps and versions, checked using deterministic `DocumentId`-ordered stamp-tuple
-checksums as well as distributions; swapping timestamps while preserving min/max must fail.
-The sampled-root scope is unchanged. The tool retains row-count, FK, trigger-state, fingerprint,
-singleton and source-identity checks. It initializes the native descriptor backing sequence from allocated compact keys. Copy
+The current combined target omits both `dms.Document.ContentLastModifiedAt` and
+`dms.Document.CreatedAt`; legacy source-shaped staging can still contain them, but the target
+insert omits them as source-only. The document `ContentVersion` check remains. Authoritative
+descriptor and sampled stamp-bearing root rows retain their exact timestamps and versions, checked
+using deterministic `DocumentId`-ordered stamp-tuple checksums as well as distributions; swapping
+timestamps while preserving min/max must fail. The sampled-root scope is unchanged. The tool retains
+row-count, FK, trigger-state, fingerprint, singleton and source-identity checks. It initializes the
+native descriptor backing sequence from allocated compact keys. Copy
 and Checkpoint resolve that sequence from catalog ownership and check `last_value`, `is_called`
 and increment against `MAX(DescriptorId)` without calling `nextval`. Document, collection and
 change-version sequences retain their existing checks.

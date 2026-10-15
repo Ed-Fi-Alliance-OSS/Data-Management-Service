@@ -17,9 +17,9 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 [Category("CdcProviderArtifacts")]
 public class Given_PostgresqlCdcProviderArtifacts
 {
-    private const string FixtureRelativePath =
+    internal const string FixtureRelativePath =
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-extension-child-collections";
-    private const string PublicationName = "dms_binding_publication";
+    internal const string PublicationName = "dms_binding_publication";
     private const string ReplicationSlotName = "dms_binding_slot";
 
     private PostgresqlGeneratedDdlFixture _fixture = null!;
@@ -43,11 +43,11 @@ public class Given_PostgresqlCdcProviderArtifacts
     {
         if (_database is not null)
         {
-            await DropReplicationSlotIfExistsAsync();
+            await DropReplicationSlotIfExistsAsync(_database.ConnectionString, ReplicationSlotName);
             await _database.DisposeAsync();
         }
 
-        DropConnectorRoleIfExists();
+        DropConnectorRoleIfExists(_connectorRoleName);
     }
 
     [Test]
@@ -237,7 +237,7 @@ public class Given_PostgresqlCdcProviderArtifacts
             .BeFalse();
     }
 
-    private static void AssumePostgresqlLogicalReplicationAvailable()
+    internal static void AssumePostgresqlLogicalReplicationAvailable()
     {
         using var connection = new NpgsqlConnection(Configuration.PostgresqlAdminConnectionString);
         connection.Open();
@@ -267,7 +267,7 @@ public class Given_PostgresqlCdcProviderArtifacts
         return command.ExecuteScalar()!.ToString()!;
     }
 
-    private static async Task<string> ReadDataStoreIdentityAsync(NpgsqlConnection connection)
+    internal static async Task<string> ReadDataStoreIdentityAsync(NpgsqlConnection connection)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -480,11 +480,14 @@ public class Given_PostgresqlCdcProviderArtifacts
         }
     }
 
-    private async Task DropReplicationSlotIfExistsAsync()
+    internal static async Task DropReplicationSlotIfExistsAsync(
+        string databaseConnectionString,
+        string replicationSlotName
+    )
     {
         try
         {
-            await using var connection = new NpgsqlConnection(_database.ConnectionString);
+            await using var connection = new NpgsqlConnection(databaseConnectionString);
             await connection.OpenAsync();
 
             await using var command = connection.CreateCommand();
@@ -494,7 +497,7 @@ public class Given_PostgresqlCdcProviderArtifacts
                 WHERE slot.slot_name = @slot_name
                 AND slot.active = false;
                 """;
-            command.Parameters.AddWithValue("slot_name", ReplicationSlotName);
+            command.Parameters.AddWithValue("slot_name", replicationSlotName);
             await command.ExecuteNonQueryAsync();
         }
         catch (PostgresException)
@@ -507,9 +510,9 @@ public class Given_PostgresqlCdcProviderArtifacts
         }
     }
 
-    private void DropConnectorRoleIfExists()
+    internal static void DropConnectorRoleIfExists(string? connectorRoleName)
     {
-        if (string.IsNullOrWhiteSpace(_connectorRoleName))
+        if (string.IsNullOrWhiteSpace(connectorRoleName))
         {
             return;
         }
@@ -520,7 +523,7 @@ public class Given_PostgresqlCdcProviderArtifacts
             connection.Open();
 
             using var command = connection.CreateCommand();
-            command.CommandText = $"DROP ROLE IF EXISTS {QuoteIdentifier(_connectorRoleName)};";
+            command.CommandText = $"DROP ROLE IF EXISTS {QuoteIdentifier(connectorRoleName)};";
             command.ExecuteNonQuery();
         }
         catch (PostgresException)
@@ -533,7 +536,7 @@ public class Given_PostgresqlCdcProviderArtifacts
         }
     }
 
-    private static void CreateConnectorRole(string connectorRoleName)
+    internal static void CreateConnectorRole(string connectorRoleName)
     {
         using var connection = new NpgsqlConnection(Configuration.PostgresqlAdminConnectionString);
         connection.Open();
@@ -544,7 +547,7 @@ public class Given_PostgresqlCdcProviderArtifacts
         command.ExecuteNonQuery();
     }
 
-    private static async Task ExecuteNonQueryAsync(NpgsqlConnection connection, string sql)
+    internal static async Task ExecuteNonQueryAsync(NpgsqlConnection connection, string sql)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
@@ -673,4 +676,210 @@ public class Given_PostgresqlCdcProviderArtifacts
         string WalStatus,
         string InvalidationReason
     );
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+[Category("CdcProviderArtifacts")]
+public class Given_PostgresqlCdcProviderArtifacts_With_A_Legacy_CreatedAt_Column
+{
+    private static readonly string[] _fiveDocumentColumns =
+    [
+        "DocumentId",
+        "DocumentUuid",
+        "ResourceKeyId",
+        "CreatedByOwnershipTokenId",
+        "ContentVersion",
+    ];
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private string _connectorRoleName = null!;
+    private string _replicationSlotName = null!;
+    private CdcProviderSetupResult _fiveColumnValidation = null!;
+    private CdcProviderSetupResult _legacyColumnValidation = null!;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        Given_PostgresqlCdcProviderArtifacts.AssumePostgresqlLogicalReplicationAvailable();
+
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            Given_PostgresqlCdcProviderArtifacts.FixtureRelativePath
+        );
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _connectorRoleName = $"cdc_connector_{_database.DatabaseName}";
+        // Replication slot names are cluster-wide; a per-database name keeps this fixture's slot, which lives
+        // until OneTimeTearDown, from colliding with the per-test slot of Given_PostgresqlCdcProviderArtifacts.
+        _replicationSlotName = $"dms_binding_slot_{_database.DatabaseName}";
+        Given_PostgresqlCdcProviderArtifacts.CreateConnectorRole(_connectorRoleName);
+
+        await using var connection = new NpgsqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+
+        // Create every CDC prerequisite against the five-column table, then confirm it validates cleanly,
+        // so the legacy column is the only difference in the second validation.
+        await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+        _fiveColumnValidation = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
+
+        await Given_PostgresqlCdcProviderArtifacts.ExecuteNonQueryAsync(
+            connection,
+            """
+            ALTER TABLE dms."Document" ADD COLUMN "CreatedAt" timestamp with time zone NOT NULL DEFAULT now();
+            """
+        );
+
+        _legacyColumnValidation = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_database is not null)
+        {
+            await Given_PostgresqlCdcProviderArtifacts.DropReplicationSlotIfExistsAsync(
+                _database.ConnectionString,
+                _replicationSlotName
+            );
+            await _database.DisposeAsync();
+        }
+
+        Given_PostgresqlCdcProviderArtifacts.DropConnectorRoleIfExists(_connectorRoleName);
+    }
+
+    [Test]
+    public void It_expects_a_five_column_Document_source_without_CreatedAt()
+    {
+        DocumentColumnNames(_fixture.CdcSourceInventory).Should().Equal(_fiveDocumentColumns);
+    }
+
+    [Test]
+    public void It_validates_the_five_column_database_as_an_exact_match()
+    {
+        _fiveColumnValidation
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.ExactMatch, DescribeDiagnostics(_fiveColumnValidation));
+        _fiveColumnValidation.Diagnostics.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_fails_validation_once_the_Document_table_carries_CreatedAt()
+    {
+        _legacyColumnValidation.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+    }
+
+    [Test]
+    public void It_reports_the_unexpected_CreatedAt_source_column_as_the_only_error()
+    {
+        var diagnostic = _legacyColumnValidation
+            .Diagnostics.Where(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error)
+            .Should()
+            .ContainSingle(DescribeDiagnostics(_legacyColumnValidation))
+            .Which;
+
+        diagnostic.Code.Should().Be("CDC_SOURCE_COLUMN_UNEXPECTED");
+        diagnostic.SafeName.Value.Should().Be("dms.Document.CreatedAt");
+        diagnostic.ArtifactKind.Should().Be(CdcProviderArtifactKind.SourceColumn);
+        diagnostic.Severity.Should().Be(CdcProviderDiagnosticSeverity.Error);
+        diagnostic.Classification.Should().Be(CdcProviderRetryContinuityClassification.FailClosed);
+        diagnostic.ExpectedValue.Should().Be("absent");
+        diagnostic.ObservedValue.Should().Be("present");
+    }
+
+    [Test]
+    public void It_reports_the_same_non_error_diagnostics_as_the_five_column_validation()
+    {
+        NonErrorDiagnosticCodes(_legacyColumnValidation)
+            .Should()
+            .Equal(NonErrorDiagnosticCodes(_fiveColumnValidation));
+    }
+
+    [Test]
+    public void It_reads_CreatedAt_from_the_live_source_inventory()
+    {
+        string[] legacyDocumentColumns = [.. _fiveDocumentColumns, "CreatedAt"];
+        DocumentColumnNames(_legacyColumnValidation.SourceTableInventory)
+            .Should()
+            .Equal(legacyDocumentColumns);
+    }
+
+    [Test]
+    public void It_stops_at_the_source_inventory_step()
+    {
+        CdcProviderArtifactKind[] laterStepArtifactKinds =
+        [
+            CdcProviderArtifactKind.PostgresqlReplicaIdentity,
+            CdcProviderArtifactKind.PostgresqlPublication,
+            CdcProviderArtifactKind.PostgresqlReplicationSlot,
+        ];
+
+        _fiveColumnValidation
+            .ArtifactInventory.Select(observation => observation.ArtifactKind)
+            .Should()
+            .Contain(laterStepArtifactKinds);
+        _fiveColumnValidation.GrantInventory.Should().NotBeEmpty();
+
+        _legacyColumnValidation
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.HeartbeatTable
+                && observation.State == CdcProviderArtifactState.Matched
+            );
+        _legacyColumnValidation
+            .ArtifactInventory.Select(observation => observation.ArtifactKind)
+            .Should()
+            .NotContain(laterStepArtifactKinds);
+        _legacyColumnValidation.GrantInventory.Should().BeEmpty();
+    }
+
+    private async Task<CdcProviderSetupResult> RunSetupAsync(
+        NpgsqlConnection connection,
+        CdcProviderSetupMode mode
+    )
+    {
+        var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
+
+        return await service.SetupAsync(
+            new CdcProviderSetupRequest(
+                provider: CdcProvider.Postgresql,
+                mode: mode,
+                boundPhysicalSourceFingerprint: CdcSourceFingerprintMetadata.Compute(
+                    CdcProvider.Postgresql,
+                    await Given_PostgresqlCdcProviderArtifacts.ReadDataStoreIdentityAsync(connection)
+                ),
+                setupPrincipal: new CdcSetupPrincipalContext(new CdcSafeName("postgres")),
+                connectorPrincipal: new CdcConnectorPrincipal(new CdcSafeName(_connectorRoleName)),
+                artifactNames: CdcProviderArtifactNames.ForPostgresql(
+                    new CdcSafeName(Given_PostgresqlCdcProviderArtifacts.PublicationName),
+                    new CdcSafeName(_replicationSlotName)
+                ),
+                artifactOutput: new CdcProviderArtifactOutputRequest(false),
+                expectedSourceInventory: _fixture.CdcSourceInventory,
+                dmsManagedTableInventory: _fixture.CdcDmsManagedTableInventory,
+                databaseExecutor: new DbConnectionCdcProviderDatabaseExecutor(connection)
+            )
+        );
+    }
+
+    private static string[] DocumentColumnNames(IEnumerable<CdcSourceTableInventory> inventory) =>
+        inventory
+            .Single(table => table.TableKind == CdcSourceTableKind.Document)
+            .Columns.OrderBy(column => column.Ordinal)
+            .Select(column => column.ColumnName.Value)
+            .ToArray();
+
+    private static string[] NonErrorDiagnosticCodes(CdcProviderSetupResult result) =>
+        result
+            .Diagnostics.Where(diagnostic => diagnostic.Severity != CdcProviderDiagnosticSeverity.Error)
+            .Select(diagnostic => diagnostic.Code)
+            .ToArray();
+
+    private static string DescribeDiagnostics(CdcProviderSetupResult result) =>
+        string.Join(
+            "; ",
+            result.Diagnostics.Select(diagnostic =>
+                $"{diagnostic.Code}:{diagnostic.ArtifactKind}:{diagnostic.SafeName.Value}:{diagnostic.ExpectedValue}->{diagnostic.ObservedValue}"
+            )
+        );
 }

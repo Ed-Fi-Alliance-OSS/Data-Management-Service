@@ -125,8 +125,7 @@ internal static class MssqlDescriptorReadTestSupport
                 [DocumentId],
                 [DocumentUuid],
                 [ResourceKeyId],
-                [ContentVersion],
-                [CreatedAt]
+                [ContentVersion]
             FROM [dms].[Document]
             WHERE [DocumentId] = @documentId;
             """,

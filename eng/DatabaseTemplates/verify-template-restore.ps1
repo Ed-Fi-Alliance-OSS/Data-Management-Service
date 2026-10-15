@@ -15,7 +15,10 @@
     fresh verification database inside the running database container. The
     restored schema set must match the source database's user schemas, and
     core data (dms.EffectiveSchema, dms.Document, dms.Descriptor) must be
-    non-empty; extension schemas may be DDL-only. Serveability is then proven
+    non-empty; extension schemas may be DDL-only. Both the source database
+    (before the restore) and the restored database (before any data assertion
+    or API probe) must have a dms.Document table without the removed CreatedAt
+    column. Serveability is then proven
     end to end: a CMS data store and application bound only to the restored
     database are registered, DMS is restarted to clear its data store cache, and
     an authenticated descriptor read must return HTTP 200 with a non-empty
@@ -157,6 +160,9 @@ try {
         -DatabaseName $SourceDatabaseName -MssqlPassword $MssqlPassword
     Write-Host "Source timestamp and compact-descriptor catalog assertions passed: $SourceDatabaseName" -ForegroundColor Green
 
+    # The v3 schema hash cannot tell the dms.Document shapes apart, so check the catalog.
+    Assert-DocumentTableShape -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName -DatabaseName $SourceDatabaseName -MssqlPassword $MssqlPassword
+
     # --- Restore the package into a fresh verification database ---
     $expectedSchemas = @(Get-UserSchemaNames -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName -DatabaseName $SourceDatabaseName -MssqlPassword $MssqlPassword)
     Write-Host "Expected schemas (from '$SourceDatabaseName'): $($expectedSchemas -join ', ')"
@@ -179,6 +185,8 @@ try {
     }
 
     Write-Host "Restored schemas match: $($restoredSchemas -join ', ')" -ForegroundColor Green
+
+    Assert-DocumentTableShape -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName -DatabaseName $VerificationDatabaseName -MssqlPassword $MssqlPassword
 
     # --- Restore-manifest assertions (version-1 restore contract) ---
     # Prove the package carries a shape-valid restore manifest that matches the restored

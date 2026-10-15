@@ -1,0 +1,524 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Data;
+using System.Data.Common;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.SchemaTools.Provisioning;
+using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging;
+using Npgsql;
+
+namespace EdFi.DataManagementService.SchemaTools.Restamping;
+
+public sealed class SchemaRestamper : ISchemaRestamper
+{
+    private readonly ILogger _logger;
+    private readonly Func<SqlDialect, string, DbConnection> _connectionFactory;
+
+    public SchemaRestamper(ILogger logger)
+        : this(logger, CreateConnection) { }
+
+    public SchemaRestamper(ILogger logger, Func<SqlDialect, string, DbConnection> connectionFactory)
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
+    }
+
+    public async Task<SchemaRestampResult> RestampAsync(
+        SqlDialect dialect,
+        string connectionString,
+        int commandTimeoutSeconds,
+        EffectiveSchemaInfo target,
+        bool migrationCompleted,
+        CancellationToken cancellationToken
+    )
+    {
+        ValidateArguments(dialect, connectionString, commandTimeoutSeconds, target);
+
+        DbConnection connection = null!;
+        DbTransaction transaction = null!;
+        var connectionOpened = false;
+        var commitAttempted = false;
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            connection = _connectionFactory(dialect, connectionString);
+            await connection.OpenAsync(cancellationToken);
+            connectionOpened = true;
+            transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+            foreach (var lockSql in SchemaRestampSql.LockCommands(dialect))
+            {
+                await ExecuteAsync(
+                    connection,
+                    transaction,
+                    lockSql,
+                    commandTimeoutSeconds,
+                    cancellationToken
+                );
+            }
+
+            var snapshot = await ReadSnapshotAsync(
+                connection,
+                transaction,
+                dialect,
+                commandTimeoutSeconds,
+                cancellationToken
+            );
+            SchemaRestampValidator.ValidateOrThrow(snapshot, target, _logger);
+            var oldHash = snapshot.Fingerprints[0].EffectiveSchemaHash;
+            var changed = !string.Equals(oldHash, target.EffectiveSchemaHash, StringComparison.Ordinal);
+            if (changed && !migrationCompleted)
+            {
+                throw new SchemaRestampException(
+                    SchemaRestampFailure.ConfirmationRequired,
+                    "The migration-completed confirmation is required before re-stamping."
+                );
+            }
+
+            if (changed)
+            {
+                var deleted = await ExecuteAsync(
+                    connection,
+                    transaction,
+                    SchemaRestampSql.DeleteComponents(dialect),
+                    commandTimeoutSeconds,
+                    cancellationToken,
+                    captureAffectedRows: dialect == SqlDialect.Mssql,
+                    ("oldHash", oldHash)
+                );
+                if (deleted != snapshot.SchemaComponents.Count)
+                {
+                    throw InvalidState("dms.SchemaComponent changed during re-stamp.");
+                }
+
+                var updated = await ExecuteAsync(
+                    connection,
+                    transaction,
+                    SchemaRestampSql.UpdateFingerprint(dialect),
+                    commandTimeoutSeconds,
+                    cancellationToken,
+                    captureAffectedRows: dialect == SqlDialect.Mssql,
+                    ("singletonId", (short)1),
+                    ("oldHash", oldHash),
+                    ("targetHash", target.EffectiveSchemaHash)
+                );
+                if (updated != 1)
+                {
+                    throw InvalidState("dms.EffectiveSchema changed during re-stamp.");
+                }
+
+                foreach (var payload in snapshot.SchemaComponents.Select(component => component.Payload))
+                {
+                    var inserted = await ExecuteAsync(
+                        connection,
+                        transaction,
+                        SchemaRestampSql.InsertComponent(dialect),
+                        commandTimeoutSeconds,
+                        cancellationToken,
+                        captureAffectedRows: dialect == SqlDialect.Mssql,
+                        ("targetHash", target.EffectiveSchemaHash),
+                        ("endpoint", payload.ProjectEndpointName),
+                        ("projectName", payload.ProjectName),
+                        ("projectVersion", payload.ProjectVersion),
+                        ("isExtension", payload.IsExtensionProject)
+                    );
+                    if (inserted != 1)
+                    {
+                        throw InvalidState("dms.SchemaComponent insertion did not affect one row.");
+                    }
+                }
+            }
+
+            commitAttempted = true;
+            // Once commit begins, cancellation cannot establish whether the database committed.
+            // Let the provider finish the commit so a cancellation request cannot turn a known
+            // success into an avoidable unknown outcome.
+            await transaction.CommitAsync(CancellationToken.None);
+            return new SchemaRestampResult(
+                changed,
+                oldHash,
+                target.EffectiveSchemaHash,
+                snapshot.SchemaComponents.Count
+            );
+        }
+        catch (Exception exception)
+        {
+            if (!commitAttempted && transaction is not null)
+            {
+                try
+                {
+                    await transaction.RollbackAsync(CancellationToken.None);
+                }
+                catch (Exception)
+                {
+                    // The original failure remains the operator diagnostic.
+                }
+            }
+
+            if (commitAttempted)
+            {
+                throw new SchemaRestampException(
+                    SchemaRestampFailure.CommitOutcomeUnknown,
+                    "The re-stamp commit outcome is unknown. Inspect the database and rerun with identical inputs while services remain offline."
+                );
+            }
+
+            if (exception is SchemaRestampException)
+            {
+                throw;
+            }
+
+            throw Classify(exception, !connectionOpened, cancellationToken);
+        }
+        finally
+        {
+            if (transaction is not null)
+            {
+                try
+                {
+                    await transaction.DisposeAsync();
+                }
+                catch (Exception)
+                {
+                    // Disposal cannot replace the transaction result.
+                }
+            }
+            if (connection is not null)
+            {
+                try
+                {
+                    await connection.DisposeAsync();
+                }
+                catch (Exception)
+                {
+                    // Disposal cannot replace the transaction result.
+                }
+            }
+        }
+    }
+
+    private static void ValidateArguments(
+        SqlDialect dialect,
+        string connectionString,
+        int commandTimeoutSeconds,
+        EffectiveSchemaInfo target
+    )
+    {
+        ValidateConnectionArguments(dialect, connectionString, commandTimeoutSeconds);
+        if (target is null)
+        {
+            throw new SchemaRestampException(SchemaRestampFailure.Validation, "Target schema is required.");
+        }
+    }
+
+    internal static void ValidateConnectionArguments(
+        SqlDialect dialect,
+        string connectionString,
+        int commandTimeoutSeconds
+    )
+    {
+        if (dialect is not (SqlDialect.Pgsql or SqlDialect.Mssql))
+        {
+            throw new SchemaRestampException(SchemaRestampFailure.Validation, "Unsupported SQL dialect.");
+        }
+        if (commandTimeoutSeconds <= 0)
+        {
+            throw new SchemaRestampException(
+                SchemaRestampFailure.Validation,
+                "Command timeout must be positive."
+            );
+        }
+        SchemaRestampConnectionStringValidator.ValidateOrThrow(connectionString, dialect);
+    }
+
+    private static DbConnection CreateConnection(SqlDialect dialect, string connectionString) =>
+        dialect == SqlDialect.Pgsql
+            ? new NpgsqlConnection(connectionString)
+            : new SqlConnection(connectionString);
+
+    private static async Task<SchemaRestampSnapshot> ReadSnapshotAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        SqlDialect dialect,
+        int timeout,
+        CancellationToken cancellationToken
+    )
+    {
+        List<SchemaRestampFingerprint> fingerprints = [];
+        await WithReaderAsync(
+            CreateCommand(connection, transaction, SchemaRestampSql.ReadFingerprint(dialect), timeout),
+            cancellationToken,
+            async reader =>
+            {
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    fingerprints.Add(
+                        new SchemaRestampFingerprint(
+                            Required<short>(reader, 0, "dms.EffectiveSchema"),
+                            Required<string>(reader, 1, "dms.EffectiveSchema"),
+                            Required<string>(reader, 2, "dms.EffectiveSchema"),
+                            Required<short>(reader, 3, "dms.EffectiveSchema"),
+                            Required<byte[]>(reader, 4, "dms.EffectiveSchema")
+                        )
+                    );
+                }
+            }
+        );
+
+        List<ResourceKeyRow> resourceKeys = [];
+        await WithReaderAsync(
+            CreateCommand(connection, transaction, SchemaRestampSql.ReadResourceKeys(dialect), timeout),
+            cancellationToken,
+            async reader =>
+            {
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    resourceKeys.Add(
+                        new ResourceKeyRow(
+                            Required<short>(reader, 0, "dms.ResourceKey"),
+                            Required<string>(reader, 1, "dms.ResourceKey"),
+                            Required<string>(reader, 2, "dms.ResourceKey"),
+                            Required<string>(reader, 3, "dms.ResourceKey")
+                        )
+                    );
+                }
+            }
+        );
+
+        List<SchemaRestampComponent> components = [];
+        await WithReaderAsync(
+            CreateCommand(connection, transaction, SchemaRestampSql.ReadComponents(dialect), timeout),
+            cancellationToken,
+            async reader =>
+            {
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    components.Add(
+                        new SchemaRestampComponent(
+                            Required<string>(reader, 0, "dms.SchemaComponent"),
+                            new SchemaComponentRow(
+                                Required<string>(reader, 1, "dms.SchemaComponent"),
+                                Required<string>(reader, 2, "dms.SchemaComponent"),
+                                Required<string>(reader, 3, "dms.SchemaComponent"),
+                                Required<bool>(reader, 4, "dms.SchemaComponent")
+                            )
+                        )
+                    );
+                }
+            }
+        );
+        return new SchemaRestampSnapshot(fingerprints, resourceKeys, components);
+    }
+
+    private static T Required<T>(DbDataReader reader, int ordinal, string table)
+    {
+        if (reader.GetValue(ordinal) is T value)
+        {
+            return value;
+        }
+        throw InvalidState($"{table} contains a missing or invalid required field.");
+    }
+
+    private static async Task<int> ExecuteAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        string sql,
+        int timeout,
+        CancellationToken cancellationToken,
+        bool captureAffectedRows = false,
+        params (string Name, object Value)[] parameters
+    )
+    {
+        var command = CreateCommand(connection, transaction, sql, timeout);
+        foreach (var (name, value) in parameters)
+        {
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = name;
+            parameter.Value = value;
+            command.Parameters.Add(parameter);
+        }
+        if (!captureAffectedRows)
+        {
+            return await WithAsyncResource(
+                command,
+                currentCommand => currentCommand.ExecuteNonQueryAsync(cancellationToken)
+            );
+        }
+
+        // SQL Server's client count can be suppressed by NOCOUNT or include trigger DML.
+        // Capture the mutation's own count immediately, without changing session settings.
+        command.CommandText = $"{sql}; SET @affectedRows = @@ROWCOUNT;";
+        var affectedRows = command.CreateParameter();
+        affectedRows.ParameterName = "affectedRows";
+        affectedRows.DbType = DbType.Int32;
+        affectedRows.Direction = ParameterDirection.Output;
+        command.Parameters.Add(affectedRows);
+        return await WithAsyncResource(
+            command,
+            async currentCommand =>
+            {
+                await currentCommand.ExecuteNonQueryAsync(cancellationToken);
+                return affectedRows.Value is int count
+                    ? count
+                    : throw InvalidState("The re-stamp mutation did not return an affected-row count.");
+            }
+        );
+    }
+
+    private static async Task WithReaderAsync(
+        DbCommand command,
+        CancellationToken cancellationToken,
+        Func<DbDataReader, Task> read
+    )
+    {
+        await WithAsyncResource(
+            command,
+            async currentCommand =>
+            {
+                var reader = await currentCommand.ExecuteReaderAsync(cancellationToken);
+                await WithAsyncResource(
+                    reader,
+                    async currentReader =>
+                    {
+                        await read(currentReader);
+                        return true;
+                    }
+                );
+                return true;
+            }
+        );
+    }
+
+    private static async Task<TResult> WithAsyncResource<TResource, TResult>(
+        TResource resource,
+        Func<TResource, Task<TResult>> operation
+    )
+        where TResource : IAsyncDisposable
+    {
+        TResult result;
+        try
+        {
+            result = await operation(resource);
+        }
+        catch (Exception)
+        {
+            try
+            {
+                await resource.DisposeAsync();
+            }
+            catch
+            {
+                // Keep cleanup from replacing the operation's primary failure.
+            }
+
+            throw;
+        }
+
+        await resource.DisposeAsync();
+        return result;
+    }
+
+    private static DbCommand CreateCommand(
+        DbConnection connection,
+        DbTransaction transaction,
+        string sql,
+        int timeout
+    )
+    {
+        var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandTimeout = timeout;
+        command.CommandText = sql;
+        return command;
+    }
+
+    private static SchemaRestampException InvalidState(string message) =>
+        new(SchemaRestampFailure.Validation, message);
+
+    private static SchemaRestampException Classify(
+        Exception exception,
+        bool beforeConnection,
+        CancellationToken cancellationToken
+    )
+    {
+        if (exception is OperationCanceledException || cancellationToken.IsCancellationRequested)
+        {
+            return new SchemaRestampException(
+                SchemaRestampFailure.Cancelled,
+                "The re-stamp was cancelled before commit."
+            );
+        }
+        if (
+            exception is TimeoutException
+            || exception is PostgresException { SqlState: "57014" }
+            || exception is NpgsqlException && HasInnerTimeoutException(exception)
+            || exception is SqlException { Number: -2 or 1222 }
+        )
+        {
+            return new SchemaRestampException(
+                SchemaRestampFailure.Timeout,
+                "The re-stamp database command timed out."
+            );
+        }
+        if (beforeConnection)
+        {
+            return new SchemaRestampException(
+                SchemaRestampFailure.Connection,
+                "Could not connect to the target database."
+            );
+        }
+        if (exception is PostgresException pg)
+        {
+            return pg.SqlState switch
+            {
+                "3D000" or "42P01" or "42703" => new(
+                    SchemaRestampFailure.Validation,
+                    "The target database is missing required re-stamp metadata."
+                ),
+                "42501" => new(
+                    SchemaRestampFailure.PermissionDenied,
+                    "The target database denied required re-stamp privileges."
+                ),
+                _ => new(SchemaRestampFailure.TransactionFailed, "The re-stamp database transaction failed."),
+            };
+        }
+        if (exception is SqlException ms)
+        {
+            return ms.Number switch
+            {
+                4060 or 911 or 208 or 207 => new(
+                    SchemaRestampFailure.Validation,
+                    "The target database is missing required re-stamp metadata."
+                ),
+                229 or 262 or 297 => new(
+                    SchemaRestampFailure.PermissionDenied,
+                    "The target database denied required re-stamp privileges."
+                ),
+                _ => new(SchemaRestampFailure.TransactionFailed, "The re-stamp database transaction failed."),
+            };
+        }
+        return new SchemaRestampException(
+            SchemaRestampFailure.TransactionFailed,
+            "The re-stamp database transaction failed."
+        );
+    }
+
+    private static bool HasInnerTimeoutException(Exception exception)
+    {
+        var current = exception;
+        while (current.InnerException is { } inner)
+        {
+            if (inner is TimeoutException)
+            {
+                return true;
+            }
+            current = inner;
+        }
+
+        return false;
+    }
+}
