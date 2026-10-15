@@ -607,7 +607,12 @@ function Invoke-BootstrapWrapper {
         # template .nupkg and its sibling attestation document. Requires -RestoreTemplate.
         # Without it, restore mode resolves the package from the configured NuGet feed using
         # DATABASE_TEMPLATE_PACKAGE / DATABASE_TEMPLATE_NUGET_VERSION.
-        [string]$PackageDirectory
+        [string]$PackageDirectory,
+
+        # Restore mode: an image build (build-dms.ps1's DockerBuild step) run once the package is
+        # authenticated, staged, and cross-checked, before the stop proof and any container
+        # start, so a rejected package never triggers Docker activity. Requires -RestoreTemplate.
+        [scriptblock]$RestoreImageBuild
     )
 
     $ErrorActionPreference = "Stop"
@@ -682,6 +687,9 @@ function Invoke-BootstrapWrapper {
     $packageDirectorySupplied = $PSBoundParameters.ContainsKey('PackageDirectory') -and -not [string]::IsNullOrWhiteSpace($PackageDirectory)
     if ($packageDirectorySupplied -and -not $restoreTemplateSupplied) {
         throw "-PackageDirectory requires -RestoreTemplate. The directory only selects WHERE the template package comes from; -RestoreTemplate Minimal|Populated selects the restore itself."
+    }
+    if ($null -ne $RestoreImageBuild -and -not $restoreTemplateSupplied) {
+        throw "-RestoreImageBuild requires -RestoreTemplate. Outside restore mode nothing would run the image build."
     }
     if ($restoreTemplateSupplied) {
         if ($InfraOnly) {
@@ -1034,6 +1042,12 @@ function Invoke-BootstrapWrapper {
                         -DatabaseEngine $DatabaseEngine `
                         -StageDirectory $restoreStage.StageDirectory `
                         -SchemaToolPath $restoreSchemaToolPath
+
+                    # The requested image build is the first Docker activity: every package and
+                    # candidate check above has passed, and the stop proof stays next to -DbOnly.
+                    if ($null -ne $RestoreImageBuild) {
+                        & $RestoreImageBuild
+                    }
 
                     # Stop proof #1 (D6): no container of either compose project may be running.
                     Assert-DmsComposeProjectStopped -ProjectName "dms-local"

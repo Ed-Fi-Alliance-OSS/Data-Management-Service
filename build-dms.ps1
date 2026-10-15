@@ -1314,8 +1314,30 @@ function Start-BootstrapDockerEnvironment {
             $DatabaseEngine
         }
 
+    $restoreModeRequested = (-not [string]::IsNullOrWhiteSpace($RestoreTemplate)) -or
+        (-not [string]::IsNullOrWhiteSpace($PackageDirectory))
+
+    # In restore mode the image build is handed to the wrapper, which runs it only after the
+    # package is authenticated, staged, and cross-checked against the candidate workspace, so a
+    # rejected package never triggers Docker activity. It runs from the caller's location, as
+    # DockerBuild's relative src/dms path expects.
+    $restoreImageBuild = $null
     if (-not $SkipDockerBuild -and -not $UsePublishedImage) {
-        Invoke-Step { DockerBuild }
+        if ($restoreModeRequested) {
+            $restoreImageBuildLocation = (Get-Location).Path
+            $restoreImageBuild = {
+                Push-Location -LiteralPath $restoreImageBuildLocation
+                try {
+                    Invoke-Step { DockerBuild }
+                }
+                finally {
+                    Pop-Location
+                }
+            }
+        }
+        else {
+            Invoke-Step { DockerBuild }
+        }
     }
 
     # A restore-SHAPED invocation must NOT be preceded by this teardown: Stop-DockerEnvironment
@@ -1331,8 +1353,6 @@ function Start-BootstrapDockerEnvironment {
     # -RestoreTemplate alone still deleted the datastore for a mistyped restore command. Skipping
     # the teardown for both inputs keeps every restore-mode rule wrapper-owned; build-dms.ps1
     # stays thin and duplicates no validation.
-    $restoreModeRequested = (-not [string]::IsNullOrWhiteSpace($RestoreTemplate)) -or
-        (-not [string]::IsNullOrWhiteSpace($PackageDirectory))
     if (-not $restoreModeRequested) {
         Stop-DockerEnvironment `
             -EnvironmentFilePath $environmentFilePath `
@@ -1373,6 +1393,10 @@ function Start-BootstrapDockerEnvironment {
 
             if (-not [string]::IsNullOrWhiteSpace($PackageDirectory)) {
                 $bootstrapArgs.PackageDirectory = $PackageDirectory
+            }
+
+            if ($null -ne $restoreImageBuild) {
+                $bootstrapArgs.RestoreImageBuild = $restoreImageBuild
             }
 
             Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {

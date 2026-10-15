@@ -159,6 +159,12 @@
     it, restore mode resolves the package from the configured NuGet feed using
     DATABASE_TEMPLATE_PACKAGE / DATABASE_TEMPLATE_NUGET_VERSION.
 
+.PARAMETER RestoreImageBuild
+    Restore mode. An image build to run once the package is authenticated, staged, and
+    cross-checked against the candidate workspace, before any Docker activity. Requires
+    -RestoreTemplate. build-dms.ps1 StartEnvironment passes its DockerBuild step here so a
+    rejected package never builds an image.
+
 .PARAMETER InfraOnly
     IDE workflow switch. When set, the wrapper runs infrastructure startup, configure, and
     provision, then stops before any DMS startup. Combine with `-DmsBaseUrl` for the
@@ -319,7 +325,9 @@ param(
     [ValidateSet("Minimal", "Populated")]
     [string]$RestoreTemplate,
 
-    [string]$PackageDirectory
+    [string]$PackageDirectory,
+
+    [scriptblock]$RestoreImageBuild
 )
 
 $ErrorActionPreference = "Stop"

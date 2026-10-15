@@ -1927,6 +1927,8 @@ $resultStatement
             @{ Name = "-RestoreTemplate with -SchoolYearRange"; Arguments = @{ RestoreTemplate = "Populated"; SchoolYearRange = "2024-2025" }; Expected = "*-RestoreTemplate is not valid with -SchoolYearRange*" }
             @{ Name = "a bare -LoadSeedData with -RestoreTemplate"; Arguments = @{ RestoreTemplate = "Populated"; LoadSeedData = $true }; Expected = "*requires its own seed source*bare -LoadSeedData is ambiguous*" }
             @{ Name = "-PackageDirectory without -RestoreTemplate"; Arguments = @{ PackageDirectory = "C:\\packages" }; Expected = "*-PackageDirectory requires -RestoreTemplate*" }
+            @{ Name = "-RestoreImageBuild without -RestoreTemplate"; Arguments = @{ RestoreImageBuild = { throw "the image build must not run" } }; Expected = "*-RestoreImageBuild requires -RestoreTemplate*" }
+            @{ Name = "-PackageDirectory and -RestoreImageBuild without -RestoreTemplate"; Arguments = @{ PackageDirectory = "C:\\packages"; RestoreImageBuild = { throw "the image build must not run" } }; Expected = "*-PackageDirectory requires -RestoreTemplate*" }
             @{ Name = "-RestoreTemplate with -EnableKafkaCdc"; Arguments = @{ RestoreTemplate = "Minimal"; EnableKafkaCdc = $true }; Expected = "*-RestoreTemplate is not valid with -EnableKafkaCdc*" }
         ) {
             $invocationArguments = $Arguments
@@ -2642,6 +2644,81 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "configure dataStore=[`$Dat
             # The candidate remnant is removed by the wrapper's finally (the stub created a real
             # directory the publish step never consumed).
             Test-Path -LiteralPath (Join-Path $script:repo.RepoRoot "restore-candidate") | Should -BeFalse
+        }
+
+        It "build-dms StartEnvironment without -SkipDockerBuild: <Case>" -ForEach @(
+            @{ Case = "an untrusted or tampered package is refused before the image build"; Arguments = @{ RestoreTemplate = "Minimal" }; ThrowAt = @("Assert-TrustedRestorePackage"); Expected = "*injected Assert-TrustedRestorePackage failure*"; Reached = "restore:trust" }
+            @{ Case = "a staging or manifest/artifact failure is refused before the image build"; Arguments = @{ RestoreTemplate = "Minimal" }; ThrowAt = @("Initialize-RestorePackageStage"); Expected = "*injected Initialize-RestorePackageStage failure*"; Reached = "restore:stage" }
+            @{ Case = "a package/candidate mismatch is refused before the image build"; Arguments = @{ RestoreTemplate = "Minimal" }; ThrowAt = @("Invoke-RestoreCandidateCrossCheck"); Expected = "*injected Invoke-RestoreCandidateCrossCheck failure*"; Reached = "restore:crosscheck" }
+            @{ Case = "-PackageDirectory without -RestoreTemplate is refused before the image build"; Arguments = @{}; ThrowAt = @(); Expected = "*-PackageDirectory requires -RestoreTemplate*"; Reached = $null }
+            @{ Case = "an accepted package builds once, after the cross-check and before the stop proof and every start"; Arguments = @{ RestoreTemplate = "Minimal" }; ThrowAt = @(); Expected = $null; Reached = $null }
+        ) {
+            # The real Start-BootstrapDockerEnvironment, extracted from build-dms.ps1 into the
+            # fixture root, so its $PSScriptRoot/eng/docker-compose is this fixture's real entry
+            # script and wrapper. Invoke-Step and Invoke-Execute are the real build helpers;
+            # DockerBuild and the teardown record into the restore stubs' ordered log.
+            $tokens = $null
+            $parseErrors = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:sourceRepoRoot "build-dms.ps1"), [ref]$tokens, [ref]$parseErrors)
+            $parseErrors | Should -BeNullOrEmpty
+            $functionAst = $ast.Find({
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                    $node.Name -eq "Start-BootstrapDockerEnvironment"
+            }, $true)
+            $functionAst | Should -Not -BeNullOrEmpty
+            $functionPath = Join-Path $script:repo.RepoRoot "start-bootstrap-docker-environment.ps1"
+            Set-Content -LiteralPath $functionPath -Value $functionAst.Extent.Text -Encoding utf8
+            . $functionPath
+
+            $log = $script:restoreLog
+            # build-dms.ps1's script parameter, read by the extracted function.
+            Set-Variable -Name EnvironmentFile -Value $script:repo.EnvFile
+            function Resolve-E2EEnvironmentFilePath { param([string]$Path) $Path }
+            Set-Item -Path function:Stop-DockerEnvironment -Value { Add-Content -LiteralPath $log -Value "build-dms:teardown" }.GetNewClosure()
+            function Invoke-WithDmsEnvironmentFileSchemaAuthority { param([scriptblock]$Action) & $Action }
+            function DockerBuild { Add-Content -LiteralPath $log -Value "build-dms:docker-build cwd=$((Get-Location).Path)" }
+            $buildHelpers = Import-Module (Join-Path $script:sourceRepoRoot "eng/build-helpers.psm1") -Force -PassThru
+
+            Install-RestoreSequencingStub -LogPath $log -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot -ThrowAt $ThrowAt
+            $invocationArguments = $Arguments
+            Push-Location -LiteralPath $script:repo.RepoRoot
+            try {
+                $callerLocation = (Get-Location).Path
+                $run = { Start-BootstrapDockerEnvironment -DatabaseEngine postgresql -PackageDirectory $script:repo.RepoRoot @invocationArguments }
+                if ($null -ne $Expected) {
+                    $run | Should -Throw $Expected
+                }
+                else {
+                    & $run
+                }
+            }
+            finally {
+                Pop-Location
+                Remove-Module $buildHelpers -Force
+            }
+
+            $lines = @(Get-Content -LiteralPath $log -ErrorAction SilentlyContinue)
+            $lines | Should -Not -Contain "build-dms:teardown" -Because "restore mode never tears down before the package is proven"
+            $buildLines = @($lines | Where-Object { $_ -like "build-dms:docker-build*" })
+            if ($null -ne $Expected) {
+                if ($null -ne $Reached) {
+                    $lines | Should -Contain $Reached -Because "the run must reach the rejecting gate"
+                }
+                $buildLines | Should -BeNullOrEmpty -Because "a rejected restore input must not build an image"
+                @($lines | Where-Object { $_ -like "start-*" -or $_ -like "docker *" -or $_ -like "restore:stop-proof*" }) |
+                    Should -BeNullOrEmpty -Because "a rejected restore input must not touch Docker"
+            }
+            else {
+                $buildLines | Should -Be @("build-dms:docker-build cwd=$callerLocation") -Because "the requested build runs exactly once, from the caller's location"
+                $buildIndex = Get-RestoreLogIndex -Log $lines -Pattern "build-dms:docker-build*"
+                $buildIndex | Should -BeGreaterThan (Get-RestoreLogIndex -Log $lines -Pattern "restore:crosscheck")
+                @($lines[0..($buildIndex - 1)] | Where-Object { $_ -like "start-*" -or $_ -like "docker *" -or $_ -like "restore:stop-*" }) |
+                    Should -BeNullOrEmpty -Because "nothing Docker-shaped may precede the build"
+                Get-RestoreLogIndex -Log $lines -Pattern "restore:stop-proof project=dms-local" | Should -BeGreaterThan $buildIndex
+                Get-RestoreLogIndex -Log $lines -Pattern "start-db-only*" | Should -BeGreaterThan $buildIndex
+                Get-RestoreLogIndex -Log $lines -Pattern "start-dms env=*" | Should -BeGreaterThan $buildIndex
+            }
         }
 
         It "<Engine>: a scratch-validation failure leaves the existing target and active workspace untouched, removes every transient, and starts neither CMS nor DMS" -ForEach @(
@@ -3884,7 +3961,7 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                 'SeparateConfigDatabase', 'DataStoreDatabaseName',
                 # Restore mode selects what the datastore is restored FROM, never which compose
                 # files a teardown must cover.
-                'RestoreTemplate', 'PackageDirectory'
+                'RestoreTemplate', 'PackageDirectory', 'RestoreImageBuild'
             )
             $rejectedCdc = @('EnableKafkaCdc', 'CdcSettingsPath', 'CdcBindingStatePath')
 
@@ -3919,6 +3996,7 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                 -DataStoreDatabaseName ignored_by_teardown `
                 -RestoreTemplate Minimal `
                 -PackageDirectory (Join-Path $script:repo.RepoRoot "packages") `
+                -RestoreImageBuild { throw "teardown must not run the restore image build" } `
                 -d
 
             $log = @(Get-Content -LiteralPath $callLog)
@@ -4569,6 +4647,52 @@ CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
             $LASTEXITCODE | Should -Be 0
             $plainOutput | Should -Contain "STOP-DOCKER-ENVIRONMENT-CALLED" -Because "non-restore StartEnvironment keeps its pre-start teardown"
             $plainOutput | Should -Contain "INVOKE-EXECUTE-CALLED"
+        }
+
+        It "without -SkipDockerBuild, a non-restore run builds before the teardown and the wrapper, and a restore-shaped run leaves the build to the wrapper (behavioral, AST-extracted)" {
+            # Same extraction as above, but Invoke-Step runs its block, so DockerBuild records when
+            # build-dms itself builds. The restore-mode build order through the real wrapper is
+            # covered in the restore-mode sequencing context.
+            $buildScriptPath = Join-Path $script:sourceRepoRoot "build-dms.ps1"
+            $tokens = $null
+            $parseErrors = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($buildScriptPath, [ref]$tokens, [ref]$parseErrors)
+            $parseErrors | Should -BeNullOrEmpty
+            $functionAst = $ast.Find({
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                    $node.Name -eq "Start-BootstrapDockerEnvironment"
+            }, $true)
+            $functionAst | Should -Not -BeNullOrEmpty
+
+            $probePath = Join-Path $script:repo.RepoRoot "start-bootstrap-build-probe.ps1"
+            @(
+                "param([string]`$Mode)"
+                "`$EnvironmentFile = 'probe.env'"
+                "function Resolve-E2EEnvironmentFilePath { param([string]`$Path) 'resolved.env' }"
+                "function Stop-DockerEnvironment { param(`$EnvironmentFilePath, `$IdentityProvider, `$DatabaseEngine) Write-Output 'STOP-DOCKER-ENVIRONMENT-CALLED' }"
+                "function DockerBuild { Write-Output 'DOCKER-BUILD-CALLED' }"
+                "function Invoke-Step { param(`$Block) & `$Block }"
+                "function Invoke-Execute { param(`$Block) Write-Output 'INVOKE-EXECUTE-CALLED' }"
+                $functionAst.Extent.Text
+                "if (`$Mode -eq 'restore') {"
+                "    Start-BootstrapDockerEnvironment -DatabaseEngine postgresql -RestoreTemplate Minimal"
+                "} elseif (`$Mode -eq 'packagedir') {"
+                "    Start-BootstrapDockerEnvironment -DatabaseEngine postgresql -PackageDirectory 'C:\packages'"
+                "} else {"
+                "    Start-BootstrapDockerEnvironment -DatabaseEngine postgresql"
+                "}"
+            ) -join "`n" | Set-Content -LiteralPath $probePath -Encoding utf8
+
+            $plainOutput = @(& pwsh -NoProfile -NonInteractive -File $probePath -Mode plain 2>&1)
+            $LASTEXITCODE | Should -Be 0
+            $plainOutput | Should -Be @("DOCKER-BUILD-CALLED", "STOP-DOCKER-ENVIRONMENT-CALLED", "INVOKE-EXECUTE-CALLED") -Because "non-restore StartEnvironment still builds, then tears down, then starts"
+
+            foreach ($mode in @("restore", "packagedir")) {
+                $restoreOutput = @(& pwsh -NoProfile -NonInteractive -File $probePath -Mode $mode 2>&1)
+                $LASTEXITCODE | Should -Be 0
+                $restoreOutput | Should -Be @("INVOKE-EXECUTE-CALLED") -Because "a restore-shaped run ($mode) must not build before the wrapper has checked the package"
+            }
         }
 
         It "normalizes -PackageDirectory against the caller's CWD before the eng/docker-compose Push-Location" {
