@@ -2243,7 +2243,9 @@ function Get-RestoreAuthoritativeObjectInventory {
     describes the artifact, so a signed package carrying an extra object that its own manifest
     also declares passes every manifest-versus-database comparison; judging the restored scratch
     against the candidate's own DDL closes that hole. The expected database and the transient
-    in-container DDL file are removed in finally on every path.
+    in-container DDL file are removed in finally on every path. After a successful derivation a
+    failed expected-database drop is the error, so no inventory reaches the scratch verdict while
+    that database may remain; after a failed derivation it is only reported.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Restore-internal derivation against a generated throwaway database; the restore flow does not expose -WhatIf end to end.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to the sqlcmd transport, which carries the password via SQLCMDPASSWORD on docker exec; the MSSQL account is always "sa", and -PostgresUser names a PostgreSQL account that has no password here (psql authenticates over the container socket), so a PSCredential adds no protection across that boundary.')]
@@ -2301,6 +2303,8 @@ function Get-RestoreAuthoritativeObjectInventory {
         PostgresUser   = $PostgresUser
     }
     $containerDdlPath = $null
+    $expectedInventory = $null
+    $derivationSucceeded = $false
 
     try {
         if ($DatabaseEngine -eq "postgresql") {
@@ -2355,7 +2359,8 @@ function Get-RestoreAuthoritativeObjectInventory {
             -MssqlPassword $MssqlPassword `
             -PostgresUser $PostgresUser
 
-        return $expectedFacts.FullInventory
+        $expectedInventory = $expectedFacts.FullInventory
+        $derivationSucceeded = $true
     }
     finally {
         # Two independent cleanups: a failed file removal must never skip the database drop.
@@ -2378,9 +2383,19 @@ function Get-RestoreAuthoritativeObjectInventory {
                 -PostgresUser $PostgresUser
         }
         catch {
-            Write-Warning "Expected-database cleanup did not complete: $(($_.Exception.Message | Out-String).Trim()) Remove expected database '$expectedDatabaseName' in container '$ContainerName' manually if it remains."
+            $cleanupFailure = "$(($_.Exception.Message | Out-String).Trim()) Remove expected database '$expectedDatabaseName' in container '$ContainerName' manually if it remains."
+            # After a successful derivation the cleanup failure is the error, so no inventory
+            # reaches scratch validation, the workspace commit, or the target replacement.
+            # Otherwise the derivation failure already propagating stays the error and this is
+            # reported.
+            if ($derivationSucceeded) {
+                throw "Authoritative inventory derivation passed, but its expected-database cleanup did not complete: $cleanupFailure"
+            }
+            Write-Warning "Expected-database cleanup did not complete: $cleanupFailure"
         }
     }
+
+    return $expectedInventory
 }
 
 function Assert-RestoreScratchMatchesAuthoritativeInventory {

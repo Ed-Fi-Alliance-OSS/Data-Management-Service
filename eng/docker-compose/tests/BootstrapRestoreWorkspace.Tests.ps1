@@ -2207,6 +2207,56 @@ exit 0
             Should -Not -BeNullOrEmpty -Because "the expected database is throwaway state that must never outlive the derivation"
     }
 
+    It "<Engine>: a successful derivation whose expected-database drop fails returns no inventory" -ForEach @(
+        @{ Engine = "postgresql"; Container = "dms-postgresql" }
+        @{ Engine = "mssql"; Container = "dms-mssql" }
+    ) {
+        Mock Invoke-RestoreCatalogQuery { throw "drop refused" } -ModuleName bootstrap-restore -ParameterFilter { $FailureMessage -like "Failed to drop expected database *" }
+
+        $script:derivedInventory = $null
+        { $script:derivedInventory = Get-RestoreAuthoritativeObjectInventory `
+                -SchemaFilePath ([string[]]@("C:\candidate\core.json")) `
+                -DatabaseEngine $Engine `
+                -ContainerName $Container `
+                -OutputRoot $script:derivationRoot `
+                -SchemaToolPath $script:derivationTool.ToolPath } |
+            Should -Throw "*Authoritative inventory derivation passed, but its expected-database cleanup did not complete:*drop refused*Remove expected database 'edfi_dms_restore_expected_*' in container '$Container'*"
+
+        $script:derivedInventory | Should -BeNullOrEmpty -Because "an inventory must never reach the scratch verdict while the expected database may remain"
+        # The derivation itself passed, and the independent DDL-file cleanup still ran.
+        Should -Invoke Get-RestoreDatabaseCatalogFact -ModuleName bootstrap-restore -Times 1 -Exactly
+        @($global:DerivationDockerLog | Where-Object { $_ -like "exec $Container rm -f *restore-expected-*.sql" }) | Should -HaveCount 1
+    }
+
+    It "<Engine>: a derivation failure stays the error when the expected-database drop also fails, and the drop failure is still reported" -ForEach @(
+        @{ Engine = "postgresql"; Container = "dms-postgresql" }
+        @{ Engine = "mssql"; Container = "dms-mssql" }
+    ) {
+        Mock Get-RestoreDatabaseCatalogFact { throw "catalog unreachable" } -ModuleName bootstrap-restore
+        Mock Invoke-RestoreCatalogQuery { throw "drop refused" } -ModuleName bootstrap-restore -ParameterFilter { $FailureMessage -like "Failed to drop expected database *" }
+
+        $derivationError = $null
+        try {
+            Get-RestoreAuthoritativeObjectInventory `
+                -SchemaFilePath ([string[]]@("C:\candidate\core.json")) `
+                -DatabaseEngine $Engine `
+                -ContainerName $Container `
+                -OutputRoot $script:derivationRoot `
+                -SchemaToolPath $script:derivationTool.ToolPath `
+                -WarningVariable cleanupWarnings `
+                -WarningAction SilentlyContinue | Out-Null
+        }
+        catch {
+            $derivationError = $_
+        }
+
+        "$derivationError" | Should -BeLike "*catalog unreachable*"
+        "$derivationError" | Should -Not -BeLike "*expected-database cleanup*"
+        @($cleanupWarnings | Where-Object { "$_" -like "Expected-database cleanup did not complete:*drop refused*Remove expected database 'edfi_dms_restore_expected_*' in container '$Container'*" }) |
+            Should -HaveCount 1
+        @($global:DerivationDockerLog | Where-Object { $_ -like "exec $Container rm -f *restore-expected-*.sql" }) | Should -HaveCount 1
+    }
+
     It "refuses to drop anything that is not a generated expected-database name" {
         { Remove-RestoreExpectedDatabase -DatabaseEngine postgresql -ExpectedDatabaseName "edfi_datamanagementservice" -ContainerName "dms-postgresql" } |
             Should -Throw "*Refusing to drop 'edfi_datamanagementservice'*"
