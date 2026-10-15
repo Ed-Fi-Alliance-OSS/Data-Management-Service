@@ -621,7 +621,11 @@ public class OpenIddictServiceCollectionExtensionsTests
                 new FakeTimeProvider()
             );
 
+            // ExecuteAsync runs on the thread pool, so stopping straight after StartAsync could
+            // cancel it before it runs. Waiting for it to finish proves the disabled path returned.
+            // An enabled sweep would wait on its timer and time out here instead.
             await service.StartAsync(CancellationToken.None);
+            await service.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(10));
             await service.StopAsync(CancellationToken.None);
         }
 

@@ -58,9 +58,11 @@ public class TokenCleanupServiceTests
 
             var service = CreateService(_tokenRepository, new FakeTimeProvider(StartTime), enabled: false);
 
-            // Disabled ExecuteAsync returns without ever awaiting the timer, so it
-            // completes synchronously; StartAsync's returned task reflects that.
+            // ExecuteAsync runs on the thread pool, so stopping straight after StartAsync could
+            // cancel it before it runs. Waiting for it to finish proves the disabled path returned.
+            // An enabled sweep would wait on its timer and time out here instead.
             await service.StartAsync(CancellationToken.None);
+            await service.ExecuteTask!.WaitAsync(SignalTimeout);
             await service.StopAsync(CancellationToken.None);
         }
 

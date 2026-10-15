@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Sourced by up.sh, update.sh, and reset.sh. Warns about environment variable names retired by the
-# move to the official "Configuration Service" name. Docker Compose no longer reads them, so a .env
+# move to the official "Configuration Service" name, and about DMS_ENABLE_CLAIMSET_RELOAD, which has
+# no replacement because DMS_ENABLE_MANAGEMENT_ENDPOINTS now controls claimset reload and view too. Docker Compose no longer reads them, so a .env
 # that still sets one runs on the default or fails on the missing replacement. Mirrors
 # Get-LegacyEnvironmentVariableReplacement in eng/docker-compose/env-utility.psm1, limited to the
 # names this stack used, with one difference: DMS_CONFIG_IDENTITY_ENCRYPTION_KEY is reported as
@@ -15,7 +16,7 @@ legacy_env_replacement() {
   case "$1" in
     DMS_CONFIG_USE_EMBEDDED_BASE_CLAIMS | DMS_CONFIG_CLAIMS_PATH | DMS_CONFIG_USE_CLAIMS_PATH | \
       DMS_CONFIG_DANGEROUSLY_ENABLE_DYNAMIC_CLAIMS_LOADING | DMS_CONFIG_ENABLE_APPLICATION_RESET_ENDPOINT | \
-      DMS_CONFIG_IDENTITY_SCOPE | DMS_CONFIG_IDENTITY_ENCRYPTION_KEY) ;;
+      DMS_CONFIG_IDENTITY_SCOPE | DMS_CONFIG_IDENTITY_ENCRYPTION_KEY | DMS_ENABLE_CLAIMSET_RELOAD) ;;
     DMS_CONFIG_ENABLE_CLAIMS_RELOAD) echo "CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING" ;;
     DMS_CONFIG_?*) echo "CONFIGURATION_SERVICE_${1#DMS_CONFIG_}" ;;
     CONFIG_SERVICE_?*) echo "DMS_CONFIGURATION_SERVICE_${1#CONFIG_SERVICE_}" ;;

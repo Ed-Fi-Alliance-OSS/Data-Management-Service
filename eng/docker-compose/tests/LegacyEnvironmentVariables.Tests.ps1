@@ -73,6 +73,7 @@ Describe 'Legacy Configuration Service environment variable names' {
             'DMS_CONFIG_DANGEROUSLY_ENABLE_DYNAMIC_CLAIMS_LOADING'
             'DMS_CONFIG_ENABLE_APPLICATION_RESET_ENDPOINT'
             'DMS_CONFIG_IDENTITY_SCOPE'
+            'DMS_ENABLE_CLAIMSET_RELOAD'
         ) {
             Get-LegacyEnvironmentVariableReplacement -Name $_ | Should -BeExactly ''
         }
@@ -336,7 +337,7 @@ Describe 'Legacy Configuration Service environment variable names' {
             $helper = Get-Content -LiteralPath (Join-Path $script:azureRoot 'compose/legacy-env-warning.sh') -Raw
             $removedBranch = [regex]::Match($helper, '(?s)case "\$1" in\s+(?<names>.*?)\)\s*;;').Groups['names'].Value
 
-            @([regex]::Matches($removedBranch, 'DMS_CONFIG_[A-Z0-9_]+') | ForEach-Object Value | Sort-Object) |
+            @([regex]::Matches($removedBranch, '[A-Z][A-Z0-9_]+') | ForEach-Object Value | Sort-Object) |
                 Should -Be $script:azureRemovedNames
         }
 
@@ -346,8 +347,9 @@ Describe 'Legacy Configuration Service environment variable names' {
 
             $delete.Success | Should -BeTrue -Because 'the recipe must delete removed names instead of renaming them'
             @($delete.Groups['names'].Value -split '\|' | ForEach-Object { "DMS_CONFIG_$_" } | Sort-Object) |
-                Should -Be $script:azureRemovedNames
+                Should -Be @($script:azureRemovedNames | Where-Object { $_ -like 'DMS_CONFIG_*' }) -Because 'the rename only touches DMS_CONFIG_ names'
             $delete.Index | Should -BeLessThan $update.IndexOf("CONFIGURATION_SERVICE_\3/'") -Because 'sed applies its expressions in order'
+            $update | Should -Match ([regex]::Escape("-e '/^[[:space:]]*(export[[:space:]]+)?DMS_ENABLE_CLAIMSET_RELOAD[[:space:]]*=/d'")) -Because 'the recipe must delete every other removed name too'
         }
 
         It '<Script> reports the identity encryption key as removed' -ForEach @(

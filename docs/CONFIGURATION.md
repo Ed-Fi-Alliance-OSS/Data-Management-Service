@@ -103,8 +103,8 @@ DMS and the Configuration Service turn optional features on and off with these r
 - **Settings that change behavior are not features** and keep their names:
   `AppSettings:BypassTypeCoercion`, `AppSettings:MaskRequestBodyInLogs`,
   `AppSettings:UseLegacyDocumentIdOrderingForChangeQueries`, `AppSettings:BypassAuthorization`,
-  `AppSettings:ReverseProxy:UseForwardedHeaders`, `IdentitySettings:AllowRegistration`, and
-  `AppSettings:DeployDatabaseOnStartup`.
+  `AppSettings:ReverseProxy:UseForwardedHeaders`, `IdentitySettings:AllowRegistration`,
+  `AppSettings:DeployDatabaseOnStartup`, and `AppSettings:EnableAspNetCompression` (DMS).
 
 These existing settings are recorded exceptions and keep their names:
 
@@ -117,6 +117,10 @@ These existing settings are recorded exceptions and keep their names:
 - `JobSettings:WorkerEnabled`, `JobSettings:SchedulerEnabled`, and `JobSettings:RetentionEnabled`
   (Configuration Service, each default `true`) switch individual parts of the one background job
   system, which share the rest of [JobSettings](#jobsettings).
+- `ClaimsOptions:DangerouslyEnableUnrestrictedClaimsLoading` (Configuration Service, default
+  `false`) keeps its name because the `Dangerously` prefix is the warning. It exposes
+  `/management/reload-claims`, `/management/upload-claims`, and `/management/current-claims`,
+  which answer `404` while it is `false`.
 
 ### Optional features overview
 
@@ -163,7 +167,7 @@ Compose files map them to the new keys.
 | `AppSettings:EnableManagementEndpoints` | `AppSettings:ManagementEndpoints:Enabled` | `AppSettings__ManagementEndpoints__Enabled` | Management endpoints are off |
 | `AppSettings:EnableClaimsetReload` | Removed. `AppSettings:ManagementEndpoints:Enabled` now controls both the reload and view operations, and Compose no longer reads `DMS_ENABLE_CLAIMSET_RELOAD`. | None | Ignored; see the note below |
 | `AppSettings:EnableIdentityManagement` (8.1 pre-release builds only) | `DataManagement:IdentityManagement:Enabled` | `DataManagement__IdentityManagement__Enabled` | Identity management is off |
-| `AppSettings:UseApiSchemaPath` | `AppSettings:ApiSchema:UseCustomPath` | `AppSettings__ApiSchema__UseCustomPath` | DMS loads the bundled ApiSchema workspace |
+| `AppSettings:UseApiSchemaPath` | `AppSettings:ApiSchema:UseCustomPath` | `AppSettings__ApiSchema__UseCustomPath` | DMS loads the bundled ApiSchema workspace; on the relational backend, requests then fail with `503` when the database was provisioned from a different schema (`EffectiveSchemaHash` mismatch) |
 | `AppSettings:ApiSchemaPath` | `AppSettings:ApiSchema:Path` | `AppSettings__ApiSchema__Path` | No custom path is set |
 | `IdentitySettings:TokenCleanupEnabled` (Configuration Service, 8.1 pre-release builds only) | `IdentitySettings:TokenCleanup:Enabled` | `IdentitySettings__TokenCleanup__Enabled` | Token cleanup stays on |
 | `IdentitySettings:TokenCleanupIntervalMinutes` (Configuration Service, 8.1 pre-release builds only) | `IdentitySettings:TokenCleanup:IntervalMinutes` | `IdentitySettings__TokenCleanup__IntervalMinutes` | The sweep runs every 30 minutes |

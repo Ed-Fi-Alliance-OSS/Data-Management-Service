@@ -53,6 +53,9 @@ public class IdentityCorsExposeHeadersTests
                             ["DataManagement:IdentityManagement:Enabled"] = enableIdentityManagement
                                 ? "true"
                                 : "false",
+                            // The retired key stays on, so the toggle-off case proves the CORS
+                            // policy reads only the current key.
+                            ["AppSettings:EnableIdentityManagement"] = "true",
                         }
                     );
                 }

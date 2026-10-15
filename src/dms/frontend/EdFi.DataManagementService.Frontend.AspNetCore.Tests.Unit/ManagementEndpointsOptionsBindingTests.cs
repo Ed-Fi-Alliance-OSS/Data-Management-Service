@@ -48,7 +48,10 @@ public class Given_ManagementEndpointsOptionsBinding
     {
         using WebApplicationFactory<Program> factory = CreateFactory([]);
 
-        BoundOptions(factory).TryGetRequiredRoleForEndpointMapping(out string? requiredRole).Should().BeFalse();
+        BoundOptions(factory)
+            .TryGetRequiredRoleForEndpointMapping(out string? requiredRole)
+            .Should()
+            .BeFalse();
         requiredRole.Should().BeNull();
     }
 

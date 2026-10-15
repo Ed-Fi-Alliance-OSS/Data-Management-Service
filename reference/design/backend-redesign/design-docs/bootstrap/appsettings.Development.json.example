@@ -10,8 +10,10 @@
     "EncryptionKey": "<dms-config-database-encryption-key>"
   },
   "AppSettings": {
-    "UseApiSchemaPath": true,
-    "ApiSchemaPath": "<repo-root>/eng/docker-compose/.bootstrap/ApiSchema",
+    "ApiSchema": {
+      "UseCustomPath": true,
+      "Path": "<repo-root>/eng/docker-compose/.bootstrap/ApiSchema"
+    },
     "AuthenticationService": "http://localhost:8081/connect/token"
   },
   "JwtAuthentication": {

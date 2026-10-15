@@ -86,7 +86,10 @@ public class IdentityFeatureToggleTests
                 (context, configuration) =>
                 {
                     configuration.AddInMemoryCollection(
-                        new Dictionary<string, string?> { ["DataManagement:IdentityManagement:Enabled"] = "true" }
+                        new Dictionary<string, string?>
+                        {
+                            ["DataManagement:IdentityManagement:Enabled"] = "true",
+                        }
                     );
                 }
             );
