@@ -8,7 +8,8 @@ namespace EdFi.DataManagementService.Core.Extraction;
 /// <summary>
 /// The text rule for descriptor identity values: well-formed UTF-16 with no NUL character. Request
 /// validation applies <see cref="IsWellFormedWithoutNul"/> and answers with a path-attributed 400;
-/// normalization applies <see cref="AssertWellFormedWithoutNul"/> to every value it lowercases and hashes.
+/// descriptor reference normalization applies <see cref="AssertWellFormedWithoutNul"/> before it
+/// lowercases and hashes a value.
 /// </summary>
 internal static class DescriptorText
 {

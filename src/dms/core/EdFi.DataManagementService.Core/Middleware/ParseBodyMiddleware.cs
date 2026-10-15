@@ -133,9 +133,9 @@ namespace EdFi.DataManagementService.Core.Middleware
             {
                 string? duplicatePropertyPath = requestInfo.FrontendRequest.DuplicatePropertyPath;
                 if (
-                    duplicatePropertyPath == null
-                    && requestInfo.FrontendRequest.ParsedBody == null
-                    && requestInfo.FrontendRequest.Body != null
+                    duplicatePropertyPath is null
+                    && requestInfo.FrontendRequest.ParsedBody is null
+                    && requestInfo.FrontendRequest.Body is not null
                 )
                 {
                     duplicatePropertyPath = DuplicatePropertiesMiddleware.FindDuplicatePropertyPath(
@@ -143,7 +143,7 @@ namespace EdFi.DataManagementService.Core.Middleware
                     );
                 }
 
-                if (duplicatePropertyPath == null)
+                if (duplicatePropertyPath is null)
                 {
                     MaterializeStrings(requestInfo.ParsedBody);
                 }
