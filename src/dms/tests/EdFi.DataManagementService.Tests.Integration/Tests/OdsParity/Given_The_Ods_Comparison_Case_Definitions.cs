@@ -115,6 +115,7 @@ public class Given_The_Ods_Comparison_Case_Definitions
     private static readonly string[] _expectedGroups =
     [
         "validation",
+        "page-size-beside-limit",
         "omitted-limit-default",
         "sizing",
         "number-collision",

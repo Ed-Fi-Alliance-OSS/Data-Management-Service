@@ -245,8 +245,9 @@ internal class ValidateQueryMiddleware(
         PageOrderingMode? resolvedPageOrderingMode =
             changeVersionResult.Errors.Count == 0 ? pageOrderingMode : null;
 
-        // A request that supplied either cursor parameter is validated by the cursor precedence.
-        // Everything else keeps the traditional parsing and its existing messages. Both paths answer
+        // A request that supplied pageToken, or pageSize without limit, is validated by the cursor
+        // precedence. Everything else keeps the traditional parsing and its existing messages,
+        // including pageSize beside limit without pageToken, where pageSize is ignored. Both paths answer
         // a pagination fault with the parameter-validation shell, matching ODS/API.
         CursorValidationResult cursorResult = _cursorParametersRecognized
             ? CursorRequestValidator.Validate(
@@ -447,14 +448,11 @@ internal class ValidateQueryMiddleware(
     /// <remarks>
     /// <see cref="RequestInfo.CollectionPaging" /> is assigned only at an accepting exit, so a rejected
     /// cursor request still carries the traditional default and would be counted as traditional traffic.
-    /// The same constant array the cursor validator reads is used here, so the two cannot disagree about
-    /// what makes a request a cursor request.
+    /// The same predicate the cursor validator selects its path with is used here, so the two cannot
+    /// disagree about what makes a request a cursor request.
     /// </remarks>
     private static string RejectedPagingMode(RequestInfo requestInfo) =>
-        Array.Exists(
-            CursorRequestValidator.CursorParameters,
-            requestInfo.FrontendRequest.QueryParameters.ContainsKey
-        )
+        CursorRequestValidator.SelectsCursorPaging(requestInfo.FrontendRequest.QueryParameters)
             ? CollectionPagingTelemetryLabel.CursorPagingMode
             : CollectionPagingTelemetryLabel.TraditionalPagingMode;
 }
