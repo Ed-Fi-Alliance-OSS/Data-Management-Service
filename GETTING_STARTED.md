@@ -162,9 +162,13 @@ grant_type=client_credentials
 ```
 
 The DMS token proxy accepts the client credentials through the `Authorization`
-header, not as form fields. The example uses Rest Client syntax, which
-Base64-encodes `<client-id>:<client-secret>` before sending; other HTTP clients
-must send the standard Base64-encoded Basic value, for example with
+header, as shown. Like the ODS/API, it also accepts `client_id` and
+`client_secret` in a form or JSON body instead, but not combined with a Basic
+header; see the
+[ADR](./reference/adr-oauth-token-client-credentials-DMS-1604.md). The example
+uses Rest Client syntax, which Base64-encodes `<client-id>:<client-secret>`
+before sending; other HTTP clients must send the standard Base64-encoded Basic
+value, for example with
 `curl -u <client-id>:<client-secret>`. Calling the Configuration Service `/connect/token`
 endpoint directly is a separate endpoint contract; see the working examples in
 [getting-started.http](./getting-started.http).
