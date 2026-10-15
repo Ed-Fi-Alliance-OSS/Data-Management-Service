@@ -110,6 +110,18 @@ internal sealed record NaturalKeyLookupRequest(
 internal sealed record NaturalKeyLookupMatch(long DocumentId, int? DescriptorId, short ResourceKeyId);
 
 /// <summary>
+/// Limits every natural-key lookup shares across dialects.
+/// </summary>
+internal static class NaturalKeyLookupLimits
+{
+    /// <summary>
+    /// The longest stored descriptor URI: <c>Namespace</c> (255) + <c>'#'</c> + <c>CodeValue</c> (50). A longer
+    /// URI cannot match any stored descriptor, and SQL Server's OPENJSON would truncate it to this length.
+    /// </summary>
+    public const int MaxDescriptorUriLength = 306;
+}
+
+/// <summary>
 /// The columns every natural-key lookup statement projects, in order. A group that cannot supply a value
 /// projects a typed NULL so that every group shares one union shape.
 /// </summary>

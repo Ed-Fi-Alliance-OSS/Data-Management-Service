@@ -33,10 +33,8 @@ internal sealed class MssqlNaturalKeyLookupCommandBuilder : INaturalKeyLookupCom
     /// </summary>
     private const string UriLoweredColumn = "UriLowered";
 
-    /// <summary>
-    /// The longest stored descriptor URI: <c>Namespace</c> (255) + <c>'#'</c> + <c>CodeValue</c> (50).
-    /// </summary>
-    private const string DescriptorUriType = "nvarchar(306)";
+    private static readonly string DescriptorUriType =
+        $"nvarchar({NaturalKeyLookupLimits.MaxDescriptorUriLength.ToString(CultureInfo.InvariantCulture)})";
 
     private static readonly string IdentityCollation =
         IdentityEqualityContract.SqlServer.IdentityTextCollation
