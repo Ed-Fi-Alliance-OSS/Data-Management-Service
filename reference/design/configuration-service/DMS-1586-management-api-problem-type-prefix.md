@@ -10,10 +10,9 @@
 |---|---|
 | Spec file | `reference/design/configuration-service/DMS-1586-management-api-problem-type-prefix.md` |
 | Jira ticket | [DMS-1586](https://edfi.atlassian.net/browse/DMS-1586) |
-| Branch | `DMS-1586` (worktree `C:/dev/simpat/Data-Management-Service-DMS-1586`) |
-| Base | `a077929f1` (`origin/main` when the worktree was created); all line numbers below are against this commit |
-| Status | **R3 — implementation complete; validation evidence recorded (step 4.2, §12); awaiting final review.** Steps 0.1 to 4.1 are approved. Push, PR, merge and Jira updates are not authorized |
-| Gate model | One step = one local commit = one explicit approval. Phase approval does not approve unseen steps. Corrections land as focused corrective commits and are resubmitted |
+| Branch | `DMS-1586`; [PR #1365](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/pull/1365) |
+| Base | `a077929f1` (`origin/main` when the branch was created); all line numbers below are against this commit |
+| Status | **R4 — implementation complete and reviewed; draft PR open.** §12.1 to §12.6 hold the local validation of the final implementation tree. §12.10 holds the CI runs on the PR head `c7341a0e3`. §12.7 lists what remains before merge |
 
 ### 1.1 Revision history
 
@@ -22,6 +21,7 @@
 | R1 | 2026-10-14 | Initial draft (`29e86dd9e`) |
 | R2 | 2026-10-14 | Architect review of R1: removed the editor/IDE prescription from §5; the step 1.1 parser sketch uses a non-nullable `is not string type` guard; step 1.1 adds missing, null and non-integer `status` and missing, null and non-array `errors` cases under both accepted URNs; §9.3 makes the E2E image lifecycle explicit (no `-SkipDockerBuild` after a teardown, plus image verification); section references corrected (§11 challenge list, §12 validation log); Q-1 to Q-7 dispositions recorded; the step 2.1 reflection check is described as a factory-inventory guard |
 | R3 | 2026-10-14 | Step 4.2: validation log filled (§12). Four reviewer-ordered corrections: the DMS OAuth test filter is corrected and must execute a nonzero number of tests (step 1.1, step 2.2, V-3); §7.2 is replaced with a byte-safe check; formatting validation (step 2.2, V-5) covers only the changed C# files; V-6 and V-7 are the focused jobs API runs, not the full provider suites |
+| R4 | 2026-10-14 | Updated after the PR opened. The status now reflects the completed implementation and review. §2.1 quotes the ticket's description and its Executive Summary scope statement, and notes that the Acceptance Criteria field is empty. §12.10 adds the CI runs on `c7341a0e3`, and §12.7 and §12.9 are reconciled with them. Removed the local worktree path, the review prompt list and the per-step approval instructions. §12 is condensed: TRX run ids, local instance and container names, the binary hash and the image digest are removed. Earlier validation results (trees, commands and counts) are unchanged |
 
 ---
 
@@ -29,9 +29,17 @@
 
 ### 2.1 Explicit requirement (from the ticket)
 
-> CMS and ODS Admin API v3 both implement the Ed-Fi Management API v3 surface. CMS uses `urn:ed-fi:api:*` problem types; ODS Admin API and the published specification use `urn:ed-fi:management-api:*`. Change CMS to `urn:ed-fi:management-api:`.
+Description:
 
-The retrieved ticket has no separately enumerated acceptance criteria. Everything in §2.2 beyond R-1 is **derived** (compatibility and regression requirements inferred from the repository), and is labelled as such.
+> CMS and ODS Admin API v3 both implement the Ed-Fi Management API v3 surface, but their error responses use different type URN prefixes: cms uses urn:ed-fi:api and ODS Admin API and the published specification uses urn:ed-fi:management-api.
+>
+> Change CMS to use **urn:ed-fi:management-api:**
+
+Executive Summary (scope statement):
+
+> Align cms error responses type URN prefixes to match management api sepcification
+
+The ticket's Acceptance Criteria field is empty. R-1 restates the description and the scope statement. The ticket names the published specification as the source of `urn:ed-fi:management-api`, but the published YAML spells the prefix `urn:ed-fi:admin-api` (A-1, Q-1). R-1 therefore takes its value from the ticket's explicit instruction and from the ODS Admin API v3 runtime, which agree. Everything in §2.2 beyond R-1 is **derived** (compatibility and regression requirements inferred from the repository), and is labelled as such.
 
 ### 2.2 Requirements and derived acceptance checks
 
@@ -63,7 +71,6 @@ The retrieved ticket has no separately enumerated acceptance criteria. Everythin
 - Database schemas, migrations, `SchemaHashConstants.RelationalMappingVersion`, routes, status codes, titles, details, content types.
 - Rewriting historical design documents that merely *use* old CMS types (`CMS-Profiles-Design.md`, `DMS-1338-…`, `DMS-1356-…`, `DMS-1532-…`, `reference/DMS-1039/…`). Only documents that **decided** to keep the old prefix get an annotation (step 3.2).
 - Correcting the upstream published specification (out of repository; noted in Q-1).
-- Push, PR, merge, deploy or Jira updates (separately authorized).
 
 ---
 
@@ -220,23 +227,22 @@ Counts are occurrences of `urn:ed-fi:api` at the base commit. **Every** `src/con
 Conventions for every step:
 
 - Changed C# files are formatted with `dotnet csharpier format <changed .cs files>` (AGENTS.md).
-- Before committing: review `git diff` for accidental replacements, unrelated formatting, weakened assertions and out-of-scope files; run the focused checks listed; commit locally with the stated message ending in the `Co-Authored-By` trailer.
-- Report after committing: phase and step, commit SHA, each edited file with a one-line explanation, test commands and results (skips reported as skips), remaining risks, and any deviation from this spec. **Then stop for approval.**
+- Each step is one commit, with the message given below. Before committing, the diff is reviewed for accidental replacements, unrelated formatting, weakened assertions and out-of-scope files, and the focused checks listed are run.
 
 ### Phase 0 — Specification
 
-**Purpose:** agree the scope, sequencing and validation before any change. **Dependencies:** none. **Completion:** spec committed; architect approval recorded in the conversation; Q-1 and Q-3 resolved.
+**Purpose:** agree the scope, sequencing and validation before any change. **Dependencies:** none. **Completion:** spec committed and reviewed; Q-1 to Q-7 resolved (§11).
 
 #### Step 0.1 — Commit this spec
 
 - Edit: create this file only.
 - Tests: none.
 - Commit: `[DMS-1586] Add implementation spec for the management-api problem-type prefix`
-- Checkpoint: Codex review per the challenge list in §11; revise as R2 if needed (spec-only commits).
+- Checkpoint: design review of R1; its findings were applied as R2 (a spec-only commit).
 
 ### Phase 1 — DMS token-proxy compatibility
 
-**Purpose:** make DMS accept both CMS token-limit types before CMS changes, so that no commit and no supported deployment order loses the token-limit 429. **Dependencies:** Phase 0 approved. **Completion:** DMS parser accepts exactly the two types; all OAuth tests green; DMS public types unchanged.
+**Purpose:** make DMS accept both CMS token-limit types before CMS changes, so that no commit and no supported deployment order loses the token-limit 429. **Dependencies:** Phase 0 complete. **Completion:** DMS parser accepts exactly the two types; all OAuth tests green; DMS public types unchanged.
 
 #### Step 1.1 — Accept both upstream token-limit URNs in `OAuthManager`
 
@@ -319,7 +325,7 @@ Mutation reasoning (each must fail if the behavior is reverted): drop the manage
 
 ### Phase 2 — CMS problem-type prefix
 
-**Purpose:** satisfy R-1 to R-4 and R-8 at the unit and integration level. **Dependencies:** step 1.1 committed and approved. **Completion:** zero `urn:ed-fi:api` occurrences under `src/config`; CMS unit suites green; both jobs integration lanes run; E2E feature expectations updated (executed in Phase 4).
+**Purpose:** satisfy R-1 to R-4 and R-8 at the unit and integration level. **Dependencies:** step 1.1 committed. **Completion:** zero `urn:ed-fi:api` occurrences under `src/config`; CMS unit suites green; both jobs integration lanes run; E2E feature expectations updated (executed in Phase 4).
 
 #### Step 2.1 — Add an exhaustive CMS factory contract fixture (test-only, at current values)
 
@@ -358,7 +364,7 @@ Why one commit (Q-3): splitting by test suite would leave intermediate commits w
 
 ### Phase 3 — Documentation
 
-**Purpose:** R-9. **Dependencies:** step 2.2 approved, so the docs describe shipped behavior. **Completion:** client-facing note present; superseded decisions annotated; no DMS-type documentation altered.
+**Purpose:** R-9. **Dependencies:** step 2.2 committed, so the docs describe shipped behavior. **Completion:** client-facing note present; superseded decisions annotated; no DMS-type documentation altered.
 
 #### Step 3.1 — Current documentation and changelog
 
@@ -382,15 +388,15 @@ Locations: DMS-1218 spec §10 (after line 206) and §11 (after line 210); jobs s
 
 ### Phase 4 — Final validation
 
-**Purpose:** prove R-1 to R-10 on the final tree before asking to push. **Dependencies:** Phase 3 approved. **Completion:** §9 suite executed with results recorded; final acceptance diff review presented.
+**Purpose:** prove R-1 to R-10 on the final tree. **Dependencies:** Phase 3 complete. **Completion:** §9 suite executed with results recorded; final acceptance diff review presented.
 
 #### Step 4.1 — Full validation run (no commit unless a defect is found)
 
-Run §9 in order and report each command's actual result, with skips and environment blockers listed separately. A defect found here is fixed in a focused corrective commit under its own approval.
+Run §9 in order and report each command's actual result, with skips and environment blockers listed separately. A defect found here is fixed in a focused corrective commit.
 
 #### Step 4.2 — Record evidence in this spec
 
-Update §1 status, fill §12 (validation log) and the commit list. Commit: `[DMS-1586] Record validation evidence in the spec`. Then present the final commit list, edited-file summary, requirement-to-test evidence and limitations, and **request push approval** (no push, PR, merge or Jira update without it).
+Update §1 status, fill §12 (validation log) and the commit list. Commit: `[DMS-1586] Record validation evidence in the spec`.
 
 ---
 
@@ -499,14 +505,14 @@ Prerequisite: a Release build (`./build-config.ps1 Build -Configuration Release`
 
 1. **Teardown.** `pwsh src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/teardown-local-cms.ps1`. Its own `compose down` names only `postgresql.yml`, so after an SQL Server lane also run `./start-local-config.ps1 -d -v -EnvironmentFile <that lane's env file>` from `eng/docker-compose`. Then confirm `docker ps -a --filter "label=com.docker.compose.project=cs-local"` lists nothing.
 2. **Run** the lane command below, which rebuilds the image.
-3. **Verify the image.** `docker image inspect ed-fi-api-config-local --format "{{.Id}} {{.Created}}"` must show a creation time after the lane started, and `docker inspect ed-fi-api-config-service --format "{{.Image}}"` must show the same image ID. Record both values in §12.
+3. **Verify the image.** `docker image inspect ed-fi-api-config-local --format "{{.Id}} {{.Created}}"` must show a creation time after the lane started, and `docker inspect ed-fi-api-config-service --format "{{.Image}}"` must show the same image ID. Record the result in §12.
 
 | # | Command | Coverage |
 |---|---|---|
 | V-8 | `./build-config.ps1 E2ETest -Configuration Release -IdentityProvider self-contained` | PostgreSQL, single-tenant: all 11 affected feature files and the ClaimsManagement step |
 | V-9 | `./build-config.ps1 E2ETest -Configuration Release -IdentityProvider self-contained -EnvironmentFile "./.env.config.mssql.e2e" -E2ETestFilter "TestCategory=MssqlRepresentative"` | SQL Server representative, including `Jobs.feature` not-found |
 | V-10 | `./build-config.ps1 E2ETest -Configuration Release -IdentityProvider self-contained -EnvironmentFile "./.env.config.mssql.multitenant.e2e" -E2ETestFilter "TestCategory=MssqlMultitenantRepresentative"` | SQL Server multi-tenant, including `Jobs.feature` missing-tenant `bad-request` |
-| — | Keycloak legs (`-IdentityProvider keycloak`) | PR CI matrix; listed as an outstanding merge gate unless run locally |
+| — | Keycloak legs (`-IdentityProvider keycloak`) | Not run locally; run by CI on the PR head (§12.10) |
 
 DMS E2E is not required: no DMS response changes, and no DMS E2E scenario exercises the CMS token-limit 429 (Q-7).
 
@@ -549,21 +555,11 @@ All questions were resolved in the architect's review of R1 (2026-10-14).
 
 DMS-first sequencing (Phase 1 before Phase 2) and the §6 deployment-order note are accepted. DMS's public types, and every CMS field other than the taxonomy prefix, stay unchanged.
 
-### Review challenge list (for Codex)
-
-1. Does the plan still satisfy R-1 exactly, including both the CMS `/connect/token` errors and the jobs API?
-2. Is there any CMS emitter outside `FailureResponse` that §4.2 missed?
-3. Could any `src/config` occurrence be DMS-owned, which would make the scoped substitution wrong?
-4. Does step 1.1 change any parser rule other than the accepted type set?
-5. Are the regression tests revert-sensitive (§5, step 1.1 mutation reasoning; step 2.1 local mutation)?
-6. Is the rollout limitation (old DMS + new CMS) acceptable and documented clearly enough?
-7. Is anything in scope unnecessary?
-
 ---
 
 ## 12. Validation log
 
-Recorded at step 4.2 (2026-10-14). Every run was local, on a Windows 11 ARM64 host. Counts come from each run's TRX file, identified by its TRX run id. The artifacts are kept outside the repository and are not committed.
+§12.1 to §12.6 and §12.8 record the local validation at step 4.2 (2026-10-14). They are historical: every run was local, on a Windows 11 ARM64 host, against the trees named in each row. Counts come from each run's TRX file. The TRX files are not committed. §12.10 records CI on the PR head. §12.7 and §12.9 give the current merge readiness and acceptance status, drawing on both.
 
 ### 12.1 Tree under test
 
@@ -572,34 +568,34 @@ Recorded at step 4.2 (2026-10-14). Every run was local, on a Windows 11 ARM64 ho
 
 ### 12.2 Results
 
-| # | Lane | Command | Tree | TRX run id | Total | Passed | Failed | Not executed |
-|---|---|---|---|---|---|---|---|---|
-| V-1 | CMS backend unit (full project) | §9.1 V-1 | `8b69d5ab5` | `dbf1a158-2fcb-4d8f-afb7-878c2a8f81c4` | 2920 | 2920 | 0 | 0 |
-| V-2 | CMS frontend unit (full project) | §9.1 V-2 | `8b69d5ab5` | `dccda529-7300-46f6-89e8-ea0e73dcee73` | 2667 | 2667 | 0 | 0 |
-| V-3 | DMS **OAuth tests** (`OAuthManagerTests` filter; not the full DMS Core suite) | §9.1 V-3 | `8b69d5ab5` | `70628ce9-e240-422e-b676-60e74ec9a4fd` | 194 | 194 | 0 | 0 |
-| V-4 | DMS `TokenEndpointModuleTests` | §9.1 V-4 | `97b0760e4` | `bafcd008-a60d-4cf5-a4cd-98ffb371739f` | 20 | 20 | 0 | 0 |
-| V-5 | `dotnet csharpier check` on the changed C# files | §9.1 V-5 | `97b0760e4` | — | 33 files | 33 clean | 0 | — |
-| V-6 | PostgreSQL jobs API (`dms-cms-postgres-integration` container, port 5432) | §9.2 V-6 | `8b69d5ab5` | `e9336c6d-b6f6-40fa-ad07-0362f36ad9d6` | 30 | 30 | 0 | 0 |
-| V-7 | SQL Server jobs API (LocalDB instance `DMS1529`, named pipe, `ConnectionStrings__MssqlAdmin` set) | §9.2 V-7 | `8b69d5ab5` | `8d492259-e6fd-4c23-bf9c-e6103d0ec149` | 26 | 26 | 0 | 0 |
-| V-8 | CMS E2E, PostgreSQL, self-contained, Docker | §9.3 V-8 | `97b0760e4` | `52757500-8fd5-4146-b579-6c335e2f2601` | 465 | 285 | 0 | 180 (§12.4) |
-| V-9 | CMS E2E, SQL Server representative | §12.3 (deviation) | `97b0760e4` | `7341134a-1135-4347-8a07-6c4f9751d359` | 34 | 34 | 0 | 0 |
-| V-10 | CMS E2E, SQL Server multi-tenant representative | §12.3 (deviation) | `97b0760e4` | `760dd613-c298-495f-89d0-62b3c086961c` | 10 | 10 | 0 | 0 |
-| — | CMS E2E Keycloak legs (`-IdentityProvider keycloak`) | §9.3 | — | — | — | — | — | **Not run; outstanding for PR CI** (§12.7) |
+| # | Lane | Command | Tree | Total | Passed | Failed | Not executed |
+|---|---|---|---|---|---|---|---|
+| V-1 | CMS backend unit (full project) | §9.1 V-1 | `8b69d5ab5` | 2920 | 2920 | 0 | 0 |
+| V-2 | CMS frontend unit (full project) | §9.1 V-2 | `8b69d5ab5` | 2667 | 2667 | 0 | 0 |
+| V-3 | DMS **OAuth tests** (`OAuthManagerTests` filter; not the full DMS Core suite) | §9.1 V-3 | `8b69d5ab5` | 194 | 194 | 0 | 0 |
+| V-4 | DMS `TokenEndpointModuleTests` | §9.1 V-4 | `97b0760e4` | 20 | 20 | 0 | 0 |
+| V-5 | `dotnet csharpier check` on the changed C# files | §9.1 V-5 | `97b0760e4` | 33 files | 33 clean | 0 | — |
+| V-6 | PostgreSQL jobs API (local PostgreSQL container) | §9.2 V-6 | `8b69d5ab5` | 30 | 30 | 0 | 0 |
+| V-7 | SQL Server jobs API (SQL Server LocalDB, `ConnectionStrings__MssqlAdmin` set) | §9.2 V-7 | `8b69d5ab5` | 26 | 26 | 0 | 0 |
+| V-8 | CMS E2E, PostgreSQL, self-contained, Docker | §9.3 V-8 | `97b0760e4` | 465 | 285 | 0 | 180 (§12.4) |
+| V-9 | CMS E2E, SQL Server representative | §12.3 (deviation) | `97b0760e4` | 34 | 34 | 0 | 0 |
+| V-10 | CMS E2E, SQL Server multi-tenant representative | §12.3 (deviation) | `97b0760e4` | 10 | 10 | 0 | 0 |
+| — | CMS E2E Keycloak legs (`-IdentityProvider keycloak`) | §9.3 | — | — | — | — | **Not run locally**; run by CI on `c7341a0e3` (§12.10) |
 
 Every filtered run (V-3, V-4, V-6, V-7, V-9, V-10) executed a nonzero number of tests. The first V-3 attempt at step 2.2 used the R2 filter `FullyQualifiedName~OAuth.OAuthManagerTests`, which matched no tests and exited 0. It was rerun with the corrected filter, and only that rerun is recorded.
 
-**V-8 image lifecycle (§9.3).** Teardown exited 0. Afterwards `docker ps -a --filter "label=com.docker.compose.project=cs-local"` listed nothing and no `ed-fi-api-config-local` image existed. The lane ran `./build-config.ps1 E2ETest -Configuration Release -IdentityProvider self-contained` without `-SkipDockerBuild`, starting at 2026-10-15T00:49:27Z (UTC). The rebuilt image `ed-fi-api-config-local` is `sha256:fed30c21d7577bb916562dd8daf8cae9173f1c227ca3b6957d5ab3481b1f6d80`, created 2026-10-15T00:50:14Z, after the lane started. The `ed-fi-api-config-service` container ran that same image ID.
+**V-8 image lifecycle (§9.3).** Teardown exited 0. Afterwards `docker ps -a --filter "label=com.docker.compose.project=cs-local"` listed nothing and no `ed-fi-api-config-local` image existed. The lane ran `./build-config.ps1 E2ETest -Configuration Release -IdentityProvider self-contained` without `-SkipDockerBuild`. The rebuilt `ed-fi-api-config-local` image was created after the lane started, and the `ed-fi-api-config-service` container ran that image.
 
 ### 12.3 Deviation: SQL Server E2E lanes V-9 and V-10
 
 The validation host is ARM64 and cannot run the amd64 SQL Server container image, so V-9 and V-10 did not run `build-config.ps1 E2ETest` with the SQL Server environment files. Each lane instead ran as follows:
 
-- **Database:** LocalDB instance `DMS1586`, SQL Server 2025 (17.0.4025.3), over its named pipe with the `sa` login. The `edfi_configurationservice` database was dropped and recreated at the start of each lane.
-- **Configuration Service:** a host process started from the Release build of `EdFi.DmsConfigurationService.Frontend.AspNetCore.dll` (SHA-256 `1BECDA3A1E33E5440FE1FB88B074F2F01C04A9979FF387D6553DBC5CEA52BDD8`, built 2026-10-14T17:45:49-07:00, after the `97b0760e4` commit at 17:40:50-07:00). It was configured from the lane's environment file (`./.env.config.mssql.e2e` or `./.env.config.mssql.multitenant.e2e`) the way `local-config.yml` configures the container, with `AppSettings__MultiTenancy` false for V-9 and true for V-10.
+- **Database:** SQL Server 2025 LocalDB. The `edfi_configurationservice` database was dropped and recreated at the start of each lane.
+- **Configuration Service:** a host process started from the Release build of `EdFi.DmsConfigurationService.Frontend.AspNetCore.dll`, built after the `97b0760e4` commit. It was configured from the lane's environment file (`./.env.config.mssql.e2e` or `./.env.config.mssql.multitenant.e2e`) the way `local-config.yml` configures the container, with `AppSettings__MultiTenancy` false for V-9 and true for V-10.
 - **Identity setup:** the OpenIddict signing key was inserted through `OpenIddict-Crypto.psm1`. `setup-openiddict.ps1 -InsertData` ran unchanged, with its `docker exec … sqlcmd` call routed to the host `sqlcmd`. The three expected clients were present before the tests started.
 - **Tests:** `dotnet test` on the Release build of the E2E project, filtered by `TestCategory=MssqlRepresentative` (V-9) and `TestCategory=MssqlMultitenantRepresentative` (V-10).
 
-These lanes are **host-process CMS testing against SQL Server 2025**. They do not validate the SQL Server Docker deployment (image build, compose wiring or container startup). The reviewer accepted them for this ticket because the change is a database-independent string prefix. **Cleanup limitation:** each lane started on a freshly created database, but cleanup between features within a lane was not verified.
+These lanes are **host-process CMS testing against SQL Server 2025**. They do not validate the SQL Server Docker deployment (image build, compose wiring or container startup). The reviewer accepted them for this ticket because the change is a database-independent string prefix. **Cleanup limitation:** each lane started on a freshly created database, but cleanup between features within a lane was not verified. CI later ran the SQL Server Docker deployment path on `c7341a0e3` (§12.10).
 
 ### 12.4 V-8 tests not executed (180)
 
@@ -635,12 +631,18 @@ The two undefined-step scenarios are not provider or configuration skips. They c
 6. V-6 and V-7 are the focused jobs API runs. The full provider suites were not run.
 7. V-1, V-2, V-3, V-6 and V-7 were recorded at step 2.2 and reused, because no `src` file changed afterwards (§12.1).
 
-### 12.7 Outstanding before merge
+### 12.7 Merge readiness
 
-- **Keycloak coverage:** the CMS E2E Keycloak legs (`-IdentityProvider keycloak`), including the 154 characterization tests and the 3 `@KeycloakOnly` scenarios. These run in PR CI and must pass there.
-- **SQL Server Docker deployment path:** not validated locally (§12.3).
-- **Push, PR, merge and Jira updates:** not authorized.
-- **Out of scope, recorded for follow-up:** the two `ApiClients.feature` undefined-step scenarios (§12.4).
+Current as of the PR head `c7341a0e3` and the commit that adds R4. That commit changes only this document.
+
+- **Covered by CI on `c7341a0e3` (§12.10):** the CMS E2E Keycloak legs on PostgreSQL and SQL Server, and the SQL Server Docker deployment path (representative and multi-tenant lanes under both identity providers). Neither is outstanding.
+- **Remaining before merge:**
+  - PR #1365 is a draft. Every job in its `pull_request` runs was skipped, so the CI evidence comes from manual (`workflow_dispatch`) runs. The PR-event checks must run and pass on the head that merges.
+  - The PR needs review approval.
+  - The DMS manual run has one failed job, the CDC connector template smoke tests. The evidence points to the CI test harness, not to this change, but the failure has not been reproduced on `main` (§12.10). The run's DMS CI Gate job passed.
+- **Out of scope, recorded for follow-up:**
+  - The two `ApiClients.feature` undefined-step scenarios (§12.4).
+  - The stale `urn:ed-fi:admin-api` text in the published specification (Q-1).
 
 ### 12.8 Commit list
 
@@ -653,7 +655,8 @@ The two undefined-step scenarios are not provider or configuration skips. They c
 | 5 | 2.2 | `8b69d5ab5` | `[DMS-1586] Use the urn:ed-fi:management-api problem-type prefix in the Configuration Service` |
 | 6 | 3.1 | `53e9ff236` | `[DMS-1586] Document the Configuration Service problem-type prefix change` |
 | 7 | 3.2 | `97b0760e4` | `[DMS-1586] Mark earlier Configuration Service prefix decisions as superseded` |
-| 8 | 4.2 | the commit adding this section | `[DMS-1586] Record validation evidence in the spec` |
+| 8 | 4.2 | `c7341a0e3` | `[DMS-1586] Record validation evidence in the spec` |
+| 9 | R4 | the commit adding R4 | `[DMS-1586] Update the spec for the open PR and its CI results` |
 
 ### 12.9 Acceptance evidence
 
@@ -666,6 +669,39 @@ The two undefined-step scenarios are not provider or configuration skips. They c
 | R-5 | V-3 parameterized token-limit fixtures under both types, plus the cross-service fixture with `It_is_fed_the_management_api_type`; V-4 legacy-upstream proxy path | Met |
 | R-6 | V-3 deviating-body, near-miss, shape and secret-embedding fixtures under both types | Met |
 | R-7 | The `src/dms` scope guard lists two files; V-3 and V-4 DMS-type assertions unchanged | Met |
-| R-8 | V-1 to V-10 green with 0 failures | Met locally; Keycloak legs outstanding (§12.7) |
+| R-8 | Local: V-1 to V-10 green with 0 failures (§12.2). CI on `c7341a0e3`: Configuration Service run 38670012218 green, including the Keycloak and SQL Server Docker E2E legs (§12.10) | Met |
 | R-9 | `53e9ff236` changelog and docs; `97b0760e4` superseded annotations | Met |
 | R-10 | SQL and `SchemaHashConstants` guard empty | Met |
+
+### 12.10 CI on the PR head `c7341a0e3`
+
+Both runs were started manually (`workflow_dispatch`) on branch `DMS-1586`, and both report head SHA `c7341a0e3ff92ddf8e29bd9715812d5e8ba5cfe4`. The PR's own `pull_request` runs (38670007326 Configuration Service, 38670007097 DMS) skipped every job. Test counts come from each job's `dotnet test` console summary. They are not directly comparable with the TRX counts in §12.2.
+
+**Configuration Service, [run 38670012218](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/38670012218): success, 17 of 17 jobs.**
+
+| Job | Identity provider | Database and deployment | Result |
+|---|---|---|---|
+| Run Unit Tests | — | — | Success |
+| Run Integration Tests | — | PostgreSQL; SQL Server 2025 (`mcr.microsoft.com/mssql/server:2025-latest` service container) | Success: PostgreSQL 1106 passed, SQL Server 1133 passed, 0 failed |
+| Run E2E Tests (self-contained) | self-contained | PostgreSQL, Docker | Success: 285 passed, 178 skipped, 0 failed (463) |
+| Run E2E Tests (keycloak) | Keycloak | PostgreSQL, Docker | Success: 431 passed, 32 skipped, 0 failed (463) |
+| Run E2E Tests - MSSQL (self-contained) | self-contained | SQL Server, Docker (`.env.config.mssql.e2e`, `MssqlRepresentative`) | Success: 34 passed, 0 failed |
+| Run E2E Tests - MSSQL (keycloak) | Keycloak | SQL Server, Docker (`.env.config.mssql.e2e`, `MssqlRepresentative`) | Success: 34 passed, 0 failed |
+| Run E2E Tests - MSSQL Multitenant (self-contained) | self-contained | SQL Server, Docker (`.env.config.mssql.multitenant.e2e`, `MssqlMultitenantRepresentative`) | Success: 10 passed, 0 failed |
+| Run E2E Tests - MSSQL Multitenant (keycloak) | Keycloak | SQL Server, Docker (`.env.config.mssql.multitenant.e2e`, `MssqlMultitenantRepresentative`) | Success: 10 passed, 0 failed |
+| Fresh-build detection, Fresh Rebuild Config Docker Image, lock-file checks, secrets contract package, BIDI scans, event upload, Config CI Gate | — | — | Success |
+
+The SQL Server E2E jobs start the compose stack with the `dms-mssql` container, so they cover the SQL Server Docker deployment path that the local V-9 and V-10 lanes did not (§12.3). The skipped tests in the CI E2E jobs were not itemized.
+
+**DMS, [run 38670021353](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/38670021353): failure, caused by one job. DMS CI Gate: success.**
+
+Every other job passed. They include the unit tests, PostgreSQL DMS E2E shards 1 to 4, SQL Server DMS E2E (representative) under both identity providers, the Instance Management E2E suites, and the backend, API and CDC integration suites.
+
+The failed job is **Run Backend CDC Connector Template Smoke Tests**: 4 of 8 tests failed, all of them cases of `It_publishes_a_real_tracking_restamp_after_projector_drain`. Each could not start `src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/bin/Debug/net10.0/dms-document-cache` ("No such file or directory"). Evidence about the cause:
+
+- The job runs only on `workflow_dispatch`. It executes the prebuilt integration-test-assemblies artifact, and the workflow that builds that artifact does not reference the DocumentCacheAdmin CLI build output.
+- DMS-1586 changes no workflow, CLI or backend file: `git diff a077929f1 c7341a0e3 -- .github src/dms/clis src/dms/backend` is empty.
+- In [run 38666867786](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/38666867786) on `DMS-1403` (`f14ac1f2c`), the same four tests failed with the same error. That branch changes CDC tests and the DMS workflow, so it corroborates the failure but is not an independent baseline.
+- Among the 40 most recent DMS workflow runs, this job ran only in the two manual runs above. No run on `main` was found.
+
+The failure is attributed to the CI test harness, not to DMS-1586. It has not been reproduced on `main`.
