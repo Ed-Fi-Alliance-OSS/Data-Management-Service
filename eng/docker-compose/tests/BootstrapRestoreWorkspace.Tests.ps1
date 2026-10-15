@@ -249,7 +249,8 @@ exit 0
         # instance or a stray override value; Remove-Item is required because assigning $null/""
         # can leave a present-but-blank variable on some hosts.
         Remove-Item Env:\DMS_BOOTSTRAP_ROOT_OVERRIDE -ErrorAction SilentlyContinue
-        Remove-Item function:global:docker -ErrorAction SilentlyContinue
+        # Function: removal paths use the visible name without a scope qualifier.
+        Remove-Item -LiteralPath Function:\docker -ErrorAction SilentlyContinue
         Import-ManifestModule
     }
 
@@ -331,9 +332,9 @@ exit 0
 }
 
 AfterAll {
-    Remove-Item function:global:Invoke-TestContainerFileDocker -ErrorAction SilentlyContinue
-    Remove-Item function:global:Invoke-TestContainerInputDocker -ErrorAction SilentlyContinue
-    Remove-Item function:global:New-TestRetainedPackage -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath Function:\Invoke-TestContainerFileDocker -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath Function:\Invoke-TestContainerInputDocker -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath Function:\New-TestRetainedPackage -ErrorAction SilentlyContinue
 }
 
 Describe "DMS_BOOTSTRAP_ROOT_OVERRIDE workspace redirection" {
@@ -802,7 +803,7 @@ Describe "Assert-DmsComposeProjectStopped (stop proof)" {
 
     AfterAll {
         if ($script:createdDockerFallback) {
-            Remove-Item function:global:docker -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath Function:\docker -ErrorAction SilentlyContinue
         }
     }
 
@@ -972,7 +973,7 @@ Describe "Publish-RestoreCandidateWorkspace (whole-tree commit)" {
 
     AfterAll {
         if ($script:createdDockerFallback) {
-            Remove-Item function:global:docker -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath Function:\docker -ErrorAction SilentlyContinue
         }
     }
 
@@ -1218,7 +1219,7 @@ Describe "Invoke-RestoreCatalogQuery" {
 
     AfterAll {
         if ($script:createdDockerFallback) {
-            Remove-Item function:global:docker -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath Function:\docker -ErrorAction SilentlyContinue
         }
     }
 
@@ -1295,7 +1296,7 @@ Describe "Assert-RestoreTargetSafety" {
 
     AfterAll {
         if ($script:createdDockerFallback) {
-            Remove-Item function:global:docker -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath Function:\docker -ErrorAction SilentlyContinue
         }
     }
 
@@ -1618,7 +1619,7 @@ Describe "Invoke-RestoreScratchValidation" {
 
     AfterAll {
         if ($script:createdDockerFallback) {
-            Remove-Item function:global:docker -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath Function:\docker -ErrorAction SilentlyContinue
         }
     }
 
@@ -2070,7 +2071,7 @@ exit 0
 
     AfterAll {
         if ($script:createdDockerFallback) {
-            Remove-Item function:global:docker -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath Function:\docker -ErrorAction SilentlyContinue
         }
     }
 
@@ -2276,7 +2277,7 @@ Describe "Invoke-RestoreTargetReplacement" {
 
     AfterAll {
         if ($script:createdDockerFallback) {
-            Remove-Item function:global:docker -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath Function:\docker -ErrorAction SilentlyContinue
         }
     }
 
@@ -2548,7 +2549,7 @@ Describe "Invoke-RestoreTargetReplacement target-safety recheck after the transf
 
     AfterAll {
         if ($script:createdDockerFallback) {
-            Remove-Item function:global:docker -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath Function:\docker -ErrorAction SilentlyContinue
         }
     }
 
@@ -2671,7 +2672,7 @@ Describe "Remove-RestorePreflightDatabase and Remove-RestoreScratchDatabase" {
 
     AfterAll {
         if ($script:createdDockerFallback) {
-            Remove-Item function:global:docker -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath Function:\docker -ErrorAction SilentlyContinue
         }
     }
 

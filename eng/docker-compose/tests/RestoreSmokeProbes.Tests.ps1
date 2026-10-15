@@ -77,7 +77,7 @@ BeforeAll {
 
 AfterAll {
     if ($script:createdDockerFallback) {
-        Remove-Item function:global:docker -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath Function:\docker -ErrorAction SilentlyContinue
     }
     Remove-Variable -Name RestoreSmokeTestDocker, RestoreSmokeTestTargetDir, RestoreSmokeTestPwshExit, RestoreSmokeImageTestState, RestoreSmokeTestVolumes, RestoreSmokeTestVolumeCalls, RestoreSmokeApiTest -Scope Global -ErrorAction SilentlyContinue
 }

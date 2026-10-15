@@ -204,7 +204,9 @@ Describe "template publication keeps each template with its own attestation on d
 
     AfterEach {
         foreach ($name in @("Invoke-RestMethod", "Invoke-WebRequest", "dotnet")) {
-            Remove-Item "function:global:$name" -ErrorAction SilentlyContinue
+            # A scope qualifier in a Function: provider path is read as part of the name, so
+            # "function:global:$name" matches nothing and the stubs would leak into later files.
+            Remove-Item -LiteralPath "Function:\$name" -ErrorAction SilentlyContinue
         }
         foreach ($name in $script:savedEnvironment.Keys) {
             if ($null -eq $script:savedEnvironment[$name]) {

@@ -592,7 +592,8 @@ $failureStatement
                 "Publish-RestoreCandidateWorkspace", "Invoke-RestoreTargetReplacement",
                 "Remove-RestorePackageStage", "docker"
             )) {
-                Remove-Item "function:global:$stubName" -ErrorAction SilentlyContinue
+                # Function: removal paths use the visible name without a scope qualifier.
+                Remove-Item -LiteralPath "Function:\$stubName" -ErrorAction SilentlyContinue
             }
         }
 
@@ -3170,7 +3171,7 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "configure dataStore=[`$Dat
                     # CMS functions of every later suite in the same process (the CI lane runs one process).
                     foreach ($name in $script:wrapperReuseStubNames) {
                         Remove-Alias -Name $name -Scope Global -Force -ErrorAction SilentlyContinue
-                        Remove-Item ("function:global:WrapperReuseStub-" + $name.Replace("-", "")) -Force -ErrorAction SilentlyContinue
+                        Remove-Item -LiteralPath ("Function:\WrapperReuseStub-" + $name.Replace("-", "")) -Force -ErrorAction SilentlyContinue
                     }
                     $survivors = @($script:wrapperReuseStubNames | Where-Object { Get-Alias -Name $_ -Scope Global -ErrorAction SilentlyContinue })
                     if ($survivors.Count -gt 0) {
