@@ -792,4 +792,50 @@ public class DuplicatePropertiesMiddlewareTest
                 );
         }
     }
+
+    /// <summary>
+    /// A finished property value inside an array element must not advance the element's index; only a
+    /// finished element does.
+    /// </summary>
+    [TestFixture("""{"items":[{"id":1,"x":1,"x":2}]}""", "$.items[0].x")]
+    [TestFixture("""{"items":[{"ref":{"a":1},"x":1,"x":2}]}""", "$.items[0].x")]
+    [TestFixture("""{"items":[{"id":1},{"id":2,"x":1,"x":2}]}""", "$.items[1].x")]
+    [Parallelizable]
+    public class Given_A_Duplicate_Property_After_Other_Properties_Inside_An_Array_Element(
+        string body,
+        string expectedPath
+    ) : DuplicatePropertiesMiddlewareTest
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var frontEndRequest = new FrontendRequest(
+                Path: "ed-fi/schools",
+                Body: body,
+                Form: null,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
+            );
+            _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
+            {
+                ParsedBody = JsonNode.Parse(body)!,
+            };
+            await Middleware().Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_reports_the_duplicate_in_its_own_array_element()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo.FrontendResponse.Body!["validationErrors"]!
+                .AsObject()
+                .Select(error => error.Key)
+                .Should()
+                .Equal(expectedPath);
+        }
+    }
 }

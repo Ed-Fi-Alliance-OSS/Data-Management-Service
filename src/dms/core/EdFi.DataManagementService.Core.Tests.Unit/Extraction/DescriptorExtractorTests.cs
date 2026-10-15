@@ -1031,4 +1031,112 @@ public class DescriptorExtractorTests
                 );
         }
     }
+
+    [TestFixture(
+        """{"courseTitle":"Math","careerPathwayDescriptor":"uri://ed-fi.org/CareerPathwayDescriptor#Ot\u0000her"}""",
+        new[] { "$.careerPathwayDescriptor" }
+    )]
+    [TestFixture(
+        """{"courseTitle":"Math","competencyLevels":[{"competencyLevelDescriptor":"uri://ed-fi.org/CompetencyLevelDescriptor#Basic"},{"competencyLevelDescriptor":"uri://ed-fi.org/CompetencyLevelDescriptor#Adv\u0000anced"}]}""",
+        new[] { "$.competencyLevels[1].competencyLevelDescriptor" }
+    )]
+    [TestFixture(
+        """{"courseTitle":"Math","careerPathwayDescriptor":"\u0000","competencyLevels":[{"competencyLevelDescriptor":"uri://ed-fi.org/CompetencyLevelDescriptor#\u0000"}]}""",
+        new[] { "$.careerPathwayDescriptor", "$.competencyLevels[0].competencyLevelDescriptor" }
+    )]
+    [Parallelizable]
+    public class Given_Extracting_Descriptor_References_With_Nul_In_Schema_Path_Values(
+        string body,
+        string[] expectedPaths
+    ) : DescriptorExtractorTests
+    {
+        private ReferenceExtractionValidationException _exception = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ResourceSchema resourceSchema = BuildResourceSchema(BuildApiSchemaDocuments(), "slimCourses");
+
+            Action act = () =>
+                resourceSchema.ExtractRelationalDescriptors(
+                    CreateResourceInfo("SlimCourse"),
+                    CreateRelationalMappingSet(CreateResourceInfo("SlimCourse"), includeWritePlan: true),
+                    JsonNode.Parse(body)!,
+                    NullLogger.Instance
+                );
+
+            _exception = act.Should().Throw<ReferenceExtractionValidationException>().Which;
+        }
+
+        [Test]
+        public void It_reports_every_offending_concrete_path_together()
+        {
+            _exception.ValidationFailures.Select(failure => failure.Path.Value).Should().Equal(expectedPaths);
+        }
+
+        [Test]
+        public void It_reports_the_descriptor_text_rule()
+        {
+            _exception
+                .ValidationFailures.Select(failure => failure.Message)
+                .Should()
+                .AllBe(DescriptorText.InvalidValueMessage);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Extracting_Relational_Descriptor_References_With_Nul_At_A_Descriptor_Edge_Path
+        : DescriptorExtractorTests
+    {
+        private ReferenceExtractionValidationException _exception = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ResourceSchema resourceSchema = BuildResourceSchema(
+                BuildRelationalReferenceDescriptorApiSchemaDocuments(),
+                "studentProgramAssociations"
+            );
+
+            Action act = () =>
+                resourceSchema.ExtractRelationalDescriptors(
+                    CreateResourceInfo("StudentProgramAssociation"),
+                    CreateRelationalReferenceDescriptorMappingSet(includeWritePlan: true),
+                    JsonNode.Parse(
+                        """
+                        {
+                            "associationIdentifier": "A-1",
+                            "programs": [
+                                {
+                                    "programReference": {
+                                        "programName": "STEM",
+                                        "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#STEM"
+                                    }
+                                },
+                                {
+                                    "programReference": {
+                                        "programName": "Arts",
+                                        "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Fine\u0000Arts"
+                                    }
+                                }
+                            ]
+                        }
+                        """
+                    )!,
+                    NullLogger.Instance
+                );
+
+            _exception = act.Should().Throw<ReferenceExtractionValidationException>().Which;
+        }
+
+        [Test]
+        public void It_reports_the_concrete_descriptor_edge_path()
+        {
+            _exception
+                .ValidationFailures.Select(failure => failure.Path.Value)
+                .Should()
+                .Equal("$.programs[1].programReference.programTypeDescriptor");
+        }
+    }
 }

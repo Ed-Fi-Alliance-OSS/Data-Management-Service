@@ -967,4 +967,164 @@ public class ExtractDocumentInfoMiddlewareTests
                 .And.Contain(_expectedInvalidValueDescription);
         }
     }
+
+    internal static ApiSchemaDocuments BuildDescriptorApiSchemaDocuments()
+    {
+        return new ApiSchemaBuilder()
+            .WithStartProject()
+            .WithStartResource("SexDescriptor", isDescriptor: true)
+            .WithIdentityJsonPaths(["$.namespace", "$.codeValue"])
+            .WithStartDocumentPathsMapping()
+            .WithDocumentPathScalar("Namespace", "$.namespace")
+            .WithDocumentPathScalar("CodeValue", "$.codeValue")
+            .WithEndDocumentPathsMapping()
+            .WithEndResource()
+            .WithEndProject()
+            .ToApiSchemaDocuments();
+    }
+
+    [TestFixture("POST")]
+    [TestFixture("PUT")]
+    [Parallelizable]
+    public class Given_A_Descriptor_Write_With_Nul_In_Its_Identity(string method)
+        : ExtractDocumentInfoMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+        private bool _nextWasCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ResourceSchema resourceSchema = BuildResourceSchema(
+                BuildDescriptorApiSchemaDocuments(),
+                "sexDescriptors"
+            );
+            string body = """
+                {
+                    "namespace": "uri://ed-fi.org/Sex\u0000Descriptor",
+                    "codeValue": "Fe\u0000male",
+                    "shortDescription": "Female"
+                }
+                """;
+
+            _requestInfo = CreateRequestInfo(
+                resourceSchema,
+                Enum.Parse<RequestMethod>(method),
+                body,
+                "/ed-fi/sexDescriptors"
+            );
+
+            await BuildMiddleware()
+                .Execute(
+                    _requestInfo,
+                    () =>
+                    {
+                        _nextWasCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+        }
+
+        [Test]
+        public void It_returns_a_validation_response_keyed_by_field()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo.FrontendResponse.Body!["validationErrors"]!
+                .AsObject()
+                .Select(error => error.Key)
+                .Should()
+                .BeEquivalentTo("$.namespace", "$.codeValue");
+        }
+
+        [Test]
+        public void It_does_not_continue_the_pipeline()
+        {
+            _nextWasCalled.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_does_not_set_document_info()
+        {
+            _requestInfo.DocumentInfo.Should().BeSameAs(No.DocumentInfo);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Relational_Post_Request_With_Nul_In_A_Descriptor_Reference
+        : ExtractDocumentInfoMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+        private bool _nextWasCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ResourceSchema resourceSchema = BuildResourceSchema(
+                BuildReferenceDescriptorApiSchemaDocuments(),
+                "studentProgramAssociations"
+            );
+            string body = """
+                {
+                    "associationIdentifier": "A-1",
+                    "programs": [
+                        {
+                            "programReference": {
+                                "programName": "STEM",
+                                "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#ST\u0000EM"
+                            }
+                        }
+                    ]
+                }
+                """;
+
+            _requestInfo = CreateRequestInfo(
+                resourceSchema,
+                RequestMethod.POST,
+                body,
+                "/ed-fi/studentProgramAssociations"
+            );
+            _requestInfo.ResourceInfo = new ResourceInfo(
+                ProjectName: new ProjectName("Ed-Fi"),
+                ResourceName: new ResourceName("StudentProgramAssociation"),
+                IsDescriptor: false,
+                ResourceVersion: new SemVer("1.0.0"),
+                AllowIdentityUpdates: false
+            );
+            _requestInfo.MappingSet = CreateReferenceDescriptorMappingSet();
+
+            await BuildMiddleware()
+                .Execute(
+                    _requestInfo,
+                    () =>
+                    {
+                        _nextWasCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+        }
+
+        [Test]
+        public void It_returns_a_validation_response_at_the_concrete_path()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo.FrontendResponse.Body!["validationErrors"]!
+                .AsObject()
+                .Select(error => error.Key)
+                .Should()
+                .Equal("$.programs[0].programReference.programTypeDescriptor");
+        }
+
+        [Test]
+        public void It_does_not_continue_the_pipeline()
+        {
+            _nextWasCalled.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_does_not_set_document_info()
+        {
+            _requestInfo.DocumentInfo.Should().BeSameAs(No.DocumentInfo);
+        }
+    }
 }

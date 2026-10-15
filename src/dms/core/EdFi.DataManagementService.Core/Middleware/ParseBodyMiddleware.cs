@@ -4,10 +4,12 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
 
@@ -15,6 +17,8 @@ namespace EdFi.DataManagementService.Core.Middleware
 {
     internal class ParseBodyMiddleware(ILogger _logger) : IPipelineStep
     {
+        private const int MaxLoggedMalformedStringLength = 256;
+
         private static JsonNode GenerateFrontendErrorResponse(string errorDetail, TraceId traceId)
         {
             string[] errors = [errorDetail];
@@ -119,7 +123,90 @@ namespace EdFi.DataManagementService.Core.Middleware
                 }
             }
 
+            // The parser accepts unpaired-surrogate escapes such as \uD800 and defers the failure to
+            // the first read of that string, which would otherwise surface later as a 5xx. The
+            // duplicate-property scan reads every property name (the frontend's, or the one below for a
+            // body parsed here), and the walk reads every string value, so either failure becomes the
+            // malformed-body 400. A body with a
+            // duplicate property is left to DuplicatePropertiesMiddleware: enumerating its object would
+            // throw, and that step already answers it with a path-attributed 400.
+            try
+            {
+                string? duplicatePropertyPath = requestInfo.FrontendRequest.DuplicatePropertyPath;
+                if (
+                    duplicatePropertyPath is null
+                    && requestInfo.FrontendRequest.ParsedBody is null
+                    && requestInfo.FrontendRequest.Body is not null
+                )
+                {
+                    duplicatePropertyPath = DuplicatePropertyPathScanner.TryFindFirstDuplicatePropertyPath(
+                        Encoding.UTF8.GetBytes(requestInfo.FrontendRequest.Body),
+                        out string scannedPath
+                    )
+                        ? scannedPath
+                        : null;
+                }
+
+                if (duplicatePropertyPath is null)
+                {
+                    MaterializeStrings(requestInfo.ParsedBody);
+                }
+            }
+            catch (InvalidOperationException ex)
+            {
+                // S6667 asks for the caught exception to be passed to the logger. Its message ends in
+                // a JSON path built from client property names, which can carry control characters,
+                // so only the sanitized, bounded message is logged. The client response keeps the path.
+#pragma warning disable S6667
+                _logger.LogDebug(
+                    "The request body contains a malformed string - {TraceId} - {Detail}",
+                    requestInfo.FrontendRequest.TraceId.Value,
+                    LoggingSanitizer.SanitizeFreeTextForLogging(ex.Message, MaxLoggedMalformedStringLength)
+                );
+#pragma warning restore S6667
+
+                SetValidationErrorResponse(requestInfo, ex.Message);
+
+                return;
+            }
+
             await next();
+        }
+
+        /// <summary>
+        /// Reads every string value, so a malformed one throws here with its path. Property names were
+        /// already read by the duplicate-property scan, which rejects a malformed one first.
+        /// </summary>
+        private static void MaterializeStrings(JsonNode? node)
+        {
+            switch (node)
+            {
+                case JsonObject jsonObject:
+                    foreach (var property in jsonObject)
+                    {
+                        MaterializeStrings(property.Value);
+                    }
+                    break;
+
+                case JsonArray jsonArray:
+                    foreach (var item in jsonArray)
+                    {
+                        MaterializeStrings(item);
+                    }
+                    break;
+
+                case JsonValue jsonValue
+                    when jsonValue.GetValueKind() == System.Text.Json.JsonValueKind.String:
+                    try
+                    {
+                        _ = jsonValue.GetValue<string>();
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        throw new InvalidOperationException($"{ex.Message} Path: {jsonValue.GetPath()}", ex);
+                    }
+                    break;
+            }
         }
     }
 }
