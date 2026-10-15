@@ -19,6 +19,9 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql;
 /// The violated name is read from the position SQL Server quotes it at, never by searching the
 /// whole message: a unique-violation message ends with the duplicate value itself ("The duplicate
 /// key value is (...)"), and a client-supplied value can spell another constraint's name (DMS-1529).
+/// The positions are the us_english ones: SQL Server localizes these messages to the session
+/// language, so <see cref="PinMssqlSessionLanguage"/> pins every Configuration Service session to
+/// us_english.
 /// Each <see cref="SqlError"/> is examined on its own, so a batch that reports several errors is
 /// classified by any of them rather than by the first one only.
 /// </remarks>
