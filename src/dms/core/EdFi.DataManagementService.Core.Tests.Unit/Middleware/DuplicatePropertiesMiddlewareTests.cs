@@ -20,9 +20,16 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [Parallelizable]
 public class DuplicatePropertiesMiddlewareTest
 {
+    private const string ProblemJson = "application/problem+json";
+
     internal static IPipelineStep Middleware()
     {
         return new DuplicatePropertiesMiddleware(NullLogger.Instance);
+    }
+
+    internal static IPipelineStep ProblemJsonMiddleware()
+    {
+        return new DuplicatePropertiesMiddleware(NullLogger.Instance, errorContentType: ProblemJson);
     }
 
     [TestFixture]
@@ -553,6 +560,147 @@ public class DuplicatePropertiesMiddlewareTest
                     "validationErrors":{"$.schoolId":["An item with the same key has already been added."]
                     """
                 );
+        }
+    }
+
+    /// <summary>
+    /// A duplicate found either way - named by the frontend, which is the production path, or found
+    /// by scanning a raw body passed through the Core request contract - is answered in the
+    /// configured media type: application/json by default, application/problem+json when the
+    /// identity JSON-body pipeline asks for it. The status and body do not depend on the option.
+    /// </summary>
+    [TestFixture("frontend-path")]
+    [TestFixture("raw-body-scan")]
+    [Parallelizable]
+    public class Given_A_Duplicate_Property_With_And_Without_The_Problem_Json_Option(string source)
+        : DuplicatePropertiesMiddlewareTest
+    {
+        private RequestInfo _problemJsonRequestInfo = No.RequestInfo();
+        private RequestInfo _defaultRequestInfo = No.RequestInfo();
+        private bool _nextWasCalled;
+
+        private FrontendRequest Request() =>
+            source switch
+            {
+                "frontend-path" => RequestWith(body: null, duplicatePropertyPath: "$.FirstName"),
+                "raw-body-scan" => RequestWith("""{"FirstName":"Jane","FirstName":"Jane"}"""),
+                _ => throw new ArgumentOutOfRangeException(nameof(source), source, null),
+            };
+
+        private static FrontendRequest RequestWith(string? body, string? duplicatePropertyPath = null) =>
+            new(
+                Path: "identities",
+                Body: body,
+                Form: null,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: [],
+                DuplicatePropertyPath: duplicatePropertyPath
+            );
+
+        private Task RecordingNext()
+        {
+            _nextWasCalled = true;
+            return Task.CompletedTask;
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _problemJsonRequestInfo = new(Request(), RequestMethod.POST, No.ServiceProvider);
+            await ProblemJsonMiddleware().Execute(_problemJsonRequestInfo, RecordingNext);
+
+            _defaultRequestInfo = new(Request(), RequestMethod.POST, No.ServiceProvider);
+            await Middleware().Execute(_defaultRequestInfo, RecordingNext);
+        }
+
+        [Test]
+        public void It_returns_status_400_either_way()
+        {
+            _problemJsonRequestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            _defaultRequestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_returns_application_json_by_default()
+        {
+            _defaultRequestInfo.FrontendResponse.ContentType.Should().Be("application/json");
+        }
+
+        [Test]
+        public void It_returns_application_problem_json_when_configured()
+        {
+            _problemJsonRequestInfo.FrontendResponse.ContentType.Should().Be(ProblemJson);
+        }
+
+        [Test]
+        public void It_names_the_duplicate_property()
+        {
+            _defaultRequestInfo.FrontendResponse.Body!["validationErrors"]!
+                .AsObject()
+                .Select(error => error.Key)
+                .Should()
+                .Equal("$.FirstName");
+        }
+
+        [Test]
+        public void It_returns_the_same_body_either_way()
+        {
+            _problemJsonRequestInfo
+                .FrontendResponse.Body!.ToJsonString()
+                .Should()
+                .Be(_defaultRequestInfo.FrontendResponse.Body!.ToJsonString());
+        }
+
+        [Test]
+        public void It_does_not_continue_the_pipeline()
+        {
+            _nextWasCalled.Should().BeFalse();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Problem_Json_Option_And_No_Duplicate_Property : DuplicatePropertiesMiddlewareTest
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private bool _nextWasCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var frontEndRequest = new FrontendRequest(
+                Path: "identities",
+                Body: """{"FirstName":"Jane","LastSurname":"Rivera"}""",
+                Form: null,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
+            );
+            _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider);
+            await ProblemJsonMiddleware()
+                .Execute(
+                    _requestInfo,
+                    () =>
+                    {
+                        _nextWasCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+        }
+
+        [Test]
+        public void It_continues_the_pipeline()
+        {
+            _nextWasCalled.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_does_not_set_an_error_response()
+        {
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 }
