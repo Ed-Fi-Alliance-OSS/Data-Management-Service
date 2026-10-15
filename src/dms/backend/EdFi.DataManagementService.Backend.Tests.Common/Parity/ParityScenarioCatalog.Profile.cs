@@ -536,7 +536,7 @@ public static partial class ParityScenarioCatalog
         ),
         Profile(
             "ProfileUnchangedWriteGuardedNoOp/RootOnlyPut",
-            "Root-only shape: an unchanged profiled PUT is a guarded no-op that changes no rowsets or stamps — root row including its replicated content stamps, every document stamp (ContentVersion, ContentLastModifiedAt), and no ChangeVersion allocation.",
+            "Root-only shape: an unchanged profiled PUT is a guarded no-op that changes no rowsets or stamps — root row including its replicated content stamps, document ContentVersion, and no ChangeVersion allocation.",
             "ProfileGuardedNoOpTests",
             "Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Root_Only_Shape",
             "Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Root_Only_Shape",

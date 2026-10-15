@@ -2,7 +2,7 @@
 jira: DMS-1403
 jira_url: https://edfi.atlassian.net/browse/DMS-1403
 epic: DMS-1402
-status: v3.1 — approved for Phase 0 on 2026-10-12 (Codex review 4 technical approval, Q1 closed by product, user approval; §0.4); nothing implemented
+status: v3.1 — approved for Phase 0 on 2026-10-12 (Codex review 4 technical approval, Q1 closed by product, user approval; §0.4); implemented on branch `DMS-1403` (draft PR #1359); qualification and release gates remain open (§8.3, §7.5)
 ---
 
 # Story: Drop `dms.Document.CreatedAt`
@@ -200,6 +200,16 @@ the call points or the fail-closed semantics.
   database name. (f3) also asserts the call order: source check, then restore, then restored
   check, then CMS token.
 
+Round 2 review of `f14ac1f2c` (2026-10-15): after DMS-1401 integration, the current
+`dms.Document` has five columns, so the current-shape statements (header status, PAC-4, PAC-10 b,
+§7.1, §7.2, §7.4, §7.5, I8, §9.1) now say five. The step 1.1–3.2 text and the dated notes above still
+describe the six-column shape at `205d5e98b`; they are history. PAC-10 (b) now states its
+evidence exactly: five-column source inventory, seven legacy captured columns, five expected
+captured columns. The seven-column capture fixture keeps its name. The legacy source-inventory
+fixture is renamed `Given_A_Legacy_Document_Inventory_With_CreatedAt`, because the current
+column count plus `CreatedAt` is six, not seven. Its no-op `CreatedAt` filter is removed. The
+§6 step 1.1 filter, E1, and §8.4 list 1.1 use the new name.
+
 ---
 
 ## 1. Problem, proposed decision, alternatives, assumptions, open questions
@@ -359,9 +369,11 @@ become binding only when approved.
   and query authorization pass with their surviving assertions intact and exact: `ContentVersion`,
   `ContentLastModifiedAt`, identities, rowsets, resource keys, and ChangeVersion allocation are
   still asserted by value. Removing the `CreatedAt` assertions does not weaken any other check.
-- **PAC-4 CDC alignment.** The CDC source inventory for `dms.Document` has six columns in table
-  order; the SQL Server provider's generated `@captured_column_list` for `dms.Document` lists six;
-  SQL Server capture-column expectations (backend and SchemaTools live tests) list six; the
+- **PAC-4 CDC alignment.** The CDC source inventory for `dms.Document` has five columns in table
+  order (`DocumentId`, `DocumentUuid`, `ResourceKeyId`, `CreatedByOwnershipTokenId`,
+  `ContentVersion`; DMS-1401 removed `ContentLastModifiedAt`, §7.6); the SQL Server provider's
+  generated `@captured_column_list` for `dms.Document` lists five; SQL Server capture-column
+  expectations (backend and SchemaTools live tests) list five; the
   PostgreSQL publication and SQL Server capture integration tests pass; the connector pinned-image
   fixture's `Document` definition matches the inventory.
 - **PAC-5 Copy-forward.** `Copy-NorthridgeDataForward.ps1` no longer reads
@@ -398,10 +410,13 @@ become binding only when approved.
   `CreatedAt`, and whose other CDC prerequisites are valid, is rejected by provider setup on both
   engines with `CDC_SOURCE_COLUMN_UNEXPECTED` for `dms.Document.CreatedAt` (`FailClosed`,
   `Outcome = Failed`). Evidence: validator unit test (1.1) and live tests on both engines (3.2).
-  (b) *SQL Server capture columns:* when the source inventory matches and an existing
-  `dms_binding_document` capture instance captures the seven legacy columns, the capture-instance
-  inspection reports the artifact `Mismatched`. Evidence: provider unit test through the existing
-  fake-executor seam (1.1). The two mechanisms are not expected to fire in one invocation; the
+  (b) *SQL Server capture columns:* when the source inventory matches the current five-column
+  `dms.Document` shape and an existing `dms_binding_document` capture instance captures the seven
+  legacy columns (the five current columns plus `ContentLastModifiedAt` and `CreatedAt`), the
+  capture-instance inspection reports the artifact `Mismatched` against the five expected captured
+  columns. Evidence: provider unit test
+  `Given_An_Existing_Seven_Column_Document_Capture_Instance` through the existing fake-executor
+  seam (1.1). The two mechanisms are not expected to fire in one invocation; the
   service stops at the first error. No validation rule, order, or stop behavior is changed.
 - **PAC-11 Template verifier fails closed (new).** `verify-template-restore.ps1` asserts, for the
   source database before the restore and for the restored verification database before the
@@ -653,7 +668,8 @@ extracted to `baseline\failing-names.txt`; every pre-existing §8.4 fixture name
     CREATE block contains no `"CreatedAt"` (both fail on revert); keep the remaining column/default
     assertions unchanged.
   - `CdcSourceInventoryTests.cs:327-347`: six names, `Enumerable.Range(1, 6)`; **add** fixture
-    `Given_A_Legacy_Seven_Column_Document_Inventory` with
+    `Given_A_Legacy_Document_Inventory_With_CreatedAt` (named
+    `Given_A_Legacy_Seven_Column_Document_Inventory` before the round 2 review; §0.5) with
     `It_reports_created_at_as_unexpected`, calling
     `CdcSourceInventoryValidator.ValidateLiveSourceInventory(expected, observedWithCreatedAtAtOrdinal7)`
     and asserting exactly one diagnostic `CDC_SOURCE_COLUMN_UNEXPECTED` for
@@ -679,7 +695,7 @@ extracted to `baseline\failing-names.txt`; every pre-existing §8.4 fixture name
   dotnet test src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit --nologo --results-directory "$R\1.1" --logger "trx;LogFileName=U2.trx"
   dotnet build src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration --nologo
   Get-TrxFixtureCounts -TrxPath "$R\1.1\U1.trx" -ExpectedFixtures @(
-    'EdFi.DataManagementService.Backend.Ddl.Tests.Unit.Given_A_Legacy_Seven_Column_Document_Inventory',
+    'EdFi.DataManagementService.Backend.Ddl.Tests.Unit.Given_A_Legacy_Document_Inventory_With_CreatedAt',
     'EdFi.DataManagementService.Backend.Ddl.Tests.Unit.Given_An_Existing_Seven_Column_Document_Capture_Instance')
   ```
   (The exact namespace of the two new fixtures is whatever the files already use; the list is
@@ -774,7 +790,7 @@ both engines by exact name; diff review confirms no surviving assertion was loos
 - T-C hits.
 - **Permanent exceptions**, scoped to these test cases and not to their files. Any other
   `CreatedAt` hit in the same files fails the gate.
-  - E1: step 1.1's legacy source-inventory fixture `Given_A_Legacy_Seven_Column_Document_Inventory`
+  - E1: step 1.1's legacy source-inventory fixture `Given_A_Legacy_Document_Inventory_With_CreatedAt`
     (`Backend.Ddl.Tests.Unit/CdcSourceInventoryTests.cs`).
   - E2: step 1.1's legacy capture-instance fixture
     `Given_An_Existing_Seven_Column_Document_Capture_Instance`
@@ -1024,10 +1040,10 @@ each dispatch waits for its own approval.
 The change is one definition consumed by both dialect emitters; PostgreSQL loses an unnamed
 `DEFAULT now()` column, SQL Server loses a column with a named default constraint
 `DF_Document_CreatedAt` (dropping the column drops the constraint; no orphan). Column order of
-the remaining six columns is unchanged on both. SQL Server CDC capture instances are enabled by
-the provider with an explicit `@captured_column_list` derived from the inventory, so a database
-provisioned from the new DDL gets a six-column capture instance; the pinned expectations change
-to match.
+the remaining five columns is unchanged on both (six before DMS-1401 integration, §7.6). SQL
+Server CDC capture instances are enabled by the provider with an explicit `@captured_column_list`
+derived from the inventory, so a database provisioned from the new DDL gets a five-column capture
+instance; the pinned expectations change to match.
 
 ### 7.2 Compatibility: API CRUD versus CDC setup/validation (two different answers)
 
@@ -1048,7 +1064,7 @@ together** because the setup runs its steps in order and stops at the first erro
 | Mechanism | Step order (SQL Server) | PostgreSQL | SQL Server |
 |---|---|---|---|
 | Source inventory | 5th step (`ExecuteSourceInventoryAsync`) | `CDC_SOURCE_COLUMN_UNEXPECTED` (old DB, new runtime) or `CDC_SOURCE_COLUMN_MISSING` (new DB, old runtime) for `dms.Document.CreatedAt`, `FailClosed`, `Outcome = Failed`; later steps do not run | same (live inventory read at `CdcSqlServerHeartbeatDatabaseProvider.cs:427-448`) |
-| Capture-instance columns | 6th step (`ExecuteCaptureInstancesAsync`), reached only when the source inventory matched | n/a | an existing capture instance whose captured list differs from the expected six names fails `capturedColumnsMatch` (around line 3160) → artifact `Mismatched` → `CDC_PROVIDER_ARTIFACT_MISMATCH` |
+| Capture-instance columns | 6th step (`ExecuteCaptureInstancesAsync`), reached only when the source inventory matched | n/a | an existing capture instance whose captured list differs from the expected five names fails `capturedColumnsMatch` (around line 3160) → artifact `Mismatched` → `CDC_PROVIDER_ARTIFACT_MISMATCH` |
 
 With the new runtime and a new database both mechanisms match exactly. Evidence: unit tests for
 both mechanisms (1.1) and live source-inventory tests (3.2). The validator, the step order, and
@@ -1082,12 +1098,13 @@ reprovision and reload. For CDC-enabled stores see §7.4 (c).
 ### 7.4 CDC rollout: what is supported and what is not
 
 The source inventory is derived from the definition, so after this change the runtime's expected
-`dms.Document` inventory has six columns. Three situations must be kept apart:
+`dms.Document` inventory has five columns (with DMS-1401, §7.6). Three situations must be kept
+apart:
 
 **(a) Fresh provisioning with eligible initial CDC enablement — supported.** A database
 provisioned from the new DDL, with no prior binding, passes the initial-enable workflow's
 pre-capture checks (controller-proven new physical source; no unexpected canonical/cache/work
-rows) and gets a six-column capture instance on SQL Server and a matching publication on
+rows) and gets a five-column capture instance on SQL Server and a matching publication on
 PostgreSQL. Consumers that deserialize `dms.Document` change events by name never see
 `createdAt` from such a source; the repository's connector templates and fixtures do not
 enumerate the column.
@@ -1117,7 +1134,7 @@ expand into implementing CDC replacement.
 ### 7.5 Templates, verifier, release handoff
 
 Template packages are built by provisioning from current DDL, so any build after this merge
-produces six-column `dms.Document` tables without further work. Packages built before it remain
+produces five-column `dms.Document` tables without further work. Packages built before it remain
 loadable and serveable (no reader) but do not carry the reduction, and after step 5.3 the shared
 verifier **rejects** them by catalog, in both the source database and the restored verification
 database, independent of the `v3` hash.
@@ -1290,7 +1307,7 @@ the PR before the story is complete (not reproducible locally or deliberately CI
 | I7 | Backend CDC integration, database lanes | `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration --filter "Category!=CdcConnectorTemplateSmoke" --results-directory "$R\<step>" --logger "trx;LogFileName=I7.trx" --nologo` | no failure except those whose name **and** signature match the I7 record from the pre-step-3.1 tree (`3.1\I7-revert-check-outcomes.csv`: 50 Kafka qualification `Docker operation failed (image)`, 3 Windows journal-interruption). Kafka qualification prerequisites can fail `OneTimeSetUp` rather than skip. Not-executed tests are counted separately from failures and passes, with each reason named (§0.5). | 3.1, pre-push | **Run Backend CDC Integration Tests** runs `Category!=DatabaseIntegration` only |
 | I7-smoke | Connector-template pinned-image smoke | Qualification run: dispatch `on-dms-pullrequest.yml` (`workflow_dispatch`) on the branch; job `run-backend-cdc-connector-template-smoke-tests` (`Category=CdcConnectorTemplateSmoke`, Docker Compose stack, repository image variables) | pass on the reviewed branch SHA | not run locally (stated; 200 tests skip without the pinned-image variables) | required before merge; ordinary PR and merge-queue CI skip this job |
 | I7-contract | CDC message contract, both providers | Qualification runs: dispatch `nightly-cdc-qualification.yml` twice on the branch, with `lane=Postgresql, suite=MessageContract` and `lane=Mssql, suite=MessageContract` | both pass on the reviewed branch SHA | not run locally (stated; 964 tests skip without `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE`) | required before merge; not part of PR CI |
-| I8 | API integration (in-process DMS on provisioned DBs) | `dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration -p:BuildingPluginFixtures=true --filter "Category=ApiIntegration&Category=PostgresqlIntegration" --results-directory "$R\6.2" --logger "trx;LogFileName=I8-pg.trx" --nologo` (+ `MssqlIntegration` variant when the MSSQL container is up) | pass; proves DMS boots and serves on a six-column schema; plugin tests not run (NU1008 workaround) and stated | pre-push | PG + MSSQL API lanes, Plugin lane |
+| I8 | API integration (in-process DMS on provisioned DBs) | `dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration -p:BuildingPluginFixtures=true --filter "Category=ApiIntegration&Category=PostgresqlIntegration" --results-directory "$R\6.2" --logger "trx;LogFileName=I8-pg.trx" --nologo` (+ `MssqlIntegration` variant when the MSSQL container is up) | pass; proves DMS boots and serves on a five-column `dms.Document` schema; plugin tests not run (NU1008 workaround) and stated | pre-push | PG + MSSQL API lanes, Plugin lane |
 | P1 | Northridge db-free guards | `Invoke-Pester eng/northridge/tests/NorthridgeFailClosedGuards.Tests.ps1 -Output Detailed *> "$R\<step>\P1.log"` | all pass; the suite has no live scenarios; its skips are environment-dependent (no symbolic-link privilege; no POSIX `sh` on `PATH`, twice), named in the log, and must match the 0.3 baseline by name | 4.1, pre-push | Pester lane |
 | P2 | Northridge live carry-forward | `$env:DMS_NORTHRIDGE_PG_FIXTURE_CONTAINER='<pg16>'; Invoke-Pester eng/northridge/tests/CompactDescriptorCarryForward.Tests.ps1 -Output Detailed *> "$R\<step>\P2.log"`, run from Linux `pwsh` (on this Windows workstation, a disposable `mcr.microsoft.com/powershell` container with the Docker socket) | both `-ForEach` forms pass with nothing skipped; the source archive's `dms.Document` COPY header carries `CreatedAt`; the copy reports it as the only source-only column; the target catalog has no `CreatedAt`; the existing integrity assertions pass | 4.2, pre-push | not in CI (stated) |
 | P3 | Template verifier Pester | `Invoke-Pester eng/DatabaseTemplates/tests -Output Detailed *> "$R\<step>\P3.log"` | all pass incl. `Template-DocumentShape.Tests.ps1` case groups (a)–(f) on both engines, named in the log | 5.3, pre-push | Pester lane |
@@ -1321,7 +1338,7 @@ and `<step>-mssql.txt`; the filter is built as
 `($list | ForEach-Object { "FullyQualifiedName~$_" }) -join '|'` so the list and the filter cannot
 diverge.
 
-**1.1 (U1, Ddl.Tests.Unit)** — *new in this story:* `Given_A_Legacy_Seven_Column_Document_Inventory`,
+**1.1 (U1, Ddl.Tests.Unit)** — *new in this story:* `Given_A_Legacy_Document_Inventory_With_CreatedAt`,
 `Given_An_Existing_Seven_Column_Document_Capture_Instance` (namespace as discovered; discovered
 and shown passing in step 1.1, not at baseline), plus the existing fixture that owns
 `It_should_not_emit_document_created_at` in `CoreDdlEmitterTests`.
@@ -1483,8 +1500,8 @@ them.
 | 36 generated DDL goldens (U1) | yes | **physical removal** in every fixture's DDL |
 | Provisioned-schema catalog goldens (3.3) | yes | **physical removal** in live catalogs, both engines |
 | Live legacy-shape source-inventory tests (3.2) | yes (ALTER fails; expected inventory differs) | **physical removal** reflected in the runtime inventory; rejection mechanism (a) |
-| `CdcSourceInventoryTests` six-column pin + legacy-inventory diagnostic (1.1) | yes | derived inventory and mechanism (a) at unit level |
-| `CdcSqlServerHeartbeatDatabaseProviderTests` six-name list + mismatch fixture (1.1) | yes (captured list) / component (mismatch fixture) | capture-list derivation; mechanism (b) at unit level |
+| `CdcSourceInventoryTests` five-column pin + legacy-inventory diagnostic (1.1) | yes | derived inventory and mechanism (a) at unit level |
+| `CdcSqlServerHeartbeatDatabaseProviderTests` five-name list + mismatch fixture (1.1) | yes (captured list) / component (mismatch fixture) | capture-list derivation; mechanism (b) at unit level |
 | Seeder INSERT pins (2.1) | no — test-support component check | the shared seeder matches the new shape |
 | `Get-StampDistribution` text assertion and `$plan.SourceOnly` pin (4.1) | no — tooling component check | the copy tool no longer reads the column |
 | Live carry-forward (4.2) | only through the regenerated target DDL | tooling behavior against a legacy dump |

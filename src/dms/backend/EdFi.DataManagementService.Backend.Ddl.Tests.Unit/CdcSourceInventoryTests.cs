@@ -610,7 +610,7 @@ public class Given_CdcSourceInventoryValidator
 }
 
 [TestFixture]
-public class Given_A_Legacy_Seven_Column_Document_Inventory
+public class Given_A_Legacy_Document_Inventory_With_CreatedAt
 {
     private IReadOnlyList<CdcProviderDiagnostic> _diagnostics = null!;
 
@@ -622,32 +622,24 @@ public class Given_A_Legacy_Seven_Column_Document_Inventory
         // A database provisioned before the column was dropped still carries CreatedAt after its surviving columns.
         var observed = expected
             .Select(table =>
-            {
-                if (table.TableKind != CdcSourceTableKind.Document)
-                {
-                    return table;
-                }
-
-                var survivingColumns = table
-                    .Columns.Where(column => column.ColumnName.Value != "CreatedAt")
-                    .ToArray();
-
-                return new CdcSourceTableInventory(
-                    table.TableKind,
-                    table.TableName,
-                    table.EmittedQuotedTableName,
-                    [
-                        .. survivingColumns,
-                        new CdcSourceColumnInventory(
-                            new DbColumnName("CreatedAt"),
-                            @"""CreatedAt""",
-                            survivingColumns.Length + 1,
-                            "timestamp with time zone",
-                            IsNullable: false
-                        ),
-                    ]
-                );
-            })
+                table.TableKind != CdcSourceTableKind.Document
+                    ? table
+                    : new CdcSourceTableInventory(
+                        table.TableKind,
+                        table.TableName,
+                        table.EmittedQuotedTableName,
+                        [
+                            .. table.Columns,
+                            new CdcSourceColumnInventory(
+                                new DbColumnName("CreatedAt"),
+                                @"""CreatedAt""",
+                                table.Columns.Count + 1,
+                                "timestamp with time zone",
+                                IsNullable: false
+                            ),
+                        ]
+                    )
+            )
             .ToArray();
 
         _diagnostics = CdcSourceInventoryValidator.ValidateLiveSourceInventory(expected, observed);

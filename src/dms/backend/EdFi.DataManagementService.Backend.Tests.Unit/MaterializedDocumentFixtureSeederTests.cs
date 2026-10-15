@@ -359,9 +359,13 @@ public class Given_MaterializedDocumentFixtureSeeder
             .Contain("SET IDENTITY_INSERT [dms].[Document] ON")
             .And.Contain("INSERT INTO [dms].[Document]")
             .And.Contain("SET IDENTITY_INSERT [dms].[Document] OFF");
-        // The document row carries no timestamp. The SQL Server timestamp conversion now applies where the
-        // authoritative stamp is seeded: the resource root's stamp update.
+        // The document row carries no timestamp; the authoritative stamp is seeded on the resource root.
         documentInsert.Parameters.Should().NotContain(parameter => parameter.Value is DateTime);
+    }
+
+    [Test]
+    public void It_seeds_the_mssql_resource_root_stamp_as_a_configured_utc_DateTime()
+    {
         var rootStampUpdate = new MaterializedDocumentFixtureSeeder(
             MaterializedDocumentFixtureSqlDialect.Mssql
         )
