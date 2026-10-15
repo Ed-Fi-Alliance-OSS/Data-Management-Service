@@ -56,14 +56,17 @@ foreach ($case in @(
                 Move-Item (Join-Path $directory 'package.zip') (Join-Path $directory 'Focused.Template.nupkg')
                 return $directory
             }
-            function Invoke-TestDocumentStampMutation([bool]$Present) {
+            # Re-adds one removed dms.Document column (the combined tree drops both ContentLastModifiedAt and
+            # CreatedAt), so each legacy shape is proven rejected while the other column stays absent.
+            function Invoke-TestDocumentStampMutation([bool]$Present, [string]$Column = 'ContentLastModifiedAt') {
+                $constraint = "DF_Test_Old$Column"
                 if ($Engine -eq 'mssql') {
-                    $sql = if ($Present) { 'ALTER TABLE dms.Document ADD ContentLastModifiedAt datetime2(7) NOT NULL CONSTRAINT DF_Test_OldStamp DEFAULT SYSUTCDATETIME();' }
-                    else { 'ALTER TABLE dms.Document DROP CONSTRAINT DF_Test_OldStamp; ALTER TABLE dms.Document DROP COLUMN ContentLastModifiedAt;' }
+                    $sql = if ($Present) { "ALTER TABLE dms.Document ADD $Column datetime2(7) NOT NULL CONSTRAINT $constraint DEFAULT SYSUTCDATETIME();" }
+                    else { "ALTER TABLE dms.Document DROP CONSTRAINT $constraint; ALTER TABLE dms.Document DROP COLUMN $Column;" }
                 }
                 else {
-                    $sql = if ($Present) { 'ALTER TABLE dms."Document" ADD COLUMN "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now();' }
-                    else { 'ALTER TABLE dms."Document" DROP COLUMN "ContentLastModifiedAt";' }
+                    $sql = if ($Present) { "ALTER TABLE dms.""Document"" ADD COLUMN ""$Column"" timestamptz NOT NULL DEFAULT now();" }
+                    else { "ALTER TABLE dms.""Document"" DROP COLUMN ""$Column"";" }
                 }
                 Invoke-TestSql $source $sql | Out-Null
             }
@@ -109,6 +112,12 @@ SELECT "DocumentId", "ResourceKeyId", 'uri://template', 'school', 'School' FROM 
                 $script:oldPackage = Invoke-TestPackageCapture 'prechange'
             }
             finally { Invoke-TestDocumentStampMutation $false }
+            Invoke-TestDocumentStampMutation $true 'CreatedAt'
+            try {
+                @(Invoke-TestSql $source $fingerprintSql) | Should -Be $fingerprint
+                $script:createdAtPackage = Invoke-TestPackageCapture 'prechange-createdat'
+            }
+            finally { Invoke-TestDocumentStampMutation $false 'CreatedAt' }
         }
         BeforeEach {
             # Preserve the real, already imported modules while replacing only the API boundary.
@@ -143,6 +152,21 @@ SELECT "DocumentId", "ResourceKeyId", 'uri://template', 'school', 'School' FROM 
                 @(Invoke-TestSql $source $fingerprintSql) | Should -Be $fingerprint
             }
             finally { Invoke-TestDocumentStampMutation $false }
+        }
+        It 'Rejects a pre-change restored package that still carries CreatedAt before API setup' {
+            { & $script:verify -SourceDatabaseName $source -VerificationDatabaseName $script:restored -PackageDirectory $script:createdAtPackage -ExpectedModelManifestPath $script:manifest -DatabaseEngine $Engine -ContainerName $Container -MssqlPassword $password } | Should -Throw "*database '$script:restored' still carries CreatedAt*"
+            Should -Invoke Get-CmsToken -Times 0 -Exactly
+            @(Invoke-TestSql $script:restored $fingerprintSql) | Should -Be $fingerprint
+        }
+        It 'Rejects an old source that still carries CreatedAt before restoration or API setup' {
+            Invoke-TestDocumentStampMutation $true 'CreatedAt'
+            try {
+                # A deliberately nonexistent package proves the source gate precedes restore.
+                { & $script:verify -SourceDatabaseName $source -VerificationDatabaseName $script:restored -PackageDirectory (Join-Path $TestDrive 'never-restored') -ExpectedModelManifestPath $script:manifest -DatabaseEngine $Engine -ContainerName $Container -MssqlPassword $password } | Should -Throw "*database '$source' still carries CreatedAt*"
+                Should -Invoke Get-CmsToken -Times 0 -Exactly
+                @(Invoke-TestSql $source $fingerprintSql) | Should -Be $fingerprint
+            }
+            finally { Invoke-TestDocumentStampMutation $false 'CreatedAt' }
         }
     }
 }

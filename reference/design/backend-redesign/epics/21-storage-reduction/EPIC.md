@@ -134,3 +134,4 @@ by roughly half a dozen scenarios as an accepted lane-time cost.
 - **DMS-1456 (T14)** — [`14-remove-referential-identity-infrastructure.md`](14-remove-referential-identity-infrastructure.md) — Remove ReferentialIdentity fixtures, maintenance, and infrastructure.
 - **DMS-1404** — [`15-compact-descriptor-id-and-storage-optimizations.md`](15-compact-descriptor-id-and-storage-optimizations.md) — Give descriptors a compact int surrogate, plus other optimizations.
 - **DMS-1401** — [`16-drop-document-content-last-modified-at.md`](16-drop-document-content-last-modified-at.md) — Drop the denormalized ContentLastModifiedAt from dms.Document while retaining document-level ContentVersion and authoritative root/descriptor timestamps.
+- **DMS-1403** — [`17-drop-document-created-at.md`](17-drop-document-created-at.md) — Drop the unread dms.Document.CreatedAt without a replacement creation-time capability.

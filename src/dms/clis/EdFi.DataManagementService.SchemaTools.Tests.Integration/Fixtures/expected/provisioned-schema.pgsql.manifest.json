@@ -3063,16 +3063,6 @@
     {
       "schema_name": "dms",
       "table_name": "Document",
-      "column_name": "CreatedAt",
-      "ordinal_position": 6,
-      "data_type": "timestamp with time zone",
-      "is_nullable": false,
-      "default_expression": "now()",
-      "is_computed": false
-    },
-    {
-      "schema_name": "dms",
-      "table_name": "Document",
       "column_name": "CreatedByOwnershipTokenId",
       "ordinal_position": 4,
       "data_type": "smallint",

@@ -194,8 +194,7 @@ public static class DocumentReferenceLookupPageFixture
                 "DocumentId" bigint PRIMARY KEY,
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
-                "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "CreatedAt" timestamptz NOT NULL DEFAULT now()
+                "ContentVersion" bigint NOT NULL DEFAULT 1
             );
 
             CREATE TABLE IF NOT EXISTS dms."Descriptor" (
@@ -301,8 +300,7 @@ public static class DocumentReferenceLookupPageFixture
                 [DocumentId] bigint PRIMARY KEY,
                 [DocumentUuid] uniqueidentifier NOT NULL,
                 [ResourceKeyId] smallint NOT NULL DEFAULT 0,
-                [ContentVersion] bigint NOT NULL DEFAULT 1,
-                [CreatedAt] datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
+                [ContentVersion] bigint NOT NULL DEFAULT 1
             );
 
             IF OBJECT_ID('dms.Descriptor', 'U') IS NULL

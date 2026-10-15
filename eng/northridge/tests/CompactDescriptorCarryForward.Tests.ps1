@@ -54,6 +54,10 @@ CREATE SCHEMA auth; CREATE TABLE auth."CarryForwardWitness" ("DocumentId" bigint
         $history = $legacy.Substring($historyStart, $historyEnd - $historyStart).Replace('"ResourceKeyId" smallint NOT NULL', '"Discriminator" varchar(256) NOT NULL')
         $legacy = $legacy.Substring(0, $historyStart) + $history + $legacy.Substring($historyEnd)
         $legacy = $legacy.Replace('ON "tracked_changes_edfi"."Descriptor" ("ResourceKeyId", "ChangeVersion")', 'ON "tracked_changes_edfi"."Descriptor" ("Discriminator", "ChangeVersion")')
+        # Older dumps also carry dms.Document.CreatedAt, which the current schema no longer has.
+        $documentKey = 'CONSTRAINT "PK_Document" PRIMARY KEY ("DocumentId")'
+        if (($legacy.Length - $legacy.Replace($documentKey, '').Length) -ne $documentKey.Length) { throw "Fixture DDL must declare $documentKey exactly once" }
+        $legacy = $legacy.Replace($documentKey, '"CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),' + "`n    " + $documentKey)
         foreach ($db in $script:databases) {
             docker exec $script:container createdb -U $script:user $db
             if ($LASTEXITCODE -ne 0) { throw "Cannot create fixture $db" }
@@ -141,6 +145,19 @@ COMMIT;
         $map.DocumentId | Should -Be @('5000000042', '5000000043', '5000000044', '5000000045')
         $map.DescriptorId | Should -Be @('41', '42', '43', '44')
     }
+    It 'Reads a legacy archive whose dms.Document still carries ContentLastModifiedAt and CreatedAt' {
+        $archive = @(docker exec $script:container pg_restore --data-only -n dms -t Document -f - /tmp/nr-compact-fixture.dump)
+        $LASTEXITCODE | Should -Be 0
+        @($archive | Where-Object { $_ -like 'COPY *' }) | Should -Be @('COPY dms."Document" ("ContentLastModifiedAt", "DocumentId", "DocumentUuid", "ResourceKeyId", "CreatedByOwnershipTokenId", "ContentVersion", "CreatedAt") FROM stdin;')
+    }
+    It 'Reports ContentLastModifiedAt and CreatedAt as the only source-only dms.Document columns and leaves them out of the target' {
+        $script:copyOutput -join "`n" | Should -Match 'PASS: copy complete'
+        @($script:copyOutput | Where-Object { $_ -like '*archive columns:*' -or $_ -like '*source-only columns left in staging:*' } | ForEach-Object { $_.Trim() }) | Should -Be @(
+            'archive columns: 7; target columns: 5; inserted: 5', 'source-only columns left in staging: ContentLastModifiedAt, CreatedAt')
+        $columnSql = "SELECT column_name FROM information_schema.columns WHERE table_schema = 'dms' AND table_name = 'Document' ORDER BY ordinal_position;"
+        (Query $script:target $columnSql) | Should -Be @('DocumentId', 'DocumentUuid', 'ResourceKeyId', 'CreatedByOwnershipTokenId', 'ContentVersion')
+        (Query $script:source $columnSql) | Should -Be @('ContentLastModifiedAt', 'DocumentId', 'DocumentUuid', 'ResourceKeyId', 'CreatedByOwnershipTokenId', 'ContentVersion', 'CreatedAt')
+    }
     It 'Preserves each owning document type and reconstructs the exact legacy URI' {
         (Query $script:target 'SELECT s."DocumentId" || ''|'' || s."ResourceKeyId" || ''|'' || d."ResourceKeyId" || ''|'' || s."Namespace" || ''#'' || s."CodeValue" FROM dms."Descriptor" s JOIN dms."Document" d ON d."DocumentId" = s."DocumentId" ORDER BY s."DocumentId";') | Should -Be @(
             '5000000042|3|3|uri://Example/Type#A#B', '5000000043|5|5|uri://Example/Type#A#B', '5000000044|3|3|uri://Example/Type#Min', '5000000045|3|3|uri://Example/Type#Max')
@@ -166,12 +183,11 @@ COMMIT;
         }
     }
     It 'Preserves exact document/RI/stamp values, source identity and cleanup and passes checkpoint' {
-        foreach ($table in @('dms.Document', 'dms.ReferentialIdentity')) {
-            $schema, $name = $table.Split('.')
-            $columns = if ($name -ceq 'Document') { '"DocumentId", "DocumentUuid", "ResourceKeyId", "CreatedByOwnershipTokenId", "ContentVersion", "CreatedAt"' } else { '*' }
-            $sql = "SELECT json_agg(t ORDER BY `"DocumentId`")::text FROM (SELECT $columns FROM `"$schema`".`"$name`") t;"
-            (Query $script:target $sql) | Should -Be (Query $script:source $sql)
-        }
+        # Every target dms.Document column, by name; the legacy source's extra ContentLastModifiedAt and CreatedAt are not copied.
+        $sql = "SELECT json_agg(json_build_object($((Query $script:target "SELECT format('%L, %I', column_name, column_name) FROM information_schema.columns WHERE table_schema = 'dms' AND table_name = 'Document' ORDER BY ordinal_position;") -join ', ')) ORDER BY `"DocumentId`")::text FROM dms.`"Document`";"
+        (Query $script:target $sql) | Should -Be (Query $script:source $sql)
+        $sql = 'SELECT json_agg(t ORDER BY "DocumentId")::text FROM dms."ReferentialIdentity" t;'
+        (Query $script:target $sql) | Should -Be (Query $script:source $sql)
         foreach ($table in @('dms.Descriptor', 'edfi.Student', 'edfi.ProfileRootOnlyMergeItem')) {
             $schema, $name = $table.Split('.')
             $sql = "SELECT json_agg(json_build_array(`"DocumentId`", `"ContentVersion`", `"ContentLastModifiedAt`") ORDER BY `"DocumentId`")::text FROM `"$schema`".`"$name`";"

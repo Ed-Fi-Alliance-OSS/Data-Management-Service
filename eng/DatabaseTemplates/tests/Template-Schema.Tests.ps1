@@ -77,6 +77,8 @@ Describe 'Template restore verification ordering' {
             'catalog assertions'
         }
         Mock Get-UserSchemaNames { param($DatabaseName) $events.Add("schemas:$DatabaseName"); @('dms', 'edfi', 'tpdm') }
+        # DMS-1403's dms.Document shape check runs beside these catalog assertions (source, then restored).
+        Mock Assert-DocumentTableShape { param($DatabaseName) $events.Add("shape:$DatabaseName") }
         Mock Restore-TemplatePackage { $events.Add('restore'); 'Combined.nupkg' }
         Mock docker {
             $global:LASTEXITCODE = 0
@@ -92,7 +94,7 @@ Describe 'Template restore verification ordering' {
 
     It 'Checks both catalogs and populated data before API setup for <Engine>' -ForEach @(@{ Engine = 'postgresql' }, @{ Engine = 'mssql' }) {
         { & $verify -SourceDatabaseName source -VerificationDatabaseName restored -ExpectedModelManifestPath $manifest -DatabaseEngine $Engine -RequirePopulatedData } | Should -Throw 'API checkpoint'
-        $events | Should -Be @('catalog:source', 'schemas:source', 'restore', 'catalog:restored', 'schemas:restored', 'api')
+        $events | Should -Be @('catalog:source', 'shape:source', 'schemas:source', 'restore', 'catalog:restored', 'schemas:restored', 'shape:restored', 'api')
         Should -Invoke docker -Times 10 -Exactly
         Should -Invoke Restore-TemplatePackage -Times 1 -Exactly
     }

@@ -20,13 +20,13 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [Category("CdcProviderArtifacts")]
 public class Given_MssqlCdcProviderArtifacts
 {
-    private const string FixtureRelativePath =
+    internal const string FixtureRelativePath =
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-extension-child-collections";
     private const string ConnectorPassword = "EdFi_Dms1!";
-    private const string GatingRoleName = "dms_binding_gate";
-    private const string DocumentCaptureInstanceName = "dms_binding_document";
-    private const string DocumentCacheCaptureInstanceName = "dms_binding_document_cache";
-    private const string HeartbeatCaptureInstanceName = "dms_binding_cdc_heartbeat";
+    internal const string GatingRoleName = "dms_binding_gate";
+    internal const string DocumentCaptureInstanceName = "dms_binding_document";
+    internal const string DocumentCacheCaptureInstanceName = "dms_binding_document_cache";
+    internal const string HeartbeatCaptureInstanceName = "dms_binding_cdc_heartbeat";
 
     private MssqlGeneratedDdlFixture _fixture = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
@@ -328,7 +328,7 @@ public class Given_MssqlCdcProviderArtifacts
         );
     }
 
-    private static DbConnectionCdcProviderDatabaseExecutor CreateSqlServerExecutor(
+    internal static DbConnectionCdcProviderDatabaseExecutor CreateSqlServerExecutor(
         SqlConnection connection
     ) =>
         new(
@@ -568,7 +568,7 @@ public class Given_MssqlCdcProviderArtifacts
             );
     }
 
-    private static async Task<string> ReadDataStoreIdentityAsync(SqlConnection connection)
+    internal static async Task<string> ReadDataStoreIdentityAsync(SqlConnection connection)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -878,7 +878,7 @@ public class Given_MssqlCdcProviderArtifacts
         }
     }
 
-    private static async Task ExecuteNonQueryAsync(SqlConnection connection, string sql)
+    internal static async Task ExecuteNonQueryAsync(SqlConnection connection, string sql)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
@@ -1008,7 +1008,7 @@ public class Given_MssqlCdcProviderArtifacts
         return changes;
     }
 
-    private static void CreateConnectorLoginAndUser(string databaseName, string connectorPrincipalName)
+    internal static void CreateConnectorLoginAndUser(string databaseName, string connectorPrincipalName)
     {
         using var connection = new SqlConnection(BaselineDatabaseConfiguration.MssqlAdminConnectionString!);
         connection.Open();
@@ -1032,7 +1032,7 @@ public class Given_MssqlCdcProviderArtifacts
         command.ExecuteNonQuery();
     }
 
-    private static void DropConnectorLoginIfExists(string connectorPrincipalName)
+    internal static void DropConnectorLoginIfExists(string connectorPrincipalName)
     {
         SqlConnection.ClearAllPools();
 
@@ -1057,7 +1057,7 @@ public class Given_MssqlCdcProviderArtifacts
     private static bool IsSafeLsnObservation(string value) =>
         value == "none" || value.StartsWith("0x", StringComparison.Ordinal);
 
-    private static string DescribeDiagnostics(IReadOnlyList<CdcProviderDiagnostic> diagnostics) =>
+    internal static string DescribeDiagnostics(IReadOnlyList<CdcProviderDiagnostic> diagnostics) =>
         string.Join(
             "; ",
             diagnostics.Select(diagnostic =>
@@ -1087,6 +1087,221 @@ public class Given_MssqlCdcProviderArtifacts
         string ColumnName,
         int ColumnOrdinal
     );
+}
+
+[TestFixture]
+[NonParallelizable]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
+[Category("CdcProviderArtifacts")]
+public class Given_MssqlCdcProviderArtifacts_With_A_Legacy_CreatedAt_Column
+{
+    private static readonly string[] _fiveDocumentColumns =
+    [
+        "DocumentId",
+        "DocumentUuid",
+        "ResourceKeyId",
+        "CreatedByOwnershipTokenId",
+        "ContentVersion",
+    ];
+
+    private MssqlGeneratedDdlFixture _fixture = null!;
+    private MssqlGeneratedDdlTestDatabase _database = null!;
+    private string _connectorPrincipalName = null!;
+    private CdcProviderSetupResult _fiveColumnValidation = null!;
+    private CdcProviderSetupResult _legacyColumnValidation = null!;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        MssqlConnectionStringGuard.RequireConfiguredForCiOrSkipLocally(
+            "SQL Server CDC artifact integration tests require a MssqlAdmin connection string."
+        );
+
+        _fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            Given_MssqlCdcProviderArtifacts.FixtureRelativePath
+        );
+        _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _connectorPrincipalName = $"cdc_connector_{Guid.NewGuid():N}";
+        Given_MssqlCdcProviderArtifacts.CreateConnectorLoginAndUser(
+            _database.DatabaseName,
+            _connectorPrincipalName
+        );
+
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+
+        // Create every CDC prerequisite against the five-column table, then confirm it validates cleanly,
+        // so the legacy column is the only difference in the second validation.
+        await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+        _fiveColumnValidation = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
+
+        await Given_MssqlCdcProviderArtifacts.ExecuteNonQueryAsync(
+            connection,
+            """
+            ALTER TABLE [dms].[Document] ADD [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Document_CreatedAt] DEFAULT (sysutcdatetime());
+            """
+        );
+
+        _legacyColumnValidation = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
+
+        if (!string.IsNullOrWhiteSpace(_connectorPrincipalName))
+        {
+            Given_MssqlCdcProviderArtifacts.DropConnectorLoginIfExists(_connectorPrincipalName);
+        }
+    }
+
+    [Test]
+    public void It_expects_a_five_column_Document_source_without_CreatedAt()
+    {
+        DocumentColumnNames(_fixture.CdcSourceInventory).Should().Equal(_fiveDocumentColumns);
+    }
+
+    [Test]
+    public void It_validates_the_five_column_database_as_an_exact_match()
+    {
+        _fiveColumnValidation
+            .Outcome.Should()
+            .Be(
+                CdcProviderSetupOutcome.ExactMatch,
+                Given_MssqlCdcProviderArtifacts.DescribeDiagnostics(_fiveColumnValidation.Diagnostics)
+            );
+        _fiveColumnValidation
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
+    }
+
+    [Test]
+    public void It_fails_validation_once_the_Document_table_carries_CreatedAt()
+    {
+        _legacyColumnValidation.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+    }
+
+    [Test]
+    public void It_reports_the_unexpected_CreatedAt_source_column_as_the_only_error()
+    {
+        var diagnostic = _legacyColumnValidation
+            .Diagnostics.Where(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error)
+            .Should()
+            .ContainSingle(
+                Given_MssqlCdcProviderArtifacts.DescribeDiagnostics(_legacyColumnValidation.Diagnostics)
+            )
+            .Which;
+
+        diagnostic.Code.Should().Be("CDC_SOURCE_COLUMN_UNEXPECTED");
+        diagnostic.SafeName.Value.Should().Be("dms.Document.CreatedAt");
+        diagnostic.ArtifactKind.Should().Be(CdcProviderArtifactKind.SourceColumn);
+        diagnostic.Severity.Should().Be(CdcProviderDiagnosticSeverity.Error);
+        diagnostic.Classification.Should().Be(CdcProviderRetryContinuityClassification.FailClosed);
+        diagnostic.ExpectedValue.Should().Be("absent");
+        diagnostic.ObservedValue.Should().Be("present");
+    }
+
+    [Test]
+    public void It_reports_the_same_non_error_diagnostics_as_the_five_column_validation()
+    {
+        NonErrorDiagnosticCodes(_legacyColumnValidation)
+            .Should()
+            .Equal(NonErrorDiagnosticCodes(_fiveColumnValidation));
+    }
+
+    [Test]
+    public void It_reads_CreatedAt_from_the_live_source_inventory()
+    {
+        string[] legacyDocumentColumns = [.. _fiveDocumentColumns, "CreatedAt"];
+        DocumentColumnNames(_legacyColumnValidation.SourceTableInventory)
+            .Should()
+            .Equal(legacyDocumentColumns);
+    }
+
+    [Test]
+    public void It_stops_before_capture_instance_inspection()
+    {
+        _fiveColumnValidation
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+                && observation.SafeArtifactName.Value
+                    == Given_MssqlCdcProviderArtifacts.DocumentCaptureInstanceName
+            );
+        _fiveColumnValidation.GrantInventory.Should().NotBeEmpty();
+
+        _legacyColumnValidation
+            .ArtifactInventory.Should()
+            .Contain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.HeartbeatTable
+                && observation.State == CdcProviderArtifactState.Matched
+            );
+        _legacyColumnValidation
+            .ArtifactInventory.Should()
+            .NotContain(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+            );
+        _legacyColumnValidation.GrantInventory.Should().BeEmpty();
+    }
+
+    private async Task<CdcProviderSetupResult> RunSetupAsync(
+        SqlConnection connection,
+        CdcProviderSetupMode mode
+    )
+    {
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        return await service.SetupAsync(
+            new CdcProviderSetupRequest(
+                provider: CdcProvider.SqlServer,
+                mode: mode,
+                boundPhysicalSourceFingerprint: CdcSourceFingerprintMetadata.Compute(
+                    CdcProvider.SqlServer,
+                    await Given_MssqlCdcProviderArtifacts.ReadDataStoreIdentityAsync(connection)
+                ),
+                setupPrincipal: new CdcSetupPrincipalContext(new CdcSafeName("sa")),
+                connectorPrincipal: new CdcConnectorPrincipal(new CdcSafeName(_connectorPrincipalName)),
+                artifactNames: CdcProviderArtifactNames.ForSqlServer(
+                    new CdcSafeName(Given_MssqlCdcProviderArtifacts.GatingRoleName),
+                    new Dictionary<CdcSourceTableKind, CdcSafeName>
+                    {
+                        [CdcSourceTableKind.Document] = new(
+                            Given_MssqlCdcProviderArtifacts.DocumentCaptureInstanceName
+                        ),
+                        [CdcSourceTableKind.DocumentCache] = new(
+                            Given_MssqlCdcProviderArtifacts.DocumentCacheCaptureInstanceName
+                        ),
+                        [CdcSourceTableKind.CdcHeartbeat] = new(
+                            Given_MssqlCdcProviderArtifacts.HeartbeatCaptureInstanceName
+                        ),
+                    }
+                ),
+                artifactOutput: new CdcProviderArtifactOutputRequest(false),
+                expectedSourceInventory: _fixture.CdcSourceInventory,
+                dmsManagedTableInventory: _fixture.CdcDmsManagedTableInventory,
+                databaseExecutor: Given_MssqlCdcProviderArtifacts.CreateSqlServerExecutor(connection)
+            )
+        );
+    }
+
+    private static string[] DocumentColumnNames(IEnumerable<CdcSourceTableInventory> inventory) =>
+        inventory
+            .Single(table => table.TableKind == CdcSourceTableKind.Document)
+            .Columns.OrderBy(column => column.Ordinal)
+            .Select(column => column.ColumnName.Value)
+            .ToArray();
+
+    private static string[] NonErrorDiagnosticCodes(CdcProviderSetupResult result) =>
+        result
+            .Diagnostics.Where(diagnostic => diagnostic.Severity != CdcProviderDiagnosticSeverity.Error)
+            .Select(diagnostic => diagnostic.Code)
+            .ToArray();
 }
 
 internal sealed class ThrowingSqlServerCdcProviderDatabaseExecutor(

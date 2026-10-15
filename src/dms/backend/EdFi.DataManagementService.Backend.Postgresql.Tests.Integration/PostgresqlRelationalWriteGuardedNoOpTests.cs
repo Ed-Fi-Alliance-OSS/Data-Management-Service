@@ -194,8 +194,7 @@ internal sealed record GuardedNoOpDocumentRow(
     long DocumentId,
     Guid DocumentUuid,
     short ResourceKeyId,
-    long ContentVersion,
-    DateTimeOffset CreatedAt
+    long ContentVersion
 );
 
 internal sealed record GuardedNoOpSchoolRow(
@@ -391,8 +390,7 @@ file static class GuardedNoOpIntegrationTestSupport
                 state.Document.DocumentId,
                 state.Document.DocumentUuid,
                 state.Document.ResourceKeyId,
-                state.Document.ContentVersion,
-                state.Document.CreatedAt
+                state.Document.ContentVersion
             ),
             new NoProfileGuardedNoOpScenarios.SchoolRow(
                 state.School.DocumentId,
@@ -574,7 +572,7 @@ file static class GuardedNoOpIntegrationTestSupport
     {
         var rows = await database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion", "CreatedAt"
+            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
             FROM "dms"."Document"
             WHERE "DocumentUuid" = @documentUuid;
             """,
@@ -586,8 +584,7 @@ file static class GuardedNoOpIntegrationTestSupport
                 GetInt64(rows[0], "DocumentId"),
                 GetGuid(rows[0], "DocumentUuid"),
                 GetInt16(rows[0], "ResourceKeyId"),
-                GetInt64(rows[0], "ContentVersion"),
-                GetDateTimeOffset(rows[0], "CreatedAt")
+                GetInt64(rows[0], "ContentVersion")
             )
             : throw new InvalidOperationException(
                 $"Expected exactly one document row for '{documentUuid}', but found {rows.Count}."

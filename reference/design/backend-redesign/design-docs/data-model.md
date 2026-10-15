@@ -89,8 +89,6 @@ CREATE TABLE dms.Document (
     -- Note: emitted DDL must create dms.ChangeVersionSequence before dms.Document.
     ContentVersion bigint NOT NULL DEFAULT nextval('dms.ChangeVersionSequence'),
 
-    CreatedAt timestamp with time zone NOT NULL DEFAULT now(),
-
     CONSTRAINT UX_Document_DocumentUuid UNIQUE (DocumentUuid),
     CONSTRAINT UX_Document_DocumentId_ResourceKeyId UNIQUE (DocumentId, ResourceKeyId)
 );
@@ -116,8 +114,6 @@ CREATE TABLE dms.Document (
     -- Update tracking tokens (see reference/design/backend-redesign/design-docs/update-tracking.md)
     -- Note: emitted DDL must create dms.ChangeVersionSequence before dms.Document.
     ContentVersion bigint NOT NULL CONSTRAINT DF_Document_ContentVersion DEFAULT (NEXT VALUE FOR dms.ChangeVersionSequence),
-
-    CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_Document_CreatedAt DEFAULT (sysutcdatetime()),
 
     CONSTRAINT UX_Document_DocumentUuid UNIQUE (DocumentUuid),
     CONSTRAINT UX_Document_DocumentId_ResourceKeyId UNIQUE (DocumentId, ResourceKeyId),
@@ -145,6 +141,9 @@ Notes:
   - The root resource table (or `dms.Descriptor`) mirrors `ContentVersion` and owns the authoritative `ContentLastModifiedAt`; `dms.Document` has no timestamp column of that name. Both stamps change in the same transaction. Document insertion allocates the initial version; owner insertion copies it and initializes the owner timestamp.
   - Identity-projection changes that alter the stored representation are reflected through the same content stamps.
   - API `_lastModifiedDate` and per-item `ChangeVersion` are served from these stored stamps. `_lastModifiedDate` uses the existing DMS whole-second UTC `yyyy-MM-ddTHH:mm:ssZ` formatter, discarding fractional seconds without rounding. API `_etag` is composed from `ContentVersion` plus a representation `variantKey` (schema epoch, format, profile code, link flag, and content-coding code); the document body is not hashed for etag construction.
+- `dms.Document` has no creation-time column. The former `CreatedAt` was removed without
+  replacement (DMS-1403). The DMS API data path did not use this column; removing it does not
+  change API fields, ETags, change queries, or authorization decisions.
 - Time semantics: store timestamps as UTC instants at provider precision. In PostgreSQL, use `timestamp with time zone`; in SQL Server, use `datetime2` with UTC writers (e.g., `sysutcdatetime()`). Public `_lastModifiedDate` formatting is the whole-second UTC representation defined above.
 - Authorization is addressed separately in [auth.md](auth.md).
 
