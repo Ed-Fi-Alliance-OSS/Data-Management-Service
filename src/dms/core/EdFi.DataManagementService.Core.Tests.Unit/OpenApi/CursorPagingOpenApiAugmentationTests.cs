@@ -45,9 +45,10 @@ public class CursorPagingOpenApiAugmentationTests
 
     private const string ExpectedPageSizeDescription =
         "The maximum number of items to retrieve in the page. For use with pageToken (cursor paging) "
-        + "only: a request that supplies pageSize without pageToken is rejected. A first page token comes "
-        + "from the Next-Page-Token response header of this operation or from the partitions operation of "
-        + "this resource. If unspecified on a cursor paging request, the maximum page size is used.";
+        + "only. Without pageToken, pageSize is ignored when limit is supplied and the request is rejected "
+        + "otherwise. A first page token comes from the Next-Page-Token response header of this operation "
+        + "or from the partitions operation of this resource. If unspecified on a cursor paging request, "
+        + "the maximum page size is used.";
 
     /// <summary>
     /// The clause the shipped ApiSchema carries, which promises a count derived from the number of
@@ -449,7 +450,7 @@ public class CursorPagingOpenApiAugmentationTests
         }
 
         [Test]
-        public void It_should_describe_page_size_as_requiring_a_page_token()
+        public void It_should_describe_when_page_size_is_used_ignored_or_rejected()
         {
             _resources["components"]!["parameters"]!["pageSize"]!["description"]!
                 .GetValue<string>()

@@ -303,7 +303,7 @@ public class OpenApiDocumentTests
                         }
                       },
                       "pageSize": {
-                        "description": "The maximum number of items to retrieve in the page. For use with pageToken (cursor paging) only: a request that supplies pageSize without pageToken is rejected. A first page token comes from the Next-Page-Token response header of this operation or from the partitions operation of this resource. If unspecified on a cursor paging request, the maximum page size is used.",
+                        "description": "The maximum number of items to retrieve in the page. For use with pageToken (cursor paging) only. Without pageToken, pageSize is ignored when limit is supplied and the request is rejected otherwise. A first page token comes from the Next-Page-Token response header of this operation or from the partitions operation of this resource. If unspecified on a cursor paging request, the maximum page size is used.",
                         "in": "query",
                         "name": "pageSize",
                         "schema": {
@@ -428,7 +428,7 @@ public class OpenApiDocumentTests
                         }
                       },
                       "pageSize": {
-                        "description": "The maximum number of items to retrieve in the page. For use with pageToken (cursor paging) only: a request that supplies pageSize without pageToken is rejected. A first page token comes from the Next-Page-Token response header of this operation or from the partitions operation of this resource. If unspecified on a cursor paging request, the maximum page size is used.",
+                        "description": "The maximum number of items to retrieve in the page. For use with pageToken (cursor paging) only. Without pageToken, pageSize is ignored when limit is supplied and the request is rejected otherwise. A first page token comes from the Next-Page-Token response header of this operation or from the partitions operation of this resource. If unspecified on a cursor paging request, the maximum page size is used.",
                         "in": "query",
                         "name": "pageSize",
                         "schema": {
