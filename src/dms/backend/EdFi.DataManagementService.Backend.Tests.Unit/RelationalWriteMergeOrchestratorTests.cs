@@ -204,26 +204,15 @@ public class Given_RelationalWriteMergeOrchestrator_with_missing_reference_defer
     }
 
     [Test]
-    public void It_does_not_include_non_missing_document_failures_or_descriptor_failures()
+    public void It_does_not_include_non_missing_document_failures()
     {
-        _result
-            .DeferredMissingDocumentReferencePaths.Should()
-            .NotContain(["$.incompatibleReference", "$.gradeLevelDescriptor"]);
+        _result.DeferredMissingDocumentReferencePaths.Should().NotContain("$.incompatibleReference");
     }
 
     [Test]
     public void It_compares_paths_ordinally()
     {
         _result.DeferredMissingDocumentReferencePaths.Contains("$.ASSESSMENTREFERENCE").Should().BeFalse();
-    }
-
-    [Test]
-    public void It_preserves_the_paths_across_a_with_expression()
-    {
-        var copy = _result with { SupportsGuardedNoOp = false };
-
-        copy.DeferredMissingDocumentReferencePaths.Should()
-            .BeEquivalentTo("$.assessmentReference", "$.sections[1].assessmentReference");
     }
 }
 

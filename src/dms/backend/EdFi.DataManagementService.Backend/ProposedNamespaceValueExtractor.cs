@@ -12,7 +12,8 @@ using EdFi.DataManagementService.Backend.Plans;
 namespace EdFi.DataManagementService.Backend;
 
 /// <summary>
-/// Outcome of reading the proposed namespace value out of the finalized merged root row.
+/// Outcome of reading the proposed namespace value out of the finalized merged root row, or out of the
+/// request body for a namespace derived from a deferred missing reference.
 /// </summary>
 internal abstract record ProposedNamespaceValueExtractionResult
 {
@@ -20,7 +21,7 @@ internal abstract record ProposedNamespaceValueExtractionResult
 
     /// <summary>
     /// The proposed namespace value was extracted. <paramref name="ProposedNamespace"/> is
-    /// <see langword="null"/> when the finalized value is null/empty, which the SQL maps to a
+    /// <see langword="null"/> when the value read is null/empty, which the SQL maps to a
     /// proposed-namespace-missing failure.
     /// </summary>
     public sealed record Ready(string? ProposedNamespace) : ProposedNamespaceValueExtractionResult;
@@ -167,8 +168,10 @@ internal static class ProposedNamespaceValueExtractor
                 return true;
 
             case WriteValueSource.Precomputed when boundValue is null:
-                // A null key-unified canonical means no member resolved. Take the first deferred
-                // reference member in the same precedence order the flattener evaluates.
+                // A null key-unified canonical means no member supplied a value; the flattener never takes
+                // one from a deferred member. Authorize the first deferred reference member. Any one is
+                // enough: Core's equality-constraint validation rejects a request whose unified members
+                // disagree, so every supplied member carries the same namespace.
                 foreach (var plan in rootPlan.KeyUnificationPlans)
                 {
                     if (plan.CanonicalBindingIndex != bindingIndex)
