@@ -901,7 +901,7 @@
         "DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "dms",
         "name": "Descriptor"
       }
@@ -942,7 +942,7 @@
       "identity_projection_columns": [
         "EventTimestamp"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "DateTimeKeyResource"
       },
@@ -989,7 +989,7 @@
       "identity_projection_columns": [
         "DecimalKey"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "DecimalKeyResource"
       },
@@ -1042,7 +1042,7 @@
         "RefResourceId",
         "DecimalKeyReference_DecimalKey"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "DecimalRefResource"
       },
@@ -1101,7 +1101,7 @@
         "EdOrgDependentResourceReference_EdOrgDependentResourceId",
         "EdOrgDependentResourceReference_EducationOrganizationId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EdOrgDependentChildResource"
       },
@@ -1154,7 +1154,7 @@
         "EdOrgDependentResourceId",
         "EducationOrganization_EducationOrganizationId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "EdOrgDependentResource"
       },
@@ -1223,7 +1223,7 @@
         "StudentUniqueId_Unified",
         "ResourceBReference_ResourceBId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "KeyUnifiedResource"
       },
@@ -1276,7 +1276,7 @@
         "ResourceAId",
         "StudentReference_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ResourceA"
       },
@@ -1329,7 +1329,7 @@
         "ResourceBId",
         "StudentReference_StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ResourceB"
       },
@@ -1440,7 +1440,7 @@
       "identity_projection_columns": [
         "SchoolId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "School"
       },
@@ -1487,7 +1487,7 @@
       "identity_projection_columns": [
         "StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Student"
       },
@@ -1540,7 +1540,7 @@
         "StudentUniqueId",
         "SchoolReference_SchoolId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "StudentSchoolAssociation"
       },
@@ -2494,7 +2494,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -2613,7 +2613,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -2742,7 +2742,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -2939,7 +2939,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -3156,7 +3156,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -3360,7 +3360,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -3714,7 +3714,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -3920,7 +3920,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -4126,7 +4126,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -4278,7 +4278,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -4420,7 +4420,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },

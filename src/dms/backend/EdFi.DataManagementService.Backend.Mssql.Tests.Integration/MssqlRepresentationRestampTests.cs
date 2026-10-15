@@ -106,10 +106,10 @@ public class Given_A_Mssql_RepresentationRestampStore
     }
 
     [Test]
-    public async Task It_previews_resource_and_UUID_scopes_without_document_mirror_work_or_cache_mutation()
+    public async Task It_previews_resource_and_UUID_scopes_without_document_owner_work_or_cache_mutation()
     {
         Source source = await InsertAsync(10);
-        (long documentCount, long mirrorCount, long workCount, long cacheCount) before = await CountsAsync();
+        (long documentCount, long ownerCount, long workCount, long cacheCount) before = await CountsAsync();
         await using IDocumentCacheAdministrativeMutexLease lease = await LeaseAsync();
         await using IRelationalWriteSession session = await lease.BeginTransactionAsync(
             IsolationLevel.Serializable
@@ -175,7 +175,7 @@ public class Given_A_Mssql_RepresentationRestampStore
     }
 
     [Test]
-    public async Task It_atomically_updates_canonical_root_mirror_and_tracking_work_for_a_resource_page()
+    public async Task It_atomically_updates_document_version_root_timestamp_and_tracking_work_for_a_resource_page()
     {
         Source first = await InsertAsync(10);
         Source second = await InsertAsync(11);
@@ -190,20 +190,27 @@ public class Given_A_Mssql_RepresentationRestampStore
             (await RootAsync(stamp.DocumentId))
                 .Should()
                 .Be((stamp.ContentVersion, stamp.ContentLastModifiedAt));
+            (await SourceStampAsync(stamp.DocumentId))
+                .Should()
+                .Be((stamp.ContentVersion, stamp.ContentLastModifiedAt));
+            (await WorkAsync(stamp.DocumentId)).Should().Be(stamp.ContentVersion);
+            stamp
+                .ContentLastModifiedAt.Should()
+                .BeAfter(new DateTimeOffset(2001, 1, 1, 0, 0, 0, TimeSpan.Zero));
         }
         (await WorkAsync(first.DocumentId)).Should().BeGreaterThan(first.Version);
         (await WorkAsync(second.DocumentId)).Should().BeGreaterThan(second.Version);
     }
 
     [Test]
-    public async Task It_updates_descriptor_mirror_with_the_exact_canonical_version_and_timestamp()
+    public async Task It_returns_the_persisted_descriptor_version_and_timestamp()
     {
         Source source = await InsertDescriptorAsync(10);
         RepresentationRestampPage page = new([
             new RepresentationRestampDocument(
                 source.DocumentId,
                 source.Uuid,
-                new RepresentationRestampMirrorRoute(DescriptorResourceKeyId, "dms", "Descriptor")
+                new RepresentationRestampStampRoute(DescriptorResourceKeyId, "dms", "Descriptor")
             ),
         ]);
         await using IDocumentCacheAdministrativeMutexLease lease = await LeaseAsync();
@@ -217,7 +224,7 @@ public class Given_A_Mssql_RepresentationRestampStore
         );
         await session.CommitAsync();
         RepresentationRestampStamp stamp = commit.CanonicalStamps.Single();
-        (await DescriptorMirrorAsync(source.DocumentId))
+        (await DescriptorStampAsync(source.DocumentId))
             .Should()
             .Be((stamp.ContentVersion, stamp.ContentLastModifiedAt));
     }
@@ -228,7 +235,7 @@ public class Given_A_Mssql_RepresentationRestampStore
         Source first = await InsertDescriptorAsync(10);
         Source second = await InsertDescriptorAsync(11);
         Source unrelated = await InsertAsync(12);
-        var unrelatedBefore = await CanonicalAsync(unrelated.DocumentId);
+        var unrelatedBefore = await SourceStampAsync(unrelated.DocumentId);
         await LifecycleAsync("Tracking", false);
         await using IDocumentCacheAdministrativeMutexLease lease = await LeaseAsync();
         await using IRelationalWriteSession session = await lease.BeginTransactionAsync(
@@ -249,12 +256,12 @@ public class Given_A_Mssql_RepresentationRestampStore
         page.Documents.Select(document => document.DocumentId)
             .Should()
             .Equal(first.DocumentId, second.DocumentId);
-        page.Documents.Select(document => document.MirrorRoute)
+        page.Documents.Select(document => document.StampRoute)
             .Should()
             .OnlyContain(route =>
                 route.ResourceKeyId == DescriptorResourceKeyId
-                && route.MirrorStampTargetSchema == "dms"
-                && route.MirrorStampTargetTable == "Descriptor"
+                && route.StampTargetSchema == "dms"
+                && route.StampTargetTable == "Descriptor"
             );
         RepresentationRestampPageCommit commit = await _store.StampPageAsync(
             session,
@@ -270,7 +277,7 @@ public class Given_A_Mssql_RepresentationRestampStore
         }
         commit.CanonicalStamps.Select(stamp => stamp.ContentVersion).Should().OnlyHaveUniqueItems();
         (await CountAsync("DocumentProjectionWork")).Should().Be(2);
-        (await CanonicalAsync(unrelated.DocumentId)).Should().Be(unrelatedBefore);
+        (await SourceStampAsync(unrelated.DocumentId)).Should().Be(unrelatedBefore);
         (await RootAsync(unrelated.DocumentId)).Should().Be(unrelatedBefore);
     }
 
@@ -279,7 +286,7 @@ public class Given_A_Mssql_RepresentationRestampStore
     {
         Source source = await InsertDescriptorAsync(10);
         Source unrelated = await InsertDescriptorAsync(11);
-        var unrelatedBefore = await CanonicalAsync(unrelated.DocumentId);
+        var unrelatedBefore = await SourceStampAsync(unrelated.DocumentId);
         await LifecycleAsync("Tracking", false);
         await using IDocumentCacheAdministrativeMutexLease lease = await LeaseAsync();
         await using IRelationalWriteSession session = await lease.BeginTransactionAsync(
@@ -298,7 +305,7 @@ public class Given_A_Mssql_RepresentationRestampStore
         );
 
         page.Documents.Single().DocumentId.Should().Be(source.DocumentId);
-        page.Documents.Single().MirrorRoute.MirrorStampTargetTable.Should().Be("Descriptor");
+        page.Documents.Single().StampRoute.StampTargetTable.Should().Be("Descriptor");
         RepresentationRestampPageCommit commit = await _store.StampPageAsync(
             session,
             page,
@@ -309,17 +316,17 @@ public class Given_A_Mssql_RepresentationRestampStore
         RepresentationRestampStamp stamp = commit.CanonicalStamps.Single();
         await AssertDescriptorRestampAsync(source, stamp);
         (await CountAsync("DocumentProjectionWork")).Should().Be(1);
-        (await CanonicalAsync(unrelated.DocumentId)).Should().Be(unrelatedBefore);
-        (await DescriptorMirrorAsync(unrelated.DocumentId)).Should().Be(unrelatedBefore);
+        (await SourceStampAsync(unrelated.DocumentId)).Should().Be(unrelatedBefore);
+        (await DescriptorStampAsync(unrelated.DocumentId)).Should().Be(unrelatedBefore);
         (await DescriptorIdAsync(unrelated.DocumentId)).Should().Be(unrelated.DescriptorId);
     }
 
     [Test]
-    public async Task It_rolls_back_stamp_mirror_work_and_manifest_progress_when_enqueue_fails()
+    public async Task It_rolls_back_document_version_owner_timestamp_work_and_manifest_progress_when_enqueue_fails()
     {
         Source source = await InsertAsync(10);
         await LifecycleAsync("Tracking", false);
-        (long Version, DateTimeOffset At) before = await CanonicalAsync(source.DocumentId);
+        (long Version, DateTimeOffset At) before = await SourceStampAsync(source.DocumentId);
         await using IDocumentCacheAdministrativeMutexLease lease = await LeaseAsync();
         await using IRelationalWriteSession session = await lease.BeginTransactionAsync(
             IsolationLevel.Serializable
@@ -344,10 +351,194 @@ public class Given_A_Mssql_RepresentationRestampStore
         Func<Task> stampPage = async () => await _store.StampPageAsync(session, page, CancellationToken.None);
         await stampPage.Should().ThrowAsync<DbException>();
         await session.RollbackAsync();
-        (await CanonicalAsync(source.DocumentId)).Should().Be(before);
+        (await SourceStampAsync(source.DocumentId)).Should().Be(before);
         (await RootAsync(source.DocumentId)).Should().Be(before);
         (await CountAsync("DocumentProjectionWork")).Should().Be(0);
     }
+
+    [Test]
+    public async Task It_restamps_a_mixed_UUID_page_once_per_document_without_history_changes()
+    {
+        Source student = await InsertAsync(10);
+        Source descriptor = await InsertDescriptorAsync(11);
+        Source unrelated = await InsertAsync(12);
+        var unrelatedBefore = await SourceStampAsync(unrelated.DocumentId);
+        // Consume the restarted sequence once so current_value denotes the last allocated value.
+        long sequenceBefore = await _database.ExecuteScalarAsync<long>(
+            "SELECT NEXT VALUE FOR [dms].[ChangeVersionSequence];"
+        );
+        long historyBefore = await HistoryCountAsync();
+        await LifecycleAsync("Tracking", false);
+
+        RepresentationRestampPageCommit commit = await StampAsync(
+            new DocumentCacheRepresentationRestampDocumentUuidsScope([student.Uuid, descriptor.Uuid]),
+            unrelated.Version
+        );
+
+        commit
+            .CanonicalStamps.Select(stamp => stamp.DocumentId)
+            .Should()
+            .BeEquivalentTo([student.DocumentId, descriptor.DocumentId]);
+        commit
+            .CanonicalStamps.Select(stamp => stamp.ContentVersion)
+            .Should()
+            .BeEquivalentTo([sequenceBefore + 1, sequenceBefore + 2]);
+        foreach (RepresentationRestampStamp stamp in commit.CanonicalStamps)
+        {
+            (await SourceStampAsync(stamp.DocumentId))
+                .Should()
+                .Be((stamp.ContentVersion, stamp.ContentLastModifiedAt));
+            (await WorkAsync(stamp.DocumentId)).Should().Be(stamp.ContentVersion);
+            stamp
+                .ContentLastModifiedAt.Should()
+                .BeAfter(new DateTimeOffset(2001, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        }
+        RepresentationRestampStamp studentStamp = commit.CanonicalStamps.Single(stamp =>
+            stamp.DocumentId == student.DocumentId
+        );
+        (await RootAsync(student.DocumentId))
+            .Should()
+            .Be((studentStamp.ContentVersion, studentStamp.ContentLastModifiedAt));
+        await AssertDescriptorRestampAsync(
+            descriptor,
+            commit.CanonicalStamps.Single(stamp => stamp.DocumentId == descriptor.DocumentId)
+        );
+        (await SequenceAsync()).Should().Be(sequenceBefore + 2);
+        (await HistoryCountAsync()).Should().Be(historyBefore);
+        (await SourceStampAsync(unrelated.DocumentId)).Should().Be(unrelatedBefore);
+        (await CountAsync("DocumentProjectionWork")).Should().Be(2);
+    }
+
+    [Test]
+    public async Task It_rolls_back_all_owner_stamps_work_and_progress_after_a_later_owner_update_fails()
+    {
+        Source student = await InsertAsync(10);
+        Source descriptor = await InsertDescriptorAsync(11);
+        var studentBefore = await SourceStampAsync(student.DocumentId);
+        var descriptorBefore = await SourceStampAsync(descriptor.DocumentId);
+        long historyBefore = await HistoryCountAsync();
+        await LifecycleAsync("Tracking", false);
+        // The ordinary root group is updated first; fail only after the descriptor has been stamped too.
+        await _database.ExecuteNonQueryAsync(
+            """
+            CREATE TRIGGER [dms].[RejectRestamp] ON [dms].[Descriptor] AFTER UPDATE AS
+            BEGIN
+                THROW 51000, 'Injected owner stamp failure', 1;
+            END;
+            """
+        );
+        var scope = new DocumentCacheRepresentationRestampDocumentUuidsScope([student.Uuid, descriptor.Uuid]);
+        DocumentCacheRepresentationRestampOperation operation = Operation(scope, descriptor.Version);
+        await using (IDocumentCacheAdministrativeMutexLease draftLease = await LeaseAsync())
+        await using (
+            IRelationalWriteSession draft = await draftLease.BeginTransactionAsync(
+                IsolationLevel.Serializable
+            )
+        )
+        {
+            await _store.CreateDraftAsync(draft, operation, CancellationToken.None);
+            await draft.CommitAsync();
+        }
+        await using IDocumentCacheAdministrativeMutexLease lease = await LeaseAsync();
+        await using IRelationalWriteSession session = await lease.BeginTransactionAsync(
+            IsolationLevel.Serializable
+        );
+        RepresentationRestampPage page = await _store.SelectNextPageAsync(
+            session,
+            operation,
+            10,
+            CancellationToken.None
+        );
+        await _store.UpdateProgressAsync(
+            session,
+            operation.OperationId,
+            2,
+            DocumentCacheRepresentationRestampOperationState.Incomplete,
+            CancellationToken.None
+        );
+
+        Func<Task> stampPage = async () => await _store.StampPageAsync(session, page, CancellationToken.None);
+        await stampPage.Should().ThrowAsync<SqlException>().WithMessage("*Injected owner stamp failure*");
+        await session.RollbackAsync();
+
+        (await SourceStampAsync(student.DocumentId)).Should().Be(studentBefore);
+        (await RootAsync(student.DocumentId)).Should().Be(studentBefore);
+        (await SourceStampAsync(descriptor.DocumentId)).Should().Be(descriptorBefore);
+        (await DescriptorStampAsync(descriptor.DocumentId)).Should().Be(descriptorBefore);
+        (await DescriptorIdAsync(descriptor.DocumentId)).Should().Be(descriptor.DescriptorId);
+        (await CountAsync("DocumentProjectionWork")).Should().Be(0);
+        (await HistoryCountAsync()).Should().Be(historyBefore);
+        (await ReadManifestProgressAsync(operation.OperationId))
+            .Should()
+            .Be(
+                new ManifestProgress(
+                    0,
+                    DocumentCacheRepresentationRestampOperationState.Draft,
+                    descriptor.Version
+                )
+            );
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_rejects_a_missing_owner_and_rolls_back_the_document_version_and_work(bool descriptor)
+    {
+        Source source = descriptor ? await InsertDescriptorAsync(10) : await InsertAsync(10);
+        string schema = descriptor ? "dms" : "edfi";
+        string table = descriptor ? "Descriptor" : "Student";
+        await _database.ExecuteNonQueryAsync(
+            $"DELETE FROM [{schema}].[{table}] WHERE [DocumentId] = @id;",
+            new SqlParameter("@id", SqlDbType.BigInt) { Value = source.DocumentId }
+        );
+        long versionBefore = await _database.ExecuteScalarAsync<long>(
+            "SELECT [ContentVersion] FROM [dms].[Document] WHERE [DocumentId] = @id;",
+            new SqlParameter("@id", SqlDbType.BigInt) { Value = source.DocumentId }
+        );
+        await LifecycleAsync("Tracking", false);
+        await using IDocumentCacheAdministrativeMutexLease lease = await LeaseAsync();
+        await using IRelationalWriteSession session = await lease.BeginTransactionAsync(
+            IsolationLevel.Serializable
+        );
+        RepresentationRestampPage page = new([
+            new(
+                source.DocumentId,
+                source.Uuid,
+                new RepresentationRestampStampRoute(
+                    descriptor ? DescriptorResourceKeyId : StudentResourceKeyId,
+                    schema,
+                    table
+                )
+            ),
+        ]);
+
+        Func<Task> stampPage = async () => await _store.StampPageAsync(session, page, CancellationToken.None);
+        await stampPage
+            .Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage(
+                $"Representation restamp owner '{schema}.{table}' did not stamp the selected page exactly once."
+            );
+        await session.RollbackAsync();
+
+        (
+            await _database.ExecuteScalarAsync<long>(
+                "SELECT [ContentVersion] FROM [dms].[Document] WHERE [DocumentId] = @id;",
+                new SqlParameter("@id", SqlDbType.BigInt) { Value = source.DocumentId }
+            )
+        )
+            .Should()
+            .Be(versionBefore);
+        (await CountAsync("DocumentProjectionWork")).Should().Be(0);
+    }
+
+    private Task<long> SequenceAsync() =>
+        _database.ExecuteScalarAsync<long>(
+            "SELECT CONVERT(bigint, current_value) FROM sys.sequences WHERE object_id = OBJECT_ID(N'dms.ChangeVersionSequence');"
+        );
+
+    private async Task<long> HistoryCountAsync() =>
+        await CountAsync("Student", "tracked_changes_edfi")
+        + await CountAsync("Descriptor", "tracked_changes_edfi");
 
     [Test]
     public async Task It_does_not_create_or_advance_work_when_disabled()
@@ -356,11 +547,11 @@ public class Given_A_Mssql_RepresentationRestampStore
         await LifecycleAsync("Disabled", false);
         await StampAsync(new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Student"), 10);
         (await CountAsync("DocumentProjectionWork")).Should().Be(0);
-        (await CanonicalAsync(source.DocumentId)).Version.Should().BeGreaterThan(10);
+        (await SourceStampAsync(source.DocumentId)).Version.Should().BeGreaterThan(10);
     }
 
     [Test]
-    public async Task It_bounds_a_SQL_Server_restamp_page_below_the_mirror_parameter_limit()
+    public async Task It_bounds_a_SQL_Server_restamp_page_below_the_owner_parameter_limit()
     {
         await InsertManyAsync(700);
         await LifecycleAsync("Disabled", false);
@@ -422,7 +613,7 @@ public class Given_A_Mssql_RepresentationRestampStore
             await _store.StampPageAsync(session, page, CancellationToken.None);
             await session.CommitAsync();
         }
-        long firstVersion = (await CanonicalAsync(first.DocumentId)).Version;
+        long firstVersion = (await SourceStampAsync(first.DocumentId)).Version;
         await using IDocumentCacheAdministrativeMutexLease resumeLease = await LeaseAsync();
         await using IRelationalWriteSession resume = await resumeLease.BeginTransactionAsync(
             IsolationLevel.Serializable
@@ -434,7 +625,7 @@ public class Given_A_Mssql_RepresentationRestampStore
             CancellationToken.None
         );
         resumed.Documents.Select(document => document.DocumentId).Should().Equal(second.DocumentId);
-        (await CanonicalAsync(first.DocumentId)).Version.Should().Be(firstVersion);
+        (await SourceStampAsync(first.DocumentId)).Version.Should().Be(firstVersion);
         await resume.RollbackAsync();
     }
 
@@ -527,7 +718,7 @@ public class Given_A_Mssql_RepresentationRestampStore
             previewDocumentCount: 1
         );
         await LifecycleAsync(lifecycle.ToString(), cacheAheadRecoveryRequired);
-        (long Version, DateTimeOffset At) canonicalBefore = await CanonicalAsync(source.DocumentId);
+        (long Version, DateTimeOffset At) canonicalBefore = await SourceStampAsync(source.DocumentId);
         (long Version, DateTimeOffset At) mirrorBefore = await RootAsync(source.DocumentId);
 
         DocumentCacheAdministrativeCommandResult result = await CreateCommand(
@@ -538,7 +729,7 @@ public class Given_A_Mssql_RepresentationRestampStore
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
         result.Classification.Should().Be(expectedClassification);
         result.Mutated.Should().BeFalse();
-        (await CanonicalAsync(source.DocumentId)).Should().Be(canonicalBefore);
+        (await SourceStampAsync(source.DocumentId)).Should().Be(canonicalBefore);
         (await RootAsync(source.DocumentId)).Should().Be(mirrorBefore);
         (await CountAsync("DocumentProjectionWork")).Should().Be(0);
         (await ReadManifestProgressAsync(operation.OperationId))
@@ -588,9 +779,9 @@ public class Given_A_Mssql_RepresentationRestampStore
                     PreRestampBoundary: 11
                 )
             );
-        long firstCommittedVersion = (await CanonicalAsync(first.DocumentId)).Version;
+        long firstCommittedVersion = (await SourceStampAsync(first.DocumentId)).Version;
         firstCommittedVersion.Should().BeGreaterThan(11);
-        (await CanonicalAsync(second.DocumentId)).Version.Should().Be(11);
+        (await SourceStampAsync(second.DocumentId)).Version.Should().Be(11);
 
         await AssertResumeCompletesWithoutRestampingFirstAsync(
             operation,
@@ -641,9 +832,9 @@ public class Given_A_Mssql_RepresentationRestampStore
                     PreRestampBoundary: 11
                 )
             );
-        long firstCommittedVersion = (await CanonicalAsync(first.DocumentId)).Version;
+        long firstCommittedVersion = (await SourceStampAsync(first.DocumentId)).Version;
         firstCommittedVersion.Should().BeGreaterThan(11);
-        (await CanonicalAsync(second.DocumentId)).Version.Should().Be(11);
+        (await SourceStampAsync(second.DocumentId)).Version.Should().Be(11);
 
         await AssertResumeCompletesWithoutRestampingFirstAsync(
             operation,
@@ -822,8 +1013,8 @@ public class Given_A_Mssql_RepresentationRestampStore
         resumed.RepresentationRestampResult.Should().NotBeNull();
         resumed.RepresentationRestampResult!.PreRestampBoundary.Should().Be(11);
         resumed.RepresentationRestampResult.CommittedDocumentCount.Should().Be(2);
-        (await CanonicalAsync(first.DocumentId)).Version.Should().Be(firstCommittedVersion);
-        (await CanonicalAsync(second.DocumentId)).Version.Should().BeGreaterThan(11);
+        (await SourceStampAsync(first.DocumentId)).Version.Should().Be(firstCommittedVersion);
+        (await SourceStampAsync(second.DocumentId)).Version.Should().BeGreaterThan(11);
         (await ReadManifestProgressAsync(operation.OperationId))
             .Should()
             .Be(
@@ -941,9 +1132,9 @@ public class Given_A_Mssql_RepresentationRestampStore
             """
             DECLARE @inserted TABLE ([DocumentId] bigint);
 
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId], [ContentVersion], [ContentLastModifiedAt])
+            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId], [ContentVersion])
             OUTPUT INSERTED.[DocumentId] INTO @inserted ([DocumentId])
-            VALUES (@uuid, @resourceKeyId, @version, SYSUTCDATETIME());
+            VALUES (@uuid, @resourceKeyId, @version);
 
             SELECT [DocumentId] FROM @inserted;
             """,
@@ -957,7 +1148,11 @@ public class Given_A_Mssql_RepresentationRestampStore
             new SqlParameter("@id", SqlDbType.BigInt) { Value = id },
             new SqlParameter("@studentUniqueId", SqlDbType.NVarChar, 32) { Value = $"student-{id}" }
         );
-        long currentVersion = (await CanonicalAsync(id)).Version;
+        await _database.ExecuteNonQueryAsync(
+            "UPDATE [edfi].[Student] SET [ContentLastModifiedAt] = '2001-01-01T00:00:00' WHERE [DocumentId] = @id;",
+            new SqlParameter("@id", SqlDbType.BigInt) { Value = id }
+        );
+        long currentVersion = (await SourceStampAsync(id)).Version;
         return new(id, uuid, currentVersion);
     }
 
@@ -973,10 +1168,10 @@ public class Given_A_Mssql_RepresentationRestampStore
                 CROSS JOIN sys.all_objects AS [second]
             )
             INSERT INTO [dms].[Document] (
-                [DocumentUuid], [ResourceKeyId], [ContentVersion], [ContentLastModifiedAt]
+                [DocumentUuid], [ResourceKeyId], [ContentVersion]
             )
             OUTPUT INSERTED.[DocumentId] INTO @documents ([DocumentId])
-            SELECT NEWID(), @resourceKeyId, [Value], SYSUTCDATETIME()
+            SELECT NEWID(), @resourceKeyId, [Value]
             FROM [numbers];
 
             INSERT INTO [edfi].[Student] ([DocumentId], [StudentUniqueId], [FirstName])
@@ -1006,9 +1201,9 @@ public class Given_A_Mssql_RepresentationRestampStore
             """
             DECLARE @inserted TABLE ([DocumentId] bigint);
 
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId], [ContentVersion], [ContentLastModifiedAt])
+            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId], [ContentVersion])
             OUTPUT INSERTED.[DocumentId] INTO @inserted ([DocumentId])
-            VALUES (@uuid, @resourceKeyId, @version, SYSUTCDATETIME());
+            VALUES (@uuid, @resourceKeyId, @version);
 
             SELECT [DocumentId] FROM @inserted;
             """,
@@ -1035,7 +1230,11 @@ public class Given_A_Mssql_RepresentationRestampStore
             new SqlParameter("@resourceKeyId", SqlDbType.SmallInt) { Value = DescriptorResourceKeyId },
             new SqlParameter("@codeValue", SqlDbType.NVarChar, 50) { Value = $"code-{id}" }
         );
-        long currentVersion = (await CanonicalAsync(id)).Version;
+        await _database.ExecuteNonQueryAsync(
+            "UPDATE [dms].[Descriptor] SET [ContentLastModifiedAt] = '2001-01-01T00:00:00' WHERE [DocumentId] = @id;",
+            new SqlParameter("@id", SqlDbType.BigInt) { Value = id }
+        );
+        long currentVersion = (await SourceStampAsync(id)).Version;
         ((long)descriptorId).Should().NotBe(id);
         return new(id, uuid, currentVersion, descriptorId);
     }
@@ -1077,12 +1276,33 @@ public class Given_A_Mssql_RepresentationRestampStore
         );
     }
 
-    private Task<(long Version, DateTimeOffset At)> CanonicalAsync(long id) =>
-        ReadAsync("Document", "dms", id);
+    private async Task<(long Version, DateTimeOffset At)> SourceStampAsync(long id)
+    {
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await _database.QueryRowsAsync(
+            """
+            SELECT document.[ContentVersion], owner.[ContentLastModifiedAt]
+            FROM [dms].[Document] AS document
+            INNER JOIN (
+                SELECT [DocumentId], [ContentLastModifiedAt] FROM [edfi].[Student]
+                UNION ALL
+                SELECT [DocumentId], [ContentLastModifiedAt] FROM [dms].[Descriptor]
+            ) AS owner ON owner.[DocumentId] = document.[DocumentId]
+            WHERE document.[DocumentId] = @id;
+            """,
+            new SqlParameter("@id", SqlDbType.BigInt) { Value = id }
+        );
+        var row = rows.Single();
+        return (
+            Convert.ToInt64(row["ContentVersion"]),
+            new DateTimeOffset(
+                DateTime.SpecifyKind(Convert.ToDateTime(row["ContentLastModifiedAt"]), DateTimeKind.Utc)
+            )
+        );
+    }
 
     private Task<(long Version, DateTimeOffset At)> RootAsync(long id) => ReadAsync("Student", "edfi", id);
 
-    private Task<(long Version, DateTimeOffset At)> DescriptorMirrorAsync(long id) =>
+    private Task<(long Version, DateTimeOffset At)> DescriptorStampAsync(long id) =>
         ReadAsync("Descriptor", "dms", id);
 
     private async Task AssertDescriptorRestampAsync(Source source, RepresentationRestampStamp stamp)
@@ -1091,11 +1311,12 @@ public class Given_A_Mssql_RepresentationRestampStore
         ((long)source.DescriptorId!.Value).Should().NotBe(source.DocumentId);
         stamp.DocumentId.Should().Be(source.DocumentId);
         stamp.ContentVersion.Should().BeGreaterThan(source.Version);
+        stamp.ContentLastModifiedAt.Should().BeAfter(new DateTimeOffset(2001, 1, 1, 0, 0, 0, TimeSpan.Zero));
         (await DescriptorIdAsync(source.DocumentId)).Should().Be(source.DescriptorId.Value);
-        (await CanonicalAsync(source.DocumentId))
+        (await SourceStampAsync(source.DocumentId))
             .Should()
             .Be((stamp.ContentVersion, stamp.ContentLastModifiedAt));
-        (await DescriptorMirrorAsync(source.DocumentId))
+        (await DescriptorStampAsync(source.DocumentId))
             .Should()
             .Be((stamp.ContentVersion, stamp.ContentLastModifiedAt));
         (await WorkAsync(source.DocumentId)).Should().Be(stamp.ContentVersion);

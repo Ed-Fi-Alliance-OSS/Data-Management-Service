@@ -119,6 +119,7 @@ Describe 'Managed provisioning uses the configure phase selection' {
             . ([scriptblock]::Create($node.Extent.Text))
         }
         function Resolve-ProvisionEnvironmentFile { param($Path) return $Path }
+        function Write-LegacyEnvironmentVariableWarning { param($EnvironmentFile) }
         function Resolve-DatabaseEngineEnvironmentFile { param($DatabaseEngine, $BaseEnvironmentFile, $DockerComposeRoot) return $BaseEnvironmentFile }
         function ReadValuesFromEnvFile { param($EnvironmentFile) return @{} }
         function Resolve-CmsBaseUrl { param($EnvValues) return 'http://cms' }

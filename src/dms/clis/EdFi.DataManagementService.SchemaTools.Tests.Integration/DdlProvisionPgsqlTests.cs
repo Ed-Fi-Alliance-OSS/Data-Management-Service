@@ -87,6 +87,12 @@ public class Given_A_Fresh_Database_Provisioned_With_Create_Database_Flag
         );
         connection.Open();
         ProvisionTestHelper.AssertCoreTablesExist(connection);
+        ProvisionTestHelper.AssertContentStampOwnership(
+            new PgsqlSchemaIntrospector().Introspect(
+                PostgresTestDatabaseHelper.BuildConnectionString(_databaseName),
+                ["dms", "testproject"]
+            )
+        );
     }
 
     [Test]
@@ -183,6 +189,8 @@ public class Given_Provisioning_Rerun_On_Same_Database
     private string _secondManifestJson = null!;
     private ProvisionTestHelper.DocumentCacheMutableStateSnapshot _beforeRerun = null!;
     private ProvisionTestHelper.DocumentCacheMutableStateSnapshot _afterRerun = null!;
+    private DateTime _beforeRerunTimestamp;
+    private DateTime _afterRerunTimestamp;
 
     [OneTimeSetUp]
     public void OneTimeSetUp()
@@ -202,6 +210,7 @@ public class Given_Provisioning_Rerun_On_Same_Database
         var schemaAllowlist = ProvisionTestHelper.DiscoverProvisionedSchemasPgsql(connectionString);
         var introspector = new PgsqlSchemaIntrospector();
         var firstManifest = introspector.Introspect(connectionString, schemaAllowlist);
+        ProvisionTestHelper.AssertContentStampOwnership(firstManifest);
         _firstManifestJson = ProvisionedSchemaManifestEmitter.Emit(firstManifest);
 
         using (var connection = new NpgsqlConnection(connectionString))
@@ -209,6 +218,11 @@ public class Given_Provisioning_Rerun_On_Same_Database
             connection.Open();
             ProvisionTestHelper.InsertRowsThatMustSurviveRerun(connection, "pgsql");
             _beforeRerun = ProvisionTestHelper.ReadDocumentCacheMutableStateSnapshot(connection, "pgsql");
+            _beforeRerunTimestamp = ProvisionTestHelper.AssertCachedContentStamp(
+                connection,
+                "dms",
+                "Descriptor"
+            );
         }
 
         // Second provisioning run (idempotent rerun)
@@ -222,12 +236,18 @@ public class Given_Provisioning_Rerun_On_Same_Database
         // Introspect after second run (rediscover schemas to catch accidental new schemas)
         var secondSchemaAllowlist = ProvisionTestHelper.DiscoverProvisionedSchemasPgsql(connectionString);
         var secondManifest = introspector.Introspect(connectionString, secondSchemaAllowlist);
+        ProvisionTestHelper.AssertContentStampOwnership(secondManifest);
         _secondManifestJson = ProvisionedSchemaManifestEmitter.Emit(secondManifest);
 
         using (var connection = new NpgsqlConnection(connectionString))
         {
             connection.Open();
             _afterRerun = ProvisionTestHelper.ReadDocumentCacheMutableStateSnapshot(connection, "pgsql");
+            _afterRerunTimestamp = ProvisionTestHelper.AssertCachedContentStamp(
+                connection,
+                "dms",
+                "Descriptor"
+            );
         }
     }
 
@@ -264,6 +284,7 @@ public class Given_Provisioning_Rerun_On_Same_Database
     public void It_preserves_document_cache_mutable_rows_on_second_run()
     {
         _afterRerun.Should().Be(_beforeRerun);
+        _afterRerunTimestamp.Should().Be(_beforeRerunTimestamp);
     }
 }
 
@@ -1870,15 +1891,13 @@ public class Given_Postgresql_DocumentProjectionSafety
         using var connection = PgsqlDocumentProjectionTestSupport.OpenConnection(_databaseName);
         PgsqlDocumentProjectionTestSupport.SetLifecycle(connection, "Tracking");
 
-        var documentId = PgsqlDocumentProjectionTestSupport
-            .InsertDocuments(connection, 1)
-            .Single()
-            .DocumentId;
+        var documentId = PgsqlDocumentProjectionTestSupport.InsertWidget(connection, 1, "Widget 1");
         PgsqlDocumentProjectionTestSupport.InsertDocumentCache(
             connection,
             documentId,
             """{"id":"matching"}"""
         );
+        ProvisionTestHelper.AssertCachedContentStamp(connection, "testproject", "Widget");
 
         PgsqlDocumentProjectionTestSupport
             .TryExecuteNonQuery(
@@ -1888,10 +1907,11 @@ public class Given_Postgresql_DocumentProjectionSafety
             .MessageText.Should()
             .Contain("DocumentUuid diverges");
 
-        var invalidJsonDocumentId = PgsqlDocumentProjectionTestSupport
-            .InsertDocuments(connection, 1)
-            .Single()
-            .DocumentId;
+        var invalidJsonDocumentId = PgsqlDocumentProjectionTestSupport.InsertWidget(
+            connection,
+            2,
+            "Widget 2"
+        );
         PgsqlDocumentProjectionTestSupport
             .TryExecuteNonQuery(
                 connection,
@@ -1925,7 +1945,10 @@ public class Given_Postgresql_DocumentProjectionSafety
 
         PgsqlDocumentProjectionTestSupport.ExecuteNonQuery(
             connection,
-            $"""DELETE FROM dms."Document" WHERE "DocumentId" = {documentId}"""
+            $"""
+            DELETE FROM testproject."Widget" WHERE "DocumentId" = {documentId};
+            DELETE FROM dms."Document" WHERE "DocumentId" = {documentId};
+            """
         );
 
         PgsqlDocumentProjectionTestSupport
@@ -2127,8 +2150,7 @@ internal static class PgsqlDocumentProjectionTestSupport
         using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE dms."Document"
-            SET "ContentVersion" = nextval('dms."ChangeVersionSequence"'),
-                "ContentLastModifiedAt" = now()
+            SET "ContentVersion" = nextval('dms."ChangeVersionSequence"')
             WHERE "DocumentId" = ANY(@documentIds)
             RETURNING "DocumentId", "ContentVersion"
             """;
@@ -2367,9 +2389,11 @@ internal static class PgsqlDocumentProjectionTestSupport
                 resource_key."ResourceVersion",
                 document."ContentVersion",
                 'etag-' || document."ContentVersion"::text,
-                document."ContentLastModifiedAt",
+                widget."ContentLastModifiedAt",
                 '{{documentJson}}'::jsonb
             FROM dms."Document" document
+            INNER JOIN testproject."Widget" widget
+                ON widget."DocumentId" = document."DocumentId"
             INNER JOIN dms."ResourceKey" resource_key
                 ON resource_key."ResourceKeyId" = document."ResourceKeyId"
             WHERE document."DocumentId" = {{documentId}}

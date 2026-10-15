@@ -26,6 +26,124 @@ public class Given_DocumentCacheMaterializer_Coherence
     private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
     private static readonly QualifiedResourceName DescriptorResource = new("Ed-Fi", "SchoolTypeDescriptor");
 
+    [TestCase(false, "Stable")]
+    [TestCase(false, "Deleted")]
+    [TestCase(false, "VersionChanged")]
+    [TestCase(true, "Stable")]
+    [TestCase(true, "Deleted")]
+    [TestCase(true, "VersionChanged")]
+    public async Task It_classifies_an_initial_missing_owner_from_the_final_document_observation(
+        bool isDescriptor,
+        string finalState
+    )
+    {
+        var testContext = CreateMaterializerTestContext();
+        var source = isDescriptor
+            ? (DocumentCacheResolvedSourceMetadata)testContext.DescriptorSource
+            : testContext.OrdinarySource;
+        var initial = CreateCurrentMetadata(source) with { ContentLastModifiedAt = null };
+        DocumentCacheCurrentSourceMetadataReadResult final = finalState switch
+        {
+            "Deleted" => DocumentCacheCurrentSourceMetadataReadResult.MissingSource.Instance,
+            "VersionChanged" => new DocumentCacheCurrentSourceMetadataReadResult.Found(
+                new DocumentCacheCurrentSourceMetadata(
+                    initial.DocumentId,
+                    initial.DocumentUuid,
+                    initial.ResourceKeyId,
+                    initial.ContentVersion + 1,
+                    null
+                )
+            ),
+            _ => new DocumentCacheCurrentSourceMetadataReadResult.Found(initial),
+        };
+        var sourceReader = new SequencedSourceMetadataReader(
+            new DocumentCacheSourceMetadataReadResult.OwnerMissing(initial),
+            final
+        );
+        var descriptorHydrator = new RecordingDescriptorHydrator();
+        var readMaterializer = new RecordingReadMaterializer();
+        var sut = new DocumentCacheMaterializer(
+            sourceReader,
+            descriptorHydrator,
+            new ThrowingDocumentHydrator(),
+            readMaterializer,
+            new RecordingServedEtagComposer("stream-etag")
+        );
+
+        if (finalState == "Stable")
+        {
+            Func<Task> act = () => sut.MaterializeAsync(CreateRequest(testContext.MappingSet));
+            var exception = (
+                await act.Should().ThrowAsync<DocumentCacheProjectionProcessingException>()
+            ).Subject.Single();
+            exception
+                .Reason.Should()
+                .Be(DocumentCacheProjectionProcessingFailureReason.StableSourceBodyMissing);
+            exception.FailureMetadata.ResourceKeyId.Should().Be(source.ResourceKeyId);
+        }
+        else
+        {
+            var result = await sut.MaterializeAsync(CreateRequest(testContext.MappingSet));
+            result
+                .Should()
+                .BeSameAs(
+                    finalState == "Deleted"
+                        ? DocumentCacheMaterializationResult.MissingSource.Instance
+                        : DocumentCacheMaterializationResult.SourceChangedDuringHydration.Instance
+                );
+        }
+
+        descriptorHydrator.CallCount.Should().Be(0);
+        readMaterializer.CallCount.Should().Be(0);
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_reports_a_stable_owner_that_disappeared_during_hydration(bool isDescriptor)
+    {
+        var testContext = CreateMaterializerTestContext();
+        var source = isDescriptor
+            ? (DocumentCacheResolvedSourceMetadata)testContext.DescriptorSource
+            : testContext.OrdinarySource;
+        var sourceReader = new SequencedSourceMetadataReader(
+            new DocumentCacheSourceMetadataReadResult.Found(source),
+            new DocumentCacheCurrentSourceMetadataReadResult.Found(
+                CreateCurrentMetadata(source) with
+                {
+                    ContentLastModifiedAt = null,
+                }
+            )
+        );
+        var descriptorHydrator = new RecordingDescriptorHydrator
+        {
+            Result = new DocumentCacheDescriptorHydrationResult.Found(
+                CreateDescriptorRow(testContext.DescriptorSource)
+            ),
+        };
+        var hydrator = new RecordingDocumentHydrator
+        {
+            Result = CreateHydratedPage(testContext.ReadPlan, testContext.OrdinarySource),
+        };
+        var readMaterializer = new RecordingReadMaterializer();
+        var sut = new DocumentCacheMaterializer(
+            sourceReader,
+            descriptorHydrator,
+            hydrator,
+            readMaterializer,
+            new RecordingServedEtagComposer("stream-etag")
+        );
+
+        Func<Task> act = () => sut.MaterializeAsync(CreateRequest(testContext.MappingSet));
+
+        var exception = (
+            await act.Should().ThrowAsync<DocumentCacheProjectionProcessingException>()
+        ).Subject.Single();
+        exception.Reason.Should().Be(DocumentCacheProjectionProcessingFailureReason.StableSourceBodyMissing);
+        descriptorHydrator.CallCount.Should().Be(isDescriptor ? 1 : 0);
+        hydrator.CallCount.Should().Be(isDescriptor ? 0 : 1);
+        readMaterializer.CallCount.Should().Be(0);
+    }
+
     [Test]
     public async Task It_returns_missing_source_when_the_final_metadata_read_finds_no_canonical_row()
     {

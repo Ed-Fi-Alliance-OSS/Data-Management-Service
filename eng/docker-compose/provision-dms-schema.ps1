@@ -1632,7 +1632,7 @@ function Test-CmsReadOnlyAccessEnvPresent {
     <#
     .SYNOPSIS
     Returns $true when the env file explicitly supplies at least one of the three
-    CONFIG_SERVICE_CLIENT_* keys with a non-blank value. Used to gate the optional
+    DMS_CONFIGURATION_SERVICE_CLIENT_* keys with a non-blank value. Used to gate the optional
     CMSReadOnlyAccess guidance so defaults alone do not advertise the block as available.
     #>
     param(
@@ -1644,7 +1644,7 @@ function Test-CmsReadOnlyAccessEnvPresent {
         return $false
     }
 
-    foreach ($name in @("CONFIG_SERVICE_CLIENT_ID", "CONFIG_SERVICE_CLIENT_SCOPE", "CONFIG_SERVICE_CLIENT_SECRET")) {
+    foreach ($name in @("DMS_CONFIGURATION_SERVICE_CLIENT_ID", "DMS_CONFIGURATION_SERVICE_CLIENT_SCOPE", "DMS_CONFIGURATION_SERVICE_CLIENT_SECRET")) {
         if ($EnvValues.ContainsKey($name) -and -not [string]::IsNullOrWhiteSpace([string]$EnvValues[$name])) {
             return $true
         }
@@ -1657,7 +1657,7 @@ function Get-ProvisionCmsReadOnlyAccessGuidance {
     <#
     .SYNOPSIS
     Produces optional CMSReadOnlyAccess guidance lines for IDE-hosted launch. Returns an empty
-    array when none of the three CONFIG_SERVICE_CLIENT_* keys are explicitly present in the
+    array when none of the three DMS_CONFIGURATION_SERVICE_CLIENT_* keys are explicitly present in the
     env file. Per command-boundaries.md Section 3.4, "may include" means "include when actually
     populated"; a default-derived client id alone does not satisfy that contract.
     #>
@@ -1670,10 +1670,10 @@ function Get-ProvisionCmsReadOnlyAccessGuidance {
         return @()
     }
 
-    $clientId = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "CONFIG_SERVICE_CLIENT_ID" -DefaultValue "CMSReadOnlyAccess"
-    $scope = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "CONFIG_SERVICE_CLIENT_SCOPE" -DefaultValue "edfi_admin_api/readonly_access"
-    $secret = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "CONFIG_SERVICE_CLIENT_SECRET"
-    $encryptionKey = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "DMS_CONFIG_DATABASE_ENCRYPTION_KEY"
+    $clientId = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "DMS_CONFIGURATION_SERVICE_CLIENT_ID" -DefaultValue "CMSReadOnlyAccess"
+    $scope = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "DMS_CONFIGURATION_SERVICE_CLIENT_SCOPE" -DefaultValue "edfi_admin_api/readonly_access"
+    $secret = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "DMS_CONFIGURATION_SERVICE_CLIENT_SECRET"
+    $encryptionKey = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY"
 
     $lines = [System.Collections.Generic.List[string]]::new()
     $lines.Add("")
@@ -1687,10 +1687,10 @@ function Get-ProvisionCmsReadOnlyAccessGuidance {
         $lines.Add("  ConfigurationServiceSettings__ClientSecret = (present in environment file)")
     }
     if ([string]::IsNullOrWhiteSpace($encryptionKey)) {
-        $lines.Add("  ConfigurationServiceSettings__EncryptionKey = (set to DMS_CONFIG_DATABASE_ENCRYPTION_KEY from your .env file; .env.example default secret!_32_chars_xxxxxxxxxxxxxxx)")
+        $lines.Add("  ConfigurationServiceSettings__EncryptionKey = (set to CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY from your .env file; .env.example default secret!_32_chars_xxxxxxxxxxxxxxx)")
     }
     else {
-        $lines.Add("  ConfigurationServiceSettings__EncryptionKey = (present in environment file as DMS_CONFIG_DATABASE_ENCRYPTION_KEY)")
+        $lines.Add("  ConfigurationServiceSettings__EncryptionKey = (present in environment file as CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY)")
     }
 
     return $lines.ToArray()
@@ -1760,6 +1760,7 @@ function Invoke-ProvisionDmsSchema {
     }
 
     $resolvedEnvironmentFile = Resolve-ProvisionEnvironmentFile -Path $EnvironmentFile
+    Write-LegacyEnvironmentVariableWarning -EnvironmentFile $resolvedEnvironmentFile
     # Compose the MSSQL engine overlay for -DatabaseEngine mssql; mirrors
     # configure-local-data-store.ps1 and start-local-dms.ps1. Direct invocation with
     # -DatabaseEngine mssql layers the overlay onto a custom -EnvironmentFile; wrapper-forwarded
@@ -1783,7 +1784,7 @@ function Invoke-ProvisionDmsSchema {
     }
     $envValues = ReadValuesFromEnvFile -EnvironmentFile $resolvedEnvironmentFile
     $cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues
-    $tenant = Get-EnvValueOrDefault -EnvValues $envValues -Name "CONFIG_SERVICE_TENANT"
+    $tenant = Get-EnvValueOrDefault -EnvValues $envValues -Name "DMS_CONFIGURATION_SERVICE_TENANT"
 
     $schemaWorkspace = Resolve-BootstrapSchemaWorkspace
     $schemaPaths = [string[]]@($schemaWorkspace.CoreSchemaPath) + [string[]]@($schemaWorkspace.ExtensionSchemaPaths)

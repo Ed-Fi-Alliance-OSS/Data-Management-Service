@@ -714,7 +714,7 @@ function Assert-RestoreTargetDatabaseNameSafe {
 
     if ($SeparateConfigDatabase) {
         if ([string]::IsNullOrWhiteSpace($EffectiveConfigDatabaseName)) {
-            throw "-SeparateConfigDatabase requires the effective Configuration Service database name (DMS_CONFIG_DATABASE_NAME) so the restore target can be proven distinct from it."
+            throw "-SeparateConfigDatabase requires the effective Configuration Service database name (CONFIGURATION_SERVICE_DATABASE_NAME) so the restore target can be proven distinct from it."
         }
         if ($TargetDatabaseName.Trim().Equals($EffectiveConfigDatabaseName.Trim(), [System.StringComparison]::OrdinalIgnoreCase)) {
             throw "The restore target database resolves to the dedicated Configuration Service database ('$($EffectiveConfigDatabaseName.Trim())') selected by -SeparateConfigDatabase. Restore never replaces a separate CMS database."

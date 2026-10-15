@@ -57,7 +57,6 @@ public class Given_Mssql_DocumentCacheMaterializer_Coherence
                 [ResourceKeyId] smallint NOT NULL,
                 [CreatedByOwnershipTokenId] smallint NULL,
                 [ContentVersion] bigint NOT NULL,
-                [ContentLastModifiedAt] datetimeoffset NOT NULL,
                 [CreatedAt] datetimeoffset NOT NULL
             );
 
@@ -67,7 +66,6 @@ public class Given_Mssql_DocumentCacheMaterializer_Coherence
                 [ResourceKeyId],
                 [CreatedByOwnershipTokenId],
                 [ContentVersion],
-                [ContentLastModifiedAt],
                 [CreatedAt]
             )
             VALUES (
@@ -76,9 +74,16 @@ public class Given_Mssql_DocumentCacheMaterializer_Coherence
                 11,
                 NULL,
                 222,
-                '2026-07-30T14:15:16+00:00',
                 '2026-07-30T14:15:16+00:00'
             );
+
+            EXEC('CREATE SCHEMA [edfi]');
+            CREATE TABLE [edfi].[School] (
+                [DocumentId] bigint PRIMARY KEY,
+                [ContentLastModifiedAt] datetimeoffset NOT NULL
+            );
+            INSERT INTO [edfi].[School] ([DocumentId], [ContentLastModifiedAt])
+            VALUES (980101, '2026-07-30T14:15:16+00:00');
             """
         );
     }
@@ -133,6 +138,59 @@ public class Given_Mssql_DocumentCacheMaterializer_Coherence
         var result = await sut.MaterializeAsync(CreateRequest(_mappingSet));
 
         result.Should().BeSameAs(DocumentCacheMaterializationResult.MissingSource.Instance);
+    }
+
+    [TestCase(false, false, "Stable")]
+    [TestCase(false, false, "Deleted")]
+    [TestCase(false, false, "Changed")]
+    [TestCase(false, true, "Stable")]
+    [TestCase(false, true, "Deleted")]
+    [TestCase(false, true, "Changed")]
+    [TestCase(true, false, "Stable")]
+    [TestCase(true, false, "Deleted")]
+    [TestCase(true, false, "Changed")]
+    [TestCase(true, true, "Stable")]
+    [TestCase(true, true, "Deleted")]
+    [TestCase(true, true, "Changed")]
+    [TestCase(false, false, "Stable", true)]
+    [TestCase(false, false, "Deleted", true)]
+    [TestCase(false, false, "Changed", true)]
+    [TestCase(false, true, "Stable", true)]
+    [TestCase(false, true, "Deleted", true)]
+    [TestCase(false, true, "Changed", true)]
+    [TestCase(true, false, "Stable", true)]
+    [TestCase(true, false, "Deleted", true)]
+    [TestCase(true, false, "Changed", true)]
+    [TestCase(true, true, "Stable", true)]
+    [TestCase(true, true, "Deleted", true)]
+    [TestCase(true, true, "Changed", true)]
+    public async Task It_classifies_owner_absence_across_a_synchronized_reread(
+        bool descriptor,
+        bool initiallyMissing,
+        string finalState,
+        bool afterDocumentRead = false
+    )
+    {
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        var executor = new MssqlRelationalCommandExecutor(
+            async cancellationToken =>
+            {
+                var opened = new SqlConnection(_connectionString);
+                await opened.OpenAsync(cancellationToken);
+                return (DbConnection)opened;
+            },
+            NullLogger<MssqlRelationalCommandExecutor>.Instance
+        );
+        await DocumentCacheOwnerCoherenceScenario.ExecuteAsync(
+            connection,
+            executor,
+            SqlDialect.Mssql,
+            descriptor,
+            initiallyMissing,
+            finalState,
+            afterDocumentRead
+        );
     }
 
     private DocumentCacheMaterializer CreateMaterializer(Func<Task> mutateDuringHydration)

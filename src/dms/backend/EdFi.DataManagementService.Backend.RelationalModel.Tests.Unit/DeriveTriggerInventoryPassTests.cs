@@ -122,8 +122,8 @@ public class Given_Trigger_Set_Composition
             t.Table.Name == "School" && t.Parameters is TriggerKindParameters.DocumentStamping
         );
 
-        rootStamp.MirrorStampTargetTable.Should().NotBeNull();
-        rootStamp.MirrorStampTargetTable!.Value.Name.Should().Be("School");
+        rootStamp.StampTargetTable.Should().NotBeNull();
+        rootStamp.StampTargetTable!.Value.Name.Should().Be("School");
     }
 
     /// <summary>
@@ -136,8 +136,8 @@ public class Given_Trigger_Set_Composition
             t.Table.Name == "SchoolAddress" && t.Parameters is TriggerKindParameters.DocumentStamping
         );
 
-        childStamp.MirrorStampTargetTable.Should().NotBeNull();
-        childStamp.MirrorStampTargetTable!.Value.Name.Should().Be("School");
+        childStamp.StampTargetTable.Should().NotBeNull();
+        childStamp.StampTargetTable!.Value.Name.Should().Be("School");
     }
 
     /// <summary>
@@ -149,7 +149,7 @@ public class Given_Trigger_Set_Composition
         _triggers
             .Where(t => t.Parameters is TriggerKindParameters.DocumentStamping)
             .Should()
-            .OnlyContain(t => t.MirrorStampTargetTable.HasValue);
+            .OnlyContain(t => t.StampTargetTable.HasValue);
     }
 
     /// <summary>
@@ -166,9 +166,7 @@ public class Given_Trigger_Set_Composition
         descriptorStamp.Should().NotBeNull();
         descriptorStamp!.Name.Value.Should().Be("TR_Descriptor_Stamp_Document");
         descriptorStamp.IdentityProjectionColumns.Should().BeEmpty();
-        descriptorStamp
-            .MirrorStampTargetTable.Should()
-            .Be(new DbTableName(new DbSchemaName("dms"), "Descriptor"));
+        descriptorStamp.StampTargetTable.Should().Be(new DbTableName(new DbSchemaName("dms"), "Descriptor"));
     }
 
     /// <summary>
@@ -290,8 +288,8 @@ public class Given_Extension_Table_Triggers
             t.Table.Name == "ContactExtension" && t.Parameters is TriggerKindParameters.DocumentStamping
         );
 
-        extensionStamp.MirrorStampTargetTable.Should().NotBeNull();
-        extensionStamp.MirrorStampTargetTable!.Value.Name.Should().Be("Contact");
+        extensionStamp.StampTargetTable.Should().NotBeNull();
+        extensionStamp.StampTargetTable!.Value.Name.Should().Be("Contact");
     }
 }
 
@@ -434,9 +432,7 @@ public class Given_Descriptor_Resources_For_Trigger_Derivation
         descriptorStamp.Name.Value.Should().Be("TR_Descriptor_Stamp_Document");
         descriptorStamp.Parameters.Should().BeOfType<TriggerKindParameters.DocumentStamping>();
         descriptorStamp.IdentityProjectionColumns.Should().BeEmpty();
-        descriptorStamp
-            .MirrorStampTargetTable.Should()
-            .Be(new DbTableName(new DbSchemaName("dms"), "Descriptor"));
+        descriptorStamp.StampTargetTable.Should().Be(new DbTableName(new DbSchemaName("dms"), "Descriptor"));
     }
 
     /// <summary>

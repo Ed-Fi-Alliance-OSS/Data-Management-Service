@@ -123,13 +123,12 @@ public static class NoProfileAtomicRollbackAssertions
         after.Should().BeEquivalentTo(before);
     }
 
-    /// <summary>Stamp-complete document row for the rejected-write snapshot.</summary>
+    /// <summary>Version and creation metadata for the rejected-write document snapshot.</summary>
     public sealed record RejectedWriteDocumentRow(
         long DocumentId,
         Guid DocumentUuid,
         short ResourceKeyId,
         long ContentVersion,
-        DateTimeOffset ContentLastModifiedAt,
         DateTimeOffset CreatedAt
     );
 
@@ -141,7 +140,7 @@ public static class NoProfileAtomicRollbackAssertions
 
     /// <summary>
     /// The key-unification target: the conflicting Calendar seed's full value-bearing row, including
-    /// the root table's own replicated ContentVersion/ContentLastModifiedAt stamp columns.
+    /// the root table's ContentVersion mirror and authoritative ContentLastModifiedAt.
     /// </summary>
     public sealed record RejectedWriteCalendarRow(
         long DocumentId,

@@ -160,8 +160,8 @@ function Resolve-CmsReadOnlyAccessFromEnv {
     <#
     .SYNOPSIS
     Builds the optional CMSReadOnlyAccess block included in the configure result. Returns
-    $null when none of CONFIG_SERVICE_CLIENT_ID, CONFIG_SERVICE_CLIENT_SCOPE, or
-    CONFIG_SERVICE_CLIENT_SECRET are present in the effective environment. Per
+    $null when none of DMS_CONFIGURATION_SERVICE_CLIENT_ID, DMS_CONFIGURATION_SERVICE_CLIENT_SCOPE, or
+    DMS_CONFIGURATION_SERVICE_CLIENT_SECRET are present in the effective environment. Per
     command-boundaries.md Section 3.4, "may include" means "include when actually populated"; a
     default-derived client id alone does not satisfy that contract. The client id/scope/secret
     come from the local environment file (start-local-dms.ps1's provider-specific local
@@ -175,9 +175,9 @@ function Resolve-CmsReadOnlyAccessFromEnv {
         return $null
     }
 
-    $clientId = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "CONFIG_SERVICE_CLIENT_ID" -DefaultValue "CMSReadOnlyAccess"
-    $scope = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "CONFIG_SERVICE_CLIENT_SCOPE" -DefaultValue "edfi_admin_api/readonly_access"
-    $secret = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "CONFIG_SERVICE_CLIENT_SECRET"
+    $clientId = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "DMS_CONFIGURATION_SERVICE_CLIENT_ID" -DefaultValue "CMSReadOnlyAccess"
+    $scope = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "DMS_CONFIGURATION_SERVICE_CLIENT_SCOPE" -DefaultValue "edfi_admin_api/readonly_access"
+    $secret = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "DMS_CONFIGURATION_SERVICE_CLIENT_SECRET"
 
     $block = @{
         ClientId = $clientId
@@ -194,7 +194,7 @@ function Test-CmsReadOnlyAccessEnvPresent {
     <#
     .SYNOPSIS
     Returns $true when the effective environment (env file or ambient process environment, with
-    Compose precedence) supplies at least one of the three CONFIG_SERVICE_CLIENT_* keys with a
+    Compose precedence) supplies at least one of the three DMS_CONFIGURATION_SERVICE_CLIENT_* keys with a
     non-blank value. Used to gate the optional CMSReadOnlyAccess block so defaults alone do not
     advertise the block as available.
     #>
@@ -202,7 +202,7 @@ function Test-CmsReadOnlyAccessEnvPresent {
         [hashtable]$EnvValues
     )
 
-    foreach ($name in @("CONFIG_SERVICE_CLIENT_ID", "CONFIG_SERVICE_CLIENT_SCOPE", "CONFIG_SERVICE_CLIENT_SECRET")) {
+    foreach ($name in @("DMS_CONFIGURATION_SERVICE_CLIENT_ID", "DMS_CONFIGURATION_SERVICE_CLIENT_SCOPE", "DMS_CONFIGURATION_SERVICE_CLIENT_SECRET")) {
         if (-not [string]::IsNullOrWhiteSpace((Get-ComposeResolvedEnvValue -EnvironmentValues $EnvValues -Name $name))) {
             return $true
         }
@@ -451,6 +451,7 @@ function Invoke-ConfigureLocalDataStore {
     Assert-NoBootstrapRootOverride -PhaseName "configure-local-data-store.ps1"
 
     $resolvedEnvironmentFile = Resolve-ConfigureEnvironmentFile -Path $EnvironmentFile
+    Write-LegacyEnvironmentVariableWarning -EnvironmentFile $resolvedEnvironmentFile
     # Compose the MSSQL engine overlay for -DatabaseEngine mssql; this covers direct invocation of
     # this script with a custom -EnvironmentFile (still gets the overlay layered on top) and the
     # bootstrap wrapper path (Resolve-DatabaseEngineEnvironmentFile detects the overlay is already
@@ -474,7 +475,7 @@ function Invoke-ConfigureLocalDataStore {
     }
     $envValues = ReadValuesFromEnvFile -EnvironmentFile $resolvedEnvironmentFile
     $cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues
-    $tenant = Get-EnvValueOrDefault -EnvValues $envValues -Name "CONFIG_SERVICE_TENANT"
+    $tenant = Get-EnvValueOrDefault -EnvValues $envValues -Name "DMS_CONFIGURATION_SERVICE_TENANT"
     $schoolYears = @(Resolve-SchoolYearRange -Range $SchoolYearRange)
 
     if ($NoDataStore -and $schoolYears.Count -gt 0) {
@@ -507,9 +508,9 @@ function Invoke-ConfigureLocalDataStore {
     # Which input a registered name came from, for the topology guards' diagnostics.
     $registrationDatabaseSource = if ($restoreReuse) { "-RestoreTargetDatabaseName" } else { "-DataStoreDatabaseName" }
 
-    $multiTenancyEnabled = (Get-EnvValueOrDefault -EnvValues $envValues -Name "DMS_CONFIG_MULTI_TENANCY").Equals("true", [System.StringComparison]::OrdinalIgnoreCase)
+    $multiTenancyEnabled = (Get-EnvValueOrDefault -EnvValues $envValues -Name "CONFIGURATION_SERVICE_MULTI_TENANCY").Equals("true", [System.StringComparison]::OrdinalIgnoreCase)
     if ($schoolYears.Count -gt 0 -and $multiTenancyEnabled -and [string]::IsNullOrWhiteSpace($tenant)) {
-        throw "Parameter -SchoolYearRange requires CONFIG_SERVICE_TENANT to be set in the environment file when DMS_CONFIG_MULTI_TENANCY=true."
+        throw "Parameter -SchoolYearRange requires DMS_CONFIGURATION_SERVICE_TENANT to be set in the environment file when CONFIGURATION_SERVICE_MULTI_TENANCY=true."
     }
 
     # Datastore values are resolved BEFORE any CMS call, not just before the registration that

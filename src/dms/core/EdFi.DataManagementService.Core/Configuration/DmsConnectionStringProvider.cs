@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Linq;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Configuration;
@@ -55,60 +56,67 @@ public class DmsConnectionStringProvider(
     }
 
     /// <inheritdoc />
-    public string? GetHealthCheckConnectionString()
+    public HealthCheckTarget GetHealthCheckTarget()
     {
         logger.LogDebug("Retrieving connection string for health check purposes");
 
-        // Search across all loaded tenant caches to find the first available instance
+        // Called on every health probe, so the routine outcomes log at Debug. Only one state is a
+        // genuine misconfiguration worth a repeating Warning: data stores exist, but none of them
+        // has a connection string. "No tenant caches" and "tenant caches with no data stores" are
+        // the same condition for the health check - nothing to probe yet - and both are normal
+        // during multi-tenant onboarding (a tenant can exist before its data store does).
         var loadedTenants = dataStoreProvider.GetLoadedTenantKeys();
+        int instancesSeen = 0;
 
-        if (loadedTenants.Count == 0)
-        {
-            logger.LogWarning(
-                "No tenant caches are loaded. The data store provider has no instances. "
-                    + "Check that instances were successfully loaded from the Configuration Service."
-            );
-
-            return null;
-        }
-
-        // Find the first instance with a valid connection string across all tenants
         foreach (var tenantKey in loadedTenants)
         {
             var instances = dataStoreProvider.GetAll(string.IsNullOrEmpty(tenantKey) ? null : tenantKey);
 
-            if (instances.Count == 0)
+            // Every instance in Id order, not just the lowest-Id one: a tenant whose first data
+            // store lacks a connection string may still have a later one that can be probed.
+            foreach (var instance in instances.OrderBy(x => x.Id))
             {
-                continue;
-            }
+                instancesSeen++;
 
-            var firstInstance = instances.OrderBy(x => x.Id).First();
+                if (!string.IsNullOrWhiteSpace(instance.ConnectionString))
+                {
+                    logger.LogDebug(
+                        "Selected data store for health check: '{Name}' (ID: {DataStoreId}) from tenant '{Tenant}' ({TotalCount} instances in tenant)",
+                        LoggingSanitizer.SanitizeInternalValueForLogging(instance.Name),
+                        instance.Id,
+                        string.IsNullOrEmpty(tenantKey)
+                            ? "(default)"
+                            : LoggingSanitizer.SanitizeInternalValueForLogging(tenantKey),
+                        instances.Count
+                    );
 
-            if (!string.IsNullOrWhiteSpace(firstInstance.ConnectionString))
-            {
-                logger.LogInformation(
-                    "Selected data store for health check: '{Name}' (ID: {DataStoreId}) from tenant '{Tenant}' ({TotalCount} instances in tenant)",
-                    firstInstance.Name,
-                    firstInstance.Id,
-                    string.IsNullOrEmpty(tenantKey) ? "(default)" : tenantKey,
-                    instances.Count
+                    return HealthCheckTarget.Available(instance.ConnectionString);
+                }
+
+                logger.LogDebug(
+                    "Health check: Skipping data store '{Name}' (ID: {DataStoreId}) - no connection string configured",
+                    LoggingSanitizer.SanitizeInternalValueForLogging(instance.Name),
+                    instance.Id
                 );
-
-                return firstInstance.ConnectionString;
             }
+        }
 
+        if (instancesSeen == 0)
+        {
             logger.LogDebug(
-                "Health check: Skipping data store '{Name}' (ID: {DataStoreId}) - no connection string configured",
-                firstInstance.Name,
-                firstInstance.Id
+                "No data store instances are loaded ({TenantCount} tenant caches); there is no database to check yet",
+                loadedTenants.Count
             );
+
+            return HealthCheckTarget.NoDataStoresLoaded;
         }
 
         logger.LogWarning(
-            "No data stores with valid connection strings found across {TenantCount} loaded tenant caches",
+            "No data stores with valid connection strings found among {InstanceCount} data stores across {TenantCount} loaded tenant caches",
+            instancesSeen,
             loadedTenants.Count
         );
 
-        return null;
+        return HealthCheckTarget.NoConnectionString(instancesSeen);
     }
 }

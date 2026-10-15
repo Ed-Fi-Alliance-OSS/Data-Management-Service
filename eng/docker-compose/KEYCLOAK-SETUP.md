@@ -57,7 +57,7 @@ and initial client.
 4. Select `DmsConfigurationService`
 5. Click Credentials
 6. Copy the Client secret
-7. Update DMS Configuration Service IdentitySettings section on appsettings.json:
+7. Update Configuration Service IdentitySettings section on appsettings.json:
 
    ```js
     ConfigServiceRole: "cms-client" (Service realm role created earlier)
@@ -71,7 +71,7 @@ and initial client.
     Leave the rest as-is
    ```
 
-   Keep the copied client secret aligned with the CMS `IdentitySettings:ClientSecretValidation`
+   Keep the copied client secret aligned with the Configuration Service `IdentitySettings:ClientSecretValidation`
    settings. If you customize `MinimumLength` or `MaximumLength`, configure
    Keycloak so the secret you generate or assign falls within the same range.
 
@@ -101,7 +101,7 @@ and initial client.
 ## Token revocation through the Configuration Service
 
 With `AppSettings:IdentityProvider = keycloak`, `POST /connect/revoke` on the Configuration
-Service revokes at Keycloak. Before delegating, CMS reads the caller's client definition
+Service revokes at Keycloak. Before delegating, the Configuration Service reads the caller's client definition
 through the Keycloak Admin REST API to confirm the caller is a confidential, non-bearer-only
 client (Keycloak itself accepts a public client without checking any secret). The behaviour
 and response contract are described in
@@ -114,32 +114,32 @@ Keycloak needs the following for this to work:
   client role `view-clients`. The `realm-admin` role that `setup-keycloak.ps1` assigns to
   `DmsConfigurationService` (and that the manual setup above assigns) includes it. If you
   grant the service account narrower roles, include `view-clients`. Without it, every
-  revocation is answered `503 temporarily_unavailable`, and the CMS log says the
+  revocation is answered `503 temporarily_unavailable`, and the Configuration Service log says the
   Configuration Service client lacks permission to read clients in the realm.
 - **Confidential clients.** Only a confidential client (`Client authentication` on) can
   revoke. Public and bearer-only clients are refused with `invalid_client`.
-- **TLS and `sslRequired`.** CMS sends the caller's client secret and the token to the base
+- **TLS and `sslRequired`.** The Configuration Service sends the caller's client secret and the token to the base
   URL derived from `IdentitySettings:Authority` (everything before `/realms/`). Outside
   local development that must be an `https` URL. The local Docker stack uses
   `http://dms-keycloak:8080` on the Docker network, which works because the realm's
   `Require SSL` setting (`sslRequired`) is `external requests` (the default; private
   addresses may use HTTP). With `all requests`, Keycloak answers every plain-HTTP revocation
-  `403` "HTTPS required", and CMS answers `503`. CMS does not follow redirects on the
+  `403` "HTTPS required", and the Configuration Service answers `503`. The Configuration Service does not follow redirects on the
   revocation request, so the base URL must be one Keycloak answers on directly: a redirect,
   an HTTP-to-HTTPS redirect included, is answered `503`.
 - **Timeouts.** The client-type read, the revocation request and the reading of an error
   response each get their own `AppSettings:TokenRequestTimeoutSeconds` window, so a slow
-  Keycloak can hold a revocation for up to three times that setting before CMS answers `503`.
-- **Changing the Keycloak image.** CMS recognises Keycloak's answer for another client's token
+  Keycloak can hold a revocation for up to three times that setting before the Configuration Service answers `503`.
+- **Changing the Keycloak image.** The Configuration Service recognises Keycloak's answer for another client's token
   by its exact text (`400 invalid_request` "Unmatching clients") and answers it `200`. After
-  changing the image, rerun `KeycloakRevocationCharacterizationTests` (CMS E2E, Keycloak
+  changing the image, rerun `KeycloakRevocationCharacterizationTests` (Configuration Service E2E, Keycloak
   stack) and confirm that answer is unchanged; if the text changed, revoking another client's
   token is answered `400` instead of `200`.
 
 ### Confirming a revocation at Keycloak
 
 A `200 OK` from `/connect/revoke` does not prove the token was revoked (RFC 7009 answers
-`200` for unknown and foreign tokens too), and CMS `/connect/introspect` cannot observe
+`200` for unknown and foreign tokens too), and Configuration Service `/connect/introspect` cannot observe
 Keycloak tokens. Confirm through Keycloak's introspection endpoint,
 `POST http://localhost:8045/realms/edfi/protocol/openid-connect/token/introspect`, with
 `token=<the token>` and the credentials of a **confidential** client:
@@ -158,7 +158,7 @@ Keycloak tokens. Confirm through Keycloak's introspection endpoint,
   3. Request new tokens. Only tokens issued after the change carry the audience; a token
      issued before it keeps its original `aud` and still answers `active:false`.
 
-  The CMS end-to-end tests set up their observer client the same way (a per-run client
+  The Configuration Service end-to-end tests set up their observer client the same way (a per-run client
   scope with an audience mapper for the observer, assigned as a default scope to the
   observed clients).
 - Introspect refresh tokens with the client they were issued to, passing
@@ -166,7 +166,7 @@ Keycloak tokens. Confirm through Keycloak's introspection endpoint,
 - A public client cannot introspect (`403` "Client not allowed."); observe its tokens with a
   confidential client.
 
-A revoked token reports `active:false`. CMS and DMS validate Keycloak tokens locally, so they
+A revoked token reports `active:false`. The Configuration Service and DMS validate Keycloak tokens locally, so they
 keep accepting a revoked token until it expires (plus their clock skew).
 
 ## Shutting down the Keycloak container
@@ -259,7 +259,7 @@ Please refer "Creating a Configuration Service Client" section above
 1. You can provide any valid Client ID and Name when creating your client.
 2. After creating the client, Keycloak will automatically generate a secret for
    you. Make sure to store this for later use and confirm its length matches the
-   CMS `IdentitySettings:ClientSecretValidation` minimum/maximum settings.
+   Configuration Service `IdentitySettings:ClientSecretValidation` minimum/maximum settings.
 3. Follow the section titled "Configuring service-specific realm roles" to
    create a role specific to your service (e.g., dms-client for a DMS-specific
    role).

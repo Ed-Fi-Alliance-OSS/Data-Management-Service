@@ -19,7 +19,7 @@ public static class KeycloakCharacterizationEnvironment
 {
     public const string Category = "KeycloakCharacterization";
 
-    private const string IdentityProviderVariable = "DMS_CONFIG_IDENTITY_PROVIDER";
+    private const string IdentityProviderVariable = "CONFIGURATION_SERVICE_IDENTITY_PROVIDER";
 
     // The compose stack publishes Keycloak with values from the active environment file; the
     // fallbacks match eng/docker-compose/.env.config.e2e so a bare `dotnet test` against the

@@ -253,6 +253,7 @@ jobs:
             "eng/docker-compose/tests/StockImageProofEntryScript.Tests.ps1",
             "eng/docker-compose/tests/ProvisionE2EDatabaseReset.Tests.ps1",
             "eng/docker-compose/tests/AzureVmDeployment.Tests.ps1",
+            "eng/docker-compose/tests/LegacyEnvironmentVariables.Tests.ps1",
             "eng/docker-compose/tests/E2EEngineForwarding.Tests.ps1",
             "eng/docker-compose/tests/E2ETestProcessContext.Tests.ps1",
             "eng/docker-compose/tests/E2EIdentityEnvironment.Tests.ps1",
@@ -281,6 +282,9 @@ jobs:
             "eng/DatabaseTemplates/tests/Template-RestoreTrust.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-DevTrust.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-WorkflowInputs.Tests.ps1",
+            "eng/DatabaseTemplates/tests/Template-WorkflowManifest.Tests.ps1",
+            "eng/DatabaseTemplates/tests/Template-Schema.Tests.ps1",
+            "eng/DatabaseTemplates/tests/Compact-Descriptor.Tests.ps1",
             "eng/smoke_test/tests/SmokeTest.Tests.ps1",
             "eng/northridge/tests/SchemaSnapshotSecurity.Tests.ps1",
             "eng/northridge/tests/NorthridgeFailClosedGuards.Tests.ps1",
@@ -2091,7 +2095,7 @@ jobs:
         shell: pwsh
     env:
       DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
-      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
+      CONFIGURATION_SERVICE_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -2275,7 +2279,7 @@ jobs:
         shell: pwsh
     env:
       DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
-      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
+      CONFIGURATION_SERVICE_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -2465,7 +2469,7 @@ jobs:
         shell: pwsh
     env:
       DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
-      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
+      CONFIGURATION_SERVICE_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -2656,7 +2660,7 @@ jobs:
         shell: pwsh
     env:
       DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
-      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
+      CONFIGURATION_SERVICE_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -2881,7 +2885,7 @@ jobs:
         shell: pwsh
     env:
       DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
-      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
+      CONFIGURATION_SERVICE_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -3134,7 +3138,7 @@ jobs:
         shell: pwsh
     env:
       DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
-      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
+      CONFIGURATION_SERVICE_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -3321,7 +3325,7 @@ jobs:
         shell: pwsh
     env:
       DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
-      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
+      CONFIGURATION_SERVICE_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -3532,7 +3536,7 @@ jobs:
         shell: pwsh
     env:
       DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
-      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
+      CONFIGURATION_SERVICE_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -3749,7 +3753,7 @@ jobs:
         shell: pwsh
     env:
       DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
-      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
+      CONFIGURATION_SERVICE_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

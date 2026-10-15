@@ -201,7 +201,7 @@ function Get_Client () {
     }
 }
 
-# The role names are configured values (DMS_CONFIG_IDENTITY_SERVICE_ROLE / _CLIENT_ROLE, routed here
+# The role names are configured values (CONFIGURATION_SERVICE_IDENTITY_SERVICE_ROLE / _CLIENT_ROLE, routed here
 # by the start scripts) and travel as one path segment, so they are percent-encoded: a space, '#',
 # '?' or '/' pasted raw would end the path, start a fragment or query, or add a segment, the lookup
 # would answer 404 for a role that exists, and Create_Role would create it again under the raw name.

@@ -269,12 +269,12 @@ try {
         Set-HarnessVariable -Name $name -Value $names[$name]
     }
     Set-HarnessVariable -Name SECRETS_E2E_SECRETS_DIRECTORY -Value $secretsDirectory
-    Set-HarnessVariable -Name CMS_PLUGINS_MOUNT_SOURCE -Value $pluginRoot
+    Set-HarnessVariable -Name CONFIGURATION_SERVICE_PLUGINS_MOUNT_SOURCE -Value $pluginRoot
     # The proof deploys PostgreSQL with one tenant and sends no Tenant header. The compose files take
     # the engine and tenancy from these variables, which an earlier build-config.ps1 run in the same
     # session can leave set to MSSQL or to multitenant.
-    Set-HarnessVariable -Name DMS_CONFIG_DATASTORE -Value "postgresql"
-    Set-HarnessVariable -Name DMS_CONFIG_MULTI_TENANCY -Value "false"
+    Set-HarnessVariable -Name CONFIGURATION_SERVICE_DATASTORE -Value "postgresql"
+    Set-HarnessVariable -Name CONFIGURATION_SERVICE_MULTI_TENANCY -Value "false"
     Set-HarnessVariable -Name DMS_MULTI_TENANCY -Value "false"
 
     if ($Down) {
@@ -310,21 +310,21 @@ try {
     New-HarnessEnvironmentFile -Overrides @{
         POSTGRES_PORT = $postgresPort
         DMS_HTTP_PORTS = $dmsPort
-        DMS_CONFIG_ASPNETCORE_HTTP_PORTS = $configPort
-        CONFIG_SERVICE_URL = $configUrlInNetwork
+        CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS = $configPort
+        DMS_CONFIGURATION_SERVICE_URL = $configUrlInNetwork
         OAUTH_TOKEN_ENDPOINT = "$configUrlInNetwork/connect/token"
         SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT = "$configUrlInNetwork/connect/token"
         SELF_CONTAINED_DMS_JWT_AUTHORITY = $configUrlInNetwork
         SELF_CONTAINED_DMS_JWT_METADATA_ADDRESS = "$configUrlInNetwork/.well-known/openid-configuration"
         DMS_JWT_AUTHORITY = $configUrlInNetwork
         DMS_JWT_METADATA_ADDRESS = "$configUrlInNetwork/.well-known/openid-configuration"
-        DMS_CONFIG_IDENTITY_AUTHORITY = $configUrlInNetwork
-        DMS_CONFIG_IDENTITY_PROVIDER = "self-contained"
-        DMS_CONFIG_SECRETS_CACHE_EXPIRATION_SECONDS = $CacheExpirationSeconds
-        DMS_CONFIG_DOCKER_IMAGE = "ed-fi-api-config-secrets-e2e"
+        CONFIGURATION_SERVICE_IDENTITY_AUTHORITY = $configUrlInNetwork
+        CONFIGURATION_SERVICE_IDENTITY_PROVIDER = "self-contained"
+        CONFIGURATION_SERVICE_SECRETS_CACHE_EXPIRATION_SECONDS = $CacheExpirationSeconds
+        CONFIGURATION_SERVICE_DOCKER_IMAGE = "ed-fi-api-config-secrets-e2e"
         DMS_DOCKER_IMAGE = "ed-fi-api-secrets-e2e"
-        DMS_CONFIG_CLAIMS_MOUNT_SOURCE = $claimsMountSource
-        CMS_PLUGINS_MOUNT_SOURCE = $pluginRoot
+        CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE = $claimsMountSource
+        CONFIGURATION_SERVICE_PLUGINS_MOUNT_SOURCE = $pluginRoot
     }
 
     Write-Output "Publishing $pluginName framework-dependent into the plugin root..."
@@ -360,7 +360,7 @@ try {
             EnvironmentFile = $environmentFile
             DbUser = "postgres"
             DbPort = "ENV:POSTGRES_PORT"
-            DbName = "ENV:DMS_CONFIG_DATABASE_NAME"
+            DbName = "ENV:CONFIGURATION_SERVICE_DATABASE_NAME"
             PostgresContainerName = $names.SECRETS_E2E_POSTGRES_CONTAINER
         }
         ./setup-openiddict.ps1 -InitDb @identityDbParams
@@ -411,11 +411,11 @@ try {
         Invoke-Compose -Arguments @("up", "--detach", "dms")
         Wait-HttpHealthy -Url "http://localhost:$dmsPort/health" -Name "DMS"
 
-        Set-HarnessVariable -Name SECRETS_E2E_CMS_URL -Value "http://localhost:$configPort"
+        Set-HarnessVariable -Name SECRETS_E2E_CONFIGURATION_SERVICE_URL -Value "http://localhost:$configPort"
         Set-HarnessVariable -Name SECRETS_E2E_DMS_URL -Value ("http://localhost:$dmsPort/$(Get-ComposeResolvedEnvValue -EnvironmentValues $baseValues -Name "PATH_BASE")")
-        Set-HarnessVariable -Name SECRETS_E2E_CMS_CLIENT_ID -Value "DmsConfigurationService"
-        Set-HarnessVariable -Name SECRETS_E2E_CMS_CLIENT_SECRET -Value $clientSecrets.DmsConfigurationServiceClientSecret
-        Set-HarnessVariable -Name SECRETS_E2E_ENCRYPTION_KEY -Value (Get-BaseValue "DMS_CONFIG_DATABASE_ENCRYPTION_KEY")
+        Set-HarnessVariable -Name SECRETS_E2E_CONFIGURATION_SERVICE_CLIENT_ID -Value "DmsConfigurationService"
+        Set-HarnessVariable -Name SECRETS_E2E_CONFIGURATION_SERVICE_CLIENT_SECRET -Value $clientSecrets.DmsConfigurationServiceClientSecret
+        Set-HarnessVariable -Name SECRETS_E2E_ENCRYPTION_KEY -Value (Get-BaseValue "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY")
         Set-HarnessVariable -Name SECRETS_E2E_SECRETS_FILE -Value $secretsFile
         Set-HarnessVariable -Name SECRETS_E2E_DATASTORE_SECRET -Value $datastoreSecretName
         Set-HarnessVariable -Name SECRETS_E2E_DATASTORE_ID -Value $dataStore.id

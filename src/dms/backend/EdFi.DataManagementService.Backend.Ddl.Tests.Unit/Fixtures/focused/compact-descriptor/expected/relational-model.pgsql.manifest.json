@@ -551,7 +551,7 @@
         "DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "dms",
         "name": "Descriptor"
       },
@@ -598,7 +598,7 @@
       "identity_projection_columns": [
         "ProfileRootOnlyMergeItemId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ProfileRootOnlyMergeItem"
       },
@@ -620,7 +620,7 @@
         "ProfileRootOnlyMergeItem_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ProfileRootOnlyMergeItem"
       }
@@ -636,7 +636,7 @@
         "ProfileRootOnlyMergeItem_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ProfileRootOnlyMergeItem"
       }
@@ -726,7 +726,7 @@
         "StudentUniqueId",
         "SchoolTypeDescriptor_DescriptorId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Student"
       },
@@ -748,7 +748,7 @@
         "DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ProfileRootOnlyMergeItem"
       }
@@ -1045,7 +1045,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -1999,7 +1999,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },

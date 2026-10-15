@@ -23,12 +23,12 @@ protecting sensitive data and avoiding excessive log storage size.
   debug message, use the utility `IsDebugEnabled` and `IsInfoEnabled` functions
   first before executing that logic.
 
-## CMS And DMS Request Log Console Contract
+## Configuration Service And DMS Request Log Console Contract
 
-The Configuration Management Service and Data Management Service emit request
+The Configuration Service and Data Management Service emit request
 completion and request failure logs as structured events. DMS includes both the
 ASP.NET frontend request middleware and the core pipeline request middleware in
-this contract. The console sink is the production collector contract for CMS and
+this contract. The console sink is the production collector contract for Configuration Service and
 DMS request logs and must emit newline-delimited JSON using
 `Serilog.Formatting.Json.JsonFormatter, Serilog`.
 
@@ -49,7 +49,7 @@ and they omit `RenderedMessage` because the file sink does not set
 > console sink itself must change.
 
 Collector rules should target structured properties, not parse the rendered
-message. These request log properties are emitted directly by each CMS and DMS
+message. These request log properties are emitted directly by each Configuration Service and DMS
 request logging layer:
 
 * `Application`: `EdFi.DmsConfigurationService` or
@@ -57,7 +57,7 @@ request logging layer:
 * `EventName`: `HttpRequestCompleted` or `HttpRequestFailed`.
 * `EventId`: structured event id with `Id` `1228001` (`HttpRequestCompleted`)
   or `1228002` (`HttpRequestFailed`). This document is the source of truth for
-  these values; CMS and DMS build as separate solutions, so each application
+  these values; Configuration Service and DMS build as separate solutions, so each application
   defines them in its own `RequestLoggingEventIds` class and pins them with its
   own unit test. DMS allocates one further id from the same block, `1228003`
   (`CorrelationIdModified`), which is not a request log event — see [Notice when
@@ -66,7 +66,7 @@ request logging layer:
 * `RequestLayer`: DMS-only value of `Frontend` or `Core`. Use this field to
   separate externally visible HTTP request events from core pipeline request
   events when aggregating DMS request volume or failure rates.
-* `TraceId`: the application-visible trace or correlation ID. CMS uses
+* `TraceId`: the application-visible trace or correlation ID. The Configuration Service uses
   `HttpContext.TraceIdentifier`; DMS uses the configured correlation header
   when present and falls back to `HttpContext.TraceIdentifier`. DMS normalizes
   this value before logging it — see [Correlation ID
@@ -107,8 +107,8 @@ events are not counted as separate external HTTP requests.
 
 ### Example Request Log Output
 
-Each CMS and DMS request completion event produces newline-delimited JSON with
-this structure. CMS example:
+Each Configuration Service and DMS request completion event produces newline-delimited JSON with
+this structure. Configuration Service example:
 
 ```json
 {
@@ -173,7 +173,7 @@ and the frontend then logs its own `HttpRequestFailed` event for the resulting
 `TraceId` plus `RequestLayer` to recover the exception behind a frontend
 failure event.
 
-Completion logs use `Information`, except CMS `/.well-known/*` completion logs,
+Completion logs use `Information`, except Configuration Service `/.well-known/*` completion logs,
 which use `Debug`. Failure logs use `Error`. Request start logs are diagnostic
 breadcrumbs emitted at `Debug` and are outside the production completion/failure
 collector contract. The DMS frontend emits oversized-request-body rejections
@@ -181,16 +181,16 @@ collector contract. The DMS frontend emits oversized-request-body rejections
 actually received — 413 unless the response had already started with another
 status — so they remain visible to the request-log contract as client-error
 responses rather than failures. The `HttpRequestFailed` event is the canonical
-application error log for a request: when the CMS global exception handler
+application error log for a request: when the Configuration Service global exception handler
 converts an unhandled exception into a 500 response, the request logging
 middleware logs that handled exception on the `HttpRequestFailed` event, and the
-exception handler itself does not log. When the CMS global exception handler
+exception handler itself does not log. When the Configuration Service global exception handler
 instead converts an exception into a 400 response (malformed request bodies and
 validation failures), the request is a handled client error: it is logged as a
 normal `HttpRequestCompleted` event with no exception payload, and the error
 details are returned to the client in the problem-details response body. This
 intentionally replaces the previous behavior of logging handled exceptions at
-`Error` from the exception handler. An exception the CMS exception handler does
+`Error` from the exception handler. An exception the Configuration Service exception handler does
 not observe (thrown outside its scope, or after the response has started)
 propagates through the request logging middleware, which logs it on
 `HttpRequestFailed` and rethrows it for the host.
@@ -371,7 +371,7 @@ Because the adjustment is silent from the client's point of view, DMS emits one
 Information-level event when the correlation ID a request is answered and logged
 under is **not** the value the client sent.
 
-* `EventId`: `1228003`, `EventName` `CorrelationIdModified`. DMS-only; CMS reads
+* `EventId`: `1228003`, `EventName` `CorrelationIdModified`. DMS-only; the Configuration Service reads
   no correlation header and never emits it. It is not a request log event, so
   collectors filtering on `1228001`/`1228002` will not pick it up.
 * Structured properties: `SuppliedLength` and `NormalizedLength` (numeric
@@ -420,7 +420,7 @@ This behavior is specified as FR-LOG-3 through FR-LOG-6 in
 
 ## Log Routing and Export
 
-CMS and DMS support three supported paths for routing structured logs to an
+The Configuration Service and DMS support three supported paths for routing structured logs to an
 observability platform: platform stdout collection (the default), optional
 file-tailing agents, and OTLP export through the `OtlpLogging` configuration
 section.
@@ -428,12 +428,12 @@ section.
 ### Platform Stdout Collection
 
 The structured JSON console output described above is the default and
-supported collector contract for CMS and DMS. No additional configuration is
+supported collector contract for the Configuration Service and DMS. No additional configuration is
 required to receive it: any platform log pipeline that collects a
 container's or process's standard output (for example, a container runtime's
 log driver, a node-level agent, or a hosting platform's built-in log
 collection) receives the same newline-delimited JSON events described in
-"CMS And DMS Request Log Console Contract" above.
+"Configuration Service And DMS Request Log Console Contract" above.
 
 ### File-Tailing Agents
 
@@ -447,7 +447,7 @@ the collector contract.
 
 ### OTLP Export
 
-CMS and DMS compile in `Serilog.Sinks.OpenTelemetry` as a single
+The Configuration Service and DMS compile in `Serilog.Sinks.OpenTelemetry` as a single
 vendor-neutral OTLP log exporter, configured through a top-level
 `OtlpLogging` configuration section in each application's `appsettings.json`.
 The section is disabled by default; operators opt in by setting `Enabled` to
@@ -468,7 +468,7 @@ The `OtlpLogging` section supports these keys:
   binding error.
 * `ServiceName`: the `service.name` resource attribute. Defaults to
   `EdFi.DataManagementService` for DMS and `EdFi.DmsConfigurationService` for
-  CMS, matching each application's `Application` request log property.
+  the Configuration Service, matching each application's `Application` request log property.
 * `ServiceVersion`: the `service.version` resource attribute. Defaults to the
   application's informational version.
 * `DeploymentEnvironment`: optional deployment environment, emitted as both
@@ -503,10 +503,10 @@ The `OtlpLogging` section supports these keys:
 > silently override the configured endpoint, protocol, headers, or resource
 > identity.
 
-Vendor-specific integrations belong outside the CMS and DMS processes: send
+Vendor-specific integrations belong outside the Configuration Service and DMS processes: send
 OTLP directly to a compatible service, or through an OpenTelemetry Collector,
 to Splunk, Datadog, Elastic, Seq, CloudWatch, Azure, or another backend of
-choice. CMS and DMS do not document or bundle vendor-specific sinks. The
+choice. The Configuration Service and DMS do not document or bundle vendor-specific sinks. The
 standard `OTEL_EXPORTER_OTLP_HEADERS` variable is ignored along with the
 other OTLP environment variables; authentication headers for the receiving
 endpoint are configured through the `OtlpLogging:Headers` section instead.
@@ -530,7 +530,7 @@ export path deserves the same care as a database connection string.
   and source header values from a secret store or environment variable.
 * **Secure the collector's receiver.** A receiver reachable beyond a trusted
   network boundary should require authentication (for example, a bearer
-  token checked by the collector), which CMS and DMS supply through
+  token checked by the collector), which Configuration Service and DMS supply through
   `OtlpLogging:Headers`. Alternatively, keep the first hop inside a trusted
   boundary - a localhost agent, a sidecar, or a cluster service restricted
   by network policy - and let the collector make the authenticated,
@@ -550,7 +550,7 @@ export path deserves the same care as a database connection string.
 
 ### Deployment Recipes
 
-These recipes are guidance for routing CMS and DMS logs in common deployment
+These recipes are guidance for routing Configuration Service and DMS logs in common deployment
 environments. None of them require application code changes or a custom
 image; each recipe uses the stdout contract, the file sink, or the
 `OtlpLogging` section described above. The Docker recipe does require passing
@@ -573,7 +573,7 @@ example `OtlpLogging__Enabled=true` and
 `eng/docker-compose` (and the azure-vm stack) forward the core keys from the
 `.env` file: `OTLP_LOGGING_ENABLED`, `OTLP_LOGGING_ENDPOINT`,
 `OTLP_LOGGING_PROTOCOL`, and `OTLP_LOGGING_DEPLOYMENT_ENVIRONMENT` for DMS,
-with `DMS_CONFIG_`-prefixed equivalents for CMS. The remaining keys are not
+with `CONFIGURATION_SERVICE_`-prefixed equivalents for the Configuration Service. The remaining keys are not
 forwarded from `.env` (the service identity keys have per-service defaults,
 and header names are arbitrary keys): to override them, add
 `OtlpLogging__<Key>` entries, such as `OtlpLogging__Headers__<Name>`, to the
@@ -611,7 +611,7 @@ and the trade-offs involved in doing so.
 The tracked Compose `.env` files (`.env.example`, `.env.multitenancy`, the
 active `.env.template*` files, E2E/smoke environment files, and the Azure VM
 `.env.example`) ship
-`LOG_LEVEL=Information` for DMS and `DMS_CONFIG_LOG_LEVEL=Information` for the
+`LOG_LEVEL=Information` for DMS and `CONFIGURATION_SERVICE_LOG_LEVEL=Information` for the
 Configuration Service. Neither service ships at `Debug` by default: `Debug`
 includes anonymized HTTP request payloads and additional service-call detail
 (see [Log Levels](#log-levels)), which is more
@@ -622,7 +622,7 @@ verbose and more expensive to store than most deployments need day to day.
 Both services read their log level from the Compose environment:
 
 * `LOG_LEVEL` controls the DMS application's minimum Serilog level.
-* `DMS_CONFIG_LOG_LEVEL` controls the Configuration Service's minimum
+* `CONFIGURATION_SERVICE_LOG_LEVEL` controls the Configuration Service's minimum
   Serilog level.
 
 Set either variable to `Information`, `Warning`, or `Debug` (see
@@ -718,7 +718,7 @@ survives:
   above) and does not itself change the local container's rotation
   behavior. Docker's `DOCKER_LOG_MAX_SIZE` and `DOCKER_LOG_MAX_FILE` settings
   govern the container stdout/stderr `json-file` logs only; the Serilog file
-  sinks inside the DMS and CMS containers are separate daily rolling files and
+  sinks inside the DMS and Configuration Service containers are separate daily rolling files and
   are not capped by these Docker variables.
 
 Choose based on the deployment: bounded defaults for routine operation,

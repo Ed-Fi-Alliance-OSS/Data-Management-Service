@@ -276,7 +276,6 @@ CREATE TABLE IF NOT EXISTS "dms"."Document"
     "ResourceKeyId" smallint NOT NULL,
     "CreatedByOwnershipTokenId" smallint NULL,
     "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
-    "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_Document" PRIMARY KEY ("DocumentId")
 );
@@ -729,28 +728,28 @@ BEGIN
     END IF;
     IF TG_OP = 'INSERT' THEN
         WITH stamped AS (
-            SELECT "DocumentId", "ContentVersion", "ContentLastModifiedAt"
+            SELECT "DocumentId", "ContentVersion"
             FROM "dms"."Document"
             WHERE "DocumentId" = NEW."DocumentId"
         )
         UPDATE "dms"."Descriptor" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now()
         FROM stamped
         WHERE r."DocumentId" = stamped."DocumentId";
     ELSIF TG_OP = 'UPDATE' THEN
         WITH stamped AS (
             UPDATE "dms"."Document"
-            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+            SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
             WHERE "DocumentId" = NEW."DocumentId"
-            RETURNING "DocumentId", "ContentVersion", "ContentLastModifiedAt"
+            RETURNING "DocumentId", "ContentVersion"
         )
         UPDATE "dms"."Descriptor" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now()
         FROM stamped
         WHERE r."DocumentId" = stamped."DocumentId";
     ELSIF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -1369,11 +1368,10 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Program_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
     _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."Program" (
             "OldProgramName",
@@ -1394,19 +1392,19 @@ BEGIN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "ContentVersion", "ContentLastModifiedAt"
-        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion"
+        INTO STRICT _stampedContentVersion
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
-        NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
+        NEW."ContentLastModifiedAt" := now();
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion" INTO STRICT _stampedContentVersion;
         NEW."ContentVersion" := _stampedContentVersion;
-        NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
+        NEW."ContentLastModifiedAt" := now();
     END IF;
     IF TG_OP = 'UPDATE' AND (OLD."ProgramName" IS DISTINCT FROM NEW."ProgramName") THEN
         INSERT INTO "tracked_changes_edfi"."Program" (
@@ -1458,11 +1456,10 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
     _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         WHERE "DocumentId" = OLD."DocumentId";
         INSERT INTO "tracked_changes_edfi"."School" (
             "OldSchoolId",
@@ -1483,19 +1480,19 @@ BEGIN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "ContentVersion", "ContentLastModifiedAt"
-        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion"
+        INTO STRICT _stampedContentVersion
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
-        NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
+        NEW."ContentLastModifiedAt" := now();
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion" INTO STRICT _stampedContentVersion;
         NEW."ContentVersion" := _stampedContentVersion;
-        NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
+        NEW."ContentLastModifiedAt" := now();
     END IF;
     IF TG_OP = 'UPDATE' AND (OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
         INSERT INTO "tracked_changes_edfi"."School" (
@@ -1533,14 +1530,14 @@ BEGIN
     ),
     stamped AS (
         UPDATE "dms"."Document" d
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         FROM affected a
         WHERE d."DocumentId" = a."DocumentId"
         AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
-        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+        RETURNING d."DocumentId", d."ContentVersion"
     )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now()
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
     RETURN NULL;
@@ -1563,14 +1560,14 @@ BEGIN
     ),
     stamped AS (
         UPDATE "dms"."Document" d
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         FROM affected a
         WHERE d."DocumentId" = a."DocumentId"
         AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
-        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+        RETURNING d."DocumentId", d."ContentVersion"
     )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now()
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
     RETURN NULL;
@@ -1586,14 +1583,14 @@ BEGIN
     ),
     stamped AS (
         UPDATE "dms"."Document" d
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         FROM affected a
         WHERE d."DocumentId" = a."DocumentId"
         AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
-        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+        RETURNING d."DocumentId", d."ContentVersion"
     )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now()
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
     RETURN NULL;
@@ -1631,14 +1628,14 @@ BEGIN
     ),
     stamped AS (
         UPDATE "dms"."Document" d
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         FROM affected a
         WHERE d."DocumentId" = a."DocumentId"
         AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
-        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+        RETURNING d."DocumentId", d."ContentVersion"
     )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now()
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
     RETURN NULL;
@@ -1661,14 +1658,14 @@ BEGIN
     ),
     stamped AS (
         UPDATE "dms"."Document" d
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         FROM affected a
         WHERE d."DocumentId" = a."DocumentId"
         AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
-        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+        RETURNING d."DocumentId", d."ContentVersion"
     )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now()
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
     RETURN NULL;
@@ -1684,14 +1681,14 @@ BEGIN
     ),
     stamped AS (
         UPDATE "dms"."Document" d
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         FROM affected a
         WHERE d."DocumentId" = a."DocumentId"
         AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
-        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+        RETURNING d."DocumentId", d."ContentVersion"
     )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now()
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
     RETURN NULL;
@@ -1729,14 +1726,14 @@ BEGIN
     ),
     stamped AS (
         UPDATE "dms"."Document" d
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         FROM affected a
         WHERE d."DocumentId" = a."DocumentId"
         AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
-        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+        RETURNING d."DocumentId", d."ContentVersion"
     )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now()
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
     RETURN NULL;
@@ -1759,14 +1756,14 @@ BEGIN
     ),
     stamped AS (
         UPDATE "dms"."Document" d
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         FROM affected a
         WHERE d."DocumentId" = a."DocumentId"
         AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
-        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+        RETURNING d."DocumentId", d."ContentVersion"
     )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now()
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
     RETURN NULL;
@@ -1782,14 +1779,14 @@ BEGIN
     ),
     stamped AS (
         UPDATE "dms"."Document" d
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         FROM affected a
         WHERE d."DocumentId" = a."DocumentId"
         AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
-        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+        RETURNING d."DocumentId", d."ContentVersion"
     )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now()
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
     RETURN NULL;
@@ -1827,14 +1824,14 @@ BEGIN
     ),
     stamped AS (
         UPDATE "dms"."Document" d
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         FROM affected a
         WHERE d."DocumentId" = a."DocumentId"
         AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
-        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+        RETURNING d."DocumentId", d."ContentVersion"
     )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now()
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
     RETURN NULL;
@@ -1857,14 +1854,14 @@ BEGIN
     ),
     stamped AS (
         UPDATE "dms"."Document" d
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         FROM affected a
         WHERE d."DocumentId" = a."DocumentId"
         AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
-        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+        RETURNING d."DocumentId", d."ContentVersion"
     )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now()
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
     RETURN NULL;
@@ -1880,14 +1877,14 @@ BEGIN
     ),
     stamped AS (
         UPDATE "dms"."Document" d
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         FROM affected a
         WHERE d."DocumentId" = a."DocumentId"
         AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
-        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+        RETURNING d."DocumentId", d."ContentVersion"
     )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now()
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
     RETURN NULL;
@@ -1925,14 +1922,14 @@ BEGIN
     ),
     stamped AS (
         UPDATE "dms"."Document" d
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         FROM affected a
         WHERE d."DocumentId" = a."DocumentId"
         AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
-        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+        RETURNING d."DocumentId", d."ContentVersion"
     )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now()
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
     RETURN NULL;
@@ -1955,14 +1952,14 @@ BEGIN
     ),
     stamped AS (
         UPDATE "dms"."Document" d
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         FROM affected a
         WHERE d."DocumentId" = a."DocumentId"
         AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
-        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+        RETURNING d."DocumentId", d."ContentVersion"
     )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now()
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
     RETURN NULL;
@@ -1978,14 +1975,14 @@ BEGIN
     ),
     stamped AS (
         UPDATE "dms"."Document" d
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         FROM affected a
         WHERE d."DocumentId" = a."DocumentId"
         AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
-        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+        RETURNING d."DocumentId", d."ContentVersion"
     )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now()
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
     RETURN NULL;
@@ -2023,14 +2020,14 @@ BEGIN
     ),
     stamped AS (
         UPDATE "dms"."Document" d
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         FROM affected a
         WHERE d."DocumentId" = a."DocumentId"
         AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
-        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+        RETURNING d."DocumentId", d."ContentVersion"
     )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now()
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
     RETURN NULL;
@@ -2053,14 +2050,14 @@ BEGIN
     ),
     stamped AS (
         UPDATE "dms"."Document" d
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         FROM affected a
         WHERE d."DocumentId" = a."DocumentId"
         AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
-        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+        RETURNING d."DocumentId", d."ContentVersion"
     )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now()
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
     RETURN NULL;
@@ -2076,14 +2073,14 @@ BEGIN
     ),
     stamped AS (
         UPDATE "dms"."Document" d
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         FROM affected a
         WHERE d."DocumentId" = a."DocumentId"
         AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
-        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+        RETURNING d."DocumentId", d."ContentVersion"
     )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now()
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
     RETURN NULL;
@@ -2121,14 +2118,14 @@ BEGIN
     ),
     stamped AS (
         UPDATE "dms"."Document" d
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         FROM affected a
         WHERE d."DocumentId" = a."DocumentId"
         AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
-        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+        RETURNING d."DocumentId", d."ContentVersion"
     )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now()
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
     RETURN NULL;
@@ -2151,14 +2148,14 @@ BEGIN
     ),
     stamped AS (
         UPDATE "dms"."Document" d
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         FROM affected a
         WHERE d."DocumentId" = a."DocumentId"
         AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
-        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+        RETURNING d."DocumentId", d."ContentVersion"
     )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now()
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
     RETURN NULL;
@@ -2174,14 +2171,14 @@ BEGIN
     ),
     stamped AS (
         UPDATE "dms"."Document" d
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         FROM affected a
         WHERE d."DocumentId" = a."DocumentId"
         AND EXISTS (SELECT 1 FROM "edfi"."School" r WHERE r."DocumentId" = a."DocumentId")
-        RETURNING d."DocumentId", d."ContentVersion", d."ContentLastModifiedAt"
+        RETURNING d."DocumentId", d."ContentVersion"
     )
     UPDATE "edfi"."School" r
-    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = stamped."ContentLastModifiedAt"
+    SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now()
     FROM stamped
     WHERE r."DocumentId" = stamped."DocumentId";
     RETURN NULL;

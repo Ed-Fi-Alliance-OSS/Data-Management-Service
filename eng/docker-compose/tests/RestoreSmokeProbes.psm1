@@ -1155,13 +1155,13 @@ function Write-RestoreSmokeImageEnvironmentFile {
         if ([string]::IsNullOrWhiteSpace($DmsImage)) {
             throw "The local wrapper needs -DmsImage."
         }
-        [ordered]@{ DMS_DOCKER_IMAGE = $DmsImage; DMS_CONFIG_DOCKER_IMAGE = $ConfigImage }
+        [ordered]@{ DMS_DOCKER_IMAGE = $DmsImage; CONFIGURATION_SERVICE_DOCKER_IMAGE = $ConfigImage }
     }
     else {
         if ([string]::IsNullOrWhiteSpace($PublishedDmsTag)) {
             throw "The published wrapper needs -PublishedDmsTag."
         }
-        [ordered]@{ DMS_IMAGE_TAG = $PublishedDmsTag; DMS_CONFIG_DOCKER_IMAGE = $ConfigImage }
+        [ordered]@{ DMS_IMAGE_TAG = $PublishedDmsTag; CONFIGURATION_SERVICE_DOCKER_IMAGE = $ConfigImage }
     }
 
     $keyPattern = '^\s*(?:' + (($imageKeys.Keys | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')\s*='
@@ -1584,7 +1584,7 @@ function Resolve-RestoreSmokeApiEndpoint {
     set none of these keys. A multi-tenant stack is refused: its data stores are tenant-scoped and
     its DMS routes carry a tenant segment, which the probe does not model.
 
-    It also returns the stack's DMS_CONFIG_DATABASE_ENCRYPTION_KEY (DataStoreEncryptionKey): CMS
+    It also returns the stack's CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY (DataStoreEncryptionKey): CMS
     returns every data store connection string as Base64 AES cipher text under that key, so data
     store selection needs it. A stack without it is refused. The value is never logged or recorded.
     #>
@@ -1594,14 +1594,14 @@ function Resolve-RestoreSmokeApiEndpoint {
     )
 
     $values = ReadValuesFromEnvFile -EnvironmentFile $EnvironmentFile
-    $multiTenancy = [string](Get-EnvValue -EnvValues $values -Name "DMS_CONFIG_MULTI_TENANCY" -DefaultValue "false")
+    $multiTenancy = [string](Get-EnvValue -EnvValues $values -Name "CONFIGURATION_SERVICE_MULTI_TENANCY" -DefaultValue "false")
     if ($multiTenancy.Trim().Trim('"').Trim("'") -ine "false") {
-        throw "The served-data probe supports only a single-tenant stack, but DMS_CONFIG_MULTI_TENANCY is '$(ConvertTo-RestoreSmokeLogSafeText $multiTenancy)' in '$EnvironmentFile'."
+        throw "The served-data probe supports only a single-tenant stack, but CONFIGURATION_SERVICE_MULTI_TENANCY is '$(ConvertTo-RestoreSmokeLogSafeText $multiTenancy)' in '$EnvironmentFile'."
     }
 
-    $encryptionKey = [string](Get-ComposeResolvedEnvValue -EnvironmentValues $values -Name "DMS_CONFIG_DATABASE_ENCRYPTION_KEY")
+    $encryptionKey = [string](Get-ComposeResolvedEnvValue -EnvironmentValues $values -Name "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY")
     if ([string]::IsNullOrWhiteSpace($encryptionKey)) {
-        throw "The served-data probe needs DMS_CONFIG_DATABASE_ENCRYPTION_KEY, the key CMS encrypts data store connection strings with, but it is not set for the stack started from '$EnvironmentFile'."
+        throw "The served-data probe needs CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY, the key CMS encrypts data store connection strings with, but it is not set for the stack started from '$EnvironmentFile'."
     }
 
     return [pscustomobject]@{
@@ -1651,7 +1651,7 @@ function Reset-RestoreSmokeApiSession {
 function Get-RestoreSmokeDataStoreAesKey {
     <#
     .SYNOPSIS
-    The AES key CMS derives from DMS_CONFIG_DATABASE_ENCRYPTION_KEY, exactly as
+    The AES key CMS derives from CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY, exactly as
     ConnectionStringEncryptionService does: the key string padded with '0' to 32 characters, cut to
     its first 32, then UTF-8 encoded. Throws for a blank key, or for one whose first 32 characters
     do not encode to 32 bytes (CMS cannot use such a key either). Messages never carry the key.
@@ -1663,11 +1663,11 @@ function Get-RestoreSmokeDataStoreAesKey {
     )
 
     if ([string]::IsNullOrWhiteSpace($EncryptionKey)) {
-        throw "Data store selection needs DMS_CONFIG_DATABASE_ENCRYPTION_KEY, the key CMS encrypts data store connection strings with, but it is not set."
+        throw "Data store selection needs CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY, the key CMS encrypts data store connection strings with, but it is not set."
     }
     $keyBytes = [System.Text.Encoding]::UTF8.GetBytes($EncryptionKey.PadRight(32, [char]'0').Substring(0, 32))
     if ($keyBytes.Length -ne 32) {
-        throw "DMS_CONFIG_DATABASE_ENCRYPTION_KEY does not derive a 32-byte AES key: its first 32 characters encode to $($keyBytes.Length) UTF-8 bytes."
+        throw "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY does not derive a 32-byte AES key: its first 32 characters encode to $($keyBytes.Length) UTF-8 bytes."
     }
     return , $keyBytes
 }
@@ -1722,7 +1722,7 @@ function ConvertFrom-RestoreSmokeDataStoreCipherText {
         }
     }
     catch {
-        $result.Reason = "its connection string could not be decrypted with DMS_CONFIG_DATABASE_ENCRYPTION_KEY"
+        $result.Reason = "its connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY"
         return $result
     }
     finally {
@@ -1735,7 +1735,7 @@ function ConvertFrom-RestoreSmokeDataStoreCipherText {
         $result.PlainText = [System.Text.UTF8Encoding]::new($false, $true).GetString($plainTextBytes)
     }
     catch {
-        $result.Reason = "its connection string did not decrypt to UTF-8 text with DMS_CONFIG_DATABASE_ENCRYPTION_KEY"
+        $result.Reason = "its connection string did not decrypt to UTF-8 text with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY"
     }
     return $result
 }
@@ -1749,7 +1749,7 @@ function Select-RestoreSmokeDataStore {
     credentials, so only the parsed database name is ever reported.
 
     CMS returns each connection string as Base64 AES cipher text, so each one is decrypted with
-    -EncryptionKey (the stack's DMS_CONFIG_DATABASE_ENCRYPTION_KEY) before it is parsed. A value
+    -EncryptionKey (the stack's CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY) before it is parsed. A value
     that does not decrypt is not selected, with a reason that names no key or value. A blank key throws
     before any data store is examined.
     #>

@@ -746,17 +746,20 @@ internal static class DocumentCacheReadAccelerationScenario
     )
     {
         await using DbCommand command = harness.DbConnection.CreateCommand();
-        command.CommandText = """
+        command.CommandText = $"""
             SELECT d."DocumentId",
                    d."DocumentUuid",
                    d."ResourceKeyId",
                    d."ContentVersion",
-                   d."ContentLastModifiedAt",
+                   owner."ContentLastModifiedAt",
                    es."EffectiveSchemaHash",
                    rk."ProjectName",
                    rk."ResourceName",
                    rk."ResourceVersion"
             FROM "dms"."Document" d
+            INNER JOIN ({DocumentCacheAuthoritativeStampSql.Owners(
+                harness
+            )}) owner ON owner."DocumentId" = d."DocumentId"
             INNER JOIN "dms"."ResourceKey" rk
                 ON rk."ResourceKeyId" = d."ResourceKeyId"
             CROSS JOIN "dms"."EffectiveSchema" es

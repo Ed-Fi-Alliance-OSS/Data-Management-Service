@@ -341,21 +341,18 @@ public class Given_A_Postgresql_DocumentCacheStatusCurrentSourceObserver
             INSERT INTO "dms"."Document" (
                 "DocumentUuid",
                 "ResourceKeyId",
-                "ContentVersion",
-                "ContentLastModifiedAt"
+                "ContentVersion"
             )
             VALUES (
                 @documentUuid,
                 @resourceKeyId,
-                @contentVersion,
-                @lastModifiedAt
+                @contentVersion
             )
             RETURNING "DocumentId";
             """,
             new NpgsqlParameter("documentUuid", NpgsqlDbType.Uuid) { Value = Guid.NewGuid() },
             new NpgsqlParameter("resourceKeyId", NpgsqlDbType.Smallint) { Value = resourceKeyId },
-            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion },
-            new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz) { Value = FirstEnqueuedAt }
+            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion }
         );
 
         return Convert.ToInt64(rows.Single()["DocumentId"]);
@@ -423,14 +420,12 @@ public class Given_A_Postgresql_DocumentCacheStatusCurrentSourceObserver
             INSERT INTO "dms"."Document" (
                 "DocumentUuid",
                 "ResourceKeyId",
-                "ContentVersion",
-                "ContentLastModifiedAt"
+                "ContentVersion"
             )
             SELECT
                 ('00000000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
                 @resourceKeyId,
-                series,
-                @lastModifiedAt
+                series
             FROM generate_series(1, @documentCount) AS series;
 
             INSERT INTO "dms"."DocumentCache" (

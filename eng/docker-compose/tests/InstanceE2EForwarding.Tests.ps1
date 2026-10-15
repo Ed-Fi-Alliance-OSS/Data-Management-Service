@@ -139,7 +139,7 @@ Describe "Get-InstanceE2ETestEnvironmentContext resolves engine, databases, and 
     }
 
     It "rejects a route database name embedded in the protected CMS connection string" {
-        $script:contextEnvValues["DMS_CONFIG_DATABASE_CONNECTION_STRING"] =
+        $script:contextEnvValues["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] =
             "Host=dms-postgresql;Port=5432;Database=$($script:contextEnvValues['INSTANCE_E2E_DATABASE_2_NAME']);Username=postgres;Password=abcdefgh1!"
         { Get-InstanceE2ETestEnvironmentContext -EnvironmentFile "./.env.routeContext.e2e" -DatabaseEngine "postgresql" } |
             Should -Throw -ExpectedMessage "*must stay separate*"
@@ -187,7 +187,6 @@ Describe "Register-InstanceE2EFixture registers the canonical suite-owned fixtur
         Mock Get-EnvValue { $DefaultValue }
         # Mocked so an ambient POSTGRES_* value on the test host cannot leak into the fixture run.
         Mock Get-ComposeResolvedEnvValue { $DefaultValue }
-        Mock ConvertTo-PostgresCredential { [System.Management.Automation.PSCredential]::new("postgres", [System.Security.SecureString]::new()) }
         Mock Add-Tenant { 1 }
         $script:vendorSeq = 0
         Mock Add-Vendor { $script:vendorSeq++; [long](100 + $script:vendorSeq) }

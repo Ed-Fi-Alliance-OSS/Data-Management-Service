@@ -19,6 +19,11 @@ if [ "${SKIP_GIT:-0}" != "1" ] && git -C . rev-parse --git-dir >/dev/null 2>&1; 
   fi
 fi
 
+# Name any retired variable before Compose fails on its missing replacement.
+# shellcheck source=legacy-env-warning.sh
+source ./legacy-env-warning.sh
+warn_legacy_env_names .env
+
 # The PostgreSQL 18 image keeps its cluster in a versioned PGDATA directory below a volume mounted at
 # /var/lib/postgresql. A volume created before that layout holds its cluster at the volume root (it
 # was mounted at /var/lib/postgresql/data), which PostgreSQL 18 ignores: recreating the container

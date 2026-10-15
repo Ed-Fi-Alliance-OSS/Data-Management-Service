@@ -14,6 +14,48 @@ public abstract class AuthoritativeCompactDescriptorDdlGoldenFixtureTestBase : D
     protected virtual int ExpectedStoredDescriptorColumns => 595;
     protected virtual int ExpectedDescriptorBearingIndexes => 879;
 
+    [TestCase("pgsql", "CREATE TABLE IF NOT EXISTS \"dms\".\"Document\"")]
+    [TestCase("mssql", "CREATE TABLE [dms].[Document]")]
+    public void It_should_emit_document_versions_and_authoritative_owner_timestamps(
+        string dialect,
+        string documentCreateStatement
+    )
+    {
+        var sql = ReadActual($"{dialect}.sql");
+        var documentStart = sql.IndexOf(documentCreateStatement, StringComparison.Ordinal);
+        documentStart.Should().BeGreaterThanOrEqualTo(0);
+        var documentEnd = sql.IndexOf("\n);", documentStart, StringComparison.Ordinal);
+        documentEnd.Should().BeGreaterThan(documentStart);
+        var documentDefinition = sql[documentStart..documentEnd];
+        documentDefinition.Should().Contain("ContentVersion").And.NotContain("ContentLastModifiedAt");
+
+        var descriptorCreateStatement = dialect is "pgsql"
+            ? "CREATE TABLE IF NOT EXISTS \"dms\".\"Descriptor\""
+            : "CREATE TABLE [dms].[Descriptor]";
+        var descriptorStart = sql.IndexOf(descriptorCreateStatement, StringComparison.Ordinal);
+        descriptorStart.Should().BeGreaterThanOrEqualTo(0);
+        var descriptorEnd = sql.IndexOf("\n);", descriptorStart, StringComparison.Ordinal);
+        descriptorEnd.Should().BeGreaterThan(descriptorStart);
+        var descriptorDefinition = sql[descriptorStart..descriptorEnd];
+        descriptorDefinition.Should().Contain("ContentVersion").And.Contain("ContentLastModifiedAt");
+
+        using var manifest = ReadManifest(dialect);
+        var resources = manifest.RootElement.GetProperty("resource_details").EnumerateArray().ToArray();
+
+        var ordinaryResources = resources
+            .Where(resource => resource.GetProperty("storage_kind").GetString() is "RelationalTables")
+            .ToArray();
+        ordinaryResources.Should().NotBeEmpty();
+        foreach (var resource in ordinaryResources)
+        {
+            var root = resource
+                .GetProperty("tables")
+                .EnumerateArray()
+                .Single(table => table.GetProperty("scope").GetString() is "$");
+            AssertOwnerStamps(root);
+        }
+    }
+
     [TestCase("pgsql")]
     [TestCase("mssql")]
     public void It_should_preserve_the_authoritative_descriptor_column_and_index_inventory(string dialect)
@@ -159,6 +201,19 @@ public abstract class AuthoritativeCompactDescriptorDdlGoldenFixtureTestBase : D
             .GetProperty("columns")
             .EnumerateArray()
             .Where(column => column.GetProperty("kind").GetString() is "DescriptorFk");
+
+    private static void AssertOwnerStamps(JsonElement table)
+    {
+        var columns = table.GetProperty("columns").EnumerateArray().ToArray();
+        var timestamp = columns.Single(column => ReadName(column) is "ContentLastModifiedAt");
+        timestamp.GetProperty("kind").GetString().Should().Be("AuthoritativeContentLastModifiedAt");
+        timestamp.GetProperty("is_nullable").GetBoolean().Should().BeFalse();
+        timestamp.GetProperty("storage").GetProperty("kind").GetString().Should().Be("Stored");
+
+        var version = columns.Single(column => ReadName(column) is "ContentVersion");
+        version.GetProperty("kind").GetString().Should().Be("MirroredContentVersion");
+        version.GetProperty("is_nullable").GetBoolean().Should().BeFalse();
+    }
 
     private static (string Schema, string Name) TableIdentity(JsonElement table) =>
         (table.GetProperty("schema").GetString()!, ReadName(table));

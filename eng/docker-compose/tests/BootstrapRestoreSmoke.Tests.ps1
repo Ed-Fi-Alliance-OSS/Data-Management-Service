@@ -298,7 +298,7 @@ Describe "Invoke-BootstrapRestoreSmoke static contract" {
             @{ File = "RestoreSmokeProbes.psm1" }
         ) {
             $content = Get-Content -LiteralPath (Join-Path $PSScriptRoot $File) -Raw
-            $content.Contains("DMS_CONFIG_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT") | Should -BeFalse
+            $content.Contains("CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT") | Should -BeFalse
         }
     }
 

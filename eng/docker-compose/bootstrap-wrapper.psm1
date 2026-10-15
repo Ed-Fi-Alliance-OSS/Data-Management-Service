@@ -410,7 +410,7 @@ function Resolve-WrapperIdentityProvider {
     .SYNOPSIS
     Resolves the identity provider used by BOTH the start and seed phases so a single wrapper
     invocation can't end up with infra started under one provider and seed authenticated under
-    another. Order: explicit wrapper flag, effective env file's DMS_CONFIG_IDENTITY_PROVIDER,
+    another. Order: explicit wrapper flag, effective env file's CONFIGURATION_SERVICE_IDENTITY_PROVIDER,
     "self-contained" fallback (matching the start scripts' default). Degrades to "self-contained"
     when the env-utility sibling module is unavailable (wrapper-argument Pester test sandbox).
     #>
@@ -441,8 +441,8 @@ function Resolve-WrapperIdentityProvider {
 
     Import-Module $envUtilityPath -Force
     $envValues = ReadValuesFromEnvFile -EnvironmentFile $EffectiveEnvironmentFile
-    if ($envValues -is [System.Collections.IDictionary] -and $envValues.ContainsKey("DMS_CONFIG_IDENTITY_PROVIDER")) {
-        $envValue = [string]$envValues["DMS_CONFIG_IDENTITY_PROVIDER"]
+    if ($envValues -is [System.Collections.IDictionary] -and $envValues.ContainsKey("CONFIGURATION_SERVICE_IDENTITY_PROVIDER")) {
+        $envValue = [string]$envValues["CONFIGURATION_SERVICE_IDENTITY_PROVIDER"]
         if (-not [string]::IsNullOrWhiteSpace($envValue)) {
             $provider = $envValue.Trim().ToLowerInvariant()
             if ($supported -notcontains $provider) {
@@ -871,7 +871,7 @@ function Invoke-BootstrapWrapper {
             # derived-env materialization so an unsupported env-file value fails without writing .env.derived.
             # The start
             # scripts default to "self-contained" and would otherwise diverge from the seed phase,
-            # which resolves DMS_CONFIG_IDENTITY_PROVIDER from the env file. Without this, a single
+            # which resolves CONFIGURATION_SERVICE_IDENTITY_PROVIDER from the env file. Without this, a single
             # wrapper invocation could start infra under one provider and authenticate seeds under
             # another.
             $resolvedIdentityProvider = Resolve-WrapperIdentityProvider `
@@ -962,7 +962,7 @@ function Invoke-BootstrapWrapper {
                     # validation: a case-variant key must not stand in for the CMS database.
                     $effectiveConfigDatabaseName = Get-SequentialEffectiveValue `
                         -Evaluation (Resolve-DotenvFileSequentially -Path $effectiveEnvFile) `
-                        -Name "DMS_CONFIG_DATABASE_NAME" `
+                        -Name "CONFIGURATION_SERVICE_DATABASE_NAME" `
                         -DefaultValue "edfi_configurationservice"
                 }
                 Assert-RestoreTargetDatabaseNameSafe `
@@ -1450,7 +1450,7 @@ function Invoke-BootstrapWrapper {
                 # only when this run actually composed an overlay: the fresh run always recomposes one for
                 # a local bootstrap and would otherwise fall back to the default version. The identity
                 # provider, as RESOLVED here: an explicit provider outranks the environment file's own
-                # DMS_CONFIG_IDENTITY_PROVIDER, so a keycloak run over a self-contained environment would
+                # CONFIGURATION_SERVICE_IDENTITY_PROVIDER, so a keycloak run over a self-contained environment would
                 # otherwise advertise a continuation that silently switches providers.
                 #
                 # Emitted as a single-quoted PowerShell literal so a path with spaces stays one argument

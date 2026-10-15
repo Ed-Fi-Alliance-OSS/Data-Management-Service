@@ -295,8 +295,9 @@ Describe "sanitize-e2e-artifacts Get-SanitizedText (DMS-1284)" {
         $text = @"
 MSSQL_SA_PASSWORD=Aa1!EnvSecretValue
 POSTGRES_PORT=5435
-DMS_CONFIG_IDENTITY_CLIENT_SECRET=clientSecretEnvValue
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=encryptionKeyEnvValue
+CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET=clientSecretEnvValue
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=encryptionKeyEnvValue
+DMS_CONFIGURATION_SERVICE_CLIENT_SECRET=readOnlyClientSecretEnvValue
 DMS_DATASTORE=mssql
 "@
 
@@ -305,6 +306,7 @@ DMS_DATASTORE=mssql
         $result | Should -Not -Match "Aa1!EnvSecretValue"
         $result | Should -Not -Match "clientSecretEnvValue"
         $result | Should -Not -Match "encryptionKeyEnvValue"
+        $result | Should -Not -Match "readOnlyClientSecretEnvValue"
         $result | Should -Match "POSTGRES_PORT=5435"
         $result | Should -Match "DMS_DATASTORE=mssql"
     }
@@ -313,10 +315,10 @@ DMS_DATASTORE=mssql
         # A log line prefixes the pair with a timestamp/level and can carry trailing text, so the rule
         # cannot be line-anchored. The form-credential rule cannot cover this shape either: its \b never
         # matches the boundary between '_' and 'secret', both word characters.
-        $result = Get-SanitizedText -Text "14:02:03 INFO resolved DMS_CONFIG_IDENTITY_CLIENT_SECRET=Aa1!MidLineSecretValue for the config client"
+        $result = Get-SanitizedText -Text "14:02:03 INFO resolved CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET=Aa1!MidLineSecretValue for the config client"
 
         $result | Should -Not -Match "Aa1!MidLineSecretValue"
-        $result | Should -Match "DMS_CONFIG_IDENTITY_CLIENT_SECRET=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match "CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET=\*\*\*REDACTED\*\*\*"
         $result | Should -Match "14:02:03 INFO resolved"
         $result | Should -Match "for the config client"
     }
@@ -324,9 +326,14 @@ DMS_DATASTORE=mssql
     # PASSWORD-suffixed names are already covered mid-line by the (unanchored) connection-string rule,
     # whose bare value intentionally runs past spaces to the ';' terminator; these are the suffixes only
     # the env-secret rule covers, and its value stops at whitespace so following prose is preserved.
+    # Legacy names stay covered: retained logs from deployments not yet renamed still carry them.
     It "redacts a mid-line <Name> secret and preserves the text after the value" -ForEach @(
+        @{ Name = "CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET" }
+        @{ Name = "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY" }
+        @{ Name = "DMS_CONFIGURATION_SERVICE_CLIENT_SECRET" }
         @{ Name = "DMS_CONFIG_IDENTITY_CLIENT_SECRET" }
         @{ Name = "DMS_CONFIG_DATABASE_ENCRYPTION_KEY" }
+        @{ Name = "CONFIG_SERVICE_CLIENT_SECRET" }
         @{ Name = "SOME_SERVICE_ACCESS_TOKEN" }
     ) {
         $result = Get-SanitizedText -Text "starting stack with $Name=PLACEHOLDER_MIDLINE_VALUE and continuing"
@@ -342,8 +349,8 @@ DMS_DATASTORE=mssql
     # the class also excludes '"') the quoted value must still match. PASSWORD-suffixed names are also
     # reached by the connection-string rule; the SECRET/TOKEN/KEY suffixes are covered only by env-secret.
     It "redacts a double-quoted <Name> value containing spaces without leaking its tail" -ForEach @(
-        @{ Name = "DMS_CONFIG_IDENTITY_CLIENT_SECRET" }
-        @{ Name = "DMS_CONFIG_DATABASE_ENCRYPTION_KEY" }
+        @{ Name = "CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET" }
+        @{ Name = "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY" }
         @{ Name = "SOME_SERVICE_ACCESS_TOKEN" }
     ) {
         $result = Get-SanitizedText -Text "$Name=""PLACEHOLDER with a TAIL"" and continuing"
@@ -355,8 +362,8 @@ DMS_DATASTORE=mssql
     }
 
     It "redacts a single-quoted <Name> value containing spaces without leaking its tail" -ForEach @(
-        @{ Name = "DMS_CONFIG_IDENTITY_CLIENT_SECRET" }
-        @{ Name = "DMS_CONFIG_DATABASE_ENCRYPTION_KEY" }
+        @{ Name = "CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET" }
+        @{ Name = "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY" }
         @{ Name = "SOME_SERVICE_ACCESS_TOKEN" }
     ) {
         $result = Get-SanitizedText -Text "$Name='PLACEHOLDER with a TAIL' and continuing"
@@ -371,22 +378,22 @@ DMS_DATASTORE=mssql
     # connection-string rule's quoted alternatives do. Without that, the alternative ends at the first
     # quote of a doubled pair and publishes the remainder of the secret.
     It "redacts a double-quoted env-style secret with doubled embedded quotes without leaking the tail" {
-        $result = Get-SanitizedText -Text 'DMS_CONFIG_IDENTITY_CLIENT_SECRET="EFRAGA ""EFRAGB"" EFRAGC" and continuing'
+        $result = Get-SanitizedText -Text 'CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET="EFRAGA ""EFRAGB"" EFRAGC" and continuing'
 
         $result | Should -Not -Match "EFRAGA"
         $result | Should -Not -Match "EFRAGB"
         $result | Should -Not -Match "EFRAGC"
-        $result | Should -Match "DMS_CONFIG_IDENTITY_CLIENT_SECRET=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match "CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET=\*\*\*REDACTED\*\*\*"
         $result | Should -Match "and continuing"
     }
 
     It "redacts a single-quoted env-style secret with doubled embedded quotes without leaking the tail" {
-        $result = Get-SanitizedText -Text 'DMS_CONFIG_DATABASE_ENCRYPTION_KEY=''EFRAGD it''''EFRAGE''''s EFRAGF'' and continuing'
+        $result = Get-SanitizedText -Text 'CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=''EFRAGD it''''EFRAGE''''s EFRAGF'' and continuing'
 
         $result | Should -Not -Match "EFRAGD"
         $result | Should -Not -Match "EFRAGE"
         $result | Should -Not -Match "EFRAGF"
-        $result | Should -Match "DMS_CONFIG_DATABASE_ENCRYPTION_KEY=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=\*\*\*REDACTED\*\*\*"
         $result | Should -Match "and continuing"
     }
 
@@ -415,21 +422,21 @@ DMS_DATASTORE=mssql
     }
 
     It "redacts a double-quoted env-style secret inside single-line TRX markup without consuming the closing tag" {
-        $result = Get-SanitizedText -PreserveMarkup -Text '<Output><StdOut>DMS_CONFIG_IDENTITY_CLIENT_SECRET="PLACEHOLDER with a TAIL"</StdOut></Output>'
+        $result = Get-SanitizedText -PreserveMarkup -Text '<Output><StdOut>CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET="PLACEHOLDER with a TAIL"</StdOut></Output>'
 
         $result | Should -Not -Match "PLACEHOLDER"
         $result | Should -Not -Match "TAIL"
-        $result | Should -Match "DMS_CONFIG_IDENTITY_CLIENT_SECRET=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match "CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET=\*\*\*REDACTED\*\*\*"
         $result | Should -Match ([regex]::Escape("</StdOut></Output>"))
         { [xml]$result } | Should -Not -Throw
     }
 
     It "redacts an XML-escaped quoted env-style secret as it appears inside a TRX" {
-        $result = Get-SanitizedText -PreserveMarkup -Text '<Output>DMS_CONFIG_DATABASE_ENCRYPTION_KEY=&quot;PLACEHOLDER with a TAIL&quot;</Output>'
+        $result = Get-SanitizedText -PreserveMarkup -Text '<Output>CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=&quot;PLACEHOLDER with a TAIL&quot;</Output>'
 
         $result | Should -Not -Match "PLACEHOLDER"
         $result | Should -Not -Match "TAIL"
-        $result | Should -Match "DMS_CONFIG_DATABASE_ENCRYPTION_KEY=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=\*\*\*REDACTED\*\*\*"
         $result | Should -Match ([regex]::Escape("</Output>"))
     }
 
@@ -548,11 +555,11 @@ DMS_DATASTORE=mssql
         # so the prose after it is preserved while the markup characters inside the value are not a
         # terminator. (A PASSWORD-suffixed name is instead claimed by the connection-string rule, whose
         # bare value deliberately runs past spaces to the ';' terminator.)
-        $result = Get-SanitizedText -Text "starting stack with DMS_CONFIG_IDENTITY_CLIENT_SECRET=Aa1!<EFRAGA>EFRAGB and continuing"
+        $result = Get-SanitizedText -Text "starting stack with CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET=Aa1!<EFRAGA>EFRAGB and continuing"
 
         $result | Should -Not -Match "EFRAGA"
         $result | Should -Not -Match "EFRAGB"
-        $result | Should -Match "DMS_CONFIG_IDENTITY_CLIENT_SECRET=\*\*\*REDACTED\*\*\*"
+        $result | Should -Match "CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET=\*\*\*REDACTED\*\*\*"
         $result | Should -Match "and continuing"
     }
 

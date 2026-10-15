@@ -227,7 +227,7 @@ jobs:
 
       - name: Provision template database
         run: |
-          ./provision-e2e-database.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -Configuration Release -DatabaseEngine "${{ inputs.database_engine }}"
+          ./provision-e2e-database.ps1 -EnvironmentFile "${{ inputs.environment_file }}" -Configuration Release -DatabaseEngine "${{ inputs.database_engine }}" -SchemaOutputDirectory "${{ github.workspace }}/template-evidence/schema"
         working-directory: eng/docker-compose/
 
       - name: Start DMS Docker
@@ -390,16 +390,62 @@ jobs:
       - name: Verify template package restore
         if: ${{ inputs.verify_restore }}
         run: |
+          $evidenceDirectory = "${{ github.workspace }}/template-evidence"
+          $dialect = if ('${{ inputs.database_engine }}' -eq 'mssql') { 'mssql' } else { 'pgsql' }
+          $modelManifest = Join-Path $evidenceDirectory "schema/relational-model.$dialect.manifest.json"
+          # Validate the full implementation baseline and retain the exact SQL used by both gates.
+          ./Assert-TemplateSchema.ps1 -ExpectedModelManifestPath $modelManifest -DatabaseEngine '${{ inputs.database_engine }}' -RenderSql |
+            Set-Content (Join-Path $evidenceDirectory 'catalog-assertions.sql')
+          $packages = @(Get-ChildItem -LiteralPath . -Filter '*.nupkg' | Where-Object { $_.Name -notlike '*.Attestation.*' })
+          if ($packages.Count -ne 1) { throw "Expected exactly one template package for this leg." }
+          $engineContainer = if ($dialect -eq 'mssql') { 'dms-mssql' } else { 'dms-postgresql' }
+          $engineImage = & docker inspect $engineContainer --format '{{.Config.Image}} {{.Image}}'
+          if ($LASTEXITCODE -ne 0) { throw "Could not record the database engine image." }
+          $evidence = [ordered]@{
+            producing_commit = (git rev-parse HEAD)
+            build_run = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+            build_attempt = '${{ github.run_attempt }}'
+            database_engine = '${{ inputs.database_engine }}'
+            engine_image = $engineImage
+            standard_version = '${{ inputs.standard_version }}'
+            environment_file = '${{ inputs.environment_file }}'
+            package_id = '${{ inputs.package_name }}'
+            package_version = ('${{ steps.versions.outputs.dms-semver }}' -replace 'dms-v', '')
+            package_file = $packages[0].Name
+            package_sha256 = (Get-FileHash $packages[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            manifest_file = "schema/relational-model.$dialect.manifest.json"
+            manifest_sha256 = (Get-FileHash $modelManifest -Algorithm SHA256).Hash.ToLowerInvariant()
+            require_populated_data = [bool]::Parse('${{ inputs.require_populated_data }}')
+            verification = 'failed'
+          }
           $verifyParams = @{
             SourceDatabaseName = $env:TEMPLATE_DB_NAME
             DatabaseEngine = '${{ inputs.database_engine }}'
             ExpectedTemplateKind = 'Populated'
+            ExpectedModelManifestPath = $modelManifest
           }
           if ([bool]::Parse('${{ inputs.require_populated_data }}')) {
             $verifyParams.RequirePopulatedData = $true
           }
-          ./verify-template-restore.ps1 @verifyParams
+          Start-Transcript -Path (Join-Path $evidenceDirectory 'verification.log')
+          try {
+            ./verify-template-restore.ps1 @verifyParams
+            $evidence.verification = 'passed'
+          }
+          finally {
+            Stop-Transcript
+            $evidence | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $evidenceDirectory 'verification.json')
+          }
         working-directory: eng/DatabaseTemplates/
+
+      - name: Upload template schema and verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: "${{ inputs.package_name }}-Verification"
+          path: ${{ github.workspace }}/template-evidence/
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload Bulk Load Logs
         if: failure()

@@ -319,10 +319,10 @@ api-schema-tools cdc resume --settings ./cdc-mssql.json --state-path "$PWD/.cdc-
 api-schema-tools cdc retire --settings ./cdc-postgresql.json --state-path "$PWD/.cdc-state" --generation 1 --destructive-cleanup --json
 ```
 
-Each settings file contains the normal DMS configuration (including CMS access,
+Each settings file contains the normal DMS configuration (including Configuration Service access,
 schema packages, and `DataManagement:DocumentCache:Targets`) plus a `Cdc` section. For example,
 merge the following fragment into your PostgreSQL DMS settings, replacing local paths and
-principals with those of your deployment. `42` denotes the actual CMS-selected target ID,
+principals with those of your deployment. `42` denotes the actual target ID the Configuration Service selected,
 not a target this fragment creates. For complete settings preparation and host/worker
 endpoints, use the [PostgreSQL setup procedure](../../../../reference/cdc-documentation/operations-runbook.md#postgresql-setup).
 
@@ -403,7 +403,7 @@ The broker-size override's parent directory must already exist and survive resta
 Environment variables with prefix `DMS_CDC__` override settings in memory. For
 example, provide the setup connection through
 `DMS_CDC__Cdc__SetupConnectionString`; this connection reaches the selected physical
-DMS database as the setup principal. Supply normal CMS credentials through the same
+DMS database as the setup principal. Supply normal Configuration Service credentials through the same
 prefix, such as `DMS_CDC__ConfigurationServiceSettings__ClientSecret`. Connector secret
 properties must contain externalized references resolved by the worker; literal
 connector passwords are rejected. The controller never emits connector payloads.
@@ -464,7 +464,7 @@ and [source replacement deferral](../../../../reference/design/backend-redesign/
 Use the complete repository-root [PostgreSQL setup](../../../../reference/cdc-documentation/operations-runbook.md#postgresql-setup)
 or [SQL Server setup](../../../../reference/cdc-documentation/operations-runbook.md#sql-server-setup)
 procedure for both local and published bootstrap. They cover the protected complete
-settings file, separate CMS topology, selected target ID, dedicated new database,
+settings file, separate Configuration Service topology, selected target ID, dedicated new database,
 restricted connector principal, schema inputs and initial writer/seed exclusion required
 by the [local bootstrap contract](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-bootstrap-and-ci).
 
@@ -473,8 +473,8 @@ The bootstrap parameter handoff is:
 | Parameter | Purpose |
 | --- | --- |
 | `-EnableKafkaCdc` | Explicit initial managed CDC opt-in. |
-| `-SeparateConfigDatabase` | Required separate CMS topology. |
-| `-DataStoreDatabaseName` | Dedicated new DMS database selected with the settings' CMS target. |
+| `-SeparateConfigDatabase` | Required separate Configuration Service topology. |
+| `-DataStoreDatabaseName` | Dedicated new DMS database selected with the settings' Configuration Service target. |
 | `-CdcSettingsPath` | Protected complete DMS plus CDC input settings. |
 | `-CdcBindingStatePath` | Original persistent managed provisioning/controller state root. |
 | `-DatabaseEngine` | `postgresql` or `mssql`; the latter uses `Cdc:Provider=sqlserver`. |
@@ -493,7 +493,7 @@ The [DMS E2E opt-in](../../../../reference/cdc-documentation/operations-runbook.
 and [SQL Server variant](../../../../reference/cdc-documentation/operations-runbook.md#sql-server-e2e-variant)
 provide exact repository-root `setup-local-dms.ps1` and `build-dms.ps1 E2ETest` examples.
 Both accept `-EnableKafkaCdc`, `-CdcSettingsPath` and `-CdcBindingStatePath`; their
-settings must select the actual `E2E_DATABASE_NAME`, schema and CMS target together.
+settings must select the actual `E2E_DATABASE_NAME`, schema and Configuration Service target together.
 This setup wiring does not qualify the separate
 [API-driven message scenarios](../../../../reference/design/backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md)
 or add CDC to [Instance Management E2E](../../tests/EdFi.InstanceManagement.Tests.E2E/README.md#cdc-support).

@@ -9,7 +9,7 @@ There are two parts to the lab:
 
 * This markdown file provides context and instructions on running the Ed-Fi API.
 * File `getting-started.http` provides annotated HTTP commands demonstrating how
-  to interact with the DMS and the DMS Configuration Service.
+  to interact with the DMS and the Configuration Service.
 
 ## Pre-Requisites
 
@@ -49,7 +49,7 @@ diagrams in Code's built-in Markdown preview tool.
       Descriptors API, and Ed-Fi Discovery API. It includes Ed-Fi Data Standard
       5.2 out of the box. It will be capable of supporting other Data Standard
       versions at a future date.
-   2. The DMS Configuration Service, which implements a form of the Ed-Fi
+   2. The Configuration Service, which implements a form of the Ed-Fi
       Management API, whose specification is derived from the legacy Ed-Fi Admin
       API 2 application.
 2. Both systems use PostgreSQL for online transaction processing (OLTP) data
@@ -69,7 +69,7 @@ C4Deployment
         }
         Deployment_Node(db, "PostgreSQL Databases") {
             ContainerDb(dmsdb, "DMS")
-            ContainerDb(configdb, "DMS Config")
+            ContainerDb(configdb, "Configuration Service")
         }
     }
     Rel(dms, dmsdb, "read/write")

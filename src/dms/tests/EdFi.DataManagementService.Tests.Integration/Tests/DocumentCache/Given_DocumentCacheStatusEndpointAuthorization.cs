@@ -390,8 +390,8 @@ public class Given_DocumentCacheStatusEndpointAuthorization
         var connectionStringProvider = A.Fake<IConnectionStringProvider>();
         A.CallTo(() => connectionStringProvider.GetConnectionString(A<long>._, A<string?>._))
             .Returns("test-connection-string");
-        A.CallTo(() => connectionStringProvider.GetHealthCheckConnectionString())
-            .Returns("test-connection-string");
+        A.CallTo(() => connectionStringProvider.GetHealthCheckTarget())
+            .Returns(HealthCheckTarget.Available("test-connection-string"));
         services.AddTransient(_ => connectionStringProvider);
 
         var backendMappingInitializer = A.Fake<IBackendMappingInitializer>();

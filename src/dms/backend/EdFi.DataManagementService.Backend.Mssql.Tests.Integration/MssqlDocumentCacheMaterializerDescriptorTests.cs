@@ -60,7 +60,6 @@ public class Given_Mssql_DocumentCacheMaterializer_Descriptor
                     [ResourceKeyId] smallint NOT NULL,
                     [CreatedByOwnershipTokenId] smallint NULL,
                     [ContentVersion] bigint NOT NULL,
-                    [ContentLastModifiedAt] datetimeoffset NOT NULL,
                     [CreatedAt] datetimeoffset NOT NULL
                 );
 
@@ -68,6 +67,7 @@ public class Given_Mssql_DocumentCacheMaterializer_Descriptor
                     [DescriptorId] int IDENTITY(1,1) NOT NULL CONSTRAINT [PK_Descriptor] PRIMARY KEY,
                     [DocumentId] bigint NOT NULL UNIQUE REFERENCES [dms].[Document] ([DocumentId]) ON DELETE CASCADE,
                     [ResourceKeyId] smallint NOT NULL,
+                    [ContentLastModifiedAt] datetimeoffset NOT NULL,
                     [Namespace] varchar(255) NOT NULL,
                     [CodeValue] varchar(50) NOT NULL,
                     [ShortDescription] varchar(75) NOT NULL,
@@ -82,7 +82,6 @@ public class Given_Mssql_DocumentCacheMaterializer_Descriptor
                     [ResourceKeyId],
                     [CreatedByOwnershipTokenId],
                     [ContentVersion],
-                    [ContentLastModifiedAt],
                     [CreatedAt]
                 )
                 VALUES (
@@ -91,13 +90,13 @@ public class Given_Mssql_DocumentCacheMaterializer_Descriptor
                     13,
                     NULL,
                     222,
-                    '2026-07-30T14:15:16+00:00',
                     '2026-07-30T14:15:16+00:00'
                 );
 
                 INSERT INTO [dms].[Descriptor] (
                     [DocumentId],
                     [ResourceKeyId],
+                    [ContentLastModifiedAt],
                     [Namespace],
                     [CodeValue],
                     [ShortDescription],
@@ -108,6 +107,7 @@ public class Given_Mssql_DocumentCacheMaterializer_Descriptor
                 VALUES (
                     5000970301,
                     13,
+                    '2026-07-30T14:15:16+00:00',
                     'uri://ed-fi.org/SchoolTypeDescriptor',
                     'Alternative',
                     'Alternative',

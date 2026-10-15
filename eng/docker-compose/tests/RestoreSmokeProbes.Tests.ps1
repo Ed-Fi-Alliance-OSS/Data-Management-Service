@@ -1026,7 +1026,7 @@ Describe "Write-RestoreSmokeImageEnvironmentFile" {
         $lines = Get-Content -LiteralPath $script:targetFile
         $lines | Should -Contain "POSTGRES_DB_NAME=edfi_datamanagementservice"
         @($lines | Where-Object { $_ -like "DMS_DOCKER_IMAGE=*" }) | Should -Be @("DMS_DOCKER_IMAGE=local/ed-fi-api")
-        $lines | Should -Contain "DMS_CONFIG_DOCKER_IMAGE=local/ed-fi-api-configuration-service"
+        $lines | Should -Contain "CONFIGURATION_SERVICE_DOCKER_IMAGE=local/ed-fi-api-configuration-service"
     }
 
     It "points the published compose files at the run-unique tag and the in-run config image" {
@@ -1034,7 +1034,7 @@ Describe "Write-RestoreSmokeImageEnvironmentFile" {
 
         $lines = Get-Content -LiteralPath $script:targetFile
         @($lines | Where-Object { $_ -like "DMS_IMAGE_TAG=*" }) | Should -Be @("DMS_IMAGE_TAG=dms-restore-smoke-abc")
-        $lines | Should -Contain "DMS_CONFIG_DOCKER_IMAGE=local/ed-fi-api-configuration-service"
+        $lines | Should -Contain "CONFIGURATION_SERVICE_DOCKER_IMAGE=local/ed-fi-api-configuration-service"
     }
 }
 
@@ -1875,7 +1875,7 @@ BeforeDiscovery {
 Describe "Served-data API probe" {
     BeforeAll {
         # CMS returns data store connection strings as Base64 AES cipher text under this key; the
-        # probe reads it from the stack's env (DMS_CONFIG_DATABASE_ENCRYPTION_KEY).
+        # probe reads it from the stack's env (CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY).
         $script:dataStoreKey = "RestoreSmokeProbe-TestKey-0123456789ABCDEF"
         $script:shortDataStoreKey = "short-test-key"
         # The env resolver lets an ambient value win (as Compose does), so no ambient key may leak in.
@@ -1885,9 +1885,9 @@ Describe "Served-data API probe" {
             param([AllowNull()][string]$Value)
 
             $resolved = if ([string]::IsNullOrEmpty($Value)) { [NullString]::Value } else { $Value }
-            [System.Environment]::SetEnvironmentVariable("DMS_CONFIG_DATABASE_ENCRYPTION_KEY", $resolved)
+            [System.Environment]::SetEnvironmentVariable("CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY", $resolved)
         }
-        $script:ambientDataStoreKey = [System.Environment]::GetEnvironmentVariable("DMS_CONFIG_DATABASE_ENCRYPTION_KEY")
+        $script:ambientDataStoreKey = [System.Environment]::GetEnvironmentVariable("CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY")
         Set-TestAmbientDataStoreKey $null
 
         # This file's own CMS-compatible encryptor: the ConnectionStringEncryptionService steps with a
@@ -1976,11 +1976,11 @@ Describe "Served-data API probe" {
             $file = Join-Path $TestDrive "endpoint.env"
             Set-Content -LiteralPath $file -Value @(
                 "DMS_HTTP_PORTS=18080"
-                "DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081"
+                "CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081"
                 "DMS_BOOTSTRAP_ADMIN_CLIENT_ID=custom-admin"
                 "DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=Custom-S3cret!"
-                "DMS_CONFIG_MULTI_TENANCY=false"
-                "DMS_CONFIG_DATABASE_ENCRYPTION_KEY=Stack-Env-File-Key-0123456789ABCDEF"
+                "CONFIGURATION_SERVICE_MULTI_TENANCY=false"
+                "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=Stack-Env-File-Key-0123456789ABCDEF"
             )
 
             $endpoint = Resolve-RestoreSmokeApiEndpoint -EnvironmentFile $file
@@ -1994,7 +1994,7 @@ Describe "Served-data API probe" {
 
         It "falls back to the defaults the configure phase uses when the keys are absent" {
             $file = Join-Path $TestDrive "defaults.env"
-            Set-Content -LiteralPath $file -Value @("POSTGRES_DB_NAME=edfi_datamanagementservice", "DMS_CONFIG_DATABASE_ENCRYPTION_KEY=$($script:dataStoreKey)")
+            Set-Content -LiteralPath $file -Value @("POSTGRES_DB_NAME=edfi_datamanagementservice", "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=$($script:dataStoreKey)")
 
             $endpoint = Resolve-RestoreSmokeApiEndpoint -EnvironmentFile $file
 
@@ -2003,21 +2003,21 @@ Describe "Served-data API probe" {
             $endpoint.AdminClient.ClientId | Should -Be "dms-data-store-admin"
         }
 
-        It "refuses a multi-tenant stack (DMS_CONFIG_MULTI_TENANCY=<value>)" -ForEach @(
+        It "refuses a multi-tenant stack (CONFIGURATION_SERVICE_MULTI_TENANCY=<value>)" -ForEach @(
             @{ Value = "true" }
             @{ Value = "True" }
             @{ Value = '"true"' }
         ) {
             $file = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N") + ".env")
-            Set-Content -LiteralPath $file -Value "DMS_CONFIG_MULTI_TENANCY=$Value"
+            Set-Content -LiteralPath $file -Value "CONFIGURATION_SERVICE_MULTI_TENANCY=$Value"
 
             { Resolve-RestoreSmokeApiEndpoint -EnvironmentFile $file } | Should -Throw "The served-data probe supports only a single-tenant stack*"
         }
 
-        It "refuses a stack whose DMS_CONFIG_DATABASE_ENCRYPTION_KEY is <case>, naming no value" -ForEach @(
+        It "refuses a stack whose CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY is <case>, naming no value" -ForEach @(
             @{ Case = "absent"; Lines = @() }
-            @{ Case = "empty"; Lines = @("DMS_CONFIG_DATABASE_ENCRYPTION_KEY=") }
-            @{ Case = "blank"; Lines = @("DMS_CONFIG_DATABASE_ENCRYPTION_KEY=   ") }
+            @{ Case = "empty"; Lines = @("CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=") }
+            @{ Case = "blank"; Lines = @("CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=   ") }
         ) {
             $file = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N") + ".env")
             Set-Content -LiteralPath $file -Value (@("DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=Custom-S3cret!") + $Lines)
@@ -2030,13 +2030,13 @@ Describe "Served-data API probe" {
                 $failure = $_.Exception.Message
             }
 
-            $failure | Should -BeExactly "The served-data probe needs DMS_CONFIG_DATABASE_ENCRYPTION_KEY, the key CMS encrypts data store connection strings with, but it is not set for the stack started from '$file'."
+            $failure | Should -BeExactly "The served-data probe needs CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY, the key CMS encrypts data store connection strings with, but it is not set for the stack started from '$file'."
             $failure | Should -Not -Match 'Custom-S3cret'
         }
 
         It "reads the key as Compose does: <case>" -ForEach @(
-            @{ Case = "surrounding quotes are stripped"; Line = 'DMS_CONFIG_DATABASE_ENCRYPTION_KEY="Quoted-Key-0123456789ABCDEFGHIJKLMN"'; Ambient = $null; Expected = "Quoted-Key-0123456789ABCDEFGHIJKLMN" }
-            @{ Case = "an ambient value wins over the env file"; Line = "DMS_CONFIG_DATABASE_ENCRYPTION_KEY=File-Key-0123456789ABCDEFGHIJKLMNOP"; Ambient = "Ambient-Key-0123456789ABCDEFGHIJKLM"; Expected = "Ambient-Key-0123456789ABCDEFGHIJKLM" }
+            @{ Case = "surrounding quotes are stripped"; Line = 'CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY="Quoted-Key-0123456789ABCDEFGHIJKLMN"'; Ambient = $null; Expected = "Quoted-Key-0123456789ABCDEFGHIJKLMN" }
+            @{ Case = "an ambient value wins over the env file"; Line = "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=File-Key-0123456789ABCDEFGHIJKLMNOP"; Ambient = "Ambient-Key-0123456789ABCDEFGHIJKLM"; Expected = "Ambient-Key-0123456789ABCDEFGHIJKLM" }
         ) {
             $file = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N") + ".env")
             Set-Content -LiteralPath $file -Value $Line
@@ -2095,7 +2095,7 @@ Describe "Served-data API probe" {
             @{ Case = "empty"; Key = "" }
             @{ Case = "blank"; Key = "   " }
         ) {
-            $expected = "Data store selection needs DMS_CONFIG_DATABASE_ENCRYPTION_KEY, the key CMS encrypts data store connection strings with, but it is not set."
+            $expected = "Data store selection needs CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY, the key CMS encrypts data store connection strings with, but it is not set."
 
             { Get-RestoreSmokeDataStoreAesKey -EncryptionKey $Key } | Should -Throw -ExpectedMessage $expected
             { Select-RestoreSmokeDataStore -DataStores @(New-TestDataStore -Id 3) -TargetDatabaseName $script:target -DatabaseEngine postgresql -EncryptionKey $Key } |
@@ -2113,7 +2113,7 @@ Describe "Served-data API probe" {
                 $failure = $_.Exception.Message
             }
 
-            $failure | Should -BeExactly "DMS_CONFIG_DATABASE_ENCRYPTION_KEY does not derive a 32-byte AES key: its first 32 characters encode to 36 UTF-8 bytes."
+            $failure | Should -BeExactly "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY does not derive a 32-byte AES key: its first 32 characters encode to 36 UTF-8 bytes."
             $failure.Contains([string][char]0x00E9) | Should -BeFalse
         }
 
@@ -2123,8 +2123,8 @@ Describe "Served-data API probe" {
             @{ Case = "the Base64 of an unencrypted connection string"; Value = "base64-plaintext"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string cipher text is truncated or malformed (103 bytes; expected a 16-byte IV and whole 16-byte AES blocks)" }
             @{ Case = "truncated mid-block"; Value = "truncated"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string cipher text is truncated or malformed (123 bytes; expected a 16-byte IV and whole 16-byte AES blocks)" }
             @{ Case = "an IV without cipher text"; Value = "iv-only"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string cipher text is truncated or malformed (16 bytes; expected a 16-byte IV and whole 16-byte AES blocks)" }
-            @{ Case = "missing its final block"; Value = "final-block-dropped"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string could not be decrypted with DMS_CONFIG_DATABASE_ENCRYPTION_KEY" }
-            @{ Case = "encrypted under another key"; Value = "wrong-key"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string could not be decrypted with DMS_CONFIG_DATABASE_ENCRYPTION_KEY" }
+            @{ Case = "missing its final block"; Value = "final-block-dropped"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY" }
+            @{ Case = "encrypted under another key"; Value = "wrong-key"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY" }
         ) {
             $fixture = $Fixture
             $payload = [System.Convert]::FromBase64String($fixture.CipherText)
@@ -2520,9 +2520,9 @@ Describe "Served-data API probe" {
             $file = Join-Path $TestDrive "probe-$Name.env"
             Set-Content -LiteralPath $file -Value @(
                 "DMS_HTTP_PORTS=18080"
-                "DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081"
+                "CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081"
                 "DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=Admin-S3cret!"
-                "DMS_CONFIG_DATABASE_ENCRYPTION_KEY=$key"
+                "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=$key"
             )
             $global:RestoreSmokeApiTest.DataStores = @(New-TestDataStore -Id 3 -ConnectionString $CipherText -Raw)
 
@@ -2542,9 +2542,9 @@ Describe "Served-data API probe" {
             $file = Join-Path $TestDrive "probe-wrong-key.env"
             Set-Content -LiteralPath $file -Value @(
                 "DMS_HTTP_PORTS=18080"
-                "DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081"
+                "CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081"
                 "DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=Admin-S3cret!"
-                "DMS_CONFIG_DATABASE_ENCRYPTION_KEY=$($script:shortDataStoreKey)"
+                "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=$($script:shortDataStoreKey)"
             )
             $global:RestoreSmokeApiTest.DataStores = @(New-TestDataStore -Id 3 -ConnectionString $CipherText -Raw)
             $endpoint = Resolve-RestoreSmokeApiEndpoint -EnvironmentFile $file
@@ -2557,7 +2557,7 @@ Describe "Served-data API probe" {
                 $failure = $_.Exception.Message
             }
 
-            $failure | Should -BeExactly "No route-unqualified data store targets the restored database 'edfi_datamanagementservice' (1 listed: id=3 name='Local Development Data Store': its connection string could not be decrypted with DMS_CONFIG_DATABASE_ENCRYPTION_KEY)."
+            $failure | Should -BeExactly "No route-unqualified data store targets the restored database 'edfi_datamanagementservice' (1 listed: id=3 name='Local Development Data Store': its connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY)."
             foreach ($secret in @($script:dataStoreKey, $script:shortDataStoreKey, $CipherText, $PlainText, "S3cret")) {
                 $failure.Contains($secret) | Should -BeFalse
             }
@@ -2570,7 +2570,7 @@ Describe "Served-data API probe" {
             $endpoint.DataStoreEncryptionKey = $null
 
             { Test-RestoreSmokeApiRead -Session $script:session -Endpoint $endpoint -TargetDatabaseName $script:target -DatabaseEngine postgresql } |
-                Should -Throw -ExpectedMessage "Data store selection needs DMS_CONFIG_DATABASE_ENCRYPTION_KEY, the key CMS encrypts data store connection strings with, but it is not set."
+                Should -Throw -ExpectedMessage "Data store selection needs CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY, the key CMS encrypts data store connection strings with, but it is not set."
             @($global:RestoreSmokeApiTest.Calls) | Should -Be @("Get-CmsToken", "Get-DataStore")
         }
 
@@ -3504,9 +3504,9 @@ Describe "Write-RestoreSmokeCoreOnlyEnvironmentFile" {
                 "DATABASE_TEMPLATE_PACKAGE=EdFi.Api.Populated.Template.PostgreSql.5.2.0"
                 "# SCHEMA_PACKAGES='[]' in a comment is not a declaration"
                 $SchemaPackages
-                "DMS_CONFIG_ASPNETCORE_HTTP_PORTS=8081"
+                "CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=8081"
                 "DMS_IMAGE_TAG=dms-restore-smoke-0123456789ab"
-                "DMS_CONFIG_DOCKER_IMAGE=local/ed-fi-api-configuration-service:dms-restore-smoke-0123456789ab"
+                "CONFIGURATION_SERVICE_DOCKER_IMAGE=local/ed-fi-api-configuration-service:dms-restore-smoke-0123456789ab"
             ) -join "`n"
             [System.IO.File]::WriteAllText($path, $content + "`n")
             return $path
@@ -3534,7 +3534,7 @@ Describe "Write-RestoreSmokeCoreOnlyEnvironmentFile" {
         $schemaLine.Count | Should -Be 1
         $written.Replace($schemaLine[0], "<schema>") | Should -BeExactly ((Get-Content -LiteralPath $base -Raw).Replace($script:schemaBlock, "<schema>"))
         $written | Should -Match '(?m)^DMS_IMAGE_TAG=dms-restore-smoke-0123456789ab$'
-        $written | Should -Match '(?m)^DMS_CONFIG_DOCKER_IMAGE=local/ed-fi-api-configuration-service:dms-restore-smoke-0123456789ab$'
+        $written | Should -Match '(?m)^CONFIGURATION_SERVICE_DOCKER_IMAGE=local/ed-fi-api-configuration-service:dms-restore-smoke-0123456789ab$'
     }
 
     It "derives the core-only selection from the repository's .env.example" {
@@ -5648,7 +5648,7 @@ exit $LASTEXITCODE
             @($run.Results.Steps.Name)[0..2] | Should -Be @("preflight", "build-schema-tools", "build-images")
             $run.Results.Steps[2].Status | Should -Be "ok"
             $forwarded = $run.Results.Provenance.ForwardedImageKeys
-            $forwarded.DMS_CONFIG_DOCKER_IMAGE | Should -Be $tags.Config
+            $forwarded.CONFIGURATION_SERVICE_DOCKER_IMAGE | Should -Be $tags.Config
             if ($Wrapper -eq "local") {
                 $forwarded.DMS_DOCKER_IMAGE | Should -Be $tags.Dms
                 @($run.Results.Provenance.Images.OwnedTags) | Should -Be @($tags.Dms, $tags.Config)

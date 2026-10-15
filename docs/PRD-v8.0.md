@@ -98,7 +98,7 @@ carried forward into v8.0 will be covered separately in a v8.1 companion PRD.
 ## 2. Enterprise / System Context
 
 The diagram below shows the Ed-Fi API platform's system context: the two
-host-operated services (DMS and CMS), their respective databases, and the
+host-operated services (DMS and the Configuration Service), their respective databases, and the
 external actors that connect to them.
 
 ```mermaid
@@ -108,9 +108,9 @@ graph TB
     subgraph Platform["Ed-Fi API Platform (Host-Operated)"]
     AdminUI["Ed-Fi Admin App<br/>(User Interface)"]
         DMS["Ed-Fi API Service<br/>(DMS)"]
-        CMS["Ed-Fi Configuration<br/>Management Service (CMS)"]
+        CMS["Ed-Fi API<br/>Configuration Service"]
         DMSDB[("DMS Database<br/>(operational/resource data)")]
-        CMSDB[("CMS Database<br/>(configuration data)")]
+        CMSDB[("Configuration Service Database<br/>(configuration data)")]
 
         KeyCloak["Keycloak<br/>(Identity & Access Management)"]
     end
@@ -128,14 +128,14 @@ graph TB
 - **Client applications** (vendor/integrator systems such as SIS, assessment, or
   gradebook products) connect to the **Ed-Fi API service (DMS)** to transmit and
   retrieve student data.
-- The **Ed-Fi Admin App** user interface connects to the **Ed-Fi Configuration
-  Management Service (CMS)** for managing configuration data (client
+- The **Ed-Fi Admin App** user interface connects to the **Ed-Fi API Configuration
+  Service** for managing configuration data (client
   credentials, claim sets, Profiles, tenant and environment routing).
-- **DMS** connects to **CMS** to retrieve and cache configuration information
+- **DMS** connects to **the Configuration Service** to retrieve and cache configuration information
   (e.g., credentials, tenant/environment routing, Profile assignments) needed to
   authorize and route incoming requests.
-- **DMS** and **CMS** each have their own database instance. Hosts MAY
-  optionally colocate the DMS and CMS tables within a single physical database
+- **DMS** and **the Configuration Service** each have their own database instance. Hosts MAY
+  optionally colocate the DMS and Configuration Service tables within a single physical database
   instance, though they remain logically distinct.
 
 This system-context split — a separate configuration/administrative service, no
@@ -474,9 +474,9 @@ identifier-change support.
 ### 4.1 Architecture (NFR-ARCH)
 
 - **NFR-ARCH-1.** Configuration management SHALL be implemented in a separate
-  application ("Configuration Management Service").
+  application ("Configuration Service").
 - **NFR-ARCH-2.** The Ed-Fi API service SHALL retrieve configuration
-  information from the Configuration Management Service using the Ed-Fi
+  information from the Configuration Service using the Ed-Fi
   Management API specification.
 - **NFR-ARCH-3.** The Ed-Fi API service SHALL NOT utilize an external cache
   provider (e.g. Redis, Memcached).
@@ -685,8 +685,8 @@ identifier-change support.
   behaviors in FR-KEY are treated as testable requirements.
 - **Access governance data management** including creation of API clients and
   assignment of permissions via claim sets, Education Organizations, namespaces,
-  and profiles, will be handled by a separate application: the Ed-Fi
-  Configuration Management Service (CMS).
+  and profiles, will be handled by a separate application: the Ed-Fi API
+  Configuration Service.
 - **Duplicate-checking of client-supplied Correlation IDs is out of scope.** Per
   FR-LOG-2, uniqueness of a client-supplied Correlation ID is the client's
   responsibility, not something the system validates or enforces. The system

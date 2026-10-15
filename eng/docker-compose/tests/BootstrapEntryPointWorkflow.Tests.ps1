@@ -114,10 +114,10 @@ Export-ModuleMember -Function Test-CdcInfrastructureInvocation, Test-CdcDeployme
 POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
             return [pscustomobject]@{
@@ -1360,7 +1360,7 @@ param(
             @{ Name = "shared topology, resolved self-contained"; Provider = "self-contained"; Separate = $false }
         ) {
             # An explicit -IdentityProvider outranks the environment file's own
-            # DMS_CONFIG_IDENTITY_PROVIDER, so a keycloak run whose environment says self-contained would
+            # CONFIGURATION_SERVICE_IDENTITY_PROVIDER, so a keycloak run whose environment says self-contained would
             # advertise a continuation that silently switches providers. The environment file named here
             # deliberately represents the self-contained value, so the provider can only have come from
             # this run's resolution.
@@ -1419,7 +1419,7 @@ param(
             $customEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.custom-identity-hint"
             Get-Content -LiteralPath $script:repo.EnvFile | Set-Content -LiteralPath $customEnvFile -Encoding utf8
             @(Get-Content -LiteralPath $customEnvFile) |
-                Should -Contain "DMS_CONFIG_IDENTITY_PROVIDER=self-contained" -Because "the conflict this row is about must actually exist in the environment"
+                Should -Contain "CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained" -Because "the conflict this row is about must actually exist in the environment"
 
             $output = & $script:repo.WrapperScript `
                 -EnvironmentFile $customEnvFile `
@@ -2434,12 +2434,12 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "configure dataStore=[`$Dat
         }
 
         It "separate topology: the CMS exclusion receives the Configuration Service database Compose selects, not a case-variant key" {
-            # Separate topology rewrites the declared DMS_CONFIG_DATABASE_NAME (the .env.example
+            # Separate topology rewrites the declared CONFIGURATION_SERVICE_DATABASE_NAME (the .env.example
             # shape) to edfi_configurationservice in place. The later lowercase
-            # dms_config_database_name is a different dotenv key that survives that pipeline; a
+            # configuration_service_database_name is a different dotenv key that survives that pipeline; a
             # case-insensitive table would hand it to the exclusion.
             $cmsAliasEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.cms-case-alias"
-            @(Get-Content -LiteralPath $script:repo.EnvFile) + @('DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}', "dms_config_database_name=unrelated_cms") |
+            @(Get-Content -LiteralPath $script:repo.EnvFile) + @('CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}', "configuration_service_database_name=unrelated_cms") |
                 Set-Content -LiteralPath $cmsAliasEnvFile -Encoding utf8
             Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
             $log = $script:restoreLog
@@ -3307,8 +3307,8 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed ids=[`$(`$DataStoreId
             # datastore in shared mode, or the dedicated Configuration Service database in
             # separate mode; created by -InitDb when missing); every invocation must splat the
             # shared engine-aware parameters, tracking the CMS topology seam via
-            # DMS_CONFIG_DATABASE_NAME rather than always targeting the DMS datastore.
-            $startScript | Should -Match 'DbType = "MSSQL"; DbUser = "sa"; DbPort = "ENV:MSSQL_PORT"; DbName = "ENV:DMS_CONFIG_DATABASE_NAME"'
+            # CONFIGURATION_SERVICE_DATABASE_NAME rather than always targeting the DMS datastore.
+            $startScript | Should -Match 'DbType = "MSSQL"; DbUser = "sa"; DbPort = "ENV:MSSQL_PORT"; DbName = "ENV:CONFIGURATION_SERVICE_DATABASE_NAME"'
             $openiddictCalls = [regex]::Matches($startScript, '(?m)^.*\./setup-openiddict\.ps1 .*$')
             $openiddictCalls.Count | Should -BeGreaterThan 0
             foreach ($call in $openiddictCalls) {
@@ -3434,8 +3434,8 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed ids=[`$(`$DataStoreId
             $ds61Names = @([regex]::Matches($ds61Overlay, '"name":"([^"]+)"') | ForEach-Object { $_.Groups[1].Value })
             $ds61Names | Should -Be @("EdFi.DataStandard61.ApiSchema")
 
-            $ds52Overlay | Should -Match '(?m)^DMS_CONFIG_DATA_STANDARD_VERSION=5\.2$'
-            $ds61Overlay | Should -Match '(?m)^DMS_CONFIG_DATA_STANDARD_VERSION=6\.1$'
+            $ds52Overlay | Should -Match '(?m)^CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=5\.2$'
+            $ds61Overlay | Should -Match '(?m)^CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=6\.1$'
 
             # Single-line SCHEMA_PACKAGES keeps overlay composition trivial (base multi-line block
             # is removed wholesale before the overlay is appended).
@@ -3490,10 +3490,10 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed ids=[`$(`$DataStoreId
 POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 SCHEMA_PACKAGES='$BaseSchemaPackagesValue'
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
@@ -3534,7 +3534,7 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             & $script:compositionProbeRepo.WrapperScript
 
             $capturedValues = ReadValuesFromEnvFile $script:compositionProbeRepo.CapturedEnvPath
-            $capturedValues["DMS_CONFIG_DATA_STANDARD_VERSION"] | Should -Be "5.2"
+            $capturedValues["CONFIGURATION_SERVICE_DATA_STANDARD_VERSION"] | Should -Be "5.2"
             $capturedValues["SCHEMA_PACKAGES"] | Should -BeLike "*EdFi.DataStandard52.ApiSchema*"
             $capturedValues["SCHEMA_PACKAGES"] | Should -Not -BeLike "*Custom.Base.Package*" -Because "the local entry point always composes the default overlay over a custom base SCHEMA_PACKAGES"
         }
@@ -3547,7 +3547,7 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             & $script:compositionProbeRepo.WrapperScript -DataStandardVersion "6.1"
 
             $capturedValues = ReadValuesFromEnvFile $script:compositionProbeRepo.CapturedEnvPath
-            $capturedValues["DMS_CONFIG_DATA_STANDARD_VERSION"] | Should -Be "6.1"
+            $capturedValues["CONFIGURATION_SERVICE_DATA_STANDARD_VERSION"] | Should -Be "6.1"
             $capturedValues["SCHEMA_PACKAGES"] | Should -BeLike "*EdFi.DataStandard61.ApiSchema*"
             $capturedValues["SCHEMA_PACKAGES"] | Should -Not -BeLike "*Custom.Base.Package*" -Because "an explicit -DataStandardVersion composes the overlay even on the published entry point"
         }
@@ -3560,7 +3560,7 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             & $script:compositionProbeRepo.WrapperScript
 
             $capturedValues = ReadValuesFromEnvFile $script:compositionProbeRepo.CapturedEnvPath
-            $capturedValues.ContainsKey("DMS_CONFIG_DATA_STANDARD_VERSION") | Should -BeFalse -Because "no overlay was composed, so no overlay-only key was introduced"
+            $capturedValues.ContainsKey("CONFIGURATION_SERVICE_DATA_STANDARD_VERSION") | Should -BeFalse -Because "no overlay was composed, so no overlay-only key was introduced"
             $capturedValues["SCHEMA_PACKAGES"] | Should -BeLike "*Custom.Base.Package*" -Because "omitting -DataStandardVersion on the published entry point must leave the base env file's own SCHEMA_PACKAGES driving the run"
         }
     }
@@ -3595,10 +3595,10 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
 POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 DMS_DATASTORE=postgresql
 SCHEMA_PACKAGES='[{"version":"1.0.335","name":"EdFi.DataStandard52.ApiSchema"},{"version":"1.0.335","name":"EdFi.DataStandard52.TPDM.ApiSchema"}]'
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
@@ -3639,7 +3639,7 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
 
             # The data-standard overlay (always composed for the local entry point) must still take
             # effect: the two overlays touch disjoint keys and must not clobber one another.
-            $capturedValues["DMS_CONFIG_DATA_STANDARD_VERSION"] | Should -Be "5.2"
+            $capturedValues["CONFIGURATION_SERVICE_DATA_STANDARD_VERSION"] | Should -Be "5.2"
             $capturedValues["SCHEMA_PACKAGES"] | Should -BeLike "*EdFi.DataStandard52.ApiSchema*"
         }
 
@@ -4014,10 +4014,10 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
 POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
                 $callLog = Join-Path $repoRoot "call-log.txt"
@@ -4140,10 +4140,10 @@ Add-Content -LiteralPath '$callLog' -Value "start DatabaseEngine=`$DatabaseEngin
 POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
                 }
                 else {
@@ -4151,13 +4151,13 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=unsupported-for-db-only
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=unsupported-for-db-only
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 # Deliberately invalid application-only settings. DbOnly parameter guards must still be reached,
 # proving the database slice does not parse identity configuration before returning.
-DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
+CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
                     $bootstrapRoot = Join-Path $dockerComposeRoot ".bootstrap"
@@ -4542,10 +4542,10 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
 POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 SCHEMA_PACKAGES='[{"name":"Custom.Base.Package","version":"9.9.9"}]'
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 

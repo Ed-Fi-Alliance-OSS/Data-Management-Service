@@ -137,9 +137,9 @@ graph TB
     subgraph Platform["Ed-Fi API Platform (Host-Operated)"]
     AdminUI["Ed-Fi Admin App<br/>(User Interface)"]
         DMS["Ed-Fi API Service<br/>(DMS)"]
-        CMS["Ed-Fi Configuration<br/>Management Service (CMS)"]
+        CMS["Ed-Fi API<br/>Configuration Service"]
         DMSDB[("DMS Database<br/>(operational/resource data)")]
-        CMSDB[("CMS Database<br/>(configuration data)")]
+        CMSDB[("Configuration Service Database<br/>(configuration data)")]
 
         KeyCloak["Keycloak<br/>(Identity & Access Management)"]
         Debezium -->|read| DMSDB

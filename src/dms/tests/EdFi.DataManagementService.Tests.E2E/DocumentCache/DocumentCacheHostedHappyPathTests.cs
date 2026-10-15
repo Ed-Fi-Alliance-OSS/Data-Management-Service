@@ -1139,10 +1139,12 @@ public sealed partial class DocumentCacheHostedHappyPathTests
     private static string CliDatastoreOptionValue() => IsMssql() ? "sqlserver" : "postgresql";
 
     private static string ConfigurationSecret() =>
-        Environment.GetEnvironmentVariable("CONFIG_SERVICE_CLIENT_SECRET") ?? CmsReadOnlyClientSecret;
+        Environment.GetEnvironmentVariable("DMS_CONFIGURATION_SERVICE_CLIENT_SECRET")
+        ?? CmsReadOnlyClientSecret;
 
     private static string ConfigurationEncryptionKey() =>
-        Environment.GetEnvironmentVariable("DMS_CONFIG_DATABASE_ENCRYPTION_KEY") ?? CmsEncryptionKey;
+        Environment.GetEnvironmentVariable("CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY")
+        ?? CmsEncryptionKey;
 
     private static void AssertDocumentCacheAdminOutputDoesNotLeakProtectedValues(string output, string error)
     {

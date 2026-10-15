@@ -33,7 +33,6 @@ public class Given_A_Mssql_DocumentCacheQueryPlan_Evidence
 
     private static readonly QualifiedResourceName PersonResource = new("Ed-Fi", "Person");
     private static readonly DateTime FirstEnqueuedAt = new(2026, 8, 1, 12, 0, 0, DateTimeKind.Utc);
-    private static readonly DateTime LastModifiedAt = new(2026, 8, 1, 12, 1, 0, DateTimeKind.Utc);
     private static readonly DocumentCachePhysicalSourceFingerprint Fingerprint = new(
         "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     );
@@ -199,14 +198,12 @@ public class Given_A_Mssql_DocumentCacheQueryPlan_Evidence
             INSERT INTO [dms].[Document] (
                 [DocumentUuid],
                 [ResourceKeyId],
-                [ContentVersion],
-                [ContentLastModifiedAt]
+                [ContentVersion]
             )
             SELECT
                 NEWID(),
                 @resourceKeyId,
-                [Number],
-                @lastModifiedAt
+                [Number]
             FROM numbers
             ORDER BY [Number];
 
@@ -229,7 +226,6 @@ public class Given_A_Mssql_DocumentCacheQueryPlan_Evidence
             new SqlParameter("@resourceKeyId", SqlDbType.SmallInt) { Value = resourceKeyId },
             new SqlParameter("@documentCount", SqlDbType.Int) { Value = ScaleDocumentCount },
             new SqlParameter("@workRowCount", SqlDbType.Int) { Value = ScaleWorkRowCount },
-            new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = LastModifiedAt },
             new SqlParameter("@firstEnqueuedAt", SqlDbType.DateTime2) { Value = FirstEnqueuedAt }
         );
     }

@@ -1265,7 +1265,7 @@ function ConvertFrom-CmsEncryptedConnectionString {
     <#
     .SYNOPSIS
         Decrypts a data store connection string as a CMS response carries it: the Base64 of a 16-byte
-        IV followed by AES-CBC/PKCS7 cipher text, under DMS_CONFIG_DATABASE_ENCRYPTION_KEY (the same key
+        IV followed by AES-CBC/PKCS7 cipher text, under CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY (the same key
         CMS encrypts with) padded with '0' and cut to 32 characters.
     .DESCRIPTION
         Shared by the provisioning phase, which hands the decrypted target to SchemaTools, and by the
@@ -1281,9 +1281,9 @@ function ConvertFrom-CmsEncryptedConnectionString {
         $EnvValues
     )
 
-    $encryptionKey = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvValues -Name "DMS_CONFIG_DATABASE_ENCRYPTION_KEY"
+    $encryptionKey = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvValues -Name "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY"
     if ([string]::IsNullOrWhiteSpace($encryptionKey)) {
-        throw "CMS data store connection string is encrypted, but DMS_CONFIG_DATABASE_ENCRYPTION_KEY is not set in the environment file."
+        throw "CMS data store connection string is encrypted, but CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY is not set in the environment file."
     }
 
     try {
@@ -1322,7 +1322,7 @@ function ConvertFrom-CmsEncryptedConnectionString {
         }
     }
     catch {
-        throw "CMS data store encrypted connection string could not be decrypted with DMS_CONFIG_DATABASE_ENCRYPTION_KEY."
+        throw "CMS data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY."
     }
     finally {
         $aes.Dispose()
@@ -1334,7 +1334,7 @@ function Get-CmsDatabaseTopologyDefaultConnectionString {
     .SYNOPSIS
         Constructs the concrete PostgreSQL connection-string default
         Confirm-CmsDatabaseTopologyAgreement validates against when
-        DMS_CONFIG_DATABASE_CONNECTION_STRING is entirely absent, in exactly the shape the checked-in
+        CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING is entirely absent, in exactly the shape the checked-in
         local-config.yml / published-config.yml nested Compose fallback renders (confirmed against a
         real `docker compose config` invocation - see CmsDatabaseTopology.Tests.ps1's Compose-rendering
         oracle).
@@ -1560,7 +1560,7 @@ function Assert-E2EDatabaseIsDedicated {
 
     foreach ($connectionStringKey in @(
             "DATABASE_CONNECTION_STRING_ADMIN",
-            "DMS_CONFIG_DATABASE_CONNECTION_STRING"
+            "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"
         )) {
         if (-not (Test-ProtectedKeyConfigured -EnvironmentValues $EnvironmentValues -Name $connectionStringKey)) {
             continue

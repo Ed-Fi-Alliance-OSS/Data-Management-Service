@@ -113,8 +113,9 @@ by DMS-1404. Future index transitions start from `UX_Descriptor_ResourceKeyId_Ur
 existing `(ResourceKeyId, DocumentId)` paging and `(ResourceKeyId, ContentVersion, DocumentId)`
 change-window indexes and their document anchors.
 
-Both document stamp columns remain authoritative in the DMS-1404 baseline, with current
-document-to-root/descriptor mirror ownership. DMS-1404's completed handoff includes regenerated
+At the historical DMS-1404 checkpoint, both document stamp columns were authoritative, with
+document-to-root/descriptor mirrors. The combined DMS-1401 schema instead retains the document
+version and authoritative root/descriptor timestamps. DMS-1404's completed handoff includes regenerated
 provider fixtures, unequal-ID metadata/restamp/cache checks, compatible performance loaders,
 representative legacy-dump conversion and reusable catalog assertions driven by a reviewed model
 manifest for the exact schema. [DMS-1401](../epics/21-storage-reduction/16-drop-document-content-last-modified-at.md#implementation-order-and-handoff-from-dms-1404)
@@ -1341,9 +1342,9 @@ its trigger topology except for concrete `ResourceKeyId` column population, the 
 document/resource FK, and explicit SQL Server identity collation; the DocumentCache table family;
 tracked-change tables and triggers; `auth.*`;
 `dms.ResourceKey` / `dms.EffectiveSchema` / `dms.SchemaComponent`; the read/reconstitution pipeline;
-both document stamp columns and current mirror ownership remain in the DMS-1404 baseline.
-DMS-1401 separately owns timestamp removal/authority changes; natural-key work preserves the
-stamp ownership on its implementation baseline.
+the historical DMS-1404 baseline retained both document stamp columns and their mirrors.
+The combined DMS-1401 baseline instead retains the document version and authoritative
+root/descriptor timestamps; natural-key work preserves stamp ownership on its implementation baseline.
 The SQL Server `dms.UniqueIdentifierTable` TVP type stays: `MssqlRepresentationRestampStore`
 (DMS-1318) still binds it for restamping by document UUID. `dms.BigIntTable` stays — it serves
 authorization. `RelationalMappingVersion` follows the release

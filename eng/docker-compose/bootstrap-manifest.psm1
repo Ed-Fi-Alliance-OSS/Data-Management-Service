@@ -548,7 +548,7 @@ function Set-BootstrapStartupEnvironment {
 
         # No staged claims in manifest (only reachable with -SkipArtifactValidation / teardown).
         # No staged claims workspace to mount; keep mount source blank.
-        $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = ""
+        $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE = ""
         return $true
     }
 
@@ -601,13 +601,13 @@ function Set-BootstrapStartupEnvironment {
     # Activate staged claims per manifest claims.mode (bootstrap-design.md §3 activation boundary).
     # These process-env overrides govern in bootstrap mode regardless of .env-file Hybrid defaults.
     if ($claimsMode -eq "Hybrid") {
-        $env:DMS_CONFIG_CLAIMS_SOURCE = "Hybrid"
-        $env:DMS_CONFIG_CLAIMS_DIRECTORY = "/app/additional-claims"
-        $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = $claimsPath
+        $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE = "Hybrid"
+        $env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY = "/app/additional-claims"
+        $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE = $claimsPath
     } else {
-        $env:DMS_CONFIG_CLAIMS_SOURCE = "Embedded"
-        $env:DMS_CONFIG_CLAIMS_DIRECTORY = ""
-        $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = ""
+        $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE = "Embedded"
+        $env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY = ""
+        $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE = ""
     }
 
     return $true
@@ -616,14 +616,14 @@ function Set-BootstrapStartupEnvironment {
 $script:BootstrapEnvVarNames = @(
     # Startup temporarily selects identity endpoints as well as staged schema/claims. Restore
     # them before a later phase fingerprints the caller's Compose environment for CDC lifecycle.
-    "DMS_CONFIG_IDENTITY_PROVIDER",
+    "CONFIGURATION_SERVICE_IDENTITY_PROVIDER",
     "OAUTH_TOKEN_ENDPOINT",
     "DMS_JWT_AUTHORITY",
     "DMS_JWT_METADATA_ADDRESS",
-    "DMS_CONFIG_IDENTITY_AUTHORITY",
-    "DMS_CONFIG_CLAIMS_SOURCE",
-    "DMS_CONFIG_CLAIMS_DIRECTORY",
-    "DMS_CONFIG_CLAIMS_MOUNT_SOURCE",
+    "CONFIGURATION_SERVICE_IDENTITY_AUTHORITY",
+    "CONFIGURATION_SERVICE_CLAIMS_SOURCE",
+    "CONFIGURATION_SERVICE_CLAIMS_DIRECTORY",
+    "CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE",
     "USE_API_SCHEMA_PATH",
     "API_SCHEMA_PATH",
     "DMS_API_SCHEMA_MOUNT_SOURCE",
@@ -783,9 +783,9 @@ function Invoke-BootstrapStartupConfiguration {
         # Non-bootstrap mode: activate Hybrid claims so the extension and E2E claimset fragments
         # staged in .e2e-claims are loaded from /app/additional-claims. Every caller of this branch
         # is an E2E setup path, and the E2E claim sets are defined only by test-owned fragments.
-        $env:DMS_CONFIG_CLAIMS_SOURCE = "Hybrid"
-        $env:DMS_CONFIG_CLAIMS_DIRECTORY = "/app/additional-claims"
-        $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = Initialize-E2EClaimsWorkspace
+        $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE = "Hybrid"
+        $env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY = "/app/additional-claims"
+        $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE = Initialize-E2EClaimsWorkspace
         Write-Information "Extension Security Metadata: Hybrid claims mode enabled (non-bootstrap startup)." -InformationAction Continue
     }
 

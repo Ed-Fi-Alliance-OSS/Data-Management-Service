@@ -890,7 +890,7 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
     }
 
     [Test]
-    public void It_should_copy_existing_document_stamps_for_root_inserts()
+    public void It_should_copy_the_document_version_and_initialize_the_root_timestamp_on_insert()
     {
         var insertBranch = ExtractPlpgsqlSegment(
             GetRootStampFunctionBody(),
@@ -898,28 +898,29 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
             "ELSIF TG_OP = 'UPDATE' THEN"
         );
 
-        insertBranch.Should().Contain("SELECT \"ContentVersion\", \"ContentLastModifiedAt\"");
+        insertBranch.Should().Contain("SELECT \"ContentVersion\"");
         insertBranch.Should().Contain("FROM \"dms\".\"Document\"");
         insertBranch.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\"");
-        insertBranch.Should().Contain("INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt");
+        insertBranch.Should().Contain("INTO STRICT _stampedContentVersion");
         insertBranch.Should().Contain("NEW.\"ContentVersion\" := _stampedContentVersion;");
-        insertBranch.Should().Contain("NEW.\"ContentLastModifiedAt\" := _stampedContentLastModifiedAt;");
+        insertBranch.Should().Contain("NEW.\"ContentLastModifiedAt\" := now();");
+        insertBranch.Should().NotContain("SELECT \"ContentVersion\", \"ContentLastModifiedAt\"");
         insertBranch.Should().NotContain("nextval");
     }
 
     [Test]
-    public void It_should_mirror_child_write_stamps_from_returning_rows()
+    public void It_should_stamp_the_root_from_child_write_versions()
     {
         var functionBody = GetPerEventStampFunctionBody("SchoolAddress", "ins");
 
         var affectedStart = functionBody.IndexOf("WITH affected AS (", StringComparison.Ordinal);
         var stampedStart = functionBody.IndexOf("stamped AS (", StringComparison.Ordinal);
         var nextvalStart = functionBody.IndexOf(
-            "SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"'), \"ContentLastModifiedAt\" = now()",
+            "SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"')",
             StringComparison.Ordinal
         );
         var returningStart = functionBody.IndexOf(
-            "RETURNING d.\"DocumentId\", d.\"ContentVersion\", d.\"ContentLastModifiedAt\"",
+            "RETURNING d.\"DocumentId\", d.\"ContentVersion\"",
             StringComparison.Ordinal
         );
         var mirrorUpdateStart = functionBody.IndexOf(
@@ -927,7 +928,7 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
             StringComparison.Ordinal
         );
         var mirrorSetStart = functionBody.IndexOf(
-            "SET \"ContentVersion\" = stamped.\"ContentVersion\", \"ContentLastModifiedAt\" = stamped.\"ContentLastModifiedAt\"",
+            "SET \"ContentVersion\" = stamped.\"ContentVersion\", \"ContentLastModifiedAt\" = now()",
             StringComparison.Ordinal
         );
         var mirrorFromStart = functionBody.IndexOf("FROM stamped", StringComparison.Ordinal);
@@ -975,17 +976,28 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
         updateBranch.Should().Contain("UPDATE \"dms\".\"Document\"");
         updateBranch
             .Should()
-            .Contain(
-                "SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"'), \"ContentLastModifiedAt\" = now()"
-            );
+            .Contain("SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"')");
         updateBranch.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\"");
-        updateBranch
-            .Should()
-            .Contain(
-                "RETURNING \"ContentVersion\", \"ContentLastModifiedAt\" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;"
-            );
+        updateBranch.Should().Contain("RETURNING \"ContentVersion\" INTO STRICT _stampedContentVersion;");
         updateBranch.Should().Contain("NEW.\"ContentVersion\" := _stampedContentVersion;");
-        updateBranch.Should().Contain("NEW.\"ContentLastModifiedAt\" := _stampedContentLastModifiedAt;");
+        updateBranch.Should().Contain("NEW.\"ContentLastModifiedAt\" := now();");
+    }
+
+    [Test]
+    public void It_should_never_read_or_write_a_document_timestamp_in_postgresql_stamping()
+    {
+        var root = GetRootStampFunctionBody();
+        root.Should().NotContain("_stampedContentLastModifiedAt");
+        root.Should().NotContain("RETURNING \"ContentVersion\", \"ContentLastModifiedAt\"");
+        root.Should().Contain("NEW.\"ContentLastModifiedAt\" := now();");
+
+        foreach (var suffix in new[] { "ins", "upd", "del" })
+        {
+            var child = GetPerEventStampFunctionBody("SchoolAddress", suffix);
+            child.Should().NotContain("d.\"ContentLastModifiedAt\"");
+            child.Should().Contain("\"ContentLastModifiedAt\" = now()");
+            child.Should().Contain("RETURNING d.\"DocumentId\", d.\"ContentVersion\"");
+        }
     }
 
     [Test]
@@ -1071,9 +1083,7 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
         insertFunction.Should().Contain("SELECT DISTINCT newtab.\"DocumentId\" AS \"DocumentId\"");
         insertFunction
             .Should()
-            .Contain(
-                "SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"'), \"ContentLastModifiedAt\" = now()"
-            );
+            .Contain("SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"')");
         insertFunction.Should().Contain("UPDATE \"edfi\".\"School\" r");
         // Non-root stamping never reads/copies existing stamps into NEW mirror columns.
         insertFunction.Should().NotContain("INTO STRICT");
@@ -1391,7 +1401,7 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
     }
 
     [Test]
-    public void It_should_capture_content_stamps_with_output_and_mirror_to_target_table()
+    public void It_should_capture_document_versions_and_stamp_the_authoritative_root()
     {
         var triggerBody = GetSchoolStampTriggerBody();
 
@@ -1404,12 +1414,8 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
             "[ContentVersion] bigint NOT NULL",
             StringComparison.Ordinal
         );
-        var contentLastModifiedColumnStart = triggerBody.IndexOf(
-            "[ContentLastModifiedAt] datetime2(7) NOT NULL",
-            StringComparison.Ordinal
-        );
         var outputStart = triggerBody.IndexOf(
-            "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped",
+            "OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped",
             StringComparison.Ordinal
         );
         var mirrorUpdateStart = triggerBody.IndexOf("UPDATE r", StringComparison.Ordinal);
@@ -1418,7 +1424,7 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
             StringComparison.Ordinal
         );
         var mirrorSetLastModifiedStart = triggerBody.IndexOf(
-            "r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]",
+            "r.[ContentLastModifiedAt] = sysutcdatetime()",
             StringComparison.Ordinal
         );
         var mirrorFromStart = triggerBody.IndexOf("FROM [edfi].[School] r", StringComparison.Ordinal);
@@ -1436,8 +1442,7 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
             );
         documentIdColumnStart.Should().BeGreaterThan(declareStart);
         contentVersionColumnStart.Should().BeGreaterThan(documentIdColumnStart);
-        contentLastModifiedColumnStart.Should().BeGreaterThan(contentVersionColumnStart);
-        outputStart.Should().BeGreaterThan(contentLastModifiedColumnStart);
+        outputStart.Should().BeGreaterThan(contentVersionColumnStart);
         mirrorUpdateStart.Should().BeGreaterThan(outputStart);
         mirrorSetVersionStart.Should().BeGreaterThan(mirrorUpdateStart);
         mirrorSetLastModifiedStart.Should().BeGreaterThan(mirrorSetVersionStart);
@@ -1450,17 +1455,19 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
         // to prevent the contention at all.
         triggerBody.Should().Contain("FROM [edfi].[School] r WITH (FORCESEEK)");
         triggerBody.Should().NotContain("OPTION (");
+        triggerBody.Should().NotContain("d.[ContentLastModifiedAt]");
+        triggerBody.Should().NotContain("inserted.[ContentLastModifiedAt]");
+        triggerBody.Should().NotContain("s.[ContentLastModifiedAt]");
+        triggerBody.Should().NotContain("[ContentLastModifiedAt] datetime2(7) NOT NULL");
     }
 
     [Test]
-    public void It_should_copy_existing_document_stamps_for_root_inserts()
+    public void It_should_copy_existing_document_version_for_root_inserts()
     {
         var triggerBody = GetSchoolStampTriggerBody();
 
-        triggerBody
-            .Should()
-            .Contain("INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])");
-        triggerBody.Should().Contain("SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]");
+        triggerBody.Should().Contain("INSERT INTO @stamped ([DocumentId], [ContentVersion])");
+        triggerBody.Should().Contain("SELECT d.[DocumentId], d.[ContentVersion]");
         triggerBody.Should().Contain("FROM [dms].[Document] d");
         triggerBody.Should().Contain("INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]");
         triggerBody.Should().Contain("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
@@ -1549,6 +1556,9 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
     {
         _ddl.Should().Contain("SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]");
         _ddl.Should().NotContain("DECLARE @contentVersion");
+        GetStampTriggerBody("SchoolAddress")
+            .Should()
+            .Contain("OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped");
     }
 
     [Test]
@@ -1615,7 +1625,7 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
         var triggerBody = GetSchoolStampTriggerBody();
 
         var stampedPrepopulationStart = triggerBody.IndexOf(
-            "INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])",
+            "INSERT INTO @stamped ([DocumentId], [ContentVersion])",
             StringComparison.Ordinal
         );
         var guardStart = triggerBody.IndexOf(
@@ -2902,7 +2912,7 @@ internal static class TriggerFixture
             [documentIdColumn],
             [],
             new TriggerKindParameters.DocumentStamping(),
-            MirrorStampTargetTable: tableName
+            StampTargetTable: tableName
         );
 
         return new DerivedRelationalModelSet(
@@ -2993,7 +3003,7 @@ internal static class PgsqlDocumentStampingFixture
                 },
                 new DbColumnModel(
                     contentLastModifiedAtColumn,
-                    ColumnKind.MirroredContentLastModifiedAt,
+                    ColumnKind.AuthoritativeContentLastModifiedAt,
                     new RelationalScalarType(ScalarKind.DateTime),
                     IsNullable: false,
                     SourceJsonPath: null,
@@ -3215,7 +3225,7 @@ internal static class PgsqlDocumentStampingFixture
                 [documentIdColumn],
                 [schoolIdColumn],
                 new TriggerKindParameters.DocumentStamping(),
-                MirrorStampTargetTable: tableName
+                StampTargetTable: tableName
             ),
             new(
                 new DbTriggerName("TR_SchoolAddress_Stamp"),
@@ -3223,7 +3233,7 @@ internal static class PgsqlDocumentStampingFixture
                 [childDocumentIdColumn],
                 [],
                 new TriggerKindParameters.DocumentStamping(),
-                MirrorStampTargetTable: tableName
+                StampTargetTable: tableName
             ),
             new(
                 new DbTriggerName("TR_SchoolExtension_Stamp"),
@@ -3231,7 +3241,7 @@ internal static class PgsqlDocumentStampingFixture
                 [documentIdColumn],
                 [],
                 new TriggerKindParameters.DocumentStamping(),
-                MirrorStampTargetTable: tableName
+                StampTargetTable: tableName
             ),
             new(
                 new DbTriggerName("TR_SchoolAddressPeriod_Stamp"),
@@ -3239,7 +3249,7 @@ internal static class PgsqlDocumentStampingFixture
                 [childDocumentIdColumn],
                 [],
                 new TriggerKindParameters.DocumentStamping(),
-                MirrorStampTargetTable: tableName
+                StampTargetTable: tableName
             ),
             new(
                 new DbTriggerName("TR_SchoolExtensionAddress_Stamp"),
@@ -3247,7 +3257,7 @@ internal static class PgsqlDocumentStampingFixture
                 [childDocumentIdColumn],
                 [],
                 new TriggerKindParameters.DocumentStamping(),
-                MirrorStampTargetTable: tableName
+                StampTargetTable: tableName
             ),
             new(
                 new DbTriggerName("TR_School_ReferentialIdentity"),
@@ -3350,7 +3360,7 @@ internal static class MssqlDocumentStampingFixture
                 },
                 new DbColumnModel(
                     contentLastModifiedAtColumn,
-                    ColumnKind.MirroredContentLastModifiedAt,
+                    ColumnKind.AuthoritativeContentLastModifiedAt,
                     new RelationalScalarType(ScalarKind.DateTime),
                     IsNullable: false,
                     SourceJsonPath: null,
@@ -3417,7 +3427,7 @@ internal static class MssqlDocumentStampingFixture
                 [documentIdColumn],
                 [schoolIdColumn],
                 new TriggerKindParameters.DocumentStamping(),
-                MirrorStampTargetTable: tableName
+                StampTargetTable: tableName
             ),
             new(
                 new DbTriggerName("TR_SchoolAddress_Stamp"),
@@ -3425,7 +3435,7 @@ internal static class MssqlDocumentStampingFixture
                 [childDocumentIdColumn],
                 [],
                 new TriggerKindParameters.DocumentStamping(),
-                MirrorStampTargetTable: tableName
+                StampTargetTable: tableName
             ),
             new(
                 new DbTriggerName("TR_School_ReferentialIdentity"),
@@ -3869,7 +3879,7 @@ public class Given_RelationalModelDdlEmitter_With_TrackedChange_Attached_Resourc
             "IF TG_OP = 'UPDATE' AND (OLD.\"BeginDate\" IS DISTINCT FROM NEW.\"BeginDate\" OR OLD.\"SchoolId_Unified\" IS DISTINCT FROM NEW.\"SchoolId_Unified\") THEN";
 
         var contentStampCapture = functionBody.IndexOf(
-            "RETURNING \"ContentVersion\", \"ContentLastModifiedAt\" INTO STRICT _stampedContentVersion",
+            "RETURNING \"ContentVersion\" INTO STRICT _stampedContentVersion",
             StringComparison.Ordinal
         );
         var identityGuardStart = functionBody.IndexOf(identityGuard, StringComparison.Ordinal);
@@ -3968,7 +3978,7 @@ public class Given_RelationalModelDdlEmitter_With_TrackedChange_Attached_Resourc
         const string identityGuard = "IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)";
 
         var contentStampCapture = triggerBody.IndexOf(
-            "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped",
+            "OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped",
             StringComparison.Ordinal
         );
         var identityGuardStart = triggerBody.IndexOf(identityGuard, StringComparison.Ordinal);
@@ -4171,7 +4181,7 @@ internal static class TrackedChangeTriggerFixture
 
     /// <summary>
     /// Builds a model set whose stamping trigger has a <see cref="TrackedChangeAttachment"/> but
-    /// whose <see cref="DbTriggerInfo.MirrorStampTargetTable"/> points to a parent table rather than
+    /// whose <see cref="DbTriggerInfo.StampTargetTable"/> points to a parent table rather than
     /// the trigger's own table, making it non-root per
     /// <see cref="RelationalModelDdlEmitter"/>.<c>IsRootDocumentStampingTrigger</c>.
     /// Used to verify that <c>TryBuildTrackedChangePlan</c> rejects non-root attached triggers.
@@ -4215,7 +4225,7 @@ internal static class TrackedChangeTriggerFixture
             [new DbColumnName("DocumentId")],
             identityProjectionColumns,
             new TriggerKindParameters.DocumentStamping(new TrackedChangeAttachment(trackedTable.Table)),
-            MirrorStampTargetTable: mirrorStampTargetTable ?? sourceTable.Table
+            StampTargetTable: mirrorStampTargetTable ?? sourceTable.Table
         );
 
         return new DerivedRelationalModelSet(

@@ -51,7 +51,7 @@ BeforeAll {
 
     # The candidate table shared by every fixture Describe, keyed for the -ForEach rows (whose
     # data is bound at discovery time, before this block runs). Exotic values reach the authority
-    # as AMBIENT overrides - MSSQL_DB_NAME for the datastore, DMS_CONFIG_DATABASE_NAME for the
+    # as AMBIENT overrides - MSSQL_DB_NAME for the datastore, CONFIGURATION_SERVICE_DATABASE_NAME for the
     # CMS-target seam (full UTF-16 fidelity, and it exercises the documented Compose ambient
     # precedence); the env file itself stays ASCII-only.
     $script:liveName = @{
@@ -84,13 +84,13 @@ BeforeAll {
         Set-Content -LiteralPath $path -NoNewline -Value (@(
             "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=$Marker",
             "MSSQL_DB_NAME=$FileAuthoredName",
-            "DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=$CmsDatabaseSegment;User Id=sa;Password=pw;TrustServerCertificate=true;"
+            "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=$CmsDatabaseSegment;User Id=sa;Password=pw;TrustServerCertificate=true;"
         ) -join "`n")
         return $path
     }
 
     # Drives the REAL authority. The initialized (datastore) candidate travels ambiently unless
-    # -FileAuthored is requested; an ambient CMS-target seam travels via DMS_CONFIG_DATABASE_NAME
+    # -FileAuthored is requested; an ambient CMS-target seam travels via CONFIGURATION_SERVICE_DATABASE_NAME
     # when supplied; a registered candidate is handed over as the PROVIDER-PARSED value, exactly
     # as the wired start script does (never raw parameter text).
     function script:Invoke-LiveAuthority {
@@ -117,7 +117,7 @@ BeforeAll {
             [System.Environment]::SetEnvironmentVariable('MSSQL_DB_NAME', $InitializedName)
         }
         if ($PSBoundParameters.ContainsKey('AmbientSeamName')) {
-            [System.Environment]::SetEnvironmentVariable('DMS_CONFIG_DATABASE_NAME', $AmbientSeamName)
+            [System.Environment]::SetEnvironmentVariable('CONFIGURATION_SERVICE_DATABASE_NAME', $AmbientSeamName)
         }
 
         $registeredParsedValue = ""
@@ -153,10 +153,10 @@ BeforeAll {
         if ([string]::IsNullOrWhiteSpace($ConfiguredValue)) { 'EdFi_Dms1!' } else { $ConfiguredValue }
     }
 
-    # Production resolves MSSQL_DB_NAME and DMS_CONFIG_DATABASE_NAME with ambient precedence, so
+    # Production resolves MSSQL_DB_NAME and CONFIGURATION_SERVICE_DATABASE_NAME with ambient precedence, so
     # each fixture Describe owns those names for its whole run: presence-aware snapshot,
     # per-test clearing, faithful restore.
-    $script:liveAmbientNames = @('MSSQL_DB_NAME', 'DMS_CONFIG_DATABASE_NAME')
+    $script:liveAmbientNames = @('MSSQL_DB_NAME', 'CONFIGURATION_SERVICE_DATABASE_NAME')
     function script:Save-LiveAmbientState {
         $snapshot = @{}
         foreach ($name in $script:liveAmbientNames) {
@@ -223,14 +223,14 @@ Describe "MSSQL live topology authority: the pinned default-collation fixture" -
         It "REFUSES a genuinely distinct accented CMS-target seam, naming the seam key and withholding the value" {
             $thrown = { Invoke-LiveAuthority -ContainerName $script:fixtureContainer -SaPassword $script:saPassword -InitializedName $script:sharedDatastoreName -FileAuthored -Marker 'false' -AmbientSeamName "$([char]0xE9)dfi_datamanagementservice" } |
                 Should -Throw "*DIFFERENT physical database*" -PassThru
-            $thrown.Exception.Message | Should -BeLike "*'DMS_CONFIG_DATABASE_NAME'*"
+            $thrown.Exception.Message | Should -BeLike "*'CONFIGURATION_SERVICE_DATABASE_NAME'*"
             $thrown.Exception.Message | Should -Not -BeLike "*$([char]0xE9)*" -Because "diagnostics never echo a caller-authored value"
         }
 
         It "REFUSES a distinct ASCII CMS connection-string segment, naming the segment key" {
             $thrown = { Invoke-LiveAuthority -ContainerName $script:fixtureContainer -SaPassword $script:saPassword -InitializedName $script:sharedDatastoreName -FileAuthored -Marker 'false' -CmsDatabaseSegment 'edfi_somewhere_else' } |
                 Should -Throw "*DIFFERENT physical database*" -PassThru
-            $thrown.Exception.Message | Should -BeLike "*'DMS_CONFIG_DATABASE_CONNECTION_STRING'*"
+            $thrown.Exception.Message | Should -BeLike "*'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING'*"
         }
     }
 
@@ -244,7 +244,7 @@ Describe "MSSQL live topology authority: the pinned default-collation fixture" -
         It "REFUSES an accented CMS connection-string seam that is genuinely distinct from the reserved database" {
             $thrown = { Invoke-LiveAuthority -ContainerName $script:fixtureContainer -SaPassword $script:saPassword -InitializedName $script:sharedDatastoreName -AmbientSeamName $script:liveName['reviewer'] } |
                 Should -Throw "*DIFFERENT physical database*" -PassThru
-            $thrown.Exception.Message | Should -BeLike "*'DMS_CONFIG_DATABASE_NAME'*"
+            $thrown.Exception.Message | Should -BeLike "*'CONFIGURATION_SERVICE_DATABASE_NAME'*"
         }
 
         It "ACCEPTS <Label> as the initialized candidate" -ForEach @(
@@ -367,7 +367,7 @@ Describe "MSSQL live topology authority: the case-sensitive-instance scenario" -
         # offline comparer can stand in for the server.
         $thrown = { Invoke-LiveAuthority -ContainerName $script:fixtureContainer -SaPassword $script:saPassword -InitializedName $script:sharedDatastoreName -FileAuthored -Marker 'false' -CmsDatabaseSegment 'EDFI_DATAMANAGEMENTSERVICE' } |
             Should -Throw "*DIFFERENT physical database*" -PassThru
-        $thrown.Exception.Message | Should -BeLike "*'DMS_CONFIG_DATABASE_CONNECTION_STRING'*"
+        $thrown.Exception.Message | Should -BeLike "*'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING'*"
     }
 
     It "REFUSES a case-variant CMS connection-string segment in separate mode: it is not the reserved database here" {

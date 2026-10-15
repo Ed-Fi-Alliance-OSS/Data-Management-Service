@@ -133,11 +133,11 @@ sed -i "s#^PUBLIC_BASE_URL=.*#PUBLIC_BASE_URL=https://$FQDN#"                 .e
 sed -i "s#^PUBLIC_HOST=.*#PUBLIC_HOST=$FQDN#"                                  .env
 sed -i "s#^POSTGRES_PASSWORD=.*#POSTGRES_PASSWORD=$(gen)#"                     .env
 sed -i "s#^KEYCLOAK_ADMIN_PASSWORD=.*#KEYCLOAK_ADMIN_PASSWORD=$(gen)#"         .env
-sed -i "s#^DMS_CONFIG_IDENTITY_CLIENT_SECRET=.*#DMS_CONFIG_IDENTITY_CLIENT_SECRET=$(gen)#" .env
-sed -i "s#^CONFIG_SERVICE_CLIENT_SECRET=.*#CONFIG_SERVICE_CLIENT_SECRET=$(gen)#"           .env
+sed -i "s#^CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET=.*#CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET=$(gen)#" .env
+sed -i "s#^DMS_CONFIGURATION_SERVICE_CLIENT_SECRET=.*#DMS_CONFIGURATION_SERVICE_CLIENT_SECRET=$(gen)#"           .env
 sed -i "s#^BOOTSTRAP_ADMIN_CLIENT_SECRET=.*#BOOTSTRAP_ADMIN_CLIENT_SECRET=$(gen)#"         .env
 sed -i "s#^PGADMIN_DEFAULT_PASSWORD=.*#PGADMIN_DEFAULT_PASSWORD=$(gen)#"       .env
-sed -i "s#^DMS_CONFIG_DATABASE_ENCRYPTION_KEY=.*#DMS_CONFIG_DATABASE_ENCRYPTION_KEY=$(key32)#" .env
+sed -i "s#^CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=.*#CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=$(key32)#" .env
 
 grep -E '^(PUBLIC_|POSTGRES_PASSWORD|.*SECRET|.*ENCRYPTION_KEY)' .env   # sanity check
 ```
@@ -161,7 +161,7 @@ Or **self-signed** (testing): `./ssl/generate-certificate.sh "$FQDN"`
 
 ---
 
-## Step 8 — Start identity + CMS (NOT the DMS services yet)
+## Step 8 — Start identity + the Configuration Service (NOT the DMS services yet)
 
 The DMS fail-fasts on boot if the Keycloak realm / clients / data stores don't exist, so start
 everything EXCEPT `st-dms`/`mt-dms` first; they come up at the end of Step 9 (after bootstrap +
@@ -193,7 +193,7 @@ curl -sk -o /dev/null -w "keycloak %{http_code}\n" "https://localhost/auth/realm
 
 ## Step 9 — Bootstrap clients, tenants, data stores (on the VM)
 
-This step is inherently scripted (Keycloak realm/clients + CMS vendor/application/tenant/
+This step is inherently scripted (Keycloak realm/clients + Configuration Service vendor/application/tenant/
 data-store API calls). Run it over the loopback:
 
 ```bash
@@ -247,10 +247,10 @@ cd ~/dms-src/eng/azure-vm/compose
 # keys: UPDATE.md.
 
 # State reset (on the VM). reset.sh drops data plus Keycloak so stale review credentials are
-# revoked, then restarts infra/CMS only (NOT the DMS services -- they start after bootstrap +
+# revoked, then restarts infrastructure and Configuration Service only (NOT the DMS services -- they start after bootstrap +
 # schema, like a first stand-up), then prints the remaining steps:
 ./reset.sh
-# Wait for the freshly recreated identity/CMS services before bootstrap writes its attempted marker.
+# Wait for the freshly recreated identity and Configuration Service services before bootstrap writes its attempted marker.
 until curl -skf https://localhost/auth/realms/master >/dev/null \
   && curl -skf https://localhost/st-config/health >/dev/null \
   && curl -skf https://localhost/mt-config/health >/dev/null; do sleep 5; done

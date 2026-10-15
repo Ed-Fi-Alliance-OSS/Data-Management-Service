@@ -340,7 +340,7 @@ function Resolve-SeedDataStandardRefTag {
     effective Data Standard version recorded in the resolved environment file.
 
     .DESCRIPTION
-    DMS_CONFIG_DATA_STANDARD_VERSION is written by the .env.bootstrap.ds52 / .env.bootstrap.ds61
+    CONFIGURATION_SERVICE_DATA_STANDARD_VERSION is written by the .env.bootstrap.ds52 / .env.bootstrap.ds61
     local-bootstrap overlays that bootstrap-wrapper.psm1 composes onto the effective environment
     file for -DataStandardVersion 5.2 / 6.1 (see New-DataStandardDerivedEnvFile in
     env-utility.psm1). Falls back to the historical v5.2.0 default when the key is absent or
@@ -357,14 +357,14 @@ function Resolve-SeedDataStandardRefTag {
         [hashtable]$EnvValues
     )
 
-    $dataStandardVersion = (Get-EnvValue -EnvValues $EnvValues -Name "DMS_CONFIG_DATA_STANDARD_VERSION" -DefaultValue "").Trim()
+    $dataStandardVersion = (Get-EnvValue -EnvValues $EnvValues -Name "CONFIGURATION_SERVICE_DATA_STANDARD_VERSION" -DefaultValue "").Trim()
 
     switch ($dataStandardVersion) {
         "" { return "v5.2.0" }
         "5.2" { return "v5.2.0" }
         "6.1" { return "v6.1.0" }
         default {
-            throw "Unsupported DMS_CONFIG_DATA_STANDARD_VERSION '$(Format-LogSafeText $dataStandardVersion)'. Supported values: 5.2, 6.1; leave blank for the v5.2.0 default."
+            throw "Unsupported CONFIGURATION_SERVICE_DATA_STANDARD_VERSION '$(Format-LogSafeText $dataStandardVersion)'. Supported values: 5.2, 6.1; leave blank for the v5.2.0 default."
         }
     }
 }
@@ -1634,6 +1634,7 @@ Assert-NoBootstrapRootOverride -PhaseName "load-dms-seed-data.ps1"
 # Resolve environment file through the shared resolver (explicit path, else .env - seeded
 # once from .env.example when absent, so the example itself is never consumed at runtime).
 $EnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path $EnvironmentFile
+Write-LegacyEnvironmentVariableWarning -EnvironmentFile $EnvironmentFile
 
 # Derive the pinned Ed-Fi-Data-Standard ref tag from the resolved environment file now, before
 # any BuiltIn seed-source materialization reads $script:DataStandardRefTag (see
@@ -1800,7 +1801,7 @@ foreach ($tier in $tiers) {
 $envValues = ReadValuesFromEnvFile -EnvironmentFile $EnvironmentFile
 $cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues
 $identityProvider = Resolve-IdentityProvider -EnvValues $envValues -OverrideProvider $IdentityProvider
-$tenant = if ($envValues.ContainsKey("CONFIG_SERVICE_TENANT")) { [string]$envValues.CONFIG_SERVICE_TENANT } else { "" }
+$tenant = if ($envValues.ContainsKey("DMS_CONFIGURATION_SERVICE_TENANT")) { [string]$envValues.DMS_CONFIGURATION_SERVICE_TENANT } else { "" }
 $resolvedDmsBaseUrl = if (-not [string]::IsNullOrWhiteSpace($DmsBaseUrl)) {
     $DmsBaseUrl
 }

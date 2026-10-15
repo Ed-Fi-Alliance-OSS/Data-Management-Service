@@ -739,12 +739,12 @@ Describe "Copy-NorthridgeDataForward.ps1 stamp distributions cover every sampled
     BeforeAll {
         . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:copyScript -FunctionName "ConvertTo-StampDistributionMap")))
         $script:stampTable = @("dms.Document", "edfi.Student", "edfi.School")
-        # A count, then min|max for ContentVersion, ContentLastModifiedAt and CreatedAt on dms.Document;
-        # the sampled tables carry the first two pairs only.
+        # Document carries count and version/creation extrema; owners carry count, version/timestamp
+        # extrema and an owner-keyed tuple checksum.
         $script:stampRow = @(
-            "dms.Document|3|1|9|a|b|a|b",
-            "edfi.School|2|1|9|a|b",
-            "edfi.Student|5|1|9|a|b"
+            "dms.Document|3|1|9|a|b",
+            "edfi.School|2|1|9|a|b|school-hash",
+            "edfi.Student|5|1|9|a|b|student-hash"
         )
     }
 
@@ -752,8 +752,8 @@ Describe "Copy-NorthridgeDataForward.ps1 stamp distributions cover every sampled
         $map = ConvertTo-StampDistributionMap -Row ($script:stampRow + "") -ExpectedTable $script:stampTable
         $map.Count | Should -Be 3
         $map.Comparer | Should -Be ([System.StringComparer]::Ordinal)
-        $map["edfi.Student"] | Should -Be "5|1|9|a|b"
-        $map["dms.Document"] | Should -Be "3|1|9|a|b|a|b"
+        $map["edfi.Student"] | Should -Be "5|1|9|a|b|student-hash"
+        $map["dms.Document"] | Should -Be "3|1|9|a|b"
     }
 
     It "refuses a row without a separator rather than dropping it" {
@@ -884,7 +884,6 @@ Describe "Copy-NorthridgeDataForward.ps1 inserts dms.Document by the columns the
             'ResourceKeyId|NO|NO|NO|NEVER',
             'CreatedByOwnershipTokenId|YES|NO|NO|NEVER',
             'ContentVersion|NO|YES|NO|NEVER',
-            'ContentLastModifiedAt|NO|YES|NO|NEVER',
             'CreatedAt|NO|YES|NO|NEVER'
         )
     }
@@ -898,16 +897,17 @@ Describe "Copy-NorthridgeDataForward.ps1 inserts dms.Document by the columns the
         { Get-CopyHeaderColumn -HeaderLine 'COPY dms."Document" ("A", B C) FROM stdin;' -QualifiedTable "dms.Document" } | Should -Throw "*not an identifier*"
     }
 
-    It "does not send IdentityVersion or IdentityLastModifiedAt to a target that no longer has them" {
+    It "omits legacy content and identity timestamps from the current Document insert" {
         # The false pass: pg_restore --data-only replayed the archive's own COPY column list into the
         # target, which succeeded only because the published source predates those columns being
         # dropped; the next refresh from a newer dump fails the COPY under --exit-on-error.
         $plan = Resolve-StagedInsertColumn -SourceColumn (Get-CopyHeaderColumn -HeaderLine $script:sourceHeader -QualifiedTable "dms.Document") `
             -TargetColumn (ConvertTo-TargetColumnList -Row $script:targetRow -QualifiedTable "dms.Document") -QualifiedTable "dms.Document"
-        $plan.Insert | Should -Be @("DocumentId", "DocumentUuid", "ResourceKeyId", "CreatedByOwnershipTokenId", "ContentVersion", "ContentLastModifiedAt", "CreatedAt")
+        $plan.Insert | Should -Be @("DocumentId", "DocumentUuid", "ResourceKeyId", "CreatedByOwnershipTokenId", "ContentVersion", "CreatedAt")
         $plan.Insert | Should -Not -Contain "IdentityVersion"
         $plan.Insert | Should -Not -Contain "IdentityLastModifiedAt"
-        $plan.SourceOnly | Should -Be @("IdentityVersion", "IdentityLastModifiedAt") -Because "they are staged as text and go no further"
+        $plan.Insert | Should -Not -Contain "ContentLastModifiedAt"
+        $plan.SourceOnly | Should -Be @("IdentityVersion", "ContentLastModifiedAt", "IdentityLastModifiedAt") -Because "they are staged as text and go no further"
         $plan.OverridingSystemValue | Should -BeTrue -Because "DocumentId is GENERATED ALWAYS AS IDENTITY and the archive's values must survive the insert"
     }
 
@@ -1550,7 +1550,7 @@ Describe "Northridge PostgreSQL restore recipe identity handoff" {
         $invocation | Should -Match '-DmsClientRole "\$DMSROLE"'
         $invocation | Should -Match '-DbUser "\$DBUSER"'
         $invocation | Should -Match '-DbName "\$CMSDB"' -Because "the insert must target the database the DELETE cleared, as the same literal"
-        $invocation | Should -Not -Match 'ENV:DMS_CONFIG_DATABASE_NAME' -Because "an indirection the script resolves on its own could name a database other than the one the DELETE ran against"
+        $invocation | Should -Not -Match 'ENV:CONFIGURATION_SERVICE_DATABASE_NAME' -Because "an indirection the script resolves on its own could name a database other than the one the DELETE ran against"
         $invocation | Should -Match '-ClientSecretMinimumLength "\$CLIENT_SECRET_MIN"'
         $invocation | Should -Match '-ClientSecretMaximumLength "\$CLIENT_SECRET_MAX"'
     }
@@ -1623,7 +1623,7 @@ Describe "Northridge PostgreSQL restore recipe identity handoff" {
     }
     It "deletes and recreates the DMS-to-CMS client in the one database the running Configuration Service reads" {
         # The false pass: the DELETE ran against $DB while the insert was pointed at
-        # ENV:DMS_CONFIG_DATABASE_NAME, which setup-openiddict.ps1 resolves on its own. With that
+        # ENV:CONFIGURATION_SERVICE_DATABASE_NAME, which setup-openiddict.ps1 resolves on its own. With that
         # override set, the delete cleared one database and the insert skipped the producer's row in
         # the other, and only step 11 would have noticed.
         $step10 = [regex]::Match($script:recipe, '(?ms)^# 10\. REQUIRED: recreate the client DMS uses.*?(?=^# 11\. )').Value
@@ -1636,14 +1636,14 @@ Describe "Northridge PostgreSQL restore recipe identity handoff" {
         $script:activeRecipe.IndexOf('CMSDB=$(') | Should -BeLessThan $script:activeRecipe.IndexOf($delete.Value) -Because "the name is resolved, in step 7, before it is used here"
         $invocation = & $script:SetupOpenIddictInvocation
         $invocation | Should -Match '-DbName "\$CMSDB"' -Because "the insert targets the same database, as the same literal"
-        $invocation | Should -Not -Match 'ENV:DMS_CONFIG_DATABASE_NAME'
+        $invocation | Should -Not -Match 'ENV:CONFIGURATION_SERVICE_DATABASE_NAME'
         $invocation | Should -Not -Match '-DbName "\$DB"'
     }
 
     It "resolves the CMS database once, in step 7, before the signing key is read or replaced" {
         # The false pass: step 10 resolved the database the running Configuration Service reads and
         # recreated the DMS-to-CMS client there, while step 7 had replaced the signing key in $DB. With
-        # DMS_CONFIG_DATABASE_NAME set, the key went into the restored data store and CMS kept minting
+        # CONFIGURATION_SERVICE_DATABASE_NAME set, the key went into the restored data store and CMS kept minting
         # tokens from the producer's key in its own database, and only the step 9 token check noticed.
         $step7 = [regex]::Match($script:recipe, '(?ms)^# 7\. REQUIRED: install your own OpenIddict signing key\..*?(?=^# 8\. )').Value
         $active7 = (($step7 -split "\r?\n") | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"

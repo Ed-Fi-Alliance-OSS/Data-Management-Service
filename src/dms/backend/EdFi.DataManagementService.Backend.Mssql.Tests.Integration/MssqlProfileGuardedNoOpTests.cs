@@ -69,7 +69,7 @@ internal static class MssqlProfileGuardedNoOpIntegrationTestSupport
             .QueryRowsAsync(
                 """
                 SELECT [DocumentId], [DocumentUuid], [ResourceKeyId],
-                       [ContentVersion], [ContentLastModifiedAt],
+                       [ContentVersion],
                        [CreatedAt]
                 FROM [dms].[Document]
                 WHERE [DocumentUuid] = @documentUuid;
@@ -486,8 +486,9 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Root_Only
     public void It_does_not_change_content_last_modified_at()
     {
         _stateAfterUpdate
-            .Document.ContentLastModifiedAt.Should()
-            .Be(_stateBeforeUpdate.Document.ContentLastModifiedAt);
+            .RootRow["ContentLastModifiedAt"]
+            .Should()
+            .Be(_stateBeforeUpdate.RootRow["ContentLastModifiedAt"]);
     }
 
     [Test]
@@ -591,8 +592,9 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Post_As_Update_Wit
     public void It_does_not_change_content_last_modified_at()
     {
         _stateAfterPostAsUpdate
-            .Document.ContentLastModifiedAt.Should()
-            .Be(_stateBeforePostAsUpdate.Document.ContentLastModifiedAt);
+            .RootRow["ContentLastModifiedAt"]
+            .Should()
+            .Be(_stateBeforePostAsUpdate.RootRow["ContentLastModifiedAt"]);
     }
 
     [Test]
@@ -695,6 +697,8 @@ internal abstract class MssqlSeparateTableShapeProfileGuardedNoOpFixtureBase
             """
             SELECT
                 [DocumentId],
+                [ContentVersion],
+                [ContentLastModifiedAt],
                 [ProfileSeparateTableMergeItemId],
                 [DisplayName]
             FROM [edfi].[ProfileSeparateTableMergeItem]
@@ -813,6 +817,8 @@ internal abstract class MssqlCollectionShapeProfileGuardedNoOpFixtureBase
             """
             SELECT
                 [DocumentId],
+                [ContentVersion],
+                [ContentLastModifiedAt],
                 [SchoolId]
             FROM [edfi].[School]
             WHERE [DocumentId] = @documentId;
@@ -925,8 +931,9 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Separate_
     public void It_does_not_change_content_last_modified_at()
     {
         _stateAfterUpdate
-            .Document.ContentLastModifiedAt.Should()
-            .Be(_stateBeforeUpdate.Document.ContentLastModifiedAt);
+            .RootRow["ContentLastModifiedAt"]
+            .Should()
+            .Be(_stateBeforeUpdate.RootRow["ContentLastModifiedAt"]);
     }
 
     /// <summary>
@@ -1055,7 +1062,8 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Top_Level
     public void It_does_not_change_content_last_modified_at()
     {
         _stateAfterUpdate
-            .Document.ContentLastModifiedAt.Should()
-            .Be(_stateBeforeUpdate.Document.ContentLastModifiedAt);
+            .RootRow["ContentLastModifiedAt"]
+            .Should()
+            .Be(_stateBeforeUpdate.RootRow["ContentLastModifiedAt"]);
     }
 }

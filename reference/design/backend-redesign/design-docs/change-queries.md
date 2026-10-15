@@ -1286,11 +1286,13 @@ DMS does not automate truncation of these tables in v1. The same operational gui
 
 Because typical ODS deployments rotate per school year, ODS does not automate this either, and DMS adopts the same default.
 
-#### Concrete-resource `ContentVersion` / `ContentLastModifiedAt` mirror
+<a id="concrete-resource-contentversion--contentlastmodifiedat-mirror"></a>
 
-Each `ConcreteResourceModel` with `StorageKind = RelationalTables` gets two columns mirrored onto its root table: `ContentVersion` and `ContentLastModifiedAt`. The shared `dms.Descriptor` table gets the same two columns. The columns are kept in lock-step with `dms.Document` by the existing `*_Stamp` triggers (see the next subsection).
+#### Concrete-resource version mirror and authoritative timestamp
 
-This mirror lets SQL-side integrators (and the existing ODS-shaped community tooling, including the API Publisher and dashboard datastores) read change-version and last-modified per row without joining `dms.Document`, and lets live resource and descriptor endpoints serve `?minChangeVersion=X&maxChangeVersion=Y` as a single-table range seek.
+Each `ConcreteResourceModel` with `StorageKind = RelationalTables` has a `ContentVersion` mirror and an authoritative `ContentLastModifiedAt` on its root table. The shared `dms.Descriptor` table has the same two columns. The `*_Stamp` triggers copy the document version and generate the owner timestamp in the same transaction; `dms.Document` has no `ContentLastModifiedAt`.
+
+These owner stamps let SQL-side integrators (and the existing ODS-shaped community tooling, including the API Publisher and dashboard datastores) read change-version and last-modified per row without joining `dms.Document`, and let live resource and descriptor endpoints serve `?minChangeVersion=X&maxChangeVersion=Y` as a single-table range seek.
 
 **Scope** — receive the columns and a supporting index:
 
@@ -1300,18 +1302,18 @@ This mirror lets SQL-side integrators (and the existing ODS-shaped community too
 Do not receive the columns:
 
 - Child / collection tables (`edfi.SchoolAddress`, …). No independent endpoint and no window-filter consumer.
-- `*Extension` resource-extension tables (`tpdm.ContactExtension`, …). Not new resources; the `DocumentId` is shared with the base document, so the mirror on the base root is authoritative.
+- `*Extension` resource-extension tables (`tpdm.ContactExtension`, …). Not new resources; the `DocumentId` is shared with the base document, so the base root carries their version mirror and authoritative timestamp.
 - Abstract-resource union views. The columns surface through the underlying concrete root tables.
 
 **Invariants:**
 
-1. `dms.Document` remains the source of truth. The mirror is written only by the `*_Stamp` triggers; the relational write path MUST NOT include `ContentVersion` or `ContentLastModifiedAt` in client-writable column projections.
-2. For every committed transaction, `<root>.ContentVersion = dms.Document.ContentVersion` and `<root>.ContentLastModifiedAt = dms.Document.ContentLastModifiedAt` for the same `DocumentId`.
-3. For representation-changing updates and deletes, a trigger fire allocates exactly one `dms.ChangeVersionSequence` value per affected document and writes it to both `dms.Document` and the mirror, captured via `OUTPUT` (SQL Server) / `RETURNING` (PostgreSQL). Root-resource and descriptor inserts are the exception: `dms.Document` defaults allocate the initial content stamp before the root/descriptor row is inserted, and the root/descriptor insert trigger copies that existing stamp to the mirror without allocating another content version. `NEXT VALUE FOR` MUST NOT be invoked a second time for the same document in the same fire.
+1. `dms.Document.ContentVersion` remains the lock/concurrency and enqueue authority; the root/descriptor owns its timestamp. Stamps are server-maintained by defaults, `*_Stamp` triggers and the explicit representation-restamp utility; the relational write path MUST NOT include `ContentVersion` or `ContentLastModifiedAt` in client-writable column projections.
+2. For every committed transaction, `<root>.ContentVersion = dms.Document.ContentVersion` for the same `DocumentId`; the authoritative owner timestamp and representation must belong to that version. This also applies to `dms.Descriptor`, joined by its unique `DocumentId`, not its compact `DescriptorId`.
+3. For representation-changing updates and deletes, a trigger fire allocates exactly one `dms.ChangeVersionSequence` value per affected document and writes it to both `dms.Document` and the mirror, captured via `OUTPUT` (SQL Server) / `RETURNING` (PostgreSQL). Root-resource and descriptor inserts are the exception: `dms.Document` defaults allocate the initial content stamp before the root/descriptor row is inserted, and the root/descriptor insert trigger copies that existing version and initializes its own UTC timestamp without allocating another content version. Owner timestamps are generated directly on the surviving root/descriptor, never captured from `dms.Document`. `NEXT VALUE FOR` MUST NOT be invoked a second time for the same document in the same fire.
 4. There is no separate document-level identity counter; identity-projection changes are handled by the key-change workset and do not add extra mirrored document columns.
-5. The `affectedDocs` CTE inside each `*_Stamp` trigger MUST exclude rows whose `inserted` / `deleted` images differ **only** in the two content stamp columns (`ContentVersion`, `ContentLastModifiedAt`). This tightens the existing "no-op updates are not representation changes" rule from [update-tracking.md](update-tracking.md) §"Stamping rules" and is the mechanism that keeps nested-trigger fire safe when a child / `_ext` trigger writes to the root mirror.
+5. The `affectedDocs` CTE inside each `*_Stamp` trigger MUST exclude rows whose `inserted` / `deleted` images differ **only** in the two content stamp columns (`ContentVersion`, `ContentLastModifiedAt`). This tightens the existing "no-op updates are not representation changes" rule from [update-tracking.md](update-tracking.md) §"Stamping rules" and is the mechanism that keeps nested-trigger fire safe when a child / `_ext` trigger writes the root stamps.
 6. On SQL Server, the root-resource and descriptor content stamps MUST be **skipped outright** — not merely evaluated to an empty workset — when the firing cannot change anything. Invariant 5 makes the workset empty; it does not stop the optimizer from resolving the join against `dms.Document` to discover that, and that resolution takes update locks on rows the statement will never modify. The guard is `IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE(<stored column>) OR …)`, which closes two cases in one predicate: a pure `INSERT`, where both `affectedDocs` branches require a matching `deleted` row; and a stamp-only re-firing, where `deleted` is non-empty but no stored column appears in the `SET` clause. `UPDATE(column)` is a **performance pre-filter only** — it reports SET-clause membership, not value change — so it MUST range over exactly the stored columns the invariant-5 value diff uses, and that diff remains authoritative. The child / `_ext` shape is deliberately unguarded: its inserted-side branch legitimately matches pure inserts, because a new collection row must stamp its root document.
-7. On SQL Server, the mirror `UPDATE` MUST be hinted `WITH (FORCESEEK)`. It joins the mirror table to a table variable, whose fixed cardinality estimate lets a cached plan scan the mirror and take update locks across rows the transaction never touched. The hint is only satisfiable while the mirror target exposes an index whose leading key column is the joined column — `DocumentId` for every mirror target — because SQL Server does not fall back to a scan when it cannot honor the hint; it fails the statement with error 8622. Any change that moves a mirror target's primary key off the joined column MUST therefore drop the hint at the same time.
+7. On SQL Server, the owner stamp `UPDATE` MUST retain `WITH (FORCESEEK)`. It joins the owner table to a table variable; without the hint, the fixed cardinality estimate can permit a scan and take update locks across untouched owners. The target needs an index whose leading key is the joined `DocumentId`. Ordinary roots provide that primary key; the compact descriptor provides a unique document-association index even though its primary key is `DescriptorId`. Preserve that access path and the existing projection-work locking strategy. A missing usable index makes the hint fail with error 8622; changing the primary key alone is no reason to remove this protection.
 
 **MSSQL column additions** — illustrated on `edfi.Student`:
 
@@ -1327,7 +1329,7 @@ CREATE INDEX [IX_Student_ContentVersion] ON [edfi].[Student] ([ContentVersion]);
 
 PostgreSQL is the same shape with `DEFAULT 0` and `now()` defaults and a `timestamp with time zone` column type.
 
-The mirror `ContentVersion` default is a non-null sentinel, not a real change-version allocation. The production write path always goes through the `*_Stamp` trigger. Root-resource and descriptor inserts copy the existing `dms.Document` content stamp initialized by document defaults; updates, deletes, child writes, and `_ext` writes allocate a fresh `dms.Document.ContentVersion` and mirror that captured value.
+The mirror `ContentVersion` default is a non-null sentinel, not a real change-version allocation. The production write path always goes through the `*_Stamp` trigger. Root-resource and descriptor inserts copy the existing document version initialized by its default and initialize the owner timestamp. Updates, deletes, child writes, and `_ext` writes allocate a fresh `dms.Document.ContentVersion` and mirror that captured value to surviving owners while generating their timestamps. A deleted root/descriptor has no owner timestamp to update; its allocated version still feeds history.
 
 **`dms.Descriptor` has two ResourceKeyId-leading paging indexes.** Descriptor GET-many page
 selection roots on `dms.Descriptor` and uses `ResourceKeyId` as the authoritative,
@@ -1358,14 +1360,14 @@ probes retain component comparisons and must not be described as lowered-URI ind
 
 **Compiled-mapping-set additions** (defined in [compiled-mapping-set.md](compiled-mapping-set.md)):
 
-- The per-resource derivation pass that builds `ConcreteResourceModel.RelationalModel` adds two synthesized columns to the root `DbTableModel` whenever `StorageKind = RelationalTables`. Their `ColumnKind` is `MirroredContentVersion` and `MirroredContentLastModifiedAt` respectively (defined in [flattening-reconstitution.md](flattening-reconstitution.md)). `SourceJsonPath` and `TargetResource` are null. The write-path `TableWritePlan.ColumnBindings` exclusion rule (also defined in [flattening-reconstitution.md](flattening-reconstitution.md)) keeps them out of client-writable column lists; dialect emitters render the correct DDL defaults for each kind (`0` for `MirroredContentVersion`, current-UTC for `MirroredContentLastModifiedAt`).
+- The per-resource derivation pass that builds `ConcreteResourceModel.RelationalModel` adds two synthesized columns to the root `DbTableModel` whenever `StorageKind = RelationalTables`. Their `ColumnKind` is `MirroredContentVersion` and `AuthoritativeContentLastModifiedAt` respectively (defined in [flattening-reconstitution.md](flattening-reconstitution.md)). `SourceJsonPath` and `TargetResource` are null. The write-path `TableWritePlan.ColumnBindings` exclusion rule (also defined in [flattening-reconstitution.md](flattening-reconstitution.md)) keeps them out of client-writable column lists; dialect emitters render the correct DDL defaults for each kind (`0` for `MirroredContentVersion`, current-UTC for `AuthoritativeContentLastModifiedAt`).
 - For `StorageKind = SharedDescriptorTable`, the columns are added by the core DDL pass that owns `dms.Descriptor`, not by the per-resource pass, because `dms.Descriptor` is a core table.
 - `DeriveIndexInventoryPass` adds one `IX_<Table>_ContentVersion` per in-scope root table and
   `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId` for live descriptor
   change-version-windowed page selection into `IndexesInCreateOrder`. The core DDL pass continues to
   own `IX_Descriptor_ResourceKeyId_DocumentId` and
   `UX_Descriptor_ResourceKeyId_Uri`. No live-descriptor index has `Discriminator` as a key.
-- `DbTriggerInfo` for entries with `Kind = DocumentStamping` gains a required `MirrorStampTargetTable: DbTableName` field. The derivation pass assigns the target by rule: same table for root-table triggers, resource's root for child / `_ext` triggers, `dms.Descriptor` for the descriptor trigger. Dialect emitters render the mirror UPDATE against `MirrorStampTargetTable` and MUST NOT re-derive the target from the trigger's source table.
+- `DbTriggerInfo` for entries with `Kind = DocumentStamping` gains a required `StampTargetTable: DbTableName` field. The derivation pass assigns the target by rule: same table for root-table triggers, resource's root for child / `_ext` triggers, `dms.Descriptor` for the descriptor trigger. Dialect emitters render the owner stamp UPDATE against `StampTargetTable` and MUST NOT re-derive the target from the trigger's source table.
 
 #### Triggers that populate the `tracked_changes*` tables
 
@@ -1398,15 +1400,14 @@ BEGIN
 
     DECLARE @stamped TABLE (
         [DocumentId] bigint NOT NULL PRIMARY KEY,
-        [ContentVersion] bigint NOT NULL,
-        [ContentLastModifiedAt] datetime2(7) NOT NULL
+        [ContentVersion] bigint NOT NULL
     );
 
     -- Root-resource INSERT rows copy the dms.Document defaults that were allocated when
     -- the document row was created. Child / _ext INSERT rows still flow through
     -- affectedDocs below because they change an existing root document.
-    INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])
-    SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]
+    INSERT INTO @stamped ([DocumentId], [ContentVersion])
+    SELECT d.[DocumentId], d.[ContentVersion]
     FROM [dms].[Document] d
     INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
     LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -1421,7 +1422,7 @@ BEGIN
     IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE([DocumentId]) OR UPDATE([SchoolId_Unified]))
     BEGIN
         ;WITH affectedDocs AS (
-            -- Avoids mirror-stamp self-fires; see "Concrete-resource ContentVersion / ContentLastModifiedAt mirror" above).
+            -- Avoids mirror-stamp self-fires; see "Concrete-resource version mirror and authoritative timestamp" above).
             SELECT i.[DocumentId]
             FROM inserted i
             LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -1441,13 +1442,13 @@ BEGIN
             WHERE i.[DocumentId] IS NULL
         )
         UPDATE d
-        SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
+        SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped
         FROM [dms].[Document] d
         INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
     END
 
-    -- Mirror the stamped values onto MirrorStampTargetTable from this trigger's DbTriggerInfo.
+    -- Copy the version and generate the timestamp on StampTargetTable from this trigger's DbTriggerInfo.
     -- For TR_Grade_Stamp the target is [edfi].[Grade] itself; for child / _ext stamping triggers
     -- the target is the resource's root table (e.g. TR_SchoolAddress_Stamp targets [edfi].[School]).
     --
@@ -1459,7 +1460,7 @@ BEGIN
     BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+            r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[Grade] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -1607,7 +1608,7 @@ DMS therefore issues two `DELETE` statements per document deletion, in order, wi
 
 The leading trigger `UPDATE` of `dms.Document.ContentVersion` therefore runs against a row that the second statement removes. This is intentional: it gives the tombstone the standard read-after-bump `ChangeVersion`, at the cost of one sequence value and one transient row write per delete.
 
-The mirror UPDATE (the second UPDATE in the trigger body, against `MirrorStampTargetTable`) is naturally a zero-row no-op for deleted documents because the resource row is already gone before the trigger fires. The `dms.Document` UPDATE still bumps `ContentVersion` via the first half of the trigger, which is what the tombstone `INSERT` reads from — so the mirror's absence here does not affect the tracked-change row.
+The owner stamp UPDATE (the second UPDATE in the trigger body, against `StampTargetTable`) is naturally a zero-row no-op for deleted documents because the resource row is already gone before the trigger fires. The `dms.Document` UPDATE still bumps `ContentVersion` via the first half of the trigger, which is what the tombstone `INSERT` reads from — so the owner's absence here does not affect the tracked-change row.
 
 Root deletes have one additional trigger-ordering contract: a supported resource or descriptor delete produces exactly one visible tombstone for the deleted root. The tombstone's `ChangeVersion` is the version allocated by the root resource or descriptor delete trigger before the corresponding `dms.Document` row is removed.
 
@@ -1617,9 +1618,9 @@ The FK from the resource row to `dms.Document` (see [data-model.md](data-model.m
 
 The emitted `dms.Descriptor_Stamp` trigger follows the same document-owned convention. It pairs
 descriptor updates by the stable compact `DescriptorId`, captures/stamps the owning `DocumentId`,
-and mirrors both `ContentVersion` and `ContentLastModifiedAt` back through that document association.
+and copies `ContentVersion` while generating authoritative `ContentLastModifiedAt` on the descriptor through that document association.
 Descriptor component updates stamp content but do not emit delete/key-change history rows; unchanged
-bodies preserve stamps and history. DMS-1401 owns the later timestamp ownership change.
+bodies preserve stamps and history. These are the combined DMS-1401 timestamp-ownership rules.
 
 ### Authorization
 
@@ -2205,7 +2206,7 @@ The planner uses this path for every resource with a `MirroredContentVersion` co
 
 `/deletes`, `/keyChanges`, and `/availableChangeVersions` are unchanged. The mirror affects only the live resource read path.
 
-Reads of `_lastModifiedDate` and per-item `ChangeVersion` in response bodies remain sourced from `dms.Document` for now; switching to the concrete-table mirror is an optional future read-path optimization (the values are identical per Invariant #2).
+Response `ChangeVersion` remains sourced from `dms.Document`; `_lastModifiedDate` comes from the authoritative resource root or descriptor. Resource-aware metadata SELECTs join the owner by `DocumentId` within the existing hydration batch, including single-document, page and candidate paths. There is one owner timestamp projection for the batch, with no per-document timestamp query. Descriptor responses project their timestamp from `dms.Descriptor` alongside the body; stored descriptor-reference expansion continues to join by `DescriptorId`.
 
 
 #### Page-selection ordering
@@ -2336,7 +2337,7 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
 - ChangeTracking key-change rows using the owning `DbTriggerInfo.IdentityProjectionColumns` workset, including key-unification cases where canonical storage columns change without direct alias-column updates, and presence-only alias changes do not emit key-change rows when the canonical identity storage values are unchanged.
 - `ReadChangesAuthorizationViewInfo` union arms for current/current, current/tracked, tracked/current, and tracked/tracked association combinations.
 - Manifest output for tracked-change tables, triggers, and ReadChanges authorization views so SQL generation tests are checking renderer behavior, not hidden semantic compilation in the DDL emitter.
-- Mirror columns (`ContentVersion`, `ContentLastModifiedAt`) tagged with `ColumnKind.MirroredContentVersion` and `ColumnKind.MirroredContentLastModifiedAt` on every `ConcreteResourceModel` with `StorageKind = RelationalTables`, including extension-project resources; absent on `StorageKind = SharedDescriptorTable` resources (the columns live on `dms.Descriptor` instead, added by the core DDL pass).
+- Version mirror and authoritative timestamp columns (`ContentVersion`, `ContentLastModifiedAt`) tagged with `ColumnKind.MirroredContentVersion` and `ColumnKind.AuthoritativeContentLastModifiedAt` on every `ConcreteResourceModel` with `StorageKind = RelationalTables`, including extension-project resources; absent on `StorageKind = SharedDescriptorTable` resources (the columns live on `dms.Descriptor` instead, added by the core DDL pass).
 - `IX_<Table>_ContentVersion` per in-scope root in `IndexesInCreateOrder` (single-column), plus
   `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId` with key columns in the order
   `[ResourceKeyId, ContentVersion, DocumentId]` for live descriptor change-version-windowed page
@@ -2351,8 +2352,8 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
   deleting and recreating a regular resource with only string identity casing differences suppresses
   the old tombstone, proving tracked-change identity copies use the DMS CI identity collation rather
   than the database default.
-- Every `DbTriggerInfo` with `Kind = DocumentStamping` has a non-null `MirrorStampTargetTable` matching the per-trigger rule (same table for root, resource's root for child / `_ext`, `dms.Descriptor` for the descriptor trigger).
-- DB-behavior: mirror equals source (`<root>.ContentVersion = dms.Document.ContentVersion` and `<root>.ContentLastModifiedAt = dms.Document.ContentLastModifiedAt`) after every write path — insert, update, no-op update, identity change, child-collection write, `_ext` write, FK-cascade update, descriptor write. Run on at least a root-only resource (`edfi.Student`), a child-bearing resource (`edfi.School` with `SchoolAddress` writes), an `_ext`-bearing resource, an extension-project resource (e.g. `tpdm.Candidate`), and a descriptor.
+- Every `DbTriggerInfo` with `Kind = DocumentStamping` has a non-null `StampTargetTable` matching the per-trigger rule (same table for root, resource's root for child / `_ext`, `dms.Descriptor` for the descriptor trigger).
+- DB-behavior: version mirror equals source (`<root>.ContentVersion = dms.Document.ContentVersion`) and the authoritative owner timestamp matches the persisted representation after every write path — insert, update, no-op update, identity change, child-collection write, `_ext` write, FK-cascade update, descriptor write. Run on at least a root-only resource (`edfi.Student`), a child-bearing resource (`edfi.School` with `SchoolAddress` writes), an `_ext`-bearing resource, an extension-project resource (e.g. `tpdm.Candidate`), and a descriptor.
 - DB-behavior: stamp-only updates (`UPDATE <root> SET ContentVersion = ContentVersion + 1 …`) do not allocate a new sequence value, do not fire additional mirror UPDATEs, and do not insert `tracked_changes_*` rows; multi-row UPDATEs that stamp N documents allocate N distinct `ContentVersion` values, and each document's mirror equals its `dms.Document` stamp.
 - DB-behavior: root deletes with cascaded child, nested-child, or `_ext` rows produce exactly one visible root tombstone in the relevant `tracked_changes_*` table. The tombstone's `ChangeVersion` is the final delete ChangeVersion exposed to Change Queries, and no later visible root stamp or tracked-change row can advance an extraction watermark past that tombstone. Run this on PostgreSQL and SQL Server for at least one child-bearing resource and one extension-bearing resource.
 - DB-behavior: there is no separate document-level identity counter on any in-scope root table or `dms.Descriptor`; identity-projection changes are reflected through `ContentVersion` and `ContentLastModifiedAt`.
