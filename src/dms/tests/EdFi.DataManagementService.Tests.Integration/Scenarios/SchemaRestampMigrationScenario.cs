@@ -205,8 +205,8 @@ internal static class SchemaRestampMigrationScenario
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
-            builder.UseSetting("AppSettings:UseApiSchemaPath", "true");
-            builder.UseSetting("AppSettings:ApiSchemaPath", fixture.ApiSchemaDirectory);
+            builder.UseSetting("AppSettings:ApiSchema:UseCustomPath", "true");
+            builder.UseSetting("AppSettings:ApiSchema:Path", fixture.ApiSchemaDirectory);
             builder.UseSetting("AppSettings:StartupStatusFilePath", startupPath);
             builder.UseSetting("AppSettings:Datastore", dataStore);
             builder.UseSetting("AppSettings:BypassAuthorization", "true");
