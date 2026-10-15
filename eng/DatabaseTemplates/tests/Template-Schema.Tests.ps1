@@ -64,10 +64,12 @@ Describe 'Template restore verification ordering' {
         Import-Module (Join-Path $templates '../Dms-Management.psm1') -Force
         $script:verify = Join-Path $templates 'verify-template-restore.ps1'
         Import-Module (Join-Path $templates 'Template-Schema.psm1') -Force
+        Import-Module (Join-Path $templates 'Template-RestoreCore.psm1') -Force
+        Import-Module (Join-Path $templates 'Template-RestoreTrust.psm1') -Force
     }
     BeforeEach {
         $events = [System.Collections.Generic.List[string]]::new()
-        $state = @{ Reject = '' }
+        $state = @{ Reject = ''; Engine = '' }
         $manifest = Join-Path $TestDrive 'reviewed.json'
         '{}' | Set-Content $manifest
         Mock Import-Module {}
@@ -87,12 +89,26 @@ Describe 'Template restore verification ordering' {
             }
             else { '1' }
         }
+        # The packaged restore manifest is verified against the restored database between the
+        # catalog assertions and API setup; its own contract is covered by the restore-core tests.
+        Mock Get-ChildItem -ParameterFilter { $Filter -eq '*.nupkg' } { [pscustomobject]@{ Name = 'Combined.nupkg'; FullName = 'Combined.nupkg' } }
+        Mock Get-ChildItem -ParameterFilter { $Path -like '*template-manifest-verify-*' } { [pscustomobject]@{ Name = 'entry'; FullName = 'entry' } }
+        Mock Copy-Item {}
+        Mock Expand-Archive {}
+        Mock Read-RestoreManifest {
+            [pscustomobject]@{ templateKind = 'Populated'; databaseEngine = $state.Engine; artifactFileName = 'dump'; artifactSha256 = 'sha'; projects = @('ed-fi') }
+        }
+        Mock Get-FileSha256Hex { 'sha' }
+        Mock Get-TemplateSourceCatalogFacts { [pscustomobject]@{ FullInventory = @(); DatabaseLevelObjects = @() } }
+        Mock Assert-DmsOnlyInventory { [pscustomobject]@{ ProjectSchemaNames = @('ed-fi') } }
+        Mock Assert-RestoreManifestMatchesDatabase { $events.Add('manifest') }
         Mock Get-CmsToken { $events.Add('api'); throw 'API checkpoint' }
     }
 
     It 'Checks both catalogs and populated data before API setup for <Engine>' -ForEach @(@{ Engine = 'postgresql' }, @{ Engine = 'mssql' }) {
-        { & $verify -SourceDatabaseName source -VerificationDatabaseName restored -ExpectedModelManifestPath $manifest -DatabaseEngine $Engine -RequirePopulatedData } | Should -Throw 'API checkpoint'
-        $events | Should -Be @('catalog:source', 'schemas:source', 'restore', 'catalog:restored', 'schemas:restored', 'api')
+        $state.Engine = $Engine
+        { & $verify -SourceDatabaseName source -VerificationDatabaseName restored -ExpectedTemplateKind Populated -ExpectedModelManifestPath $manifest -DatabaseEngine $Engine -RequirePopulatedData } | Should -Throw 'API checkpoint'
+        $events | Should -Be @('catalog:source', 'schemas:source', 'restore', 'catalog:restored', 'schemas:restored', 'manifest', 'api')
         Should -Invoke docker -Times 10 -Exactly
         Should -Invoke Restore-TemplatePackage -Times 1 -Exactly
     }
@@ -102,7 +118,7 @@ Describe 'Template restore verification ordering' {
         @{ Engine = 'mssql'; Rejected = 'source' }, @{ Engine = 'mssql'; Rejected = 'restored' }
     ) {
         $state.Reject = $Rejected
-        { & $verify -SourceDatabaseName source -VerificationDatabaseName restored -ExpectedModelManifestPath $manifest -DatabaseEngine $Engine } | Should -Throw "Rejected catalog $Rejected"
+        { & $verify -SourceDatabaseName source -VerificationDatabaseName restored -ExpectedTemplateKind Minimal -ExpectedModelManifestPath $manifest -DatabaseEngine $Engine } | Should -Throw "Rejected catalog $Rejected"
         Should -Invoke Get-CmsToken -Times 0 -Exactly
         Should -Invoke docker -Times 0 -Exactly -ParameterFilter { $args -notcontains '-i' }
         if ($Rejected -eq 'source') { Should -Invoke Restore-TemplatePackage -Times 0 -Exactly }
@@ -110,7 +126,7 @@ Describe 'Template restore verification ordering' {
     }
 
     It 'Rejects empty expected manifests before database work' {
-        { & $verify -SourceDatabaseName source -ExpectedModelManifestPath '' } | Should -Throw '*empty*'
+        { & $verify -SourceDatabaseName source -ExpectedTemplateKind Minimal -ExpectedModelManifestPath '' } | Should -Throw '*empty*'
         Should -Invoke Restore-TemplatePackage -Times 0 -Exactly
         Should -Invoke Get-CmsToken -Times 0 -Exactly
     }
