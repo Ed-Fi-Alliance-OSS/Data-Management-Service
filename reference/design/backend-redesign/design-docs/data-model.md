@@ -131,7 +131,7 @@ Notes:
   resolution use RI; the generated natural-key probes described in
   [natural-key-resolution.md](natural-key-resolution.md) belong to later stories.
 - `ResourceKeyId` identifies the document’s concrete resource type; use `dms.ResourceKey` for `(ProjectName, ResourceName)` when needed (diagnostics, CDC metadata).
-- `dms.Document` deliberately carries no `(ResourceKeyId, DocumentId)` resource-type scan index. Descriptor paging roots on `dms.Descriptor` via its denormalized `ResourceKeyId` (see §2), while document UUID probes retain their existing path. Descriptor document/type agreement is trigger-enforced in the current RI baseline. `FK_Document_ResourceKey` needs no referencing-side index because resource-key seeds are immutable at runtime.
+- `dms.Document` deliberately carries no `(ResourceKeyId, DocumentId)` resource-type scan index. Descriptor paging roots on `dms.Descriptor` via its denormalized `ResourceKeyId` (see §2), while document UUID probes retain their existing path. `FK_Descriptor_DocumentResourceKey` enforces descriptor document/type agreement through `UX_Document_DocumentId_ResourceKeyId`. `FK_Document_ResourceKey` needs no referencing-side index because resource-key seeds are immutable at runtime.
 - `dms.Document` has no `(ContentVersion, DocumentId)` projector-discovery index. Durable
   projection work is paged through `dms.DocumentProjectionWork`; explicit baseline,
   rebuild, and scrub scans use the `DocumentId` primary-key order.
@@ -211,14 +211,15 @@ CREATE TABLE "dms"."Descriptor" (
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_Descriptor" PRIMARY KEY ("DescriptorId"),
     CONSTRAINT "UX_Descriptor_DocumentId" UNIQUE ("DocumentId"),
-    CONSTRAINT "FK_Descriptor_Document" FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId") ON DELETE RESTRICT,
-    CONSTRAINT "FK_Descriptor_ResourceKey" FOREIGN KEY ("ResourceKeyId")
-        REFERENCES "dms"."ResourceKey" ("ResourceKeyId") ON DELETE NO ACTION
+    CONSTRAINT "FK_Descriptor_DocumentResourceKey" FOREIGN KEY ("DocumentId", "ResourceKeyId")
+        REFERENCES "dms"."Document" ("DocumentId", "ResourceKeyId") ON DELETE RESTRICT
 );
 
 CREATE UNIQUE INDEX "UX_Descriptor_ResourceKeyId_Uri"
     ON "dms"."Descriptor" ("ResourceKeyId", ("Namespace" || '#' || "CodeValue"));
+
+CREATE UNIQUE INDEX "UX_Descriptor_UriLowered_ResourceKeyId"
+    ON "dms"."Descriptor" (lower(("Namespace" || '#' || "CodeValue") COLLATE "pg_c_utf8"), "ResourceKeyId");
 
 CREATE INDEX "IX_Descriptor_ResourceKeyId_DocumentId"
     ON "dms"."Descriptor" ("ResourceKeyId", "DocumentId");
@@ -245,40 +246,46 @@ CREATE TABLE [dms].[Descriptor] (
     [EffectiveBeginDate] date NULL,
     [EffectiveEndDate] date NULL,
     [Uri] AS ([Namespace] + N'#' + [CodeValue]),
+    [UriLowered] AS LOWER(([Namespace] + N'#' + [CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS),
     [ContentVersion] bigint NOT NULL DEFAULT 0,
     [ContentLastModifiedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_Descriptor] PRIMARY KEY CLUSTERED ([DescriptorId]),
     CONSTRAINT [UX_Descriptor_DocumentId] UNIQUE ([DocumentId]),
-    CONSTRAINT [FK_Descriptor_Document] FOREIGN KEY ([DocumentId])
-        REFERENCES [dms].[Document] ([DocumentId]) ON DELETE NO ACTION,
-    CONSTRAINT [FK_Descriptor_ResourceKey] FOREIGN KEY ([ResourceKeyId])
-        REFERENCES [dms].[ResourceKey] ([ResourceKeyId]) ON DELETE NO ACTION
+    CONSTRAINT [FK_Descriptor_DocumentResourceKey] FOREIGN KEY ([DocumentId], [ResourceKeyId])
+        REFERENCES [dms].[Document] ([DocumentId], [ResourceKeyId]) ON DELETE NO ACTION
 );
 
 CREATE UNIQUE INDEX [UX_Descriptor_ResourceKeyId_Uri]
     ON [dms].[Descriptor] ([ResourceKeyId], [Uri]);
+CREATE UNIQUE INDEX [UX_Descriptor_UriLowered_ResourceKeyId]
+    ON [dms].[Descriptor] ([UriLowered], [ResourceKeyId]);
 CREATE INDEX [IX_Descriptor_ResourceKeyId_DocumentId]
     ON [dms].[Descriptor] ([ResourceKeyId], [DocumentId]);
 CREATE INDEX [IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId]
     ON [dms].[Descriptor] ([ResourceKeyId], [ContentVersion], [DocumentId]);
 ```
 
-Both providers retain the single-column document FK with `RESTRICT` on PostgreSQL
-and `NO ACTION` on SQL Server, and the `NO ACTION` resource-key catalog FK. The descriptor stamping trigger rejects a type key that differs
-from the owning document on insert/update. The computed URI is
-non-persisted: its index holds the URI without duplicating it in the base row. On SQL Server
+Both providers reference the owning document through the composite
+`FK_Descriptor_DocumentResourceKey (DocumentId, ResourceKeyId)`, with `RESTRICT` on PostgreSQL and
+`NO ACTION` on SQL Server. It is the safety net for the descriptor-first delete order and rejects a
+type key that differs from the owning document's. The computed URI columns are
+non-persisted: their indexes hold the URI without duplicating it in the base row. On SQL Server
 the stored `Namespace` and `CodeValue` carry the DMS identity collation
 (`SQL_Latin1_General_CP1_CI_AS`), which the computed URI inherits; PostgreSQL keeps the
-database-default collation. Uniqueness compares the unlowered whole URI within `ResourceKeyId`,
-so distinct component pairs producing the same string cannot form separate identities. There is
-no component-wise unique key, `UriLowered`, or `LOWER` in the unique expression. SQL Server
+database-default collation. `UX_Descriptor_ResourceKeyId_Uri` compares the unlowered whole URI within `ResourceKeyId`,
+so distinct component pairs producing the same string cannot form separate identities; there is
+no component-wise unique key and no `LOWER` in that expression.
+`UX_Descriptor_UriLowered_ResourceKeyId` adds lowered whole-URI uniqueness within `ResourceKeyId`.
+Case folding is engine-owned: PostgreSQL folds under the pinned `pg_c_utf8` collation rather than
+the database default, and SQL Server keys the non-persisted `UriLowered`, computed from the stored
+components under the DMS identity collation. PostgreSQL has no `UriLowered` column. SQL Server
 provisioning and runtime writes need the effective indexed-computation SET options described
 in [ddl-generation.md](ddl-generation.md#descriptor-storage-and-runtime-session-options).
 
 `ResourceKeyId` is denormalized from `dms.Document` in the insert transaction and remains
 immutable. It is the descriptor-type authority, qualified by project/resource through
-`dms.ResourceKey`; the same URI may belong to different types or projects. The stamping
-trigger's document/resource check prevents drift. Descriptor paging roots on the descriptor-only
+`dms.ResourceKey`; the same URI may belong to different types or projects. The composite
+`FK_Descriptor_DocumentResourceKey` prevents drift. Descriptor paging roots on the descriptor-only
 `(ResourceKeyId, DocumentId)` index; change-window paging uses
 `(ResourceKeyId, ContentVersion, DocumentId)`. No descriptor discriminator column or
 discriminator/content-version index remains. Abstract identity discriminators and union-view
@@ -299,11 +306,12 @@ Descriptor references and identity resolution (current RI runtime):
   joins and query parameters use the compact key; document/RI operations use `DocumentId`.
 - Existing RI hashing and witness checks reconstruct `Namespace + '#' + CodeValue` and keep
   each path's current transformations and comparisons. Original-case response URIs reconstruct
-  from the same stored components. Incoming references remain whole strings: this change does
-  not split on `#`, trim components, or introduce validation or Unicode normalization.
+  from the same stored components. Incoming references remain whole strings: they are not split on `#`,
+  trimmed or Unicode-normalized. Descriptor identity components and reference values containing
+  NUL or an unpaired surrogate are rejected with a path-attributed 400.
 
 The [natural-key workstream](natural-key-resolution.md) owns later lowered-URI probes,
-RI removal, equality/validation changes, platform upgrades, and stored-wins semantics.
+query-side descriptor validation, RI removal, equality changes and stored-wins semantics.
 Those proposals are not the DMS-1404 runtime contract.
 
 Descriptor update semantics:

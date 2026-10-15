@@ -4,4 +4,4 @@
 -- See the LICENSE and NOTICES files in the project root for more information.
 
 -- Test-only catalog mutation; the v3 EffectiveSchema fingerprint is deliberately unchanged.
-ALTER TABLE [dms].[Descriptor] DROP CONSTRAINT [FK_Descriptor_Document];
+ALTER TABLE [dms].[Descriptor] DROP CONSTRAINT [FK_Descriptor_DocumentResourceKey];

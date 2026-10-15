@@ -25,6 +25,11 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
     {
         var fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(fixture.GeneratedDdl);
+
+        // Keep DocumentId far above DescriptorId so no test can pass by confusing the two keys.
+        await _database.ExecuteNonQueryAsync(
+            """ALTER TABLE dms."Document" ALTER COLUMN "DocumentId" RESTART WITH 1000000;"""
+        );
     }
 
     [SetUp]
@@ -280,9 +285,9 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
     public async Task It_rejects_a_descriptor_update_whose_resource_key_id_diverges_from_the_document()
     {
         // List paging trusts dms.Descriptor.ResourceKeyId while GET-by-id trusts
-        // dms.Document.ResourceKeyId, and no FK ties the two copies together. The trigger's
-        // equality guard must reject the divergent write before the no-op diff (which
-        // deliberately excludes ResourceKeyId) can short-circuit past it.
+        // dms.Document.ResourceKeyId. The bench key exists in dms.ResourceKey, so only
+        // FK_Descriptor_DocumentResourceKey can reject the divergent write; the trigger's no-op
+        // diff deliberately excludes ResourceKeyId.
         var seed = await SeedAsync();
         await InsertBenchResourceKeyAsync();
 
@@ -297,7 +302,8 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
             );
 
         var exception = (await act.Should().ThrowAsync<PostgresException>()).Which;
-        exception.MessageText.Should().Contain("diverges from the owning dms.Document row");
+        exception.SqlState.Should().Be(PostgresErrorCodes.ForeignKeyViolation);
+        exception.ConstraintName.Should().Be("FK_Descriptor_DocumentResourceKey");
 
         var storedResourceKeyId = await _database.ExecuteScalarAsync<short>(
             """SELECT "ResourceKeyId" FROM dms."Descriptor" WHERE "DocumentId" = @documentId;""",
@@ -316,6 +322,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
     [Test]
     public async Task It_rejects_a_descriptor_insert_whose_resource_key_id_diverges_from_the_document()
     {
+        // The bench key exists in dms.ResourceKey, so only FK_Descriptor_DocumentResourceKey can reject.
         var documentId = await InsertDocumentAsync();
         await InsertBenchResourceKeyAsync();
 
@@ -332,7 +339,8 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
             );
 
         var exception = (await act.Should().ThrowAsync<PostgresException>()).Which;
-        exception.MessageText.Should().Contain("diverges from the owning dms.Document row");
+        exception.SqlState.Should().Be(PostgresErrorCodes.ForeignKeyViolation);
+        exception.ConstraintName.Should().Be("FK_Descriptor_DocumentResourceKey");
 
         var descriptorRowCount = await _database.ExecuteScalarAsync<long>(
             """SELECT COUNT(*) FROM dms."Descriptor" WHERE "DocumentId" = @documentId;""",
@@ -342,31 +350,31 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
     }
 
     [Test]
-    public async Task It_does_not_stamp_document_when_a_resource_key_id_backfill_updates_both_tables()
+    public async Task It_rejects_a_document_resource_key_id_change_while_its_descriptor_references_it()
     {
-        // ResourceKeyId is immutable in production and deliberately excluded from the trigger's
-        // no-op diff so a migration backfill UPDATE of the column cannot bump stamps. The
-        // equality guard requires such a backfill to update dms.Document before dms.Descriptor.
+        // The composite FK also covers the document side, which the former trigger guard never did.
         var seed = await SeedAsync();
         await InsertBenchResourceKeyAsync();
 
-        await _database.ExecuteNonQueryAsync(
-            """
-            UPDATE dms."Document"
-            SET "ResourceKeyId" = 32000
-            WHERE "DocumentId" = @documentId;
-            """,
-            new NpgsqlParameter("documentId", seed.DocumentId)
-        );
-        await _database.ExecuteNonQueryAsync(
-            """
-            UPDATE dms."Descriptor"
-            SET "ResourceKeyId" = 32000
-            WHERE "DocumentId" = @documentId;
-            """,
-            new NpgsqlParameter("documentId", seed.DocumentId)
-        );
+        var act = async () =>
+            await _database.ExecuteNonQueryAsync(
+                """
+                UPDATE dms."Document"
+                SET "ResourceKeyId" = 32000
+                WHERE "DocumentId" = @documentId;
+                """,
+                new NpgsqlParameter("documentId", seed.DocumentId)
+            );
 
+        var exception = (await act.Should().ThrowAsync<PostgresException>()).Which;
+        exception.SqlState.Should().Be(PostgresErrorCodes.ForeignKeyViolation);
+        exception.ConstraintName.Should().Be("FK_Descriptor_DocumentResourceKey");
+
+        var documentResourceKeyId = await _database.ExecuteScalarAsync<short>(
+            """SELECT "ResourceKeyId" FROM dms."Document" WHERE "DocumentId" = @documentId;""",
+            new NpgsqlParameter("documentId", seed.DocumentId)
+        );
+        documentResourceKeyId.Should().NotBe((short)32000);
         var after = await ReadStampPairAsync(seed.DocumentId);
         after.DocumentVersion.Should().Be(seed.ContentVersion);
         after.Owner.ContentLastModifiedAt.Should().Be(seed.ContentLastModifiedAt);
