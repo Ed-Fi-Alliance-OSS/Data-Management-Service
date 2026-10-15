@@ -3,11 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.OAuth;
+using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
+using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
@@ -58,21 +61,84 @@ public class TokenEndpointModule : IEndpointModule
         if (httpContext.Request.HasFormContentType)
         {
             var form = await httpContext.Request.ReadFormAsync();
-            tokenRequest = new TokenRequest { grant_type = form["grant_type"].ToString() };
+
+            // RFC 6749 section 3.2: request parameters must not be included more than once.
+            if (Array.Exists(_singleValuedFormParameters, name => form[name].Count > 1))
+            {
+                await WriteBadRequest(
+                    httpContext,
+                    appSettings,
+                    "A request parameter was included more than once"
+                );
+                return;
+            }
+
+            // An absent field reads as empty here. TokenRequestCredentials treats an empty field as
+            // omitted, as RFC 6749 section 3.2 requires, so the two need no telling apart.
+            tokenRequest = new TokenRequest
+            {
+                grant_type = form["grant_type"].ToString(),
+                client_id = form["client_id"].ToString(),
+                client_secret = form["client_secret"].ToString(),
+            };
         }
 
         await GenerateToken(httpContext, tokenRequest, appSettings, oAuthManager, logger, httpClientFactory);
     }
 
+    private static readonly string[] _singleValuedFormParameters =
+    [
+        "grant_type",
+        "client_id",
+        "client_secret",
+    ];
+
+    private static async Task WriteBadRequest(
+        HttpContext httpContext,
+        IOptions<AppSettings> appSettings,
+        string detail
+    )
+    {
+        var traceId = AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, appSettings);
+        httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+        // Matches the media type of the manager's problem responses, which are UTF-8 StringContent.
+        httpContext.Response.ContentType = "application/problem+json; charset=utf-8";
+        await httpContext.Response.WriteAsync(
+            FailureResponse.ForBadRequest(detail, traceId, [], []).ToString()
+        );
+    }
+
     internal static async Task HandleJsonData(
         HttpContext httpContext,
-        TokenRequest tokenRequest,
         IOptions<AppSettings> appSettings,
+        IOptions<JsonOptions> jsonOptions,
         IOAuthManager oAuthManager,
         ILogger<TokenEndpointModule> logger,
         IHttpClientFactory httpClientFactory
     )
     {
+        // Manually read the JSON body so the framework's binder never sees it: its parse errors
+        // quote the body, and the framework logs them (or throws them into the error log).
+        TokenRequest? tokenRequest = null;
+        try
+        {
+            tokenRequest = await httpContext.Request.ReadFromJsonAsync<TokenRequest>(
+                jsonOptions.Value.SerializerOptions
+            );
+        }
+        catch (JsonException)
+        {
+            // Deliberately not logged or passed on: the exception message can contain body content.
+        }
+
+        if (tokenRequest is null)
+        {
+            var traceId = AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, appSettings);
+            logger.LogDebug("Token request body is not valid JSON - {TraceId}", traceId.Value);
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
         await GenerateToken(httpContext, tokenRequest, appSettings, oAuthManager, logger, httpClientFactory);
     }
 
@@ -93,12 +159,20 @@ public class TokenEndpointModule : IEndpointModule
 
         var client = new HttpClientWrapper(httpClientFactory.CreateClient());
 
-        httpContext.Request.Headers.TryGetValue("Authorization", out var authHeader);
+        // null when the request carried no Authorization header at all, which the manager must
+        // tell apart from a header that is present but empty.
+        string? authHeader = httpContext.Request.Headers.TryGetValue(
+            "Authorization",
+            out var authHeaderValues
+        )
+            ? authHeaderValues.ToString()
+            : null;
 
         var response = await oAuthManager.GetAccessTokenAsync(
             client,
-            tokenRequest.grant_type,
-            authHeader.ToString(),
+            tokenRequest.grant_type ?? string.Empty,
+            authHeader,
+            new TokenRequestCredentials(tokenRequest.client_id, tokenRequest.client_secret),
             appSettings.Value.AuthenticationService,
             traceId
         );
@@ -122,5 +196,20 @@ public class TokenEndpointModule : IEndpointModule
 
 public class TokenRequest
 {
-    public string grant_type { get; set; } = "";
+    /// <summary>
+    /// Nullable because JSON binding assigns a JSON <c>null</c> whatever the declared type, and a
+    /// non-nullable declaration let that <c>null</c> reach the manager unchecked.
+    /// </summary>
+    public string? grant_type { get; set; } = "";
+
+    /// <summary>
+    /// <c>null</c> or empty when the body did not carry a value, which the manager treats alike.
+    /// </summary>
+    public string? client_id { get; set; }
+
+    /// <summary>
+    /// <c>null</c> or empty when the body did not carry a value, which the manager treats alike.
+    /// Never logged.
+    /// </summary>
+    public string? client_secret { get; set; }
 }
