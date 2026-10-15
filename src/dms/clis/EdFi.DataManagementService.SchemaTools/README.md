@@ -217,6 +217,15 @@ supported migration; this command rejects those metadata changes.
 api-schema-tools ddl re-stamp --schema <paths...> --connection-string <connstr> --dialect <dialect> [--migration-completed] [--timeout <seconds>]
 ```
 
+Use `api-schema-tools` from the same release/build as the target DMS, with that
+DMS deployment's exact core and extension schema inputs. The computed hash also
+depends on the tool's compiled relational mapping version; schema files alone
+do not select the target release. Both a committed re-stamp and an already
+matching no-op print the target effective schema hash. Compare it with the
+expected hash in the target DMS preflight error before restarting services. If
+they differ, keep services stopped and correct the tool build or schema inputs;
+a successful no-op from an older tool does not establish target compatibility.
+
 The command validates the existing fingerprint, resource-key seed and schema
 component metadata before it acts. A valid matching fingerprint is a read-only
 success and needs no confirmation. A changed fingerprint requires
@@ -244,6 +253,12 @@ For a changed stamp, keep DMS and workers stopped, apply and validate the
 provider-specific physical migration, run `ddl re-stamp`, run ordinary
 `ddl provision` separately, then restart DMS and workers. Provisioning remains
 create-only and rejects an ordinary mismatched fingerprint. The operation does
+not verify every existing physical object: provision can succeed even when a
+required migration was omitted, including a missing column on an existing
+table. Independently validate the migrated physical shape before re-stamping
+and verify affected API operations before reopening traffic. If provision
+fails, the re-stamp remains committed; keep services offline and resolve the
+failure through the migration's recovery procedure. The operation does
 not guarantee rollback of the physical migration and makes no claim about CDC
 continuity. See the [schema fingerprint operations guide](../../../../docs/RELATIONAL-BACKEND.md#re-stamping-after-a-validated-physical-migration).
 

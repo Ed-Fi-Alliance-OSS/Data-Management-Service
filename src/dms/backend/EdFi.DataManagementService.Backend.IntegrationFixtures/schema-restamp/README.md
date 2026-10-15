@@ -2,6 +2,8 @@
 
 This fixture demonstrates the metadata transition for one additive, nullable field. The source and target `api-schema.json` inputs share project/resource identities and ResourceKey inputs. The target adds optional `widgetNote` to Widget with a maximum length of 120. Its generated relational model maps to `testproject.Widget.WidgetNote` (`varchar(120)` on PostgreSQL and `nvarchar(120)` on SQL Server).
 
+Use `api-schema-tools` from the same release/build as the target DMS with its exact schema inputs. Compare the target hash printed by re-stamp (including a no-op) with the expected hash in the target runtime's preflight error before restarting. A successful provision pass can miss omitted migration DDL; independently validate the physical shape before re-stamping and verify affected API operations before reopening traffic.
+
 The migration scripts are examples for this fixture only. An operator must design and validate a production migration, preserve a recoverable backup, stop DMS/workers and other metadata writers, apply the physical migration, verify it independently, run `api-schema-tools ddl re-stamp` with the target schema and `--migration-completed`, run ordinary `ddl provision` separately, then restart and verify runtime admission and API behavior. The re-stamp command changes metadata only. It cannot prove physical shape, guarantee rollback, or certify CDC continuity. A failure after the metadata transaction commits is handled as a separate provisioning/recovery step.
 
 For a PostgreSQL fixture database, apply `migration.pgsql.sql` through the normal migration connection, then run both commands:

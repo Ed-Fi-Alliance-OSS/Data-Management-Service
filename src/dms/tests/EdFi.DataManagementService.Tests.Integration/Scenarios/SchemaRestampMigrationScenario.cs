@@ -26,6 +26,7 @@ internal static class SchemaRestampMigrationScenario
         int RestampExitCode,
         string RestampError,
         int ProvisionExitCode,
+        string ProvisionError,
         HttpStatusCode BeforeStampStatus,
         HttpStatusCode ExistingWidgetStatus,
         HttpStatusCode CreateStatus,
@@ -113,24 +114,16 @@ internal static class SchemaRestampMigrationScenario
             dialectName,
             "--migration-completed"
         );
-        ProcessResult provision;
-        if (applyPhysicalMigration)
-        {
-            provision = await RunToolAsync(
-                "ddl",
-                "provision",
-                "--schema",
-                targetSchema,
-                "--connection-string",
-                connectionString,
-                "--dialect",
-                dialectName
-            );
-        }
-        else
-        {
-            provision = new ProcessResult(-1, string.Empty);
-        }
+        ProcessResult provision = await RunToolAsync(
+            "ddl",
+            "provision",
+            "--schema",
+            targetSchema,
+            "--connection-string",
+            connectionString,
+            "--dialect",
+            dialectName
+        );
 
         var freshTarget = CreateHost(target, connectionString, dataStore);
         using (freshTarget)
@@ -175,6 +168,7 @@ internal static class SchemaRestampMigrationScenario
                 restamp.ExitCode,
                 restamp.Error,
                 provision.ExitCode,
+                provision.Error,
                 beforeStampStatus,
                 existingStatus,
                 create.StatusCode,

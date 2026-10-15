@@ -613,8 +613,13 @@ extension schemas and `--migration-completed`; run ordinary `ddl provision`
 separately; complete any required representation correction described below;
 then restart services and verify runtime admission and affected API
 operations. Provisioning's ordinary hash mismatch guard remains in force. A
-successful metadata update does not certify physical shape, promise automatic
-rollback, or certify CDC continuity. If commit transport fails, treat the result
+successful provision pass does not verify every existing physical object and
+can miss an omitted migration, such as a missing column on an existing table.
+Independently validate physical shape before re-stamping and verify affected
+API operations before reopening traffic. A failed provision pass does not undo
+the committed re-stamp: keep services stopped and follow the migration's
+recovery procedure. A successful metadata update does not certify physical
+shape, promise automatic rollback, or certify CDC continuity. If commit transport fails, treat the result
 as uncertain, inspect the database, and retry with identical inputs while
 services remain stopped. A valid target stamp is a no-op on retry.
 
@@ -644,9 +649,17 @@ transitions. See the [schema tools command reference](../src/dms/clis/EdFi.DataM
 
 For compatible metadata transitions, this command replaces the manual
 EffectiveSchema/SchemaComponent re-key in [PR #1121's historical migration procedure](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/pull/1121).
-Use the target binary's exact core and extension schema inputs; the ApiSchema
-format, resource-key seed fingerprint, ResourceKey ID/name/version mappings,
-and component endpoint/name/version/extension flags must remain identical.
+Use `api-schema-tools` from the same release/build as the target DMS, together
+with that deployment's exact core and extension schema inputs. The computed
+hash depends on the tool's compiled relational mapping version as well as the
+schema files. Both changed and matching invocations print the target effective
+schema hash; compare it with the expected hash in the target DMS preflight
+error before restarting. If they differ, keep services stopped and correct the
+tool build or inputs. An older tool can report a successful no-op against an
+old stamp while the target DMS still rejects it.
+
+The ApiSchema format, resource-key seed fingerprint, ResourceKey ID/name/version
+mappings, and component endpoint/name/version/extension flags must remain identical.
 Keep any independently applicable physical migration DDL and validate it before
 re-stamping. The historical procedure's mapping-version references and physical
 DDL do not constitute a complete upgrade to today's schema; current release

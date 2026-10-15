@@ -85,9 +85,40 @@ public static class DdlRestampCommand
     {
         if (parseResult.Errors.Count > 0)
         {
-            await error.WriteLineAsync(
-                "Invalid arguments for ddl re-stamp. Required options: --schema, --connection-string, --dialect. Run 'ddl re-stamp --help' for usage."
-            );
+            await error.WriteLineAsync("Invalid arguments for ddl re-stamp.");
+            foreach (var option in parseResult.CommandResult.Command.Options)
+            {
+                var optionResult = parseResult.GetResult(option);
+                if (option.Required && (optionResult is null || optionResult.Implicit))
+                {
+                    await error.WriteLineAsync($"Missing required option {option.Name}.");
+                }
+                else if (
+                    optionResult is not null
+                    && parseResult.Errors.Any(parseError =>
+                        ReferenceEquals(parseError.SymbolResult, optionResult)
+                        || ReferenceEquals(parseError.SymbolResult?.Parent, optionResult)
+                    )
+                )
+                {
+                    // Use option definitions, never parser messages or tokens that may contain credentials.
+                    await error.WriteLineAsync(
+                        optionResult.Option.Name switch
+                        {
+                            "--dialect" => "Invalid value for --dialect; expected pgsql or mssql.",
+                            "--timeout" =>
+                                "Invalid value for --timeout; expected an integer number of seconds.",
+                            "--schema" => "Invalid arguments for --schema; expected schema file paths.",
+                            "--connection-string" =>
+                                "Invalid arguments for --connection-string; expected a single connection string.",
+                            "--migration-completed" =>
+                                "Invalid value for --migration-completed; expected true or false.",
+                            _ => "Invalid option arguments.",
+                        }
+                    );
+                }
+            }
+            await error.WriteLineAsync("Run 'ddl re-stamp --help' for usage.");
             return 1;
         }
 
@@ -219,6 +250,7 @@ public static class DdlRestampCommand
         else
         {
             await output.WriteLineAsync("Already stamped; no changes.");
+            await output.WriteLineAsync($"Target effective schema hash: {result.TargetHash}");
         }
         await output.WriteLineAsync(
             "This command updates schema metadata only. Run 'ddl provision' separately, then restart DMS and workers."

@@ -170,6 +170,12 @@ public abstract class DdlRestampCommandTests
         }
 
         [Test]
+        public void It_prints_the_target_hash_for_comparison_with_runtime_preflight()
+        {
+            _output.ToString().Should().Contain($"Target effective schema hash: {new string('a', 64)}");
+        }
+
+        [Test]
         public void It_writes_no_error()
         {
             _error.ToString().Should().BeEmpty();
@@ -556,6 +562,57 @@ public abstract class DdlRestampCommandTests
         {
             (_output.ToString() + _error.ToString()).Should().NotContain(sentinel);
         }
+    }
+
+    [TestFixture("--dialect", "credential-sentinel", "pgsql or mssql")]
+    [TestFixture("-d", "credential-sentinel", "pgsql or mssql")]
+    [TestFixture("--dialect", "", "pgsql or mssql")]
+    [TestFixture("--timeout", "credential-sentinel", "integer")]
+    [TestFixture("-t", "credential-sentinel", "integer")]
+    [TestFixture("--timeout", "", "integer")]
+    public sealed class Given_Invalid_Parser_Option(string option, string value, string expectedGuidance)
+        : DdlRestampCommandTests
+    {
+        private int _exitCode;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            List<string> arguments =
+            [
+                "ddl",
+                "re-stamp",
+                "--schema",
+                MinimalSchemaPath,
+                "--connection-string",
+                ConnectionString,
+            ];
+            if (option is not ("--dialect" or "-d"))
+            {
+                arguments.AddRange(["--dialect", "pgsql"]);
+            }
+            arguments.Add(option);
+            if (value.Length > 0)
+            {
+                arguments.Add(value);
+            }
+            _exitCode = await InvokeAsync(CancellationToken.None, arguments.ToArray());
+        }
+
+        [Test]
+        public void It_returns_failure() => _exitCode.Should().Be(1);
+
+        [Test]
+        public void It_identifies_the_failed_option_and_expected_input() =>
+            _error.ToString().Should().Contain(option).And.Contain(expectedGuidance);
+
+        [Test]
+        public void It_does_not_misreport_supplied_required_options_as_missing() =>
+            _error.ToString().Should().NotContain("Missing required").And.NotContain("Required options:");
+
+        [Test]
+        public void It_keeps_argument_values_private() =>
+            (_output.ToString() + _error.ToString()).Should().NotContain("credential-sentinel");
     }
 
     [TestFixture]

@@ -37,7 +37,7 @@ public sealed class Given_Postgresql_SchemaRestampMigration
         SchemaRestampMigrationScenario.Evidence evidence = await RunAsync(applyPhysicalMigration: true);
         evidence.BeforeStampStatus.Should().Be(HttpStatusCode.ServiceUnavailable);
         evidence.RestampExitCode.Should().Be(0, evidence.RestampError);
-        evidence.ProvisionExitCode.Should().Be(0);
+        evidence.ProvisionExitCode.Should().Be(0, evidence.ProvisionError);
         evidence.ExistingWidgetStatus.Should().Be(HttpStatusCode.OK);
         evidence.ExistingWidget!["widgetId"]!.GetValue<int>().Should().Be(1);
         evidence.ExistingWidget["widgetName"]!.GetValue<string>().Should().Be("before-migration");
@@ -53,6 +53,8 @@ public sealed class Given_Postgresql_SchemaRestampMigration
         SchemaRestampMigrationScenario.Evidence evidence = await RunAsync(applyPhysicalMigration: false);
         evidence.BeforeStampStatus.Should().Be(HttpStatusCode.ServiceUnavailable);
         evidence.RestampExitCode.Should().Be(0);
+        // PostgreSQL accepts the refreshed function; its missing NEW/OLD field fails on use.
+        evidence.ProvisionExitCode.Should().Be(0, evidence.ProvisionError);
         evidence.ExistingWidgetStatus.Should().Be(HttpStatusCode.InternalServerError);
         evidence.CreateStatus.Should().Be(HttpStatusCode.InternalServerError);
     }
