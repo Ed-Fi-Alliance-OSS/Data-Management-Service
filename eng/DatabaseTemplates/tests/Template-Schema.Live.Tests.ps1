@@ -23,6 +23,9 @@ foreach ($case in @(
             Import-Module (Join-Path $templates 'Template-Management.psm1') -Force
             Import-Module (Join-Path $templates '../Dms-Management.psm1') -Force
             Import-Module (Join-Path $templates 'Template-Schema.psm1') -Force
+            # BeforeEach mocks Import-Module, so the verifier's manifest helpers must already be loaded.
+            Import-Module (Join-Path $templates 'Template-RestoreCore.psm1') -Force
+            Import-Module (Join-Path $templates 'Template-RestoreTrust.psm1') -Force
             $password = $env:DMS_TEMPLATE_TEST_MSSQL_PASSWORD ?? 'EdFi_Dms1!'
             $source = 't17_source_' + [Guid]::NewGuid().ToString('N')
             $script:restored = 't17_restored_' + [Guid]::NewGuid().ToString('N')
@@ -51,7 +54,7 @@ foreach ($case in @(
                     $schemas = @(Get-UserSchemaNames -DatabaseEngine $Engine -ContainerName $Container -DatabaseName $Database -MssqlPassword $SaSecret)
                     $facts = Get-TemplateSourceCatalogFacts -DatabaseEngine $Engine -ContainerName $Container -DatabaseName $Database -MssqlPassword $SaSecret -ArtifactSchemaName ([string[]]$schemas)
                     $partition = Assert-DmsOnlyTemplateSource -Facts $facts -DatabaseEngine $Engine -DatabaseName $Database
-                    Invoke-DatabaseDump -DatabaseEngine $Engine -ContainerName $Container -DatabaseName $Database -DatabaseSchemas $schemas -BackupDirectory $Directory -BackupFileName $ArtifactName -MssqlPassword $SaSecret
+                    Invoke-DatabaseDump -DatabaseEngine $Engine -ContainerName $Container -DatabaseName $Database -DatabaseSchemas $schemas -BackupDirectory $Directory -BackupFileName $ArtifactName -MssqlPassword $SaSecret | Out-Null
                     Write-TemplateRestoreManifest -Facts $facts -Partition $partition -Config @{ Id = 'Focused.Template'; DatabaseBackupName = $ArtifactName } `
                         -PackageVersion '0.0.0-test' -DatabaseEngine $Engine -TemplateKind Minimal -StandardVersion '5.2.0' -BackupDirectory $Directory | Out-Null
                 } $Engine $Container $source $password $staging $artifactName
