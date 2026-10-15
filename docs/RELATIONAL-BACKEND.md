@@ -427,6 +427,10 @@ compares it to the effective schema it loaded. The check runs in
   with a detail explaining that the database was provisioned for a different effective schema and
   that it **must be reprovisioned with `ddl provision` against a fresh database and the service
   restarted** to clear the cached validation state.
+  Fresh reprovisioning is the default remediation. An independently validated,
+  metadata-compatible physical migration may instead use the bounded
+  [re-stamp procedure](#re-stamping-after-a-validated-physical-migration) below;
+  ordinary provisioning and runtime never update a mismatched stamp automatically.
 
 Immediately after the fingerprint check, each routed resource pipeline runs a second first-use check,
 [`ValidateResourceKeySeedMiddleware`](../src/dms/core/EdFi.DataManagementService.Core/Middleware/ValidateResourceKeySeedMiddleware.cs)
@@ -626,8 +630,9 @@ The environment file lives at [`eng/docker-compose/.env.e2e`](../eng/docker-comp
 
 ## 7. E2E setup/teardown and the "no hot reload" rule
 
-The effective schema is **fixed at provisioning time**. There is no in-place schema migration
-and **no hot reload**: changing any `ApiSchema.json` input changes the effective schema hash, and
+The loaded effective schema has **no hot reload**. Ordinary provisioning does not
+perform in-place migrations; the bounded administrative exception below records
+an independently validated physical migration. Changing any `ApiSchema.json` input changes the effective schema hash, and
 a DMS instance running against a database provisioned for the old hash will fail the first-use
 fingerprint check and return **HTTP 503** (see [§3](#3-schema-fingerprint-validation--how-dms-validates-schema-on-first-use)).
 
@@ -641,8 +646,80 @@ So, after **any** schema change, the developer loop is:
 This is exactly what the test infrastructure does: integration fixtures create a fresh database
 from the generated DDL per run and drop it on teardown, and the E2E setup tears down stale state
 (including removing a stale `.bootstrap` workspace) before starting. Because each run provisions
-cleanly, tests never rely on updating an already-provisioned database in place.
+cleanly, ordinary fixtures do not update an already-provisioned database in place.
+The dedicated schema re-stamp migration fixture exercises the explicit exception.
 
 > [!WARNING]
 > If you change a schema and only restart the service (without reprovisioning), or only
 > reprovision (without restarting), you will still see 503s. Both steps are required.
+
+### Re-stamping after a validated physical migration
+
+Fresh provisioning remains the normal development, test, and deployment path.
+For a separately designed and validated data-preserving physical migration,
+`api-schema-tools ddl re-stamp` provides a bounded administrative exception for
+updating the database's fingerprint metadata. The command validates the current
+singleton, resource-key seeds, and schema components, then atomically changes
+only the effective hash and its component associations. It preserves
+`AppliedAt`, resource keys, and the other singleton values. A valid target
+fingerprint is a read-only success; missing or corrupt metadata is an error.
+
+The operator owns the migration recipe, backup/recovery boundary, physical DDL,
+and post-migration validation. Stop DMS, workers, and other metadata writers;
+apply and validate the physical change; run the command with the target core and
+extension schemas and `--migration-completed`; run ordinary `ddl provision`
+separately; complete any required representation correction described below;
+then restart services and verify runtime admission and affected API
+operations. Provisioning's ordinary hash mismatch guard remains in force. A
+successful provision pass does not verify every existing physical object and
+can miss an omitted migration, such as a missing column on an existing table.
+Independently validate physical shape before re-stamping and verify affected
+API operations before reopening traffic. A failed provision pass does not undo
+the committed re-stamp: keep services stopped and follow the migration's
+recovery procedure. A successful metadata update does not certify physical
+shape, promise automatic rollback, or certify CDC continuity. If commit transport fails, treat the result
+as uncertain, inspect the database, and retry with identical inputs while
+services remain stopped. A valid target stamp is a no-op on retry.
+
+The re-stamp role requires `SELECT` on all three metadata tables, `UPDATE` on
+`dms.EffectiveSchema`, and `DELETE`/`INSERT` on `dms.SchemaComponent`, plus
+database/schema access. On PostgreSQL, all three tables are locked in
+`SHARE ROW EXCLUSIVE` mode; ownership or `MAINTAIN`, `UPDATE`, `DELETE`, or
+`TRUNCATE` privilege is required on each table, even `dms.ResourceKey` and even
+for an unconfirmed or matching invocation. Prefer `MAINTAIN` on `ResourceKey`
+where available to avoid granting data mutation. Retain the locks to exclude
+concurrent metadata writers. Physical migration and provisioning require their
+own privileges; see the linked command reference for details.
+
+The command preserves stored `dms.DocumentCache` entries and document versions.
+If the migration changes API document representations, plan and complete the
+supported offline [DocumentCacheAdmin representation-restamp procedure](../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#representation-restamp)
+before reopening traffic and validate affected reads afterward. A process
+restart does not invalidate stored cache entries, and a cache rebuild alone
+does not carry out the document-version/publication changes required by a
+representation correction. Cache lifecycle and CDC compatibility remain separate
+migration responsibilities.
+
+This exception does not change the fresh-database developer loop above, hot
+reload behavior, the release cadence for `RelationalMappingVersion`, or the
+reprovisioning requirements for changes that are not compatible fingerprint
+transitions. See the [schema tools command reference](../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#ddl-re-stamp--record-a-validated-physical-schema-migration).
+
+For compatible metadata transitions, this command replaces the manual
+EffectiveSchema/SchemaComponent re-key in [PR #1121's historical migration procedure](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/pull/1121).
+Use `api-schema-tools` from the same release/build as the target DMS, together
+with that deployment's exact core and extension schema inputs. The computed
+hash depends on the tool's compiled relational mapping version as well as the
+schema files. Both changed and matching invocations print the target effective
+schema hash; compare it with the expected hash in the target DMS preflight
+error before restarting. If they differ, keep services stopped and correct the
+tool build or inputs. An older tool can report a successful no-op against an
+old stamp while the target DMS still rejects it.
+
+The ApiSchema format, resource-key seed fingerprint, ResourceKey ID/name/version
+mappings, and component endpoint/name/version/extension flags must remain identical.
+Keep any independently applicable physical migration DDL and validate it before
+re-stamping. The historical procedure's mapping-version references and physical
+DDL do not constitute a complete upgrade to today's schema; current release
+policy retains `RelationalMappingVersion = "v3"` for 8.1. A same-hash no-op cannot
+repair a stale physical database or template.
