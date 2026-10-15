@@ -176,6 +176,35 @@ public class Given_Natural_Key_Reference_Resolver(SqlDialect dialect)
     }
 
     [Test]
+    public async Task It_never_binds_a_string_postgresql_cannot_store()
+    {
+        // PostgreSQL text cannot hold NUL, while SQL Server nvarchar can.
+        const string programName = "Career\0Prep";
+
+        var result = await ResolveAsync([ProgramReference(programName, CareerUri)], []);
+
+        if (dialect == SqlDialect.Pgsql)
+        {
+            _executor.CommandCount.Should().Be(0);
+        }
+        else
+        {
+            _builder
+                .Requests.Single()
+                .Groups.Single()
+                .Entries.Single()
+                .KeyValues.Should()
+                .Equal(255901L, programName, CareerUri);
+        }
+
+        result
+            .InvalidDocumentReferences.Should()
+            .ContainSingle()
+            .Which.Reason.Should()
+            .Be(DocumentReferenceFailureReason.Missing);
+    }
+
+    [Test]
     public async Task It_sends_no_command_when_every_uncached_value_is_unstorable()
     {
         var result = await ResolveAsync([SchoolReference("not-a-number")], []);

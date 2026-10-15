@@ -433,8 +433,12 @@ internal sealed class NaturalKeyReferenceResolver(
         }
 
         return
-            scalarType is { Kind: ScalarKind.String, MaxLength: { } maxLength }
-            && StoredLength(dialect, rawValue) > maxLength
+            scalarType.Kind is ScalarKind.String
+            && (
+                // PostgreSQL text cannot hold NUL, so binding it would fail the whole lookup.
+                (dialect == SqlDialect.Pgsql && rawValue.Contains('\0'))
+                || (scalarType.MaxLength is { } maxLength && StoredLength(dialect, rawValue) > maxLength)
+            )
             ? null
             : value;
     }
