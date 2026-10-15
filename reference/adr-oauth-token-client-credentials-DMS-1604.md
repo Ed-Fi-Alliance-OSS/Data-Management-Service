@@ -85,8 +85,9 @@ Both accept a Basic header:
 - Keycloak 26.1 form-decodes each half with `URLDecoder`
   ([`BasicAuthHelper.RFC6749.parseHeader`](https://github.com/keycloak/keycloak/blob/26.1.0/core/src/main/java/org/keycloak/util/BasicAuthHelper.java)).
 
-The Configuration Service also reads form credentials in self-contained mode, but it doesn't in
-Keycloak mode. Basic is the one upstream contract that works everywhere.
+The Configuration Service reads a Basic header only in self-contained mode; it reads form
+credentials in every mode. In Keycloak mode, DMS calls Keycloak directly rather than the
+Configuration Service, and Keycloak accepts Basic. So Basic works with every upstream DMS forwards to.
 
 ## Decision
 

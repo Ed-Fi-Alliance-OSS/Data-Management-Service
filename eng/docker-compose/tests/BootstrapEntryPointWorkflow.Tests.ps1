@@ -2951,7 +2951,7 @@ Add-Content -LiteralPath '$forwardLogPath' -Value "engine=`$DatabaseEngine separ
             $script:gettingStarted | Should -Match '(?i)urls\.oauth'
             $script:gettingStarted | Should -Match '(?i)Authorization:\s*Basic'
             $script:gettingStarted | Should -Match 'grant_type=client_credentials'
-            $script:gettingStarted | Should -Match '(?i)not combined with a Basic header'
+            $script:gettingStarted | Should -Match '(?i)not combined with a Basic\s+header'
         }
 
     }
