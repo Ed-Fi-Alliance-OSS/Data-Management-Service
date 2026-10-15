@@ -103,7 +103,7 @@ internal sealed class MssqlNaturalKeyLookupCommandBuilder : INaturalKeyLookupCom
         if (group.Entries.Count == 0)
         {
             throw new ArgumentException(
-                $"Natural-key lookup group {group.GroupOrdinal} for '{FormatResource(group.Target.Resource)}' has no entries."
+                $"Natural-key lookup group {group.GroupOrdinal} for '{RelationalWriteSupport.FormatResource(group.Target.Resource)}' has no entries."
             );
         }
 
@@ -112,7 +112,7 @@ internal sealed class MssqlNaturalKeyLookupCommandBuilder : INaturalKeyLookupCom
         if (group.Entries.FirstOrDefault(entry => entry.KeyValues.Count != keyTypes.Count) is { } mismatch)
         {
             throw new ArgumentException(
-                $"Natural-key lookup group {group.GroupOrdinal} for '{FormatResource(group.Target.Resource)}' "
+                $"Natural-key lookup group {group.GroupOrdinal} for '{RelationalWriteSupport.FormatResource(group.Target.Resource)}' "
                     + $"expects {keyTypes.Count} key values per entry but an entry carries {mismatch.KeyValues.Count}."
             );
         }
@@ -163,7 +163,7 @@ internal sealed class MssqlNaturalKeyLookupCommandBuilder : INaturalKeyLookupCom
                         TargetAlias,
                         probe.ResourceKeyIdColumn
                             ?? throw new InvalidOperationException(
-                                $"Abstract natural-key probe for '{FormatResource(probe.Resource)}' has no ResourceKeyId column."
+                                $"Abstract natural-key probe for '{RelationalWriteSupport.FormatResource(probe.Resource)}' has no ResourceKeyId column."
                             )
                     ),
                     _ => SmallintLiteral(group.Target.ResourceKeyId),
@@ -197,7 +197,10 @@ internal sealed class MssqlNaturalKeyLookupCommandBuilder : INaturalKeyLookupCom
                 descriptorProbe,
                 descriptorAlias,
                 KeyColumn(keyIndex),
-                ResolveResourceKeyId(mappingSet, descriptorBinding.DescriptorResource)
+                RelationalWriteSupport.GetResourceKeyIdOrThrow(
+                    mappingSet,
+                    descriptorBinding.DescriptorResource
+                )
             );
             targetPredicates.Add(
                 $"{targetColumn} = {Column(descriptorAlias, descriptorProbe.DescriptorIdColumn)}"
@@ -273,20 +276,13 @@ internal sealed class MssqlNaturalKeyLookupCommandBuilder : INaturalKeyLookupCom
                     NaturalKeyProbeKeyBinding.Scalar scalar => KeyType.ForScalar(scalar.ScalarType),
                     NaturalKeyProbeKeyBinding.Descriptor => KeyType.DescriptorUri,
                     _ => throw new InvalidOperationException(
-                        $"Natural-key probe for '{FormatResource(probe.Resource)}' has an unsupported binding "
+                        $"Natural-key probe for '{RelationalWriteSupport.FormatResource(probe.Resource)}' has an unsupported binding "
                             + $"'{keyColumn.Binding.GetType().Name}' on '{keyColumn.IdentityJsonPath.Canonical}'."
                     ),
                 }
             ),
         ];
     }
-
-    private static short ResolveResourceKeyId(MappingSet mappingSet, QualifiedResourceName resource) =>
-        mappingSet.ResourceKeyIdByResource.TryGetValue(resource, out var resourceKeyId)
-            ? resourceKeyId
-            : throw new InvalidOperationException(
-                $"Descriptor resource '{FormatResource(resource)}' has no ResourceKeyId in the mapping set."
-            );
 
     /// <summary>
     /// Writes the group's entries as <c>[{"o":1,"k1":...},...]</c>. Dates and times use the invariant ISO 8601
@@ -396,9 +392,6 @@ internal sealed class MssqlNaturalKeyLookupCommandBuilder : INaturalKeyLookupCom
 
     private static string QuoteIdentifier(string identifier) =>
         "[" + identifier.Replace("]", "]]", StringComparison.Ordinal) + "]";
-
-    private static string FormatResource(QualifiedResourceName resource) =>
-        $"{resource.ProjectName}.{resource.ResourceName}";
 
     /// <summary>
     /// The OPENJSON column type for one key, and whether it is compared under the identity text collation.

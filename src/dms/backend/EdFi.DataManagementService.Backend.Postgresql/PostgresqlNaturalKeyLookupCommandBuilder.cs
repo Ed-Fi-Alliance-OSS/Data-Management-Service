@@ -71,7 +71,7 @@ internal sealed class PostgresqlNaturalKeyLookupCommandBuilder : INaturalKeyLook
         if (group.Entries.Count == 0)
         {
             throw new ArgumentException(
-                $"Natural-key lookup group {group.GroupOrdinal} for '{FormatResource(group.Target.Resource)}' has no entries."
+                $"Natural-key lookup group {group.GroupOrdinal} for '{RelationalWriteSupport.FormatResource(group.Target.Resource)}' has no entries."
             );
         }
 
@@ -80,7 +80,7 @@ internal sealed class PostgresqlNaturalKeyLookupCommandBuilder : INaturalKeyLook
         if (group.Entries.FirstOrDefault(entry => entry.KeyValues.Count != keyTypes.Count) is { } mismatch)
         {
             throw new ArgumentException(
-                $"Natural-key lookup group {group.GroupOrdinal} for '{FormatResource(group.Target.Resource)}' "
+                $"Natural-key lookup group {group.GroupOrdinal} for '{RelationalWriteSupport.FormatResource(group.Target.Resource)}' "
                     + $"expects {keyTypes.Count} key values per entry but an entry carries {mismatch.KeyValues.Count}."
             );
         }
@@ -151,7 +151,7 @@ internal sealed class PostgresqlNaturalKeyLookupCommandBuilder : INaturalKeyLook
                         TargetAlias,
                         probe.ResourceKeyIdColumn
                             ?? throw new InvalidOperationException(
-                                $"Abstract natural-key probe for '{FormatResource(probe.Resource)}' has no ResourceKeyId column."
+                                $"Abstract natural-key probe for '{RelationalWriteSupport.FormatResource(probe.Resource)}' has no ResourceKeyId column."
                             )
                     ),
                     _ => SmallintLiteral(group.Target.ResourceKeyId),
@@ -185,7 +185,10 @@ internal sealed class PostgresqlNaturalKeyLookupCommandBuilder : INaturalKeyLook
                 descriptorProbe,
                 descriptorAlias,
                 KeyColumn(keyIndex),
-                ResolveResourceKeyId(mappingSet, descriptorBinding.DescriptorResource)
+                RelationalWriteSupport.GetResourceKeyIdOrThrow(
+                    mappingSet,
+                    descriptorBinding.DescriptorResource
+                )
             );
             targetPredicates.Add(
                 $"{targetColumn} = {Column(descriptorAlias, descriptorProbe.DescriptorIdColumn)}"
@@ -262,20 +265,13 @@ internal sealed class PostgresqlNaturalKeyLookupCommandBuilder : INaturalKeyLook
                     NaturalKeyProbeKeyBinding.Scalar scalar => KeyType.ForScalar(scalar.ScalarType.Kind),
                     NaturalKeyProbeKeyBinding.Descriptor => KeyType.DescriptorUri,
                     _ => throw new InvalidOperationException(
-                        $"Natural-key probe for '{FormatResource(probe.Resource)}' has an unsupported binding "
+                        $"Natural-key probe for '{RelationalWriteSupport.FormatResource(probe.Resource)}' has an unsupported binding "
                             + $"'{keyColumn.Binding.GetType().Name}' on '{keyColumn.IdentityJsonPath.Canonical}'."
                     ),
                 }
             ),
         ];
     }
-
-    private static short ResolveResourceKeyId(MappingSet mappingSet, QualifiedResourceName resource) =>
-        mappingSet.ResourceKeyIdByResource.TryGetValue(resource, out var resourceKeyId)
-            ? resourceKeyId
-            : throw new InvalidOperationException(
-                $"Descriptor resource '{FormatResource(resource)}' has no ResourceKeyId in the mapping set."
-            );
 
     private static RelationalParameter CreateArrayParameter(
         string name,
@@ -318,9 +314,6 @@ internal sealed class PostgresqlNaturalKeyLookupCommandBuilder : INaturalKeyLook
 
     private static string QuoteIdentifier(string identifier) =>
         "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
-
-    private static string FormatResource(QualifiedResourceName resource) =>
-        $"{resource.ProjectName}.{resource.ResourceName}";
 
     /// <summary>
     /// The PostgreSQL array element type bound for one key, and how entry values become a typed CLR array.

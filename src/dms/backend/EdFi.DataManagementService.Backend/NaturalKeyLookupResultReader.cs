@@ -42,7 +42,7 @@ internal static class NaturalKeyLookupResultReader
             if (group.Entries.Count == 0)
             {
                 throw new InvalidOperationException(
-                    $"Natural-key lookup group {group.GroupOrdinal} for resource '{Format(group.Target.Resource)}' "
+                    $"Natural-key lookup group {group.GroupOrdinal} for resource '{RelationalWriteSupport.FormatResource(group.Target.Resource)}' "
                         + "has no entries."
                 );
             }
@@ -105,7 +105,7 @@ internal static class NaturalKeyLookupResultReader
             {
                 throw new InvalidOperationException(
                     $"Natural-key lookup returned ordinal {ordinal} for group {groupOrdinal} "
-                        + $"('{Format(group.Target.Resource)}'), which has {groupMatches.Length} entries."
+                        + $"('{RelationalWriteSupport.FormatResource(group.Target.Resource)}'), which has {groupMatches.Length} entries."
                 );
             }
 
@@ -113,7 +113,7 @@ internal static class NaturalKeyLookupResultReader
             {
                 throw new ReferenceLookupCorruptionException(
                     $"Natural-key lookup matched more than one row for ordinal {ordinal} of group {groupOrdinal} "
-                        + $"('{Format(group.Target.Resource)}'). The identity must match at most one row, so the "
+                        + $"('{RelationalWriteSupport.FormatResource(group.Target.Resource)}'). The identity must match at most one row, so the "
                         + "natural-key uniqueness invariant is broken."
                 );
             }
@@ -198,7 +198,7 @@ internal static class NaturalKeyLookupResultReader
         {
             throw new InvalidOperationException(
                 $"Natural-key lookup row for ordinal {ordinal} of descriptor group {group.GroupOrdinal} "
-                    + $"('{Format(target.Resource)}') has no DescriptorId."
+                    + $"('{RelationalWriteSupport.FormatResource(target.Resource)}') has no DescriptorId."
             );
         }
 
@@ -206,7 +206,7 @@ internal static class NaturalKeyLookupResultReader
         {
             throw new InvalidOperationException(
                 $"Natural-key lookup row for ordinal {ordinal} of group {group.GroupOrdinal} "
-                    + $"('{Format(target.Resource)}') returned a DescriptorId, but the group is not a "
+                    + $"('{RelationalWriteSupport.FormatResource(target.Resource)}') returned a DescriptorId, but the group is not a "
                     + "descriptor target."
             );
         }
@@ -218,7 +218,7 @@ internal static class NaturalKeyLookupResultReader
         {
             throw new InvalidOperationException(
                 $"Natural-key lookup row for ordinal {ordinal} of group {group.GroupOrdinal} "
-                    + $"('{Format(target.Resource)}') returned ResourceKeyId {match.ResourceKeyId}, but the "
+                    + $"('{RelationalWriteSupport.FormatResource(target.Resource)}') returned ResourceKeyId {match.ResourceKeyId}, but the "
                     + $"group projects {target.ResourceKeyId}."
             );
         }
@@ -235,9 +235,6 @@ internal static class NaturalKeyLookupResultReader
 
         return reader.GetFieldValue<T>(ordinal);
     }
-
-    private static string Format(QualifiedResourceName resource) =>
-        $"{resource.ProjectName}.{resource.ResourceName}";
 
     private sealed record ResultOrdinals(
         int GroupOrdinal,

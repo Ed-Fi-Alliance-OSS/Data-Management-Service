@@ -102,7 +102,11 @@ internal sealed class NaturalKeyReferenceResolver(
                     groupsByTarget,
                     groups,
                     target,
-                    () => NaturalKeyLookupTarget.ForProbe(probe, ResourceKeyId(mappingSet, target))
+                    () =>
+                        NaturalKeyLookupTarget.ForProbe(
+                            probe,
+                            RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, target)
+                        )
                 )
                 .Add(key, keyValues);
         }
@@ -129,7 +133,11 @@ internal sealed class NaturalKeyReferenceResolver(
                     groupsByTarget,
                     groups,
                     target,
-                    () => NaturalKeyLookupTarget.ForDescriptor(target, ResourceKeyId(mappingSet, target))
+                    () =>
+                        NaturalKeyLookupTarget.ForDescriptor(
+                            target,
+                            RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, target)
+                        )
                 )
                 .Add(key, [uri]);
         }
@@ -446,13 +454,6 @@ internal sealed class NaturalKeyReferenceResolver(
             ? element.IdentityValue
             : throw new InvalidOperationException(
                 $"Descriptor reference at path '{reference.Path.Value}' must carry exactly one identity value."
-            );
-
-    private static short ResourceKeyId(MappingSet mappingSet, QualifiedResourceName resource) =>
-        mappingSet.ResourceKeyIdByResource.TryGetValue(resource, out var resourceKeyId)
-            ? resourceKeyId
-            : throw new InvalidOperationException(
-                $"Reference target '{RelationalWriteSupport.FormatResource(resource)}' has no ResourceKeyId in the mapping set."
             );
 
     private static GroupBuilder GetGroup(

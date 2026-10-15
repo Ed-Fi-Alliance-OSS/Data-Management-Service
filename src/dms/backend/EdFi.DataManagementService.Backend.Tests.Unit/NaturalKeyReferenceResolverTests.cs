@@ -12,8 +12,9 @@ using static EdFi.DataManagementService.Backend.Tests.Unit.NaturalKeyLookupTestM
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
 
-[TestFixture]
-public class Given_Natural_Key_Reference_Resolver
+[TestFixture(SqlDialect.Pgsql)]
+[TestFixture(SqlDialect.Mssql)]
+public class Given_Natural_Key_Reference_Resolver(SqlDialect dialect)
 {
     private const string CareerUri = "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education";
     private const long SchoolDocumentId = 1001;
@@ -37,9 +38,9 @@ public class Given_Natural_Key_Reference_Resolver
     [SetUp]
     public void Setup()
     {
-        _mappingSet = Ds52(SqlDialect.Pgsql);
+        _mappingSet = Ds52(dialect);
         _builder = new RecordingLookupCommandBuilder();
-        _executor = new FakeLookupExecutor(_builder, FindStoredRow);
+        _executor = new FakeLookupExecutor(dialect, _builder, FindStoredRow);
         _resolver = new NaturalKeyReferenceResolver(_builder, new ResolvedDocumentReferenceMapFactory());
     }
 
@@ -142,6 +143,36 @@ public class Given_Natural_Key_Reference_Resolver
             .Be(DescriptorReferenceFailureReason.Missing);
         _builder.Requests.Single().Groups.Should().ContainSingle().Which.Entries.Should().ContainSingle();
         _builder.Requests.Single().Groups[0].Entries[0].KeyValues.Should().Equal(255901L);
+    }
+
+    [Test]
+    public async Task It_measures_string_length_in_the_dialect_storage_unit()
+    {
+        // 31 characters but 62 UTF-16 code units: it fits PostgreSQL varchar(60), which counts characters, but not
+        // SQL Server nvarchar(60), which counts UTF-16 code units and would let OPENJSON truncate it.
+        var programName = string.Concat(Enumerable.Repeat(char.ConvertFromUtf32(0x1F600), 31));
+
+        var result = await ResolveAsync([ProgramReference(programName, CareerUri)], []);
+
+        if (dialect == SqlDialect.Pgsql)
+        {
+            _builder
+                .Requests.Single()
+                .Groups.Single()
+                .Entries.Single()
+                .KeyValues.Should()
+                .Equal(255901L, programName, CareerUri);
+        }
+        else
+        {
+            _executor.CommandCount.Should().Be(0);
+        }
+
+        result
+            .InvalidDocumentReferences.Should()
+            .ContainSingle()
+            .Which.Reason.Should()
+            .Be(DocumentReferenceFailureReason.Missing);
     }
 
     [Test]
@@ -498,13 +529,14 @@ public class Given_Natural_Key_Reference_Resolver
     /// reader decodes it.
     /// </summary>
     private sealed class FakeLookupExecutor(
+        SqlDialect dialect,
         RecordingLookupCommandBuilder builder,
         Func<NaturalKeyLookupGroup, NaturalKeyLookupEntry, NaturalKeyLookupMatch?> findStoredRow
     ) : IRelationalCommandExecutor
     {
         public int CommandCount { get; private set; }
 
-        public SqlDialect Dialect => SqlDialect.Pgsql;
+        public SqlDialect Dialect => dialect;
 
         public Task<TResult> ExecuteReaderAsync<TResult>(
             RelationalCommand command,

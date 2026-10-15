@@ -121,10 +121,19 @@ public class Given_Resolved_Document_Reference_Map
     }
 
     [Test]
-    public void It_exposes_no_default_equality_identity_dictionary_on_a_public_backend_member()
+    public void It_exposes_no_default_equality_identity_dictionary_on_a_public_write_pipeline_member()
     {
-        var offending = typeof(ReferenceLookupKey)
-            .Assembly.GetExportedTypes()
+        // ReferenceLookupKey is internal, so the compiler keeps it off public signatures; DocumentIdentity is public
+        // and lives in Core.External, so the write-pipeline contract assemblies are scanned, not only Backend.
+        Assembly[] writePipelineAssemblies =
+        [
+            typeof(ReferenceLookupKey).Assembly,
+            typeof(MappingSet).Assembly,
+            typeof(DocumentIdentity).Assembly,
+        ];
+
+        var offending = writePipelineAssemblies
+            .SelectMany(assembly => assembly.GetExportedTypes())
             .SelectMany(type => PublicSignatureTypes(type).Select(signatureType => (type, signatureType)))
             .Where(pair => ExpandTypes(pair.signatureType).Any(IsForbidden))
             .Select(pair => $"{pair.type.FullName}: {pair.signatureType}")
