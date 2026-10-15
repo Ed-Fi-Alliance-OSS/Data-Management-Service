@@ -372,9 +372,13 @@ The approved intentional ODS differences are:
   rather than ODS's `Limit must be a value between 0 and {N}.`;
 - use DMS's configured `MaximumPageSize`, initially `500`, as the value applied when `limit` or
   `pageSize` is omitted, where Ed-Fi's published default is `25`;
-- publish that same runtime `MaximumPageSize` as both the default and maximum for `limit` and
-  `pageSize`, replacing the authoritative fixture's hardcoded `limit` default of `25` with maximum
-  `500` and its `pageSize` default of `25` with no maximum. ODS's runtime maximum for both
+- publish that same runtime `MaximumPageSize` as the default and maximum for `limit` and as the
+  maximum for `pageSize`, and publish no `pageSize` default, replacing the authoritative fixture's
+  hardcoded `limit` default of `25` with maximum `500` and its `pageSize` default of `25` with no
+  maximum. ODS 7.3.2 publishes that `pageSize` default
+  ([`OpenApiMetadataParametersFactory`](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/v7.3.2/Application/EdFi.Ods.Features/OpenApiMetadata/Factories/OpenApiMetadataParametersFactory.cs)) but, like DMS, rejects `pageSize` without `pageToken`, so a
+  client that sends the advertised default fails; DMS omits it, and an omitted `pageSize` on a
+  cursor request still uses `MaximumPageSize` at runtime. ODS's runtime maximum for both
   parameters is likewise a configurable setting already defaulting to `500`, so this difference is
   confined to published metadata rather than runtime enforcement;
 - publish the runtime `DefaultPartitionCount` as the OpenAPI `numberOfPartitions` default, which

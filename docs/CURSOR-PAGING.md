@@ -421,7 +421,7 @@ deployment actually enforces rather than a shipped constant.
 
 | Setting | Effect | Initial value |
 | --- | --- | --- |
-| `AppSettings:MaximumPageSize` | Upper bound for `pageSize` and `limit`, and the page size applied when neither is given. Published as both the `default` and the `maximum` of those two parameters | `500` |
+| `AppSettings:MaximumPageSize` | Upper bound for `pageSize` and `limit`, and the page size applied when neither is given. Published as the `default` and `maximum` of `limit` and as the `maximum` of `pageSize`. `pageSize` publishes no `default`, because it is valid only with `pageToken` | `500` |
 | `AppSettings:DefaultPartitionCount` | Partition count used when `/partitions` omits `number`. Published as the `default` of `numberOfPartitions`; the accepted `1`..`200` range is fixed and not configurable | `10` |
 
 See [Configuration](./CONFIGURATION.md) for the full settings reference.

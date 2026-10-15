@@ -850,11 +850,22 @@ Do not augment item-by-id, change-query, discovery, or management paths, and do 
 composite paths.
 
 Publish the runtime `MaximumPageSize`, initially `500`, as both the default and the maximum for the
-existing `limit` parameter and the new `pageSize` parameter. This replaces the authoritative
-fixture's published `limit` default of `25` with fixed maximum `500`, and its `pageSize` default of
-`25` with no maximum, using the runtime value consistently across assembled DMS documents. Publish
+existing `limit` parameter, and as the maximum of the new `pageSize` parameter. Publish no `pageSize`
+default, and remove the one the base document carries. This replaces the authoritative fixture's
+published `limit` default of `25` with fixed maximum `500`, and its `pageSize` default of `25` with
+no maximum, using the runtime value consistently across assembled DMS documents. Publish
 `DefaultPartitionCount` as the `numberOfPartitions` default. Published metadata that disagrees with
 runtime enforcement is a defect regardless of which value is more conservative.
+
+`pageSize` has no published default because `pageSize` is valid only with `pageToken`. Swagger UI and
+many generated clients send a parameter's advertised default, so a published default would make every
+collection GET they issue fail with `PageToken is required when pageSize is specified.` An omitted
+`pageSize` on a cursor request still uses `MaximumPageSize` at runtime; only the published default is
+omitted. Ed-Fi ODS 7.3.2 publishes a `pageSize` default of `25`
+([`OpenApiMetadataParametersFactory`](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/v7.3.2/Application/EdFi.Ods.Features/OpenApiMetadata/Factories/OpenApiMetadataParametersFactory.cs)) while its validator applies the same `pageToken` requirement, so DMS
+deliberately does not copy that default. The `pageSize` description states the `pageToken`
+requirement and where a first token comes from: a `Next-Page-Token` response header or the
+`/partitions` operation.
 
 **Profile filtering.** Profile OpenAPI filtering MUST explicitly associate `/partitions` with its
 base collection, because the partition response carries no resource schema from which the current
@@ -1108,7 +1119,9 @@ identifiers. Decoded bounds are candidate identifiers by another name.
    away for indexes that no observed deficiency justifies.
 5. **OpenAPI defaults conflict.** The authoritative OpenAPI paging defaults and fixed `limit`
    maximum conflict with runtime behavior. Assembled documents must expose `MaximumPageSize`
-   consistently as both default and maximum across resource and descriptor specifications.
+   consistently as the `limit` default and as the `limit` and `pageSize` maximum across resource and
+   descriptor specifications, and must not publish a `pageSize` default, which clients would send
+   without the `pageToken` it requires.
 6. **Profile association.** `/partitions` has no resource-schema response from which the current
    profile filter can infer ownership; explicit base-path association is mandatory, or partition
    paths will leak into or vanish from profile documents unpredictably.

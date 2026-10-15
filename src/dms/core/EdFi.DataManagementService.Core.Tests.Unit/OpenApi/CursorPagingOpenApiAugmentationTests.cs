@@ -43,6 +43,12 @@ public class CursorPagingOpenApiAugmentationTests
         "The number of evenly distributed partitions to provide for client-side parallel processing. If "
         + "unspecified, the configured default number of partitions for this deployment is used.";
 
+    private const string ExpectedPageSizeDescription =
+        "The maximum number of items to retrieve in the page. For use with pageToken (cursor paging) "
+        + "only: a request that supplies pageSize without pageToken is rejected. A first page token comes "
+        + "from the Next-Page-Token response header of this operation or from the partitions operation of "
+        + "this resource. If unspecified on a cursor paging request, the maximum page size is used.";
+
     /// <summary>
     /// The clause the shipped ApiSchema carries, which promises a count derived from the number of
     /// accessible items. Assembly publishes a fixed configured default instead, so this must not survive.
@@ -385,8 +391,49 @@ public class CursorPagingOpenApiAugmentationTests
         {
             JsonNode schema = _resources["components"]!["parameters"]!["pageSize"]!["schema"]!;
 
-            schema["default"]!.GetValue<int>().Should().Be(500);
             schema["maximum"]!.GetValue<int>().Should().Be(500);
+            schema["minimum"]!.GetValue<int>().Should().Be(0);
+            schema["format"]!.GetValue<string>().Should().Be("int32");
+            schema["type"]!.GetValue<string>().Should().Be("integer");
+        }
+
+        [Test]
+        public void It_should_remove_the_inherited_page_size_default()
+        {
+            ApiSchemaBuilder.CursorPagingParameterComponents()["pageSize"]!["schema"]!
+                .AsObject()
+                .Should()
+                .ContainKey(
+                    "default",
+                    "the base document fixture must carry a default for removal to be tested"
+                );
+
+            _resources["components"]!["parameters"]!["pageSize"]!["schema"]!
+                .AsObject()
+                .Should()
+                .NotContainKey("default");
+        }
+
+        [Test]
+        public void It_should_remove_the_inherited_page_size_default_for_descriptors()
+        {
+            _descriptors["components"]!["parameters"]!["pageSize"]!["schema"]!
+                .AsObject()
+                .Should()
+                .NotContainKey("default");
+        }
+
+        [Test]
+        public void It_should_describe_page_size_as_requiring_a_page_token()
+        {
+            _resources["components"]!["parameters"]!["pageSize"]!["description"]!
+                .GetValue<string>()
+                .Should()
+                .Be(ExpectedPageSizeDescription);
+            _descriptors["components"]!["parameters"]!["pageSize"]!["description"]!
+                .GetValue<string>()
+                .Should()
+                .Be(ExpectedPageSizeDescription);
         }
 
         [Test]
@@ -428,6 +475,14 @@ public class CursorPagingOpenApiAugmentationTests
         public void It_should_publish_the_same_values_in_the_descriptor_document()
         {
             _descriptors["components"]!["parameters"]!["limit"]!["schema"]!["maximum"]!
+                .GetValue<int>()
+                .Should()
+                .Be(500);
+            _descriptors["components"]!["parameters"]!["limit"]!["schema"]!["default"]!
+                .GetValue<int>()
+                .Should()
+                .Be(500);
+            _descriptors["components"]!["parameters"]!["pageSize"]!["schema"]!["maximum"]!
                 .GetValue<int>()
                 .Should()
                 .Be(500);
@@ -572,7 +627,7 @@ public class CursorPagingOpenApiAugmentationTests
 
             parameters["limit"]!["schema"]!["default"]!.GetValue<int>().Should().Be(250);
             parameters["limit"]!["schema"]!["maximum"]!.GetValue<int>().Should().Be(250);
-            parameters["pageSize"]!["schema"]!["default"]!.GetValue<int>().Should().Be(250);
+            parameters["pageSize"]!["schema"]!.AsObject().Should().NotContainKey("default");
             parameters["pageSize"]!["schema"]!["maximum"]!.GetValue<int>().Should().Be(250);
         }
 

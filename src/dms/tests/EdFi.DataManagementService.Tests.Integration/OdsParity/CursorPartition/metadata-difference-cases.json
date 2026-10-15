@@ -12,7 +12,7 @@
           "jsonValues": {
             "/components/parameters/limit/schema/default": "{maximumPageSize}",
             "/components/parameters/limit/schema/maximum": "{maximumPageSize}",
-            "/components/parameters/pageSize/schema/default": "{maximumPageSize}",
+            "/components/parameters/pageSize/schema/default": null,
             "/components/parameters/pageSize/schema/maximum": "{maximumPageSize}"
           }
         }
@@ -30,7 +30,7 @@
       },
       "outcome": "difference",
       "approvedDifference": "openapi-publishes-runtime-page-size-bounds",
-      "note": "The recorded values are what the authoritative Ed-Fi fixture publishes: limit defaults to 25 with a maximum of 500, and pageSize defaults to 25 with no maximum. DMS replaces both with the runtime MaximumPageSize, so the published metadata tracks the deployment rather than a hardcoded pair. ODS's runtime maximum for both parameters is likewise a configurable setting already defaulting to 500, so this difference is confined to published metadata rather than runtime enforcement."
+      "note": "The recorded values are what the authoritative Ed-Fi fixture publishes: limit defaults to 25 with a maximum of 500, and pageSize defaults to 25 with no maximum. DMS publishes the runtime MaximumPageSize as the limit default and as the maximum of both, and publishes no pageSize default: both runtimes reject pageSize without pageToken, so an advertised default that Swagger UI and generated clients send would make every collection GET they issue fail. An omitted pageSize on a cursor request still uses MaximumPageSize at runtime. ODS's runtime maximum for both parameters is likewise a configurable setting already defaulting to 500, so this difference is confined to published metadata rather than runtime enforcement."
     },
     {
       "id": "openapi-publishes-runtime-default-partition-count",

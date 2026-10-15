@@ -435,12 +435,14 @@ public class ApiServiceOpenApiTests
 
         private JsonNode resourceSpecification = null!;
         private JsonNode descriptorSpecification = null!;
+        private JsonNode profileSpecification = null!;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             ApiService apiService = CreateApiService(
                 CursorPagingOpenApiTestBase.ApiSchemaNodes(),
+                new CachingProfileOpenApiService(),
                 appSettings: new AppSettings
                 {
                     AllowIdentityUpdateOverrides = "",
@@ -456,6 +458,13 @@ public class ApiServiceOpenApiTests
             descriptorSpecification = apiService.GetDescriptorOpenApiSpecification(
                 Servers("https://example.org/data/v3")
             );
+            profileSpecification = (
+                await apiService.GetProfileOpenApiSpecificationAsync(
+                    "StudentProfile",
+                    tenantId: null,
+                    Servers("https://example.org/data/v3")
+                )
+            )!;
         }
 
         private static JsonNode ParameterSchema(JsonNode specification, string componentName)
@@ -471,7 +480,7 @@ public class ApiServiceOpenApiTests
             limitSchema["maximum"]!.GetValue<int>().Should().Be(ConfiguredMaximumPageSize);
 
             JsonNode pageSizeSchema = ParameterSchema(resourceSpecification, "pageSize");
-            pageSizeSchema["default"]!.GetValue<int>().Should().Be(ConfiguredMaximumPageSize);
+            pageSizeSchema.AsObject().Should().NotContainKey("default");
             pageSizeSchema["maximum"]!.GetValue<int>().Should().Be(ConfiguredMaximumPageSize);
         }
 
@@ -492,7 +501,15 @@ public class ApiServiceOpenApiTests
             limitSchema["maximum"]!.GetValue<int>().Should().Be(ConfiguredMaximumPageSize);
 
             JsonNode pageSizeSchema = ParameterSchema(descriptorSpecification, "pageSize");
-            pageSizeSchema["default"]!.GetValue<int>().Should().Be(ConfiguredMaximumPageSize);
+            pageSizeSchema.AsObject().Should().NotContainKey("default");
+            pageSizeSchema["maximum"]!.GetValue<int>().Should().Be(ConfiguredMaximumPageSize);
+        }
+
+        [Test]
+        public void It_should_publish_the_page_size_maximum_without_a_default_in_the_profile_base_document()
+        {
+            JsonNode pageSizeSchema = ParameterSchema(profileSpecification, "pageSize");
+            pageSizeSchema.AsObject().Should().NotContainKey("default");
             pageSizeSchema["maximum"]!.GetValue<int>().Should().Be(ConfiguredMaximumPageSize);
         }
 
