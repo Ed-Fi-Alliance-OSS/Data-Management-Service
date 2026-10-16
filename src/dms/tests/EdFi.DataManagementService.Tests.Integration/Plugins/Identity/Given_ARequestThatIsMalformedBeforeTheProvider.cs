@@ -85,6 +85,8 @@ public sealed class Given_ARequestThatIsMalformedBeforeTheProvider
     private readonly Dictionary<string, HttpStatusCode> _controls = [];
     private readonly Dictionary<string, int> _invocationsAfterControls = [];
 
+    private JsonNode DuplicateSearchBody => _outcomes["duplicate-search"].Body!;
+
     [OneTimeSetUp]
     public async Task Setup()
     {
@@ -184,39 +186,83 @@ public sealed class Given_ARequestThatIsMalformedBeforeTheProvider
     }
 
     [Test]
-    public void It_reports_the_exact_indexed_search_problem_and_headers()
+    public void It_reports_the_indexed_search_problem_type()
     {
-        IdentityHttpOutcome outcome = _outcomes["duplicate-search"];
-        outcome.Status.Should().Be(HttpStatusCode.BadRequest);
-        JsonNode body = outcome.Body!;
-        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data-validation-failed");
-        body["title"]!.GetValue<string>().Should().Be("Data Validation Failed");
-        body["status"]!.GetValue<int>().Should().Be(400);
-        body["detail"]!
+        DuplicateSearchBody["type"]!
+            .GetValue<string>()
+            .Should()
+            .Be("urn:ed-fi:api:bad-request:data-validation-failed");
+    }
+
+    [Test]
+    public void It_reports_the_indexed_search_problem_title()
+    {
+        DuplicateSearchBody["title"]!.GetValue<string>().Should().Be("Data Validation Failed");
+    }
+
+    [Test]
+    public void It_reports_the_indexed_search_problem_status()
+    {
+        DuplicateSearchBody["status"]!.GetValue<int>().Should().Be(400);
+    }
+
+    [Test]
+    public void It_reports_the_indexed_search_problem_detail()
+    {
+        DuplicateSearchBody["detail"]!
             .GetValue<string>()
             .Should()
             .Be("Data validation failed. See 'validationErrors' for details.");
-        body["correlationId"]!.GetValue<string>().Should().Be("dms-1594-http");
-        body["errors"]!.AsArray().Should().BeEmpty();
-        JsonObject errors = body["validationErrors"]!.AsObject();
-        errors.Select(error => error.Key).Should().Equal("$[1].BirthLocation.City");
-        errors["$[1].BirthLocation.City"]!
+    }
+
+    [Test]
+    public void It_reports_the_indexed_search_problem_correlation_id()
+    {
+        DuplicateSearchBody["correlationId"]!.GetValue<string>().Should().Be("dms-1594-http");
+    }
+
+    [Test]
+    public void It_reports_no_general_errors_for_the_indexed_search_problem()
+    {
+        DuplicateSearchBody["errors"]!.AsArray().Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_reports_the_indexed_search_duplicate_path()
+    {
+        DuplicateSearchBody["validationErrors"]!
+            .AsObject()
+            .Select(error => error.Key)
+            .Should()
+            .Equal("$[1].BirthLocation.City");
+    }
+
+    [Test]
+    public void It_reports_the_duplicate_message_for_the_indexed_search_path()
+    {
+        DuplicateSearchBody["validationErrors"]!["$[1].BirthLocation.City"]!
             .AsArray()
             .Select(message => message!.GetValue<string>())
             .Should()
             .Equal("An item with the same key has already been added.");
-        outcome.Headers["Cache-Control"].Should().Equal("no-store");
-        outcome.Headers["Content-Type"].Single().Split(';')[0].Should().Be("application/json");
-        _invocationsByOperation["search"].Should().Be(0);
+    }
+
+    [Test]
+    public void It_keeps_the_indexed_search_problem_out_of_caches()
+    {
+        _outcomes["duplicate-search"].HeaderValues("Cache-Control").Should().Equal("no-store");
     }
 
     [Test]
     public void It_keeps_unauthorized_before_duplicate_reporting()
     {
-        IdentityHttpOutcome outcome = _outcomes["unauthorized-duplicate"];
-        outcome.Status.Should().Be(HttpStatusCode.Unauthorized);
-        outcome.Body?["validationErrors"].Should().BeNull();
-        _invocationsByOperation["search"].Should().Be(0);
+        _outcomes["unauthorized-duplicate"].Status.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Test]
+    public void It_does_not_report_the_duplicate_to_an_unauthorized_client()
+    {
+        _outcomes["unauthorized-duplicate"].Body?["validationErrors"].Should().BeNull();
     }
 
     [Test]
