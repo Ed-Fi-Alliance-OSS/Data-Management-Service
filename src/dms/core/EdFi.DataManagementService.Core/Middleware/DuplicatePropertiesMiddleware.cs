@@ -35,12 +35,12 @@ internal class DuplicatePropertiesMiddleware(ILogger logger, string errorContent
 
         string? duplicatePath = requestInfo.FrontendRequest.DuplicatePropertyPath;
 
-        if (duplicatePath == null && !string.IsNullOrEmpty(requestInfo.FrontendRequest.Body))
+        if (duplicatePath is null && !string.IsNullOrEmpty(requestInfo.FrontendRequest.Body))
         {
             duplicatePath = FindDuplicatePropertyPath(requestInfo.FrontendRequest.Body);
         }
 
-        if (duplicatePath != null)
+        if (duplicatePath is not null)
         {
             var validationErrors = new Dictionary<string, string[]>
             {

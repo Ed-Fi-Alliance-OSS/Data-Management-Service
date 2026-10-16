@@ -73,7 +73,7 @@ namespace EdFi.DataManagementService.Core.Middleware
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
-            if (requestInfo.FrontendRequest.BodyParseErrorMessage != null)
+            if (requestInfo.FrontendRequest.BodyParseErrorMessage is not null)
             {
                 _logger.LogDebug(
                     "Unable to parse the request body as JSON - {TraceId}",
@@ -84,7 +84,7 @@ namespace EdFi.DataManagementService.Core.Middleware
                 return;
             }
 
-            if (requestInfo.FrontendRequest.ParsedBody != null)
+            if (requestInfo.FrontendRequest.ParsedBody is not null)
             {
                 requestInfo.ParsedBody = requestInfo.FrontendRequest.ParsedBody;
             }
@@ -113,7 +113,7 @@ namespace EdFi.DataManagementService.Core.Middleware
                 {
                     JsonNode? body = JsonNode.Parse(requestInfo.FrontendRequest.Body);
 
-                    Trace.Assert(body != null, "Unable to parse JSON", "");
+                    Trace.Assert(body is not null, "Unable to parse JSON", "");
 
                     requestInfo.ParsedBody = body;
                 }
