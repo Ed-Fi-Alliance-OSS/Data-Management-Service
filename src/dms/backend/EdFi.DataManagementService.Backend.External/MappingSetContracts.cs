@@ -247,6 +247,13 @@ public sealed record DescriptorProbeTarget(
 )
 {
     /// <summary>
+    /// The PostgreSQL collation that folds a lowered descriptor URI independently of the database default.
+    /// The descriptor index and every PostgreSQL descriptor probe fold under it, on both the column and the
+    /// parameter side.
+    /// </summary>
+    public const string PostgresqlUriFoldCollation = "pg_c_utf8";
+
+    /// <summary>
     /// The probe for <c>dms.Descriptor</c>, which core DDL owns and which is the same for every schema.
     /// </summary>
     public static DescriptorProbeTarget SharedDescriptorTable { get; } =
