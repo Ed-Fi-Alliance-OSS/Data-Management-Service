@@ -13,7 +13,17 @@ using static EdFi.DataManagementService.Core.Response.FailureResponse;
 
 namespace EdFi.DataManagementService.Core.Middleware
 {
-    internal class ParseBodyMiddleware(ILogger _logger) : IPipelineStep
+    /// <summary>
+    /// Parses the request body as JSON, answering a malformed or empty body with 400.
+    /// </summary>
+    /// <param name="_logger">The logger.</param>
+    /// <param name="_errorContentType">
+    /// The media type of those 400 responses. The identity JSON-body pipeline passes
+    /// application/problem+json, which its published OpenAPI document declares; every other
+    /// pipeline keeps the application/json default.
+    /// </param>
+    internal class ParseBodyMiddleware(ILogger _logger, string _errorContentType = "application/json")
+        : IPipelineStep
     {
         private static JsonNode GenerateFrontendErrorResponse(string errorDetail, TraceId traceId)
         {
@@ -46,12 +56,13 @@ namespace EdFi.DataManagementService.Core.Middleware
             return response;
         }
 
-        private static void SetValidationErrorResponse(RequestInfo requestInfo, string errorDetail)
+        private void SetValidationErrorResponse(RequestInfo requestInfo, string errorDetail)
         {
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 400,
                 GenerateFrontendValidationErrorResponse(errorDetail, requestInfo.FrontendRequest.TraceId),
-                Headers: []
+                Headers: [],
+                ContentType: _errorContentType
             );
         }
 
@@ -62,7 +73,7 @@ namespace EdFi.DataManagementService.Core.Middleware
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
-            if (requestInfo.FrontendRequest.BodyParseErrorMessage != null)
+            if (requestInfo.FrontendRequest.BodyParseErrorMessage is not null)
             {
                 _logger.LogDebug(
                     "Unable to parse the request body as JSON - {TraceId}",
@@ -73,7 +84,7 @@ namespace EdFi.DataManagementService.Core.Middleware
                 return;
             }
 
-            if (requestInfo.FrontendRequest.ParsedBody != null)
+            if (requestInfo.FrontendRequest.ParsedBody is not null)
             {
                 requestInfo.ParsedBody = requestInfo.FrontendRequest.ParsedBody;
             }
@@ -87,7 +98,8 @@ namespace EdFi.DataManagementService.Core.Middleware
                             "A non-empty request body is required.",
                             requestInfo.FrontendRequest.TraceId
                         ),
-                        Headers: []
+                        Headers: [],
+                        ContentType: _errorContentType
                     );
                     return;
                 }
@@ -101,7 +113,7 @@ namespace EdFi.DataManagementService.Core.Middleware
                 {
                     JsonNode? body = JsonNode.Parse(requestInfo.FrontendRequest.Body);
 
-                    Trace.Assert(body != null, "Unable to parse JSON", "");
+                    Trace.Assert(body is not null, "Unable to parse JSON", "");
 
                     requestInfo.ParsedBody = body;
                 }

@@ -17,7 +17,14 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// This uses Utf8JsonReader to scan the raw JSON and detect duplicates with their exact paths,
 /// which is necessary because System.Text.Json's JsonNode silently overwrites duplicate properties.
 /// </summary>
-internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
+/// <param name="logger">The logger.</param>
+/// <param name="errorContentType">
+/// The media type of the 400 response for a duplicate property. The identity JSON-body pipeline
+/// passes application/problem+json, which its published OpenAPI document declares; every other
+/// pipeline keeps the application/json default.
+/// </param>
+internal class DuplicatePropertiesMiddleware(ILogger logger, string errorContentType = "application/json")
+    : IPipelineStep
 {
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
@@ -28,12 +35,12 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
 
         string? duplicatePath = requestInfo.FrontendRequest.DuplicatePropertyPath;
 
-        if (duplicatePath == null && !string.IsNullOrEmpty(requestInfo.FrontendRequest.Body))
+        if (duplicatePath is null && !string.IsNullOrEmpty(requestInfo.FrontendRequest.Body))
         {
             duplicatePath = FindDuplicatePropertyPath(requestInfo.FrontendRequest.Body);
         }
 
-        if (duplicatePath != null)
+        if (duplicatePath is not null)
         {
             var validationErrors = new Dictionary<string, string[]>
             {
@@ -54,7 +61,8 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
                     validationErrors,
                     []
                 ),
-                Headers: []
+                Headers: [],
+                ContentType: errorContentType
             );
             return;
         }

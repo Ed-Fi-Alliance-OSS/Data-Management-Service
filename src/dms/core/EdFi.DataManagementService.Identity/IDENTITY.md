@@ -862,7 +862,7 @@ That `type`, rather than the status code, is the portable terminal signal: a cli
 ### The other statuses a client can see
 
 The host produces these without calling your provider, and a client sees them whatever the provider does.
-Every one of them is `application/problem+json`, except the `400` for a malformed or empty body or a duplicate property, which DMS sends as `application/json` with the same problem body.
+Every one of them is `application/problem+json`.
 
 | Status | Cause |
 | --- | --- |
