@@ -75,10 +75,6 @@ public sealed class CoreDdlEmitter
 
     private const string DescriptorStampingTriggerName = "TR_Descriptor_Stamp_Document";
 
-    /// <summary>
-    /// The PostgreSQL collation that folds the lowered descriptor URI independently of the database default.
-    /// </summary>
-    private const string PgsqlUriFoldingCollation = "pg_c_utf8";
     private const string DocumentCacheUuidValidationTriggerName = DocumentCacheInventoryDefinition
         .DocumentCacheTriggers
         .ValidateDocumentUuid;
@@ -1089,7 +1085,7 @@ public sealed class CoreDdlEmitter
         // pg_c_utf8 instead of following the database default collation.
         writer.AppendLine(
             _dialect.Rules.Dialect == SqlDialect.Pgsql
-                ? $"CREATE UNIQUE INDEX IF NOT EXISTS {Quote("UX_Descriptor_UriLowered_ResourceKeyId")} ON {_dialect.QualifyTable(_descriptorTable)} (lower(({Quote("Namespace")} || '#' || {Quote("CodeValue")}) COLLATE {Quote(PgsqlUriFoldingCollation)}), {Quote("ResourceKeyId")});"
+                ? $"CREATE UNIQUE INDEX IF NOT EXISTS {Quote("UX_Descriptor_UriLowered_ResourceKeyId")} ON {_dialect.QualifyTable(_descriptorTable)} (lower(({Quote("Namespace")} || '#' || {Quote("CodeValue")}) COLLATE {Quote(DescriptorProbeTarget.PostgresqlUriFoldCollation)}), {Quote("ResourceKeyId")});"
                 : _dialect.CreateIndexIfNotExists(
                     _descriptorTable,
                     "UX_Descriptor_UriLowered_ResourceKeyId",
