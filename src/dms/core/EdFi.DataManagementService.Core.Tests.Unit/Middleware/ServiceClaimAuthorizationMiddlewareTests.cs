@@ -187,6 +187,7 @@ public class ServiceClaimAuthorizationMiddlewareTests
     public class Given_A_Claim_Set_Without_The_Identity_Claim
     {
         private RequestInfo _requestInfo = null!;
+        private int _nextCalls;
 
         [SetUp]
         public async Task Setup()
@@ -194,8 +195,23 @@ public class ServiceClaimAuthorizationMiddlewareTests
             ClaimSet claimSet = new(ClaimSetName, []);
             IClaimSetProvider claimSetProvider = CreateProvider(claimSet);
             _requestInfo = CreateRequestInfo(IdentityOperation.Create);
-
-            await CreateMiddleware(claimSetProvider).Execute(_requestInfo, TestHelper.NullNext);
+            _requestInfo.FrontendRequest = _requestInfo.FrontendRequest with
+            {
+                DuplicatePropertyPath = "$.duplicate",
+            };
+            _nextCalls = 0;
+            await CreateMiddleware(claimSetProvider)
+                .Execute(
+                    _requestInfo,
+                    async () =>
+                    {
+                        _nextCalls++;
+                        await new DuplicatePropertiesMiddleware(NullLogger.Instance).Execute(
+                            _requestInfo,
+                            TestHelper.NullNext
+                        );
+                    }
+                );
         }
 
         [Test]
@@ -203,6 +219,9 @@ public class ServiceClaimAuthorizationMiddlewareTests
         {
             _requestInfo.FrontendResponse.StatusCode.Should().Be(403);
         }
+
+        [Test]
+        public void It_keeps_forbidden_before_duplicate_reporting() => _nextCalls.Should().Be(0);
     }
 
     [TestFixture]

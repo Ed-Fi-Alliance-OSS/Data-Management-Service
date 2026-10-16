@@ -29,6 +29,26 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 /// </summary>
 public class IdentityHandlerRequestValidationTests
 {
+    [Test]
+    public async Task It_reports_malformed_json_before_a_duplicate()
+    {
+        var provider = new CountingIdentityService();
+        RequestInfo requestInfo = CreateRequestInfo(
+            IdentityOperation.Search,
+            provider,
+            """[{"x":1,"x":2},]""",
+            "application/json"
+        );
+        await RunJsonBodyChain(requestInfo);
+        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        requestInfo.FrontendResponse.Body!["validationErrors"]!
+            .AsObject()
+            .Select(error => error.Key)
+            .Should()
+            .Equal("$.");
+        provider.InvocationCount.Should().Be(0);
+    }
+
     /// <summary>
     /// Counts every operation call, so a rejected request that reaches the provider anyway is caught
     /// even though its returned outcome would otherwise look unremarkable.

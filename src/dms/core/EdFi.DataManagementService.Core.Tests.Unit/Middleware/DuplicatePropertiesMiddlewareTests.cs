@@ -9,9 +9,15 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Utilities;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
+using Serilog;
+using Serilog.Core;
+using Serilog.Events;
+using Serilog.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
@@ -20,6 +26,187 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [Parallelizable]
 public class DuplicatePropertiesMiddlewareTest
 {
+    private static RequestInfo RawRequest(string body, string? duplicatePath = null) =>
+        new(
+            new FrontendRequest(
+                Path: "ed-fi/schools",
+                Body: body,
+                Form: null,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: [],
+                DuplicatePropertyPath: duplicatePath
+            ),
+            RequestMethod.POST,
+            No.ServiceProvider
+        );
+
+    private static void AssertDuplicateProblem(RequestInfo requestInfo, string expectedPath)
+    {
+        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        JsonNode body = requestInfo.FrontendResponse.Body!;
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data-validation-failed");
+        body["title"]!.GetValue<string>().Should().Be("Data Validation Failed");
+        body["status"]!.GetValue<int>().Should().Be(400);
+        body["detail"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Data validation failed. See 'validationErrors' for details.");
+        body["correlationId"]!.GetValue<string>().Should().Be("traceId");
+        body["errors"]!.AsArray().Should().BeEmpty();
+        JsonObject errors = body["validationErrors"]!.AsObject();
+        errors.Select(item => item.Key).Should().Equal(expectedPath);
+        errors[expectedPath]!
+            .AsArray()
+            .Select(item => item!.GetValue<string>())
+            .Should()
+            .Equal("An item with the same key has already been added.");
+    }
+
+    [TestFixtureSource(nameof(Cases))]
+    public class Given_Raw_Duplicate_Property_Paths(string json, string expectedPath)
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private int _nextCalls;
+
+        private static IEnumerable<object[]> Cases()
+        {
+            yield return
+            [
+                """{"studentUniqueId":"1","addresses":[{"city":"a","streetNumberName":"b"},{"city":"x","city":"y"}]}""",
+                "$.addresses[1].city",
+            ];
+            yield return
+            [
+                """{"studentUniqueId":"1","addresses":[{"city":"a"}],"electronicMails":[{"x":"1","x":"2"}]}""",
+                "$.electronicMails[0].x",
+            ];
+            yield return
+            [
+                """[{"LastSurname":"a"},{"BirthLocation":{"City":"x","City":"y"}}]""",
+                "$[1].BirthLocation.City",
+            ];
+            (string Sequence, string Suffix)[] matrix =
+            [
+                ("""{"x":1,"x":2}""", "[0].x"),
+                ("""{"before":1,"x":1,"x":2}""", "[0].x"),
+                ("""{"a":1,"b":2},{"before":0,"x":1,"x":2}""", "[1].x"),
+                ("""{},{"before":1,"groups":[{"a":1},{"before":0,"x":1,"x":2}]}""", "[1].groups[1].x"),
+            ];
+            foreach (var (sequence, suffix) in matrix)
+            {
+                yield return ["{\"items\":[" + sequence + "]}", "$.items" + suffix];
+                yield return ["[" + sequence + "]", "$" + suffix];
+            }
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _nextCalls = 0;
+            _requestInfo = RawRequest(json);
+            await Middleware()
+                .Execute(
+                    _requestInfo,
+                    () =>
+                    {
+                        _nextCalls++;
+                        return Task.CompletedTask;
+                    }
+                );
+        }
+
+        [Test]
+        public void It_reports_the_exact_problem() => AssertDuplicateProblem(_requestInfo, expectedPath);
+
+        [Test]
+        public void It_rejects_before_the_next_step() => _nextCalls.Should().Be(0);
+    }
+
+    [TestFixture]
+    public class Given_A_Raw_Body_And_Optional_Metadata
+    {
+        [Test]
+        public async Task It_prefers_the_supplied_path()
+        {
+            RequestInfo requestInfo = RawRequest("""{"other":1,"other":2}""", "$.supplied");
+            await Middleware()
+                .Execute(requestInfo, () => throw new AssertionException("Duplicate continued"));
+            AssertDuplicateProblem(requestInfo, "$.supplied");
+        }
+
+        [Test]
+        public async Task It_continues_once_without_duplicates()
+        {
+            int nextCalls = 0;
+            await Middleware()
+                .Execute(
+                    RawRequest("""[{"x":1},{"x":2}]"""),
+                    () =>
+                    {
+                        nextCalls++;
+                        return Task.CompletedTask;
+                    }
+                );
+            nextCalls.Should().Be(1);
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Duplicate_Path_Is_Logged
+    {
+        private sealed class CapturingSink : ILogEventSink
+        {
+            public List<LogEvent> Events { get; } = [];
+
+            public void Emit(LogEvent logEvent) => Events.Add(logEvent);
+        }
+
+        [TestCase("control-padded")]
+        [TestCase("short-controls")]
+        [TestCase("astral-boundary")]
+        public async Task It_sanitizes_before_truncating_without_changing_the_response(string scenario)
+        {
+            (string originalPath, string expectedLog) = scenario switch
+            {
+                "control-padded" => (
+                    "$." + new string('\n', 1100) + new string('a', 1023) + "😀tail",
+                    "$." + new string('a', 1022) + LoggingSanitizer.TruncationSuffix
+                ),
+                "short-controls" => ("$.x\r\nforged\t\u202E", "$.xforged"),
+                _ => (
+                    "$." + new string('a', 1021) + "😀tail",
+                    "$." + new string('a', 1021) + LoggingSanitizer.TruncationSuffix
+                ),
+            };
+            var sink = new CapturingSink();
+            using var serilogLogger = new LoggerConfiguration()
+                .MinimumLevel.Debug()
+                .WriteTo.Sink(sink)
+                .CreateLogger();
+            using var factory = new SerilogLoggerFactory(serilogLogger);
+            RequestInfo requestInfo = RawRequest("{}", originalPath);
+            await new DuplicatePropertiesMiddleware(
+                factory.CreateLogger<DuplicatePropertiesMiddleware>()
+            ).Execute(requestInfo, () => throw new AssertionException("Duplicate continued"));
+
+            LogEvent duplicateEvent = sink.Events.Single(item =>
+                item.Properties.ContainsKey("DuplicatePath")
+            );
+            ((ScalarValue)duplicateEvent.Properties["DuplicatePath"]).Value.Should().Be(expectedLog);
+            duplicateEvent
+                .RenderMessage()
+                .Should()
+                .NotContain("\n")
+                .And.NotContain("\r")
+                .And.NotContain("\t")
+                .And.NotContain("\u202E");
+            ((ScalarValue)duplicateEvent.Properties["TraceId"]).Value.Should().Be("traceId");
+            AssertDuplicateProblem(requestInfo, originalPath);
+        }
+    }
+
     internal static IPipelineStep Middleware()
     {
         return new DuplicatePropertiesMiddleware(NullLogger.Instance);
