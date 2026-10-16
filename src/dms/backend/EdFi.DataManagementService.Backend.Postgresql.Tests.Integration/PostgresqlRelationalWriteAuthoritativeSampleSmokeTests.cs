@@ -251,7 +251,7 @@ file static class AuthoritativeSampleWriteIntegrationTestSupport
         var descriptorIdentity = new DocumentIdentity([
             new DocumentIdentityElement(
                 DocumentIdentity.DescriptorIdentityJsonPath,
-                favoriteProgramTypeDescriptor.ToLowerInvariant()
+                favoriteProgramTypeDescriptor
             ),
         ]);
 

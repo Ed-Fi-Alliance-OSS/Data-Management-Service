@@ -324,10 +324,7 @@ file static class AuthoritativeSampleStudentSectionAssociationIntegrationTestSup
             }
 
             var descriptorIdentity = new DocumentIdentity([
-                new DocumentIdentityElement(
-                    DocumentIdentity.DescriptorIdentityJsonPath,
-                    descriptorUri.ToLowerInvariant()
-                ),
+                new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, descriptorUri),
             ]);
 
             descriptorReferences.Add(

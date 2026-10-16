@@ -412,7 +412,7 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
                 (
                     "$.programReference.programTypeDescriptor",
                     "ProgramTypeDescriptor",
-                    ExtracurricularProgramTypeDescriptorUri.ToLowerInvariant()
+                    ExtracurricularProgramTypeDescriptorUri
                 )
             );
     }
