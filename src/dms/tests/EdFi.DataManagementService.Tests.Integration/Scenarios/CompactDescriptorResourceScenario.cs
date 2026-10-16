@@ -7,6 +7,7 @@ using System.Data.Common;
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
@@ -532,42 +533,29 @@ internal static class CompactDescriptorResourceScenario
         string item = await PostAsync(harness, Items, payload);
         recorder.ShouldHaveCommandCount(2);
         recorder.ShouldHaveTransactionBoundary(1, 1, 0);
-        recorder.Commands[0].CommandText.Should().Contain("ReferentialIdentity").And.Contain("DescriptorId");
-        recorder.Commands[1].CommandText.Should().NotContain("ReferentialIdentity");
-        AssertSingleDescriptorLookup(recorder, seed.ReferentialId);
+        AssertOneEmbeddedLookupStatement(recorder);
         recorder.Reset();
         (await PostAsync(harness, Items, payload, HttpStatusCode.OK)).Should().Be(item);
         recorder.ShouldHaveCommandCount(2);
         recorder.ShouldHaveTransactionBoundary(1, 1, 0);
-        recorder
-            .Commands.Count(command =>
-                command.CommandText.Contains("ReferentialIdentity", StringComparison.Ordinal)
-            )
-            .Should()
-            .Be(1);
-        AssertSingleDescriptorLookup(recorder, seed.ReferentialId);
+        AssertOneEmbeddedLookupStatement(recorder);
         await AssertStoredKeysAsync(harness, seed.Keys, seed.Keys, expectedColumns: 2);
     }
 
-    private static void AssertSingleDescriptorLookup(
-        RelationalWriteSessionCommandRecorder recorder,
-        Guid referentialId
-    )
+    /// <summary>
+    /// The root and collection descriptor occurrences share one natural-key lookup statement, embedded in the
+    /// first-phase command. A lookup group reads its bound keys through <c>unnest(@g…</c> on PostgreSQL and
+    /// <c>OPENJSON(@g…</c> on SQL Server; hydration's own <c>OPENJSON</c> never binds a group parameter.
+    /// </summary>
+    private static void AssertOneEmbeddedLookupStatement(RelationalWriteSessionCommandRecorder recorder)
     {
-        var boundIds = recorder
-            .Commands[0]
-            .Parameters.SelectMany(parameter =>
-                parameter.Value switch
-                {
-                    Guid[] values => values,
-                    Guid value => [value],
-                    _ => Array.Empty<Guid>(),
-                }
-            );
-        boundIds
-            .Count(value => value == referentialId)
+        static int LookupStatementCount(string commandText) =>
+            Regex.Matches(commandText, @"(?:unnest|OPENJSON)\(@g").Count;
+
+        LookupStatementCount(recorder.Commands[0].CommandText)
             .Should()
             .Be(1, "root and collection occurrences must share one batched descriptor lookup");
+        LookupStatementCount(recorder.Commands[1].CommandText).Should().Be(0);
     }
 
     private static JsonObject Item(string code, string uri, string ns = "uri://ed-fi.org/DMS-1404/items") =>
@@ -647,7 +635,7 @@ internal static class CompactDescriptorResourceScenario
         );
         await using DbCommand command = Command(
             harness,
-            "SELECT descriptor.\"DescriptorId\", descriptor.\"DocumentId\", (SELECT ri.\"ReferentialId\" FROM \"dms\".\"ReferentialIdentity\" ri WHERE ri.\"DocumentId\" = descriptor.\"DocumentId\") FROM \"dms\".\"Descriptor\" descriptor JOIN \"dms\".\"Document\" document ON document.\"DocumentId\" = descriptor.\"DocumentId\" WHERE document.\"DocumentUuid\" = @uuid",
+            "SELECT descriptor.\"DescriptorId\", descriptor.\"DocumentId\" FROM \"dms\".\"Descriptor\" descriptor JOIN \"dms\".\"Document\" document ON document.\"DocumentId\" = descriptor.\"DocumentId\" WHERE document.\"DocumentUuid\" = @uuid",
             ("@uuid", Guid.Parse(path.Split('/')[^1]))
         );
         await using DbDataReader reader = await command.ExecuteReaderAsync();
@@ -655,7 +643,7 @@ internal static class CompactDescriptorResourceScenario
         SeededDescriptor keys = new(reader.GetInt32(0), reader.GetInt64(1));
         keys.DocumentId.Should().BeGreaterThan(int.MaxValue);
         ((long)keys.DescriptorId).Should().NotBe(keys.DocumentId);
-        return new(path, $"{ns}#{codeValue}", keys, reader.GetGuid(2));
+        return new(path, $"{ns}#{codeValue}", keys);
     }
 
     private static async Task AssertStoredKeysAsync(
@@ -831,7 +819,7 @@ internal static class CompactDescriptorResourceScenario
         return new(reader.GetInt64(0), reader.GetInt64(1), reader.GetValue(2));
     }
 
-    private sealed record DescriptorSeed(string Path, string Uri, SeededDescriptor Keys, Guid ReferentialId);
+    private sealed record DescriptorSeed(string Path, string Uri, SeededDescriptor Keys);
 
     private sealed record Stamp(long DocumentId, long Version, object ModifiedAt);
 }

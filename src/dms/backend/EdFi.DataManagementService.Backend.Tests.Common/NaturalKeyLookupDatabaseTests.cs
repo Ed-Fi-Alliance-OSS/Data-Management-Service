@@ -524,6 +524,67 @@ public abstract class NaturalKeyLookupDatabaseTests
     }
 
     [Test]
+    public async Task It_resolves_a_large_deduped_lookup_set_without_losing_repeated_missing_path_diagnostics()
+    {
+        const int LargeLookupCount = 4096;
+        const long FirstBulkSchoolId = 300000;
+        var documentIdBySchoolId = await SeedBulkSchoolsAsync(FirstBulkSchoolId, LargeLookupCount);
+
+        DocumentReference[] references =
+        [
+            .. Enumerable
+                .Range(0, LargeLookupCount)
+                .Select(index =>
+                    SchoolReference(FirstBulkSchoolId + index, $"$.bulkSchools[{index}].schoolReference")
+                ),
+            .. Enumerable
+                .Range(0, 3)
+                .Select(index =>
+                    SchoolReference(UnknownSchoolId, $"$.missingSchools[{index}].schoolReference")
+                ),
+        ];
+
+        var result = await ResolveAsync(references, []);
+
+        result
+            .SuccessfulDocumentReferencesByPath.ToDictionary(
+                resolved => resolved.Key.Value,
+                resolved => resolved.Value.DocumentId
+            )
+            .Should()
+            .Equal(
+                Enumerable
+                    .Range(0, LargeLookupCount)
+                    .ToDictionary(
+                        index => $"$.bulkSchools[{index}].schoolReference",
+                        index => documentIdBySchoolId[FirstBulkSchoolId + index]
+                    )
+            );
+        result
+            .InvalidDocumentReferences.Select(failure => (failure.Path.Value, failure.Reason))
+            .Should()
+            .Equal(
+                ("$.missingSchools[0].schoolReference", DocumentReferenceFailureReason.Missing),
+                ("$.missingSchools[1].schoolReference", DocumentReferenceFailureReason.Missing),
+                ("$.missingSchools[2].schoolReference", DocumentReferenceFailureReason.Missing)
+            );
+
+        // The repeated missing identity is probed once; its three paths are classified from that one miss.
+        var entries = CreateResolver()
+            .TryBuildLookupRequest(ResolverRequest(references, []))!
+            .LookupRequest!.Groups.Should()
+            .ContainSingle()
+            .Subject.Entries;
+        entries.Should().HaveCount(LargeLookupCount + 1);
+        entries
+            .Count(entry =>
+                Convert.ToInt64(entry.KeyValues.Single(), CultureInfo.InvariantCulture) == UnknownSchoolId
+            )
+            .Should()
+            .Be(1);
+    }
+
+    [Test]
     public async Task It_rejects_a_descriptor_uri_that_matches_more_than_one_row()
     {
         var descriptor = Table("dms", "Descriptor");
@@ -891,6 +952,47 @@ public abstract class NaturalKeyLookupDatabaseTests
             ("studentUniqueId", StudentUniqueId),
             ("beginDate", _beginDate)
         );
+    }
+
+    /// <summary>
+    /// Seeds <paramref name="count"/> schools with consecutive ids inside the test transaction, set-based so the
+    /// seed stays two statements however large the batch is, and returns each school's document id.
+    /// </summary>
+    private async Task<Dictionary<long, long>> SeedBulkSchoolsAsync(long firstSchoolId, int count)
+    {
+        var document = Table("dms", "Document");
+        var school = Table("edfi", "School");
+        var documents = IsPgsql
+            ? "SELECT gen_random_uuid(), @key FROM generate_series(1, @count)"
+            : "SELECT TOP (@count) NEWID(), @key FROM sys.all_columns a CROSS JOIN sys.all_columns b";
+
+        await ExecuteAsync(
+            _connection,
+            _transaction,
+            $"""
+            INSERT INTO {document} ({Q("DocumentUuid")}, {Q("ResourceKeyId")}) {documents};
+            INSERT INTO {school} ({Q("DocumentId")}, {Q("NameOfInstitution")}, {Q("SchoolId")})
+            SELECT d.{Q("DocumentId")}, 'Bulk School', @firstSchoolId - 1 + ROW_NUMBER() OVER (ORDER BY d.{Q(
+                "DocumentId"
+            )})
+            FROM {document} d
+            WHERE d.{Q("ResourceKeyId")} = @key
+                AND NOT EXISTS (SELECT 1 FROM {school} s WHERE s.{Q("DocumentId")} = d.{Q("DocumentId")});
+            """,
+            ("key", ResourceKeyId(_school)),
+            ("count", count),
+            ("firstSchoolId", firstSchoolId)
+        );
+
+        var rows = await RowsAsync(
+            _connection,
+            _transaction,
+            $"SELECT {Q("SchoolId")}, {Q("DocumentId")} FROM {school} WHERE {Q("SchoolId")} >= @firstSchoolId;",
+            ("firstSchoolId", firstSchoolId)
+        );
+        rows.Should().HaveCount(count);
+
+        return rows.ToDictionary(row => Convert.ToInt64(row[0]), row => Convert.ToInt64(row[1]));
     }
 
     private async Task<long> InsertProgramAsync(DbConnection connection, string programName, int descriptorId)
