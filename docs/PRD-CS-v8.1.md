@@ -1,6 +1,6 @@
 # Product Requirements Document: Ed-Fi API Configuration Service (CS) v8.1
 
-> **Status**: Planned \
+> **Status**: Published \
 > **Owner**: Vinaya Mayya \
 > **Product**: Ed-Fi API Configuration Service (CS) \
 > **Repository**: `Ed-Fi-Alliance-OSS/Data-Management-Service` (`src/config`) \
@@ -130,6 +130,19 @@ in CS v8.0.
 - **FR-ERROR-8**: All unstructured or untrusted provider, transport, JSON, and
   operational error text SHOULD be replaced with safe, fixed fallback
   messages in client-facing responses.
+- **FR-ERROR-9**: CS SHALL distinguish unresolved references from duplicate
+  natural keys. A caller-supplied reference to an entity that does not exist
+  (for example a vendor, data store, profile, application, ownership token,
+  or claim set copy source) SHALL return `409 Conflict` with type
+  `urn:ed-fi:api:conflict:unresolved-reference`. A create, update, copy, or
+  import that duplicates an existing natural key (vendor company name per
+  tenant, profile name, claim set name, data store name per tenant, API client
+  name per application, data store derivative type per data store,
+  application name per vendor, tenant name, data store context key) SHALL
+  return `400 Bad Request` with type `urn:ed-fi:api:bad-request:data`, with
+  the message under the duplicated field in `validationErrors`.
+  `POST /v3/vendors` SHALL only create; an existing company name is rejected
+  rather than updated. Supersedes v8.0 FR-ERROR-5 for claim sets and vendors.
 
 ### 2.7 Database Instance Provisioning
 

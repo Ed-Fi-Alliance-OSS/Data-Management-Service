@@ -615,7 +615,7 @@ External systems and dependencies:
   context, registered client ID) return `400 Bad Request` validation errors,
   `POST /v3/vendors` with an existing company name updates that vendor
   (`200 OK`), and renaming a vendor to an existing company name returns
-  `500` (known defect). See v8.2 FR-ERROR-9.
+  `500` (known defect). Changed in v8.1; see v8.1 FR-ERROR-9.
 
 ### 3.12 Ed-Fi API Integration
 

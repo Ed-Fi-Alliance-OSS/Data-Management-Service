@@ -20,10 +20,6 @@ Early draft of potential 8.2 requirements.
 
 ### 2.2 Error Handling and Responses
 
-- **FR-ERROR-9**: Decide whether unresolved caller-supplied references should
-  remain `400 Bad Request` validation failures or move to `409 Conflict` for
-  closer ODS Admin API parity, and apply that decision consistently across
-  CS endpoints.
 - **FR-ERROR-10**: CS SHOULD accept a client-supplied correlation ID through a
   configurable request header, applying the same character allowlist, maximum
   length, and invalid-value handling as the DMS resource API (DMS v8.1

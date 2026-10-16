@@ -416,7 +416,7 @@ This is accepted rather than solved: reflecting the original is the one thing
 this event must not do.
 
 This behavior is specified as FR-LOG-3 through FR-LOG-6 in
-[PRD v8.1](./PRD-v8.1.md).
+[PRD v8.1](./PRD-Ed-Fi-API-v8.1.md).
 
 ## Log Routing and Export
 

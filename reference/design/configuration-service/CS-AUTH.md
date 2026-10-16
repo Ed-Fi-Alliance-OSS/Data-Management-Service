@@ -807,10 +807,10 @@ There are two supported orders:
      - *Healthy key store, with traffic.* The last load that read the old rows completes
        within one load timeout of the insert. Its cooldown ends one cooldown later. The
        first new-key request after that starts a reload, which completes within one load
-       timeout. New-key tokens are therefore accepted from at most load timeout + cooldown
-       - load timeout after the insert: **50 s** at the defaults. This assumes a new-key
-       request reaches the instance once the cooldown has ended. Without one, `T_prop`
-       applies.
+       timeout. New-key tokens are therefore accepted from at most load timeout +
+       cooldown + load timeout after the insert: **50 s** at the defaults. This assumes a
+       new-key request reaches the instance once the cooldown has ended. Without one,
+       `T_prop` applies.
      - *Key store failing.* The key arrives with the first successful load after the store
        recovers, within the conditional recovery bounds above (*R* + 82 s at the defaults
        with no load in flight at recovery, *R* + 92 s with one).
