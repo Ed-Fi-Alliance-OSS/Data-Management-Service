@@ -96,27 +96,44 @@ public class Given_AspNetCoreFrontend_Request_Body_Extraction
         return captured;
     }
 
-    [TestCaseSource(nameof(IndexedDuplicateCases))]
-    public async Task It_carries_the_exact_indexed_duplicate_path(
-        string json,
-        string expectedPath,
-        string operation
-    )
+    [TestFixtureSource(
+        typeof(Given_AspNetCoreFrontend_Request_Body_Extraction),
+        nameof(IndexedDuplicateCases)
+    )]
+    public class Given_An_Indexed_Duplicate(string json, string expectedPath, string operation)
     {
-        FrontendRequest captured = await ExtractRequest(json, operation);
-        captured.DuplicatePropertyPath.Should().Be(expectedPath);
-        captured.Body.Should().BeNull();
-        captured.BodyParseErrorMessage.Should().BeNull();
+        private FrontendRequest _captured = null!;
+
+        [SetUp]
+        public async Task Setup() => _captured = await ExtractRequest(json, operation);
+
+        [Test]
+        public void It_carries_the_exact_indexed_duplicate_path() =>
+            _captured.DuplicatePropertyPath.Should().Be(expectedPath);
+
+        [Test]
+        public void It_does_not_set_the_raw_body() => _captured.Body.Should().BeNull();
+
+        [Test]
+        public void It_does_not_report_a_parse_error() => _captured.BodyParseErrorMessage.Should().BeNull();
     }
 
-    [TestCase("upsert")]
-    [TestCase("update")]
-    [TestCase("search")]
-    public async Task It_preserves_malformed_after_duplicate_reporting(string operation)
+    [TestFixture("upsert")]
+    [TestFixture("update")]
+    [TestFixture("search")]
+    public class Given_Malformed_Json_After_A_Duplicate(string operation)
     {
-        FrontendRequest captured = await ExtractRequest("""{"x":1,"x":2,}""", operation);
-        captured.BodyParseErrorMessage.Should().NotBeNullOrEmpty();
-        captured.DuplicatePropertyPath.Should().BeNull();
+        private FrontendRequest _captured = null!;
+
+        [SetUp]
+        public async Task Setup() => _captured = await ExtractRequest("""{"x":1,"x":2,}""", operation);
+
+        [Test]
+        public void It_preserves_malformed_after_duplicate_reporting() =>
+            _captured.BodyParseErrorMessage.Should().NotBeNullOrEmpty();
+
+        [Test]
+        public void It_does_not_report_a_duplicate() => _captured.DuplicatePropertyPath.Should().BeNull();
     }
 
     private static IOptions<AppSettings> AppSettings() =>

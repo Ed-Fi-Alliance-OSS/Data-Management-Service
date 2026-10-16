@@ -29,24 +29,38 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 /// </summary>
 public class IdentityHandlerRequestValidationTests
 {
-    [Test]
-    public async Task It_reports_malformed_json_before_a_duplicate()
+    [TestFixture]
+    public class Given_Malformed_Json_After_A_Duplicate
     {
-        var provider = new CountingIdentityService();
-        RequestInfo requestInfo = CreateRequestInfo(
-            IdentityOperation.Search,
-            provider,
-            """[{"x":1,"x":2},]""",
-            "application/json"
-        );
-        await RunJsonBodyChain(requestInfo);
-        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
-        requestInfo.FrontendResponse.Body!["validationErrors"]!
-            .AsObject()
-            .Select(error => error.Key)
-            .Should()
-            .Equal("$.");
-        provider.InvocationCount.Should().Be(0);
+        private CountingIdentityService _provider = new();
+        private RequestInfo _requestInfo = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _provider = new CountingIdentityService();
+            _requestInfo = CreateRequestInfo(
+                IdentityOperation.Search,
+                _provider,
+                """[{"x":1,"x":2},]""",
+                "application/json"
+            );
+            await RunJsonBodyChain(_requestInfo);
+        }
+
+        [Test]
+        public void It_returns_bad_request() => _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+
+        [Test]
+        public void It_reports_malformed_json_before_a_duplicate() =>
+            _requestInfo.FrontendResponse.Body!["validationErrors"]!
+                .AsObject()
+                .Select(error => error.Key)
+                .Should()
+                .Equal("$.");
+
+        [Test]
+        public void It_does_not_invoke_the_provider() => _provider.InvocationCount.Should().Be(0);
     }
 
     /// <summary>

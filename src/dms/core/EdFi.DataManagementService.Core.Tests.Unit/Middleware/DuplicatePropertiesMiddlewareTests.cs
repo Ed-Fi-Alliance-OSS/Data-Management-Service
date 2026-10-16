@@ -26,7 +26,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [Parallelizable]
 public class DuplicatePropertiesMiddlewareTest
 {
-    private static RequestInfo RawRequest(string body, string? duplicatePath = null) =>
+    private static RequestInfo RawRequest(string body) =>
         new(
             new FrontendRequest(
                 Path: "ed-fi/schools",
@@ -35,8 +35,7 @@ public class DuplicatePropertiesMiddlewareTest
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                RouteQualifiers: [],
-                DuplicatePropertyPath: duplicatePath
+                RouteQualifiers: []
             ),
             RequestMethod.POST,
             No.ServiceProvider
@@ -124,38 +123,77 @@ public class DuplicatePropertiesMiddlewareTest
         public void It_rejects_before_the_next_step() => _nextCalls.Should().Be(0);
     }
 
-    [TestFixture]
-    public class Given_A_Raw_Body_And_Optional_Metadata
+    [TestFixture("""{"other":1,"other":2}""", "$.supplied")]
+    [TestFixture("""{"other":1,"other":2}""", "")]
+    [TestFixture("not JSON", "$.supplied")]
+    [TestFixture("not JSON", "")]
+    public class Given_A_Raw_Body_With_Supplied_Metadata(string body, string suppliedPath)
     {
-        [Test]
-        public async Task It_prefers_the_supplied_path()
-        {
-            RequestInfo requestInfo = RawRequest("""{"other":1,"other":2}""", "$.supplied");
-            await Middleware()
-                .Execute(requestInfo, () => throw new AssertionException("Duplicate continued"));
-            AssertDuplicateProblem(requestInfo, "$.supplied");
-        }
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private int _nextCalls;
 
-        [Test]
-        public async Task It_continues_once_without_duplicates()
+        [SetUp]
+        public async Task Setup()
         {
-            int nextCalls = 0;
+            _requestInfo = RawRequest(body);
+            _requestInfo.FrontendRequest = _requestInfo.FrontendRequest with
+            {
+                DuplicatePropertyPath = suppliedPath,
+            };
+            _nextCalls = 0;
             await Middleware()
                 .Execute(
-                    RawRequest("""[{"x":1},{"x":2}]"""),
+                    _requestInfo,
                     () =>
                     {
-                        nextCalls++;
+                        _nextCalls++;
                         return Task.CompletedTask;
                     }
                 );
-            nextCalls.Should().Be(1);
         }
+
+        [Test]
+        public void It_prefers_the_supplied_path() => AssertDuplicateProblem(_requestInfo, suppliedPath);
+
+        [Test]
+        public void It_rejects_before_the_next_step() => _nextCalls.Should().Be(0);
     }
 
-    [TestFixture]
-    public class Given_A_Duplicate_Path_Is_Logged
+    [TestFixture("""[{"x":1},{"x":2}]""")]
+    [TestFixture("")]
+    public class Given_A_Raw_Body_Without_Duplicate_Metadata_Or_Properties(string body)
     {
+        private int _nextCalls;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _nextCalls = 0;
+            await Middleware()
+                .Execute(
+                    RawRequest(body),
+                    () =>
+                    {
+                        _nextCalls++;
+                        return Task.CompletedTask;
+                    }
+                );
+        }
+
+        [Test]
+        public void It_continues_once_without_duplicates() => _nextCalls.Should().Be(1);
+    }
+
+    [TestFixture("control-padded")]
+    [TestFixture("short-controls")]
+    [TestFixture("astral-boundary")]
+    public class Given_A_Duplicate_Path_Is_Logged(string scenario)
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private LogEvent _duplicateEvent = null!;
+        private string _originalPath = string.Empty;
+        private string _expectedLog = string.Empty;
+
         private sealed class CapturingSink : ILogEventSink
         {
             public List<LogEvent> Events { get; } = [];
@@ -163,12 +201,10 @@ public class DuplicatePropertiesMiddlewareTest
             public void Emit(LogEvent logEvent) => Events.Add(logEvent);
         }
 
-        [TestCase("control-padded")]
-        [TestCase("short-controls")]
-        [TestCase("astral-boundary")]
-        public async Task It_sanitizes_before_truncating_without_changing_the_response(string scenario)
+        [SetUp]
+        public async Task Setup()
         {
-            (string originalPath, string expectedLog) = scenario switch
+            (_originalPath, _expectedLog) = scenario switch
             {
                 "control-padded" => (
                     "$." + new string('\n', 1100) + new string('a', 1023) + "😀tail",
@@ -186,25 +222,39 @@ public class DuplicatePropertiesMiddlewareTest
                 .WriteTo.Sink(sink)
                 .CreateLogger();
             using var factory = new SerilogLoggerFactory(serilogLogger);
-            RequestInfo requestInfo = RawRequest("{}", originalPath);
+            _requestInfo = RawRequest("{}");
+            _requestInfo.FrontendRequest = _requestInfo.FrontendRequest with
+            {
+                DuplicatePropertyPath = _originalPath,
+            };
             await new DuplicatePropertiesMiddleware(
                 factory.CreateLogger<DuplicatePropertiesMiddleware>()
-            ).Execute(requestInfo, () => throw new AssertionException("Duplicate continued"));
+            ).Execute(_requestInfo, () => throw new AssertionException("Duplicate continued"));
 
-            LogEvent duplicateEvent = sink.Events.Single(item =>
-                item.Properties.ContainsKey("DuplicatePath")
-            );
-            ((ScalarValue)duplicateEvent.Properties["DuplicatePath"]).Value.Should().Be(expectedLog);
-            duplicateEvent
+            _duplicateEvent = sink.Events.Single(item => item.Properties.ContainsKey("DuplicatePath"));
+        }
+
+        [Test]
+        public void It_sanitizes_before_truncating() =>
+            ((ScalarValue)_duplicateEvent.Properties["DuplicatePath"]).Value.Should().Be(_expectedLog);
+
+        [Test]
+        public void It_removes_controls_from_the_rendered_message() =>
+            _duplicateEvent
                 .RenderMessage()
                 .Should()
                 .NotContain("\n")
                 .And.NotContain("\r")
                 .And.NotContain("\t")
                 .And.NotContain("\u202E");
-            ((ScalarValue)duplicateEvent.Properties["TraceId"]).Value.Should().Be("traceId");
-            AssertDuplicateProblem(requestInfo, originalPath);
-        }
+
+        [Test]
+        public void It_logs_the_trace_id_value() =>
+            ((ScalarValue)_duplicateEvent.Properties["TraceId"]).Value.Should().Be("traceId");
+
+        [Test]
+        public void It_keeps_the_original_path_in_the_response() =>
+            AssertDuplicateProblem(_requestInfo, _originalPath);
     }
 
     internal static IPipelineStep Middleware()

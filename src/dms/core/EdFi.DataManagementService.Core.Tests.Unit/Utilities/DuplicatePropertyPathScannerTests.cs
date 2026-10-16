@@ -15,6 +15,10 @@ public class Given_Duplicate_Property_Path_Scanning(string json, bool expectedFo
 {
     private bool _found;
     private string _path = string.Empty;
+    private bool _emptyFound;
+    private string _emptyPath = string.Empty;
+    private bool _repeatedFound;
+    private string _repeatedPath = string.Empty;
 
     private static IEnumerable<object[]> Cases()
     {
@@ -65,11 +69,18 @@ public class Given_Duplicate_Property_Path_Scanning(string json, bool expectedFo
     }
 
     [SetUp]
-    public void Setup() =>
+    public void Setup()
+    {
         _found = DuplicatePropertyPathScanner.TryFindFirstDuplicatePropertyPath(
             Encoding.UTF8.GetBytes(json),
             out _path
         );
+        _emptyFound = DuplicatePropertyPathScanner.TryFindFirstDuplicatePropertyPath("{}"u8, out _emptyPath);
+        _repeatedFound = DuplicatePropertyPathScanner.TryFindFirstDuplicatePropertyPath(
+            Encoding.UTF8.GetBytes(json),
+            out _repeatedPath
+        );
+    }
 
     [Test]
     public void It_reports_whether_a_duplicate_exists() => _found.Should().Be(expectedFound);
@@ -78,17 +89,14 @@ public class Given_Duplicate_Property_Path_Scanning(string json, bool expectedFo
     public void It_reports_the_exact_first_duplicate_path() => _path.Should().Be(expectedPath);
 
     [Test]
-    public void It_keeps_scan_state_local()
-    {
-        DuplicatePropertyPathScanner
-            .TryFindFirstDuplicatePropertyPath("{}"u8, out string empty)
-            .Should()
-            .BeFalse();
-        empty.Should().BeEmpty();
-        DuplicatePropertyPathScanner
-            .TryFindFirstDuplicatePropertyPath(Encoding.UTF8.GetBytes(json), out string repeated)
-            .Should()
-            .Be(expectedFound);
-        repeated.Should().Be(expectedPath);
-    }
+    public void It_does_not_find_a_duplicate_in_an_independent_scan() => _emptyFound.Should().BeFalse();
+
+    [Test]
+    public void It_does_not_carry_a_path_into_an_independent_scan() => _emptyPath.Should().BeEmpty();
+
+    [Test]
+    public void It_reports_the_same_result_on_a_repeated_scan() => _repeatedFound.Should().Be(expectedFound);
+
+    [Test]
+    public void It_reports_the_same_path_on_a_repeated_scan() => _repeatedPath.Should().Be(expectedPath);
 }

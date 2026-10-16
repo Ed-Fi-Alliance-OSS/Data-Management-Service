@@ -27,21 +27,18 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
             requestInfo.FrontendRequest.TraceId.Value
         );
 
-        string? duplicatePath = requestInfo.FrontendRequest.DuplicatePropertyPath;
+        string duplicatePath = requestInfo.FrontendRequest.DuplicatePropertyPath ?? string.Empty;
+        bool hasDuplicate = requestInfo.FrontendRequest.DuplicatePropertyPath is not null;
 
-        if (
-            duplicatePath is null
-            && !string.IsNullOrEmpty(requestInfo.FrontendRequest.Body)
-            && DuplicatePropertyPathScanner.TryFindFirstDuplicatePropertyPath(
-                Encoding.UTF8.GetBytes(requestInfo.FrontendRequest.Body),
-                out string path
-            )
-        )
+        if (!hasDuplicate && !string.IsNullOrEmpty(requestInfo.FrontendRequest.Body))
         {
-            duplicatePath = path;
+            hasDuplicate = DuplicatePropertyPathScanner.TryFindFirstDuplicatePropertyPath(
+                Encoding.UTF8.GetBytes(requestInfo.FrontendRequest.Body),
+                out duplicatePath
+            );
         }
 
-        if (duplicatePath is not null)
+        if (hasDuplicate)
         {
             var validationErrors = new Dictionary<string, string[]>
             {
