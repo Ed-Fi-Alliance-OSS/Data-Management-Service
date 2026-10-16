@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Extraction;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -31,6 +32,16 @@ internal static class RelationalQueryRequestPreprocessor
             throw new ArgumentException(
                 "Relational query preprocessing requires resource query capability metadata in the supported state.",
                 nameof(queryCapability)
+            );
+        }
+
+        var validationFailures = ValidateDescriptorQueryValues(queryElements, queryCapability);
+
+        if (validationFailures is not null)
+        {
+            return new RelationalQueryPreprocessingResult(
+                new RelationalQueryPreprocessingOutcome.ValidationFailure(validationFailures),
+                []
             );
         }
 
@@ -183,6 +194,43 @@ internal static class RelationalQueryRequestPreprocessor
         );
     }
 
+    /// <summary>
+    /// Checks every descriptor-valued element before the main pass, so a malformed value is rejected
+    /// whatever its position: the main pass returns an empty page as soon as an earlier element proves
+    /// the query has no matches. Returns null when every value is well-formed.
+    /// </summary>
+    private static List<WriteValidationFailure>? ValidateDescriptorQueryValues(
+        IReadOnlyList<QueryElement> queryElements,
+        RelationalQueryCapability queryCapability
+    )
+    {
+        List<WriteValidationFailure>? failures = null;
+
+        foreach (var queryElement in queryElements)
+        {
+            if (
+                queryElement is not null
+                && queryCapability.SupportedFieldsByQueryField.TryGetValue(
+                    queryElement.QueryFieldName,
+                    out var supportedField
+                )
+                && supportedField.Target is RelationalQueryFieldTarget.DescriptorIdColumn
+                && !DescriptorText.IsWellFormedWithoutNul(queryElement.Value)
+            )
+            {
+                failures ??= [];
+                failures.Add(
+                    new WriteValidationFailure(
+                        queryElement.DocumentPaths[0],
+                        DescriptorText.InvalidValueMessage
+                    )
+                );
+            }
+        }
+
+        return failures;
+    }
+
     private static string BuildDescriptorLookupFailureMessage(
         QueryElement queryElement,
         DescriptorReferenceFailure failure
@@ -219,7 +267,7 @@ internal static class RelationalQueryRequestPreprocessor
         var documentIdentity = new DocumentIdentity([
             new DocumentIdentityElement(
                 DocumentIdentity.DescriptorIdentityJsonPath,
-                queryElement.Value.ToLowerInvariant()
+                DescriptorText.AssertWellFormedWithoutNul(queryElement.Value).ToLowerInvariant()
             ),
         ]);
 

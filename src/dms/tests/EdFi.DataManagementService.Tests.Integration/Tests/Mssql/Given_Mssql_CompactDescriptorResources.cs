@@ -74,6 +74,12 @@ public sealed class Given_Mssql_CompactDescriptorResources : MssqlApiIntegration
         );
 
     [Test]
+    public Task It_validates_descriptor_filter_values_at_the_framework_percent_decoding_boundary() =>
+        CompactDescriptorResourceScenario.It_validates_descriptor_filter_values_at_the_framework_percent_decoding_boundary(
+            Harness
+        );
+
+    [Test]
     public Task It_protects_referenced_descriptors_without_changing_rows_or_stamps() =>
         CompactDescriptorResourceScenario.It_protects_referenced_descriptors_without_changing_rows_or_stamps(
             Harness

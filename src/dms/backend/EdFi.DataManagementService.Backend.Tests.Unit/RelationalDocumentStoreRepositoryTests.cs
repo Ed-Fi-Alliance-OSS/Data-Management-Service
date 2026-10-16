@@ -14,6 +14,7 @@ using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
+using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Profile;
 using FakeItEasy;
 using FluentAssertions;
@@ -8522,6 +8523,73 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                 && sql.Contains("SchoolWithCustomAuthorization", StringComparison.Ordinal)
                 && sql.Contains("DocumentId", StringComparison.Ordinal)
             );
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    // A malformed descriptor filter is a client error, answered like Core's own query-validation 400s:
+    // before custom-view validation, resolution and page work.
+    [Test]
+    public async Task It_rejects_a_malformed_descriptor_filter_without_validating_custom_views_or_resolving()
+    {
+        var mappingSet = CreateQuerySupportedMappingSet(
+            _schoolResourceInfo,
+            CreateSupportedQueryField(
+                "schoolCategoryDescriptor",
+                "$.schoolCategoryDescriptor",
+                "string",
+                new RelationalQueryFieldTarget.DescriptorIdColumn(
+                    new DbColumnName("SchoolCategoryDescriptorId"),
+                    new QualifiedResourceName("Ed-Fi", "SchoolCategoryDescriptor")
+                )
+            )
+        );
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [
+                CreateQueryElement(
+                    "schoolCategoryDescriptor",
+                    "$.schoolCategoryDescriptor",
+                    "uri://ed-fi.org/SchoolCategoryDescriptor#\0",
+                    "string"
+                ),
+            ],
+            totalCount: true,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+            ]
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result
+            .Should()
+            .BeOfType<QueryResult.QueryFailureValidation>()
+            .Which.ValidationFailures.Should()
+            .Equal(
+                new WriteValidationFailure(
+                    new JsonPath("$.schoolCategoryDescriptor"),
+                    DescriptorText.InvalidValueMessage
+                )
+            );
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,

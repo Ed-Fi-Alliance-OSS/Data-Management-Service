@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Tests.Common;
+using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Tests.Integration.Doubles;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -210,6 +211,53 @@ internal static class CompactDescriptorResourceScenario
             .GetValue<string>()
             .Should()
             .Be(spaced.Uri);
+    }
+
+    // The query strings are sent with raw percent sequences, because the framework's own decoding is
+    // what is under test; Uri.EscapeDataString would turn each '%' into "%25".
+    public static async Task It_validates_descriptor_filter_values_at_the_framework_percent_decoding_boundary(
+        ApiIntegrationHarness harness
+    )
+    {
+        // A percent-encoded UTF-8 sequence decodes to its character and resolves.
+        DescriptorSeed cafe = await SeedDescriptorAsync(harness, codeValue: "Café");
+        string cafeItem = await PostAsync(harness, Items, Item("cafe", cafe.Uri));
+        string cafePrefix = Uri.EscapeDataString(cafe.Uri[..^1]);
+        (await QueryRawAsync(harness, Items, $"{cafePrefix}%C3%A9"))
+            .Select(row => row!["id"]!.GetValue<string>())
+            .Should()
+            .Equal(cafeItem.Split('/')[^1]);
+
+        // A NUL is a path-attributed 400, on GET-many and on partitions, and the value is never echoed.
+        foreach (string endpoint in new[] { Items, $"{Items}/partitions" })
+        {
+            string partitionCount = endpoint.EndsWith("/partitions", StringComparison.Ordinal)
+                ? "&number=2"
+                : "";
+            using HttpResponseMessage nul = await harness.HttpClient.GetAsync(
+                $"{endpoint}?schoolTypeDescriptor={cafePrefix}%00{partitionCount}"
+            );
+            string body = await nul.Content.ReadAsStringAsync();
+            nul.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);
+            JsonNode.Parse(body)!["validationErrors"]!["$.schoolTypeDescriptor"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be(DescriptorText.InvalidValueMessage);
+        }
+
+        // An invalid UTF-8 sequence (an encoded lone surrogate) stays literal text rather than being
+        // rejected or replaced with U+FFFD, so it is a well-formed URI that matches nothing here...
+        DescriptorSeed literal = await SeedDescriptorAsync(harness, codeValue: "%ED%A0%80");
+        string literalPrefix = Uri.EscapeDataString(literal.Uri[..^"%ED%A0%80".Length]);
+        (await QueryRawAsync(harness, Items, $"{literalPrefix}%ED%A0%80")).Should().BeEmpty();
+
+        // ...and matches a descriptor whose code value is that literal text. An empty page alone could
+        // not tell literal text from a substituted U+FFFD.
+        string literalItem = await PostAsync(harness, Items, Item("literal", literal.Uri));
+        (await QueryRawAsync(harness, Items, $"{literalPrefix}%ED%A0%80"))
+            .Select(row => row!["id"]!.GetValue<string>())
+            .Should()
+            .Equal(literalItem.Split('/')[^1]);
     }
 
     public static async Task It_protects_referenced_descriptors_without_changing_rows_or_stamps(
@@ -713,6 +761,19 @@ internal static class CompactDescriptorResourceScenario
         JsonArray page = JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsArray();
         response.Headers.GetValues("Total-Count").Single().Should().Be(page.Count.ToString());
         return page;
+    }
+
+    private static async Task<JsonArray> QueryRawAsync(
+        ApiIntegrationHarness harness,
+        string endpoint,
+        string rawQueryValue
+    )
+    {
+        using HttpResponseMessage response = await harness.HttpClient.GetAsync(
+            $"{endpoint}?schoolTypeDescriptor={rawQueryValue}"
+        );
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        return JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsArray();
     }
 
     private static DbCommand Command(
