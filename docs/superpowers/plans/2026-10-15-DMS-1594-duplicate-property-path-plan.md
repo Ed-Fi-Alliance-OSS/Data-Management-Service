@@ -21,7 +21,7 @@
 - Preserve BOM/whitespace handling, buffer clearing/return, token-info raw handling, cancellation forwarding, and current JSON grammar. No new assembly, dependency, parser framework, configuration, or shared mutable scan state.
 - No CMS, provider contract/package, OpenAPI, CDC, persistence, mapping/fingerprint, or general path-escaping changes. `RelationalMappingVersion` remains `v3`.
 - Refresh DMS-1595 overlap before editing; preserve its media-type correction if present. At the inspected baseline, duplicate responses default to `application/json`. Do not introduce a resource-wide media-type policy.
-- This document is a plan awaiting human review and an execution-method choice. Commands below are for future authorized execution; none were run during planning.
+- The human approved this plan and selected native execution on 2026-10-15. No commands were run during planning; implementation and verification are now authorized.
 
 ## Review Focus
 
@@ -184,6 +184,14 @@ Expected green: positive counts, no new skipped fixtures, zero failures. A zero-
 
 - [ ] **Step 7: Run the focused resource E2E cases against rebuilt images.** Verify `docker ps`, then teardown the local E2E stack before rebuilding for changed DMS code, following `AGENTS.md`. From the repository root:
 
+Execution correction: the root `E2ETest` target dispatches already-built test assemblies and rejects a missing assembly as a zero-test run. Build the E2E project in the selected configuration first:
+
+```powershell
+dotnet build src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj -c Release
+```
+
+Expected: build succeeds with the Release E2E assembly present. Then run the environment and test commands below.
+
 ```powershell
 pwsh -File src/dms/tests/EdFi.DataManagementService.Tests.E2E/teardown-local-dms.ps1
 pwsh ./build-dms.ps1 E2ETest -Configuration Release -DatabaseEngine postgresql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter '(Category=@DMS-1594)&(Category!=@MssqlOnly)'
@@ -203,6 +211,6 @@ Omit `-SkipDockerBuild` so this run tests the changed frontend. The build entry 
 | REQ-5 every matrix case in both shapes/adapters | Task 2 raw matrix; Task 3 byte matrix; Task 1 focused algorithm cases. |
 | Failure precedence/compatibility/logging | Task 2 raw parse/service-claim/log tests; Task 3 byte parse/full HTTP gates/headers and existing projection/cache checks. |
 
-Self-review completed against the approved spec: task interfaces agree, every requirement has an owner, all five Review Focus inputs have concrete assertions, no infrastructure or product scope was added, and test commands remain future execution instructions. No plan implementation or local tests were performed.
+Planning self-review completed against the approved spec: task interfaces agree, every requirement has an owner, all five Review Focus inputs have concrete assertions, and no infrastructure or product scope was added. No implementation or local tests were performed during planning.
 
-**Review gate:** The human reviews this plan and chooses an execution method before code changes or test execution. Recommend native execution (`superpowers:executing-plans`) because these three tasks form one small sequential dependency chain; use subagent-driven execution only if the human selects it. Preserve the current-branch instruction. Report any unavailable verification as outstanding evidence rather than claiming success.
+**Review gate:** Closed by the human's approval and selection of native execution (`superpowers:executing-plans`). Preserve the current-branch instruction. Report any unavailable verification as outstanding evidence rather than claiming success.
