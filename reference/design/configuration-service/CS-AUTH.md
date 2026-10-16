@@ -34,8 +34,25 @@ and not a bearer access token. Both identity provider modes enforce it and both 
 `self-contained` in the CMS token store, `keycloak` by delegating to Keycloak. See
 [Token revocation](#token-revocation).
 
-In `self-contained` mode, `/connect/token` also accepts credentials via HTTP
-Basic authentication in addition to the form body.
+`/connect/token` accepts client credentials as HTTP Basic or as form fields in both identity provider modes, with Basic taking precedence.
+A Basic header that parses supplies both `client_id` and `client_secret`.
+Form fields only fill a value that Basic left empty.
+A malformed Basic value falls back to the form fields.
+A request that carries both Basic and form credentials is not rejected at `/connect/token`, unlike `/connect/revoke`.
+
+An omitted or empty `scope` is treated as absent, as RFC 6749 section 3.2 requires, so CMS does not forward a `scope` parameter.
+Keycloak then issues the client's default client scopes.
+The `self-contained` provider issues the scopes registered for the client.
+
+Under Keycloak, a requested scope that Keycloak rejects answers `400` with `type` `urn:ed-fi:api:bad-request` and `errors` of `["invalid_scope. <description>"]`, for example `invalid_scope. Invalid scopes: edfi_admin_api/readonly_access`.
+It used to answer `502`.
+Other Keycloak failures, such as an unreachable server, a 5xx or any other `400` error code, still answer `502`.
+The `self-contained` provider does not reject an ungranted scope and falls back to the registered scopes.
+
+Both `/openapi/v1.json` and `/metadata/specifications` declare an `oauth2_client_credentials` scheme whose `tokenUrl` is the document's own server URL (request scheme, host and path base) followed by `/connect/token`.
+The scheme lists the scopes `edfi_admin_api/full_access`, `edfi_admin_api/readonly_access` and `edfi_admin_api/authMetadata_readonly_access`.
+Operations that need no token (`/connect/*`, `GET /`, `GET /tenancy`, `GET /health` and discovery) declare an empty `security` array.
+A stock Swagger UI can therefore authorize against the Configuration Service in both modes.
 
 ## Token revocation
 

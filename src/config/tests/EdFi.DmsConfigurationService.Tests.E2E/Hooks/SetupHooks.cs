@@ -49,9 +49,9 @@ public static class SetupHooks
             StringComparison.OrdinalIgnoreCase
         );
 
-    // HTTP Basic auth on /connect/token is only supported in self-contained
-    // (OpenIddict) mode; keycloak mode expects credentials in the form body. Scope
-    // scenarios tagged @SelfContainedOnly accordingly so they don't run under keycloak.
+    // Scenarios tagged @SelfContainedOnly depend on behavior only the self-contained (OpenIddict)
+    // identity provider has, such as token revocation semantics or claim shapes Keycloak does not
+    // emit, so they do not run under keycloak.
     [BeforeScenario("SelfContainedOnly")]
     public static void SkipUnlessSelfContainedIdentityProvider()
     {
@@ -62,7 +62,7 @@ public static class SetupHooks
         )
         {
             Assert.Ignore(
-                $"Requires the self-contained identity provider (HTTP Basic on /connect/token is self-contained only); current provider is '{identityProvider}'."
+                $"Requires the self-contained identity provider; current provider is '{identityProvider}'."
             );
         }
     }
