@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Frozen;
 using System.Collections.Immutable;
 using EdFi.DataManagementService.Backend.External.Plans;
 
@@ -76,5 +77,5 @@ internal sealed record RelationalWriteMergeResult
     /// missing-reference deferral enabled.
     /// </summary>
     public IReadOnlySet<string> DeferredMissingDocumentReferencePaths { get; init; } =
-        new HashSet<string>(StringComparer.Ordinal);
+        FrozenSet<string>.Empty;
 }

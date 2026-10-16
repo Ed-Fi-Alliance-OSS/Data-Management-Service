@@ -93,10 +93,7 @@ internal sealed class RelationalWriteMergeOrchestrator(
         return mergeResult with
         {
             DeferredMissingDocumentReferencePaths = resolvedReferences
-                .InvalidDocumentReferences.Where(static failure =>
-                    failure.Reason is DocumentReferenceFailureReason.Missing
-                )
-                .Select(static failure => failure.Path.Value)
+                .MissingDocumentReferences.Select(static failure => failure.Path.Value)
                 .ToHashSet(StringComparer.Ordinal),
         };
     }

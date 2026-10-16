@@ -137,37 +137,68 @@ public class Given_NamespaceAuthorizationExecutor
         commandExecutor.Commands[0].Parameters[0].Value.Should().Be("uri://ed-fi.org/Thing");
     }
 
-    [Test]
-    public void It_types_a_null_proposed_namespace_parameter_as_a_string_and_leaves_other_parameters_untyped()
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Null_Proposed_Namespace
     {
-        var request = new NamespaceAuthorizationExecutionRequest(
-            CreateMappingSet(SqlDialect.Pgsql),
-            DocumentId: 0L,
-            ProposedNamespace: null,
-            [ProposedCheck(0)],
-            NamespacePrefixParameterizationFactory.Create(SqlDialect.Pgsql, _twoPrefixes, "namespacePrefixes")
-        );
-        var sqlPlan = new NamespaceAuthorizationSqlCompiler(SqlDialect.Pgsql).Compile(
-            new NamespaceAuthorizationSqlSpec(
-                request.Checks,
-                request.NamespacePrefixParameterization,
-                NamespaceAuthorizationSqlSpecDefaults.DocumentIdParameterName,
-                NamespaceAuthorizationSqlSpecDefaults.ProposedNamespaceParameterName
-            )
-        );
+        private RelationalParameter _proposed = null!;
+        private IReadOnlyList<RelationalParameter> _otherParameters = null!;
+        private NpgsqlParameter _configuredProposed = null!;
 
-        var parameters = NamespaceAuthorizationExecutor.BuildCommand(sqlPlan, request).Parameters;
+        [SetUp]
+        public void Setup()
+        {
+            var request = new NamespaceAuthorizationExecutionRequest(
+                CreateMappingSet(SqlDialect.Pgsql),
+                DocumentId: 0L,
+                ProposedNamespace: null,
+                [ProposedCheck(0)],
+                NamespacePrefixParameterizationFactory.Create(
+                    SqlDialect.Pgsql,
+                    _twoPrefixes,
+                    "namespacePrefixes"
+                )
+            );
+            var sqlPlan = new NamespaceAuthorizationSqlCompiler(SqlDialect.Pgsql).Compile(
+                new NamespaceAuthorizationSqlSpec(
+                    request.Checks,
+                    request.NamespacePrefixParameterization,
+                    NamespaceAuthorizationSqlSpecDefaults.DocumentIdParameterName,
+                    NamespaceAuthorizationSqlSpecDefaults.ProposedNamespaceParameterName
+                )
+            );
 
-        var proposed = parameters.Single(static parameter => parameter.Name == "@proposedNamespace");
-        proposed.Value.Should().BeNull();
-        var native = new NpgsqlParameter { Value = DBNull.Value };
-        proposed.ConfigureParameter.Should().NotBeNull();
-        proposed.ConfigureParameter!(native);
-        native.DbType.Should().Be(DbType.String);
-        parameters
-            .Where(static parameter => parameter.Name != "@proposedNamespace")
-            .Should()
-            .OnlyContain(static parameter => parameter.ConfigureParameter == null);
+            var parameters = NamespaceAuthorizationExecutor.BuildCommand(sqlPlan, request).Parameters;
+
+            _proposed = parameters.Single(static parameter => parameter.Name == "@proposedNamespace");
+            _otherParameters =
+            [
+                .. parameters.Where(static parameter => parameter.Name != "@proposedNamespace"),
+            ];
+            _configuredProposed = new NpgsqlParameter { Value = DBNull.Value };
+            _proposed.ConfigureParameter?.Invoke(_configuredProposed);
+        }
+
+        [Test]
+        public void It_binds_a_null_value()
+        {
+            _proposed.Value.Should().BeNull();
+        }
+
+        [Test]
+        public void It_types_the_proposed_namespace_parameter_as_a_string()
+        {
+            _configuredProposed.DbType.Should().Be(DbType.String);
+        }
+
+        [Test]
+        public void It_leaves_the_other_parameters_untyped()
+        {
+            _otherParameters
+                .Should()
+                .NotBeEmpty()
+                .And.OnlyContain(static parameter => parameter.ConfigureParameter == null);
+        }
     }
 
     [Test]

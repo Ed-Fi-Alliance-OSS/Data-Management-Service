@@ -185,6 +185,15 @@ public sealed record ResolvedReferenceSet(
 )
 {
     public bool HasFailures => InvalidDocumentReferences.Count > 0 || InvalidDescriptorReferences.Count > 0;
+
+    /// <summary>
+    /// The document-reference failures whose referenced document does not exist. These are the only
+    /// failures that can be deferred so authorization is evaluated before the missing-reference conflict.
+    /// </summary>
+    public IEnumerable<DocumentReferenceFailure> MissingDocumentReferences =>
+        InvalidDocumentReferences.Where(static failure =>
+            failure.Reason is DocumentReferenceFailureReason.Missing
+        );
 }
 
 /// <summary>
