@@ -49,7 +49,7 @@ public class IdentityEndpointModuleTests
     ) =>
         new()
         {
-            ["AppSettings:EnableIdentityManagement"] = "true",
+            ["DataManagement:IdentityManagement:Enabled"] = "true",
             ["AppSettings:MultiTenancy"] = multiTenancy ? "true" : "false",
             ["AppSettings:RouteQualifierSegments"] = routeQualifierSegments,
         };

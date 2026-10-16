@@ -19,14 +19,13 @@ using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
-using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
 using FrontendAppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
 public partial class MetadataEndpointModule(
     IOptions<FrontendAppSettings> appSettings,
-    IOptions<CoreAppSettings> coreOptions
+    IOptions<IdentityManagementOptions> identityManagementOptions
 ) : IEndpointModule
 {
     private const string DataOpenApiRouteBase = "data";
@@ -279,7 +278,7 @@ public partial class MetadataEndpointModule(
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        bool identityManagementEnabled = coreOptions.Value.EnableIdentityManagement;
+        bool identityManagementEnabled = identityManagementOptions.Value.Enabled;
 
         MapMetadataEndpoints(endpoints, string.Empty, validateRoute: false, identityManagementEnabled);
 
@@ -616,7 +615,7 @@ public partial class MetadataEndpointModule(
     /// <summary>
     /// Serves the fixed identity OpenAPI document. Unlike Change-Queries, the identity
     /// document is always present once mapped - the route itself is mapped only when
-    /// AppSettings:EnableIdentityManagement is true - so there is no missing-document 404 branch here.
+    /// DataManagement:IdentityManagement:Enabled is true - so there is no missing-document 404 branch here.
     /// </summary>
     internal static async Task GetIdentityOpenApiSpec(
         HttpContext httpContext,

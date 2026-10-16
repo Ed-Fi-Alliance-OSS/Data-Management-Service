@@ -196,8 +196,10 @@ function New-BootstrapCdcHandoff {
         BrokerSizeOverrideFile = Join-Path $StatePath 'broker-size.json'
         DatabaseHostPort = $databasePort
     }
-    $settingsCopy.AppSettings.UseApiSchemaPath = $true
-    $settingsCopy.AppSettings.ApiSchemaPath = Join-Path $PSScriptRoot '.bootstrap/ApiSchema'
+    $settingsCopy.AppSettings.ApiSchema = @{
+        UseCustomPath = $true
+        Path = Join-Path $PSScriptRoot '.bootstrap/ApiSchema'
+    }
     # Private deployment configuration is separate from the secret-free controller journal.
     $configurationRoot = Join-Path $PSScriptRoot '.bootstrap/cdc-runtime'
     $id = [guid]::NewGuid().ToString('N')
@@ -213,8 +215,8 @@ function New-BootstrapCdcHandoff {
     $environment.AppSettings__Datastore = $settingsCopy.AppSettings.Datastore
     $environment.AppSettings__MultiTenancy = 'false'
     $environment.AppSettings__RouteQualifierSegments = ''
-    $environment.AppSettings__UseApiSchemaPath = 'true'
-    $environment.AppSettings__ApiSchemaPath = '/app/ApiSchema'
+    $environment.AppSettings__ApiSchema__UseCustomPath = 'true'
+    $environment.AppSettings__ApiSchema__Path = '/app/ApiSchema'
     $composePath = Join-Path $configurationRoot "bootstrap-$id.dms.json"
     Write-BootstrapCdcPrivateJson -Path $composePath -Value @{ services = @{ dms = @{ environment = $environment } } }
     return [pscustomobject]@{

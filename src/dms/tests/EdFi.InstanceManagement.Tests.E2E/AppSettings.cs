@@ -30,6 +30,4 @@ public static class AppSettings
     public static string AuthenticationService =>
         Configuration["AuthenticationService"]
         ?? "http://localhost:8045/realms/edfi/protocol/openid-connect/token";
-
-    public static bool EnableClaimsetReload => bool.Parse(Configuration["EnableClaimsetReload"] ?? "false");
 }

@@ -9,13 +9,19 @@ using System.Text.Json.Serialization;
 namespace EdFi.DataManagementService.Core.Configuration;
 
 /// <summary>
-/// Authorization configuration for the claimset management endpoints. The role is deliberately not
-/// validated by an <c>IValidateOptions</c> implementation: an unusable role leaves those endpoints
-/// unmapped, it must never fail service startup.
+/// Switch and authorization configuration for the claimset management endpoints. The role is
+/// deliberately not validated by an <c>IValidateOptions</c> implementation: an unusable role leaves
+/// those endpoints unmapped, it must never fail service startup.
 /// </summary>
 public sealed class ManagementEndpointsOptions
 {
     public const string SectionName = "AppSettings:ManagementEndpoints";
+
+    /// <summary>
+    /// If true, maps the claimset management endpoints (reload and view). Defaults to false so the
+    /// endpoints fall through to the fallback 404 until an operator opts in.
+    /// </summary>
+    public bool Enabled { get; set; }
 
     /// <summary>
     /// The single literal role token a bearer must carry, under

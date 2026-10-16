@@ -63,12 +63,12 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                     "IdentitySettings:ClientSecretHashingIterations",
                     options.ClientSecretHashingIterations
                 );
-                options.TokenCleanupEnabled = configuration.GetValue<bool>(
-                    "IdentitySettings:TokenCleanupEnabled",
+                options.TokenCleanup.Enabled = configuration.GetValue<bool>(
+                    "IdentitySettings:TokenCleanup:Enabled",
                     true
                 );
-                options.TokenCleanupIntervalMinutes = configuration.GetValue<int>(
-                    "IdentitySettings:TokenCleanupIntervalMinutes",
+                options.TokenCleanup.IntervalMinutes = configuration.GetValue<int>(
+                    "IdentitySettings:TokenCleanup:IntervalMinutes",
                     30
                 );
                 options.BearerTokenPerClientLimit = configuration.GetValue<int>(

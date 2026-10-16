@@ -47,7 +47,7 @@ public class IdentityNoStoreTests
                     configuration.AddInMemoryCollection(
                         new Dictionary<string, string?>
                         {
-                            ["AppSettings:EnableIdentityManagement"] = enableIdentityManagement
+                            ["DataManagement:IdentityManagement:Enabled"] = enableIdentityManagement
                                 ? "true"
                                 : "false",
                         }
@@ -150,7 +150,7 @@ public class IdentityNoStoreTests
                         configuration.AddInMemoryCollection(
                             new Dictionary<string, string?>
                             {
-                                ["AppSettings:EnableIdentityManagement"] = "true",
+                                ["DataManagement:IdentityManagement:Enabled"] = "true",
                             }
                         );
                     }

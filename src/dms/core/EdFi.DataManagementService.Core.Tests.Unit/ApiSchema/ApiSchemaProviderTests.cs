@@ -232,8 +232,7 @@ public abstract class ApiSchemaProviderWorkspaceTestBase
                 new AppSettings
                 {
                     AllowIdentityUpdateOverrides = "",
-                    UseApiSchemaPath = true,
-                    ApiSchemaPath = WorkspaceRoot,
+                    ApiSchema = new() { UseCustomPath = true, Path = WorkspaceRoot },
                 }
             ),
             validator

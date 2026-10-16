@@ -688,7 +688,7 @@ public class TokenEndpointModuleTests
                         new Dictionary<string, string?>
                         {
                             ["AppSettings:AuthenticationService"] = "http://dev-test-auth-service",
-                            ["AppSettings:UseApiSchemaPath"] = "false",
+                            ["AppSettings:ApiSchema:UseCustomPath"] = "false",
                             ["AppSettings:BypassAuthorization"] = "true",
                             ["JwtAuthentication:MetadataAddress"] =
                                 "http://test-idp/.well-known/openid-configuration",

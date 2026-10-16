@@ -568,7 +568,7 @@ Describe 'Private API CDC attachment contract' {
                 } | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $bootstrap 'bootstrap-manifest.json')
             }
             $script:settings = @{
-                AppSettings = @{ Datastore = $Provider; ApiSchemaPath = $script:attachmentRoot }
+                AppSettings = @{ Datastore = $Provider; ApiSchema = @{ Path = $script:attachmentRoot } }
                 ConfigurationServiceSettings = @{ BaseUrl = 'http://localhost:18081'; ClientSecret = 'private-sentinel' }
                 DataManagement = @{ DocumentCache = @{
                     Targets = @(@{ Tenant = ''; DataStoreId = 42 }, @{ Tenant = ''; DataStoreId = 43 })

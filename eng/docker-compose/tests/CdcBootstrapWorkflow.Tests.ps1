@@ -697,7 +697,7 @@ Export-ModuleMember -Function Get-ComposeResolvedEnvValue
         $compose.services.dms.environment.ConfigurationServiceSettings__BaseUrl | Should -Be 'http://ed-fi-api-config-service:8081'
         $compose.services.dms.environment.ConfigurationServiceSettings__ClientSecret | Should -Be 'private-$$secret'
         $compose.services.dms.environment.AppSettings__Datastore | Should -Be $provider
-        $compose.services.dms.environment.AppSettings__ApiSchemaPath | Should -Be '/app/ApiSchema'
+        $compose.services.dms.environment.AppSettings__ApiSchema__Path | Should -Be '/app/ApiSchema'
         (Get-Content $handoff.DmsComposePath -Raw) | Should -Not -Match 'private-connection|SetupConnectionString'
         [int][IO.File]::GetUnixFileMode($handoff.SettingsPath) | Should -Be 384
         [int][IO.File]::GetUnixFileMode($handoff.DmsComposePath) | Should -Be 384
