@@ -6,10 +6,7 @@
 using System.Data;
 using System.Diagnostics;
 using System.Globalization;
-using System.Reflection;
 using System.Runtime.CompilerServices;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using Microsoft.Data.SqlClient;
@@ -51,9 +48,10 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
     private static readonly MssqlDatabaseResetPlan _dynamicResetPlan = MssqlDatabaseResetPlan.Dynamic(
         _generatedDdlBaselineTables
     );
-    private static readonly Lazy<SemaphoreSlim?> _generatedDdlProvisionSemaphore = new(
-        CreateGeneratedDdlProvisionSemaphore
-    );
+    private static readonly Lazy<MssqlGeneratedDdlProvisioningGate> _generatedDdlProvisioningGate =
+        MssqlGeneratedDdlProvisioningGate.CreateLazy(() =>
+            Environment.GetEnvironmentVariable(ProvisionMaxConcurrencyVariable) ?? ""
+        );
     private int _ownsDatabase = 1;
 
     private MssqlGeneratedDdlTestDatabase(
@@ -249,6 +247,23 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
         int commandTimeoutSeconds,
         MssqlProvisioningTimingContext context,
         string? databaseCollation = null
+    ) =>
+        await CreateProvisionedAsync(
+            generatedDdl,
+            commandTimeoutSeconds,
+            context,
+            () => _generatedDdlProvisioningGate.Value,
+            Console.Error,
+            databaseCollation
+        );
+
+    internal static async Task<MssqlGeneratedDdlTestDatabase> CreateProvisionedAsync(
+        string generatedDdl,
+        int commandTimeoutSeconds,
+        MssqlProvisioningTimingContext context,
+        Func<MssqlGeneratedDdlProvisioningGate> resolveProvisioningGate,
+        TextWriter diagnosticWriter,
+        string? databaseCollation = null
     )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(generatedDdl);
@@ -260,11 +275,17 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
 
         try
         {
-            await using var provisionSlot = await AcquireGeneratedDdlProvisionSlotAsync();
+            await using var provisionSlot = await resolveProvisioningGate().AcquireAsync();
 
             database = await CreateEmptyAsync(context, databaseCollation);
             databaseName = database.DatabaseName;
-            await database.ApplyGeneratedDdlAsync(generatedDdl, commandTimeoutSeconds, context);
+            await database.ApplyGeneratedDdlAsync(
+                generatedDdl,
+                commandTimeoutSeconds,
+                context,
+                provisionSlot.CaptureSnapshot,
+                diagnosticWriter
+            );
             return database;
         }
         catch (Exception primaryException)
@@ -334,13 +355,35 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
             callerLineNumber
         );
 
-        await ApplyGeneratedDdlAsync(generatedDdl, commandTimeoutSeconds, context);
+        await ApplyGeneratedDdlAsync(
+            generatedDdl,
+            commandTimeoutSeconds,
+            context,
+            () => MssqlGeneratedDdlProvisioningSnapshot.NotAdmitted,
+            Console.Error
+        );
     }
+
+    internal Task ApplyGeneratedDdlAsync(
+        string generatedDdl,
+        int commandTimeoutSeconds,
+        MssqlProvisioningTimingContext context,
+        TextWriter diagnosticWriter
+    ) =>
+        ApplyGeneratedDdlAsync(
+            generatedDdl,
+            commandTimeoutSeconds,
+            context,
+            () => MssqlGeneratedDdlProvisioningSnapshot.NotAdmitted,
+            diagnosticWriter
+        );
 
     private async Task ApplyGeneratedDdlAsync(
         string generatedDdl,
         int commandTimeoutSeconds,
-        MssqlProvisioningTimingContext context
+        MssqlProvisioningTimingContext context,
+        Func<MssqlGeneratedDdlProvisioningSnapshot> captureProvisioning,
+        TextWriter diagnosticWriter
     )
     {
         var stopwatch = Stopwatch.StartNew();
@@ -364,7 +407,9 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
                         batchIndex + 1,
                         batches.Length,
                         commandTimeoutSeconds,
-                        context
+                        context,
+                        captureProvisioning,
+                        diagnosticWriter
                     );
                 }
 
@@ -755,7 +800,9 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
         int batchOrdinal,
         int batchCount,
         int commandTimeoutSeconds,
-        MssqlProvisioningTimingContext context
+        MssqlProvisioningTimingContext context,
+        Func<MssqlGeneratedDdlProvisioningSnapshot> captureProvisioning,
+        TextWriter diagnosticWriter
     )
     {
         var stopwatch = Stopwatch.StartNew();
@@ -767,7 +814,48 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
             command.Transaction = transaction;
             command.CommandText = batch;
             command.CommandTimeout = commandTimeoutSeconds;
-            await command.ExecuteNonQueryAsync();
+            var provisioningAtStart = captureProvisioning();
+            var batchStopwatch = Stopwatch.StartNew();
+            try
+            {
+                await command.ExecuteNonQueryAsync();
+                batchStopwatch.Stop();
+            }
+            catch (Exception exception)
+                when (MssqlGeneratedDdlProvisioningDiagnostics.IsProvisioningCommandTimeout(
+                        exception,
+                        provisioningAtStart.IsAdmitted
+                    )
+                )
+            {
+                batchStopwatch.Stop();
+                try
+                {
+                    var provisioningAtTimeout = captureProvisioning();
+                    var diagnostic = new MssqlGeneratedDdlTimeoutDiagnostic(
+                        context,
+                        DatabaseName,
+                        batchOrdinal,
+                        batchCount,
+                        commandTimeoutSeconds,
+                        batchStopwatch.Elapsed,
+                        provisioningAtStart.AdmissionWaitElapsed,
+                        provisioningAtTimeout.MaximumConcurrency,
+                        provisioningAtStart.AdmittedCount,
+                        provisioningAtTimeout.AdmittedCount
+                    );
+                    MssqlGeneratedDdlProvisioningDiagnostics.TryWrite(
+                        diagnosticWriter,
+                        () => MssqlGeneratedDdlProvisioningDiagnostics.Format(diagnostic)
+                    );
+                }
+                catch
+                {
+                    // Preparing optional diagnostics cannot replace the provider timeout.
+                }
+
+                throw;
+            }
         }
         catch
         {
@@ -801,39 +889,6 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
     private static bool IsDirectLeaseStrategy(string leaseStrategy) =>
         leaseStrategy.Equals(MssqlProvisioningTimingRecorder.DirectLeaseStrategy, StringComparison.Ordinal);
 
-    private static async ValueTask<GeneratedDdlProvisionSemaphoreLease> AcquireGeneratedDdlProvisionSlotAsync()
-    {
-        var semaphore = _generatedDdlProvisionSemaphore.Value;
-        if (semaphore is null)
-        {
-            return new(null);
-        }
-
-        await semaphore.WaitAsync();
-        return new(semaphore);
-    }
-
-    private static SemaphoreSlim? CreateGeneratedDdlProvisionSemaphore()
-    {
-        var value = Environment.GetEnvironmentVariable(ProvisionMaxConcurrencyVariable);
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
-
-        if (
-            !int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var maxConcurrency)
-            || maxConcurrency < 1
-        )
-        {
-            throw new InvalidOperationException(
-                $"{ProvisionMaxConcurrencyVariable} must be a positive integer when set."
-            );
-        }
-
-        return new(maxConcurrency, maxConcurrency);
-    }
-
     private static string NormalizeReferentialAction(string value)
     {
         return value.Replace('_', ' ');
@@ -866,158 +921,5 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
                 UpdateAction
             );
         }
-    }
-
-    private readonly struct GeneratedDdlProvisionSemaphoreLease(SemaphoreSlim? semaphore) : IAsyncDisposable
-    {
-        public ValueTask DisposeAsync()
-        {
-            semaphore?.Release();
-            return ValueTask.CompletedTask;
-        }
-    }
-}
-
-internal static class MssqlProvisioningTimingRecorder
-{
-    public const string DirectLeaseStrategy = "direct";
-
-    private const string TimingsPathVariable = "MSSQL_FIXTURE_TIMINGS_PATH";
-    private const string ShardVariable = "MSSQL_TEST_SHARD";
-    private static readonly object _lock = new();
-
-    public static string ComputeGeneratedDdlHash(string generatedDdl)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(generatedDdl);
-
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(generatedDdl)));
-    }
-
-    public static void Record(
-        string outcome,
-        TimeSpan duration,
-        string databaseName,
-        int commandTimeoutSeconds,
-        string fixtureSignature,
-        string generatedDdlHash,
-        string phase,
-        string leaseStrategy,
-        string callerMemberName,
-        string callerFilePath,
-        int callerLineNumber,
-        bool isDiagnostic = false,
-        string detail = "",
-        int? batchOrdinal = null,
-        int? batchCount = null,
-        string batchHash = ""
-    )
-    {
-        var timingsPath = Environment.GetEnvironmentVariable(TimingsPathVariable);
-        if (string.IsNullOrWhiteSpace(timingsPath))
-        {
-            return;
-        }
-
-        var fullPath = Path.GetFullPath(timingsPath);
-        var directory = Path.GetDirectoryName(fullPath);
-        if (!string.IsNullOrWhiteSpace(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
-        string[] fields =
-        [
-            DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture),
-            outcome,
-            duration.TotalSeconds.ToString("0.000", CultureInfo.InvariantCulture),
-            databaseName,
-            commandTimeoutSeconds.ToString(CultureInfo.InvariantCulture),
-            fixtureSignature,
-            generatedDdlHash,
-            phase,
-            leaseStrategy,
-            ResolveShard(timingsPath),
-            ResolveTestWorkerId(),
-            callerMemberName,
-            callerFilePath,
-            callerLineNumber.ToString(CultureInfo.InvariantCulture),
-            isDiagnostic ? "true" : "false",
-            detail,
-            batchOrdinal?.ToString(CultureInfo.InvariantCulture) ?? "",
-            batchCount?.ToString(CultureInfo.InvariantCulture) ?? "",
-            batchHash,
-        ];
-
-        lock (_lock)
-        {
-            var writeHeader = !File.Exists(fullPath);
-            using var writer = new StreamWriter(fullPath, append: true, Encoding.UTF8);
-            if (writeHeader)
-            {
-                writer.WriteLine(
-                    "TimestampUtc,Outcome,DurationSeconds,DatabaseName,CommandTimeoutSeconds,FixtureSignature,GeneratedDdlHash,Phase,LeaseStrategy,Shard,TestWorkerId,CallerMemberName,CallerFilePath,CallerLineNumber,IsDiagnostic,Detail,BatchOrdinal,BatchCount,BatchHash"
-                );
-            }
-
-            writer.WriteLine(string.Join(",", fields.Select(EscapeCsv)));
-        }
-    }
-
-    private static string ResolveShard(string timingsPath)
-    {
-        var shard = Environment.GetEnvironmentVariable(ShardVariable);
-        if (!string.IsNullOrWhiteSpace(shard))
-        {
-            return shard;
-        }
-
-        var match = Regex.Match(timingsPath, @"mssql-shard-(?<shard>[^\\/]+)", RegexOptions.IgnoreCase);
-        if (match.Success)
-        {
-            return match.Groups["shard"].Value;
-        }
-
-        return timingsPath.Contains("mssql-api", StringComparison.OrdinalIgnoreCase) ? "api" : "";
-    }
-
-    private static string ResolveTestWorkerId()
-    {
-        foreach (var variableName in new[] { "NUNIT_WORKER_ID", "TEST_WORKER_ID" })
-        {
-            var value = Environment.GetEnvironmentVariable(variableName);
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                return value;
-            }
-        }
-
-        try
-        {
-            var testContextType = Type.GetType("NUnit.Framework.TestContext, NUnit.Framework");
-            var currentContextProperty = testContextType?.GetProperty(
-                "CurrentContext",
-                BindingFlags.Public | BindingFlags.Static
-            );
-            var currentContext = currentContextProperty?.GetValue(null);
-            var workerIdProperty = currentContext
-                ?.GetType()
-                .GetProperty("WorkerId", BindingFlags.Public | BindingFlags.Instance);
-
-            return workerIdProperty?.GetValue(currentContext)?.ToString() ?? "";
-        }
-        catch
-        {
-            return "";
-        }
-    }
-
-    private static string EscapeCsv(string value)
-    {
-        if (!value.Contains('"') && !value.Contains(',') && !value.Contains('\n') && !value.Contains('\r'))
-        {
-            return value;
-        }
-
-        return $"\"{value.Replace("\"", "\"\"")}\"";
     }
 }
