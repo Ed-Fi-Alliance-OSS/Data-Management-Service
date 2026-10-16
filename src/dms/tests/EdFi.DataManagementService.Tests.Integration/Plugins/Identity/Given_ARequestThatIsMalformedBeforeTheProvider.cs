@@ -35,6 +35,12 @@ public sealed class Given_ARequestThatIsMalformedBeforeTheProvider
                 Json,
                 "create"
             ),
+            ["duplicate-search"] = new(
+                "identities/search",
+                """[{"LastSurname":"a"},{"BirthLocation":{"City":"x","City":"y"}}]""",
+                Json,
+                "search"
+            ),
             ["malformed-create"] = new("identities", """{"FirstName":""", Json, "create"),
             ["empty-create"] = new("identities", "", Json, "create"),
             ["array-create"] = new("identities", "[]", Json, "create"),
@@ -82,12 +88,25 @@ public sealed class Given_ARequestThatIsMalformedBeforeTheProvider
     [OneTimeSetUp]
     public async Task Setup()
     {
-        _run = await IdentityHttpRun.StartAsync();
+        _run = await IdentityHttpRun.StartAsync(
+            settings: new Dictionary<string, string>
+            {
+                ["AppSettings:CorrelationIdHeader"] = "X-Correlation-ID",
+            }
+        );
+        _run.Client.DefaultRequestHeaders.Add("X-Correlation-ID", "dms-1594-http");
 
         foreach ((string name, Case request) in Cases)
         {
             _outcomes[name] = await _run.PostAsync(request.Path, request.Body, request.ContentType);
         }
+
+        using HttpClient unauthorized = _run.Host.CreateClient(IdentityTestClients.UnknownToken);
+        _outcomes["unauthorized-duplicate"] = await _run.PostAsync(
+            "identities/search",
+            Cases["duplicate-search"].Body,
+            client: unauthorized
+        );
 
         _invocationsAfterRejections = _run.Stub.InvocationCount();
 
@@ -119,6 +138,7 @@ public sealed class Given_ARequestThatIsMalformedBeforeTheProvider
     }
 
     [TestCase("duplicate-property")]
+    [TestCase("duplicate-search")]
     [TestCase("malformed-create")]
     [TestCase("empty-create")]
     [TestCase("array-create")]
@@ -161,6 +181,42 @@ public sealed class Given_ARequestThatIsMalformedBeforeTheProvider
             .Select(message => message!.GetValue<string>())
             .Should()
             .Equal("An item with the same key has already been added.");
+    }
+
+    [Test]
+    public void It_reports_the_exact_indexed_search_problem_and_headers()
+    {
+        IdentityHttpOutcome outcome = _outcomes["duplicate-search"];
+        outcome.Status.Should().Be(HttpStatusCode.BadRequest);
+        JsonNode body = outcome.Body!;
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data-validation-failed");
+        body["title"]!.GetValue<string>().Should().Be("Data Validation Failed");
+        body["status"]!.GetValue<int>().Should().Be(400);
+        body["detail"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Data validation failed. See 'validationErrors' for details.");
+        body["correlationId"]!.GetValue<string>().Should().Be("dms-1594-http");
+        body["errors"]!.AsArray().Should().BeEmpty();
+        JsonObject errors = body["validationErrors"]!.AsObject();
+        errors.Select(error => error.Key).Should().Equal("$[1].BirthLocation.City");
+        errors["$[1].BirthLocation.City"]!
+            .AsArray()
+            .Select(message => message!.GetValue<string>())
+            .Should()
+            .Equal("An item with the same key has already been added.");
+        outcome.Headers["Cache-Control"].Should().Equal("no-store");
+        outcome.Headers["Content-Type"].Single().Split(';')[0].Should().Be("application/json");
+        _invocationsByOperation["search"].Should().Be(0);
+    }
+
+    [Test]
+    public void It_keeps_unauthorized_before_duplicate_reporting()
+    {
+        IdentityHttpOutcome outcome = _outcomes["unauthorized-duplicate"];
+        outcome.Status.Should().Be(HttpStatusCode.Unauthorized);
+        outcome.Body?["validationErrors"].Should().BeNull();
+        _invocationsByOperation["search"].Should().Be(0);
     }
 
     [Test]
