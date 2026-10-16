@@ -158,6 +158,20 @@ internal static class FailureResults
         );
     }
 
+    /// <summary>
+    /// Structured 400 <c>urn:ed-fi:api:bad-request</c> response for an identity provider that
+    /// rejected the requested scope. Only the provider's <c>error</c> and <c>error_description</c>
+    /// reach the client, in the same convention the 401 and 502 use.
+    /// </summary>
+    public static IResult InvalidScope(string detail, string correlationId)
+    {
+        return Results.Json(
+            FailureResponse.ForBadRequest(_errorDetail, correlationId, GetIdentityErrorDetails(detail)),
+            contentType: _errorContentType,
+            statusCode: 400
+        );
+    }
+
     private const string UnexpectedProviderResponseMessage =
         "The identity provider returned an unexpected response.";
 
