@@ -1,6 +1,6 @@
 # DMS-1594: Correct duplicate-property array paths
 
-**Status:** Design sections approved in conversation; written-spec approval pending.
+**Status:** Approved. The human approved the written specification on 2026-10-15 and authorized continuing to implementation planning.
 **Repository/branch:** `Ed-Fi-Alliance-OSS/Data-Management-Service`, current branch `DMS-1594`.
 **Implementation evidence baseline:** `8aed04344745201c5f4b560738184889510a8fab`.
 **Date:** 2026-10-15. No implementation, builds, local tests, reproduction, or Docker operations performed.
@@ -9,7 +9,7 @@
 
 [DMS-1594](https://edfi.atlassian.net/browse/DMS-1594) defines the defect and expected paths: a client receiving a duplicate-property `400` must be directed to the actual zero-based array element. Its unnumbered problem and suggested resolution are traced here as REQ-1–5, not presented as numbered Jira acceptance criteria.
 
-The existing [identity design](../../../reference/design/identity-DMS-1413/design.md), especially Pipeline, Request Obligations, Validation Error Projection, and HTTP Response Caching, supplies preservation constraints. Its [README filing gate](../../../reference/design/identity-DMS-1413/README.md#filing-gate) records approval despite the design's stale Draft heading. There is no separately supplied approved DMS-1594 design.
+The existing [identity design](../../../reference/design/identity-DMS-1413/design.md), especially Pipeline, Request Obligations, Validation Error Projection, and HTTP Response Caching, supplies preservation constraints. Its [README filing gate](../../../reference/design/identity-DMS-1413/README.md#filing-gate) records approval despite the design's stale Draft heading. No separate DMS-1594 design was supplied during discovery; this document is now the approved DMS-1594 specification.
 
 The [human pre-spec](../../../.plans/DMS-1594-implementation-pre-spec.md), [nano pre-spec](../../../.plans/DMS-1594-implementation-pre-spec.nano.md), and [reconciliation report](../../../.plans/ref/DMS-1594-pre-spec-review.md) are supporting analysis. The report's E1–E18 index supplies detailed source anchors. These local supporting files are ignored by Git; this specification contains the implementation requirements without depending on their availability in a fresh checkout.
 
@@ -118,8 +118,8 @@ Before implementation, refresh the intended base and DMS-1595 overlap in the two
 
 Reconciliation dispositions: report C1/C6 are carried forward without reopening synthesized AC framing or property escaping; C2 is made explicit in the matrix; C3 corrects parser/provider wording; C4 is resolved by bounded log-only sanitization. C5's remote-main comparison remains a historical observation, not a claim that today's main equals this branch. The implementation evidence baseline was rechecked locally. Human/nano imprecision is superseded here without rewriting either analysis artifact.
 
-The human approved scope/architecture and failure-handling/verification in two separate conversation replies. The public Core boundary, one walker, parent-aware completion, exclusions, and local logging correction are agreed design decisions. No story/design deviations or scope expansions are approved. Routine method/frame details above remain subject to the written-spec review gate.
+The human approved scope/architecture and failure-handling/verification in two separate conversation replies, then approved the written specification with "approved, continue". The public Core boundary, one walker, parent-aware completion, method contract, exclusions, and local logging correction are approved design decisions. No story/design deviations or scope expansions are approved.
 
 Self-review: all five source requirement groups map to behavior/components/verification; both body shapes and entry paths are explicit; response and ordering invariants are preserved; no unresolved product assumption, placeholder, or unnecessary infrastructure remains. Runtime correctness still requires the future verification described above.
 
-**Next gate:** Human review and approval of this written specification. After approval, hand this file to `superpowers:writing-plans` on the current branch. That handoff should translate the approved design and verification into an implementation plan; it must not reinterpret the supporting pre-specs as additional requirements. No implementation plan or implementation is included in this deliverable.
+**Handoff:** The written-spec approval gate is closed. Use `superpowers:writing-plans` on the current branch to translate this approved design and verification into an implementation plan, without reinterpreting the supporting pre-specs as additional requirements. The plan requires human review and an execution-method choice before implementation. No implementation or local tests are authorized during this planning turn.
