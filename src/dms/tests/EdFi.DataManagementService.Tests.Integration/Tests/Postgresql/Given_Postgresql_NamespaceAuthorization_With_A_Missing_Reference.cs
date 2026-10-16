@@ -58,4 +58,16 @@ public sealed class Given_Postgresql_NamespaceAuthorization_With_A_Missing_Refer
         NamespaceAuthorizationMissingReferenceScenario.It_reports_both_unresolved_key_unified_references_in_an_allowed_namespace(
             Harness
         );
+
+    [Test]
+    public Task It_rejects_a_put_that_repoints_the_assessment_at_a_missing_one_in_a_disallowed_namespace() =>
+        NamespaceAuthorizationMissingReferenceScenario.It_rejects_a_put_that_repoints_the_assessment_at_a_missing_one_in_a_disallowed_namespace(
+            Harness
+        );
+
+    [Test]
+    public Task It_reports_the_unresolved_survey_section_on_a_put_in_an_allowed_namespace() =>
+        NamespaceAuthorizationMissingReferenceScenario.It_reports_the_unresolved_survey_section_on_a_put_in_an_allowed_namespace(
+            Harness
+        );
 }

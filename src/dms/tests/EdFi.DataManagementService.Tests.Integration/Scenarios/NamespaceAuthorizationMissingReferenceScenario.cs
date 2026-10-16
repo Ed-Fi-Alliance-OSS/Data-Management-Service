@@ -32,6 +32,7 @@ internal static class NamespaceAuthorizationMissingReferenceScenario
     private const string DisallowedNamespace = "uri://other.example.org/Assessment";
 
     private const int SchoolId = 255901001;
+    private const int SchoolYear = 2026;
 
     private const string StudentAssessmentsEndpoint = "/data/ed-fi/studentAssessments";
     private const string SurveyQuestionsEndpoint = "/data/ed-fi/surveyQuestions";
@@ -39,6 +40,8 @@ internal static class NamespaceAuthorizationMissingReferenceScenario
     private const string MismatchType =
         "urn:ed-fi:api:security:authorization:namespace:access-denied:namespace-mismatch";
     private const string UnresolvedReferenceType = "urn:ed-fi:api:data-conflict:unresolved-reference";
+    private const string KeyChangeNotSupportedType =
+        "urn:ed-fi:api:bad-request:data-validation-failed:key-change-not-supported";
 
     /// <summary>
     /// The rendered prefix list is deduplicated and ordinal-sorted, so it is independent of claim order.
@@ -199,6 +202,96 @@ internal static class NamespaceAuthorizationMissingReferenceScenario
             validationErrors: new()
             {
                 ["$.surveyReference"] = ["The referenced Survey item does not exist."],
+                ["$.surveySectionReference"] = ["The referenced SurveySection item does not exist."],
+            }
+        );
+    }
+
+    /// <summary>
+    /// The assessment reference is part of a student assessment's identity, so a PUT that repoints it is
+    /// rejected as a key change before proposed namespace authorization runs, even when the new assessment
+    /// is missing and its namespace is disallowed.
+    /// </summary>
+    public static async Task It_rejects_a_put_that_repoints_the_assessment_at_a_missing_one_in_a_disallowed_namespace(
+        ApiIntegrationHarness harness
+    )
+    {
+        await SeedStudentAssessmentDependenciesAsync(harness);
+        await CreateAssessmentAsync(harness, "A-put", AllowedNamespace);
+        var path = await CreateAsync(
+            harness,
+            StudentAssessmentsEndpoint,
+            StudentAssessmentBody("SA-put", "A-put", AllowedNamespace)
+        );
+
+        using var response = await PutJsonAsync(
+            harness,
+            path,
+            StudentAssessmentBody("SA-put", "A-put-missing", DisallowedNamespace)
+        );
+
+        await AssertProblemDetailsAsync(
+            response,
+            HttpStatusCode.BadRequest,
+            KeyChangeNotSupportedType,
+            "Key Change Not Supported",
+            "Identifying values for the StudentAssessment resource cannot be changed. Delete and recreate the "
+                + "resource item instead.",
+            validationErrors: []
+        );
+    }
+
+    /// <summary>
+    /// The survey section reference is not part of a survey question's identity, so a PUT can add one that
+    /// is missing. Its namespace shares the canonical column with the resolved survey reference, so the
+    /// stored namespace is authorized and the missing section is reported.
+    /// </summary>
+    public static async Task It_reports_the_unresolved_survey_section_on_a_put_in_an_allowed_namespace(
+        ApiIntegrationHarness harness
+    )
+    {
+        const string SurveyNamespace = AllowedPrefix + "/Survey";
+
+        await SeedSurveyQuestionDependenciesAsync(harness);
+        await CreateSeedAsync(
+            harness,
+            "/data/ed-fi/schoolYearTypes",
+            new JsonObject
+            {
+                ["schoolYear"] = SchoolYear,
+                ["schoolYearDescription"] = "2026",
+                ["currentSchoolYear"] = true,
+            }
+        );
+        await CreateSeedAsync(
+            harness,
+            "/data/ed-fi/surveys",
+            new JsonObject
+            {
+                ["surveyIdentifier"] = "SV-put",
+                ["namespace"] = SurveyNamespace,
+                ["surveyTitle"] = "S",
+                ["schoolYearTypeReference"] = new JsonObject { ["schoolYear"] = SchoolYear },
+            }
+        );
+        var surveyQuestion = SurveyQuestionBody("Q-put", "SV-put", SurveyNamespace);
+        surveyQuestion.Remove("surveySectionReference");
+        var path = await CreateAsync(harness, SurveyQuestionsEndpoint, surveyQuestion);
+
+        using var response = await PutJsonAsync(
+            harness,
+            path,
+            SurveyQuestionBody("Q-put", "SV-put", SurveyNamespace)
+        );
+
+        await AssertProblemDetailsAsync(
+            response,
+            HttpStatusCode.Conflict,
+            UnresolvedReferenceType,
+            "Unresolved Reference",
+            "One or more references could not be resolved. See 'validationErrors' for details.",
+            validationErrors: new()
+            {
                 ["$.surveySectionReference"] = ["The referenced SurveySection item does not exist."],
             }
         );
@@ -365,6 +458,38 @@ internal static class NamespaceAuthorizationMissingReferenceScenario
             .BeOneOf([HttpStatusCode.Created, HttpStatusCode.OK], await response.Content.ReadAsStringAsync());
     }
 
+    /// <summary>Creates a document and returns its resource path from the Location header.</summary>
+    private static async Task<string> CreateAsync(
+        ApiIntegrationHarness harness,
+        string endpoint,
+        JsonObject body
+    )
+    {
+        using var response = await PostJsonAsync(harness, endpoint, body);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created, await response.Content.ReadAsStringAsync());
+
+        return response.Headers.Location!.IsAbsoluteUri
+            ? response.Headers.Location.AbsolutePath
+            : response.Headers.Location.OriginalString;
+    }
+
+    private static async Task<HttpResponseMessage> PutJsonAsync(
+        ApiIntegrationHarness harness,
+        string path,
+        JsonObject body
+    )
+    {
+        body["id"] = path.Split('/')[^1];
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, path)
+        {
+            Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"),
+        };
+
+        return await harness.HttpClient.SendAsync(request);
+    }
+
     private static async Task<HttpResponseMessage> PostJsonAsync(
         ApiIntegrationHarness harness,
         string endpoint,
@@ -380,10 +505,11 @@ internal static class NamespaceAuthorizationMissingReferenceScenario
     }
 
     /// <summary>
-    /// Authorization failures are served as problem+json while data conflicts are served as plain JSON.
+    /// Authorization failures are served as problem+json while data conflicts and key-change rejections are
+    /// served as plain JSON.
     /// </summary>
     private static string ExpectedMediaType(HttpStatusCode statusCode) =>
-        statusCode == HttpStatusCode.Conflict ? "application/json" : "application/problem+json";
+        statusCode == HttpStatusCode.Forbidden ? "application/problem+json" : "application/json";
 
     private static async Task AssertProblemDetailsAsync(
         HttpResponseMessage response,
