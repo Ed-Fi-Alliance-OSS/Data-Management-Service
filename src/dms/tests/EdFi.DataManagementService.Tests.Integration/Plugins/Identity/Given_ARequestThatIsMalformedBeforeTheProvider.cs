@@ -330,7 +330,7 @@ public sealed class Given_ARequestThatIsMalformedBeforeTheProvider
 
     [TestCase("duplicate-property", "$.FirstName")]
     // The repeat is in element 0, but the host's duplicate scan advances the array index after the
-    // first property's primitive value, so it reports element 1. That is existing behavior, pinned here;
+    // first property's primitive value, so it reports element 1. That is existing behavior, pinned here.
     // DMS-1620 owns correcting the scan and these two expectations together.
     [TestCase("duplicate-find", "$[1].a")]
     [TestCase("duplicate-search", "$[1].LastSurname")]
