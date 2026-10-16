@@ -50,8 +50,8 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         var writeExecutor = scope.ServiceProvider.GetRequiredService<IRelationalWriteExecutor>();
         var writeSessionFactory = scope.ServiceProvider.GetRequiredService<IRelationalWriteSessionFactory>();
         var documentHydrator = scope.ServiceProvider.GetRequiredService<IDocumentHydrator>();
-        var factory = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>();
-        var adapter = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapter>();
+        var lookupCommandBuilder =
+            scope.ServiceProvider.GetRequiredService<INaturalKeyLookupCommandBuilder>();
         var commandExecutor = scope.ServiceProvider.GetRequiredService<IRelationalCommandExecutor>();
         var parameterConfigurator =
             scope.ServiceProvider.GetRequiredService<IRelationalParameterConfigurator>();
@@ -102,7 +102,7 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         var documentCacheReadAccelerationCoordinator =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheReadAccelerationCoordinator>();
 
-        resolver.Should().BeOfType<ReferenceResolver>();
+        resolver.Should().BeOfType<NaturalKeyReferenceResolver>();
         writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
         currentStateLoader.Should().BeOfType<RelationalWriteCurrentStateLoader>();
         noProfileMergeSynthesizer.Should().BeOfType<RelationalWriteNoProfileMergeSynthesizer>();
@@ -112,8 +112,12 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         writeExecutor.Should().BeOfType<DefaultRelationalWriteExecutor>();
         writeSessionFactory.Should().BeOfType<MssqlRelationalWriteSessionFactory>();
         documentHydrator.Should().BeOfType<MssqlDocumentHydrator>();
-        factory.Should().BeOfType<MssqlReferenceResolverAdapterFactory>();
-        adapter.Should().BeOfType<MssqlReferenceResolverAdapter>();
+        // The natural-key resolver is the only reference resolver, with this provider's lookup builder.
+        services
+            .Where(descriptor => descriptor.ServiceType == typeof(IReferenceResolver))
+            .Should()
+            .ContainSingle();
+        lookupCommandBuilder.Should().BeOfType<MssqlNaturalKeyLookupCommandBuilder>();
         commandExecutor.Should().BeOfType<MssqlRelationalCommandExecutor>();
         parameterConfigurator.Should().BeOfType<MssqlRelationalParameterConfigurator>();
         readMaterializer.Should().BeOfType<RelationalReadMaterializer>();
@@ -280,41 +284,6 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
             .BeOfType<MssqlTokenInfoEducationOrganizationLookup>();
     }
 
-    [Test]
-    public void It_builds_an_embeddable_sql_server_small_list_reference_lookup_command()
-    {
-        var factory = new MssqlReferenceResolverAdapterFactory(A.Fake<IRelationalCommandExecutor>());
-
-        var command = factory.TryBuildSessionLookupCommand(
-            CreateLookupRequest(MssqlReferenceLookupSmallListStrategy.BulkLookupThreshold - 1)
-        );
-
-        command.Should().NotBeNull();
-        command!.Parameters.Should().HaveCount(1999);
-        command.CommandText.Should().Contain("referentialIdentity.[DocumentId] AS [DocumentId]");
-        command.CommandText.Should().Contain("descriptor.[DescriptorId] AS [DescriptorId]");
-        command
-            .Parameters.Should()
-            .AllSatisfy(parameter => parameter.ConfigureParameter.Should().NotBeNull());
-    }
-
-    [Test]
-    public void It_selects_the_sql_server_table_valued_fallback_at_the_bulk_threshold()
-    {
-        var factory = new MssqlReferenceResolverAdapterFactory(A.Fake<IRelationalCommandExecutor>());
-
-        var command = factory.TryBuildSessionLookupCommand(
-            CreateLookupRequest(MssqlReferenceLookupSmallListStrategy.BulkLookupThreshold)
-        );
-
-        command.Should().BeNull();
-        var bulkCommand = MssqlReferenceLookupBulkStrategy.BuildCommand(
-            CreateLookupRequest(MssqlReferenceLookupSmallListStrategy.BulkLookupThreshold)
-        );
-        bulkCommand.Parameters.Should().ContainSingle();
-        bulkCommand.Parameters[0].ConfigureParameter.Should().NotBeNull();
-    }
-
     private static ServiceProvider BuildServiceProvider(IServiceCollection services)
     {
         services.TryAddSingleton(new DeadlockRetrySettings());
@@ -341,28 +310,6 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         descriptor.ImplementationFactory.Should().NotBeNull();
         descriptor.ImplementationType.Should().BeNull();
         descriptor.ImplementationInstance.Should().BeNull();
-    }
-
-    private static ReferenceLookupRequest CreateLookupRequest(int count)
-    {
-        var requestResource = new QualifiedResourceName("Ed-Fi", "Student");
-        var mappingSet = RelationalAccessTestData.CreateMappingSet(requestResource) with
-        {
-            Key = new MappingSetKey("test-hash", SqlDialect.Mssql, "v1"),
-        };
-
-        return new ReferenceLookupRequest(
-            mappingSet,
-            requestResource,
-            Enumerable
-                .Range(1, count)
-                .Select(index =>
-                    RelationalAccessTestData.CreateSchoolLookup(
-                        new ReferentialId(Guid.ParseExact($"{index:x8}000000000000000000000000", "N"))
-                    )
-                )
-                .ToArray()
-        );
     }
 
     private sealed class NoLinkSlugResolver : IDocumentLinkSlugResolver

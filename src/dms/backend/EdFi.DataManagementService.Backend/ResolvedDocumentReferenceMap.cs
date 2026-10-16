@@ -85,9 +85,10 @@ internal sealed class ReferenceLookupKeyComparer : IEqualityComparer<ReferenceLo
 
 /// <summary>
 /// Resolved document references looked up by their natural key, independent of which identity array instance
-/// the caller holds.
+/// the caller holds. Public only because <see cref="ResolvedReferenceSet"/> exposes it; its only construction
+/// path, <see cref="IResolvedDocumentReferenceMapFactory"/>, stays internal.
 /// </summary>
-internal interface IResolvedDocumentReferenceMap
+public interface IResolvedDocumentReferenceMap
 {
     bool TryGetDocumentId(
         QualifiedResourceName targetResource,

@@ -6,6 +6,7 @@
 using System.Collections;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
@@ -627,17 +628,12 @@ public partial class Given_RelationalQueryRequestPreprocessor
         successfulDescriptorReferences ??= [];
         invalidDescriptorReferences ??= [];
 
-        return new ResolvedReferenceSet(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
-            SuccessfulDescriptorReferencesByPath: successfulDescriptorReferences.ToDictionary(
+        return ResolvedReferenceSets.Create(
+            successfulDescriptorReferencesByPath: successfulDescriptorReferences.ToDictionary(
                 static reference => reference.Reference.Path,
                 static reference => reference
             ),
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: invalidDescriptorReferences,
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
+            invalidDescriptorReferences: invalidDescriptorReferences
         );
     }
 

@@ -367,7 +367,7 @@ public class Given_A_Mssql_Production_First_Phase_With_A_Tvp_Reference_Lookup
             WriteSessionCommandStreamTestSupport.CreateBulkReferenceUpsertRequest(
                 _mappingSet,
                 _schoolDocumentUuid,
-                MssqlReferenceLookupSmallListStrategy.BulkLookupThreshold
+                2000
             )
         );
     }

@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
@@ -121,14 +122,9 @@ public class Given_WritePlanCompiler_CompactDescriptorBindings(SqlDialect dialec
                 2
             )
         );
-        var references = new ResolvedReferenceSet(
-            documentReferences,
-            descriptorReferences,
-            new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            [],
-            [],
-            [],
-            []
+        var references = ResolvedReferenceSets.Create(
+            successfulDocumentReferencesByPath: documentReferences,
+            successfulDescriptorReferencesByPath: descriptorReferences
         );
         var body = new JsonObject
         {

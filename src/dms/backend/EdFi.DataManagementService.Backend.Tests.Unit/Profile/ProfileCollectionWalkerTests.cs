@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Profile;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
@@ -3817,9 +3818,8 @@ internal static class DescriptorBackedNestedTopologyBuilders
         );
 
     public static ResolvedReferenceSet BuildResolvedReferenceSet(string uri, int descriptorId) =>
-        new(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
+        ResolvedReferenceSets.Create(
+            successfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
             {
                 [new JsonPath("$.parents[0].parentTypeDescriptor")] = new ResolvedDescriptorReference(
                     Reference: new DescriptorReference(
@@ -3838,12 +3838,7 @@ internal static class DescriptorBackedNestedTopologyBuilders
                     DocumentId: 5000000000L + descriptorId,
                     ResourceKeyId: 1
                 ),
-            },
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
+            }
         );
 }
 
@@ -5088,8 +5083,8 @@ internal static class NumericDocumentReferenceBackedNestedTopologyBuilders
         long numericNaturalKey,
         long referenceDocumentId
     ) =>
-        new(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
+        ResolvedReferenceSets.Create(
+            successfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
             {
                 [new JsonPath(ParentReferenceConcretePath)] = new ResolvedDocumentReference(
                     Reference: new DocumentReference(
@@ -5110,13 +5105,7 @@ internal static class NumericDocumentReferenceBackedNestedTopologyBuilders
                     DocumentId: referenceDocumentId,
                     ResourceKeyId: 11
                 ),
-            },
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
+            }
         );
 }
 
@@ -5717,8 +5706,8 @@ internal static class DocumentReferenceBackedNestedTopologyBuilders
         string parentNaturalKey,
         long referenceDocumentId
     ) =>
-        new(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
+        ResolvedReferenceSets.Create(
+            successfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
             {
                 [new JsonPath(ParentReferenceConcretePath)] = new ResolvedDocumentReference(
                     Reference: new DocumentReference(
@@ -5736,13 +5725,7 @@ internal static class DocumentReferenceBackedNestedTopologyBuilders
                     DocumentId: referenceDocumentId,
                     ResourceKeyId: 11
                 ),
-            },
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
+            }
         );
 }
 
@@ -6696,8 +6679,8 @@ internal static class CompositeDescriptorScalarDocumentReferenceBackedNestedTopo
         int programTypeDescriptorId,
         long parentReferenceDocumentId
     ) =>
-        new(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
+        ResolvedReferenceSets.Create(
+            successfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
             {
                 [new JsonPath(ParentReferenceConcretePath)] = new ResolvedDocumentReference(
                     Reference: new DocumentReference(
@@ -6723,7 +6706,7 @@ internal static class CompositeDescriptorScalarDocumentReferenceBackedNestedTopo
                     ResourceKeyId: 11
                 ),
             },
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
+            successfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
             {
                 [new JsonPath(ParentReferenceProgramTypeDescriptorConcretePath)] =
                     new ResolvedDescriptorReference(
@@ -6746,12 +6729,7 @@ internal static class CompositeDescriptorScalarDocumentReferenceBackedNestedTopo
                         DocumentId: 5000000000L + programTypeDescriptorId,
                         13
                     ),
-            },
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
+            }
         );
 }
 

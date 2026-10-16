@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using NUnit.Framework;
@@ -226,15 +227,7 @@ public class Given_RelationalWriteContracts
 
         private static ResolvedReferenceSet CreateEmptyResolvedReferenceSet()
         {
-            return new ResolvedReferenceSet(
-                SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
-                SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-                LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-                InvalidDocumentReferences: [],
-                InvalidDescriptorReferences: [],
-                DocumentReferenceOccurrences: [],
-                DescriptorReferenceOccurrences: []
-            );
+            return ResolvedReferenceSets.Create();
         }
 
         private static TableWritePlan CreateRootPlan()

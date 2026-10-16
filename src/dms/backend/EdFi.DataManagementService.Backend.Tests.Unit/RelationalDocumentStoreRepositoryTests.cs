@@ -16942,17 +16942,12 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         successfulDescriptorReferences ??= [];
         invalidDescriptorReferences ??= [];
 
-        return new ResolvedReferenceSet(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
-            SuccessfulDescriptorReferencesByPath: successfulDescriptorReferences.ToDictionary(
+        return ResolvedReferenceSets.Create(
+            successfulDescriptorReferencesByPath: successfulDescriptorReferences.ToDictionary(
                 static reference => reference.Reference.Path,
                 static reference => reference
             ),
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: invalidDescriptorReferences,
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
+            invalidDescriptorReferences: invalidDescriptorReferences
         );
     }
 

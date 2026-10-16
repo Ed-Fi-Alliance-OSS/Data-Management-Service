@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Profile;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
@@ -3700,8 +3701,8 @@ internal static class DocumentReferenceCanonicalizeBuilders
         );
 
     public static ResolvedReferenceSet BuildResolvedReferenceSet() =>
-        new(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
+        ResolvedReferenceSets.Create(
+            successfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
             {
                 [new JsonPath(ReferenceConcretePath)] = new ResolvedDocumentReference(
                     Reference: new DocumentReference(
@@ -3723,13 +3724,7 @@ internal static class DocumentReferenceCanonicalizeBuilders
                     DocumentId: SchoolDocumentId,
                     ResourceKeyId: 11
                 ),
-            },
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
+            }
         );
 
     public static RelationalWriteCurrentState BuildCurrentState(
@@ -4345,9 +4340,8 @@ internal static class DescriptorCanonicalizeBuilders
         string uri,
         int descriptorId
     ) =>
-        new(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
+        ResolvedReferenceSets.Create(
+            successfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
             {
                 [new JsonPath("$.addresses[0].addressTypeDescriptor")] = new ResolvedDescriptorReference(
                     Reference: new DescriptorReference(
@@ -4366,12 +4360,7 @@ internal static class DescriptorCanonicalizeBuilders
                     DocumentId: 5000000000L + descriptorId,
                     ResourceKeyId: 1
                 ),
-            },
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
+            }
         );
 
     /// <summary>
@@ -6101,15 +6090,7 @@ public class Given_top_level_collection_with_descriptor_only_identity_throws_whe
         );
 
         // Cache is EMPTY — Physical URI not resolved in this request cycle (cache miss).
-        var resolvedRefs = new ResolvedReferenceSet(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
-        );
+        var resolvedRefs = ResolvedReferenceSets.Create();
 
         var request = new ProfileAppliedWriteRequest(
             body,
@@ -6292,16 +6273,7 @@ internal static class ReferenceWithDescriptorIdentityBuilders
             ImmutableArray<string>.Empty
         );
 
-    public static ResolvedReferenceSet BuildEmptyResolvedReferenceSet() =>
-        new(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
-        );
+    public static ResolvedReferenceSet BuildEmptyResolvedReferenceSet() => ResolvedReferenceSets.Create();
 
     private static TableWritePlan BuildRootPlan()
     {

@@ -636,7 +636,7 @@ public abstract class NaturalKeyLookupDatabaseTests
     private NaturalKeyReferenceResolver CreateResolver() =>
         new(_builder, new ResolvedDocumentReferenceMapFactory());
 
-    private Task<NaturalKeyResolvedReferences> ResolveAsync(
+    private Task<ResolvedReferenceSet> ResolveAsync(
         IReadOnlyList<DocumentReference> documents,
         IReadOnlyList<DescriptorReference> descriptors
     )
