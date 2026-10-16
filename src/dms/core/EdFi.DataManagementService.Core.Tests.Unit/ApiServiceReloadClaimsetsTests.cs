@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
@@ -22,30 +23,21 @@ using Polly;
 namespace EdFi.DataManagementService.Core.Tests.Unit;
 
 /// <summary>
-/// Tests for ApiService.ReloadClaimsetsAsync to verify correct tenant parameter handling.
-/// These tests ensure that cache invalidation is properly tenant-scoped in multi-tenant scenarios.
+/// Tests for ApiService.ReloadClaimsetsAsync and ViewClaimsetsAsync. The management endpoint
+/// switch gates route mapping only, so these operations have no switch of their own and run with
+/// default AppSettings. The reload tests also verify that cache invalidation is tenant-scoped.
 /// </summary>
 [TestFixture]
-public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
+public class Given_ClaimsetManagement_When_ClaimsetOperationsAreCalled
 {
     private ApiService _apiService = null!;
     private IConfigurationServiceClaimSetProvider _fakeConfigServiceClaimSetProvider = null!;
 
     protected static IMemoryCache CreateMemoryCache() => new MemoryCache(new MemoryCacheOptions());
 
-    private ApiService CreateApiService(
-        IConfigurationServiceClaimSetProvider configServiceClaimSetProvider,
-        bool enableClaimsetReload
-    )
+    private ApiService CreateApiService(IConfigurationServiceClaimSetProvider configServiceClaimSetProvider)
     {
-        var appSettings = Options.Create(
-            new AppSettings
-            {
-                AllowIdentityUpdateOverrides = "",
-                EnableClaimsetReload = enableClaimsetReload,
-                EnableManagementEndpoints = true,
-            }
-        );
+        var appSettings = Options.Create(new AppSettings { AllowIdentityUpdateOverrides = "" });
 
         var fakeApiSchemaProvider = A.Fake<IApiSchemaProvider>();
         var fakeEffectiveApiSchemaProvider = A.Fake<IEffectiveApiSchemaProvider>();
@@ -98,7 +90,7 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
     }
 
     [TestFixture]
-    public class Given_TenantIsSpecified : Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
+    public class Given_TenantIsSpecified : Given_ClaimsetManagement_When_ClaimsetOperationsAreCalled
     {
         private const string TestTenant = "test-tenant";
 
@@ -114,7 +106,7 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
                 )
                 .Returns(new List<ClaimSet> { new("TestClaimSet", []) });
 
-            _apiService = CreateApiService(_fakeConfigServiceClaimSetProvider, true);
+            _apiService = CreateApiService(_fakeConfigServiceClaimSetProvider);
 
             await _apiService.ReloadClaimsetsAsync(TestTenant);
         }
@@ -131,7 +123,7 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
     }
 
     [TestFixture]
-    public class Given_TenantIsNotSpecified : Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
+    public class Given_TenantIsNotSpecified : Given_ClaimsetManagement_When_ClaimsetOperationsAreCalled
     {
         [SetUp]
         public async Task Setup()
@@ -145,7 +137,7 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
                 )
                 .Returns(new List<ClaimSet> { new("TestClaimSet", []) });
 
-            _apiService = CreateApiService(_fakeConfigServiceClaimSetProvider, true);
+            _apiService = CreateApiService(_fakeConfigServiceClaimSetProvider);
 
             await _apiService.ReloadClaimsetsAsync();
         }
@@ -160,7 +152,7 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
     }
 
     [TestFixture]
-    public class Given_MultipleTenants : Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
+    public class Given_MultipleTenants : Given_ClaimsetManagement_When_ClaimsetOperationsAreCalled
     {
         private const string TenantA = "tenant-a";
         private const string TenantB = "tenant-b";
@@ -177,7 +169,7 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
                 )
                 .Returns(new List<ClaimSet> { new("TestClaimSet", []) });
 
-            _apiService = CreateApiService(_fakeConfigServiceClaimSetProvider, true);
+            _apiService = CreateApiService(_fakeConfigServiceClaimSetProvider);
 
             await _apiService.ReloadClaimsetsAsync(TenantA);
             await _apiService.ReloadClaimsetsAsync(TenantB);
@@ -204,100 +196,76 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
                 .MustNotHaveHappened();
         }
     }
-}
 
-[TestFixture]
-public class Given_ClaimsetReloadIsDisabled_When_ReloadClaimsetsAsyncIsCalled
-{
-    private ApiService _apiService = null!;
-    private IConfigurationServiceClaimSetProvider _fakeConfigServiceClaimSetProvider = null!;
-    private int _statusCode;
-
-    protected static IMemoryCache CreateMemoryCache() => new MemoryCache(new MemoryCacheOptions());
-
-    private ApiService CreateApiService(IConfigurationServiceClaimSetProvider configServiceClaimSetProvider)
+    [TestFixture]
+    public class Given_ReloadIsCalled_With_Default_AppSettings
+        : Given_ClaimsetManagement_When_ClaimsetOperationsAreCalled
     {
-        var appSettings = Options.Create(
-            new AppSettings
-            {
-                AllowIdentityUpdateOverrides = "",
-                EnableClaimsetReload = false,
-                EnableManagementEndpoints = true,
-            }
-        );
+        private int _statusCode;
 
-        var fakeApiSchemaProvider = A.Fake<IApiSchemaProvider>();
-        var fakeEffectiveApiSchemaProvider = A.Fake<IEffectiveApiSchemaProvider>();
-        var fakeDocumentValidator = A.Fake<IDocumentValidator>();
-        var fakeMatchingDocumentUuidsValidator = A.Fake<IMatchingDocumentUuidsValidator>();
-        var fakeEqualityConstraintValidator = A.Fake<IEqualityConstraintValidator>();
-        var fakeDecimalValidator = A.Fake<IDecimalValidator>();
-        var fakeResourceDependencyGraphMLFactory = A.Fake<IResourceDependencyGraphMLFactory>();
-        var fakeResourceDependencyGraphFactory = A.Fake<IResourceDependencyGraphFactory>();
-        var resourceLoadOrderCalculator = new ResourceLoadOrderCalculator(
-            [],
-            fakeResourceDependencyGraphFactory
-        );
+        [SetUp]
+        public async Task Setup()
+        {
+            _fakeConfigServiceClaimSetProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
+            A.CallTo(() =>
+                    _fakeConfigServiceClaimSetProvider.GetAllClaimSets(
+                        A<string?>.Ignored,
+                        A<CancellationToken>._
+                    )
+                )
+                .Returns(new List<ClaimSet> { new("TestClaimSet", []) });
 
-        var services = new ServiceCollection();
-        var serviceProvider = services.BuildServiceProvider();
+            _apiService = CreateApiService(_fakeConfigServiceClaimSetProvider);
 
-        var memoryCache = CreateMemoryCache();
-        var cacheSettings = new CacheSettings();
+            IFrontendResponse response = await _apiService.ReloadClaimsetsAsync();
+            _statusCode = response.StatusCode;
+        }
 
-        var cachedClaimSetProvider = new CachedClaimSetProvider(
-            configServiceClaimSetProvider,
-            memoryCache,
-            cacheSettings,
-            TimeProvider.System,
-            NullLogger<CachedClaimSetProvider>.Instance
-        );
-
-        return new ApiService(
-            fakeApiSchemaProvider,
-            fakeEffectiveApiSchemaProvider,
-            cachedClaimSetProvider,
-            fakeDocumentValidator,
-            fakeMatchingDocumentUuidsValidator,
-            fakeEqualityConstraintValidator,
-            fakeDecimalValidator,
-            NullLogger<ApiService>.Instance,
-            NullLoggerFactory.Instance,
-            appSettings,
-            ResiliencePipeline.Empty,
-            resourceLoadOrderCalculator,
-            serviceProvider,
-            A.Fake<IServiceScopeFactory>(),
-            cachedClaimSetProvider,
-            fakeResourceDependencyGraphMLFactory,
-            A.Fake<IProfileService>(),
-            new CircuitBreakerSettings(),
-            TestHelper.CreateNoOpIdentityTenantSnapshot()
-        );
+        [Test]
+        public void It_should_return_200_status()
+        {
+            _statusCode.Should().Be(200);
+        }
     }
 
-    [SetUp]
-    public async Task Setup()
+    [TestFixture]
+    public class Given_ViewIsCalled_With_Default_AppSettings
+        : Given_ClaimsetManagement_When_ClaimsetOperationsAreCalled
     {
-        _fakeConfigServiceClaimSetProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
-        _apiService = CreateApiService(_fakeConfigServiceClaimSetProvider);
+        private IFrontendResponse _response = null!;
 
-        var response = await _apiService.ReloadClaimsetsAsync("any-tenant");
-        _statusCode = response.StatusCode;
-    }
+        [SetUp]
+        public async Task Setup()
+        {
+            _fakeConfigServiceClaimSetProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
+            A.CallTo(() =>
+                    _fakeConfigServiceClaimSetProvider.GetAllClaimSets(
+                        A<string?>.Ignored,
+                        A<CancellationToken>._
+                    )
+                )
+                .Returns(new List<ClaimSet> { new("TestClaimSet", []) });
 
-    [Test]
-    public void It_should_return_404_status()
-    {
-        _statusCode.Should().Be(404);
-    }
+            _apiService = CreateApiService(_fakeConfigServiceClaimSetProvider);
 
-    [Test]
-    public void It_should_not_reload_claimsets()
-    {
-        A.CallTo(() =>
-                _fakeConfigServiceClaimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._)
-            )
-            .MustNotHaveHappened();
+            _response = await _apiService.ViewClaimsetsAsync("test-tenant");
+        }
+
+        [Test]
+        public void It_should_return_200_status()
+        {
+            _response.StatusCode.Should().Be(200);
+        }
+
+        [Test]
+        public void It_should_return_the_claimsets_for_the_specified_tenant()
+        {
+            _response.Body!.AsArray().Should().ContainSingle();
+            _response.Body![0]!["name"]!.GetValue<string>().Should().Be("TestClaimSet");
+            A.CallTo(() =>
+                    _fakeConfigServiceClaimSetProvider.GetAllClaimSets("test-tenant", A<CancellationToken>._)
+                )
+                .MustHaveHappenedOnceExactly();
+        }
     }
 }

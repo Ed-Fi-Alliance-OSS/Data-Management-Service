@@ -38,7 +38,7 @@ function global:docker {
         $script:configuration = ($output -join "`n") | ConvertFrom-Json -AsHashtable
         if ($script:configuration.services.dms.environment.AppSettings__Datastore -cne $Provider -or
             $script:configuration.services.dms.environment.AppSettings__PathBase -cne 'api' -or
-            $script:configuration.services.dms.environment.AppSettings__ApiSchemaPath -cne '/app/ApiSchema') {
+            $script:configuration.services.dms.environment.AppSettings__ApiSchema__Path -cne '/app/ApiSchema') {
             throw 'Incorrect resolved HTTP environment'
         }
         if ($script:reject) {

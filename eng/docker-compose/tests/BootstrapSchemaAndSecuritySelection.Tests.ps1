@@ -1783,7 +1783,7 @@ exit $ExitCode
 
             $content | Should -Match "bootstrap-api-schema-manifest\.json"
             $content | Should -Match "package-manifest\.json"
-            $content | Should -Match '\$\{AppSettings__ApiSchemaPath\}/Packages/\$\{name\}/package-manifest\.json'
+            $content | Should -Match '\$\{AppSettings__ApiSchema__Path\}/Packages/\$\{name\}/package-manifest\.json'
             $content | Should -Match "jq -n --slurpfile projects"
             $content | Should -Match 'schemaPath: \(\$packageDir \+ "/" \+ \.schemaPath\)'
         }
@@ -1867,8 +1867,8 @@ exit 0
             $envNames = @(
                 "PATH",
                 "DATABASE_CONNECTION_STRING_ADMIN",
-                "AppSettings__UseApiSchemaPath",
-                "AppSettings__ApiSchemaPath",
+                "AppSettings__ApiSchema__UseCustomPath",
+                "AppSettings__ApiSchema__Path",
                 "SCHEMA_PACKAGES",
                 "DOTNET_INVOCATIONS_PATH"
             )
@@ -1880,8 +1880,8 @@ exit 0
             try {
                 $env:PATH = "$stubDirectory$([System.IO.Path]::PathSeparator)$($env:PATH)"
                 $env:DATABASE_CONNECTION_STRING_ADMIN = "host=localhost;port=5432;username=postgres"
-                $env:AppSettings__UseApiSchemaPath = "true"
-                $env:AppSettings__ApiSchemaPath = $apiSchemaPath
+                $env:AppSettings__ApiSchema__UseCustomPath = "true"
+                $env:AppSettings__ApiSchema__Path = $apiSchemaPath
                 $env:SCHEMA_PACKAGES = '[{"name":"KeptPackage","version":"1.0.0","feedUrl":"https://example.test/feed/index.json"}]'
                 $env:DOTNET_INVOCATIONS_PATH = $dotnetInvocationsPath
 
@@ -1947,7 +1947,7 @@ exit 0
                 "PATH",
                 "DATABASE_CONNECTION_STRING_ADMIN",
                 "AppSettings__Datastore",
-                "AppSettings__UseApiSchemaPath",
+                "AppSettings__ApiSchema__UseCustomPath",
                 "PG_ISREADY_INVOCATIONS_PATH",
                 "DOTNET_INVOCATIONS_PATH"
             )
@@ -1960,7 +1960,7 @@ exit 0
                 $env:PATH = "$stubDirectory$([System.IO.Path]::PathSeparator)$($env:PATH)"
                 $env:DATABASE_CONNECTION_STRING_ADMIN = "Server=localhost,1433;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true"
                 $env:AppSettings__Datastore = "mssql"
-                $env:AppSettings__UseApiSchemaPath = "false"
+                $env:AppSettings__ApiSchema__UseCustomPath = "false"
                 $env:PG_ISREADY_INVOCATIONS_PATH = $pgIsReadyInvocationsPath
                 $env:DOTNET_INVOCATIONS_PATH = $dotnetInvocationsPath
 
@@ -1988,6 +1988,72 @@ exit 0
                 Should -BeFalse -Because "MSSQL startup must not run PostgreSQL readiness checks"
             Get-Content -LiteralPath $dotnetInvocationsPath |
                 Should -Contain "EdFi.DataManagementService.Frontend.AspNetCore.dll"
+        }
+
+        It "run.sh ignores the removed flat ApiSchema variables" -Skip:(-not (Get-Command -Name bash -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
+            $workspace = Join-Path $script:repo.RepoRoot "run-sh-legacy-apischema"
+            $stubDirectory = Join-Path $workspace "bin"
+            $apiSchemaPath = Join-Path $workspace "ApiSchema"
+            $dotnetInvocationsPath = Join-Path $workspace "dotnet-invocations.log"
+            Remove-Item -LiteralPath $workspace -Recurse -Force -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Path $stubDirectory -Force | Out-Null
+
+            @'
+#!/bin/sh
+echo "$*" >> "$DOTNET_INVOCATIONS_PATH"
+exit 0
+'@ | Set-Content -LiteralPath (Join-Path $stubDirectory "dotnet") -Encoding utf8
+
+            & chmod +x (Join-Path $stubDirectory "dotnet")
+
+            $envNames = @(
+                "PATH",
+                "AppSettings__Datastore",
+                "AppSettings__ApiSchema__UseCustomPath",
+                "AppSettings__ApiSchema__Path",
+                "AppSettings__UseApiSchemaPath",
+                "AppSettings__ApiSchemaPath",
+                "SCHEMA_PACKAGES",
+                "DOTNET_INVOCATIONS_PATH"
+            )
+            $envSnapshot = @{}
+            foreach ($name in $envNames) {
+                $envSnapshot[$name] = [System.Environment]::GetEnvironmentVariable($name)
+            }
+
+            try {
+                $env:PATH = "$stubDirectory$([System.IO.Path]::PathSeparator)$($env:PATH)"
+                $env:AppSettings__Datastore = "mssql"
+                Remove-Item -LiteralPath "Env:AppSettings__ApiSchema__UseCustomPath" -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath "Env:AppSettings__ApiSchema__Path" -ErrorAction SilentlyContinue
+                $env:AppSettings__UseApiSchemaPath = "true"
+                $env:AppSettings__ApiSchemaPath = $apiSchemaPath
+                $env:SCHEMA_PACKAGES = '[{"name":"LegacyPackage","version":"1.0.0","feedUrl":"https://example.test/feed/index.json"}]'
+                $env:DOTNET_INVOCATIONS_PATH = $dotnetInvocationsPath
+
+                $runOutput = & bash (Join-Path $script:sourceRepoRoot "src/dms/run.sh") 2>&1
+
+                $LASTEXITCODE | Should -Be 0 -Because ($runOutput -join [Environment]::NewLine)
+                ($runOutput -join [Environment]::NewLine) | Should -Not -Match "Using Api Schema Path\."
+            }
+            finally {
+                # Restore absence with Remove-Item: SetEnvironmentVariable coerces a $null snapshot
+                # to "" from PowerShell, which newer pwsh/.NET on Unix stores as a present-but-blank
+                # variable instead of removing it — poisoning ambient-precedence checks downstream.
+                foreach ($name in $envNames) {
+                    if ($null -eq $envSnapshot[$name]) {
+                        Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+                    }
+                    else {
+                        [System.Environment]::SetEnvironmentVariable($name, $envSnapshot[$name])
+                    }
+                }
+            }
+
+            Get-Content -LiteralPath $dotnetInvocationsPath |
+                Should -Be @("EdFi.DataManagementService.Frontend.AspNetCore.dll") -Because "the removed flat variables must not trigger a package download"
+            Test-Path -LiteralPath $apiSchemaPath |
+                Should -BeFalse -Because "the removed flat path variable must not be materialized"
         }
 
         It "start-local-dms.ps1 does not register the legacy default connector" {

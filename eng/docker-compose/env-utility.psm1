@@ -474,9 +474,12 @@ $script:RenamedLegacyVariables = [System.Collections.Generic.Dictionary[string, 
     'SECRETS_E2E_CMS_CLIENT_SECRET'            = 'SECRETS_E2E_CONFIGURATION_SERVICE_CLIENT_SECRET'
 }.GetEnumerator() | ForEach-Object { $script:RenamedLegacyVariables[$_.Key] = $_.Value }
 
-# Names nothing has read for at least one release; they have no replacement.
+# Names that are no longer read and have no replacement. DMS_ENABLE_CLAIMSET_RELOAD is listed because
+# AppSettings:ManagementEndpoints:Enabled now also controls claimset reload and view, so a .env that
+# keeps it at false no longer keeps those operations off.
 $script:RemovedLegacyVariables = [System.Collections.Generic.HashSet[string]]::new(
     [string[]]@(
+        'DMS_ENABLE_CLAIMSET_RELOAD',
         'DMS_CONFIG_USE_EMBEDDED_BASE_CLAIMS',
         'DMS_CONFIG_CLAIMS_PATH',
         'DMS_CONFIG_USE_CLAIMS_PATH',

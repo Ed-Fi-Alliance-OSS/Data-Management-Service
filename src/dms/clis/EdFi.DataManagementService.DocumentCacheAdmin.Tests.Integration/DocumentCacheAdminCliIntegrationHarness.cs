@@ -1660,8 +1660,8 @@ internal sealed class DocumentCacheAdminCliProcessHarness : IAsyncDisposable
         process.StartInfo.Environment["DOTNET_ENVIRONMENT"] = "";
         process.StartInfo.Environment["ASPNETCORE_ENVIRONMENT"] = "";
         process.StartInfo.Environment["AppSettings__Datastore"] = Target.AppSettingsDatastore;
-        process.StartInfo.Environment["AppSettings__UseApiSchemaPath"] = "true";
-        process.StartInfo.Environment["AppSettings__ApiSchemaPath"] = Target.ApiSchemaDirectory;
+        process.StartInfo.Environment["AppSettings__ApiSchema__UseCustomPath"] = "true";
+        process.StartInfo.Environment["AppSettings__ApiSchema__Path"] = Target.ApiSchemaDirectory;
         process.StartInfo.Environment["ConfigurationServiceSettings__BaseUrl"] =
             ConfigurationService.BaseUri.ToString();
         process.StartInfo.Environment["ConfigurationServiceSettings__ClientId"] =
@@ -1711,8 +1711,11 @@ internal sealed class DocumentCacheAdminCliProcessHarness : IAsyncDisposable
             ["AppSettings"] = new JsonObject
             {
                 ["Datastore"] = target.AppSettingsDatastore,
-                ["UseApiSchemaPath"] = true,
-                ["ApiSchemaPath"] = target.ApiSchemaDirectory,
+                ["ApiSchema"] = new JsonObject
+                {
+                    ["UseCustomPath"] = true,
+                    ["Path"] = target.ApiSchemaDirectory,
+                },
                 ["AllowIdentityUpdateOverrides"] = string.Empty,
                 ["MaximumPageSize"] = 500,
                 ["DefaultPartitionCount"] = 10,

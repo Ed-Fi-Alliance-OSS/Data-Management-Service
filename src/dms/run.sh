@@ -25,23 +25,23 @@ else
     echo "Skipping PostgreSQL readiness check for datastore '${datastore}'."
 fi
 
-if [ "$AppSettings__UseApiSchemaPath" = true ]; then
+if [ "$AppSettings__ApiSchema__UseCustomPath" = true ]; then
     echo "Using Api Schema Path."
 
     schema_packages="${SCHEMA_PACKAGES:-[]}"
     package_count=$(echo "$schema_packages" | jq 'length')
 
     if [ "$package_count" -gt 0 ]; then
-        if [ -z "${AppSettings__ApiSchemaPath:-}" ]; then
-            echo "AppSettings__ApiSchemaPath is required when SCHEMA_PACKAGES contains package entries."
+        if [ -z "${AppSettings__ApiSchema__Path:-}" ]; then
+            echo "AppSettings__ApiSchema__Path is required when SCHEMA_PACKAGES contains package entries."
             exit 1
         fi
 
-        generated_packages_dir="${AppSettings__ApiSchemaPath}/Packages"
-        downloaded_packages_dir="${AppSettings__ApiSchemaPath}/DownloadedPackages"
-        echo "Clearing generated ApiSchema package extraction output under ${AppSettings__ApiSchemaPath}."
+        generated_packages_dir="${AppSettings__ApiSchema__Path}/Packages"
+        downloaded_packages_dir="${AppSettings__ApiSchema__Path}/DownloadedPackages"
+        echo "Clearing generated ApiSchema package extraction output under ${AppSettings__ApiSchema__Path}."
         rm -rf -- "$generated_packages_dir" "$downloaded_packages_dir"
-        mkdir -p "${AppSettings__ApiSchemaPath}"
+        mkdir -p "${AppSettings__ApiSchema__Path}"
 
         echo "$schema_packages" | jq -c '.[]' | while read -r item
         do
@@ -50,17 +50,17 @@ if [ "$AppSettings__UseApiSchemaPath" = true ]; then
             name=$(echo "$item" | jq -r '.name')
 
             echo "Downloading Package $name..."
-            dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p "$name" -d "${AppSettings__ApiSchemaPath}" -v "$version" -f "$feedUrl"
+            dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p "$name" -d "${AppSettings__ApiSchema__Path}" -v "$version" -f "$feedUrl"
         done
 
-        manifest_path="${AppSettings__ApiSchemaPath}/bootstrap-api-schema-manifest.json"
+        manifest_path="${AppSettings__ApiSchema__Path}/bootstrap-api-schema-manifest.json"
         manifest_temp_path=$(mktemp)
         projects_temp_path=$(mktemp)
         : > "$projects_temp_path"
 
         echo "$schema_packages" | jq -r '.[].name' | while read -r name
         do
-            package_manifest_path="${AppSettings__ApiSchemaPath}/Packages/${name}/package-manifest.json"
+            package_manifest_path="${AppSettings__ApiSchema__Path}/Packages/${name}/package-manifest.json"
             if [ ! -f "$package_manifest_path" ]; then
                 echo "ApiSchema package manifest not found: $package_manifest_path"
                 exit 1
@@ -84,7 +84,7 @@ if [ "$AppSettings__UseApiSchemaPath" = true ]; then
                     exit 1
                 fi
 
-                package_xsd_directory="${AppSettings__ApiSchemaPath}/Packages/${name}/${xsd_directory}"
+                package_xsd_directory="${AppSettings__ApiSchema__Path}/Packages/${name}/${xsd_directory}"
                 if [ ! -d "$package_xsd_directory" ]; then
                     echo "ApiSchema package manifest declares xsdDirectory '$xsd_directory', but the directory was not found: $package_xsd_directory"
                     exit 1
@@ -108,7 +108,7 @@ if [ "$AppSettings__UseApiSchemaPath" = true ]; then
         done
 
         jq -n --slurpfile projects "$projects_temp_path" '{ version: 1, projects: $projects }' > "$manifest_temp_path"
-        mkdir -p "${AppSettings__ApiSchemaPath}"
+        mkdir -p "${AppSettings__ApiSchema__Path}"
         mv "$manifest_temp_path" "$manifest_path"
         rm -f "$projects_temp_path"
     fi

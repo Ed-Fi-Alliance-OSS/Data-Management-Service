@@ -40,37 +40,14 @@ public class AppSettings
     public int DefaultPartitionCount { get; set; } = DefaultPartitionCountDefault;
 
     /// <summary>
-    /// If true, loads manifest-backed ApiSchema workspace content from ApiSchemaPath.
-    /// Otherwise, loads the bundled manifest-backed ApiSchema workspace from the application output.
+    /// Selects the bundled or a custom manifest-backed ApiSchema workspace.
     /// </summary>
-    public bool UseApiSchemaPath { get; set; }
-
-    /// <summary>
-    /// Provides the file system path for a runtime ApiSchema workspace containing
-    /// bootstrap-api-schema-manifest.json and its declared core and extension schema files.
-    /// </summary>
-    public string? ApiSchemaPath { get; set; }
+    public ApiSchemaSettings ApiSchema { get; set; } = new();
 
     /// <summary>
     /// Get or set the authentication service URL.
     /// </summary>
     public string? AuthenticationService { get; set; }
-
-    /// <summary>
-    /// If true, enables management endpoints like claimset reload.
-    /// </summary>
-    public bool EnableManagementEndpoints { get; set; }
-
-    /// <summary>
-    /// If true, enables management endpoints for claimset reload operations.
-    /// </summary>
-    public bool EnableClaimsetReload { get; set; }
-
-    /// <summary>
-    /// If true, maps the DMS-owned Identity HTTP surface under /identity/v2. Defaults to false so
-    /// every identity route falls through to the fallback 404 until an operator opts in.
-    /// </summary>
-    public bool EnableIdentityManagement { get; set; }
 
     /// <summary>
     /// Comma-separated list of domain names to exclude from OpenAPI documentation generation.

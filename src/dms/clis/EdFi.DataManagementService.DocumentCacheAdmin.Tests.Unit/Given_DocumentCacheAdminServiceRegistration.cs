@@ -495,7 +495,7 @@ public sealed class Given_DocumentCacheAdminServiceRegistration
             {
                 ["Datastore"] = datastore,
                 ["DefaultPartitionCount"] = 10,
-                ["UseApiSchemaPath"] = false,
+                ["ApiSchema"] = new JsonObject { ["UseCustomPath"] = false },
             },
             ["ConfigurationServiceSettings"] = new JsonObject
             {

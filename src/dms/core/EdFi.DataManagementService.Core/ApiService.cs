@@ -1346,13 +1346,6 @@ internal class ApiService : IApiService
     /// <param name="tenant">Optional tenant identifier for multi-tenant deployments</param>
     public async Task<IFrontendResponse> ReloadClaimsetsAsync(string? tenant = null)
     {
-        // Check if claimset reload endpoints are enabled
-        if (!_appSettings.Value.EnableClaimsetReload)
-        {
-            _logger.LogWarning("Claimsets reload requested but claimset reload is disabled");
-            return new FrontendResponse(StatusCode: 404, Body: null, Headers: []);
-        }
-
         _logger.LogInformation("Claimsets reload requested");
 
         try
@@ -1388,13 +1381,6 @@ internal class ApiService : IApiService
     /// <param name="tenant">Optional tenant identifier for multi-tenant deployments</param>
     public async Task<IFrontendResponse> ViewClaimsetsAsync(string? tenant = null)
     {
-        // Check if claimset reload endpoints are enabled
-        if (!_appSettings.Value.EnableClaimsetReload)
-        {
-            _logger.LogWarning("Claimsets view requested but claimset reload is disabled");
-            return new FrontendResponse(StatusCode: 404, Body: null, Headers: []);
-        }
-
         _logger.LogInformation("Claimsets view requested");
 
         try

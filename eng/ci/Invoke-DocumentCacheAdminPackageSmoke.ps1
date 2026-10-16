@@ -359,8 +359,8 @@ try {
             "AppSettings__MaximumPageSize" = "500"
             "AppSettings__DefaultPartitionCount" = "10"
             "AppSettings__BypassAuthorization" = "true"
-            "AppSettings__UseApiSchemaPath" = "false"
-            "AppSettings__ApiSchemaPath" = $null
+            "AppSettings__ApiSchema__UseCustomPath" = "false"
+            "AppSettings__ApiSchema__Path" = $null
             "ConfigurationServiceSettings__BaseUrl" = "http://127.0.0.1:1"
             "ConfigurationServiceSettings__ClientId" = $null
             "ConfigurationServiceSettings__ClientSecret" = $null

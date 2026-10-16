@@ -1674,10 +1674,10 @@ function Get-ProvisionIdeGuidance {
     $lines.Add("")
     $lines.Add("Expected DMS runtime appsettings for IDE-hosted launch (staged workspace is runtime-authoritative):")
     $apiSchemaRoot = [System.IO.Path]::GetDirectoryName($SchemaWorkspace.ApiSchemaManifestPath)
-    $lines.Add("  AppSettings__UseApiSchemaPath = true")
-    $lines.Add("  AppSettings__ApiSchemaPath    = $(Format-LogSafePath $apiSchemaRoot)")
+    $lines.Add("  AppSettings__ApiSchema__UseCustomPath = true")
+    $lines.Add("  AppSettings__ApiSchema__Path          = $(Format-LogSafePath $apiSchemaRoot)")
     $lines.Add("Note: in bootstrap mode these flags are activated automatically; the staged workspace is runtime-authoritative.")
-    $lines.Add("      IDE-hosted DMS reads the staged schema directly via ApiSchemaPath (UseApiSchemaPath=true).")
+    $lines.Add("      IDE-hosted DMS reads the staged schema directly via ApiSchema:Path (ApiSchema:UseCustomPath=true).")
 
     return $lines.ToArray()
 }

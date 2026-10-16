@@ -216,8 +216,8 @@ public sealed class Given_DocumentCacheAdminApiSchemaAssets
         environment["AppSettings__MaximumPageSize"] = "500";
         environment["AppSettings__DefaultPartitionCount"] = "10";
         environment["AppSettings__BypassAuthorization"] = "true";
-        environment["AppSettings__UseApiSchemaPath"] = "false";
-        environment.Remove("AppSettings__ApiSchemaPath");
+        environment["AppSettings__ApiSchema__UseCustomPath"] = "false";
+        environment.Remove("AppSettings__ApiSchema__Path");
         environment["ConfigurationServiceSettings__BaseUrl"] = "http://127.0.0.1:1";
         environment.Remove("ConfigurationServiceSettings__ClientId");
         environment.Remove("ConfigurationServiceSettings__ClientSecret");
