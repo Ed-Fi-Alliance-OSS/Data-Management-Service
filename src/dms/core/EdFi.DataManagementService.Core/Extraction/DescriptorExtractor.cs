@@ -185,15 +185,12 @@ internal static class DescriptorExtractor
     {
         var (resourceInfo, descriptorUri, concretePath) = rawValue;
 
-        // Normalize the entire URI to lowercase for case-insensitive matching.
-        var normalizedDescriptorUriValue = descriptorUri is null
+        // The URI is carried as the client sent it; the database resolves it case-insensitively.
+        var descriptorUriValue = descriptorUri is null
             ? string.Empty
-            : DescriptorText.AssertWellFormedWithoutNul(descriptorUri).ToLowerInvariant();
+            : DescriptorText.AssertWellFormedWithoutNul(descriptorUri);
         DocumentIdentity documentIdentity = new([
-            new DocumentIdentityElement(
-                DocumentIdentity.DescriptorIdentityJsonPath,
-                normalizedDescriptorUriValue
-            ),
+            new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, descriptorUriValue),
         ]);
 
         return new DescriptorReference(resourceInfo, documentIdentity, new JsonPath(concretePath));

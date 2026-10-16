@@ -585,17 +585,15 @@ public class Given_FlatteningResolvedReferenceLookupSet
             .BeTrue();
         descriptorId.Should().Be(501);
 
-        // Casing tolerance: lookup must match regardless of caller casing because
-        // the resolver pipeline lowercases descriptor URIs before publishing them.
+        // Exact keys: without the stored projection, a case variant misses rather than being folded in C#.
         lookupSet
             .TryGetDescriptorIdByUri(
                 _schoolTypeDescriptorResource,
                 "URI://ED-FI.ORG/SchoolTypeDescriptor#elementary",
-                out var lowercasedId
+                out _
             )
             .Should()
-            .BeTrue();
-        lowercasedId.Should().Be(501);
+            .BeFalse();
 
         // Negative: a different descriptor resource for the same URI string must miss.
         lookupSet
@@ -630,7 +628,7 @@ public class Given_FlatteningResolvedReferenceLookupSet
         lookup
             .TryGetDescriptorIdByUri(
                 _schoolTypeDescriptorResource,
-                "URI://EXAMPLE.ORG/TYPE #mixed#value",
+                "uri://Example.org/Type #MiXeD#Value",
                 out var id
             )
             .Should()
@@ -640,6 +638,69 @@ public class Given_FlatteningResolvedReferenceLookupSet
             .TryGetDescriptorIdByUri(
                 _schoolTypeDescriptorResource,
                 "uri://Example.org/Type#MiXeD#Value",
+                out _
+            )
+            .Should()
+            .BeFalse();
+    }
+
+    [Test]
+    public void It_resolves_the_stored_spelling_of_a_request_resolved_descriptor_when_seeded_from_the_stored_projection()
+    {
+        var reference = CreateResolvedDescriptorReferenceWithUri(
+            _schoolTypeDescriptorResourceInfo,
+            "$.sections[0].schoolTypeDescriptor",
+            "uri://ed-fi.org/SchoolTypeDescriptor#Elementary",
+            descriptorId: 501
+        );
+        var lookup = FlatteningResolvedReferenceLookupSet.Create(
+            _writePlan,
+            ResolvedReferenceSets.Create(
+                successfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
+                {
+                    [reference.Reference.Path] = reference,
+                }
+            ),
+            storedDescriptorRows:
+            [
+                new HydratedDescriptorRows([
+                    new DescriptorUriRow(501, "uri://ed-fi.org/schooltypedescriptor#elementary"),
+                    // Stored but not resolved by this request: the projection never adds an id on its own.
+                    new DescriptorUriRow(777, "uri://ed-fi.org/SchoolTypeDescriptor#Middle"),
+                ]),
+            ]
+        );
+
+        lookup
+            .TryGetDescriptorIdByUri(
+                _schoolTypeDescriptorResource,
+                "uri://ed-fi.org/SchoolTypeDescriptor#Elementary",
+                out var requestSpellingId
+            )
+            .Should()
+            .BeTrue();
+        requestSpellingId.Should().Be(501);
+        lookup
+            .TryGetDescriptorIdByUri(
+                _schoolTypeDescriptorResource,
+                "uri://ed-fi.org/schooltypedescriptor#elementary",
+                out var storedSpellingId
+            )
+            .Should()
+            .BeTrue();
+        storedSpellingId.Should().Be(501);
+        lookup
+            .TryGetDescriptorIdByUri(
+                _schoolTypeDescriptorResource,
+                "uri://ed-fi.org/SchoolTypeDescriptor#Middle",
+                out _
+            )
+            .Should()
+            .BeFalse();
+        lookup
+            .TryGetDescriptorIdByUri(
+                _schoolResource,
+                "uri://ed-fi.org/schooltypedescriptor#elementary",
                 out _
             )
             .Should()

@@ -6,6 +6,7 @@
 using System.Data.Common;
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Backend;
@@ -285,9 +286,63 @@ internal static class CompactDescriptorResourceScenario
         removedDescriptor.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
-    public static async Task It_maintains_RI_and_copied_descriptor_keys_after_resource_identity_updates(
+    public static Task It_maintains_RI_and_copied_descriptor_keys_after_resource_identity_updates(
+        ApiIntegrationHarness harness
+    ) => UpdateItemIdentityToAnUppercaseDescriptorAsync(harness);
+
+    public static async Task It_matches_repeated_POSTs_with_case_variant_descriptors_after_a_resource_identity_update(
         ApiIntegrationHarness harness
     )
+    {
+        var (beforeDescriptor, afterDescriptor, item, bridge, consumer, changed) =
+            await UpdateItemIdentityToAnUppercaseDescriptorAsync(harness);
+        changed.Remove("id");
+        var unchanged = await ReadStampAsync(harness, item);
+        (await PostAsync(harness, Items, changed, HttpStatusCode.OK)).Should().Be(item);
+        (await ReadStampAsync(harness, item)).Should().Be(unchanged);
+        (
+            await PostAsync(
+                harness,
+                Bridges,
+                Bridge("bridge", "item", afterDescriptor.Uri.ToLowerInvariant()),
+                HttpStatusCode.OK
+            )
+        )
+            .Should()
+            .Be(bridge);
+        (
+            await PostAsync(
+                harness,
+                Consumers,
+                Consumer("consumer", "bridge", "item", afterDescriptor.Uri.ToUpperInvariant()),
+                HttpStatusCode.OK
+            )
+        )
+            .Should()
+            .Be(consumer);
+        using HttpResponseMessage stale = await SendAsync(
+            harness,
+            HttpMethod.Post,
+            Consumers,
+            Consumer("stale", "bridge", "item", beforeDescriptor.Uri)
+        );
+        stale.StatusCode.Should().Be(HttpStatusCode.Conflict, await stale.Content.ReadAsStringAsync());
+        (await QueryAsync(harness, Consumers, beforeDescriptor.Uri)).Should().BeEmpty();
+        (await QueryAsync(harness, Consumers, afterDescriptor.Uri)).Count.Should().Be(1);
+    }
+
+    /// <summary>
+    /// Creates an item, a bridge and a consumer on one descriptor, then PUTs the item's identity to another
+    /// descriptor spelled in upper case and asserts the cascade.
+    /// </summary>
+    private static async Task<(
+        DescriptorSeed BeforeDescriptor,
+        DescriptorSeed AfterDescriptor,
+        string Item,
+        string Bridge,
+        string Consumer,
+        JsonObject Changed
+    )> UpdateItemIdentityToAnUppercaseDescriptorAsync(ApiIntegrationHarness harness)
     {
         DescriptorSeed beforeDescriptor = await SeedDescriptorAsync(harness);
         DescriptorSeed afterDescriptor = await SeedDescriptorAsync(harness);
@@ -328,39 +383,7 @@ internal static class CompactDescriptorResourceScenario
             after.Version.Should().BeGreaterThan(before.Version);
         }
         await AssertStoredKeysAsync(harness, afterDescriptor.Keys, afterDescriptor.Keys, expectedColumns: 3);
-        changed.Remove("id");
-        var unchanged = await ReadStampAsync(harness, item);
-        (await PostAsync(harness, Items, changed, HttpStatusCode.OK)).Should().Be(item);
-        (await ReadStampAsync(harness, item)).Should().Be(unchanged);
-        (
-            await PostAsync(
-                harness,
-                Bridges,
-                Bridge("bridge", "item", afterDescriptor.Uri.ToLowerInvariant()),
-                HttpStatusCode.OK
-            )
-        )
-            .Should()
-            .Be(bridge);
-        (
-            await PostAsync(
-                harness,
-                Consumers,
-                Consumer("consumer", "bridge", "item", afterDescriptor.Uri.ToUpperInvariant()),
-                HttpStatusCode.OK
-            )
-        )
-            .Should()
-            .Be(consumer);
-        using HttpResponseMessage stale = await SendAsync(
-            harness,
-            HttpMethod.Post,
-            Consumers,
-            Consumer("stale", "bridge", "item", beforeDescriptor.Uri)
-        );
-        stale.StatusCode.Should().Be(HttpStatusCode.Conflict, await stale.Content.ReadAsStringAsync());
-        (await QueryAsync(harness, Consumers, beforeDescriptor.Uri)).Should().BeEmpty();
-        (await QueryAsync(harness, Consumers, afterDescriptor.Uri)).Count.Should().Be(1);
+        return (beforeDescriptor, afterDescriptor, item, bridge, consumer, changed);
     }
 
     public static async Task It_preserves_scalar_namespace_authorization_with_compact_descriptor_references(
@@ -410,26 +433,8 @@ internal static class CompactDescriptorResourceScenario
         ApiIntegrationHarness harness
     )
     {
-        DescriptorSeed allowed = await SeedDescriptorAsync(harness);
-        DescriptorSeed denied = await SeedDescriptorAsync(harness);
-        await SeedDescriptorAsync(harness, project: "sample", wholeUri: allowed.Uri);
-        bool postgresql = harness.DbConnection.GetType().Name == "NpgsqlConnection";
-        await ExecuteAsync(
-            harness,
-            postgresql
-                ? "CREATE SCHEMA IF NOT EXISTS auth;"
-                : "IF SCHEMA_ID(N'auth') IS NULL EXEC(N'CREATE SCHEMA [auth]');"
-        );
-        await ExecuteAsync(
-            harness,
-            $"""CREATE VIEW "auth"."{CustomViewStrategy}" AS SELECT "DocumentId" FROM "dms"."Descriptor" WHERE "DocumentId" = {allowed.Keys.DocumentId}"""
-        );
-        string item = await PostAsync(harness, Items, Item("item", allowed.Uri.ToUpperInvariant()));
-        string bridge = await PostAsync(harness, Bridges, Bridge("bridge", "item", allowed.Uri));
-        string consumer = await PostAsync(
-            harness,
-            Consumers,
-            Consumer("consumer", "bridge", "item", allowed.Uri.ToLowerInvariant())
+        var (allowed, denied, item, bridge, consumer) = await CreateCustomViewAuthorizedResourcesAsync(
+            harness
         );
         using HttpResponseMessage deniedCreate = await SendAsync(
             harness,
@@ -450,23 +455,15 @@ internal static class CompactDescriptorResourceScenario
         (await ReadStampAsync(harness, item)).Should().Be(before);
         string[] paths = [item, bridge, consumer];
         string[] endpoints = [Items, Bridges, Consumers];
-        JsonObject[] bodies =
-        [
-            Item("item", allowed.Uri),
-            Bridge("bridge", "item", allowed.Uri),
-            Consumer("consumer", "bridge", "item", allowed.Uri),
-        ];
+        JsonObject[] bodies = CustomViewBodies(allowed);
         for (int i = 0; i < paths.Length; i++)
         {
-            var stored = await ReadStampAsync(harness, paths[i]);
             JsonObject canonical = await GetAsync(harness, paths[i]);
             canonical["id"]!.GetValue<string>().Should().Be(paths[i].Split('/')[^1]);
             (await QueryAsync(harness, endpoints[i], allowed.Uri))
                 .Select(row => row!["id"]!.GetValue<string>())
                 .Should()
                 .Equal(paths[i].Split('/')[^1]);
-            (await PostAsync(harness, endpoints[i], bodies[i], HttpStatusCode.OK)).Should().Be(paths[i]);
-            (await ReadStampAsync(harness, paths[i])).Should().Be(stored);
         }
         await ExecuteAsync(harness, $"""DROP VIEW "auth"."{CustomViewStrategy}" """);
         await ExecuteAsync(
@@ -493,6 +490,65 @@ internal static class CompactDescriptorResourceScenario
         await AssertStoredKeysAsync(harness, allowed.Keys, allowed.Keys, expectedColumns: 3);
     }
 
+    public static async Task It_matches_repeated_POSTs_with_case_variant_descriptors_under_custom_view_authorization(
+        ApiIntegrationHarness harness
+    )
+    {
+        var (allowed, _, item, bridge, consumer) = await CreateCustomViewAuthorizedResourcesAsync(harness);
+        string[] paths = [item, bridge, consumer];
+        string[] endpoints = [Items, Bridges, Consumers];
+        JsonObject[] bodies = CustomViewBodies(allowed);
+        for (int i = 0; i < paths.Length; i++)
+        {
+            var stored = await ReadStampAsync(harness, paths[i]);
+            (await PostAsync(harness, endpoints[i], bodies[i], HttpStatusCode.OK)).Should().Be(paths[i]);
+            (await ReadStampAsync(harness, paths[i])).Should().Be(stored);
+        }
+    }
+
+    private static JsonObject[] CustomViewBodies(DescriptorSeed allowed) =>
+        [
+            Item("item", allowed.Uri),
+            Bridge("bridge", "item", allowed.Uri),
+            Consumer("consumer", "bridge", "item", allowed.Uri),
+        ];
+
+    /// <summary>
+    /// Seeds an allowed and a denied descriptor, authorizes only the allowed one through the custom view, and
+    /// creates an item, a bridge and a consumer on the allowed descriptor in three different spellings.
+    /// </summary>
+    private static async Task<(
+        DescriptorSeed Allowed,
+        DescriptorSeed Denied,
+        string Item,
+        string Bridge,
+        string Consumer
+    )> CreateCustomViewAuthorizedResourcesAsync(ApiIntegrationHarness harness)
+    {
+        DescriptorSeed allowed = await SeedDescriptorAsync(harness);
+        DescriptorSeed denied = await SeedDescriptorAsync(harness);
+        await SeedDescriptorAsync(harness, project: "sample", wholeUri: allowed.Uri);
+        bool postgresql = harness.DbConnection.GetType().Name == "NpgsqlConnection";
+        await ExecuteAsync(
+            harness,
+            postgresql
+                ? "CREATE SCHEMA IF NOT EXISTS auth;"
+                : "IF SCHEMA_ID(N'auth') IS NULL EXEC(N'CREATE SCHEMA [auth]');"
+        );
+        await ExecuteAsync(
+            harness,
+            $"""CREATE VIEW "auth"."{CustomViewStrategy}" AS SELECT "DocumentId" FROM "dms"."Descriptor" WHERE "DocumentId" = {allowed.Keys.DocumentId}"""
+        );
+        string item = await PostAsync(harness, Items, Item("item", allowed.Uri.ToUpperInvariant()));
+        string bridge = await PostAsync(harness, Bridges, Bridge("bridge", "item", allowed.Uri));
+        string consumer = await PostAsync(
+            harness,
+            Consumers,
+            Consumer("consumer", "bridge", "item", allowed.Uri.ToLowerInvariant())
+        );
+        return (allowed, denied, item, bridge, consumer);
+    }
+
     public static void RecordWriteCommands(IServiceCollection services)
     {
         ServiceDescriptor factory = services.Single(service =>
@@ -516,6 +572,41 @@ internal static class CompactDescriptorResourceScenario
     {
         DescriptorSeed seed = await SeedDescriptorAsync(harness);
         var recorder = harness.Services.GetRequiredService<RelationalWriteSessionCommandRecorder>();
+        recorder.Reset();
+        await PostAsync(harness, Items, ThreeSpellingItem(seed));
+        recorder.ShouldHaveCommandCount(2);
+        recorder.ShouldHaveTransactionBoundary(1, 1, 0);
+        AssertOneEmbeddedLookupStatement(recorder);
+        // Core carries each spelling unchanged and the structural memo is ordinal, so the one descriptor group
+        // binds all three; the engine maps them to one DescriptorId.
+        BoundLookupKeys(recorder.Commands[0])
+            .Should()
+            .BeEquivalentTo(seed.Uri, seed.Uri.ToUpperInvariant(), seed.Uri.ToLowerInvariant());
+        await AssertStoredKeysAsync(harness, seed.Keys, seed.Keys, expectedColumns: 2);
+    }
+
+    public static async Task It_matches_a_repeated_POST_with_three_descriptor_spellings_in_the_existing_write_command_stream(
+        ApiIntegrationHarness harness
+    )
+    {
+        DescriptorSeed seed = await SeedDescriptorAsync(harness);
+        var recorder = harness.Services.GetRequiredService<RelationalWriteSessionCommandRecorder>();
+        JsonObject payload = ThreeSpellingItem(seed);
+        string item = await PostAsync(harness, Items, payload);
+        recorder.Reset();
+        (await PostAsync(harness, Items, payload, HttpStatusCode.OK)).Should().Be(item);
+        recorder.ShouldHaveCommandCount(2);
+        recorder.ShouldHaveTransactionBoundary(1, 1, 0);
+        AssertOneEmbeddedLookupStatement(recorder);
+        await AssertStoredKeysAsync(harness, seed.Keys, seed.Keys, expectedColumns: 2);
+    }
+
+    /// <summary>
+    /// An item whose root descriptor uses the seeded spelling and whose two choices use its upper- and
+    /// lower-case forms.
+    /// </summary>
+    private static JsonObject ThreeSpellingItem(DescriptorSeed seed)
+    {
         JsonObject payload = Item("item", seed.Uri);
         payload["choices"] = new JsonArray(
             new JsonObject
@@ -529,18 +620,29 @@ internal static class CompactDescriptorResourceScenario
                 ["schoolTypeDescriptor"] = seed.Uri.ToLowerInvariant(),
             }
         );
-        recorder.Reset();
-        string item = await PostAsync(harness, Items, payload);
-        recorder.ShouldHaveCommandCount(2);
-        recorder.ShouldHaveTransactionBoundary(1, 1, 0);
-        AssertOneEmbeddedLookupStatement(recorder);
-        recorder.Reset();
-        (await PostAsync(harness, Items, payload, HttpStatusCode.OK)).Should().Be(item);
-        recorder.ShouldHaveCommandCount(2);
-        recorder.ShouldHaveTransactionBoundary(1, 1, 0);
-        AssertOneEmbeddedLookupStatement(recorder);
-        await AssertStoredKeysAsync(harness, seed.Keys, seed.Keys, expectedColumns: 2);
+        return payload;
     }
+
+    /// <summary>
+    /// The string keys a command binds through its natural-key lookup group parameters: PostgreSQL binds a typed
+    /// array per key, SQL Server one JSON key list per group.
+    /// </summary>
+    private static IEnumerable<string> BoundLookupKeys(RecordedSessionCommand command) =>
+        command
+            .Parameters.Where(parameter => parameter.Name.StartsWith("@g", StringComparison.Ordinal))
+            .SelectMany(parameter =>
+                parameter.Value switch
+                {
+                    string[] keys => keys,
+                    string json => JsonNode
+                        .Parse(json)!
+                        .AsArray()
+                        .SelectMany(entry => entry!.AsObject().Select(property => property.Value))
+                        .Where(value => value!.GetValueKind() == JsonValueKind.String)
+                        .Select(value => value!.GetValue<string>()),
+                    _ => [],
+                }
+            );
 
     /// <summary>
     /// The root and collection descriptor occurrences share one natural-key lookup statement, embedded in the

@@ -4363,13 +4363,15 @@ internal static class DescriptorCanonicalizeBuilders
 
     /// <summary>
     /// Builds a RelationalWriteCurrentState for the two-table plan with a root row and
-    /// optional collection rows (layout: [CollectionItemId, ParentDocumentId, Ordinal, DescriptorId]).
+    /// optional collection rows (layout: [CollectionItemId, ParentDocumentId, Ordinal, DescriptorId]) and
+    /// an optional stored descriptor projection (the URI the database holds for each stored DescriptorId).
     /// </summary>
     public static RelationalWriteCurrentState BuildCurrentState(
         TableWritePlan rootPlan,
         TableWritePlan collectionPlan,
         long documentId,
-        IReadOnlyList<object?[]>? collectionRows = null
+        IReadOnlyList<object?[]>? collectionRows = null,
+        IReadOnlyList<DescriptorUriRow>? storedDescriptorUris = null
     ) =>
         new(
             new DocumentMetadataRow(
@@ -4388,7 +4390,7 @@ internal static class DescriptorCanonicalizeBuilders
                 ),
                 new HydratedTableRows(collectionPlan.TableModel, collectionRows ?? []),
             ],
-            []
+            storedDescriptorUris is null ? [] : [new HydratedDescriptorRows(storedDescriptorUris)]
         );
 
     private static JsonPathExpression Path(string canonical) => new(canonical, []);
@@ -4525,16 +4527,17 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
 }
 
 /// <summary>
-/// Regression: in production, <c>DescriptorExtractor.CreateDescriptorReference</c> lowercases
-/// descriptor URIs before publishing them into <see cref="ResolvedReferenceSet"/>, but Core's
-/// <c>AddressDerivationEngine</c> reads the raw JSON value (typically mixed-case) into
-/// <see cref="VisibleStoredCollectionRow"/> identity parts. The URI-keyed cache lookup must
-/// normalize the input on both insert and probe so the documented "URI in cache" path works
-/// reliably against typical mixed-case Ed-Fi descriptor URIs (e.g.
-/// <c>uri://ed-fi.org/AddressTypeDescriptor#Physical</c>).
+/// Regression: the request-cycle descriptor cache is keyed by the exact URI the client sent, while Core's
+/// <c>AddressDerivationEngine</c> reads stored-row identity parts from the stored document, whose descriptor URIs
+/// carry the database's stored spelling. The merge seeds the cache from the stored descriptor projection, so a stored
+/// spelling resolves whether or not the client matched it. A hidden row makes the cache hit load-bearing: without
+/// it the count-divergence fallback throws.
 /// </summary>
-[TestFixture]
-public class Given_top_level_collection_with_descriptor_backed_semantic_identity_matches_when_uri_case_differs_between_cache_and_stored_row
+[TestFixture("uri://ed-fi.org/AddressTypeDescriptor#Physical")]
+[TestFixture("uri://ed-fi.org/addresstypedescriptor#PHYSICAL")]
+public class Given_top_level_collection_with_descriptor_backed_semantic_identity_and_a_hidden_row_matches_through_the_stored_descriptor_projection(
+    string requestUri
+)
 {
     private ProfileMergeOutcome _outcome;
 
@@ -4546,9 +4549,7 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
 
         var body = new JsonObject
         {
-            ["addresses"] = new JsonArray(
-                new JsonObject { ["addressTypeDescriptor"] = DescriptorCanonicalizeBuilders.AddressTypeUri }
-            ),
+            ["addresses"] = new JsonArray(new JsonObject { ["addressTypeDescriptor"] = requestUri }),
         };
 
         var candidate = DescriptorCanonicalizeBuilders.BuildCandidate(
@@ -4556,20 +4557,17 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
             DescriptorCanonicalizeBuilders.AddressTypeId
         );
 
-        // Mixed-case URI on the request item (raw JSON input).
-        var requestItem = DescriptorCanonicalizeBuilders.BuildRequestItemWithUri(
-            DescriptorCanonicalizeBuilders.AddressTypeUri,
-            creatable: true
-        );
+        // The client's spelling on the request item, as Core reads it from the request body.
+        var requestItem = DescriptorCanonicalizeBuilders.BuildRequestItemWithUri(requestUri, creatable: true);
 
-        // Mixed-case URI on the stored row (raw JSON from stored doc).
+        // The stored spelling on the stored row, as Core reads it from the stored document.
         var storedRow = DescriptorCanonicalizeBuilders.BuildStoredRowWithUri(
             DescriptorCanonicalizeBuilders.AddressTypeUri
         );
 
-        // Cache populated with the LOWERCASED URI as production's DescriptorExtractor produces.
+        // The resolver publishes the client's spelling unchanged; the engine matched it to the stored id.
         var resolvedRefs = DescriptorCanonicalizeBuilders.BuildResolvedReferenceSetWithDescriptor(
-            DescriptorCanonicalizeBuilders.AddressTypeUri.ToLowerInvariant(),
+            requestUri,
             DescriptorCanonicalizeBuilders.AddressTypeId
         );
 
@@ -4595,8 +4593,7 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
         // Two current DB rows; only one is visible to this profile (descriptor-only identity
         // with a hidden row interleaved). This makes the URI-cache hit load-bearing: the
         // positional / scalar-parts fallback would refuse with "row counts differ" because the
-        // current and stored row counts diverge, so the test will fail without the case-
-        // insensitive lookup.
+        // current and stored row counts diverge.
         var currentState = DescriptorCanonicalizeBuilders.BuildCurrentState(
             rootPlan,
             collectionPlan,
@@ -4610,6 +4607,14 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
                     2,
                     99, /* hidden row's descriptor id */
                 ],
+            ],
+            storedDescriptorUris:
+            [
+                new DescriptorUriRow(
+                    DescriptorCanonicalizeBuilders.AddressTypeId,
+                    DescriptorCanonicalizeBuilders.AddressTypeUri
+                ),
+                new DescriptorUriRow(99, "uri://ed-fi.org/AddressTypeDescriptor#Mailing"),
             ]
         );
 
@@ -4652,8 +4657,8 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
 
     [Test]
     public void It_produces_two_merged_rows_one_visible_update_and_one_hidden_preserve() =>
-        // Without case-insensitive URI lookup the cache miss falls through to the count-divergence
-        // throw at CanonicalizeStoredIdentityParts, so this length assertion is the regression gate.
+        // Without the stored-projection seeding the client-changed-casing case misses the cache and falls
+        // through to the count-divergence throw at CanonicalizeStoredIdentityParts, so this is the regression gate.
         _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows.Length.Should().Be(2);
 }
 

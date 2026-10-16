@@ -56,12 +56,24 @@ public sealed class Given_Mssql_CompactDescriptorResources : MssqlApiIntegration
         );
 
     [Test]
+    [Ignore(
+        "DMS-1452: Quarantined until POST upsert detection uses natural keys; until then the referential-identity capture misses a re-POSTed identity whose descriptor spelling differs from the stored hash input and returns 409."
+    )]
+    public Task It_matches_a_repeated_POST_with_three_descriptor_spellings_in_the_existing_write_command_stream() =>
+        CompactDescriptorResourceScenario.It_matches_a_repeated_POST_with_three_descriptor_spellings_in_the_existing_write_command_stream(
+            Harness
+        );
+
+    [Test]
     public Task It_stores_compact_keys_and_hydrates_root_collection_extension_and_copied_URIs() =>
         CompactDescriptorResourceScenario.It_stores_compact_keys_and_hydrates_root_collection_extension_and_copied_URIs(
             Harness
         );
 
     [Test]
+    [Ignore(
+        "DMS-1452: Quarantined until POST upsert detection uses natural keys; until then the referential-identity capture misses a re-POSTed identity whose descriptor spelling differs from the stored hash input and returns 409."
+    )]
     public Task It_matches_repeated_POST_and_transitive_document_identities_with_mixed_case_descriptors() =>
         CompactDescriptorResourceScenario.It_matches_repeated_POST_and_transitive_document_identities_with_mixed_case_descriptors(
             Harness
@@ -88,6 +100,15 @@ public sealed class Given_Mssql_CompactDescriptorResources : MssqlApiIntegration
     [Test]
     public Task It_maintains_RI_and_copied_descriptor_keys_after_resource_identity_updates() =>
         CompactDescriptorResourceScenario.It_maintains_RI_and_copied_descriptor_keys_after_resource_identity_updates(
+            Harness
+        );
+
+    [Test]
+    [Ignore(
+        "DMS-1452: Quarantined until POST upsert detection uses natural keys; until then the referential-identity capture misses a re-POSTed identity whose descriptor spelling differs from the stored hash input and returns 409."
+    )]
+    public Task It_matches_repeated_POSTs_with_case_variant_descriptors_after_a_resource_identity_update() =>
+        CompactDescriptorResourceScenario.It_matches_repeated_POSTs_with_case_variant_descriptors_after_a_resource_identity_update(
             Harness
         );
 

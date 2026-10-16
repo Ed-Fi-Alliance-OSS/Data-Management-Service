@@ -256,7 +256,7 @@ public class ReferenceExtractorTests
         }
 
         [Test]
-        public void It_normalizes_descriptor_valued_identity_members_before_building_the_document_identity()
+        public void It_carries_the_raw_descriptor_value_in_the_reference_identity()
         {
             _mixedCaseDocumentReference
                 .DocumentIdentity.DocumentIdentityElements.Select(static element =>
@@ -267,22 +267,23 @@ public class ReferenceExtractorTests
                     ("$.educationOrganizationId", "255901"),
                     (
                         "$.graduationPlanTypeDescriptor",
-                        "uri://ed-fi.org/graduationplantypedescriptor#foundation"
+                        "uri://ed-fi.org/GraduationPlanTypeDescriptor#Foundation"
                     ),
                     ("$.graduationSchoolYear", "2030")
                 );
         }
 
         [Test]
-        public void It_builds_the_same_identity_for_mixed_case_and_lowercase_descriptor_values()
+        public void It_builds_structurally_distinct_identities_for_mixed_case_and_lowercase_descriptor_values()
         {
+            // Core compares identities ordinally; whether the spellings name one descriptor is the database's call.
             DocumentIdentityComparer
                 .Instance.Equals(
                     _mixedCaseDocumentReference.DocumentIdentity,
                     _lowercaseDocumentReference.DocumentIdentity
                 )
                 .Should()
-                .BeTrue();
+                .BeFalse();
         }
     }
 
@@ -336,32 +337,39 @@ public class ReferenceExtractorTests
         }
 
         [Test]
-        public void It_builds_the_same_canonical_document_identity_from_resource_and_reference_payloads()
+        public void It_builds_the_resource_identity_with_its_own_descriptor_spelling()
         {
-            var expectedIdentityElements = new[]
-            {
-                ("$.educationOrganizationId", "255901"),
-                ("$.graduationPlanTypeDescriptor", "uri://ed-fi.org/graduationplantypedescriptor#foundation"),
-                ("$.graduationSchoolYear", "2030"),
-            };
-
             _resourceDocumentIdentity
                 .DocumentIdentityElements.Select(static element =>
                     (element.IdentityJsonPath.Value, element.IdentityValue)
                 )
                 .Should()
-                .Equal(expectedIdentityElements);
+                .Equal(
+                    ("$.educationOrganizationId", "255901"),
+                    (
+                        "$.graduationPlanTypeDescriptor",
+                        "uri://ed-fi.org/GraduationPlanTypeDescriptor#Foundation"
+                    ),
+                    ("$.graduationSchoolYear", "2030")
+                );
+        }
 
+        [Test]
+        public void It_builds_the_reference_identity_on_the_same_paths_in_the_same_order_with_its_own_spelling()
+        {
             _referenceDocumentReference
                 .DocumentIdentity.DocumentIdentityElements.Select(static element =>
                     (element.IdentityJsonPath.Value, element.IdentityValue)
                 )
                 .Should()
-                .Equal(expectedIdentityElements);
-
-            _resourceDocumentIdentity
-                .DocumentIdentityElements.Should()
-                .Equal(_referenceDocumentReference.DocumentIdentity.DocumentIdentityElements);
+                .Equal(
+                    ("$.educationOrganizationId", "255901"),
+                    (
+                        "$.graduationPlanTypeDescriptor",
+                        "uri://ed-fi.org/GraduationPlanTypeDescriptor#FOUNDATION"
+                    ),
+                    ("$.graduationSchoolYear", "2030")
+                );
         }
     }
 

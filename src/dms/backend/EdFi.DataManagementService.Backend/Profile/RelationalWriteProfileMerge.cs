@@ -183,9 +183,13 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
         // Build the resolved-reference lookups once and share them with both the root-table
         // synthesis and each separate-table synthesis so we avoid redundant construction.
+        // The stored descriptor projection seeds the URI cache with the stored spelling of every
+        // request-resolved descriptor, so a client that changes a descriptor's casing still matches its
+        // stored rows without C# folding case.
         var resolvedReferenceLookups = FlatteningResolvedReferenceLookupSet.Create(
             request.WritePlan,
-            request.ResolvedReferences
+            request.ResolvedReferences,
+            storedDescriptorRows: request.CurrentState?.DescriptorRowsInPlanOrder
         );
 
         // 1. Root-table merge — append merged + current rows into the root builder.

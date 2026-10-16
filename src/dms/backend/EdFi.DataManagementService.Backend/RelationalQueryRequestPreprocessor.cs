@@ -267,7 +267,7 @@ internal static class RelationalQueryRequestPreprocessor
         var documentIdentity = new DocumentIdentity([
             new DocumentIdentityElement(
                 DocumentIdentity.DescriptorIdentityJsonPath,
-                DescriptorText.AssertWellFormedWithoutNul(queryElement.Value).ToLowerInvariant()
+                DescriptorText.AssertWellFormedWithoutNul(queryElement.Value)
             ),
         ]);
 

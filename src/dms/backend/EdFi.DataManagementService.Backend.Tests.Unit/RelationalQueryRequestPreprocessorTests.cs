@@ -170,7 +170,7 @@ public partial class Given_RelationalQueryRequestPreprocessor
     }
 
     [Test]
-    public async Task It_resolves_mixed_case_descriptor_query_values_in_one_batched_lookup_without_relookup()
+    public async Task It_passes_mixed_case_descriptor_query_values_unchanged_in_one_batched_lookup_without_relookup()
     {
         var referenceResolver = A.Fake<IReferenceResolver>();
         ReferenceResolverRequest capturedRequest = null!;
@@ -257,7 +257,7 @@ public partial class Given_RelationalQueryRequestPreprocessor
                 reference.DocumentIdentity.DocumentIdentityElements.Single().IdentityValue
             )
             .Should()
-            .Equal("uri://one", "uri://two");
+            .Equal("uri://ONE", "uri://two");
     }
 
     [TestCase(DescriptorReferenceFailureReason.Missing)]
