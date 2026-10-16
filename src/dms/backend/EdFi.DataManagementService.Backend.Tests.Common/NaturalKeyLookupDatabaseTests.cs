@@ -754,13 +754,7 @@ public abstract class NaturalKeyLookupDatabaseTests
         QualifiedResourceName target,
         string path,
         params (string Path, string Value)[] elements
-    ) =>
-        new(
-            ResourceInfo(target, isDescriptor: false),
-            Identity(elements),
-            new ReferentialId(Guid.NewGuid()),
-            new JsonPath(path)
-        );
+    ) => new(ResourceInfo(target, isDescriptor: false), Identity(elements), new JsonPath(path));
 
     private static DescriptorReference DescriptorReference(
         QualifiedResourceName descriptorResource,
@@ -770,7 +764,6 @@ public abstract class NaturalKeyLookupDatabaseTests
         new(
             ResourceInfo(descriptorResource, isDescriptor: true),
             Identity((DocumentIdentity.DescriptorIdentityJsonPath.Value, uri)),
-            new ReferentialId(Guid.NewGuid()),
             new JsonPath(path)
         );
 

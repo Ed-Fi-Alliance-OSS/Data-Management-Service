@@ -308,6 +308,78 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Document_With_A_Duplicate_Reference_After_A_Distinct_One
+        : ReferenceArrayUniquenessValidationMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Each reference's identity is extracted onto its own array, so only a structural comparison of the
+            // first and third items can find the repeat.
+            string jsonBody = """
+                {
+                    "schoolReference": {
+                        "schoolId": 1
+                    },
+                    "bellScheduleName": "Test Schedule",
+                    "totalInstructionalTime": 325,
+                    "classPeriods": [
+                        {
+                            "classPeriodReference": {
+                                "classPeriodName": "01 - Traditional",
+                                "schoolId": 1
+                            }
+                        },
+                        {
+                            "classPeriodReference": {
+                                "classPeriodName": "02 - Block",
+                                "schoolId": 1
+                            }
+                        },
+                        {
+                            "classPeriodReference": {
+                                "classPeriodName": "01 - Traditional",
+                                "schoolId": 1
+                            }
+                        }
+                    ],
+                    "dates": [],
+                    "gradeLevels": []
+                }
+                """;
+
+            _requestInfo = await CreateContextAndExecute(
+                BellScheduleApiSchema(),
+                jsonBody,
+                "bellschedules",
+                RequestMethod.POST
+            );
+        }
+
+        [Test]
+        public void It_returns_status_400()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_reports_the_third_item_as_the_duplicate()
+        {
+            _requestInfo
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain(
+                    """
+                    "validationErrors":{"$.classPeriods":["The 3rd item of the classPeriods has the same identifying values as another item earlier in the list."]}
+                    """
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Document_With_Unique_References : ReferenceArrayUniquenessValidationMiddlewareTests
     {
         private RequestInfo _requestInfo = No.RequestInfo();

@@ -15130,7 +15130,6 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             DocumentIdentity: new DocumentIdentity([
                 new DocumentIdentityElement(new JsonPath("$.localEducationAgencyId"), "255901"),
             ]),
-            ReferentialId: new ReferentialId(Guid.NewGuid()),
             Path: new JsonPath(path)
         );
     }
@@ -15143,7 +15142,6 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                 new DocumentIdentityElement(new JsonPath("$.namespace"), "uri://sample"),
                 new DocumentIdentityElement(new JsonPath("$.codeValue"), "SchoolCategory#Charter"),
             ]),
-            ReferentialId: new ReferentialId(Guid.NewGuid()),
             Path: new JsonPath(path)
         );
     }

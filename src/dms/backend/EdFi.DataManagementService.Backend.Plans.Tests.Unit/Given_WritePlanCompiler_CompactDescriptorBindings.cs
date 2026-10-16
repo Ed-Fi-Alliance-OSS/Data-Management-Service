@@ -92,7 +92,6 @@ public class Given_WritePlanCompiler_CompactDescriptorBindings(SqlDialect dialec
                             true
                         ),
                         new DocumentIdentity([new(DocumentIdentity.DescriptorIdentityJsonPath, Uri)]),
-                        new ReferentialId(Guid.NewGuid()),
                         new JsonPath(column.SourceJsonPath!.Value.Canonical)
                     ),
                     DescriptorId,
@@ -115,7 +114,6 @@ public class Given_WritePlanCompiler_CompactDescriptorBindings(SqlDialect dialec
                             Uri
                         )),
                     ]),
-                    new ReferentialId(Guid.NewGuid()),
                     new JsonPath(binding.ReferenceObjectPath.Canonical)
                 ),
                 ReferencedDocumentId,

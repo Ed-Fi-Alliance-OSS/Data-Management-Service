@@ -3831,7 +3831,6 @@ internal static class DescriptorBackedNestedTopologyBuilders
                         DocumentIdentity: new DocumentIdentity([
                             new DocumentIdentityElement(new JsonPath("$.descriptor"), uri),
                         ]),
-                        ReferentialId: new ReferentialId(Guid.NewGuid()),
                         Path: new JsonPath("$.parents[0].parentTypeDescriptor")
                     ),
                     DescriptorId: descriptorId,
@@ -5099,7 +5098,6 @@ internal static class NumericDocumentReferenceBackedNestedTopologyBuilders
                                 numericNaturalKey.ToString(System.Globalization.CultureInfo.InvariantCulture)
                             ),
                         ]),
-                        ReferentialId: new ReferentialId(Guid.NewGuid()),
                         Path: new JsonPath(ParentReferenceConcretePath)
                     ),
                     DocumentId: referenceDocumentId,
@@ -5719,7 +5717,6 @@ internal static class DocumentReferenceBackedNestedTopologyBuilders
                         DocumentIdentity: new DocumentIdentity([
                             new DocumentIdentityElement(new JsonPath("$.parentId"), parentNaturalKey),
                         ]),
-                        ReferentialId: new ReferentialId(Guid.NewGuid()),
                         Path: new JsonPath(ParentReferenceConcretePath)
                     ),
                     DocumentId: referenceDocumentId,
@@ -6699,7 +6696,6 @@ internal static class CompositeDescriptorScalarDocumentReferenceBackedNestedTopo
                                 programTypeUri
                             ),
                         ]),
-                        ReferentialId: new ReferentialId(Guid.NewGuid()),
                         Path: new JsonPath(ParentReferenceConcretePath)
                     ),
                     DocumentId: parentReferenceDocumentId,
@@ -6722,7 +6718,6 @@ internal static class CompositeDescriptorScalarDocumentReferenceBackedNestedTopo
                                     programTypeUri
                                 ),
                             ]),
-                            new ReferentialId(Guid.NewGuid()),
                             new JsonPath(ParentReferenceProgramTypeDescriptorConcretePath)
                         ),
                         DescriptorId: programTypeDescriptorId,

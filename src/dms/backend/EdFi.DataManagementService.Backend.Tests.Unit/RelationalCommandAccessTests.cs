@@ -560,7 +560,6 @@ internal static class RelationalAccessTestData
             DocumentIdentity: new DocumentIdentity([
                 new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
             ]),
-            ReferentialId: referentialId,
             Path: new JsonPath(path)
         );
 
@@ -578,7 +577,6 @@ internal static class RelationalAccessTestData
             DocumentIdentity: new DocumentIdentity([
                 new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri),
             ]),
-            ReferentialId: referentialId,
             Path: new JsonPath(path)
         );
 

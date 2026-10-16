@@ -659,7 +659,6 @@ public class Given_FlatteningResolvedReferenceLookupSet
                 new DocumentIdentity([
                     new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri),
                 ]),
-                new ReferentialId(Guid.NewGuid()),
                 new JsonPath(path)
             ),
             descriptorId,
@@ -911,7 +910,6 @@ public class Given_FlatteningResolvedReferenceLookupSet
                         identityElement.IdentityValue
                     )),
                 ]),
-                new ReferentialId(Guid.NewGuid()),
                 new JsonPath(path)
             ),
             documentId,
@@ -928,7 +926,6 @@ public class Given_FlatteningResolvedReferenceLookupSet
             new DocumentReference(
                 _schoolResourceInfo,
                 new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255999")]),
-                new ReferentialId(Guid.NewGuid()),
                 new JsonPath(path)
             ),
             reason
@@ -1261,12 +1258,7 @@ public class Given_FlatteningResolvedReferenceLookupSet
     )
     {
         return new ResolvedDescriptorReference(
-            new DescriptorReference(
-                resourceInfo,
-                new DocumentIdentity([]),
-                new ReferentialId(Guid.NewGuid()),
-                new JsonPath(path)
-            ),
+            new DescriptorReference(resourceInfo, new DocumentIdentity([]), new JsonPath(path)),
             descriptorId,
             5000000000L + descriptorId,
             13

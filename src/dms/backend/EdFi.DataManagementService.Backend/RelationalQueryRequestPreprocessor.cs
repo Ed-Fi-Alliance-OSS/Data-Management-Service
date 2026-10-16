@@ -274,7 +274,6 @@ internal static class RelationalQueryRequestPreprocessor
         return new DescriptorReference(
             descriptorResourceInfo,
             documentIdentity,
-            ReferentialIdFactory.Create(descriptorResourceInfo, documentIdentity),
             new JsonPath($"$.query[{index}]")
         );
     }

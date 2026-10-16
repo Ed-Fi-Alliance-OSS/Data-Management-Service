@@ -168,10 +168,6 @@ file static class WriteSessionCommandStreamTestSupport
                     new DescriptorReference(
                         AddressTypeDescriptorResourceInfo,
                         AddressTypeDescriptorIdentity(),
-                        ReferentialIdCalculator.ReferentialIdFrom(
-                            AddressTypeDescriptorResourceInfo,
-                            AddressTypeDescriptorIdentity()
-                        ),
                         new JsonPath("$.addresses[0].addressTypeDescriptor")
                     ),
                 ],
@@ -228,7 +224,6 @@ file static class WriteSessionCommandStreamTestSupport
                 return new DocumentReference(
                     programResourceInfo,
                     identity,
-                    ReferentialIdCalculator.ReferentialIdFrom(programResourceInfo, identity),
                     new JsonPath(
                         $"$._ext.sample.addresses[0]._ext.sample.sponsorReferences[{index}].programReference"
                     )

@@ -141,8 +141,7 @@ public partial class Given_RelationalQueryRequestPreprocessor
             capability.Support.Should().BeOfType<RelationalQuerySupport.Supported>();
 
             var catalog = StoredDescriptors.ToDictionary(
-                descriptor =>
-                    CreateReferentialId($"{descriptor.Namespace}#{descriptor.CodeValue}".ToLowerInvariant()),
+                descriptor => $"{descriptor.Namespace}#{descriptor.CodeValue}".ToLowerInvariant(),
                 descriptor => descriptor.DescriptorId
             );
             _resolver = A.Fake<IReferenceResolver>();
@@ -155,8 +154,8 @@ public partial class Given_RelationalQueryRequestPreprocessor
                                 request
                                     .DescriptorReferences.Select(reference => new ResolvedDescriptorReference(
                                         reference,
-                                        catalog[reference.ReferentialId],
-                                        5000000000L + catalog[reference.ReferentialId],
+                                        catalog[UriOf(reference)],
+                                        5000000000L + catalog[UriOf(reference)],
                                         31
                                     ))
                                     .ToArray()
@@ -203,15 +202,9 @@ public partial class Given_RelationalQueryRequestPreprocessor
                 .Should()
                 .Equal(ExpectedIds.Select(id => new PreprocessedRelationalQueryValue.DescriptorId(id)));
             _lookupRequest
-                .DescriptorReferences.Select(reference =>
-                    reference.DocumentIdentity.DocumentIdentityElements.Single().IdentityValue
-                )
+                .DescriptorReferences.Select(UriOf)
                 .Should()
                 .Equal(QueryUris.Select(uri => uri.ToLowerInvariant()));
-            _lookupRequest
-                .DescriptorReferences.Select(reference => reference.ReferentialId)
-                .Should()
-                .Equal(QueryUris.Select(uri => CreateReferentialId(uri.ToLowerInvariant())));
             _lookupRequest.DocumentReferences.Should().BeEmpty();
             A.CallTo(() => _resolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
                 .MustHaveHappenedOnceExactly();
@@ -352,16 +345,7 @@ public partial class Given_RelationalQueryRequestPreprocessor
             );
         }
 
-        private static ReferentialId CreateReferentialId(string normalizedUri) =>
-            ReferentialIdFactory.Create(
-                new BaseResourceInfo(
-                    new ProjectName(DescriptorResource.ProjectName),
-                    new ResourceName(DescriptorResource.ResourceName),
-                    true
-                ),
-                new DocumentIdentity([
-                    new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, normalizedUri),
-                ])
-            );
+        private static string UriOf(DescriptorReference reference) =>
+            reference.DocumentIdentity.DocumentIdentityElements.Single().IdentityValue;
     }
 }

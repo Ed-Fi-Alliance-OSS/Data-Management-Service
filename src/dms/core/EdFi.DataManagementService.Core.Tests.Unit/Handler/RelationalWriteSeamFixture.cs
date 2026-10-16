@@ -280,7 +280,6 @@ internal sealed record RelationalWriteSeamFixture(
                 new DocumentReference(
                     SchoolResourceInfo,
                     new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
-                    new ReferentialId(Guid.Parse("11111111-1111-1111-1111-111111111111")),
                     new JsonPath("$.schoolReference")
                 )
             );
@@ -292,7 +291,6 @@ internal sealed record RelationalWriteSeamFixture(
                 new DocumentReference(
                     SchoolResourceInfo,
                     new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
-                    new ReferentialId(Guid.Parse("33333333-3333-3333-3333-333333333333")),
                     new JsonPath("$.addresses[0].periods[0].schoolReference")
                 )
             );
@@ -300,7 +298,6 @@ internal sealed record RelationalWriteSeamFixture(
                 new DocumentReference(
                     SchoolResourceInfo,
                     new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255902")]),
-                    new ReferentialId(Guid.Parse("44444444-4444-4444-4444-444444444444")),
                     new JsonPath("$.addresses[0].periods[1].schoolReference")
                 )
             );
@@ -319,7 +316,6 @@ internal sealed record RelationalWriteSeamFixture(
                             "uri://ed-fi.org/programtypedescriptor#stem"
                         ),
                     ]),
-                    new ReferentialId(Guid.Parse("22222222-2222-2222-2222-222222222222")),
                     new JsonPath("$.programTypeDescriptor")
                 )
             );
@@ -385,7 +381,6 @@ internal sealed record RelationalWriteSeamFixture(
                         new DocumentIdentity([
                             new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
                         ]),
-                        new ReferentialId(Guid.Parse("11111111-1111-1111-1111-111111111111")),
                         new JsonPath("$.schoolReference")
                     ),
                     DocumentId: 901L,
@@ -397,7 +392,6 @@ internal sealed record RelationalWriteSeamFixture(
                         new DocumentIdentity([
                             new DocumentIdentityElement(new JsonPath("$.schoolId"), "255911"),
                         ]),
-                        new ReferentialId(Guid.Parse("33333333-3333-3333-3333-333333333333")),
                         new JsonPath("$.addresses[0].periods[0].schoolReference")
                     ),
                     DocumentId: 9901L,
@@ -409,7 +403,6 @@ internal sealed record RelationalWriteSeamFixture(
                         new DocumentIdentity([
                             new DocumentIdentityElement(new JsonPath("$.schoolId"), "255902"),
                         ]),
-                        new ReferentialId(Guid.Parse("44444444-4444-4444-4444-444444444444")),
                         new JsonPath("$.addresses[0].periods[1].schoolReference")
                     ),
                     DocumentId: 9902L,
@@ -427,7 +420,6 @@ internal sealed record RelationalWriteSeamFixture(
                                 "uri://ed-fi.org/programtypedescriptor#stem"
                             ),
                         ]),
-                        new ReferentialId(Guid.Parse("22222222-2222-2222-2222-222222222222")),
                         new JsonPath("$.programTypeDescriptor")
                     ),
                     17,

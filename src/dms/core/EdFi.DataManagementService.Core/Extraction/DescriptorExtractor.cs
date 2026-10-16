@@ -11,7 +11,6 @@ using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
-using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
 
 namespace EdFi.DataManagementService.Core.Extraction;
 
@@ -197,12 +196,7 @@ internal static class DescriptorExtractor
             ),
         ]);
 
-        return new DescriptorReference(
-            resourceInfo,
-            documentIdentity,
-            ReferentialIdFrom(resourceInfo, documentIdentity),
-            new JsonPath(concretePath)
-        );
+        return new DescriptorReference(resourceInfo, documentIdentity, new JsonPath(concretePath));
     }
 
     private static BaseResourceInfo CreateDescriptorResourceInfo(QualifiedResourceName descriptorResource) =>
@@ -228,7 +222,10 @@ internal static class DescriptorExtractor
             {
                 if (
                     existingReference.ResourceInfo != descriptorReference.ResourceInfo
-                    || existingReference.ReferentialId != descriptorReference.ReferentialId
+                    || !DocumentIdentityComparer.Instance.Equals(
+                        existingReference.DocumentIdentity,
+                        descriptorReference.DocumentIdentity
+                    )
                 )
                 {
                     throw new InvalidOperationException(

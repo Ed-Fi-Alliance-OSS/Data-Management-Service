@@ -290,10 +290,6 @@ file static class AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupp
                 new DocumentReference(
                     ResourceInfo: targetResourceInfo,
                     DocumentIdentity: documentIdentity,
-                    ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(
-                        targetResourceInfo,
-                        documentIdentity
-                    ),
                     Path: new JsonPath(
                         $"$.alternativeGraduationPlans[{index}].alternativeGraduationPlanReference"
                     )

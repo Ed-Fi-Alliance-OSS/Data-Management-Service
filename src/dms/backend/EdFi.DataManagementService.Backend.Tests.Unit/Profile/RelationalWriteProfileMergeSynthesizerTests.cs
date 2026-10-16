@@ -3718,7 +3718,6 @@ internal static class DocumentReferenceCanonicalizeBuilders
                                 EducationOrganizationId
                             ),
                         ]),
-                        ReferentialId: new ReferentialId(Guid.NewGuid()),
                         Path: new JsonPath(ReferenceConcretePath)
                     ),
                     DocumentId: SchoolDocumentId,
@@ -4353,7 +4352,6 @@ internal static class DescriptorCanonicalizeBuilders
                         DocumentIdentity: new DocumentIdentity([
                             new DocumentIdentityElement(new JsonPath("$.descriptor"), uri),
                         ]),
-                        ReferentialId: new ReferentialId(Guid.NewGuid()),
                         Path: new JsonPath("$.addresses[0].addressTypeDescriptor")
                     ),
                     DescriptorId: descriptorId,

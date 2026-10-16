@@ -567,13 +567,7 @@ public class Given_Natural_Key_Reference_Resolver(SqlDialect dialect)
         QualifiedResourceName target,
         string path,
         params (string Path, string Value)[] elements
-    ) =>
-        new(
-            ResourceInfo(target, isDescriptor: false),
-            Identity(elements),
-            new ReferentialId(Guid.NewGuid()),
-            new JsonPath(path)
-        );
+    ) => new(ResourceInfo(target, isDescriptor: false), Identity(elements), new JsonPath(path));
 
     private static DescriptorReference DescriptorReference(
         string uri,
@@ -582,7 +576,6 @@ public class Given_Natural_Key_Reference_Resolver(SqlDialect dialect)
         new(
             ResourceInfo(ProgramTypeDescriptor, isDescriptor: true),
             Identity((DocumentIdentity.DescriptorIdentityJsonPath.Value, uri)),
-            new ReferentialId(Guid.NewGuid()),
             new JsonPath(path)
         );
 

@@ -10,7 +10,6 @@ using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
-using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Extraction;
@@ -209,14 +208,6 @@ public class ReferenceExtractorTests
                     ("$.localEducationAgencyReference.educationOrganizationId", "255901")
                 );
         }
-
-        [Test]
-        public void It_builds_the_referential_id_from_the_preserved_duplicate_identity_order()
-        {
-            _documentReference
-                .ReferentialId.Should()
-                .Be(ReferentialIdFrom(_documentReference.ResourceInfo, _documentReference.DocumentIdentity));
-        }
     }
 
     [TestFixture]
@@ -283,9 +274,15 @@ public class ReferenceExtractorTests
         }
 
         [Test]
-        public void It_builds_the_same_referential_id_for_mixed_case_and_lowercase_descriptor_values()
+        public void It_builds_the_same_identity_for_mixed_case_and_lowercase_descriptor_values()
         {
-            _mixedCaseDocumentReference.ReferentialId.Should().Be(_lowercaseDocumentReference.ReferentialId);
+            DocumentIdentityComparer
+                .Instance.Equals(
+                    _mixedCaseDocumentReference.DocumentIdentity,
+                    _lowercaseDocumentReference.DocumentIdentity
+                )
+                .Should()
+                .BeTrue();
         }
     }
 
@@ -296,7 +293,6 @@ public class ReferenceExtractorTests
     {
         private DocumentIdentity _resourceDocumentIdentity = null!;
         private DocumentReference _referenceDocumentReference = null!;
-        private ReferentialId _resourceReferentialId;
 
         [SetUp]
         public void Setup()
@@ -337,11 +333,6 @@ public class ReferenceExtractorTests
                 }
                 """
             );
-
-            _resourceReferentialId = ReferentialIdFrom(
-                _referenceDocumentReference.ResourceInfo,
-                _resourceDocumentIdentity
-            );
         }
 
         [Test]
@@ -371,12 +362,6 @@ public class ReferenceExtractorTests
             _resourceDocumentIdentity
                 .DocumentIdentityElements.Should()
                 .Equal(_referenceDocumentReference.DocumentIdentity.DocumentIdentityElements);
-        }
-
-        [Test]
-        public void It_builds_the_same_referential_id_from_resource_and_reference_payloads()
-        {
-            _resourceReferentialId.Should().Be(_referenceDocumentReference.ReferentialId);
         }
     }
 
@@ -427,14 +412,6 @@ public class ReferenceExtractorTests
                     ("$.sessionReference.schoolYear", "2030"),
                     ("$.schoolReference.schoolId", "255901")
                 );
-        }
-
-        [Test]
-        public void It_builds_the_referential_id_from_the_authoritative_reference_json_path_order()
-        {
-            _documentReference
-                .ReferentialId.Should()
-                .Be(ReferentialIdFrom(_documentReference.ResourceInfo, _documentReference.DocumentIdentity));
         }
     }
 

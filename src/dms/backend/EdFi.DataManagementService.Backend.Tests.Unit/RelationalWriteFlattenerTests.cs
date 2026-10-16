@@ -4485,7 +4485,6 @@ public class Given_RelationalWriteFlattener
                         identityElement.IdentityValue
                     )),
                 ]),
-                new ReferentialId(Guid.NewGuid()),
                 new JsonPath(path)
             ),
             documentId,
@@ -4499,7 +4498,6 @@ public class Given_RelationalWriteFlattener
             new DocumentReference(
                 _schoolResourceInfo,
                 new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255999")]),
-                new ReferentialId(Guid.NewGuid()),
                 new JsonPath(path)
             ),
             DocumentReferenceFailureReason.Missing
@@ -4518,7 +4516,6 @@ public class Given_RelationalWriteFlattener
                 new DocumentIdentity([
                     new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri),
                 ]),
-                new ReferentialId(Guid.NewGuid()),
                 new JsonPath(path)
             ),
             descriptorId,
@@ -4539,7 +4536,6 @@ public class Given_RelationalWriteFlattener
                 new DocumentIdentity([
                     new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri),
                 ]),
-                new ReferentialId(Guid.NewGuid()),
                 new JsonPath(path)
             ),
             descriptorId,
@@ -4564,7 +4560,6 @@ public class Given_RelationalWriteFlattener
                                 descriptor.Uri
                             ),
                         ]),
-                        new ReferentialId(Guid.NewGuid()),
                         new JsonPath(descriptor.Path)
                     ),
                     descriptor.DescriptorId,
@@ -4766,7 +4761,6 @@ public class Given_RelationalWriteFlattener
                     IsDescriptor: false
                 ),
                 new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
-                new ReferentialId(Guid.Parse("11111111-1111-1111-1111-111111111111")),
                 new JsonPath("$.schoolReference")
             );
             var programDescriptorReference = new DescriptorReference(
@@ -4781,7 +4775,6 @@ public class Given_RelationalWriteFlattener
                         "uri://ed-fi.org/programtypedescriptor#stem"
                     ),
                 ]),
-                new ReferentialId(Guid.Parse("22222222-2222-2222-2222-222222222222")),
                 new JsonPath("$.programTypeDescriptor")
             );
 
@@ -4800,7 +4793,6 @@ public class Given_RelationalWriteFlattener
                                 new DocumentIdentity([
                                     new DocumentIdentityElement(new JsonPath("$.schoolId"), "255911"),
                                 ]),
-                                new ReferentialId(Guid.Parse("33333333-3333-3333-3333-333333333333")),
                                 new JsonPath("$.addresses[0].periods[0].schoolReference")
                             ),
                             DocumentId: 9901L,
@@ -4813,7 +4805,6 @@ public class Given_RelationalWriteFlattener
                                 new DocumentIdentity([
                                     new DocumentIdentityElement(new JsonPath("$.schoolId"), "255902"),
                                 ]),
-                                new ReferentialId(Guid.Parse("44444444-4444-4444-4444-444444444444")),
                                 new JsonPath("$.addresses[0].periods[1].schoolReference")
                             ),
                             DocumentId: 9902L,

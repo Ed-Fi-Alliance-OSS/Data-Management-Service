@@ -188,7 +188,6 @@ file static class MssqlStudentArtProgramAssociationIntegrationTestSupport
         return new(
             ResourceInfo: programResourceInfo,
             DocumentIdentity: programIdentity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(programResourceInfo, programIdentity),
             Path: new JsonPath("$.programReference")
         );
     }
