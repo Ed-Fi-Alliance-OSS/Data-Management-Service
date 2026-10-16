@@ -37,7 +37,17 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
         );
 
         // Application operations
-        Task InsertApplicationAsync(
+
+        /// <summary>
+        /// Inserts the application row inside the caller's transaction.
+        /// </summary>
+        /// <returns>
+        /// <see cref="OpenIddictApplicationInsertOutcome.Inserted"/> when the row was written, or
+        /// <see cref="OpenIddictApplicationInsertOutcome.DuplicateClientId"/> when the engine
+        /// rejected it on <c>UX_OpenIddictApplication_ClientId</c> and nothing was written. Any
+        /// other failure, a role or scope uniqueness violation included, propagates as thrown.
+        /// </returns>
+        Task<OpenIddictApplicationInsertOutcome> InsertApplicationAsync(
             Guid id,
             string clientId,
             string clientSecret,

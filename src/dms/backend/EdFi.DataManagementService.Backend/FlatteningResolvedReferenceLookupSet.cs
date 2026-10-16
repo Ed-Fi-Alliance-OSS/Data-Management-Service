@@ -664,11 +664,9 @@ internal sealed class FlatteningResolvedReferenceLookupSet
         }
 
         foreach (
-            var failurePath in resolvedReferences
-                .InvalidDocumentReferences.Where(static failure =>
-                    failure.Reason is DocumentReferenceFailureReason.Missing
-                )
-                .Select(static failure => failure.Path)
+            var failurePath in resolvedReferences.MissingDocumentReferences.Select(static failure =>
+                failure.Path
+            )
         )
         {
             var parsedPath = RelationalJsonPathSupport.ParseConcretePath(failurePath);

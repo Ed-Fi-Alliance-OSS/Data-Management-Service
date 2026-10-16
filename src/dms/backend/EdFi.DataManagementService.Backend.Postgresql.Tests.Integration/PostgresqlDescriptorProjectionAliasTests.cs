@@ -171,14 +171,13 @@ internal static class DescriptorProjectionAliasFixture
                 "DocumentId" bigint PRIMARY KEY,
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
-                "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "CreatedAt" timestamptz NOT NULL DEFAULT now()
+                "ContentVersion" bigint NOT NULL DEFAULT 1
             );
 
             CREATE TABLE IF NOT EXISTS dms."Descriptor" (
                 "DescriptorId" int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
                 "DocumentId" bigint NOT NULL UNIQUE REFERENCES dms."Document" ("DocumentId"),
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "ResourceKeyId" smallint NOT NULL,
                 "Namespace" varchar(255) NOT NULL DEFAULT '',
                 "CodeValue" varchar(50) NOT NULL DEFAULT '',
@@ -190,6 +189,7 @@ internal static class DescriptorProjectionAliasFixture
 
             CREATE TABLE {TestSchema}."UnifiedAliasResource" (
                 "DocumentId" bigint PRIMARY KEY,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "Canonical_DescriptorId" int NULL,
                 "Alias1_DescriptorId" int GENERATED ALWAYS AS ("Canonical_DescriptorId") STORED,
                 "Alias2_DescriptorId" int GENERATED ALWAYS AS ("Canonical_DescriptorId") STORED

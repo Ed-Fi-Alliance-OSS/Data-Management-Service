@@ -407,13 +407,13 @@ public static class DerivedModelSetManifestEmitter
                     break;
 
                 case TriggerKindParameters.DocumentStamping stamping:
-                    writer.WritePropertyName("mirror_stamp_target_table");
+                    writer.WritePropertyName("stamp_target_table");
                     WriteTableReference(
                         writer,
-                        trigger.MirrorStampTargetTable
+                        trigger.StampTargetTable
                             ?? throw new InvalidOperationException(
                                 $"DocumentStamping trigger '{trigger.Name.Value}' requires a non-null "
-                                    + "MirrorStampTargetTable."
+                                    + "StampTargetTable."
                             )
                     );
                     if (stamping.ChangeTracking is { } changeTracking)

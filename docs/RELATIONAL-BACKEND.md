@@ -147,8 +147,8 @@ over to pooled runtime connections; direct SQL clients must supply the effective
 
 ### Reprovisioning and legacy data carry-forward
 
-Existing databases require deliberate reprovisioning before using the compact-descriptor
-runtime. Keep `SchemaHashConstants.RelationalMappingVersion` at `v3` for the current 8.1
+Existing databases require deliberate reprovisioning before using the runtime with compact
+descriptors and authoritative root/descriptor timestamps. Keep `SchemaHashConstants.RelationalMappingVersion` at `v3` for the current 8.1
 release line. The constant tracks releases: bump at most once per release when mapping
 changes, never lower it, and do not add another bump before 8.1 ships. The next eligible
 bump is `v4` for the first qualifying mapping change after 8.1 ships.
@@ -156,7 +156,8 @@ bump is `v4` for the first qualifying mapping change after 8.1 ships.
 `EffectiveSchemaHash` includes that constant and normalized ApiSchema inputs, but excludes
 generated DDL and mapping-set output. Consequently, this mapping-only physical change can
 leave the hash unchanged. Hash equality and successful first-use validation cannot prove
-that an older database or template has compact descriptor columns. Rerunning create-only
+that an older database or template has compact descriptor columns or the current timestamp
+ownership (no `dms.Document.ContentLastModifiedAt`, authoritative root/descriptor timestamps). Rerunning create-only
 provisioning against it does not convert its schema.
 
 Provision a fresh target from current DDL for its exact core/extension schema set, or use a
@@ -183,9 +184,57 @@ the [current conversion recipe](../eng/northridge/README.md#copy-legacy-data-int
 
 This conversion loads legacy data into a fresh schema; an unchanged legacy dump restore
 and an in-place schema upgrade do not produce the required target. Discard and reprovision
-a partially loaded target after failure. The tool currently requires both document stamp
-columns; DMS-1401 owns removing its document-timestamp dependency. A full Northridge reload
-or dataset republication is not a DMS-1404 closure gate.
+a partially loaded target after failure. The tool omits both legacy document timestamps
+(`ContentLastModifiedAt` and `CreatedAt`) from target inserts and retains the document
+`ContentVersion` check. It verifies authoritative descriptor and sampled root stamps with
+deterministic, `DocumentId`-ordered tuple checksums, so redistributed stamps with unchanged
+minima/maxima fail validation. The sampled-root scope is unchanged. A full Northridge reload or
+dataset republication is not a prerequisite for this schema change.
+
+**`dms.Document.CreatedAt` removal (DMS-1403).** Freshly provisioned schemas no longer have
+`dms.Document.CreatedAt` on either engine. The DMS API data path did not use this column;
+removing it does not change API fields, ETags, change queries, or authorization decisions. It
+is removed without a replacement creation-time capability. `RelationalMappingVersion` stays `v3`, and generated
+DDL is not a hash input, so `EffectiveSchemaHash` is unchanged. A matching hash and successful
+startup validation therefore cannot prove that a database no longer has the column. Verify the
+catalog instead. The first query must return at least one row, which proves the table exists.
+The second must return no rows:
+
+```sql
+-- PostgreSQL
+SELECT column_name FROM information_schema.columns
+WHERE table_schema = 'dms' AND table_name = 'Document' ORDER BY ordinal_position;
+SELECT column_name FROM information_schema.columns
+WHERE table_schema = 'dms' AND table_name = 'Document' AND column_name = 'CreatedAt';
+
+-- SQL Server
+SELECT c.name FROM sys.columns c WHERE c.object_id = OBJECT_ID(N'dms.Document') ORDER BY c.column_id;
+SELECT c.name FROM sys.columns c WHERE c.object_id = OBJECT_ID(N'dms.Document') AND c.name = N'CreatedAt';
+```
+
+The DMS API reads and writes correctly whether or not the column is present. Existing databases
+keep it, and the storage saving exists only after you deliberately reprovision them from current
+DDL. No in-place `ALTER TABLE … DROP COLUMN` is provided, and rerunning create-only provisioning
+does not remove it. To get the saving on a PostgreSQL store without CDC, use the carry-forward
+route above. On SQL Server, reprovision and reload.
+
+CDC setup and validation compare the live `dms.Document` columns with the expected inventory
+and fail closed on any difference. This covers initial enablement, `cdc-validate`, and the
+guarded start, restart, and resume pre-checks. Fresh provisioning followed by eligible initial
+CDC enablement is supported. **Established CDC deployments have no supported upgrade or cutover
+path to the new `dms.Document` shape in this release.** With the new runtime, validation and
+the guarded pre-checks fail closed on such a binding while its database still has the column;
+the DMS API keeps serving. The CDC design
+[defers physical-source replacement](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-physical-source-replacement-deferral),
+and no documented sequence moves an established binding onto a reprovisioned database. Do not
+treat carry-forward or generation retirement as one. Resolving this is a separate release
+coordination item.
+
+Database template packages built before this change still have the column. They restore and
+serve, but they do not deliver the saving. Replace them with packages built from DDL that
+includes this change. `eng/DatabaseTemplates/verify-template-restore.ps1` rejects them: it fails
+when the source database (before the restore) or the restored database (before the API probe)
+has no `dms.Document` table, still has `CreatedAt`, or cannot be queried.
 
 ### Descriptor catalog checks and template handoff
 
@@ -196,11 +245,12 @@ association, compact stored FKs and composite keys/indexes, URI storage/index sh
 from detecting what an older source or restored database happens to contain.
 
 DMS-1404's handoff to [DMS-1401](../reference/design/backend-redesign/epics/21-storage-reduction/16-drop-document-content-last-modified-at.md)
-is the working RI runtime on fresh schemas on both engines, regenerated fixtures, reusable
+was the working RI runtime on fresh schemas on both engines, regenerated fixtures, reusable
 catalog assertions, working fixture/performance loaders and legacy conversion, and passing
-unequal-ID metadata, stamping, restamping, and cache regressions. `dms.Document.ContentVersion`
-and `dms.Document.ContentLastModifiedAt` remain authoritative, with stamps mirrored to resource
-roots and descriptors. DMS-1401 owns timestamp removal and the resulting ownership changes.
+unequal-ID metadata, stamping, restamping, and cache regressions. At that historical checkpoint,
+`dms.Document.ContentVersion` and `dms.Document.ContentLastModifiedAt` were authoritative, with
+both mirrored to roots/descriptors. The combined DMS-1401 schema removes the document timestamp:
+only `ContentVersion` is mirrored; the root/descriptor timestamp is authoritative.
 
 [DMS-1404](../reference/design/backend-redesign/epics/21-storage-reduction/15-compact-descriptor-id-and-storage-optimizations.md)
 may close after its implementation, fixture, fresh-schema behavior/catalog, tooling, and
@@ -212,12 +262,46 @@ source and restored catalogs before API probes, alongside DMS-1401's timestamp c
 retain `RequirePopulatedData` for Populated verification. These package gates are required
 before DMS-1401 closes and are deferred from DMS-1404 closure.
 
-Until compatible rebuilds are verified, use databases freshly provisioned from DMS-1404 DDL
+Until compatible rebuilds are verified, use databases freshly provisioned from the combined current DDL
 and defer template-backed deployment. If templates are needed earlier, build and verify
 compatible packages first. Retaining `v3` does not make old physical schemas or packages
 compatible. Final v8.1 template production/publication, release-view promotion, and deployment
 pins remain release-workflow responsibilities; verify the final release schema against both
 stories' physical expectations when both changes are included.
+
+For the combined closure gate, build Minimal and Populated packages on both PostgreSQL and
+SQL Server for DS `5.2.0` core + TPDM and DS `6.1.0` core: eight artifacts from the same reviewed
+combined implementation commit. Use the existing engine-specific template workflows with
+`publish_package: false`, fresh sources provisioned from changed DDL and fresh restoration
+targets. Each leg emits its complete provider relational-model manifest with SchemaTools
+`ddl emit` using the exact ordered ApiSchema inputs used for provisioning; review it and pass
+it as `ExpectedModelManifestPath`. Both source and restored catalogs must pass
+`Assert-TemplateSchema.ps1` before API registration/probes: timestamp-free Document with its
+version, authoritative non-null timestamps on every expected root/descriptor, and all compact
+ID/FK/type/URI assertions. Keep schema/data/serveability checks and `RequirePopulatedData`.
+A matching `v3` fingerprint or a successful API read alone is insufficient.
+
+Retain per-leg producing commit, build run, engine image, package id/version/SHA-256, exact-schema
+manifest/hash, and source/restored catalog, data and authenticated API results. Update affected
+fixed repository consumer pins to those verified prereleases before story closure. Preserve
+`DATABASE_TEMPLATE_PACKAGE` ids and their Data Standard suffixes. Publish any retained verified
+prereleases needed by those consumers unchanged via the existing `build-dms.ps1 Push` path and
+EdFi Azure Artifacts feed, then download the exact versions from the configured feed, verify their
+hashes and smoke-test resolution/restoration.
+
+Final stable v8.1 production, publication, release-view promotion and deployment pin changes
+remain in the release workflow. Rebuild from the final release commit/schema and repeat all
+eight source/restore gates before publication. Deploy compatible rebuilt Minimal and Populated
+packages on both engines, discard cached older artifacts, update fixed deployment pins to the
+verified release versions, and deliberately reprovision affected databases before serving traffic.
+No benchmark, full dataset run, engine upgrade, RI removal or future bootstrap-restore feature
+is a prerequisite for this story.
+
+The expected saving is roughly eight bytes of raw timestamp payload per document, about half
+of the raw payload of the two former document stamp columns, not half of table/database storage.
+Alignment and page layout affect actual savings. Document-version updates and owner stamp
+maintenance remain necessary; throughput improvement and negligible read overhead are unmeasured
+hypotheses.
 
 ### Always-provisioned DocumentCache inventory
 
@@ -389,6 +473,10 @@ compares it to the effective schema it loaded. The check runs in
   with a detail explaining that the database was provisioned for a different effective schema and
   that it **must be reprovisioned with `ddl provision` against a fresh database and the service
   restarted** to clear the cached validation state.
+  Fresh reprovisioning is the default remediation. An independently validated,
+  metadata-compatible physical migration may instead use the bounded
+  [re-stamp procedure](#re-stamping-after-a-validated-physical-migration) below;
+  ordinary provisioning and runtime never update a mismatched stamp automatically.
 
 Immediately after the fingerprint check, each routed resource pipeline runs a second first-use check,
 [`ValidateResourceKeySeedMiddleware`](../src/dms/core/EdFi.DataManagementService.Core/Middleware/ValidateResourceKeySeedMiddleware.cs)
@@ -418,9 +506,13 @@ are in the design docs:
 
 ### Stored stamps and tracked-change tables
 
-Each document carries two stamps set together by the same **stamping triggers** on the document
-tables: a `ContentVersion` (the change-version number, from the shared change-version sequence) and
-a `ContentLastModifiedAt` timestamp (the current UTC time, refreshed on representation changes). Those triggers
+Each document has a `ContentVersion` on `dms.Document` (allocated from the global sequence) and
+an authoritative `ContentLastModifiedAt` on its resource root or `dms.Descriptor`. The owner also
+mirrors `ContentVersion`. **Stamping triggers** maintain those stamps in one transaction, including
+child/extension and identity-cascade changes; `dms.Document` has no last-modified timestamp.
+No-op writes preserve stamps. Document insertion allocates the initial version and owner insertion
+copies it while generating its timestamp. Document locks, optimistic concurrency and projection
+enqueueing remain version-only. Those triggers
 also populate per-resource **tracked-change tables** that live under a per-project schema named
 `tracked_changes_<projectSchema>` (for example the `tracked_changes_edfi` schema), recording the
 old/new identity and securable values plus a `ChangeVersion`. Descriptors share
@@ -443,7 +535,8 @@ document `Id`, and the `ChangeVersion` for a given write. Only the separator aft
 
 #### Read metadata (`_etag`, `_lastModifiedDate`)
 
-On read, `_lastModifiedDate` is served from the stored `ContentLastModifiedAt` and `_etag` is
+On read, `_lastModifiedDate` uses the authoritative root/descriptor `ContentLastModifiedAt`,
+formatted as UTC `yyyy-MM-ddTHH:mm:ssZ` (fractional seconds discarded without rounding). `_etag` is
 composed from `ContentVersion` plus the active representation `variantKey`; the materialized
 content is not hashed to build `_etag`. When a served `_etag` or `_lastModifiedDate` looks wrong,
 start here:
@@ -451,15 +544,30 @@ start here:
 - [`RelationalReadMaterializer.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalReadMaterializer.cs) — composes `_etag` and serves `_lastModifiedDate` for resources
 - [`DescriptorDocumentMaterializer.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/DescriptorDocumentMaterializer.cs) — the same for descriptors
 
+Ordinary GET-by-id/page metadata SELECTs join the compiled root by `DocumentId` inside the
+existing hydration batch. Descriptor metadata reads join its owning `DocumentId`; compact
+`DescriptorId` remains the stored-reference key. PUT and descriptor delete-target UUID lookups
+remain document-only when they need identity/version, preserving wrong-resource behavior without
+a new timestamp-only query. Standalone hydration appends a document-only version fence and
+retries the whole acquisition on drift/disappearance, up to three attempts. Cache source reads
+and final rereads likewise use owner timestamps and reject incoherent candidates or stable
+missing owners. See the [read/cache contracts](../reference/design/backend-redesign/design-docs/transactions-and-concurrency.md#authoritative-response-metadata).
+
+Representation restamping allocates document versions, updates the mapped root/descriptor by
+`DocumentId` and captures its persisted timestamp in the same transaction. Missing owners roll
+back the page and any enqueued work. Body, identity and tracked history remain unchanged; the
+existing document-version trigger drives projection work when the lifecycle enables it.
+
 #### Change-version filtering (`minChangeVersion` / `maxChangeVersion`)
 
-Root and descriptor tables carry **mirrored** `ContentVersion` / `ContentLastModifiedAt` columns
-(`ColumnKind.MirroredContentVersion` / `ColumnKind.MirroredContentLastModifiedAt`).
+Root and descriptor tables carry a **mirrored** `ContentVersion` and **authoritative**
+`ContentLastModifiedAt` (`ColumnKind.MirroredContentVersion` /
+`ColumnKind.AuthoritativeContentLastModifiedAt`).
 The query-time change-version filter ranges over `ContentVersion`. Descriptor live windows use
 `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId`; history windows use
 `IX_Descriptor_ResourceKeyId_ChangeVersion` on the shared history table.
 
-- [`DeriveContentVersionMirrorPass.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveContentVersionMirrorPass.cs) — derives the mirrored `ContentVersion` / `ContentLastModifiedAt` columns on root resource tables (descriptor mirror columns live on the shared `dms.Descriptor` table from the core DDL pass)
+- [`DeriveContentVersionMirrorPass.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveContentVersionMirrorPass.cs) — derives the version mirror and authoritative timestamp on root resource tables (the core DDL pass owns those columns on `dms.Descriptor`)
 - [`RelationalQueryPageKeysetPlanner.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalQueryPageKeysetPlanner.cs) — the change-version range predicate (`ChangeVersionFilterConstants`, `AppendChangeVersionPredicates`)
 
 The relational `/deletes` and `/keyChanges` paths use
@@ -568,8 +676,9 @@ The environment file lives at [`eng/docker-compose/.env.e2e`](../eng/docker-comp
 
 ## 7. E2E setup/teardown and the "no hot reload" rule
 
-The effective schema is **fixed at provisioning time**. There is no in-place schema migration
-and **no hot reload**: changing any `ApiSchema.json` input changes the effective schema hash, and
+The loaded effective schema has **no hot reload**. Ordinary provisioning does not
+perform in-place migrations; the bounded administrative exception below records
+an independently validated physical migration. Changing any `ApiSchema.json` input changes the effective schema hash, and
 a DMS instance running against a database provisioned for the old hash will fail the first-use
 fingerprint check and return **HTTP 503** (see [§3](#3-schema-fingerprint-validation--how-dms-validates-schema-on-first-use)).
 
@@ -583,8 +692,80 @@ So, after **any** schema change, the developer loop is:
 This is exactly what the test infrastructure does: integration fixtures create a fresh database
 from the generated DDL per run and drop it on teardown, and the E2E setup tears down stale state
 (including removing a stale `.bootstrap` workspace) before starting. Because each run provisions
-cleanly, tests never rely on updating an already-provisioned database in place.
+cleanly, ordinary fixtures do not update an already-provisioned database in place.
+The dedicated schema re-stamp migration fixture exercises the explicit exception.
 
 > [!WARNING]
 > If you change a schema and only restart the service (without reprovisioning), or only
 > reprovision (without restarting), you will still see 503s. Both steps are required.
+
+### Re-stamping after a validated physical migration
+
+Fresh provisioning remains the normal development, test, and deployment path.
+For a separately designed and validated data-preserving physical migration,
+`api-schema-tools ddl re-stamp` provides a bounded administrative exception for
+updating the database's fingerprint metadata. The command validates the current
+singleton, resource-key seeds, and schema components, then atomically changes
+only the effective hash and its component associations. It preserves
+`AppliedAt`, resource keys, and the other singleton values. A valid target
+fingerprint is a read-only success; missing or corrupt metadata is an error.
+
+The operator owns the migration recipe, backup/recovery boundary, physical DDL,
+and post-migration validation. Stop DMS, workers, and other metadata writers;
+apply and validate the physical change; run the command with the target core and
+extension schemas and `--migration-completed`; run ordinary `ddl provision`
+separately; complete any required representation correction described below;
+then restart services and verify runtime admission and affected API
+operations. Provisioning's ordinary hash mismatch guard remains in force. A
+successful provision pass does not verify every existing physical object and
+can miss an omitted migration, such as a missing column on an existing table.
+Independently validate physical shape before re-stamping and verify affected
+API operations before reopening traffic. A failed provision pass does not undo
+the committed re-stamp: keep services stopped and follow the migration's
+recovery procedure. A successful metadata update does not certify physical
+shape, promise automatic rollback, or certify CDC continuity. If commit transport fails, treat the result
+as uncertain, inspect the database, and retry with identical inputs while
+services remain stopped. A valid target stamp is a no-op on retry.
+
+The re-stamp role requires `SELECT` on all three metadata tables, `UPDATE` on
+`dms.EffectiveSchema`, and `DELETE`/`INSERT` on `dms.SchemaComponent`, plus
+database/schema access. On PostgreSQL, all three tables are locked in
+`SHARE ROW EXCLUSIVE` mode; ownership or `MAINTAIN`, `UPDATE`, `DELETE`, or
+`TRUNCATE` privilege is required on each table, even `dms.ResourceKey` and even
+for an unconfirmed or matching invocation. Prefer `MAINTAIN` on `ResourceKey`
+where available to avoid granting data mutation. Retain the locks to exclude
+concurrent metadata writers. Physical migration and provisioning require their
+own privileges; see the linked command reference for details.
+
+The command preserves stored `dms.DocumentCache` entries and document versions.
+If the migration changes API document representations, plan and complete the
+supported offline [DocumentCacheAdmin representation-restamp procedure](../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#representation-restamp)
+before reopening traffic and validate affected reads afterward. A process
+restart does not invalidate stored cache entries, and a cache rebuild alone
+does not carry out the document-version/publication changes required by a
+representation correction. Cache lifecycle and CDC compatibility remain separate
+migration responsibilities.
+
+This exception does not change the fresh-database developer loop above, hot
+reload behavior, the release cadence for `RelationalMappingVersion`, or the
+reprovisioning requirements for changes that are not compatible fingerprint
+transitions. See the [schema tools command reference](../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#ddl-re-stamp--record-a-validated-physical-schema-migration).
+
+For compatible metadata transitions, this command replaces the manual
+EffectiveSchema/SchemaComponent re-key in [PR #1121's historical migration procedure](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/pull/1121).
+Use `api-schema-tools` from the same release/build as the target DMS, together
+with that deployment's exact core and extension schema inputs. The computed
+hash depends on the tool's compiled relational mapping version as well as the
+schema files. Both changed and matching invocations print the target effective
+schema hash; compare it with the expected hash in the target DMS preflight
+error before restarting. If they differ, keep services stopped and correct the
+tool build or inputs. An older tool can report a successful no-op against an
+old stamp while the target DMS still rejects it.
+
+The ApiSchema format, resource-key seed fingerprint, ResourceKey ID/name/version
+mappings, and component endpoint/name/version/extension flags must remain identical.
+Keep any independently applicable physical migration DDL and validate it before
+re-stamping. The historical procedure's mapping-version references and physical
+DDL do not constitute a complete upgrade to today's schema; current release
+policy retains `RelationalMappingVersion = "v3"` for 8.1. A same-hash no-op cannot
+repair a stale physical database or template.

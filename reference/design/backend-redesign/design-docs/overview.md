@@ -32,7 +32,7 @@ this storage change.
 ### Constraints / Explicit Decisions
 
 - **ETag/LastModified are representation metadata (required)**: DMS updates stored `ContentVersion` / `ContentLastModifiedAt` when the full resource state changes, including due to identity cascades. It serves `_lastModifiedDate` from that timestamp and composes `_etag` from `ContentVersion` plus the request's representation `variantKey`, without hashing canonical JSON. Readable profile, link shaping, and content coding participate in the served tag through `profileCode`, `linkFlag`, and `contentCoding`, so byte-different variants have different ETags even though they share the same stored stamp. Descriptor PUT retains its ordinal whole-URI guard, including rejection of case-only URI changes. An RI-matched POST may update incoming components; accepted component changes, even with an unchanged whole URI, receive normal descriptor stamps. An unchanged representation preserves its stamps.
-  - This redesign stores resource-state stamps on `dms.Document` and updates them in-transaction. Indirect state changes are realized as FK-cascade updates to canonical stored identity columns that back the local reference-identity bindings (which may be generated/persisted aliases under key unification), which then trigger normal stamping. See [update-tracking.md](update-tracking.md).
+  - This redesign stores the version on `dms.Document` and the authoritative timestamp on the root/descriptor, updating them in the same transaction. Indirect state changes are realized as FK-cascade updates to canonical stored identity columns that back the local reference-identity bindings (which may be generated/persisted aliases under key unification), which then trigger normal stamping. See [update-tracking.md](update-tracking.md).
 - **Schema updates are validated, not applied**: DMS does not perform in-place schema changes. On first use of a given database connection string (after instance routing), DMS reads the database’s recorded effective schema fingerprint (the singleton `dms.EffectiveSchema` row + `dms.SchemaComponent` rows keyed by `EffectiveSchemaHash`), caches it per connection string, and selects a matching compiled mapping set. Requests fail fast if no matching mapping is available. In-process schema reload/hot-reload is out of scope for this design.
 - **Authentication & authorization**: request authentication (token validation) and authorization (data access decisions) are addressed in [auth.md](auth.md). This redesign assumes:
   - requests are authenticated before any schema-dependent work (mapping selection, queries, writes), and
@@ -52,7 +52,7 @@ this storage change.
   - responses can reconstitute reference identity values directly from local reference-identity binding columns. Propagation to those columns is database-driven: PostgreSQL uses `ON UPDATE CASCADE` for eligible edges, and SQL Server uses retained native cascades plus safe full-composite `NO ACTION` cuts selected by [SQL Server foreign-key pruning](sql-server-pruning.md). Under key unification, those binding columns may be presence-gated aliases of canonical stored columns, preserving “absent optional reference ⇒ `NULL` at the binding columns”.
 - Identity/URI changes do not rewrite stable `..._DocumentId` foreign keys, but **do** propagate into the local canonical stored identity columns that underpin reference-identity bindings through retained native cascades. Row-local maintenance keeps only the surviving derived artifacts aligned:
   - abstract identity tables are maintained transactionally for polymorphic reference targets, and
-  - update tracking metadata is maintained by normal stamping on `dms.Document` (no read-time dependency derivation required); see [update-tracking.md](update-tracking.md).
+  - update tracking metadata is maintained by normal document-version and root/descriptor timestamp stamping (no read-time dependency derivation required); see [update-tracking.md](update-tracking.md).
 - Current POST matching and reference resolution use `dms.ReferentialIdentity`; descriptor
   joins reconstruct URI witnesses and return both the compact key and owning document key
   without another round trip. Relational unique constraints remain the integrity backstop.
@@ -133,8 +133,9 @@ remapping, history type-key conversion and allocator checks.
 
 DMS-1404 hands off fresh-schema RI behavior, regenerated fixtures, catalog assertions,
 working loaders/copy conversion and unequal-ID metadata/stamp/restamp/cache regressions.
-Both `dms.Document` stamp columns remain authoritative and mirrored to roots/descriptors.
-DMS-1401 owns the timestamp change and, for the planned sequence, the combined template
+At that historical handoff both document stamp columns remained authoritative. The combined
+DMS-1401 schema keeps the document version and makes root/descriptor timestamps authoritative.
+DMS-1401 also owns the combined template
 rebuild/restore matrix and consumer-pin updates. Those package gates precede DMS-1401
 closure; DMS-1404 closes after its own checks. Defer template-backed deployment until
 compatible packages pass the catalog expectations. See the

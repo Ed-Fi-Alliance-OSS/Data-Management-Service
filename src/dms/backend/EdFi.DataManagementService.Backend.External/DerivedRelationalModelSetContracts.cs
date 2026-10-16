@@ -381,9 +381,9 @@ public sealed record TriggerColumnMapping(DbColumnName SourceColumn, DbColumnNam
 /// trigger recomputation. Empty for child/extension table stamping triggers.
 /// </param>
 /// <param name="Parameters">The trigger-kind-specific parameters.</param>
-/// <param name="MirrorStampTargetTable">
-/// The table whose <c>ContentVersion</c> / <c>ContentLastModifiedAt</c> mirror columns this trigger
-/// stamps. Non-null for every <see cref="TriggerKindParameters.DocumentStamping"/> entry: the owning
+/// <param name="StampTargetTable">
+/// The table whose <c>ContentVersion</c> mirror and authoritative <c>ContentLastModifiedAt</c> this trigger
+/// maintains. Non-null for every <see cref="TriggerKindParameters.DocumentStamping"/> entry: the owning
 /// resource root table (the source table itself for root-table triggers; the owning resource root for
 /// child / collection / <c>_ext</c> triggers). Null for non-stamping trigger kinds.
 /// </param>
@@ -393,13 +393,13 @@ public sealed record DbTriggerInfo(
     IReadOnlyList<DbColumnName> KeyColumns,
     IReadOnlyList<DbColumnName> IdentityProjectionColumns,
     TriggerKindParameters Parameters,
-    DbTableName? MirrorStampTargetTable = null
+    DbTableName? StampTargetTable = null
 );
 
 /// <summary>
 /// Change-tracking attachment for a <see cref="TriggerKindParameters.DocumentStamping"/> trigger that
 /// also writes tombstones and key-change rows. References the tracked-change table by name (mirroring
-/// <see cref="DbTriggerInfo.MirrorStampTargetTable"/>) rather than embedding the
+/// <see cref="DbTriggerInfo.StampTargetTable"/>) rather than embedding the
 /// <see cref="TrackedChangeTableInfo"/>, keeping the manifest acyclic.
 /// </summary>
 /// <param name="TrackedChangeTable">The <c>tracked_changes_*</c> table this trigger populates.</param>

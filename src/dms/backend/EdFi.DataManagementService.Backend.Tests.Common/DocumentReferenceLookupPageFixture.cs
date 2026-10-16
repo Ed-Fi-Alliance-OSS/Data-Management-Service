@@ -194,9 +194,7 @@ public static class DocumentReferenceLookupPageFixture
                 "DocumentId" bigint PRIMARY KEY,
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
-                "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "CreatedAt" timestamptz NOT NULL DEFAULT now()
+                "ContentVersion" bigint NOT NULL DEFAULT 1
             );
 
             CREATE TABLE IF NOT EXISTS dms."Descriptor" (
@@ -208,11 +206,15 @@ public static class DocumentReferenceLookupPageFixture
                 "ShortDescription" varchar(75) NOT NULL DEFAULT '',
                 "Description" varchar(1024) NULL,
                 "EffectiveBeginDate" date NULL,
-                "EffectiveEndDate" date NULL
+                "EffectiveEndDate" date NULL,
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE {schema}."StudentSectionAssociation" (
                 "DocumentId" bigint PRIMARY KEY,
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "DualCreditEducationOrganization_DocumentId" bigint NULL,
                 "DualCreditEducationOrganization_EducationOrganizationId" bigint NULL,
                 "Section_DocumentId" bigint NULL,
@@ -257,6 +259,7 @@ public static class DocumentReferenceLookupPageFixture
             VALUES ({AttemptStatusDescriptorId}, {AttemptStatusDescriptorDocumentId}, 25, 'uri://ed-fi.org/AttemptStatusDescriptor', 'Active');
 
             INSERT INTO {schema}."StudentSectionAssociation"
+                ("DocumentId", "DualCreditEducationOrganization_DocumentId", "DualCreditEducationOrganization_EducationOrganizationId", "Section_DocumentId", "Section_SectionIdentifier", "Student_DocumentId", "Student_StudentUniqueId", "AttemptStatusDescriptor_DescriptorId")
             VALUES
                 ({FullyPopulatedDocumentId}, {DualCreditEdOrg}, 255901, {Section}, 'SEC-X', {StudentA}, 'S-701', {AttemptStatusDescriptorId}),
                 ({PartiallyPopulatedDocumentId}, NULL, NULL, {Section}, 'SEC-X', {StudentB}, 'S-702', NULL),
@@ -297,9 +300,7 @@ public static class DocumentReferenceLookupPageFixture
                 [DocumentId] bigint PRIMARY KEY,
                 [DocumentUuid] uniqueidentifier NOT NULL,
                 [ResourceKeyId] smallint NOT NULL DEFAULT 0,
-                [ContentVersion] bigint NOT NULL DEFAULT 1,
-                [ContentLastModifiedAt] datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                [CreatedAt] datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
+                [ContentVersion] bigint NOT NULL DEFAULT 1
             );
 
             IF OBJECT_ID('dms.Descriptor', 'U') IS NULL
@@ -313,11 +314,15 @@ public static class DocumentReferenceLookupPageFixture
                 [Description] varchar(1024) NULL,
                 [EffectiveBeginDate] date NULL,
                 [EffectiveEndDate] date NULL,
+                [ContentVersion] bigint NOT NULL DEFAULT 1,
+                [ContentLastModifiedAt] datetime2(7) NOT NULL DEFAULT sysutcdatetime(),
                 [Uri] AS ([Namespace] + '#' + [CodeValue]) PERSISTED
             );
 
             CREATE TABLE {schema}.[StudentSectionAssociation] (
                 [DocumentId] bigint PRIMARY KEY,
+                [ContentVersion] bigint NOT NULL DEFAULT 1,
+                [ContentLastModifiedAt] datetime2(7) NOT NULL DEFAULT sysutcdatetime(),
                 [DualCreditEducationOrganization_DocumentId] bigint NULL,
                 [DualCreditEducationOrganization_EducationOrganizationId] bigint NULL,
                 [Section_DocumentId] bigint NULL,
@@ -361,6 +366,7 @@ public static class DocumentReferenceLookupPageFixture
             SET IDENTITY_INSERT dms.[Descriptor] OFF;
 
             INSERT INTO {schema}.[StudentSectionAssociation]
+                ([DocumentId], [DualCreditEducationOrganization_DocumentId], [DualCreditEducationOrganization_EducationOrganizationId], [Section_DocumentId], [Section_SectionIdentifier], [Student_DocumentId], [Student_StudentUniqueId], [AttemptStatusDescriptor_DescriptorId])
             VALUES
                 ({FullyPopulatedDocumentId}, {DualCreditEdOrg}, 255901, {Section}, 'SEC-X', {StudentA}, 'S-701', {AttemptStatusDescriptorId}),
                 ({PartiallyPopulatedDocumentId}, NULL, NULL, {Section}, 'SEC-X', {StudentB}, 'S-702', NULL),

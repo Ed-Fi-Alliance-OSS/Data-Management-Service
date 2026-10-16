@@ -109,7 +109,7 @@ public static class NoProfilePostAsUpdateScenarios
 
     /// <summary>
     /// Stamp-complete School root row for the rejected-write proof, including the root table's own
-    /// replicated ContentVersion/ContentLastModifiedAt stamp columns. The ordinary changed-write
+    /// ContentVersion mirror and authoritative ContentLastModifiedAt. The ordinary changed-write
     /// scenarios keep the business-value <see cref="SchoolRow"/> shape.
     /// </summary>
     public sealed record RejectedSchoolSnapshot(
@@ -147,9 +147,7 @@ public static class NoProfilePostAsUpdateScenarios
         long DocumentId,
         Guid DocumentUuid,
         short ResourceKeyId,
-        long ContentVersion,
-        DateTimeOffset ContentLastModifiedAt,
-        DateTimeOffset CreatedAt
+        long ContentVersion
     );
 
     public sealed record AuthoritativeAcademicRecordSnapshot(
@@ -307,8 +305,8 @@ public static class NoProfilePostAsUpdateScenarios
 
     /// <summary>
     /// Asserts a rejected POST-as-update committed no row changes across the full seeded surface: the document
-    /// row — including ContentVersion, ContentLastModifiedAt, and CreatedAt — and the School row —
-    /// including the root table's own replicated ContentVersion/ContentLastModifiedAt stamps — are byte-for-byte
+    /// row — including ContentVersion — and the School row —
+    /// including its ContentVersion mirror and authoritative ContentLastModifiedAt — are byte-for-byte
     /// unchanged, the seeded base-address and collection-aligned extension rows are unchanged, the School
     /// referential-identity row is unchanged, the School tracked-change rowset is unchanged, exactly one
     /// document remains, and no row was created for the rejected request UUID. The base-address and
@@ -460,7 +458,7 @@ public static class NoProfilePostAsUpdateScenarios
     /// <summary>
     /// Asserts a repeat authoritative POST-as-update was a no-op: UpdateSuccess for the existing UUID, no
     /// row created for the incoming request UUID, and the full persisted rowset, ContentVersion, and every
-    /// stored update-tracking stamp (ContentLastModifiedAt and CreatedAt) are unchanged from the first
+    /// stored update-tracking metadata (root ContentLastModifiedAt and document ContentVersion) are unchanged from the first
     /// POST-as-update. The snapshot must be non-vacuous (its child collections carry rows), so an
     /// empty-to-empty comparison cannot pass silently.
     /// </summary>

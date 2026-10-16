@@ -92,7 +92,8 @@ It persists nothing locally.
 Keycloak owns its own token and session lifecycle entirely outside DMS, so there is no
 DMS-side state to clean up in this mode.
 Because the cleanup service is registered only in the self-contained branch, the
-`TokenCleanupEnabled` and `TokenCleanupIntervalMinutes` settings are inert in Keycloak mode:
+`IdentitySettings:TokenCleanup:Enabled` and `IdentitySettings:TokenCleanup:IntervalMinutes`
+settings are inert in Keycloak mode:
 nothing reads them, whatever they are set to.
 A deployment that ran self-contained and later switches to Keycloak strands whatever rows were
 in `dmscs.OpenIddictToken` at switch time; they are harmless dead weight (nothing in Keycloak
@@ -144,21 +145,27 @@ It is implemented on both engines
 (`EdFi.DmsConfigurationService.Backend.Postgresql` and `EdFi.DmsConfigurationService.Backend.Mssql`),
 each delegating to its own `OpenIddictDataRepository`.
 
-The configuration surface is exactly two settings, added to `IdentityOptions`
-(`src/config/backend/EdFi.DmsConfigurationService.Backend.OpenIddict/Models/IdentityOptions.cs`):
-`TokenCleanupEnabled` (`bool`, default `true`) and `TokenCleanupIntervalMinutes` (`int`, default
-`30`).
+The configuration surface is exactly two settings, held by `TokenCleanupOptions`
+(`src/config/backend/EdFi.DmsConfigurationService.Backend.OpenIddict/Models/TokenCleanupOptions.cs`)
+on `IdentityOptions.TokenCleanup`: `Enabled` (`bool`, default `true`) and `IntervalMinutes`
+(`int`, default `30`).
 `OpenIddictServiceCollectionExtensions.AddOpenIddictIdentityOptions` binds these from the
-configuration keys `IdentitySettings:TokenCleanupEnabled` and
-`IdentitySettings:TokenCleanupIntervalMinutes`.
+configuration keys `IdentitySettings:TokenCleanup:Enabled` and
+`IdentitySettings:TokenCleanup:IntervalMinutes`.
 The Docker Compose stacks (`eng/docker-compose/local-config.yml` and
 `eng/docker-compose/published-config.yml`) map those keys to the environment variables
-`DMS_CONFIG_IDENTITY_TOKEN_CLEANUP_ENABLED` (default `true`) and
-`DMS_CONFIG_IDENTITY_TOKEN_CLEANUP_INTERVAL_MINUTES` (default `30`).
+`CONFIGURATION_SERVICE_IDENTITY_TOKEN_CLEANUP_ENABLED` (default `true`) and
+`CONFIGURATION_SERVICE_IDENTITY_TOKEN_CLEANUP_INTERVAL_MINUTES` (default `30`).
 
-`TokenCleanupService.ExecuteAsync` checks `TokenCleanupEnabled` first; when it is `false`, the
+The settings were first added as the flat keys `IdentitySettings:TokenCleanupEnabled` and
+`IdentitySettings:TokenCleanupIntervalMinutes`. DMS-1605 moved them into the
+`IdentitySettings:TokenCleanup` section, under the convention that a feature's switch lives in
+its own section as `Enabled`, with no aliases for the flat keys; see
+[Optional features](../../../docs/CONFIGURATION.md#optional-features).
+
+`TokenCleanupService.ExecuteAsync` checks `TokenCleanup.Enabled` first; when it is `false`, the
 service logs that the sweep is disabled and returns without scheduling anything.
-Otherwise it builds a `PeriodicTimer` from `TokenCleanupIntervalMinutes`, falling back to the
+Otherwise it builds a `PeriodicTimer` from `TokenCleanup.IntervalMinutes`, falling back to the
 30-minute default when the configured value is below `1` or above the `PeriodicTimer` maximum
 of 71,582 minutes (either extreme would otherwise fault the host at startup).
 It sweeps once at startup, so a pre-existing backlog does not wait a full interval and

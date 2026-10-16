@@ -8,6 +8,8 @@ using EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql;
 
@@ -20,6 +22,7 @@ public static class MssqlServiceExtensions
 {
     public static IServiceCollection AddMssqlDatastore(this IServiceCollection services)
     {
+        services.AddMssqlSessionLanguagePin();
         services.AddTransient<IVendorRepository, VendorRepository>();
         services.AddTransient<IOwnershipTokenRepository, OwnershipTokenRepository>();
         services.AddTransient<IApplicationRepository, ApplicationRepository>();
@@ -40,6 +43,18 @@ public static class MssqlServiceExtensions
         >();
         services.AddTransient<IClaimSetDataProvider, ClaimSetDataProvider>();
         services.AddTransient<IApplicationLockManager, MssqlApplicationLockManager>();
+        return services;
+    }
+
+    /// <summary>
+    /// Pins the session language of the SQL Server connection (see <see cref="PinMssqlSessionLanguage"/>).
+    /// Both SQL Server registrations call it, and the pin is registered once however often it is called.
+    /// </summary>
+    internal static IServiceCollection AddMssqlSessionLanguagePin(this IServiceCollection services)
+    {
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IPostConfigureOptions<DatabaseOptions>, PinMssqlSessionLanguage>()
+        );
         return services;
     }
 }

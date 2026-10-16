@@ -16,7 +16,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Content;
 public interface IApiSchemaAssetManifestProvider
 {
     /// <summary>
-    /// Loads and validates the bootstrap-api-schema-manifest.json from the configured ApiSchemaPath.
+    /// Loads and validates the bootstrap-api-schema-manifest.json from the configured ApiSchema path.
     /// Throws <see cref="InvalidOperationException"/> when the manifest data is missing, malformed,
     /// has an unsupported version, or contains zero projects.
     /// </summary>
@@ -42,7 +42,7 @@ public interface IApiSchemaAssetManifestProvider
 }
 
 /// <summary>
-/// Reads and validates ApiSchema manifest data from the configured ApiSchemaPath,
+/// Reads and validates ApiSchema manifest data from the configured ApiSchema path,
 /// and provides validated path resolution so content loading cannot escape the workspace.
 /// </summary>
 public class ApiSchemaAssetManifestProvider(
@@ -62,15 +62,15 @@ public class ApiSchemaAssetManifestProvider(
             return _resolvedWorkspaceRoot;
         }
 
-        var path = appSettings.Value.UseApiSchemaPath
-            ? appSettings.Value.ApiSchemaPath
+        var path = appSettings.Value.ApiSchema.UseCustomPath
+            ? appSettings.Value.ApiSchema.Path
             : Path.Combine(AppDomain.CurrentDomain.BaseDirectory, BundledApiSchemaDirectoryName);
 
         if (string.IsNullOrEmpty(path))
         {
             throw new InvalidOperationException(
-                "ApiSchemaPath is not configured in AppSettings. "
-                    + "Set AppSettings:ApiSchemaPath to the bootstrap workspace directory."
+                "AppSettings:ApiSchema:Path is not configured. "
+                    + "Set AppSettings:ApiSchema:Path to the bootstrap workspace directory."
             );
         }
 

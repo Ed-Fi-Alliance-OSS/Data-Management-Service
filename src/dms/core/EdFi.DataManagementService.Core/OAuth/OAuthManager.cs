@@ -179,25 +179,157 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
 
     private const string TokenLimitMessageSuffix = "). Access tokens should be reused until they expire.";
 
+    // The two client-authentication rejections carry the RFC 6749 section 5.2 error code the
+    // Ed-Fi ODS/API answers with as the problem-details title, in the same 401 shape the upstream
+    // rejection uses. Neither description echoes anything the caller sent.
+    private const string InvalidClientError = "invalid_client";
+
+    private const string NonBasicSchemeDescription = "The Authorization header must use the Basic scheme";
+
+    private const string InvalidRequestError = "invalid_request";
+
+    private const string MissingCredentialsDescription =
+        "Client credentials must be supplied in an Authorization: Basic header or as client_id and "
+        + "client_secret in the request body";
+
+    private const string EmptyAuthorizationDetail = "The Authorization header must not be empty";
+
+    private const string MalformedAuthorizationDetail = "Malformed Authorization header";
+
+    private const string MixedMechanismsDetail = "Only one client authentication mechanism may be used";
+
+    /// <summary>
+    /// Upper bound, in characters, on each of a body <c>client_id</c> and <c>client_secret</c>.
+    /// </summary>
+    /// <remarks>
+    /// A credential in a header was always bounded by the server's request-header limit, but a body
+    /// value is bounded only by the request-body limit, which defaults to megabytes. Percent-encoded
+    /// and base64-encoded, such a value becomes an upstream header that the identity service rejects
+    /// or resets, and the caller's input error would surface as a 502 and an upstream-failure log
+    /// entry on every unauthenticated attempt. 2048 is double the longest secret the Configuration
+    /// Service accepts (<c>ClientSecretValidationOptions.MaximumAllowedLength</c> is 1024), so no
+    /// legitimate credential comes near it. The cap bounds the work and the header size rather than
+    /// guaranteeing the upstream accepts the header: an ASCII credential pair at the cap encodes to
+    /// at most about 16 KB, but a pair made entirely of non-ASCII characters, at up to nine escaped
+    /// characters each, can still reach about 50 KB and be refused upstream. Counted as
+    /// <see cref="string.Length"/> counts, in UTF-16 code units.
+    /// </remarks>
+    private const int MaxBodyCredentialLength = 2048;
+
+    /// <summary>
+    /// States the cap and never the value, which may be a secret.
+    /// </summary>
+    private static readonly string _oversizedBodyCredentialDetail =
+        $"client_id and client_secret must each be at most {MaxBodyCredentialLength.ToString(CultureInfo.InvariantCulture)} characters";
+
+    /// <summary>
+    /// The upstream <c>Authorization</c> value for credentials the caller sent in the request body,
+    /// built as RFC 6749 section 2.3.1 defines it: each value encoded, joined with a colon, then
+    /// base64-encoded.
+    /// </summary>
+    /// <remarks>
+    /// Percent-encoding (<see cref="Uri.EscapeDataString"/>) rather than form encoding, because
+    /// form encoding writes a space as <c>+</c> and the Configuration Service's lenient
+    /// <c>/connect/token</c> parser decodes with <c>Uri.UnescapeDataString</c>, which leaves a
+    /// <c>+</c> as a literal plus. Percent-escapes decode the same under that parser, under its
+    /// strict one and under Keycloak, and encoding also stops a colon in the client ID from moving
+    /// the split. The result is a credential: it is never logged.
+    /// </remarks>
+    private static string BasicAuthorizationFrom(string clientId, string clientSecret) =>
+        "Basic "
+        + Convert.ToBase64String(
+            Encoding.UTF8.GetBytes($"{Uri.EscapeDataString(clientId)}:{Uri.EscapeDataString(clientSecret)}")
+        );
+
     public async Task<HttpResponseMessage> GetAccessTokenAsync(
         IHttpClientWrapper httpClient,
         string grantType,
-        string authHeaderString,
+        string? authHeaderString,
+        TokenRequestCredentials bodyCredentials,
         string upstreamUri,
         TraceId traceId
     )
     {
         logger.LogInformation("GetAccessTokenAsync - {TraceId}", traceId.Value);
 
-        if (!authHeaderString.Contains("basic", StringComparison.InvariantCultureIgnoreCase))
+        // The checks run in the Ed-Fi ODS/API's order: the Authorization header's shape and scheme,
+        // then mixed mechanisms, then missing credentials, all before the grant type. The length
+        // cap, which the ODS/API does not have, comes last among the credential checks.
+        string upstreamAuthorization;
+        if (authHeaderString is not null)
+        {
+            // A header that is present but empty is a malformed attempt, not an absent header: the
+            // ODS/API answers it with 400 invalid_request before it looks at the body. A
+            // whitespace-only value reaches here trimmed to empty.
+            if (string.IsNullOrWhiteSpace(authHeaderString))
+            {
+                return GenerateProblemDetailResponse(
+                    HttpStatusCode.BadRequest,
+                    FailureResponse.ForBadRequest(EmptyAuthorizationDetail, traceId, [], [])
+                );
+            }
+
+            // The same lenient test DMS has always applied, so a caller that authenticates with a
+            // Basic header sees no change. Known limitation, kept deliberately: a header of another
+            // scheme that merely contains "basic" anywhere passes it, and is treated as Basic
+            // rather than rejected (see the DMS-1604 ADR). Any other scheme is not client
+            // authentication, and body credentials do not rescue the request.
+            if (!authHeaderString.Contains("basic", StringComparison.InvariantCultureIgnoreCase))
+            {
+                return GenerateProblemDetailResponse(
+                    HttpStatusCode.Unauthorized,
+                    FailureResponse.ForUnauthorized(traceId, InvalidClientError, NonBasicSchemeDescription)
+                );
+            }
+
+            // RFC 6749 section 2.3 allows one mechanism per request, and the Ed-Fi ODS/API rejects
+            // the combination too. One non-blank body field is enough, so a partial combination is
+            // still mixed. An empty field counts as omitted (RFC 6749 section 3.2) and a
+            // whitespace-only one as blank, as in the ODS/API, so neither makes the request mixed.
+            if (bodyCredentials.HasNonBlankField)
+            {
+                return GenerateProblemDetailResponse(
+                    HttpStatusCode.BadRequest,
+                    FailureResponse.ForBadRequest(MixedMechanismsDetail, traceId, [], [])
+                );
+            }
+
+            // Forwarded verbatim, as before body credentials were accepted.
+            upstreamAuthorization = authHeaderString;
+        }
+        else if (
+            string.IsNullOrWhiteSpace(bodyCredentials.ClientId)
+            || string.IsNullOrWhiteSpace(bodyCredentials.ClientSecret)
+        )
+        {
+            // No credentials at all, or a body pair with a field absent, null, empty or blank.
+            // The ODS/API answers every one of these alike.
+            return GenerateProblemDetailResponse(
+                HttpStatusCode.Unauthorized,
+                FailureResponse.ForUnauthorized(traceId, InvalidRequestError, MissingCredentialsDescription)
+            );
+        }
+        else if (
+            bodyCredentials.ClientId.Length > MaxBodyCredentialLength
+            || bodyCredentials.ClientSecret.Length > MaxBodyCredentialLength
+        )
         {
             return GenerateProblemDetailResponse(
                 HttpStatusCode.BadRequest,
-                FailureResponse.ForBadRequest("Malformed Authorization header", traceId, [], [])
+                FailureResponse.ForBadRequest(_oversizedBodyCredentialDetail, traceId, [], [])
+            );
+        }
+        else
+        {
+            upstreamAuthorization = BasicAuthorizationFrom(
+                bodyCredentials.ClientId,
+                bodyCredentials.ClientSecret
             );
         }
 
-        if (!grantType.Equals("client_credentials", StringComparison.InvariantCultureIgnoreCase))
+        // The static form, because a caller can bind a JSON null into this parameter, and a null
+        // grant type is unsupported rather than a fault.
+        if (!string.Equals(grantType, "client_credentials", StringComparison.InvariantCultureIgnoreCase))
         {
             return GenerateProblemDetailResponse(
                 HttpStatusCode.BadRequest,
@@ -206,8 +338,25 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         }
 
         HttpRequestMessage upstreamRequest = new(HttpMethod.Post, upstreamUri);
-        upstreamRequest.Headers.Add("Authorization", authHeaderString);
+        try
+        {
+            upstreamRequest.Headers.Add("Authorization", upstreamAuthorization);
+        }
+        catch (FormatException)
+        {
+            // A caller-supplied header that passed the lenient Basic test above but is not a valid
+            // Authorization value, such as "Basicxyz:secret" or two headers joined with a comma.
+            // The exception's message quotes the whole header, so it is neither logged nor passed
+            // on; the ODS/API answers such a header 400 as well.
+            return GenerateProblemDetailResponse(
+                HttpStatusCode.BadRequest,
+                FailureResponse.ForBadRequest(MalformedAuthorizationDetail, traceId, [], [])
+            );
+        }
 
+        // Only grant_type goes in the body. Body credentials travel upstream in the Basic header
+        // built above and never as form fields, so the upstream sees one contract whichever way
+        // the caller authenticated.
         // Use FormUrlEncodedContent for proper URL encoding of user-provided values
         upstreamRequest.Content = new FormUrlEncodedContent([
             new KeyValuePair<string, string>("grant_type", grantType),

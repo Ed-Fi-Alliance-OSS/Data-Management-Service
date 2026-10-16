@@ -15,6 +15,7 @@ using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
 using FakeItEasy;
 using FluentAssertions;
@@ -23,6 +24,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
@@ -37,6 +39,7 @@ public class VendorModuleTests
     private readonly RecordingLockManager _lockManager = new();
     private readonly HttpContext _httpContext = A.Fake<HttpContext>();
     private readonly WebApplicationFactoryTracker<Program> _factoryTracker = new();
+    private RecordingLogger<VendorModule> _vendorLogger = new();
 
     protected VendorModuleTests()
     {
@@ -55,6 +58,10 @@ public class VendorModuleTests
 
     private HttpClient SetUpClient()
     {
+        // A fresh recorder per request, so a fixture reads only what its own request logged.
+        RecordingLogger<VendorModule> vendorLogger = new();
+        _vendorLogger = vendorLogger;
+
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
@@ -85,7 +92,8 @@ public class VendorModuleTests
                         .AddTransient((_) => _applicationRepository)
                         .AddTransient((_) => _apiClientRepository)
                         .AddTransient((_) => _identityProviderRepository)
-                        .AddSingleton<IApplicationLockManager>(_lockManager);
+                        .AddSingleton<IApplicationLockManager>(_lockManager)
+                        .AddSingleton<ILogger<VendorModule>>(vendorLogger);
                 }
             );
         });
@@ -2661,6 +2669,185 @@ public class VendorModuleTests
         public void It_does_not_update_the_vendor() =>
             A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
                 .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// The provider reports, for the second client, a UUID another ApiClient row already holds.
+    /// That provider client belongs to the other row, so nothing may restore, delete or
+    /// re-synchronize it, while the client this request changed before it is still compensated.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_forward_sync_whose_reported_uuid_another_client_holds : VendorLockTestBase
+    {
+        private Guid _conflictingUuid;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _rotateClientUuids = true;
+            // The fixture instance, and so its fakes, outlives each test, so the sync count below
+            // must cover only this test's request.
+            Fake.ClearRecordedCalls(_apiClientRepository);
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(_clients[1].Id, A<Guid>.Ignored, A<Guid>.Ignored)
+                )
+                .Returns(new ApiClientUuidSyncResult.FailureNewUuidInUse());
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+            _conflictingUuid = UpdateCalls[1].ReportedUuid;
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_stops_before_the_remaining_client() =>
+            UpdateCalls
+                .Select(call => call.TargetedUuid)
+                .Should()
+                .Equal(_clients[0].ClientUuid.ToString(), _clients[1].ClientUuid.ToString());
+
+        [Test]
+        public void It_restores_only_the_client_it_changed_before_the_conflict() =>
+            RollbackCalls
+                .Select(call => call.TargetedUuid)
+                .Should()
+                .Equal(UpdateCalls[0].ReportedUuid.ToString());
+
+        [Test]
+        public void It_never_targets_the_conflicting_client_at_the_provider() =>
+            _providerCalls.Should().NotContain(call => call.TargetedUuid == _conflictingUuid.ToString());
+
+        [Test]
+        public void It_deletes_nothing() => _deletedClientUuids.Should().BeEmpty();
+
+        [Test]
+        public void It_does_not_synchronize_the_conflicting_client_again() =>
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(_clients[1].Id, A<Guid>.Ignored, A<Guid>.Ignored)
+                )
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_persists_the_compensation_of_the_earlier_client() =>
+            _syncCalls
+                .Should()
+                .Equal(
+                    new SyncCall(_clients[0].Id, _clients[0].ClientUuid, UpdateCalls[0].ReportedUuid),
+                    new SyncCall(_clients[0].Id, UpdateCalls[0].ReportedUuid, RollbackCalls[0].ReportedUuid)
+                );
+
+        [Test]
+        public void It_logs_the_conflicting_uuid_and_client() =>
+            _vendorLogger
+                .Entries.Should()
+                .ContainSingle(entry =>
+                    entry.Level == LogLevel.Error
+                    && entry.Message
+                        == $"The reported client UUID {_conflictingUuid} for ApiClient {_clients[1].Id} of Vendor 1 is already held by another API client; stored client state is inconsistent; it was neither restored nor deleted"
+                );
+
+        [Test]
+        public void It_compensates_before_releasing_the_locks() => AssertCompensationRanUnderTheLocks();
+
+        [Test]
+        public void It_releases_the_lock_set() =>
+            _lockManager.Handles.Should().ContainSingle().Which.Disposed.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// The rename is rejected, so every changed client is restored, newest first. The rollback of
+    /// the middle client reports a UUID another ApiClient row already holds: that provider client
+    /// belongs to the other row, so it is neither deleted nor synchronized again, and the
+    /// restoration of the remaining client still runs.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_rollback_sync_whose_reported_uuid_another_client_holds : VendorLockTestBase
+    {
+        private Guid _conflictingUuid;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _rotateClientUuids = true;
+            Fake.ClearRecordedCalls(_apiClientRepository);
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Returns(new VendorUpdateResult.FailureDuplicateCompanyName());
+            // Only the rollback's sync is scripted: the forward sync is guarded by the UUID the
+            // snapshot resolved, the rollback's by the rotated one the forward pass persisted.
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(
+                        _clients[1].Id,
+                        A<Guid>.That.Not.IsEqualTo(_clients[1].ClientUuid),
+                        A<Guid>.Ignored
+                    )
+                )
+                .Returns(new ApiClientUuidSyncResult.FailureNewUuidInUse());
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+            _conflictingUuid = RollbackCalls[1].ReportedUuid;
+        }
+
+        [Test]
+        public void It_replaces_the_rejection_with_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_continues_restoring_every_client_it_changed() =>
+            RollbackCalls
+                .Select(call => call.TargetedUuid)
+                .Should()
+                .Equal(Enumerable.Reverse(UpdateCalls).Select(call => call.ReportedUuid.ToString()));
+
+        [Test]
+        public void It_never_targets_the_conflicting_client_at_the_provider() =>
+            _providerCalls.Should().NotContain(call => call.TargetedUuid == _conflictingUuid.ToString());
+
+        [Test]
+        public void It_deletes_nothing() => _deletedClientUuids.Should().BeEmpty();
+
+        [Test]
+        public void It_does_not_synchronize_the_conflicting_client_again() =>
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(
+                        _clients[1].Id,
+                        A<Guid>.That.Not.IsEqualTo(_clients[1].ClientUuid),
+                        A<Guid>.Ignored
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_persists_the_restorations_of_the_other_clients() =>
+            _syncCalls
+                .Should()
+                .Equal(
+                    new SyncCall(_clients[0].Id, _clients[0].ClientUuid, UpdateCalls[0].ReportedUuid),
+                    new SyncCall(_clients[1].Id, _clients[1].ClientUuid, UpdateCalls[1].ReportedUuid),
+                    new SyncCall(_clients[2].Id, _clients[2].ClientUuid, UpdateCalls[2].ReportedUuid),
+                    new SyncCall(_clients[2].Id, UpdateCalls[2].ReportedUuid, RollbackCalls[0].ReportedUuid),
+                    new SyncCall(_clients[0].Id, UpdateCalls[0].ReportedUuid, RollbackCalls[2].ReportedUuid)
+                );
+
+        [Test]
+        public void It_logs_the_conflicting_rollback_uuid_and_client() =>
+            _vendorLogger
+                .Entries.Should()
+                .ContainSingle(entry =>
+                    entry.Level == LogLevel.Error
+                    && entry.Message
+                        == $"The rollback client UUID {_conflictingUuid} for ApiClient {_clients[1].Id} of Vendor 1 is already held by another API client; stored client state is inconsistent; nothing was deleted"
+                );
+
+        [Test]
+        public void It_compensates_before_releasing_the_locks() => AssertCompensationRanUnderTheLocks();
+
+        [Test]
+        public void It_releases_the_lock_set() =>
+            _lockManager.Handles.Should().ContainSingle().Which.Disposed.Should().BeTrue();
     }
 
     [TestFixture]

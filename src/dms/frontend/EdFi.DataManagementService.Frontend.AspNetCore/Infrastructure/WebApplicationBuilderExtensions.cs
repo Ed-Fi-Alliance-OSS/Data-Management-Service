@@ -80,6 +80,9 @@ public static class WebApplicationBuilderExtensions
             .Configure<ManagementEndpointsOptions>(
                 webAppBuilder.Configuration.GetSection(ManagementEndpointsOptions.SectionName)
             )
+            .Configure<IdentityManagementOptions>(
+                webAppBuilder.Configuration.GetSection(IdentityManagementOptions.SectionName)
+            )
             .Configure<ConfigurationServiceSettings>(
                 webAppBuilder.Configuration.GetSection("ConfigurationServiceSettings")
             )
@@ -117,9 +120,7 @@ public static class WebApplicationBuilderExtensions
                 webAppBuilder.Configuration.GetSection("AppSettings:Datastore").Value ?? string.Empty;
             var logger = serviceProvider.GetRequiredService<ILogger<DbHealthCheck>>();
 
-            string connectionString =
-                connectionStringProvider.GetHealthCheckConnectionString() ?? string.Empty;
-            return new DbHealthCheck(connectionString, datastore, logger);
+            return new DbHealthCheck(connectionStringProvider, datastore, logger);
         });
 
         webAppBuilder

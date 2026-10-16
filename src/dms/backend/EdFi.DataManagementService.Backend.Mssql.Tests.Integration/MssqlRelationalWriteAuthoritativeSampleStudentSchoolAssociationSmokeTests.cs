@@ -1181,9 +1181,10 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         var row = (
             await _database.QueryRowsAsync(
                 """
-                SELECT [DocumentUuid], [ContentVersion], [ContentLastModifiedAt]
-                FROM [dms].[Document]
-                WHERE [DocumentUuid] = @documentUuid;
+                SELECT document.[DocumentUuid], document.[ContentVersion], owner.[ContentLastModifiedAt]
+                FROM [dms].[Document] document
+                INNER JOIN [edfi].[StudentSchoolAssociation] owner ON owner.[DocumentId] = document.[DocumentId]
+                WHERE document.[DocumentUuid] = @documentUuid;
                 """,
                 new SqlParameter("@documentUuid", documentUuid)
             )

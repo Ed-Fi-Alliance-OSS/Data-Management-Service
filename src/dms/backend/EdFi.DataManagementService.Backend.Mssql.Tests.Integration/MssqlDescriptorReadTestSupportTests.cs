@@ -157,8 +157,7 @@ public class Given_A_Mssql_DescriptorRead_Test_Support
         GetRequiredGuid(documentRow, "DocumentUuid").Should().Be(seed.DocumentUuid.Value);
         GetRequiredInt16(documentRow, "ResourceKeyId").Should().Be(expectedResourceKeyId);
         GetRequiredInt64(documentRow, "ContentVersion").Should().BeGreaterThan(0);
-        documentRow["ContentLastModifiedAt"].Should().NotBeNull();
-        documentRow["CreatedAt"].Should().NotBeNull();
+        descriptorRow["ContentLastModifiedAt"].Should().NotBeNull();
 
         GetRequiredString(descriptorRow, "Namespace").Should().Be(seed.Namespace);
         GetRequiredString(descriptorRow, "CodeValue").Should().Be(seed.CodeValue);

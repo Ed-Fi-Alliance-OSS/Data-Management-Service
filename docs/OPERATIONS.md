@@ -750,6 +750,339 @@ be relied on for DoS or brute-force protection.
 
 See [Roles and Scopes](./ROLES-SCOPES.md)
 
+## Configuration Service database upgrades
+
+The Configuration Service upgrades its own database with DbUp. The embedded
+scripts run in order at startup when `DeployDatabaseOnStartup` is set, or
+through the Installer, and each script that completes is journaled in
+`dmscs_SchemaVersions`. A script that fails is not journaled: the service logs
+`Database Deploy Failure` with the script's error and exits, and the whole
+script runs again on the next start. Some scripts refuse to run against data
+that the schema change would make invalid. That is deliberate: they change
+nothing and describe what blocks them, and this section is the operator
+procedure for resolving it.
+
+Run an upgrade from one Configuration Service instance, or from the Installer,
+with no other instance serving writes. Migration `0036` holds an exclusive
+lock on `dmscs."ApiClient"` from its preflight through constraint creation, so
+a concurrent writer waits rather than slipping past its check; other blocking
+scripts, such as `0035`, take no such lock. Two instances running the upgrade
+at the same time are not serialized by DbUp either. Stop every instance first,
+upgrade from one, then start the rest.
+
+### Migration 0036: API client identifiers must be unique
+
+Migration `0036` makes `ClientId` (the key a caller authenticates with) and
+`ClientUuid` (the identity provider's identifier for that client) unique
+across the whole `dmscs."ApiClient"` table, in every application and every
+tenant. The Configuration Service generates both values itself, so duplicates
+come only from rows seeded outside the API or from a setup that ran twice. If
+any exist, startup stops with a message of this shape:
+
+```text
+API client identifier uniqueness upgrade blocked: 2 ApiClient row(s) share a ClientId with another row, ids: 17, 42. 3 ApiClient row(s) share a ClientUuid with another row, ids: 42, 43, 44. Resolve the duplicates with the operator procedure in docs/OPERATIONS.md ("Configuration Service database upgrades"), then retry the upgrade. Do not use DELETE /v3/apiClients/{id} for these rows.
+```
+
+The counts are complete. The ids are a sample: at most 20 `ApiClient."Id"`
+values per column, so a message ending in `... and 5 more` names only part of
+the set, and even a short list does not say which rows share a value with
+which. The enumeration query in step 2 is the complete list; do not work from
+the message. The ids are internal row ids, not keys.
+
+**Do not delete through the API while resolving duplicates.**
+`DELETE /v3/apiClients/{id}` also deletes the identity-provider client the row
+points to, by its `ClientUuid`. For rows that share a `ClientUuid`, that is
+the survivor's provider client, and deleting the loser through the API
+destroys the survivor's credentials. The procedure below deletes rows directly
+in the database and leaves every provider client in place. The service is
+stopped for the whole procedure, so nothing else writes to the table; do not
+start the previous build to clean up through the API either.
+
+1. **Stop the Configuration Service.** Every instance. The upgrade runs at
+   startup or through the Installer, so nothing below happens with the
+   service up.
+
+2. **Enumerate every affected row.** The query lists every `ApiClient` row
+   whose `ClientId` or `ClientUuid` is also held by another row, with a flag
+   for each, its ownership chain (application, vendor, tenant), its audit
+   columns, and its data-store and ownership-token associations. Save the
+   output: it is the review record for steps 4 to 6 and the starting point
+   for step 8.
+
+   PostgreSQL:
+
+   ```sql
+   SELECT c."Id", c."ClientId", c."ClientUuid",
+          EXISTS (SELECT 1 FROM dmscs."ApiClient" o
+                  WHERE o."ClientId" = c."ClientId" AND o."Id" <> c."Id") AS "SharesClientId",
+          EXISTS (SELECT 1 FROM dmscs."ApiClient" o
+                  WHERE o."ClientUuid" = c."ClientUuid" AND o."Id" <> c."Id") AS "SharesClientUuid",
+          c."Name", c."IsApproved",
+          c."ApplicationId", a."ApplicationName", a."ClaimSetName",
+          v."Id" AS "VendorId", v."Company", t."Id" AS "TenantId", t."Name" AS "TenantName",
+          c."CreatedAt", c."CreatedBy", c."LastModifiedAt", c."ModifiedBy",
+          c."CreatorOwnershipTokenId",
+          (SELECT string_agg(ds."Id"::text || ':' || ds."Name", ', ' ORDER BY ds."Id")
+           FROM dmscs."ApiClientDataStore" acd
+           JOIN dmscs."DataStore" ds ON ds."Id" = acd."DataStoreId"
+           WHERE acd."ApiClientId" = c."Id") AS "DataStores",
+          (SELECT string_agg(acot."OwnershipTokenId"::text, ', ' ORDER BY acot."OwnershipTokenId")
+           FROM dmscs."ApiClientOwnershipToken" acot
+           WHERE acot."ApiClientId" = c."Id") AS "OwnershipTokens"
+   FROM dmscs."ApiClient" c
+   JOIN dmscs."Application" a ON a."Id" = c."ApplicationId"
+   JOIN dmscs."Vendor" v ON v."Id" = a."VendorId"
+   LEFT JOIN dmscs."Tenant" t ON t."Id" = v."TenantId"
+   WHERE EXISTS (SELECT 1 FROM dmscs."ApiClient" o
+                 WHERE o."ClientId" = c."ClientId" AND o."Id" <> c."Id")
+      OR EXISTS (SELECT 1 FROM dmscs."ApiClient" o
+                 WHERE o."ClientUuid" = c."ClientUuid" AND o."Id" <> c."Id")
+   ORDER BY c."ClientId", c."ClientUuid", c."Id";
+   ```
+
+   SQL Server:
+
+   ```sql
+   SELECT c.Id, c.ClientId, c.ClientUuid,
+          CASE WHEN EXISTS (SELECT 1 FROM dmscs.ApiClient o
+                            WHERE o.ClientId = c.ClientId AND o.Id <> c.Id) THEN 1 ELSE 0 END AS SharesClientId,
+          CASE WHEN EXISTS (SELECT 1 FROM dmscs.ApiClient o
+                            WHERE o.ClientUuid = c.ClientUuid AND o.Id <> c.Id) THEN 1 ELSE 0 END AS SharesClientUuid,
+          c.Name, c.IsApproved,
+          c.ApplicationId, a.ApplicationName, a.ClaimSetName,
+          v.Id AS VendorId, v.Company, t.Id AS TenantId, t.Name AS TenantName,
+          c.CreatedAt, c.CreatedBy, c.LastModifiedAt, c.ModifiedBy,
+          c.CreatorOwnershipTokenId,
+          (SELECT STRING_AGG(CAST(CONCAT(ds.Id, ':', ds.Name) AS NVARCHAR(MAX)), ', ') WITHIN GROUP (ORDER BY ds.Id)
+           FROM dmscs.ApiClientDataStore acd
+           JOIN dmscs.DataStore ds ON ds.Id = acd.DataStoreId
+           WHERE acd.ApiClientId = c.Id) AS DataStores,
+          (SELECT STRING_AGG(CAST(acot.OwnershipTokenId AS NVARCHAR(MAX)), ', ') WITHIN GROUP (ORDER BY acot.OwnershipTokenId)
+           FROM dmscs.ApiClientOwnershipToken acot
+           WHERE acot.ApiClientId = c.Id) AS OwnershipTokens
+   FROM dmscs.ApiClient c
+   JOIN dmscs.Application a ON a.Id = c.ApplicationId
+   JOIN dmscs.Vendor v ON v.Id = a.VendorId
+   LEFT JOIN dmscs.Tenant t ON t.Id = v.TenantId
+   WHERE EXISTS (SELECT 1 FROM dmscs.ApiClient o
+                 WHERE o.ClientId = c.ClientId AND o.Id <> c.Id)
+      OR EXISTS (SELECT 1 FROM dmscs.ApiClient o
+                 WHERE o.ClientUuid = c.ClientUuid AND o.Id <> c.Id)
+   ORDER BY c.ClientId, c.ClientUuid, c.Id;
+   ```
+
+   Both queries use the equality the constraints apply, which is also what
+   the migration's preflight uses. On SQL Server, `ClientId` compares under
+   the column's collation: a case-insensitive collation makes `abc` and `ABC`
+   duplicates, and trailing spaces never distinguish two keys. On PostgreSQL,
+   with the deterministic default collation Configuration Service databases
+   use, comparison is byte-wise, so those pairs are distinct keys.
+
+3. **Back up** before changing anything. Either the whole database:
+
+   ```bash
+   pg_dump -U postgres -Fc <database> > <database>-before-0036.dump
+   ```
+
+   ```sql
+   BACKUP DATABASE [<database>] TO DISK = N'<path>\<database>-before-0036.bak' WITH COPY_ONLY, INIT;
+   ```
+
+   or only the three tables the procedure touches:
+
+   ```bash
+   pg_dump -U postgres -Fc -t 'dmscs."ApiClient"' -t 'dmscs."ApiClientDataStore"' \
+     -t 'dmscs."ApiClientOwnershipToken"' <database> > apiclient-before-0036.dump
+   ```
+
+   ```sql
+   SELECT * INTO dmscs.ApiClient_Before0036 FROM dmscs.ApiClient;
+   SELECT * INTO dmscs.ApiClientDataStore_Before0036 FROM dmscs.ApiClientDataStore;
+   SELECT * INTO dmscs.ApiClientOwnershipToken_Before0036 FROM dmscs.ApiClientOwnershipToken;
+   ```
+
+   The SQL Server copies are plain tables in the `dmscs` schema; drop them
+   once the upgrade has been verified, because they are not part of the
+   schema and nothing else removes them.
+
+4. **Form the duplicate groups and inspect each one.** The output is ordered
+   by `ClientId`, then `ClientUuid`, so rows that share a key are adjacent but
+   rows that share a UUID under different keys are not. Group the rows twice:
+   once by `ClientId` over the rows flagged `SharesClientId`, and once by
+   `ClientUuid` over the rows flagged `SharesClientUuid`. A row flagged for
+   both belongs to one group of each kind; review such overlapping groups
+   together, because a decision in one changes what the other contains. For
+   each row, read both identifiers and both flags, the application, vendor
+   and tenant it belongs to, the audit columns (who created it and when), and
+   the associations the row would lose if deleted. Then look at the identity
+   provider for every key and UUID in the group:
+
+   * Keycloak: `GET {keycloak}/admin/realms/{realm}/clients?clientId={ClientId}`
+     finds a client by key; `GET {keycloak}/admin/realms/{realm}/clients/{ClientUuid}`
+     finds it by internal id; the admin console shows the same objects.
+     Compare the client's `id` and `clientId` with each row, and note its
+     name, its client scopes (the claim set), and the attributes or protocol
+     mappers that carry the education-organization and data-store claims.
+   * Self-contained provider (OpenIddict): the client is a row in the same
+     database.
+
+     ```sql
+     -- PostgreSQL
+     SELECT app."Id", app."ClientId", app."DisplayName", app."Type", app."CreatedAt", app."ProtocolMappers",
+            (SELECT string_agg(s."Name", ', ' ORDER BY s."Name")
+             FROM dmscs."OpenIddictApplicationScope" aps
+             JOIN dmscs."OpenIddictScope" s ON s."Id" = aps."ScopeId"
+             WHERE aps."ApplicationId" = app."Id") AS "Scopes"
+     FROM dmscs."OpenIddictApplication" app
+     WHERE app."ClientId" = '<ClientId>' OR app."Id" = '<ClientUuid>';
+     ```
+
+     ```sql
+     -- SQL Server
+     SELECT app.Id, app.ClientId, app.DisplayName, app.Type, app.CreatedAt, app.ProtocolMappers,
+            (SELECT STRING_AGG(CAST(s.Name AS NVARCHAR(MAX)), ', ') WITHIN GROUP (ORDER BY s.Name)
+             FROM dmscs.OpenIddictApplicationScope aps
+             JOIN dmscs.OpenIddictScope s ON s.Id = aps.ScopeId
+             WHERE aps.ApplicationId = app.Id) AS Scopes
+     FROM dmscs.OpenIddictApplication app
+     WHERE app.ClientId = '<ClientId>' OR app.Id = '<ClientUuid>';
+     ```
+
+   What the shapes mean: rows that share a `ClientId` but hold different
+   `ClientUuid` values point at two provider clients, or at one client and a
+   dangling reference; the provider answers that key for at most one of them,
+   so the other row's credentials never worked or stopped working. Rows that
+   share a `ClientUuid` point at one provider client, whose `clientId`
+   matches at most one of them; the rest disagree with the provider about
+   which key they hold. Audit columns and the provider's creation time show
+   which attempt created what.
+
+5. **Establish the intended owner of each group** from step 4, and record how
+   you established it. No rule such as "keep the lowest id" is offered, and
+   nothing in the service reconciles the provider automatically. **Stop if
+   ownership remains ambiguous** and leave the database as it is: an upgrade
+   that stays blocked is recoverable, a deleted credential is not.
+
+6. **Delete only the reviewed row ids**, in one transaction, child rows
+   first. Replace `<reviewed ids>` with the ids written down in step 5 and
+   nothing else; the same list goes in all three statements. Deleting a row
+   discards its data-store assignments and ownership-token links. The
+   provider client is not touched.
+
+   Run the deletion in an interactive session that stays open: `psql`, or
+   `sqlcmd` without `-Q` or `-i`, or a client with autocommit off. The block
+   opens the transaction and deletes; it does not end the transaction.
+
+   PostgreSQL:
+
+   ```sql
+   BEGIN;
+   DELETE FROM dmscs."ApiClientOwnershipToken" WHERE "ApiClientId" IN (<reviewed ids>)
+   RETURNING "ApiClientId", "OwnershipTokenId";
+   DELETE FROM dmscs."ApiClientDataStore" WHERE "ApiClientId" IN (<reviewed ids>)
+   RETURNING "ApiClientId", "DataStoreId";
+   DELETE FROM dmscs."ApiClient" WHERE "Id" IN (<reviewed ids>)
+   RETURNING "Id", "ClientId", "ClientUuid";
+   ```
+
+   SQL Server:
+
+   ```sql
+   SET XACT_ABORT ON;
+   BEGIN TRANSACTION;
+   DELETE FROM dmscs.ApiClientOwnershipToken
+   OUTPUT deleted.ApiClientId, deleted.OwnershipTokenId
+   WHERE ApiClientId IN (<reviewed ids>);
+   DELETE FROM dmscs.ApiClientDataStore
+   OUTPUT deleted.ApiClientId, deleted.DataStoreId
+   WHERE ApiClientId IN (<reviewed ids>);
+   DELETE FROM dmscs.ApiClient
+   OUTPUT deleted.Id, deleted.ClientId, deleted.ClientUuid
+   WHERE Id IN (<reviewed ids>);
+   ```
+
+   The transaction is still open. In the same session, compare the returned
+   rows with the review record: every id from step 5 and no other, and for
+   each one the associations step 2 listed. Then end the transaction with
+   exactly one of the statements below. If the session closes before either
+   runs, both engines roll the deletion back and nothing was deleted.
+
+   PostgreSQL, when the rows match:
+
+   ```sql
+   COMMIT;
+   ```
+
+   PostgreSQL, otherwise:
+
+   ```sql
+   ROLLBACK;
+   ```
+
+   SQL Server, when the rows match:
+
+   ```sql
+   COMMIT TRANSACTION;
+   ```
+
+   SQL Server, otherwise:
+
+   ```sql
+   ROLLBACK TRANSACTION;
+   ```
+
+   The child tables cascade from `ApiClient` on both engines, but the
+   procedure deletes them explicitly so that the returned rows show exactly
+   what each deletion discards.
+
+7. **Re-check both identifiers**, then retry the upgrade. Each query must
+   return zero rows; if either still returns rows, go back to step 2 with
+   that output.
+
+   PostgreSQL:
+
+   ```sql
+   SELECT c."Id" FROM dmscs."ApiClient" c
+   WHERE EXISTS (SELECT 1 FROM dmscs."ApiClient" o WHERE o."ClientId" = c."ClientId" AND o."Id" <> c."Id");
+   SELECT c."Id" FROM dmscs."ApiClient" c
+   WHERE EXISTS (SELECT 1 FROM dmscs."ApiClient" o WHERE o."ClientUuid" = c."ClientUuid" AND o."Id" <> c."Id");
+   ```
+
+   SQL Server:
+
+   ```sql
+   SELECT c.Id FROM dmscs.ApiClient c
+   WHERE EXISTS (SELECT 1 FROM dmscs.ApiClient o WHERE o.ClientId = c.ClientId AND o.Id <> c.Id);
+   SELECT c.Id FROM dmscs.ApiClient c
+   WHERE EXISTS (SELECT 1 FROM dmscs.ApiClient o WHERE o.ClientUuid = c.ClientUuid AND o.Id <> c.Id);
+   ```
+
+   Then start one Configuration Service instance or run the Installer. The
+   script runs again in full, adds both constraints, and journals `0036`;
+   `SELECT scriptname FROM public."dmscs_SchemaVersions" WHERE scriptname LIKE '%0036%';`
+   (PostgreSQL) or
+   `SELECT ScriptName FROM dbo.dmscs_SchemaVersions WHERE ScriptName LIKE '%0036%';`
+   (SQL Server) returns one row once it has. Start the remaining instances
+   after that.
+
+8. **Provider cleanup is a separate activity.** Deleting a row removes the
+   Configuration Service's reference to a provider client and establishes
+   nothing about that client. A row seeded outside the API, or corrupted, can
+   point at a provider client that is legitimately in use, including a client
+   registered through `POST /connect/register`, which never has an
+   `ApiClient` row. Leave every provider client in place until the upgrade is
+   done. Afterwards, handle a provider client you suspect is orphaned under
+   [the one rule for deleting a client during recovery](#the-one-rule-for-deleting-a-client-during-recovery):
+   deleting it requires independent evidence of ownership, such as provider
+   audit events tying the client's creation to the attempt that produced the
+   deleted row, or an operator's recorded confirmation documenting how
+   ownership was established, together with recorded operator approval of
+   the deletion. The `ClientUuid` in the step 2 review record says where to
+   look; it is not authorization. A provider client whose UUID a surviving
+   row still holds is in use and must not be deleted. If ownership remains
+   uncertain, stop and leave the client in place. Nothing in the migration or
+   in this procedure deletes provider objects.
+
 ## Configuration Service: identity-provider clients left behind by failed provisioning
 
 Creating an API client is two systems agreeing: the Configuration Service asks

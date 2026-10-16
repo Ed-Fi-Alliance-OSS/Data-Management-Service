@@ -330,7 +330,7 @@ exit $ExitCode
             $content | Should -Match 'Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine \$DatabaseEngine -BaseEnvironmentFile \$resolvedEnvironmentFile -DockerComposeRoot \$PSScriptRoot'
         }
 
-        It "provision-e2e-database.ps1 exposes neutral reset and provision parameters" {
+        It "provision-e2e-database.ps1 exposes neutral reset, provision, and schema output parameters" {
             $params = Get-DeclaredScriptParameters -Path $script:repo.E2EProvisionScript
 
             $params | Should -Contain "EnvironmentFile"
@@ -342,14 +342,15 @@ exit $ExitCode
             # themselves, so this script has to stay self-sufficient by default; the build path is
             # the only caller that can promise compiled output.
             $params | Should -Contain "UsePrebuiltTools"
+            $params | Should -Contain "SchemaOutputDirectory"
             $params | Should -Not -Contain "SchemaToolPath"
             $params | Should -Not -Contain "DataStoreId"
             $params | Should -Not -Contain "SchoolYear"
-            $params.Count | Should -Be 6
+            $params.Count | Should -Be 7
         }
 
         It "provision-e2e-database.ps1 reuses prebuilt CLI output only when asked" {
-            # Both CLI invocations are dotnet run against a project, which restores and builds by
+            # All CLI invocations are dotnet run against a project, which restores and builds by
             # default - and SchemaTools' project references reach Core and Backend.Ddl, so that is a
             # large share of a solution build paid inside every E2E job. The workflow's E2E consumers
             # extract the shared artifact before reaching here, so they must not pay it again; a
@@ -366,8 +367,8 @@ exit $ExitCode
             # Both flags live on one shared argument set, gated by the switch.
             $content | Should -Match '\$script:PrebuiltToolDotnetRunArgs\s*=\s*if \(\$UsePrebuiltTools\) \{ @\("--no-build", "--no-restore"\) \} else \{ @\(\) \}'
 
-            # And both CLI invocations - the downloader arguments and the SchemaTools provisioning
-            # arguments - consume that set, so neither can silently fall back to rebuilding.
+            # The downloader, SchemaTools emission, and provisioning arguments all consume that
+            # set, so none can silently fall back to rebuilding.
             $argSetConsumer = @(
                 ($content -split "\r?\n") | Where-Object {
                     $_ -notmatch '^\s*#' -and
@@ -375,7 +376,7 @@ exit $ExitCode
                     $_ -notmatch '\$script:PrebuiltToolDotnetRunArgs\s*='
                 }
             )
-            $argSetConsumer.Count | Should -Be 2
+            $argSetConsumer.Count | Should -Be 3
         }
 
         It "provision-e2e-database.ps1 owns explicit E2E database reset and SchemaTools provisioning" {
@@ -2046,8 +2047,8 @@ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey12345678901234567
             } *>&1 | Out-String
 
             $output | Should -Match "IDE next-step guidance"
-            $output | Should -Match "AppSettings__UseApiSchemaPath = true"
-            $output | Should -Match "AppSettings__ApiSchemaPath"
+            $output | Should -Match "AppSettings__ApiSchema__UseCustomPath = true"
+            $output | Should -Match "AppSettings__ApiSchema__Path"
             $output | Should -Match "runtime-authoritative"
         }
 

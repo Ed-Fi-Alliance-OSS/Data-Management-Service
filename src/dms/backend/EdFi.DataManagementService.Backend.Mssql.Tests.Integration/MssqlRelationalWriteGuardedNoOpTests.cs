@@ -77,6 +77,9 @@ internal sealed class GuardedNoOpCompetingBumpCoordinator(IDataStoreSelection da
         command.Transaction = _transaction;
         command.CommandText = """
             UPDATE [dms].[Document]
+            SET [ContentVersion] = [ContentVersion] + 1
+            WHERE [DocumentId] = @documentId;
+            UPDATE [edfi].[School]
             SET [ContentVersion] = [ContentVersion] + 1,
                 [ContentLastModifiedAt] = @contentLastModifiedAt
             WHERE [DocumentId] = @documentId;
@@ -93,7 +96,7 @@ internal sealed class GuardedNoOpCompetingBumpCoordinator(IDataStoreSelection da
 
         var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
 
-        if (rowsAffected != 1)
+        if (rowsAffected != 2)
         {
             throw new InvalidOperationException(
                 $"Expected exactly one competing document content-version bump for document id '{documentId}', but affected {rowsAffected} rows."
@@ -202,9 +205,7 @@ internal sealed record GuardedNoOpDocumentRow(
     long DocumentId,
     Guid DocumentUuid,
     short ResourceKeyId,
-    long ContentVersion,
-    DateTimeOffset ContentLastModifiedAt,
-    DateTimeOffset CreatedAt
+    long ContentVersion
 );
 
 internal sealed record GuardedNoOpSchoolRow(
@@ -315,6 +316,9 @@ file static class GuardedNoOpIntegrationTestSupport
         await using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE [dms].[Document]
+            SET [ContentVersion] = [ContentVersion] + 1
+            WHERE [DocumentId] = @documentId;
+            UPDATE [edfi].[School]
             SET [ContentVersion] = [ContentVersion] + 1,
                 [ContentLastModifiedAt] = @contentLastModifiedAt
             WHERE [DocumentId] = @documentId;
@@ -332,7 +336,7 @@ file static class GuardedNoOpIntegrationTestSupport
 
         var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
 
-        if (rowsAffected != 1)
+        if (rowsAffected != 2)
         {
             throw new InvalidOperationException(
                 $"Expected exactly one {bumpDescription} for document id '{documentId}', but affected {rowsAffected} rows."
@@ -448,9 +452,7 @@ file static class GuardedNoOpIntegrationTestSupport
                 state.Document.DocumentId,
                 state.Document.DocumentUuid,
                 state.Document.ResourceKeyId,
-                state.Document.ContentVersion,
-                state.Document.ContentLastModifiedAt,
-                state.Document.CreatedAt
+                state.Document.ContentVersion
             ),
             new NoProfileGuardedNoOpScenarios.SchoolRow(
                 state.School.DocumentId,
@@ -635,8 +637,7 @@ file static class GuardedNoOpIntegrationTestSupport
     {
         var rows = await database.QueryRowsAsync(
             """
-            SELECT [DocumentId], [DocumentUuid], [ResourceKeyId], [ContentVersion],
-                [ContentLastModifiedAt], [CreatedAt]
+            SELECT [DocumentId], [DocumentUuid], [ResourceKeyId], [ContentVersion]
             FROM [dms].[Document]
             WHERE [DocumentUuid] = @documentUuid;
             """,
@@ -648,9 +649,7 @@ file static class GuardedNoOpIntegrationTestSupport
                 GetInt64(rows[0], "DocumentId"),
                 GetGuid(rows[0], "DocumentUuid"),
                 GetInt16(rows[0], "ResourceKeyId"),
-                GetInt64(rows[0], "ContentVersion"),
-                GetDateTimeOffset(rows[0], "ContentLastModifiedAt"),
-                GetDateTimeOffset(rows[0], "CreatedAt")
+                GetInt64(rows[0], "ContentVersion")
             )
             : throw new InvalidOperationException(
                 $"Expected exactly one document row for '{documentUuid}', but found {rows.Count}."

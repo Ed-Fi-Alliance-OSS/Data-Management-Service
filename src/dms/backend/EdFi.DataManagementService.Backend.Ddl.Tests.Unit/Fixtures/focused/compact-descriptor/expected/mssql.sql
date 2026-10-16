@@ -263,8 +263,6 @@ CREATE TABLE [dms].[Document]
     [ResourceKeyId] smallint NOT NULL,
     [CreatedByOwnershipTokenId] smallint NULL,
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Document_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
-    [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Document_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
-    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Document_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_Document] PRIMARY KEY CLUSTERED ([DocumentId])
 );
 
@@ -607,11 +605,10 @@ BEGIN
     END
     DECLARE @stamped TABLE (
         [DocumentId] bigint NOT NULL PRIMARY KEY,
-        [ContentVersion] bigint NOT NULL,
-        [ContentLastModifiedAt] datetime2(7) NOT NULL
+        [ContentVersion] bigint NOT NULL
     );
-    INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])
-    SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]
+    INSERT INTO @stamped ([DocumentId], [ContentVersion])
+    SELECT d.[DocumentId], d.[ContentVersion]
     FROM [dms].[Document] d
     INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
     LEFT JOIN deleted del ON del.[DescriptorId] = i.[DescriptorId]
@@ -630,8 +627,8 @@ BEGIN
             WHERE i.[DescriptorId] IS NULL
         )
         UPDATE d
-        SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
+        SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped
         FROM [dms].[Document] d
         INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
     END
@@ -639,7 +636,7 @@ BEGIN
     BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+            r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [dms].[Descriptor] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -1169,11 +1166,10 @@ BEGIN
     SET NOCOUNT ON;
     DECLARE @stamped TABLE (
         [DocumentId] bigint NOT NULL PRIMARY KEY,
-        [ContentVersion] bigint NOT NULL,
-        [ContentLastModifiedAt] datetime2(7) NOT NULL
+        [ContentVersion] bigint NOT NULL
     );
-    INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])
-    SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]
+    INSERT INTO @stamped ([DocumentId], [ContentVersion])
+    SELECT d.[DocumentId], d.[ContentVersion]
     FROM [dms].[Document] d
     INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
     LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -1192,8 +1188,8 @@ BEGIN
             WHERE i.[DocumentId] IS NULL
         )
         UPDATE d
-        SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
+        SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped
         FROM [dms].[Document] d
         INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
     END
@@ -1201,7 +1197,7 @@ BEGIN
     BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+            r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[ProfileRootOnlyMergeItem] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -1260,8 +1256,7 @@ BEGIN
     SET NOCOUNT ON;
     DECLARE @stamped TABLE (
         [DocumentId] bigint NOT NULL PRIMARY KEY,
-        [ContentVersion] bigint NOT NULL,
-        [ContentLastModifiedAt] datetime2(7) NOT NULL
+        [ContentVersion] bigint NOT NULL
     );
     ;WITH affectedDocs AS (
         SELECT i.[ProfileRootOnlyMergeItem_DocumentId]
@@ -1275,8 +1270,8 @@ BEGIN
         WHERE i.[CollectionItemId] IS NULL OR (i.[CollectionItemId] <> del.[CollectionItemId] OR (i.[CollectionItemId] IS NULL AND del.[CollectionItemId] IS NOT NULL) OR (i.[CollectionItemId] IS NOT NULL AND del.[CollectionItemId] IS NULL)) OR (i.[Ordinal] <> del.[Ordinal] OR (i.[Ordinal] IS NULL AND del.[Ordinal] IS NOT NULL) OR (i.[Ordinal] IS NOT NULL AND del.[Ordinal] IS NULL)) OR (i.[ProfileRootOnlyMergeItem_DocumentId] <> del.[ProfileRootOnlyMergeItem_DocumentId] OR (i.[ProfileRootOnlyMergeItem_DocumentId] IS NULL AND del.[ProfileRootOnlyMergeItem_DocumentId] IS NOT NULL) OR (i.[ProfileRootOnlyMergeItem_DocumentId] IS NOT NULL AND del.[ProfileRootOnlyMergeItem_DocumentId] IS NULL)) OR (i.[SchoolTypeDescriptor_DescriptorId] <> del.[SchoolTypeDescriptor_DescriptorId] OR (i.[SchoolTypeDescriptor_DescriptorId] IS NULL AND del.[SchoolTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[SchoolTypeDescriptor_DescriptorId] IS NOT NULL AND del.[SchoolTypeDescriptor_DescriptorId] IS NULL))
     )
     UPDATE d
-    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
-    OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
+    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]
+    OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[ProfileRootOnlyMergeItem_DocumentId]
     INNER JOIN [edfi].[ProfileRootOnlyMergeItem] stampTarget ON stampTarget.[DocumentId] = a.[ProfileRootOnlyMergeItem_DocumentId];
@@ -1284,7 +1279,7 @@ BEGIN
     BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+            r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[ProfileRootOnlyMergeItem] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -1299,8 +1294,7 @@ BEGIN
     SET NOCOUNT ON;
     DECLARE @stamped TABLE (
         [DocumentId] bigint NOT NULL PRIMARY KEY,
-        [ContentVersion] bigint NOT NULL,
-        [ContentLastModifiedAt] datetime2(7) NOT NULL
+        [ContentVersion] bigint NOT NULL
     );
     ;WITH affectedDocs AS (
         SELECT i.[ProfileRootOnlyMergeItem_DocumentId]
@@ -1314,8 +1308,8 @@ BEGIN
         WHERE i.[CollectionItemId] IS NULL OR (i.[CollectionItemId] <> del.[CollectionItemId] OR (i.[CollectionItemId] IS NULL AND del.[CollectionItemId] IS NOT NULL) OR (i.[CollectionItemId] IS NOT NULL AND del.[CollectionItemId] IS NULL)) OR (i.[Ordinal] <> del.[Ordinal] OR (i.[Ordinal] IS NULL AND del.[Ordinal] IS NOT NULL) OR (i.[Ordinal] IS NOT NULL AND del.[Ordinal] IS NULL)) OR (i.[ParentCollectionItemId] <> del.[ParentCollectionItemId] OR (i.[ParentCollectionItemId] IS NULL AND del.[ParentCollectionItemId] IS NOT NULL) OR (i.[ParentCollectionItemId] IS NOT NULL AND del.[ParentCollectionItemId] IS NULL)) OR (i.[ProfileRootOnlyMergeItem_DocumentId] <> del.[ProfileRootOnlyMergeItem_DocumentId] OR (i.[ProfileRootOnlyMergeItem_DocumentId] IS NULL AND del.[ProfileRootOnlyMergeItem_DocumentId] IS NOT NULL) OR (i.[ProfileRootOnlyMergeItem_DocumentId] IS NOT NULL AND del.[ProfileRootOnlyMergeItem_DocumentId] IS NULL)) OR (i.[SchoolTypeDescriptor_DescriptorId] <> del.[SchoolTypeDescriptor_DescriptorId] OR (i.[SchoolTypeDescriptor_DescriptorId] IS NULL AND del.[SchoolTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[SchoolTypeDescriptor_DescriptorId] IS NOT NULL AND del.[SchoolTypeDescriptor_DescriptorId] IS NULL))
     )
     UPDATE d
-    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
-    OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
+    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]
+    OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[ProfileRootOnlyMergeItem_DocumentId]
     INNER JOIN [edfi].[ProfileRootOnlyMergeItem] stampTarget ON stampTarget.[DocumentId] = a.[ProfileRootOnlyMergeItem_DocumentId];
@@ -1323,7 +1317,7 @@ BEGIN
     BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+            r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[ProfileRootOnlyMergeItem] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -1427,11 +1421,10 @@ BEGIN
     SET NOCOUNT ON;
     DECLARE @stamped TABLE (
         [DocumentId] bigint NOT NULL PRIMARY KEY,
-        [ContentVersion] bigint NOT NULL,
-        [ContentLastModifiedAt] datetime2(7) NOT NULL
+        [ContentVersion] bigint NOT NULL
     );
-    INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])
-    SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]
+    INSERT INTO @stamped ([DocumentId], [ContentVersion])
+    SELECT d.[DocumentId], d.[ContentVersion]
     FROM [dms].[Document] d
     INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
     LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -1450,8 +1443,8 @@ BEGIN
             WHERE i.[DocumentId] IS NULL
         )
         UPDATE d
-        SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
+        SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped
         FROM [dms].[Document] d
         INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
     END
@@ -1459,7 +1452,7 @@ BEGIN
     BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+            r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[Student] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -1495,8 +1488,7 @@ BEGIN
     SET NOCOUNT ON;
     DECLARE @stamped TABLE (
         [DocumentId] bigint NOT NULL PRIMARY KEY,
-        [ContentVersion] bigint NOT NULL,
-        [ContentLastModifiedAt] datetime2(7) NOT NULL
+        [ContentVersion] bigint NOT NULL
     );
     ;WITH affectedDocs AS (
         SELECT i.[DocumentId]
@@ -1510,8 +1502,8 @@ BEGIN
         WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolTypeDescriptor_DescriptorId] <> del.[SchoolTypeDescriptor_DescriptorId] OR (i.[SchoolTypeDescriptor_DescriptorId] IS NULL AND del.[SchoolTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[SchoolTypeDescriptor_DescriptorId] IS NOT NULL AND del.[SchoolTypeDescriptor_DescriptorId] IS NULL))
     )
     UPDATE d
-    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
-    OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
+    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]
+    OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId]
     INNER JOIN [edfi].[ProfileRootOnlyMergeItem] stampTarget ON stampTarget.[DocumentId] = a.[DocumentId];
@@ -1519,7 +1511,7 @@ BEGIN
     BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+            r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[ProfileRootOnlyMergeItem] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END

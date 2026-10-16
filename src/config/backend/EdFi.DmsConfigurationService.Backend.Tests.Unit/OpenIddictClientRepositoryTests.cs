@@ -9,6 +9,7 @@ using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.TestHelpers;
 using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.Secrets;
 using FakeItEasy;
@@ -83,7 +84,8 @@ public class OpenIddictClientRepositoryTests
                         A<IDbTransaction>._
                     )
                 )
-                .Invokes(call => capturedProtocolMappers = call.Arguments.Get<string>(7));
+                .Invokes(call => capturedProtocolMappers = call.Arguments.Get<string>(7))
+                .Returns(OpenIddictApplicationInsertOutcome.Inserted);
 
             // Act
             var result = await _repository.CreateClientAsync(
@@ -142,7 +144,8 @@ public class OpenIddictClientRepositoryTests
                         A<IDbTransaction>._
                     )
                 )
-                .Invokes(call => capturedProtocolMappers = call.Arguments.Get<string>(7));
+                .Invokes(call => capturedProtocolMappers = call.Arguments.Get<string>(7))
+                .Returns(OpenIddictApplicationInsertOutcome.Inserted);
 
             // Act
             var result = await _repository.CreateClientAsync(
@@ -202,7 +205,8 @@ public class OpenIddictClientRepositoryTests
                         A<IDbTransaction>._
                     )
                 )
-                .Invokes(call => capturedProtocolMappers = call.Arguments.Get<string>(7));
+                .Invokes(call => capturedProtocolMappers = call.Arguments.Get<string>(7))
+                .Returns(OpenIddictApplicationInsertOutcome.Inserted);
 
             // Act
             var result = await _repository.CreateClientAsync(
@@ -891,5 +895,470 @@ public class OpenIddictClientRepositoryTests
 
         [Test]
         public void It_updates_no_row() => AssertNoRowWasUpdated();
+    }
+
+    /// <summary>
+    /// Shared arrangement for the provider-create path (DMS-1529 D-5). The role is absent, so the
+    /// attempt creates one before the application insert: that is the row a key conflict has to
+    /// roll back. Every fixture arranges the application-insert outcome explicitly; nothing here
+    /// relies on the enum's default value.
+    /// </summary>
+    public abstract class CreateClientTestBase : OpenIddictClientRepositoryTests
+    {
+        protected const string ClientKey = "dms1529-client-key";
+        protected const string ClientSecret = "dms1529-plain-secret-value";
+        protected const string RoleName = "dms-client";
+        protected const string ScopeName = "edfi_admin_api/full_access";
+        protected const string DuplicateKeyWarning = "no client was created";
+
+        protected IDbConnection _connection = null!;
+        protected IDbTransaction _transaction = null!;
+        protected ClientCreateResult _result = null!;
+
+        [SetUp]
+        public void SetUpCreateDefaults()
+        {
+            _connection = A.Fake<IDbConnection>();
+            _transaction = A.Fake<IDbTransaction>();
+            A.CallTo(() => _dataRepository.CreateConnectionAsync()).Returns(_connection);
+            A.CallTo(() => _dataRepository.BeginTransactionAsync(_connection)).Returns(_transaction);
+            A.CallTo(() => _dataRepository.FindRoleIdByNameAsync(RoleName, _connection, _transaction))
+                .Returns(Task.FromResult<Guid?>(null));
+            A.CallTo(() => _dataRepository.FindScopeIdByNameAsync(ScopeName, _connection, _transaction))
+                .Returns(Task.FromResult<Guid?>(null));
+            ArrangeApplicationInsert(OpenIddictApplicationInsertOutcome.Inserted);
+        }
+
+        [TearDown]
+        public void DisposeCreateFakes()
+        {
+            _transaction.Dispose();
+            _connection.Dispose();
+        }
+
+        protected void ArrangeApplicationInsert(OpenIddictApplicationInsertOutcome outcome) =>
+            A.CallTo(() =>
+                    _dataRepository.InsertApplicationAsync(
+                        A<Guid>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string[]>._,
+                        A<string[]>._,
+                        A<string>._,
+                        A<string>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .Returns(outcome);
+
+        protected async Task ActCreateAsync(string clientId = ClientKey) =>
+            _result = await _repository.CreateClientAsync(
+                clientId,
+                ClientSecret,
+                RoleName,
+                "DMS-1529 Client",
+                ScopeName,
+                "uri://ed-fi.org",
+                "255901",
+                [1, 2]
+            );
+
+        protected void AssertTransactionRolledBackWithoutCommit()
+        {
+            A.CallTo(() => _transaction.Rollback()).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _transaction.Commit()).MustNotHaveHappened();
+        }
+
+        protected void AssertNothingWrittenAfterTheApplicationInsert()
+        {
+            A.CallTo(() =>
+                    _dataRepository.InsertScopeAsync(
+                        A<Guid>._,
+                        A<string>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() =>
+                    _dataRepository.InsertApplicationScopeAsync(
+                        A<Guid>._,
+                        A<Guid>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() =>
+                    _dataRepository.InsertClientRoleAsync(
+                        A<Guid>._,
+                        A<Guid>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+
+        protected void AssertNoDuplicateKeyWarning() =>
+            _logger.VerifyNoLog(LogLevel.Warning, DuplicateKeyWarning);
+
+        // NotContain rather than OnlyContain: the success path logs nothing at all, and an empty
+        // log must satisfy "no secret was logged".
+        protected void AssertNoSecretLogged() =>
+            _logger.LoggedEntryTexts().Should().NotContain(text => text.Contains(ClientSecret));
+    }
+
+    /// <summary>
+    /// The success path with the outcome arranged explicitly. Fails if the outcome check is ever
+    /// inverted or the role, scope and client-role writes stop following a free key.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_client_creation_whose_key_is_free : CreateClientTestBase
+    {
+        private Guid _insertedApplicationId;
+
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() =>
+                    _dataRepository.InsertApplicationAsync(
+                        A<Guid>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string[]>._,
+                        A<string[]>._,
+                        A<string>._,
+                        A<string>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .Invokes(call => _insertedApplicationId = call.GetArgument<Guid>(0))
+                .Returns(OpenIddictApplicationInsertOutcome.Inserted);
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_returns_success_carrying_the_inserted_identifier()
+        {
+            _result.Should().BeOfType<ClientCreateResult.Success>();
+            ((ClientCreateResult.Success)_result).ClientUuid.Should().Be(_insertedApplicationId);
+        }
+
+        [Test]
+        public void It_commits_without_rollback()
+        {
+            A.CallTo(() => _transaction.Commit()).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _transaction.Rollback()).MustNotHaveHappened();
+        }
+
+        [Test]
+        public void It_creates_the_role_scope_and_client_role()
+        {
+            A.CallTo(() => _dataRepository.InsertRoleAsync(A<Guid>._, RoleName, _connection, _transaction))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => _dataRepository.InsertScopeAsync(A<Guid>._, ScopeName, _connection, _transaction))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() =>
+                    _dataRepository.InsertApplicationScopeAsync(
+                        _insertedApplicationId,
+                        A<Guid>._,
+                        _connection,
+                        _transaction
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() =>
+                    _dataRepository.InsertClientRoleAsync(
+                        _insertedApplicationId,
+                        A<Guid>._,
+                        _connection,
+                        _transaction
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public void It_logs_no_duplicate_key_warning() => AssertNoDuplicateKeyWarning();
+
+        [Test]
+        public void It_logs_no_secret() => AssertNoSecretLogged();
+    }
+
+    /// <summary>
+    /// The data repository reports the key as already registered. The provider rolls the whole
+    /// attempt back, the role it created included, writes nothing further, and classifies the
+    /// result as a duplicate key with nothing to compensate. Fails against the implementation that
+    /// let the engine exception reach the generic catch as an unknown failure.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_client_creation_whose_key_the_provider_already_holds : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeApplicationInsert(OpenIddictApplicationInsertOutcome.DuplicateClientId);
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_duplicate_client_id() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureDuplicateClientId>();
+
+        [Test]
+        public void It_rolls_the_transaction_back_without_committing() =>
+            AssertTransactionRolledBackWithoutCommit();
+
+        [Test]
+        public void It_created_the_role_inside_the_rolled_back_transaction() =>
+            A.CallTo(() => _dataRepository.InsertRoleAsync(A<Guid>._, RoleName, _connection, _transaction))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_inserts_no_scope_or_client_role() => AssertNothingWrittenAfterTheApplicationInsert();
+
+        [Test]
+        public void It_records_the_conflict_as_a_warning_with_the_client_identifier() =>
+            _logger
+                .LoggedEntries()
+                .Should()
+                .ContainSingle(entry =>
+                    entry.Level == LogLevel.Warning
+                    && entry.Message.Contains(DuplicateKeyWarning)
+                    && entry.Message.Contains(ClientKey)
+                );
+
+        [Test]
+        public void It_logs_nothing_at_error() =>
+            _logger.LoggedEntries().Should().NotContain(entry => entry.Level == LogLevel.Error);
+
+        [Test]
+        public void It_attaches_no_exception_to_any_log_entry() =>
+            _logger.LoggedEntries().Should().AllSatisfy(entry => entry.Exception.Should().BeNull());
+
+        [Test]
+        public void It_logs_no_secret() => AssertNoSecretLogged();
+    }
+
+    [TestFixture]
+    public class Given_a_key_conflict_for_a_role_that_already_exists : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _dataRepository.FindRoleIdByNameAsync(RoleName, _connection, _transaction))
+                .Returns(Task.FromResult<Guid?>(Guid.NewGuid()));
+            ArrangeApplicationInsert(OpenIddictApplicationInsertOutcome.DuplicateClientId);
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_duplicate_client_id() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureDuplicateClientId>();
+
+        [Test]
+        public void It_creates_no_role() =>
+            A.CallTo(() =>
+                    _dataRepository.InsertRoleAsync(
+                        A<Guid>._,
+                        A<string>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_rolls_the_transaction_back_without_committing() =>
+            AssertTransactionRolledBackWithoutCommit();
+    }
+
+    [TestFixture]
+    public class Given_a_key_conflict_whose_client_id_needs_sanitizing : CreateClientTestBase
+    {
+        private const string RawClientId = "key\r\n<b>{x}</b>";
+        private const string SanitizedClientId = "keybx/b";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeApplicationInsert(OpenIddictApplicationInsertOutcome.DuplicateClientId);
+
+            await ActCreateAsync(RawClientId);
+        }
+
+        [Test]
+        public void It_returns_failure_duplicate_client_id() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureDuplicateClientId>();
+
+        [Test]
+        public void It_logs_the_sanitized_client_identifier() =>
+            _logger
+                .LoggedEntries()
+                .Should()
+                .ContainSingle(entry =>
+                    entry.Level == LogLevel.Warning
+                    && entry.Message.Contains(DuplicateKeyWarning)
+                    && entry.Message.Contains(SanitizedClientId)
+                );
+
+        [Test]
+        public void It_logs_none_of_the_raw_characters() =>
+            _logger
+                .LoggedMessages()
+                .Should()
+                .OnlyContain(message =>
+                    !message.Contains('\r')
+                    && !message.Contains('\n')
+                    && !message.Contains('<')
+                    && !message.Contains('>')
+                    && !message.Contains('{')
+                    && !message.Contains('}')
+                );
+    }
+
+    /// <summary>
+    /// Role and scope uniqueness violations are not classified: the data repository lets them
+    /// throw, and the provider reports them as unknown failures exactly as before.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_client_creation_whose_role_insert_throws : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() =>
+                    _dataRepository.InsertRoleAsync(
+                        A<Guid>._,
+                        RoleName,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .Throws(new InvalidOperationException("duplicate role name"));
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_unknown() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureUnknown>();
+
+        [Test]
+        public void It_does_not_commit() => A.CallTo(() => _transaction.Commit()).MustNotHaveHappened();
+
+        [Test]
+        public void It_never_reaches_the_application_insert() =>
+            A.CallTo(() =>
+                    _dataRepository.InsertApplicationAsync(
+                        A<Guid>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string[]>._,
+                        A<string[]>._,
+                        A<string>._,
+                        A<string>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_logs_the_failure_at_error() =>
+            _logger.VerifyLogError("Failed to create OpenIddict client");
+
+        [Test]
+        public void It_logs_no_duplicate_key_warning() => AssertNoDuplicateKeyWarning();
+    }
+
+    [TestFixture]
+    public class Given_a_client_creation_whose_application_insert_throws : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() =>
+                    _dataRepository.InsertApplicationAsync(
+                        A<Guid>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string[]>._,
+                        A<string[]>._,
+                        A<string>._,
+                        A<string>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .Throws(new InvalidOperationException("primary key collision"));
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_unknown() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureUnknown>();
+
+        [Test]
+        public void It_does_not_commit() => A.CallTo(() => _transaction.Commit()).MustNotHaveHappened();
+
+        [Test]
+        public void It_inserts_no_scope_or_client_role() => AssertNothingWrittenAfterTheApplicationInsert();
+
+        [Test]
+        public void It_logs_no_duplicate_key_warning() => AssertNoDuplicateKeyWarning();
+    }
+
+    [TestFixture]
+    public class Given_a_client_creation_whose_scope_insert_throws : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() =>
+                    _dataRepository.InsertScopeAsync(
+                        A<Guid>._,
+                        ScopeName,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .Throws(new InvalidOperationException("duplicate scope name"));
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_unknown() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureUnknown>();
+
+        [Test]
+        public void It_does_not_commit() => A.CallTo(() => _transaction.Commit()).MustNotHaveHappened();
+
+        [Test]
+        public void It_assigns_no_client_role() =>
+            A.CallTo(() =>
+                    _dataRepository.InsertClientRoleAsync(
+                        A<Guid>._,
+                        A<Guid>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_logs_no_duplicate_key_warning() => AssertNoDuplicateKeyWarning();
     }
 }

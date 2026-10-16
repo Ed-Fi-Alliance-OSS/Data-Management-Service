@@ -346,9 +346,7 @@ public class Given_A_Postgresql_Descriptor_Only_Resource_Page
                 "DocumentId" bigint PRIMARY KEY,
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
-                "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "CreatedAt" timestamptz NOT NULL DEFAULT now()
+                "ContentVersion" bigint NOT NULL DEFAULT 1
             );
 
             CREATE TABLE IF NOT EXISTS dms."Descriptor" (
@@ -360,11 +358,15 @@ public class Given_A_Postgresql_Descriptor_Only_Resource_Page
                 "ShortDescription" varchar(75) NOT NULL DEFAULT '',
                 "Description" varchar(1024) NULL,
                 "EffectiveBeginDate" date NULL,
-                "EffectiveEndDate" date NULL
+                "EffectiveEndDate" date NULL,
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE {TestSchema}."DescriptorOnly" (
                 "DocumentId" bigint PRIMARY KEY,
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "GradeLevelDescriptor_DescriptorId" int NULL
             );
             """

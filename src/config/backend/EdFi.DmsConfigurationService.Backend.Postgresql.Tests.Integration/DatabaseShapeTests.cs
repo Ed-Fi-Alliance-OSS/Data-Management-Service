@@ -108,6 +108,8 @@ public class Given_CMS_PostgreSQL_database_shape
         new("CK_DataStoreDerivative_DerivativeType", "DataStoreDerivative", "c", ["DerivativeType"], false),
         new("UX_DataStore_TenantId_Name", "DataStore", "u", ["TenantId", "Name"], true),
         new("UX_ApiClient_ApplicationId_Name", "ApiClient", "u", ["ApplicationId", "Name"], false),
+        new("UX_ApiClient_ClientId", "ApiClient", "u", ["ClientId"], false),
+        new("UX_ApiClient_ClientUuid", "ApiClient", "u", ["ClientUuid"], false),
     ];
 
     private static readonly string[] ExpectedNonUniqueLookupIndexes =
@@ -389,6 +391,8 @@ public class Given_CMS_PostgreSQL_database_shape
             "UX_OpenIddictApplication_ClientId",
             "UX_OpenIddictScope_Name",
             "UX_OpenIddictRole_Name",
+            "UX_ApiClient_ClientId",
+            "UX_ApiClient_ClientUuid",
         ];
 
         foreach (string constraintName in globalUniqueNames)

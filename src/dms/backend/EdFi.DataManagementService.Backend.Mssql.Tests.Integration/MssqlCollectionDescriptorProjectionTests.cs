@@ -205,14 +205,13 @@ internal static class MssqlCollectionDescriptorProjectionFixture
                 [DocumentId] bigint PRIMARY KEY,
                 [DocumentUuid] uniqueidentifier NOT NULL,
                 [ResourceKeyId] smallint NOT NULL DEFAULT 0,
-                [ContentVersion] bigint NOT NULL DEFAULT 1,
-                [ContentLastModifiedAt] datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                [CreatedAt] datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
+                [ContentVersion] bigint NOT NULL DEFAULT 1
             );
 
             CREATE TABLE [dms].[Descriptor] (
                 [DescriptorId] int IDENTITY(1,1) PRIMARY KEY,
                 [DocumentId] bigint NOT NULL UNIQUE REFERENCES [dms].[Document] ([DocumentId]),
+                [ContentLastModifiedAt] datetime2(7) NOT NULL DEFAULT SYSUTCDATETIME(),
                 [ResourceKeyId] smallint NOT NULL,
                 [Namespace] varchar(255) NOT NULL DEFAULT '',
                 [CodeValue] varchar(50) NOT NULL DEFAULT '',
@@ -224,6 +223,7 @@ internal static class MssqlCollectionDescriptorProjectionFixture
 
             CREATE TABLE [{TestSchema}].[School] (
                 [DocumentId] bigint PRIMARY KEY,
+                [ContentLastModifiedAt] datetime2(7) NOT NULL DEFAULT SYSUTCDATETIME(),
                 [SchoolId] int NOT NULL
             );
 

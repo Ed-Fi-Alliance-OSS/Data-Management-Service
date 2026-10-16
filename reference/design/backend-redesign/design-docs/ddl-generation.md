@@ -47,8 +47,8 @@ The DDL generation utility is responsible for database objects derived from the 
   - schema fingerprinting: `dms.EffectiveSchema`, `dms.SchemaComponent`
 - Project-derived DDL for Change Queries and update tracking (see [change-queries.md](change-queries.md) and [update-tracking.md](update-tracking.md)):
   - per-resource `tracked_changes_<schema>.<resource>` tables and the shared `tracked_changes_edfi.Descriptor`
-  - per-resource `ContentVersion` / `ContentLastModifiedAt` mirror columns on every `StorageKind = RelationalTables` root and on `dms.Descriptor`, with supporting indexes (`IX_<Table>_ContentVersion`, `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId`)
-  - `*_Stamp` triggers on resource tables and `dms.Descriptor` (extended with `DocumentStamping.ChangeTracking` where applicable), which stamp `dms.Document`, mirror onto `MirrorStampTargetTable`, and populate `tracked_changes_*`
+  - per-resource `ContentVersion` mirrors and authoritative `ContentLastModifiedAt` columns on every `StorageKind = RelationalTables` root and on `dms.Descriptor`, with supporting indexes (`IX_<Table>_ContentVersion`, `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId`)
+  - `*_Stamp` triggers on resource tables and `dms.Descriptor` (extended with `DocumentStamping.ChangeTracking` where applicable), which advance `dms.Document.ContentVersion`, copy it and generate the authoritative timestamp on `StampTargetTable`, and populate `tracked_changes_*`
   - ReadChanges authorization views
 - Optional CDC objects:
   - the opt-in physical `dms.CdcHeartbeat` object defined by
@@ -388,7 +388,7 @@ See [key-unification.md](key-unification.md) for the normative rules and dialect
 
 Emit per-table triggers derived from ApiSchema that:
 
-- stamp `dms.Document` content tracking columns on writes to resource root/child/extension tables (see [update-tracking.md](update-tracking.md)),
+- advance `dms.Document.ContentVersion` and maintain root/descriptor stamps on writes to resource root/child/extension tables (see [update-tracking.md](update-tracking.md)),
 - maintain `{schema}.{AbstractResource}Identity` tables from participating concrete root tables.
 
 The DDL generator emits only the surviving derived-maintenance objects: document stamping and abstract identity maintenance. Reference resolution and POST upsert detection use the compiled natural-key probe metadata described in [natural-key-resolution.md](natural-key-resolution.md).
@@ -456,9 +456,9 @@ The DDL generation utility is a **provisioning** tool, not a schema migration en
 
 ### Create-only (no migrations / upgrades)
 
-- The utility targets **new/empty** databases only.
-- There is **no upgrade/migration** capability and no support for evolving an already-provisioned database from one `EffectiveSchemaHash` to another.
-- The utility is not required to preserve data or compute diffs/reconcile drift for previously provisioned databases.
+- Ordinary `ddl provision` targets **new/empty** databases and same-hash reruns.
+- Ordinary provisioning has **no upgrade/migration** capability and cannot evolve an already-provisioned database from one `EffectiveSchemaHash` to another. The separate, bounded `ddl re-stamp` metadata operation described below records an independently completed physical migration.
+- Ordinary provisioning is not required to compute diffs/reconcile drift for previously provisioned databases; same-hash reruns retain the preservation safeguards defined in this design.
 
 DMS-1404 keeps the current 8.1 `RelationalMappingVersion` at `v3`, following the once-per-release
 cadence. `EffectiveSchemaHash` excludes generated DDL and mapping-set output, so a mapping-only
@@ -471,13 +471,14 @@ Checkpoint require a reviewed exact-schema `ExpectedModelManifestPath`; document
 stamps remain intact. An unchanged legacy dump restore is not the conversion.
 
 The [DMS-1404 handoff](../../../../docs/RELATIONAL-BACKEND.md#descriptor-catalog-checks-and-template-handoff)
-retains authoritative `dms.Document.ContentVersion` and `ContentLastModifiedAt` and their
-root/descriptor mirrors. DMS-1401 owns the later timestamp change and planned combined
+historically retained authoritative `dms.Document.ContentVersion` and `ContentLastModifiedAt`
+and their root/descriptor mirrors. The combined DMS-1401 schema retains only the document
+version and makes the root/descriptor timestamp authoritative. DMS-1401 also owns the combined
 Minimal/Populated source/restore matrix on both engines for supported template Data Standards,
 plus affected prerelease consumer pins. Reuse the descriptor catalog assertions before API
 probes and alongside timestamp checks. DMS-1404 closes after its own implementation, fixtures,
 fresh-schema checks, tooling and documentation; shared package gates precede DMS-1401 closure.
-Use fresh DMS-1404 DDL until compatible rebuilt templates pass verification and defer
+Use the combined current DDL until compatible rebuilt templates pass verification and defer
 template-backed deployment. Final release production/publication, promotion and deployment
 pins remain in the v8.1 release workflow. No version upgrade or benchmark is required here.
 
@@ -515,6 +516,17 @@ reconciler. Feature-specific phase-zero checks remain bounded to safety-critical
 fingerprints, singleton preservation, known incompatible legacy artifacts, and required
 provisioning security prerequisites. Other incompatible existing objects may fail through
 ordinary provider DDL execution inside the provisioning transaction.
+
+An operator may use the separate `api-schema-tools ddl re-stamp` command after an
+independently designed and validated physical migration to update a compatible fingerprint
+transition. This bounded metadata operation validates the existing singleton, resource-key
+seed, and schema-component rows and atomically updates the effective hash and child hash
+associations. It does not execute physical DDL, certify physical schema shape or CDC
+continuity, or change ordinary provisioning: `ddl provision` continues to reject a different
+hash unless the explicit re-stamp operation has already recorded the validated target. The
+operator must stop services and other writers, run the physical migration, re-stamp, run
+ordinary provisioning separately, and restart services. Fresh provisioning remains the
+normal path; this is not a named-release upgrade recipe or automatic rollback guarantee.
 
 ### Seed data semantics
 

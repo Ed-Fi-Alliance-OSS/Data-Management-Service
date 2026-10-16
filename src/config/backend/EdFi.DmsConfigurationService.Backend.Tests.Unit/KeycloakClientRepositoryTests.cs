@@ -2712,6 +2712,269 @@ public class KeycloakClientRepositoryTests
     }
 
     /// <summary>
+    /// Keycloak refuses a clientId already registered in the realm with 409 and persists nothing,
+    /// so the creation is classified as a duplicate key with nothing to compensate and no service
+    /// account to provision. Fails against the implementation that routed every create-call
+    /// status through the generic provider failure.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_client_creation_whose_create_call_reports_a_conflict : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() =>
+                    _keycloakClientFacade.CreateClientAndRetrieveClientIdAsync("edfi", A<Client>.Ignored)
+                )
+                .Throws(CreateFlurlHttpException(HttpStatusCode.Conflict, HttpMethod.Post));
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_duplicate_client_id() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureDuplicateClientId>();
+
+        [Test]
+        public void It_attempts_no_cleanup()
+        {
+            A.CallTo(() => _keycloakClientFacade.DeleteClientAsync(A<string>.Ignored, A<string>.Ignored))
+                .MustNotHaveHappened();
+            _deletedUuids.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_provisions_no_service_account_role()
+        {
+            A.CallTo(() =>
+                    _keycloakClientFacade.GetUserForServiceAccountAsync(A<string>.Ignored, A<string>.Ignored)
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() =>
+                    _keycloakClientFacade.AddRealmRoleMappingsToUserAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<IEnumerable<Role>>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+            _roleMappings.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_records_the_conflict_as_a_warning_with_the_client_identifier() =>
+            _logger
+                .LoggedEntries()
+                .Should()
+                .ContainSingle(entry =>
+                    entry.Level == LogLevel.Warning
+                    && entry.Message.Contains("no client was created")
+                    && entry.Message.Contains(ClientKey)
+                );
+
+        [Test]
+        public void It_logs_nothing_at_error() =>
+            _logger.LoggedEntries().Should().NotContain(entry => entry.Level == LogLevel.Error);
+
+        [Test]
+        public void It_attaches_no_exception_to_any_log_entry() =>
+            _logger.LoggedEntries().Should().AllSatisfy(entry => entry.Exception.Should().BeNull());
+
+        [Test]
+        public void It_logs_no_secret() => AssertNoSecretLogged();
+    }
+
+    [TestFixture]
+    public class Given_a_create_call_conflict_whose_client_id_needs_sanitizing : CreateClientTestBase
+    {
+        private const string RawClientId = "key\r\n<b>{x}</b>";
+        private const string SanitizedClientId = "keybx/b";
+
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() =>
+                    _keycloakClientFacade.CreateClientAndRetrieveClientIdAsync("edfi", A<Client>.Ignored)
+                )
+                .Throws(CreateFlurlHttpException(HttpStatusCode.Conflict, HttpMethod.Post));
+
+            await ActCreateAsync(RawClientId);
+        }
+
+        [Test]
+        public void It_returns_failure_duplicate_client_id() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureDuplicateClientId>();
+
+        [Test]
+        public void It_logs_the_sanitized_client_identifier() =>
+            _logger
+                .LoggedEntries()
+                .Should()
+                .ContainSingle(entry =>
+                    entry.Level == LogLevel.Warning
+                    && entry.Message.Contains("no client was created")
+                    && entry.Message.Contains(SanitizedClientId)
+                );
+
+        [Test]
+        public void It_logs_none_of_the_raw_characters() =>
+            _logger
+                .LoggedMessages()
+                .Should()
+                .OnlyContain(message =>
+                    !message.Contains('\r')
+                    && !message.Contains('\n')
+                    && !message.Contains('<')
+                    && !message.Contains('>')
+                    && !message.Contains('{')
+                    && !message.Contains('}')
+                );
+    }
+
+    /// <summary>
+    /// A conflict raised while creating the realm role happens before the client is created, so
+    /// it is not a duplicate key: it keeps the preflight's provider-failure classification and
+    /// reports that creation was not attempted.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_client_creation_whose_role_creation_reports_a_conflict : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.GetRolesAsync("edfi"))
+                .Returns(Task.FromResult<IEnumerable<Role>>([]));
+            A.CallTo(() => _keycloakClientFacade.CreateRoleAsync("edfi", A<Role>.Ignored))
+                .Throws(CreateFlurlHttpException(HttpStatusCode.Conflict, HttpMethod.Post));
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_identity_provider() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureIdentityProvider>();
+
+        [Test]
+        public void It_creates_no_client() => AssertNoClientCreated();
+
+        [Test]
+        public void It_reports_that_creation_was_not_attempted()
+        {
+            _logger.VerifyLogError("creation not attempted");
+            _logger.VerifyNoLog(LogLevel.Warning, "no client was created");
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_client_creation_whose_scope_creation_reports_a_conflict : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.GetClientScopesAsync("edfi"))
+                .Returns(Task.FromResult<IEnumerable<ClientScope>>([]));
+            A.CallTo(() => _keycloakClientFacade.CreateClientScopeAsync("edfi", A<ClientScope>.Ignored))
+                .Throws(CreateFlurlHttpException(HttpStatusCode.Conflict, HttpMethod.Post));
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_identity_provider() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureIdentityProvider>();
+
+        [Test]
+        public void It_creates_no_client() => AssertNoClientCreated();
+
+        [Test]
+        public void It_reports_that_creation_was_not_attempted()
+        {
+            _logger.VerifyLogError("creation not attempted");
+            _logger.VerifyNoLog(LogLevel.Warning, "no client was created");
+        }
+    }
+
+    /// <summary>
+    /// A conflict raised after the provider has reported the created identifier is not a duplicate
+    /// key either: the client exists, so the DMS-1365 compensation deletes it and the failure
+    /// keeps its provider classification.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_client_creation_whose_service_account_lookup_reports_a_conflict
+        : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _keycloakClientFacade.GetUserForServiceAccountAsync("edfi", A<string>.Ignored))
+                .Throws(CreateFlurlHttpException(HttpStatusCode.Conflict));
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_identity_provider() =>
+            _result.Should().BeOfType<ClientCreateResult.FailureIdentityProvider>();
+
+        [Test]
+        public void It_deletes_the_client_it_created()
+        {
+            _deletedUuids.Should().Equal(CreatedUuid());
+            _providerClients.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_logs_the_service_account_lookup_phase() =>
+            _logger.VerifyLogError("service-account-lookup");
+
+        [Test]
+        public void It_does_not_report_a_duplicate_key() =>
+            _logger.VerifyNoLog(LogLevel.Warning, "no client was created");
+
+        [Test]
+        public void It_never_recreates_the_client() => AssertNoRecreationOrCredentialReissue();
+    }
+
+    /// <summary>
+    /// Only a 409 is a duplicate key. Any other refusal of the creation call keeps the generic
+    /// provider classification with the creation outcome reported as unconfirmed.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_client_creation_whose_create_call_is_forbidden : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() =>
+                    _keycloakClientFacade.CreateClientAndRetrieveClientIdAsync("edfi", A<Client>.Ignored)
+                )
+                .Throws(CreateFlurlHttpException(HttpStatusCode.Forbidden, HttpMethod.Post));
+
+            await ActCreateAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_identity_provider_carrying_the_status() =>
+            _result
+                .Should()
+                .BeOfType<ClientCreateResult.FailureIdentityProvider>()
+                .Which.IdentityProviderError.Should()
+                .BeOfType<IdentityProviderError.Forbidden>();
+
+        [Test]
+        public void It_attempts_no_cleanup() =>
+            A.CallTo(() => _keycloakClientFacade.DeleteClientAsync(A<string>.Ignored, A<string>.Ignored))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_reports_the_creation_outcome_as_unconfirmed()
+        {
+            _logger.VerifyLogError("creation outcome unconfirmed");
+            _logger.VerifyNoLog(LogLevel.Warning, "no client was created");
+        }
+    }
+
+    /// <summary>
     /// Client-derived text reaches the failure logs, so it passes through the sanitizer first:
     /// line breaks and markup characters cannot be used to forge or break log entries.
     /// </summary>

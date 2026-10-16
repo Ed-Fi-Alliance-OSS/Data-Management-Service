@@ -123,9 +123,9 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                         keyColumns,
                         isRootTable ? identityProjectionColumns : [],
                         new TriggerKindParameters.DocumentStamping(),
-                        // The mirror UPDATE targets the owning resource root: the source table itself for
+                        // Stamp maintenance targets the owning resource root: the source table itself for
                         // the root trigger, the resource root for child / collection / _ext triggers.
-                        MirrorStampTargetTable: rootTable.Table
+                        StampTargetTable: rootTable.Table
                     )
                 );
             }
@@ -278,7 +278,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 // workset must be populated first.
                 [],
                 new TriggerKindParameters.DocumentStamping(),
-                MirrorStampTargetTable: _descriptorTable
+                StampTargetTable: _descriptorTable
             )
         );
     }

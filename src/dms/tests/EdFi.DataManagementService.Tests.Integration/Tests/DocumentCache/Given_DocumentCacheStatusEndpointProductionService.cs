@@ -286,8 +286,8 @@ public class Given_DocumentCacheStatusEndpointProductionService
                     configuration.AddInMemoryCollection(
                         new Dictionary<string, string?>
                         {
-                            ["AppSettings:UseApiSchemaPath"] = "true",
-                            ["AppSettings:ApiSchemaPath"] = _fixture.ApiSchemaDirectory,
+                            ["AppSettings:ApiSchema:UseCustomPath"] = "true",
+                            ["AppSettings:ApiSchema:Path"] = _fixture.ApiSchemaDirectory,
                             ["AppSettings:StartupStatusFilePath"] = _startupStatusFilePath,
                             ["AppSettings:Datastore"] = "postgresql",
                             ["AppSettings:BypassAuthorization"] = "true",
@@ -432,11 +432,13 @@ public class Given_DocumentCacheStatusEndpointProductionService
             SELECT d."DocumentId",
                    d."DocumentUuid",
                    d."ContentVersion",
-                   d."ContentLastModifiedAt",
+                   s."ContentLastModifiedAt",
                    rk."ProjectName",
                    rk."ResourceName",
                    rk."ResourceVersion"
             FROM "dms"."Document" d
+            INNER JOIN "edfi"."Student" s
+                ON s."DocumentId" = d."DocumentId"
             INNER JOIN "dms"."ResourceKey" rk
                 ON rk."ResourceKeyId" = d."ResourceKeyId"
             WHERE d."DocumentUuid" = @documentUuid;
@@ -572,21 +574,18 @@ public class Given_DocumentCacheStatusEndpointProductionService
             INSERT INTO "dms"."Document" (
                 "DocumentUuid",
                 "ResourceKeyId",
-                "ContentVersion",
-                "ContentLastModifiedAt"
+                "ContentVersion"
             )
             VALUES (
                 @documentUuid,
                 @resourceKeyId,
-                @contentVersion,
-                @lastModifiedAt
+                @contentVersion
             )
             RETURNING "DocumentId";
             """,
             new NpgsqlParameter("documentUuid", NpgsqlDbType.Uuid) { Value = Guid.NewGuid() },
             new NpgsqlParameter("resourceKeyId", NpgsqlDbType.Smallint) { Value = resourceKeyId },
-            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = 10L },
-            new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz) { Value = firstEnqueuedAt }
+            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = 10L }
         );
 
         long documentId = Convert.ToInt64(rows.Single()["DocumentId"]);

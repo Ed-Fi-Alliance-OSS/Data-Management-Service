@@ -252,47 +252,58 @@ public sealed class RelationalDocumentStoreRepository(
         return result;
     }
 
-    public Task<GetResult> GetDocumentById(
+    public async Task<GetResult> GetDocumentById(
         IGetRequest getRequest,
         CancellationToken cancellationToken = default
     )
     {
         ArgumentNullException.ThrowIfNull(getRequest);
 
-        if (getRequest.ReadMode != RelationalGetRequestReadMode.ExternalResponse)
+        try
         {
-            return GetDocumentByIdRelationalAsync(getRequest, cancellationToken);
-        }
-
-        var resource = RelationalWriteSupport.ToQualifiedResourceName(getRequest.ResourceInfo);
-
-        if (getRequest.MappingSet.TryGetDescriptorResourceModel(resource, out _))
-        {
-            return GetDocumentByIdRelationalAsync(getRequest, cancellationToken);
-        }
-
-        return _readAccelerationCoordinator.GetByIdAsync(
-            new DocumentCacheReadAccelerationGetByIdRequest(
-                getRequest.TenantKey,
-                getRequest.MappingSet,
-                resource,
-                getRequest.DocumentUuid,
-                DocumentCacheReadAccelerationResourceKind.Resource,
-                fallbackCancellationToken =>
-                    GetDocumentByIdRelationalAsync(getRequest, fallbackCancellationToken),
-                selectionCancellationToken =>
-                    SelectGetByIdReadAccelerationCandidateAsync(
-                        getRequest,
-                        resource,
-                        selectionCancellationToken
-                    )
-            )
+            if (getRequest.ReadMode != RelationalGetRequestReadMode.ExternalResponse)
             {
-                ReadableProfileProjectionContext = getRequest.ReadableProfileProjectionContext,
-                ResponseContentCoding = getRequest.ResponseContentCoding,
-            },
-            cancellationToken
-        );
+                return await GetDocumentByIdRelationalAsync(getRequest, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            var resource = RelationalWriteSupport.ToQualifiedResourceName(getRequest.ResourceInfo);
+
+            if (getRequest.MappingSet.TryGetDescriptorResourceModel(resource, out _))
+            {
+                return await GetDocumentByIdRelationalAsync(getRequest, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            return await _readAccelerationCoordinator
+                .GetByIdAsync(
+                    new DocumentCacheReadAccelerationGetByIdRequest(
+                        getRequest.TenantKey,
+                        getRequest.MappingSet,
+                        resource,
+                        getRequest.DocumentUuid,
+                        DocumentCacheReadAccelerationResourceKind.Resource,
+                        fallbackCancellationToken =>
+                            GetDocumentByIdRelationalAsync(getRequest, fallbackCancellationToken),
+                        selectionCancellationToken =>
+                            SelectGetByIdReadAccelerationCandidateAsync(
+                                getRequest,
+                                resource,
+                                selectionCancellationToken
+                            )
+                    )
+                    {
+                        ReadableProfileProjectionContext = getRequest.ReadableProfileProjectionContext,
+                        ResponseContentCoding = getRequest.ResponseContentCoding,
+                    },
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (HydrationConsistencyException ex)
+        {
+            return new GetResult.UnknownFailure(ex.Message);
+        }
     }
 
     private Task<GetResult> GetDocumentByIdRelationalAsync(
@@ -1232,44 +1243,53 @@ public sealed class RelationalDocumentStoreRepository(
     {
         ArgumentNullException.ThrowIfNull(queryRequest);
 
-        var resource = RelationalWriteSupport.ToQualifiedResourceName(queryRequest.ResourceInfo);
-
-        if (queryRequest.MappingSet.TryGetDescriptorResourceModel(resource, out _))
+        try
         {
-            return await QueryDocumentsRelationalAsync(queryRequest, cancellationToken).ConfigureAwait(false);
-        }
+            var resource = RelationalWriteSupport.ToQualifiedResourceName(queryRequest.ResourceInfo);
 
-        // Cursor pages select their keyset through the relational path rather than read acceleration. A
-        // cursor walk depends on every page reporting the selected-keyset boundary its successor resumes
-        // from, and only traditional paging is exercised against the read-acceleration path, so cursor
-        // selection keeps to the path whose boundary reporting is covered end to end.
-        if (queryRequest.Paging is CollectionPaging.Cursor)
-        {
-            return await QueryDocumentsRelationalAsync(queryRequest, cancellationToken).ConfigureAwait(false);
-        }
+            if (queryRequest.MappingSet.TryGetDescriptorResourceModel(resource, out _))
+            {
+                return await QueryDocumentsRelationalAsync(queryRequest, cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
-        return await _readAccelerationCoordinator
-            .QueryAsync(
-                new DocumentCacheReadAccelerationQueryRequest(
-                    queryRequest.TenantKey,
-                    queryRequest.MappingSet,
-                    resource,
-                    DocumentCacheReadAccelerationResourceKind.Resource,
-                    fallbackCancellationToken =>
-                        QueryDocumentsRelationalAsync(queryRequest, fallbackCancellationToken),
-                    selectionCancellationToken =>
-                        SelectQueryReadAccelerationCandidatePageAsync(
-                            queryRequest,
-                            selectionCancellationToken
-                        )
+            // Cursor pages select their keyset through the relational path rather than read acceleration. A
+            // cursor walk depends on every page reporting the selected-keyset boundary its successor resumes
+            // from, and only traditional paging is exercised against the read-acceleration path, so cursor
+            // selection keeps to the path whose boundary reporting is covered end to end.
+            if (queryRequest.Paging is CollectionPaging.Cursor)
+            {
+                return await QueryDocumentsRelationalAsync(queryRequest, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            return await _readAccelerationCoordinator
+                .QueryAsync(
+                    new DocumentCacheReadAccelerationQueryRequest(
+                        queryRequest.TenantKey,
+                        queryRequest.MappingSet,
+                        resource,
+                        DocumentCacheReadAccelerationResourceKind.Resource,
+                        fallbackCancellationToken =>
+                            QueryDocumentsRelationalAsync(queryRequest, fallbackCancellationToken),
+                        selectionCancellationToken =>
+                            SelectQueryReadAccelerationCandidatePageAsync(
+                                queryRequest,
+                                selectionCancellationToken
+                            )
+                    )
+                    {
+                        ReadableProfileProjectionContext = queryRequest.ReadableProfileProjectionContext,
+                        ResponseContentCoding = queryRequest.ResponseContentCoding,
+                    },
+                    cancellationToken
                 )
-                {
-                    ReadableProfileProjectionContext = queryRequest.ReadableProfileProjectionContext,
-                    ResponseContentCoding = queryRequest.ResponseContentCoding,
-                },
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+                .ConfigureAwait(false);
+        }
+        catch (HydrationConsistencyException ex)
+        {
+            return new QueryResult.UnknownFailure(ex.Message);
+        }
     }
 
     private async Task<QueryResult> QueryDocumentsRelationalAsync(
@@ -4533,7 +4553,7 @@ public sealed class RelationalDocumentStoreRepository(
         for (var attemptIndex = 0; attemptIndex < GetByIdReadBoundaryAttemptCount; attemptIndex++)
         {
             var targetLookupResult = await _readTargetLookupService
-                .ResolveForGetByIdAsync(
+                .ResolveForCacheCandidateAsync(
                     mappingSet,
                     resource,
                     relationalGetRequest.DocumentUuid,
@@ -4552,7 +4572,10 @@ public sealed class RelationalDocumentStoreRepository(
                 );
             }
 
-            if (targetLookupResult is not RelationalReadTargetLookupResult.ExistingDocument existingDocument)
+            if (
+                targetLookupResult
+                is not RelationalReadTargetLookupResult.ExistingDocumentWithTimestamp existingDocument
+            )
             {
                 throw new InvalidOperationException(
                     $"Relational repository GET target lookup returned unsupported result type '{targetLookupResult.GetType().Name}'."

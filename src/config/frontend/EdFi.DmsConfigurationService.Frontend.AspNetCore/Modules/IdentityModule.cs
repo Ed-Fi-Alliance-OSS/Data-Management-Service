@@ -119,6 +119,12 @@ public class IdentityModule : IEndpointModule
                                     failureIdentityProvider.IdentityProviderError.FailureMessage,
                                     httpContext.TraceIdentifier
                                 ),
+                            // The uniqueness precheck above is not atomic: a client registered
+                            // between it and the creation reaches the provider, which refuses the
+                            // key. That is the condition the precheck reports, so it is answered
+                            // with the same validation failure rather than the insert endpoints'
+                            // 409 (DMS-1529 D-5).
+                            ClientCreateResult.FailureDuplicateClientId => throw DuplicateClientId(),
                             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
                         };
                     }
@@ -131,16 +137,7 @@ public class IdentityModule : IEndpointModule
                 );
                 if (clientExists)
                 {
-                    var validationFailures = new List<ValidationFailure>
-                    {
-                        new()
-                        {
-                            PropertyName = "ClientId",
-                            ErrorMessage =
-                                "Client with the same Client Id already exists. Please provide different Client Id.",
-                        },
-                    };
-                    throw new ValidationException(validationFailures);
+                    throw DuplicateClientId();
                 }
                 return true;
             }
@@ -148,6 +145,20 @@ public class IdentityModule : IEndpointModule
 
         return FailureResults.Authorization(httpContext.TraceIdentifier, ["Registration is disabled."]);
     }
+
+    /// <summary>
+    /// The registration endpoint's duplicate-client answer, shared by the uniqueness precheck and
+    /// the provider-detected conflict so both paths produce the same 400 body.
+    /// </summary>
+    private static ValidationException DuplicateClientId() =>
+        new([
+            new ValidationFailure
+            {
+                PropertyName = "ClientId",
+                ErrorMessage =
+                    "Client with the same Client Id already exists. Please provide different Client Id.",
+            },
+        ]);
 
     private const string BasicAuthScheme = "basic ";
 

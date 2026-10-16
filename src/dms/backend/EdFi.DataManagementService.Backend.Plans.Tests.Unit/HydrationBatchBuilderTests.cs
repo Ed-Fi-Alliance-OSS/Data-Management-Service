@@ -137,7 +137,7 @@ public class Given_HydrationBatchBuilder_With_Single_Keyset
             "d.\"DocumentId\"",
             "d.\"DocumentUuid\"",
             "d.\"ContentVersion\"",
-            "d.\"ContentLastModifiedAt\"",
+            "r.\"ContentLastModifiedAt\"",
             "d.\"ResourceKeyId\""
         );
         AssertAppearsInOrder(
@@ -145,7 +145,7 @@ public class Given_HydrationBatchBuilder_With_Single_Keyset
             "d.[DocumentId]",
             "d.[DocumentUuid]",
             "d.[ContentVersion]",
-            "d.[ContentLastModifiedAt]",
+            "r.[ContentLastModifiedAt]",
             "d.[ResourceKeyId]"
         );
     }
@@ -352,9 +352,10 @@ public class Given_HydrationBatchBuilder_With_Pgsql_Single_Document_Fast_Path
                     d."DocumentId",
                     d."DocumentUuid",
                     d."ContentVersion",
-                    d."ContentLastModifiedAt",
+                    r."ContentLastModifiedAt",
                     d."ResourceKeyId"
                 FROM "dms"."Document" d
+                INNER JOIN "edfi"."School" r ON r."DocumentId" = d."DocumentId"
                 WHERE d."DocumentId" = @DocumentId
                 ORDER BY d."DocumentId";
                 """
@@ -702,9 +703,10 @@ public class Given_HydrationBatchBuilder_With_Mssql_Single_Document_Fast_Path
                     d.[DocumentId],
                     d.[DocumentUuid],
                     d.[ContentVersion],
-                    d.[ContentLastModifiedAt],
+                    r.[ContentLastModifiedAt],
                     d.[ResourceKeyId]
                 FROM [dms].[Document] d
+                INNER JOIN [edfi].[School] r ON r.[DocumentId] = d.[DocumentId]
                 WHERE d.[DocumentId] = @DocumentId
                 ORDER BY d.[DocumentId];
                 """
@@ -1140,6 +1142,53 @@ public class Given_HydrationBatchBuilder_With_Compiled_Query_Keyset
         _mssqlBatch.Should().Contain("WITH page_ids AS (");
         _mssqlBatch.Should().Contain("FROM page_ids;");
     }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_use_one_root_joined_metadata_select_for_empty_single_and_multi_row_pages(
+        SqlDialect dialect
+    )
+    {
+        var plan = BuildTestReadPlan(dialect);
+        var queryPlan = new PageDocumentIdSqlCompiler(dialect).Compile(
+            new PageDocumentIdQuerySpec(
+                RootTable: plan.Model.Root.Table,
+                Predicates: [],
+                UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
+                Mode: new PageCandidateMode.Traditional(IncludeTotalCountSql: false)
+            )
+        );
+        var timestampColumn =
+            dialect == SqlDialect.Pgsql ? "r.\"ContentLastModifiedAt\"" : "r.[ContentLastModifiedAt]";
+        var documentTimestampColumn =
+            dialect == SqlDialect.Pgsql ? "d.\"ContentLastModifiedAt\"" : "d.[ContentLastModifiedAt]";
+        var rootJoin =
+            dialect == SqlDialect.Pgsql
+                ? "INNER JOIN \"edfi\".\"School\" r ON r.\"DocumentId\" = d.\"DocumentId\""
+                : "INNER JOIN [edfi].[School] r ON r.[DocumentId] = d.[DocumentId]";
+
+        foreach (var pageSize in new long[] { 0, 1, 25 })
+        {
+            var keyset = new PageKeysetSpec.Query(
+                queryPlan,
+                new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = pageSize },
+                PageOrderingMode.DocumentId
+            );
+
+            foreach (
+                var batch in new[]
+                {
+                    HydrationBatchBuilder.Build(plan, keyset, dialect),
+                    HydrationBatchBuilder.BuildCandidateMetadataBatch(plan, keyset, dialect),
+                }
+            )
+            {
+                batch.Split(timestampColumn, StringSplitOptions.None).Should().HaveCount(2);
+                batch.Split(rootJoin, StringSplitOptions.None).Should().HaveCount(2);
+                batch.Should().NotContain(documentTimestampColumn);
+            }
+        }
+    }
 }
 
 [TestFixture]
@@ -1533,6 +1582,45 @@ public class Given_HydrationBatchBuilder_With_Document_Reference_Lookup_Plan
                 SourcesInOrder: []
             ),
         ];
+
+    [TestCase(SqlDialect.Pgsql, false)]
+    [TestCase(SqlDialect.Pgsql, true)]
+    [TestCase(SqlDialect.Mssql, false)]
+    [TestCase(SqlDialect.Mssql, true)]
+    public void It_should_bracket_all_representation_queries_with_document_versions(
+        SqlDialect dialect,
+        bool fastPath
+    )
+    {
+        var plan = BuildTestReadPlan(
+            dialect,
+            BuildDescriptorPlans()
+                .Select(projection =>
+                    projection with
+                    {
+                        SelectBySingleDocumentSql = projection.SelectByKeysetSql,
+                    }
+                )
+                .ToArray(),
+            BuildLookupPlan() with
+            {
+                SelectBySingleDocumentSql = LookupSqlMarker,
+            },
+            includeSingleDocumentSql: true
+        );
+        string batch = HydrationBatchBuilder.BuildConsistent(
+            plan,
+            new PageKeysetSpec.Single(42),
+            dialect,
+            new HydrationExecutionOptions(UseSingleDocumentFastPath: fastPath)
+        );
+        int leading = batch.IndexOf("SELECT d.", StringComparison.Ordinal);
+        int trailing = batch.LastIndexOf("SELECT d.", StringComparison.Ordinal);
+        leading.Should().BeLessThan(batch.IndexOf("ContentLastModifiedAt", StringComparison.Ordinal));
+        AssertAppearsInOrder(batch, FirstDescriptorSqlMarker, SecondDescriptorSqlMarker, LookupSqlMarker);
+        trailing.Should().BeGreaterThan(batch.IndexOf(LookupSqlMarker, StringComparison.Ordinal));
+        batch[leading..(batch.IndexOf(';', leading) + 1)].Should().Be(batch[trailing..].Trim());
+    }
 
     [Test]
     public void It_should_emit_lookup_sql_after_descriptor_projections_when_plan_carries_lookup()

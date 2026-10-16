@@ -51,13 +51,13 @@ public class Given_A_Page_With_Multiple_Documents_Mssql
                 DocumentId bigint PRIMARY KEY,
                 DocumentUuid uniqueidentifier NOT NULL,
                 ResourceKeyId smallint NOT NULL DEFAULT 0,
-                ContentVersion bigint NOT NULL DEFAULT 1,
-                ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                CreatedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
+                ContentVersion bigint NOT NULL DEFAULT 1
             );
 
             CREATE TABLE hydtest.School (
                 DocumentId bigint PRIMARY KEY,
+                ContentVersion bigint NOT NULL DEFAULT 1,
+                ContentLastModifiedAt datetime2(7) NOT NULL DEFAULT sysutcdatetime(),
                 SchoolId int NOT NULL
             );
 
@@ -87,10 +87,10 @@ public class Given_A_Page_With_Multiple_Documents_Mssql
                 (101, 'aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa', 10),
                 (102, 'bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb', 20);
 
-            INSERT INTO hydtest.School (DocumentId, SchoolId)
+            INSERT INTO hydtest.School (DocumentId, SchoolId, ContentVersion, ContentLastModifiedAt)
             VALUES
-                (101, 255901),
-                (102, 255902);
+                (101, 255901, 10, '2026-01-02T03:04:05+00:00'),
+                (102, 255902, 20, '2026-02-03T04:05:06+00:00');
 
             INSERT INTO hydtest.SchoolAddress (CollectionItemId, School_DocumentId, Ordinal, City)
             VALUES
@@ -177,6 +177,14 @@ public class Given_A_Page_With_Multiple_Documents_Mssql
     {
         _result.DocumentMetadata[0].ContentVersion.Should().Be(10);
         _result.DocumentMetadata[1].ContentVersion.Should().Be(20);
+        _result
+            .DocumentMetadata[0]
+            .ContentLastModifiedAt.Should()
+            .Be(new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero));
+        _result
+            .DocumentMetadata[1]
+            .ContentLastModifiedAt.Should()
+            .Be(new DateTimeOffset(2026, 2, 3, 4, 5, 6, TimeSpan.Zero));
     }
 
     [Test]
@@ -314,13 +322,13 @@ public class Given_A_Single_DocumentId_Keyset_Mssql
                 DocumentId bigint PRIMARY KEY,
                 DocumentUuid uniqueidentifier NOT NULL,
                 ResourceKeyId smallint NOT NULL DEFAULT 0,
-                ContentVersion bigint NOT NULL DEFAULT 1,
-                ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                CreatedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
+                ContentVersion bigint NOT NULL DEFAULT 1
             );
 
             CREATE TABLE hydsingle.School (
                 DocumentId bigint PRIMARY KEY,
+                ContentVersion bigint NOT NULL DEFAULT 1,
+                ContentLastModifiedAt datetime2(7) NOT NULL DEFAULT sysutcdatetime(),
                 SchoolId int NOT NULL
             );
 
@@ -465,13 +473,13 @@ public class Given_A_Query_With_TotalCount_Requested_Mssql
                 DocumentId bigint PRIMARY KEY,
                 DocumentUuid uniqueidentifier NOT NULL,
                 ResourceKeyId smallint NOT NULL DEFAULT 0,
-                ContentVersion bigint NOT NULL DEFAULT 1,
-                ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                CreatedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
+                ContentVersion bigint NOT NULL DEFAULT 1
             );
 
             CREATE TABLE hydcount.School (
                 DocumentId bigint PRIMARY KEY,
+                ContentVersion bigint NOT NULL DEFAULT 1,
+                ContentLastModifiedAt datetime2(7) NOT NULL DEFAULT sysutcdatetime(),
                 SchoolId int NOT NULL
             );
 
@@ -603,13 +611,13 @@ public class Given_A_Reference_Bearing_Resource_Mssql
                 DocumentId bigint PRIMARY KEY,
                 DocumentUuid uniqueidentifier NOT NULL,
                 ResourceKeyId smallint NOT NULL DEFAULT 0,
-                ContentVersion bigint NOT NULL DEFAULT 1,
-                ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                CreatedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
+                ContentVersion bigint NOT NULL DEFAULT 1
             );
 
             CREATE TABLE hydref.StudentSchoolAssociation (
                 DocumentId bigint PRIMARY KEY,
+                ContentVersion bigint NOT NULL DEFAULT 1,
+                ContentLastModifiedAt datetime2(7) NOT NULL DEFAULT sysutcdatetime(),
                 School_DocumentId bigint NULL,
                 School_SchoolId bigint NULL,
                 Calendar_DocumentId bigint NULL,
@@ -833,9 +841,7 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
                 DocumentId bigint PRIMARY KEY,
                 DocumentUuid uniqueidentifier NOT NULL,
                 ResourceKeyId smallint NOT NULL DEFAULT 0,
-                ContentVersion bigint NOT NULL DEFAULT 1,
-                ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                CreatedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
+                ContentVersion bigint NOT NULL DEFAULT 1
             );
 
             CREATE TABLE dms.Descriptor (
@@ -848,11 +854,15 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
                 Description varchar(1024) NULL,
                 EffectiveBeginDate date NULL,
                 EffectiveEndDate date NULL,
+                ContentVersion bigint NOT NULL DEFAULT 1,
+                ContentLastModifiedAt datetime2(7) NOT NULL DEFAULT sysutcdatetime(),
                 Uri AS (Namespace + '#' + CodeValue) PERSISTED
             );
 
             CREATE TABLE hydfastpath.StudentSchoolAssociation (
                 DocumentId bigint PRIMARY KEY,
+                ContentVersion bigint NOT NULL DEFAULT 1,
+                ContentLastModifiedAt datetime2(7) NOT NULL DEFAULT sysutcdatetime(),
                 School_DocumentId bigint NULL,
                 School_SchoolId bigint NULL,
                 EntryGradeLevelDescriptor_DescriptorId int NULL
@@ -1337,13 +1347,13 @@ public class Given_A_Mssql_Query_Keyset_That_Returns_Its_Selected_Ids
                 DocumentId bigint PRIMARY KEY,
                 DocumentUuid uniqueidentifier NOT NULL,
                 ResourceKeyId smallint NOT NULL DEFAULT 0,
-                ContentVersion bigint NOT NULL DEFAULT 1,
-                ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                CreatedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
+                ContentVersion bigint NOT NULL DEFAULT 1
             );
 
             CREATE TABLE hydselected.School (
                 DocumentId bigint PRIMARY KEY,
+                ContentVersion bigint NOT NULL DEFAULT 1,
+                ContentLastModifiedAt datetime2(7) NOT NULL DEFAULT sysutcdatetime(),
                 SchoolId int NOT NULL
             );
 

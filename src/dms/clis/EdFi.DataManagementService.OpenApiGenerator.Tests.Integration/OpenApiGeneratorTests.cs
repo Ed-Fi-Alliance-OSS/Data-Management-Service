@@ -464,7 +464,7 @@ public class OpenApiGeneratorTests
                                     "pageSize": {
                                         "in": "query",
                                         "name": "pageSize",
-                                        "schema": { "type": "integer" }
+                                        "schema": { "default": 25, "type": "integer" }
                                     },
                                     "pageToken": {
                                         "in": "query",
@@ -495,7 +495,7 @@ public class OpenApiGeneratorTests
                                     "pageSize": {
                                         "in": "query",
                                         "name": "pageSize",
-                                        "schema": { "type": "integer" }
+                                        "schema": { "default": 25, "type": "integer" }
                                     },
                                     "pageToken": {
                                         "in": "query",
@@ -593,12 +593,22 @@ public class OpenApiGeneratorTests
         public void It_should_publish_the_shipped_maximum_page_size()
         {
             JsonNode limitSchema = ParameterSchema("limit");
-            limitSchema["default"]!.GetValue<int>().Should().Be(ShippedMaximumPageSize);
             limitSchema["maximum"]!.GetValue<int>().Should().Be(ShippedMaximumPageSize);
 
             JsonNode pageSizeSchema = ParameterSchema("pageSize");
-            pageSizeSchema["default"]!.GetValue<int>().Should().Be(ShippedMaximumPageSize);
             pageSizeSchema["maximum"]!.GetValue<int>().Should().Be(ShippedMaximumPageSize);
+        }
+
+        [Test]
+        public void It_should_remove_the_inherited_limit_default()
+        {
+            ParameterSchema("limit").AsObject().Should().NotContainKey("default");
+        }
+
+        [Test]
+        public void It_should_remove_the_inherited_page_size_default()
+        {
+            ParameterSchema("pageSize").AsObject().Should().NotContainKey("default");
         }
 
         [Test]

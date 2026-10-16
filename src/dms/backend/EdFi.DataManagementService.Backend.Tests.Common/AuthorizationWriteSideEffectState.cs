@@ -9,9 +9,7 @@ internal sealed record AuthorizationDocumentState(
     long DocumentId,
     Guid DocumentUuid,
     short ResourceKeyId,
-    long ContentVersion,
-    DateTime ContentLastModifiedAt,
-    DateTime CreatedAt
+    long ContentVersion
 );
 
 internal sealed record AuthorizationResourceTableState(

@@ -135,6 +135,8 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
             [
                 new InMemoryRelationalCommandExecution([CreateSourceMetadataResultSet(source)]),
                 new InMemoryRelationalCommandExecution([CreateSourceMetadataResultSet(source)]),
+                new InMemoryRelationalCommandExecution([CreateSourceMetadataResultSet(source)]),
+                new InMemoryRelationalCommandExecution([CreateSourceMetadataResultSet(source)]),
             ],
             hydratedPages: [CreateHydratedPage(testContext.ReadPlan, source)],
             bindRequest: currentRequest =>
@@ -171,7 +173,7 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
         result.Should().BeOfType<DocumentCacheMaterializationResult.Success>();
         dataStore.BindRequests.Should().ContainSingle().Which.Should().BeSameAs(request);
         targetConnectionStrings.Should().ContainSingle().Which.Should().Be("Host=replacement");
-        dataStore.CommandRequests.Should().HaveCount(2);
+        dataStore.CommandRequests.Should().HaveCount(4);
         dataStore
             .CommandRequests.Should()
             .AllSatisfy(capturedRequest =>

@@ -24,6 +24,7 @@
         <InternalsVisibleTo Include="EdFi.DataManagementService.Tests.E2E" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Tests.Unit" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Tests.Unit" />
+        <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Tests.Common" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Plans.Tests.Unit" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Postgresql.Tests.Integration" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Mssql.Tests.Integration" />
@@ -34,7 +35,9 @@
         <InternalsVisibleTo Include="dms-document-cache" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Cdc" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Cdc.Tests.Unit" />
+        <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Cdc.Tests.Integration" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit" />
+        <InternalsVisibleTo Include="EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit" />
         <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
     </ItemGroup>

@@ -41,7 +41,10 @@ param(
     # build-on-demand is what lets this script provision from a fresh worktree. Only build-dms.ps1
     # can promise compiled output: its E2ETest and InstanceE2ETest routes already require a prior
     # build for the tests themselves, and in CI the shared build artifact supplies it.
-    [switch]$UsePrebuiltTools
+    [switch]$UsePrebuiltTools,
+
+    # Retain SchemaTools output for template source/restore catalog verification.
+    [string]$SchemaOutputDirectory
 )
 
 Set-StrictMode -Version Latest
@@ -442,6 +445,23 @@ try {
             -DatabaseName $e2eDatabaseName
 
         $schemaToolsDialect = "pgsql"
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($SchemaOutputDirectory)) {
+        # Use the identical ordered inputs for emit and provision; do not resolve/download again.
+        $emitArgs = @("run", "--no-launch-profile") + $script:PrebuiltToolDotnetRunArgs + @(
+            "--configuration", $Configuration, "--project", $schemaToolsProject,
+            "--", "ddl", "emit", "--schema"
+        ) + $schemaFiles + @("--dialect", $schemaToolsDialect, "--output", $SchemaOutputDirectory)
+        & dotnet @emitArgs
+        if ($LASTEXITCODE -ne 0) { throw "SchemaTools template manifest emission failed." }
+
+        # The downloaded inputs are temporary. Retain their ordered identities and content hashes.
+        $schemaInputs = @($schemaFiles | ForEach-Object {
+            @{ path = $_; sha256 = (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant() }
+        })
+        ConvertTo-Json -InputObject $schemaInputs -Depth 10 |
+            Set-Content -LiteralPath (Join-Path $SchemaOutputDirectory "schema-inputs.json")
     }
 
     Write-Information "Running SchemaTools ddl provision for $e2eDatabaseName" -InformationAction Continue

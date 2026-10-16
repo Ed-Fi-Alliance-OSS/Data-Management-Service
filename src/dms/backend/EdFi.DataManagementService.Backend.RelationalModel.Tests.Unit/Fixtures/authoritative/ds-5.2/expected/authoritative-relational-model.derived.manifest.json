@@ -551,7 +551,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -1111,7 +1111,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -2412,7 +2412,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -2880,7 +2880,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -3494,7 +3494,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -4613,7 +4613,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -5573,7 +5573,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -6129,7 +6129,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -9151,7 +9151,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -9797,7 +9797,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -10647,7 +10647,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -11350,7 +11350,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -11945,7 +11945,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -13532,7 +13532,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -14542,7 +14542,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -15090,7 +15090,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -17007,7 +17007,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -17353,7 +17353,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -19644,7 +19644,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -20082,7 +20082,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -24100,7 +24100,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -25103,7 +25103,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -27246,7 +27246,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -29051,7 +29051,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -30198,7 +30198,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -31093,7 +31093,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -32601,7 +32601,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -33891,7 +33891,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -35249,7 +35249,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -37167,7 +37167,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -37417,7 +37417,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -37651,7 +37651,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -39611,7 +39611,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -39992,7 +39992,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -43498,7 +43498,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -44267,7 +44267,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -44686,7 +44686,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -44990,7 +44990,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -45807,7 +45807,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -46720,7 +46720,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -47761,7 +47761,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -48260,7 +48260,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -52953,7 +52953,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -54229,7 +54229,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -55834,7 +55834,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -58277,7 +58277,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -58914,7 +58914,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -60666,7 +60666,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -61152,7 +61152,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -61413,7 +61413,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -61674,7 +61674,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -61987,7 +61987,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -64777,7 +64777,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -65038,7 +65038,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -65522,7 +65522,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -67438,7 +67438,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -67755,7 +67755,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -69075,7 +69075,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -69921,7 +69921,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -70225,7 +70225,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -72740,7 +72740,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -73942,7 +73942,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -74381,7 +74381,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -77727,7 +77727,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -78031,7 +78031,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -79037,7 +79037,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -79964,7 +79964,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -80858,7 +80858,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -81887,7 +81887,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -84243,7 +84243,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -86841,7 +86841,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -88790,7 +88790,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -88944,7 +88944,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -91725,7 +91725,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -92519,7 +92519,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -94632,7 +94632,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -95592,7 +95592,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -96580,7 +96580,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -96996,7 +96996,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -97260,7 +97260,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -97634,7 +97634,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -98215,7 +98215,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -99095,7 +99095,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -99979,7 +99979,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -100234,7 +100234,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -100545,7 +100545,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -101294,7 +101294,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -101675,7 +101675,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -106010,7 +106010,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -108221,7 +108221,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -110446,7 +110446,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -110813,7 +110813,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -111341,7 +111341,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -112274,7 +112274,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -114725,7 +114725,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -115751,7 +115751,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -116235,7 +116235,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -117301,7 +117301,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -117630,7 +117630,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -118218,7 +118218,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -118592,7 +118592,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -118959,7 +118959,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -123252,7 +123252,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -123533,7 +123533,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -123969,7 +123969,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -124809,7 +124809,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -125822,7 +125822,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -126438,7 +126438,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -126805,7 +126805,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -127929,7 +127929,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -128843,7 +128843,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -129747,7 +129747,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -130522,7 +130522,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -130986,7 +130986,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -132751,7 +132751,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -134208,7 +134208,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -134701,7 +134701,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -135488,7 +135488,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -136172,7 +136172,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -136979,7 +136979,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -137612,7 +137612,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -139372,7 +139372,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -140015,7 +140015,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -140833,7 +140833,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -141506,7 +141506,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -143518,7 +143518,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -143932,7 +143932,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -144222,7 +144222,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -144912,7 +144912,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -145604,7 +145604,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -145847,7 +145847,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -146091,7 +146091,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -146654,7 +146654,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -146944,7 +146944,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -147280,7 +147280,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -147617,7 +147617,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -147990,7 +147990,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },
@@ -148190,7 +148190,7 @@
               },
               {
                 "name": "ContentLastModifiedAt",
-                "kind": "MirroredContentLastModifiedAt",
+                "kind": "AuthoritativeContentLastModifiedAt",
                 "type": {
                   "kind": "DateTime"
                 },

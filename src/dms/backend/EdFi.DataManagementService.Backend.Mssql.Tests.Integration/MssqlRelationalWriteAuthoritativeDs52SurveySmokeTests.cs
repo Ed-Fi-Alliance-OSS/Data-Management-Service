@@ -688,9 +688,10 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
         var row = (
             await _database.QueryRowsAsync(
                 """
-                SELECT [ContentVersion], [ContentLastModifiedAt]
-                FROM [dms].[Document]
-                WHERE [DocumentUuid] = @documentUuid;
+                SELECT document.[ContentVersion], owner.[ContentLastModifiedAt]
+                FROM [dms].[Document] document
+                INNER JOIN [edfi].[Survey] owner ON owner.[DocumentId] = document.[DocumentId]
+                WHERE document.[DocumentUuid] = @documentUuid;
                 """,
                 new SqlParameter("@documentUuid", documentUuid)
             )

@@ -88,7 +88,7 @@
     {
       "id": "openapi-publishes-runtime-page-size-bounds",
       "bullet": 15,
-      "summary": "Publish the runtime MaximumPageSize as both the default and the maximum for limit and pageSize, replacing the authoritative fixture's hardcoded values.",
+      "summary": "Publish the runtime MaximumPageSize as the maximum for limit and pageSize, and publish no default for either, replacing the authoritative fixture's hardcoded values.",
       "executable": true
     },
     {

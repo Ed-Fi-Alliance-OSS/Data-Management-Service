@@ -349,9 +349,10 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_default_descriptor_content_version_to_zero()
+    public void It_should_retain_descriptor_version_and_authoritative_timestamp()
     {
         _ddl.Should().Contain("\"ContentVersion\" bigint NOT NULL DEFAULT 0");
+        _ddl.Should().Contain("\"ContentLastModifiedAt\" timestamp with time zone NOT NULL DEFAULT now()");
     }
 
     [Test]
@@ -368,7 +369,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_create_document_without_identity_stamps()
+    public void It_should_create_document_with_version_but_without_timestamp()
     {
         _ddl.Should().NotContain("IdentityVersion");
         _ddl.Should().NotContain("IdentityLastModifiedAt");
@@ -378,9 +379,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         var document = _ddl[start..end];
 
         document.Should().Contain("\"ContentVersion\" bigint NOT NULL DEFAULT nextval");
-        document
-            .Should()
-            .Contain("\"ContentLastModifiedAt\" timestamp with time zone NOT NULL DEFAULT now()");
+        document.Should().NotContain("ContentLastModifiedAt");
         document.Split("ChangeVersionSequence", StringSplitOptions.None).Length.Should().Be(2);
     }
 
@@ -981,16 +980,16 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_copy_existing_document_stamps_for_descriptor_inserts()
+    public void It_should_copy_the_document_version_and_initialize_the_descriptor_timestamp_on_insert()
     {
         _ddl.Should().Contain("IF TG_OP = 'INSERT' THEN");
-        _ddl.Should().Contain("SELECT \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\"");
+        _ddl.Should().Contain("SELECT \"DocumentId\", \"ContentVersion\"");
         _ddl.Should().Contain("FROM \"dms\".\"Document\"");
         _ddl.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\"");
         _ddl.Should().Contain("UPDATE \"dms\".\"Descriptor\" r");
         _ddl.Should()
             .Contain(
-                "SET \"ContentVersion\" = stamped.\"ContentVersion\", \"ContentLastModifiedAt\" = stamped.\"ContentLastModifiedAt\""
+                "SET \"ContentVersion\" = stamped.\"ContentVersion\", \"ContentLastModifiedAt\" = now()"
             );
     }
 
@@ -1001,6 +1000,10 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         _ddl.Should().Contain("UPDATE \"dms\".\"Document\"");
         _ddl.Should().Contain("\"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"')");
         _ddl.Should().Contain("\"ContentLastModifiedAt\" = now()");
+        _ddl.Should()
+            .NotContain(
+                "SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"'), \"ContentLastModifiedAt\" = now()"
+            );
     }
 
     [Test]
@@ -1032,16 +1035,37 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_capture_descriptor_document_stamps_with_returning_and_mirror_them()
+    public void It_should_capture_descriptor_document_versions_and_stamp_the_descriptor()
     {
         _ddl.Should().Contain("WITH stamped AS (");
-        _ddl.Should().Contain("RETURNING \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\"");
+        _ddl.Should().Contain("RETURNING \"DocumentId\", \"ContentVersion\"");
         _ddl.Should().Contain("UPDATE \"dms\".\"Descriptor\" r");
         _ddl.Should()
             .Contain(
-                "SET \"ContentVersion\" = stamped.\"ContentVersion\", \"ContentLastModifiedAt\" = stamped.\"ContentLastModifiedAt\""
+                "SET \"ContentVersion\" = stamped.\"ContentVersion\", \"ContentLastModifiedAt\" = now()"
             );
         _ddl.Should().Contain("WHERE r.\"DocumentId\" = stamped.\"DocumentId\";");
+    }
+
+    [Test]
+    public void It_should_only_stamp_the_descriptor_timestamp_and_join_by_document_id()
+    {
+        var functionStart = _ddl.IndexOf(
+            "CREATE OR REPLACE FUNCTION \"dms\".\"TF_Descriptor_Stamp_Document\"()",
+            StringComparison.Ordinal
+        );
+        functionStart.Should().BeGreaterOrEqualTo(0);
+        var functionEnd = _ddl.IndexOf("$func$ LANGUAGE plpgsql;", functionStart, StringComparison.Ordinal);
+        functionEnd.Should().BeGreaterThan(functionStart);
+        var function = _ddl[functionStart..functionEnd];
+
+        function.Should().NotContain("stamped.\"ContentLastModifiedAt\"");
+        function
+            .Should()
+            .NotContain("RETURNING \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\"");
+        function.Should().Contain("\"ContentLastModifiedAt\" = now()");
+        function.Should().Contain("WHERE r.\"DocumentId\" = stamped.\"DocumentId\";");
+        function.Should().NotContain("WHERE r.\"DescriptorId\" = stamped.\"DocumentId\"");
     }
 
     [Test]
@@ -1680,11 +1704,11 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
             .Contain(
                 "CONSTRAINT [DF_Document_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence])"
             );
-        _ddl.Should().Contain("CONSTRAINT [DF_Document_ContentLastModifiedAt] DEFAULT (sysutcdatetime())");
+        _ddl.Should().NotContain("DF_Document_ContentLastModifiedAt");
     }
 
     [Test]
-    public void It_should_create_document_without_identity_stamps()
+    public void It_should_create_document_with_version_but_without_timestamp()
     {
         _ddl.Should().NotContain("IdentityVersion");
         _ddl.Should().NotContain("IdentityLastModifiedAt");
@@ -1693,13 +1717,19 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         var end = _ddl.IndexOf(";", start, StringComparison.Ordinal);
         var document = _ddl[start..end];
 
+        document.Should().Contain("[ContentVersion] bigint NOT NULL");
+        document.Should().NotContain("ContentLastModifiedAt");
         document.Split("ChangeVersionSequence", StringSplitOptions.None).Length.Should().Be(2);
     }
 
     [Test]
-    public void It_should_default_descriptor_content_version_to_zero()
+    public void It_should_retain_descriptor_version_and_authoritative_timestamp()
     {
         _ddl.Should().Contain("CONSTRAINT [DF_Descriptor_ContentVersion] DEFAULT 0");
+        _ddl.Should()
+            .Contain(
+                "[ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_ContentLastModifiedAt] DEFAULT (sysutcdatetime())"
+            );
     }
 
     // ── MSSQL named default constraints ─────────────────────────────
@@ -1711,15 +1741,26 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
-    public void It_should_have_named_default_for_document_content_last_modified_at()
+    public void It_should_not_have_document_content_last_modified_at_default()
     {
-        _ddl.Should().Contain("CONSTRAINT [DF_Document_ContentLastModifiedAt] DEFAULT");
+        _ddl.Should().NotContain("CONSTRAINT [DF_Document_ContentLastModifiedAt]");
     }
 
     [Test]
-    public void It_should_have_named_default_for_document_created_at()
+    public void It_should_not_emit_document_created_at()
     {
-        _ddl.Should().Contain("CONSTRAINT [DF_Document_CreatedAt] DEFAULT");
+        var mssqlDocument = CoreDdlStatements.Extract(_ddl, "CREATE TABLE [dms].[Document]");
+        mssqlDocument.Should().Contain("[DocumentId] bigint IDENTITY(1,1) NOT NULL");
+        mssqlDocument.Should().NotContain("[CreatedAt]");
+        mssqlDocument.Should().NotContain("[DF_Document_CreatedAt]");
+
+        var pgsqlDdl = new CoreDdlEmitter(new PgsqlDialect(new PgsqlDialectRules())).Emit();
+        var pgsqlDocument = CoreDdlStatements.Extract(
+            pgsqlDdl,
+            "CREATE TABLE IF NOT EXISTS \"dms\".\"Document\""
+        );
+        pgsqlDocument.Should().Contain("\"DocumentId\" bigint GENERATED ALWAYS AS IDENTITY NOT NULL");
+        pgsqlDocument.Should().NotContain("\"CreatedAt\"");
     }
 
     [Test]
@@ -1791,7 +1832,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
-    public void It_should_retain_the_document_owned_content_stamps()
+    public void It_should_retain_the_document_owned_content_version()
     {
         var start = _ddl.IndexOf("CREATE TABLE [dms].[Document]", StringComparison.Ordinal);
         var end = _ddl.IndexOf(";", start, StringComparison.Ordinal);
@@ -1803,11 +1844,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
             .Contain(
                 "[ContentVersion] bigint NOT NULL CONSTRAINT [DF_Document_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence])"
             );
-        document
-            .Should()
-            .Contain(
-                "[ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Document_ContentLastModifiedAt] DEFAULT (sysutcdatetime())"
-            );
+        document.Should().NotContain("ContentLastModifiedAt");
     }
 
     [Test]
@@ -2239,17 +2276,18 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     {
         _ddl.Should().Contain("UPDATE d");
         _ddl.Should().Contain("SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]");
-        _ddl.Should().Contain("d.[ContentLastModifiedAt] = sysutcdatetime()");
+        ExtractMssqlTriggerBody(_ddl, "TR_Descriptor_Stamp_Document")
+            .Should()
+            .NotContain("d.[ContentLastModifiedAt]");
         _ddl.Should().Contain("FROM [dms].[Document] d");
         _ddl.Should().Contain("INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId]");
     }
 
     [Test]
-    public void It_should_copy_existing_document_stamps_for_descriptor_inserts()
+    public void It_should_copy_existing_document_version_for_descriptor_inserts()
     {
-        _ddl.Should()
-            .Contain("INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])");
-        _ddl.Should().Contain("SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]");
+        _ddl.Should().Contain("INSERT INTO @stamped ([DocumentId], [ContentVersion])");
+        _ddl.Should().Contain("SELECT d.[DocumentId], d.[ContentVersion]");
         _ddl.Should().Contain("FROM [dms].[Document] d");
         _ddl.Should().Contain("INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]");
         _ddl.Should().Contain("LEFT JOIN deleted del ON del.[DescriptorId] = i.[DescriptorId]");
@@ -2257,16 +2295,13 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
-    public void It_should_capture_descriptor_document_stamps_with_output_and_mirror_them()
+    public void It_should_capture_descriptor_document_versions_and_stamp_the_descriptor()
     {
         _ddl.Should().Contain("DECLARE @stamped TABLE (");
-        _ddl.Should()
-            .Contain(
-                "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped"
-            );
+        _ddl.Should().Contain("OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped");
         _ddl.Should().Contain("UPDATE r");
         _ddl.Should().Contain("SET r.[ContentVersion] = s.[ContentVersion],");
-        _ddl.Should().Contain("r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]");
+        _ddl.Should().Contain("r.[ContentLastModifiedAt] = sysutcdatetime()");
         _ddl.Should().Contain("FROM [dms].[Descriptor] r");
         // FORCESEEK is a table hint on the mirror target, so the join still terminates the statement.
         _ddl.Should().Contain("FROM [dms].[Descriptor] r WITH (FORCESEEK)");
@@ -2278,6 +2313,10 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         // OPTION (LOOP JOIN) was measured not to prevent the contention at all.
         var triggerBody = ExtractMssqlTriggerBody(_ddl, "TR_Descriptor_Stamp_Document");
         triggerBody.Should().NotContain("OPTION (");
+        triggerBody.Should().NotContain("d.[ContentLastModifiedAt]");
+        triggerBody.Should().NotContain("inserted.[ContentLastModifiedAt]");
+        triggerBody.Should().NotContain("s.[ContentLastModifiedAt]");
+        triggerBody.Should().NotContain("[ContentLastModifiedAt] datetime2(7) NOT NULL");
     }
 
     /// <summary>
@@ -2326,7 +2365,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
             StringComparison.Ordinal
         );
         var stampedPrepopulationStart = triggerBody.IndexOf(
-            "INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])",
+            "INSERT INTO @stamped ([DocumentId], [ContentVersion])",
             StringComparison.Ordinal
         );
         var guardStart = triggerBody.IndexOf(
@@ -2924,7 +2963,7 @@ public class Given_CoreDdlEmitter_With_SharedDescriptor_TrackedChange_Mssql
     public void It_should_place_the_tombstone_after_the_document_stamp_update()
     {
         var documentStampUpdate = _ddl.IndexOf(
-            "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped",
+            "OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped",
             StringComparison.Ordinal
         );
         documentStampUpdate.Should().BeGreaterOrEqualTo(0);

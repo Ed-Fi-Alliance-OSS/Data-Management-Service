@@ -3,27 +3,27 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using Microsoft.Extensions.Options;
-using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
 using FrontendAppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
 /// <summary>
 /// Maps the DMS-owned Identity HTTP surface under /identity/v2, gated by
-/// AppSettings:EnableIdentityManagement (default false). Follows the mapping-time fail-closed
+/// DataManagement:IdentityManagement:Enabled (default false). Follows the mapping-time fail-closed
 /// shape of ManagementEndpointModule: with the toggle off, nothing is mapped and every identity
 /// route falls through to the fallback 404.
 /// </summary>
 public class IdentityEndpointModule(
     IOptions<FrontendAppSettings> frontendOptions,
-    IOptions<CoreAppSettings> coreOptions
+    IOptions<IdentityManagementOptions> identityManagementOptions
 ) : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        if (!coreOptions.Value.EnableIdentityManagement)
+        if (!identityManagementOptions.Value.Enabled)
         {
             return;
         }

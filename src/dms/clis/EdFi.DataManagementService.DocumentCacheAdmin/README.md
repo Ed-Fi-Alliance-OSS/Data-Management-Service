@@ -41,9 +41,10 @@ settings, environment variables, user secrets, or the deployment secret provider
 does not expose secret-bearing command-line options.
 
 The tool package includes the default Ed-Fi ApiSchema workspace and uses it when
-`AppSettings:UseApiSchemaPath` is absent or `false`. Set `AppSettings:UseApiSchemaPath=true`
-and `AppSettings:ApiSchemaPath=<workspace>` only when the run must use an external
-bootstrap workspace with `bootstrap-api-schema-manifest.json`.
+`AppSettings:ApiSchema:UseCustomPath` is absent or `false`. Set
+`AppSettings:ApiSchema:UseCustomPath=true` and `AppSettings:ApiSchema:Path=<workspace>` only
+when the run must use an external bootstrap workspace with
+`bootstrap-api-schema-manifest.json`.
 
 For history-gated offline administration, add this **fragment to the complete settings**;
 it is not a standalone DMS configuration. Replace the state path with the original
@@ -291,9 +292,9 @@ This section owns offline preview, execution and verification.
 
 Use representation restamp only for an offline correction that changes composed API or
 stream representation bytes without changing domain fields, keys, or deletion history.
-The operation advances the existing canonical `ContentVersion` and
-`ContentLastModifiedAt` values and their root or descriptor mirrors. It does not add an
-ETag algorithm, Change Query event type, projection epoch, or Kafka ordering field.
+The operation advances `dms.Document.ContentVersion`, copies that version to the root
+or descriptor row, and regenerates `ContentLastModifiedAt` on that row. It does not add
+an ETag algorithm, Change Query event type, projection epoch, or Kafka ordering field.
 
 ### Offline prerequisites
 

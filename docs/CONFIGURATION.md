@@ -78,6 +78,105 @@ as `CMS_E2E_API_URL`, `CMS_COMPOSE_PROJECT`, and `CMS_POSTGRES_CONTAINER`, now s
 `CONFIGURATION_SERVICE_` (`CMS_CONFIG_CONTAINER` became `CONFIGURATION_SERVICE_CONTAINER`), and
 `SECRETS_E2E_CMS_*` became `SECRETS_E2E_CONFIGURATION_SERVICE_*`.
 
+## Optional features
+
+### Switch convention
+
+DMS and the Configuration Service turn optional features on and off with these rules:
+
+- **A feature's switch lives in that feature's own section and is named `Enabled`**, for example
+  `DataManagement:IdentityManagement:Enabled`. One block configures the feature, and the
+  environment variable name describes itself
+  (`DataManagement__IdentityManagement__Enabled`). The switch is named `Enabled` even when the
+  feature has no other settings yet, so settings added later do not force a rename.
+- **There is no central `FeatureManagement` section.** Switches are read when the host starts,
+  and changing one takes a restart. They are not runtime feature flags: there is no per-request
+  targeting and no percentage rollout.
+- **There is no separate switch when configuring the feature already opts in.** `Plugins:Allowed`
+  loads nothing while it is empty, and DocumentCache projects nothing while
+  `DataManagement:DocumentCache:Targets` is empty. For these features the configuration is the
+  switch.
+- **Where sections live.** `AppSettings` holds host-wide scalar settings such as `Datastore`,
+  `PathBase`, and `MaximumPageSize`. New feature sections go at the top level or under
+  `DataManagement`. `AppSettings:ManagementEndpoints` stays under `AppSettings` because that
+  subsection already existed.
+- **Settings that change behavior are not features** and keep their names:
+  `AppSettings:BypassTypeCoercion`, `AppSettings:MaskRequestBodyInLogs`,
+  `AppSettings:UseLegacyDocumentIdOrderingForChangeQueries`, `AppSettings:BypassAuthorization`,
+  `AppSettings:ReverseProxy:UseForwardedHeaders`, `IdentitySettings:AllowRegistration`,
+  `AppSettings:DeployDatabaseOnStartup`, and `AppSettings:EnableAspNetCompression` (DMS).
+
+These existing settings are recorded exceptions and keep their names:
+
+- `AppSettings:MultiTenancy` (DMS and Configuration Service) is a deployment mode rather than an
+  optional feature.
+- `AppSettings:ApiSchema:UseCustomPath` (DMS) selects where the ApiSchema workspace is loaded
+  from; it does not turn a feature on or off.
+- `CacheSettings:DataStoreCacheRefreshEnabled` (DMS, default `true`) sits beside its sibling
+  `DataStoreCacheExpirationSeconds` in [CacheSettings](#cachesettings).
+- `JobSettings:WorkerEnabled`, `JobSettings:SchedulerEnabled`, and `JobSettings:RetentionEnabled`
+  (Configuration Service, each default `true`) switch individual parts of the one background job
+  system, which share the rest of [JobSettings](#jobsettings).
+- `ClaimsOptions:DangerouslyEnableUnrestrictedClaimsLoading` (Configuration Service, default
+  `false`) keeps its name because the `Dangerously` prefix is the warning. It exposes
+  `/management/reload-claims`, `/management/upload-claims`, and `/management/current-claims`,
+  which answer `404` while it is `false`.
+
+### Optional features overview
+
+"Switch" is a boolean `Enabled` key. "Configured opt-in" means the feature is on only when the
+setting holds a value; there is no boolean to set. "Retained exception switch" is a boolean that
+keeps its existing name for the reasons listed under [Switch convention](#switch-convention);
+it is not slated for renaming.
+
+| Feature | Host | Key | Kind | Default | Environment variable |
+| --- | --- | --- | --- | --- | --- |
+| Claimset management endpoints (reload and view) | DMS | `AppSettings:ManagementEndpoints:Enabled` | Switch; also needs a valid `RequiredRole` | `false` | `AppSettings__ManagementEndpoints__Enabled` |
+| Identity management API (`/identity/v2`) | DMS | `DataManagement:IdentityManagement:Enabled` | Switch | `false` | `DataManagement__IdentityManagement__Enabled` |
+| Resource links in responses | DMS | `DataManagement:ResourceLinks:Enabled` | Switch | `true` | `DataManagement__ResourceLinks__Enabled` |
+| DocumentCache projection | DMS | `DataManagement:DocumentCache:Targets` | Configured opt-in | empty | `DataManagement__DocumentCache__Targets__<n>__TenantKey`, `DataManagement__DocumentCache__Targets__<n>__DataStoreId` |
+| DocumentCache read acceleration | DMS | `DataManagement:DocumentCache:ReadAcceleration:Enabled` | Switch; also needs a matching `Targets` entry | `false` | `DataManagement__DocumentCache__ReadAcceleration__Enabled` |
+| Precompiled mapping packs | DMS | `MappingPacks:Enabled` | Switch | `false` | `MappingPacks__Enabled` |
+| OTLP log export | DMS and Configuration Service | `OtlpLogging:Enabled` | Switch | `false` | `OtlpLogging__Enabled` |
+| Plugins | DMS and Configuration Service | `Plugins:Allowed` | Configured opt-in | empty | `Plugins__Allowed` |
+| Expired-token cleanup (self-contained identity only) | Configuration Service | `IdentitySettings:TokenCleanup:Enabled` | Switch | `true` | `IdentitySettings__TokenCleanup__Enabled` |
+| Data store configuration cache refresh | DMS | `CacheSettings:DataStoreCacheRefreshEnabled` | Retained exception switch | `true` | `CacheSettings__DataStoreCacheRefreshEnabled` |
+| Background job worker | Configuration Service | `JobSettings:WorkerEnabled` | Retained exception switch | `true` | `JobSettings__WorkerEnabled` |
+| Recurring job scheduler | Configuration Service | `JobSettings:SchedulerEnabled` | Retained exception switch | `true` | `JobSettings__SchedulerEnabled` |
+| Finished-job retention sweep | Configuration Service | `JobSettings:RetentionEnabled` | Retained exception switch | `true` | `JobSettings__RetentionEnabled` |
+
+The shipped Docker Compose files set some of these from their own variables:
+`DMS_ENABLE_MANAGEMENT_ENDPOINTS`, `DMS_ENABLE_IDENTITY_MANAGEMENT`,
+`CONFIGURATION_SERVICE_IDENTITY_TOKEN_CLEANUP_ENABLED`,
+`CONFIGURATION_SERVICE_JOBS_WORKER_ENABLED`, `CONFIGURATION_SERVICE_JOBS_SCHEDULER_ENABLED`, and
+`CONFIGURATION_SERVICE_JOBS_RETENTION_ENABLED`.
+
+### Renamed configuration keys
+
+8.1 moved these settings into their feature's own section. The earlier keys are not read, and
+there are no aliases: a deployment that still sets only an earlier key gets the current key's
+default, shown in the last column. Rename each key in `appsettings.json` overrides and in any
+environment variables your deployment sets. The Docker Compose variables
+(`DMS_ENABLE_MANAGEMENT_ENDPOINTS`, `DMS_ENABLE_IDENTITY_MANAGEMENT`, `USE_API_SCHEMA_PATH`,
+`API_SCHEMA_PATH`, `CONFIGURATION_SERVICE_IDENTITY_TOKEN_CLEANUP_ENABLED`,
+`CONFIGURATION_SERVICE_IDENTITY_TOKEN_CLEANUP_INTERVAL_MINUTES`) keep their names; the shipped
+Compose files map them to the new keys.
+
+| Earlier key | Current key | Environment variable | With only the earlier key set |
+| --- | --- | --- | --- |
+| `AppSettings:EnableManagementEndpoints` | `AppSettings:ManagementEndpoints:Enabled` | `AppSettings__ManagementEndpoints__Enabled` | Management endpoints are off |
+| `AppSettings:EnableClaimsetReload` | Removed. `AppSettings:ManagementEndpoints:Enabled` now controls both the reload and view operations, and Compose no longer reads `DMS_ENABLE_CLAIMSET_RELOAD`. | None | Ignored; see the note below |
+| `AppSettings:EnableIdentityManagement` (8.1 pre-release builds only) | `DataManagement:IdentityManagement:Enabled` | `DataManagement__IdentityManagement__Enabled` | Identity management is off |
+| `AppSettings:UseApiSchemaPath` | `AppSettings:ApiSchema:UseCustomPath` | `AppSettings__ApiSchema__UseCustomPath` | DMS loads the bundled ApiSchema workspace; on the relational backend, requests then fail with `503` when the database was provisioned from a different schema (`EffectiveSchemaHash` mismatch) |
+| `AppSettings:ApiSchemaPath` | `AppSettings:ApiSchema:Path` | `AppSettings__ApiSchema__Path` | No custom path is set |
+| `IdentitySettings:TokenCleanupEnabled` (Configuration Service, 8.1 pre-release builds only) | `IdentitySettings:TokenCleanup:Enabled` | `IdentitySettings__TokenCleanup__Enabled` | Token cleanup stays on |
+| `IdentitySettings:TokenCleanupIntervalMinutes` (Configuration Service, 8.1 pre-release builds only) | `IdentitySettings:TokenCleanup:IntervalMinutes` | `IdentitySettings__TokenCleanup__IntervalMinutes` | The sweep runs every 30 minutes |
+
+With one switch for both claimset operations, a deployment that kept
+`EnableClaimsetReload=false` but sets `AppSettings:ManagementEndpoints:Enabled=true` and a valid
+`AppSettings:ManagementEndpoints:RequiredRole` now exposes reload and view to callers holding
+that role. To keep them unavailable, set `AppSettings:ManagementEndpoints:Enabled=false`.
+
 ## AppSettings
 
 | Parameter                        | Description                                                                                                                                                                                                                   |
@@ -88,33 +187,32 @@ as `CMS_E2E_API_URL`, `CMS_COMPOSE_PROJECT`, and `CMS_POSTGRES_CONTAINER`, now s
 | MaskRequestBodyInLogs            | Controls whether to mask HTTP request bodies in log statements to avoid potentially logging PII. This setting only applies to `DEBUG` logging where requests are logged.                                  |
 | CorrelationIdHeader              | Name of the request header a client-supplied correlation ID is read from. When this setting is non-empty and the named header is present with a value that still has content after normalization, that value identifies the request in logs and in the `correlationId` of error responses; otherwise — header absent, sent empty, or normalizing to nothing but whitespace, as a value made up only of removed characters or only of whitespace does — the server-generated trace identifier is used. Client-supplied values are normalized — a logging-safe character allowlist, which removes control characters (`Cc`), format characters (`Cf` — bidirectional overrides, zero-width characters, soft hyphen, BOM) and the Unicode line/paragraph separators, and `CorrelationIdMaxLength` are applied — before use; see [Logging Policy](./LOGGING.md#correlation-id-normalization). Leave empty to disable client-supplied correlation IDs entirely: no header name is honored on any path, including the catch-all `404` for an unmatched route. Environment override: `AppSettings__CorrelationIdHeader`. Default: empty |
 | CorrelationIdMaxLength           | Maximum number of UTF-16 code units retained from a correlation ID, client-supplied or server-generated, before it is used in a log event or an error response body; longer values are truncated rather than rejected. The cut is made on a code unit rather than on a user-perceived character, which is why a non-BMP character costs two. Truncation happens before disallowed characters are removed, so an over-length value can end up shorter than this limit — either because it also contains characters the allowlist removes, which are removed after the cut, or because the cut landed inside a surrogate pair, which costs one further code unit even when there is nothing to remove. Must be between `64` and `1024` inclusive - the floor keeps the cap above every common correlation ID scheme, including the 22-character server-generated trace identifier, and the ceiling bounds how much client-controlled text one request can reflect into logs and error bodies; see [the ADR](../reference/adr-correlation-id-normalization.md#bounds-on-the-length-cap). An out-of-range value does **not** prevent the process from starting: the host starts, logs the validation failure at `Critical` once at startup, and short-circuits every request — including `/health` — with the generic Ed-Fi `500` problem-details body, carrying the same `correlationId` the request is logged under, until the setting is corrected and the service is restarted. See [Logging Policy](./LOGGING.md#correlation-id-normalization). Environment override: `AppSettings__CorrelationIdMaxLength`. Default: `255` |
-| UseApiSchemaPath                 | When set to `true`, the application loads core data standard and extension artifacts from the manifest-backed workspace at `ApiSchemaPath`. When `false`, it loads the bundled manifest-backed ApiSchema workspace from the application output. Loose no-manifest `ApiSchema*.json` folders are not a runtime loading contract. |
-| ApiSchemaPath                    | Specifies the runtime ApiSchema workspace directory containing `bootstrap-api-schema-manifest.json` and the manifest-declared core and extension schema files. The ApiSchemaDownloader CLI can be used to download and extract the published ApiSchema packages before the root manifest is materialized. |
+| ApiSchema:UseCustomPath          | When set to `true`, the application loads core data standard and extension artifacts from the manifest-backed workspace at `ApiSchema:Path`. When `false`, it loads the bundled manifest-backed ApiSchema workspace from the application output. Loose no-manifest `ApiSchema*.json` folders are not a runtime loading contract. Environment override: `AppSettings__ApiSchema__UseCustomPath`; the shipped Docker Compose files map it from `USE_API_SCHEMA_PATH`. Default: `false` |
+| ApiSchema:Path                   | Specifies the runtime ApiSchema workspace directory containing `bootstrap-api-schema-manifest.json` and the manifest-declared core and extension schema files. The ApiSchemaDownloader CLI can be used to download and extract the published ApiSchema packages before the root manifest is materialized. Used only when `ApiSchema:UseCustomPath` is `true`. Environment override: `AppSettings__ApiSchema__Path`; the shipped Docker Compose files map it from `API_SCHEMA_PATH`. |
 | DomainsExcludedFromOpenApi       | Comma separated list of domain names to exclude from OpenAPI documentation generation. Domains listed here will not appear in the generated OpenAPI specifications. Case insensitive. |
 | IdentityProvider                 | Specifies the authentication provider. Valid values are `keycloak` (to use Keycloak's authentication) and `self-contained` (to use self-contained authentication). When using `self-contained`, you must also provide a value for `IdentitySettings:EncryptionKey`. Default: self-contained |
 | RouteQualifierSegments           | Comma separated list of route qualifier context segments as defined by `dataStoreContexts` in Configuration Service. Example: "districtId,schoolYear". The names `__identityId` and `__identityToken` are reserved, and names that are equal under case-insensitive comparison are rejected, whether or not identity management is enabled. As with `CorrelationIdMaxLength`, a rejected value does not stop the process: the host starts, logs the validation failure at `Critical`, and answers every request, including `/health`, with the generic Ed-Fi `500` until the setting is corrected and the service is restarted. |
 | MultiTenancy                     | When `true`, enables multi-tenancy mode where the tenant identifier is extracted from the URL route. Default: `false` |
-| EnableManagementEndpoints       | When `true`, allows the DMS claimset management endpoint surface to be registered. When `false`, `/management/reload-claimsets` and `/management/view-claimsets` are not mapped. Environment override: `AppSettings__EnableManagementEndpoints`. Default: `false` |
-| EnableIdentityManagement        | When `true`, maps the DMS-owned `/identity/v2/identities` routes and serves the identity OpenAPI document, its metadata listing entry, and the `identity` Discovery URL. When `false`, none of them exist and the identity routes fall through to the catch-all `404`. The operations themselves are performed by an identity provider plugin; with none registered, a request that passes authentication, tenant, client-binding and identity-claim checks answers `404` with `urn:ed-fi:api:identities:operation-not-supported`. With it `true`, CORS also exposes the `Location` response header to the one origin named by `Cors:SwaggerUIOrigin`, which a browser client needs to follow an asynchronous request; see [Cors](#cors). See [Identity Management](./IDENTITY-MANAGEMENT.md) for enabling it, the responses a client sees, and how quickly a change to a client or claim set takes effect. Environment override: `AppSettings__EnableIdentityManagement`. Default: `false` |
+| ManagementEndpoints:Enabled      | When `true`, allows the DMS claimset management endpoints, `reload-claimsets` and `view-claimsets`, to be mapped. This one switch controls both operations. When `false`, `/management/reload-claimsets` and `/management/view-claimsets` are not mapped. Environment override: `AppSettings__ManagementEndpoints__Enabled`; the shipped Docker Compose files map it from `DMS_ENABLE_MANAGEMENT_ENDPOINTS`. Default: `false` |
 | ManagementEndpoints:RequiredRole | Single literal role token a bearer must carry, under `JwtAuthentication:RoleClaimType`, to reach `reload-claimsets` and `view-claimsets`. Empty by default, which leaves those endpoints unmapped. Environment override: `AppSettings__ManagementEndpoints__RequiredRole`. Recommended: `cms-client` |
-| EnableClaimsetReload            | When `true`, a call to `reload-claimsets` or `view-claimsets` that passes authorization is carried out. When `false`, it answers `404` with no body. It is checked after authorization and does not control whether the routes are mapped; `EnableManagementEndpoints` and `ManagementEndpoints:RequiredRole` do. Environment override: `AppSettings__EnableClaimsetReload`. Default: `false` |
-| MaximumPageSize                  | Upper bound for the `limit` and `pageSize` query parameters on GET-many requests, and the page size applied when neither is supplied. Also the `default` and `maximum` published for those parameters in the OpenAPI specification. Must be greater than `0`; the service refuses to start otherwise. Environment override: `AppSettings__MaximumPageSize`. Default: `500` |
+| MaximumPageSize                  | Upper bound for the `limit` and `pageSize` query parameters on GET-many requests, and the page size applied when neither is supplied. Also published in the OpenAPI specification as the `maximum` of `limit` and `pageSize`; neither publishes a `default`, because `pageSize` is valid only with `pageToken` and `limit` only without it. Must be greater than `0`; the service refuses to start otherwise. Environment override: `AppSettings__MaximumPageSize`. Default: `500` |
 | DefaultPartitionCount            | Number of partitions returned by a resource or descriptor `/partitions` request that omits the `number` query parameter. Also the `default` published for `numberOfPartitions` in the OpenAPI specification. Must be between `1` and `200`, the same range accepted for `number`; the service refuses to start otherwise. Environment override: `AppSettings__DefaultPartitionCount`. See [Cursor Paging](./CURSOR-PAGING.md). Default: `10` |
 | UseLegacyDocumentIdOrderingForChangeQueries | When `true`, restores unconditional `DocumentId` ordering and anchoring for change-version-filtered collection reads, disabling the conditional `ContentVersion` ordering and anchoring used for bounded and max-only change-version windows, and for any change-version-filtered read served from a snapshot. Governs all three paging shapes of a GET-many collection: `limit`/`offset` page selection, `pageToken` cursor pages, and `/partitions` boundary calculation. **Changing this setting invalidates the cursor and partition tokens already issued for the shapes whose anchor it governs**: those issued for a max-bearing window, and those issued for any change-version-filtered read served from a snapshot. Those tokens are `ContentVersion`-anchored while the setting is `false` and `DocumentId`-anchored while it is `true`, which is why a flip in either direction invalidates them. A client replaying one is answered with the invalid-page-token response and must restart its walk, so expect in-flight walks and distributed partition tokens of those shapes to fail after a flip in either direction. Tokens anchored on `DocumentId` — every unfiltered walk, and every min-only walk against current data — resolve that same anchor under either setting and keep working across a flip. Deployment-wide rollback switch for incident response; not per-client. See [Cursor Paging](./CURSOR-PAGING.md). Default: `false` |
 | ReverseProxy:UseForwardedHeaders | When `true`, the application respects reverse proxy `X-Forwarded-*` headers for URL generation, but only from trusted sources configured in `ReverseProxy`. Default: `false`. See [Reverse Proxy and Forwarded Headers](#reverse-proxy-and-forwarded-headers). |
 | ReverseProxy:KnownProxies        | Comma-separated list of exact trusted reverse-proxy IP addresses (IPv4 or IPv6) whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.5,10.0.0.6` |
 | ReverseProxy:KnownNetworks       | Comma-separated list of trusted reverse-proxy networks in CIDR notation whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.0/8,172.16.0.0/12` |
 
-Claimset management endpoints use three separate controls. `EnableManagementEndpoints` is the
-global exposure switch; when it is `false`, the claimset management routes are not mapped.
-When it is `true`, `ManagementEndpoints:RequiredRole` must be one untrimmed token no longer
-than 256 characters, and `JwtAuthentication:RoleClaimType` must be present. Values containing
+Claimset management endpoints use two controls in the `AppSettings:ManagementEndpoints`
+section. `Enabled` is the exposure switch for both the reload and view operations; when it is
+`false`, the claimset management routes are not mapped. When it is `true`, `RequiredRole` must
+be one untrimmed token no longer than 256 characters, and `JwtAuthentication:RoleClaimType`
+must be present. Values containing
 ASCII whitespace, commas, semicolons, quotes, brackets, braces, or control characters are
 invalid and leave the claimset management endpoints unmapped, as does a missing or blank
 `JwtAuthentication:RoleClaimType`. A request to a mapped endpoint without a valid bearer token
 receives `401`; a valid token whose claims do not include this exact role under the configured
-role claim type receives `403`. `EnableClaimsetReload` is checked later by the claimset
-operation handlers; it does not control route registration.
+role claim type receives `403`. An authorized request is carried out; there is no separate
+switch for the reload or view operation.
 
 ## MappingPacks
 
@@ -135,6 +233,18 @@ is `false`. See the
 | AllowRuntimeCompileFallback | When `true` (default), allow runtime compilation when a pack is enabled but not found.                                                      |
 | FailureCooldownSeconds      | Seconds a faulted cache entry is retained before eviction. `0` (default) evicts immediately.                                                |
 | CacheMode                   | Cache strategy for compiled mapping sets. Currently only `InMemory` (default).                                                              |
+
+## DataManagement:IdentityManagement
+
+| Parameter | Description |
+| --- | --- |
+| Enabled | When `true`, maps the DMS-owned `/identity/v2/identities` routes and serves the identity OpenAPI document, its metadata listing entry, and the `identity` Discovery URL. When `false`, none of them exist and the identity routes fall through to the catch-all `404`. The operations themselves are performed by an identity provider plugin; with none registered, a request that passes authentication, tenant, client-binding and identity-claim checks answers `404` with `urn:ed-fi:api:identities:operation-not-supported`. With it `true`, CORS also exposes the `Location` response header to the one origin named by `Cors:SwaggerUIOrigin`, which a browser client needs to follow an asynchronous request; see [Cors](#cors). See [Identity Management](./IDENTITY-MANAGEMENT.md) for enabling it, the responses a client sees, and how quickly a change to a client or claim set takes effect. Environment override: `DataManagement__IdentityManagement__Enabled`; the shipped Docker Compose files map it from `DMS_ENABLE_IDENTITY_MANAGEMENT`. Default: `false` |
+
+## DataManagement:ResourceLinks
+
+| Parameter | Description |
+| --- | --- |
+| Enabled | When `true`, a document reference in a response carries a `link` object when the referenced document resolves; a reference that does not resolve, such as one to a document deleted while the response was being read, carries no `link`. When `false`, responses carry no `link` objects. Read at startup; changing it takes a restart. Environment override: `DataManagement__ResourceLinks__Enabled`. Default: `true` |
 
 ## DataManagement:DocumentCache
 
@@ -216,6 +326,15 @@ The following parameters apply to the Configuration Service (`appsettings.json`)
 | ReverseProxy:UseForwardedHeaders | When `true`, the application respects reverse proxy `X-Forwarded-*` headers for URL generation, but only from trusted sources configured in `ReverseProxy`. Default: `false`. See [Reverse Proxy and Forwarded Headers](#reverse-proxy-and-forwarded-headers). |
 | ReverseProxy:KnownProxies    | Comma-separated list of exact trusted reverse-proxy IP addresses (IPv4 or IPv6) whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.5,10.0.0.6`                                                  |
 | ReverseProxy:KnownNetworks   | Comma-separated list of trusted reverse-proxy networks in CIDR notation whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.0/8,172.16.0.0/12`                                                  |
+
+> [!NOTE]
+> **SQL Server session language.** With `Datastore` set to `mssql`, the Configuration Service
+> opens every database session with `Current Language=us_english`, overriding any
+> `Current Language` (or `Language`) in `DatabaseSettings:DatabaseConnection` and the login's
+> default language. It recognizes constraint violations, such as a duplicate name or client key,
+> by the constraint name in SQL Server's error message, and SQL Server localizes those messages
+> to the session language. Settings that follow from the session language, such as `DATEFORMAT`
+> (`mdy`) and `DATEFIRST` (`7`), are the `us_english` ones as well.
 
 ## JobSettings
 
@@ -409,7 +528,7 @@ Any other origin gets no CORS headers.
 
 | Parameter | Description |
 | --- | --- |
-| `Cors:SwaggerUIOrigin` | The single origin allowed to call DMS from a browser. Environment override: `Cors__SwaggerUIOrigin`; the shipped Docker Compose files map it from `DMS_SWAGGER_UI_URL`. When `AppSettings:EnableIdentityManagement` is `true`, DMS also exposes the `Location` response header to this origin and to no other, so a browser client at this origin can follow an asynchronous identity request. See [Identity Management](./IDENTITY-MANAGEMENT.md#cors). Default: `http://localhost:8082` |
+| `Cors:SwaggerUIOrigin` | The single origin allowed to call DMS from a browser. Environment override: `Cors__SwaggerUIOrigin`; the shipped Docker Compose files map it from `DMS_SWAGGER_UI_URL`. When `DataManagement:IdentityManagement:Enabled` is `true`, DMS also exposes the `Location` response header to this origin and to no other, so a browser client at this origin can follow an asynchronous identity request. See [Identity Management](./IDENTITY-MANAGEMENT.md#cors). Default: `http://localhost:8082` |
 
 ## CacheSettings
 
@@ -661,7 +780,7 @@ qualifier above.
 >     the environment leaves it unset still gets the PostgreSQL wait, which does not
 >     end.
 >   - `DATABASE_CONNECTION_STRING_ADMIN`, which that wait connects with.
->   - `AppSettings__UseApiSchemaPath` and `AppSettings__ApiSchemaPath`, which decide
+>   - `AppSettings__ApiSchema__UseCustomPath` and `AppSettings__ApiSchema__Path`, which decide
 >     whether and where it downloads the schema packages. A plugin that supplies
 >     either sends .NET to read a directory the script did not fill.
 >
@@ -958,8 +1077,8 @@ relevant environment variables or appsettings to set `IdentityProvider` to
 | `AppSettings.IdentityProvider` | Selects the identity provider                                    | `keycloak`                                           | `self-contained`                              |
 | `IdentitySettings.Authority`        | Identity provider issuer. In self-contained mode, also the base URL for every advertised discovery endpoint: omit `AppSettings.PathBase` from this value, and keep DMS `JwtAuthentication.MetadataAddress` on the same origin (scheme, host, and port). DMS `JwtAuthentication.Authority` must exactly match the issuer. | `http://dms-keycloak:8080/realms/edfi` | `http://ed-fi-api-config:8081` |
 | `IdentitySettings.EncryptionKey`    | Key used for token encryption (self-contained only)              | _(not used)_                                         | `QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz` |
-| `IdentitySettings.TokenCleanupEnabled` | Enables the background sweep that deletes expired OpenIddict access tokens (self-contained only) | _(not used)_                                         | `true`              |
-| `IdentitySettings.TokenCleanupIntervalMinutes` | Interval, in minutes, between expired-token cleanup sweeps (self-contained only)           | _(not used)_                                         | `30`              |
+| `IdentitySettings.TokenCleanup.Enabled` | Enables the background sweep that deletes expired OpenIddict access tokens (self-contained only) | _(not used)_                                         | `true`              |
+| `IdentitySettings.TokenCleanup.IntervalMinutes` | Interval, in minutes, between expired-token cleanup sweeps (self-contained only)           | _(not used)_                                         | `30`              |
 | `IdentitySettings.BearerTokenPerClientLimit` | Maximum number of active (unexpired, unrevoked) access tokens a limited client may hold (self-contained only; default `15`). Exemption requires no live `dmscs.ApiClient` row and a nonempty set of registered scopes consisting only of recognized Configuration Service admin scopes. Ed-Fi API clients remain limited. A grant beyond the limit is rejected with HTTP 429 and a `Too Many Tokens` problem response of type `urn:ed-fi:api:security:authentication:too-many-tokens`; the client should reuse its existing token until it expires. Any value below 1, conventionally `-1`, disables enforcement globally. | _(not used)_ | `15` |
 | `IdentitySettings.ClientSecretHashingIterations` | Number of PBKDF2-SHA256 iterations used to hash and verify client secrets (self-contained only). Must be greater than zero; startup fails otherwise. Default: `210000`. Set in Docker Compose through `CONFIGURATION_SERVICE_IDENTITY_HASHING_ITERATIONS`, which also sets the count `setup-openiddict.ps1` hashes bootstrap client secrets with. | _(not used)_ | `210000` |
 
@@ -968,7 +1087,7 @@ relevant environment variables or appsettings to set `IdentityProvider` to
 > next grant. Non-API clients, including DMS's Configuration Service credential and the Configuration Service
 > admin/bootstrap clients, are exempt when they have no live `dmscs.ApiClient` row and
 > their nonempty registered scopes consist only of recognized Configuration Service admin scopes.
-> Leave `TokenCleanupEnabled` on as well: a limited client's grant counts its active tokens, and
+> Leave `TokenCleanup:Enabled` on as well: a limited client's grant counts its active tokens, and
 > expired tokens the sweep has not yet removed still sit in the table it counts over, so a
 > deployment that has run with cleanup disabled makes each grant read through that whole backlog.
 

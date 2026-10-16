@@ -369,9 +369,7 @@ public class Given_A_Mssql_Descriptor_Only_Resource_Page
                 [DocumentId] bigint PRIMARY KEY,
                 [DocumentUuid] uniqueidentifier NOT NULL,
                 [ResourceKeyId] smallint NOT NULL DEFAULT 0,
-                [ContentVersion] bigint NOT NULL DEFAULT 1,
-                [ContentLastModifiedAt] datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                [CreatedAt] datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
+                [ContentVersion] bigint NOT NULL DEFAULT 1
             );
 
             CREATE TABLE dms.[Descriptor] (
@@ -384,11 +382,15 @@ public class Given_A_Mssql_Descriptor_Only_Resource_Page
                 [Description] varchar(1024) NULL,
                 [EffectiveBeginDate] date NULL,
                 [EffectiveEndDate] date NULL,
+                [ContentVersion] bigint NOT NULL DEFAULT 1,
+                [ContentLastModifiedAt] datetime2(7) NOT NULL DEFAULT sysutcdatetime(),
                 [Uri] AS ([Namespace] + '#' + [CodeValue]) PERSISTED
             );
 
             CREATE TABLE {TestSchema}.[DescriptorOnly] (
                 [DocumentId] bigint PRIMARY KEY,
+                [ContentVersion] bigint NOT NULL DEFAULT 1,
+                [ContentLastModifiedAt] datetime2(7) NOT NULL DEFAULT sysutcdatetime(),
                 [GradeLevelDescriptor_DescriptorId] int NULL
             );
             """

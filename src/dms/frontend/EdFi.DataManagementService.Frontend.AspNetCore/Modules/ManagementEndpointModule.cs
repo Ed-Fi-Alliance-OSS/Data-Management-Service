@@ -13,7 +13,6 @@ using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using Microsoft.Extensions.Options;
 using AspNetCoreFrontend = EdFi.DataManagementService.Frontend.AspNetCore.AspNetCoreFrontend;
-using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
 using FrontendAppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
@@ -24,7 +23,6 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 /// </summary>
 public class ManagementEndpointModule(
     IOptions<FrontendAppSettings> frontendOptions,
-    IOptions<CoreAppSettings> coreOptions,
     IOptions<ManagementEndpointsOptions> managementEndpointsOptions,
     IOptions<JwtAuthenticationOptions> jwtAuthenticationOptions,
     ILogger<ManagementEndpointModule> logger
@@ -32,7 +30,7 @@ public class ManagementEndpointModule(
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        if (!coreOptions.Value.EnableManagementEndpoints)
+        if (!managementEndpointsOptions.Value.Enabled)
         {
             return;
         }

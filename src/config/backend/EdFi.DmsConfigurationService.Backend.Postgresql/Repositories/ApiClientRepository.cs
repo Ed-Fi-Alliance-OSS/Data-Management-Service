@@ -73,6 +73,8 @@ public class ApiClientRepository(
     }
 
     private const string DuplicateNameConstraint = "UX_ApiClient_ApplicationId_Name";
+    private const string DuplicateClientIdConstraint = "UX_ApiClient_ClientId";
+    private const string DuplicateClientUuidConstraint = "UX_ApiClient_ClientUuid";
 
     public async Task<ApiClientInsertResult> InsertApiClient(
         ApiClientInsertCommand command,
@@ -167,6 +169,40 @@ public class ApiClientRepository(
             logger.LogWarning(ex, "API client name must be unique within the application");
             await transaction.RollbackAsync();
             return new ApiClientInsertResult.FailureDuplicateName();
+        }
+        catch (PostgresException ex)
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName == DuplicateClientIdConstraint
+            )
+        {
+            // With IncludeErrorDetail the exception carries the conflicting key, so only the
+            // fixed text and the safe diagnostic fields are logged, never the exception itself.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - deliberately omitted, see comment above
+            logger.LogWarning(
+                "API client key is already in use ({SqlState}, {ConstraintName})",
+                ex.SqlState,
+                ex.ConstraintName
+            );
+#pragma warning restore S6667
+            await transaction.RollbackAsync();
+            return new ApiClientInsertResult.FailureDuplicateClientId();
+        }
+        catch (PostgresException ex)
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName == DuplicateClientUuidConstraint
+            )
+        {
+            // With IncludeErrorDetail the exception carries the conflicting UUID, so only the
+            // fixed text and the safe diagnostic fields are logged, never the exception itself.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - deliberately omitted, see comment above
+            logger.LogWarning(
+                "Identity provider client is already associated with another API client ({SqlState}, {ConstraintName})",
+                ex.SqlState,
+                ex.ConstraintName
+            );
+#pragma warning restore S6667
+            await transaction.RollbackAsync();
+            return new ApiClientInsertResult.FailureDuplicateClientUuid();
         }
         catch (Exception ex)
         {
@@ -485,6 +521,23 @@ public class ApiClientRepository(
             await RollbackSafelyAsync(transaction);
             return new ApiClientUpdateResult.FailureDuplicateName();
         }
+        catch (PostgresException ex)
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName == DuplicateClientUuidConstraint
+            )
+        {
+            // With IncludeErrorDetail the exception carries the conflicting UUID, so only the
+            // fixed text and the safe diagnostic fields are logged, never the exception itself.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - deliberately omitted, see comment above
+            logger.LogWarning(
+                "Identity provider client is already associated with another API client ({SqlState}, {ConstraintName})",
+                ex.SqlState,
+                ex.ConstraintName
+            );
+#pragma warning restore S6667
+            await RollbackSafelyAsync(transaction);
+            return new ApiClientUpdateResult.FailureDuplicateClientUuid();
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Update ApiClient failure");
@@ -670,6 +723,23 @@ public class ApiClientRepository(
 
             await transaction.CommitAsync();
             return new ApiClientUuidSyncResult.Success();
+        }
+        catch (PostgresException ex)
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName == DuplicateClientUuidConstraint
+            )
+        {
+            // With IncludeErrorDetail the exception carries the conflicting UUID, so only the
+            // fixed text and the safe diagnostic fields are logged, never the exception itself.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - deliberately omitted, see comment above
+            logger.LogWarning(
+                "The new identity provider client UUID is already referenced by another API client; nothing was written ({SqlState}, {ConstraintName})",
+                ex.SqlState,
+                ex.ConstraintName
+            );
+#pragma warning restore S6667
+            await RollbackSafelyAsync(transaction);
+            return new ApiClientUuidSyncResult.FailureNewUuidInUse();
         }
         catch (Exception ex)
         {

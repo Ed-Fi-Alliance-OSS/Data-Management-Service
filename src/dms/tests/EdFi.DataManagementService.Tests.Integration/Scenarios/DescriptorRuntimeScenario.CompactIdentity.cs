@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
-using System.Globalization;
 using System.Net;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Tests.Common;
@@ -361,12 +360,7 @@ internal static partial class DescriptorRuntimeScenario
         body["_lastModifiedDate"]!
             .GetValue<string>()
             .Should()
-            .Be(
-                state.ModifiedAt.UtcDateTime.ToString(
-                    "yyyy-MM-dd'T'HH:mm:ss'Z'",
-                    CultureInfo.InvariantCulture
-                )
-            );
+            .Be(EdFi.DataManagementService.Backend.LastModifiedDateFormatter.Format(state.ModifiedAt));
     }
 
     private static async Task<long> CountAllDocumentRowsAsync(ApiIntegrationHarness harness)
@@ -411,8 +405,8 @@ internal static partial class DescriptorRuntimeScenario
         command.CommandText = """
             SELECT descriptor."DescriptorId", document."DocumentId", descriptor."ResourceKeyId",
                    descriptor."Namespace", descriptor."CodeValue",
-                   document."ContentVersion", document."ContentLastModifiedAt",
-                   descriptor."ContentVersion", descriptor."ContentLastModifiedAt",
+                   document."ContentVersion", descriptor."ContentLastModifiedAt",
+                   descriptor."ContentVersion",
                    (SELECT COUNT(*) FROM "dms"."ReferentialIdentity" ri WHERE ri."DocumentId" = document."DocumentId"),
                    (SELECT COUNT(*) FROM "tracked_changes_edfi"."Descriptor" history WHERE history."DocumentId" = document."DocumentId")
             FROM "dms"."Document" document
@@ -427,8 +421,7 @@ internal static partial class DescriptorRuntimeScenario
         (await reader.ReadAsync()).Should().BeTrue();
         long version = reader.GetInt64(5);
         DateTimeOffset at = ToDateTimeOffset(reader.GetValue(6));
-        reader.GetInt64(7).Should().Be(version, "descriptor mirrors the owning document stamp");
-        ToDateTimeOffset(reader.GetValue(8)).Should().Be(at);
+        reader.GetInt64(7).Should().Be(version, "descriptor mirrors the owning document version");
         return new(
             reader.GetInt32(0),
             reader.GetInt64(1),
@@ -437,8 +430,8 @@ internal static partial class DescriptorRuntimeScenario
             reader.GetString(4),
             version,
             at,
-            Convert.ToInt32(reader.GetValue(9)),
-            Convert.ToInt32(reader.GetValue(10))
+            Convert.ToInt32(reader.GetValue(8)),
+            Convert.ToInt32(reader.GetValue(9))
         );
     }
 

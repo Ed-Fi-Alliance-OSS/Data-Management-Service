@@ -59,15 +59,14 @@ public class Given_Mssql_DocumentCacheMaterializer_Descriptor
                     [DocumentUuid] uniqueidentifier NOT NULL,
                     [ResourceKeyId] smallint NOT NULL,
                     [CreatedByOwnershipTokenId] smallint NULL,
-                    [ContentVersion] bigint NOT NULL,
-                    [ContentLastModifiedAt] datetimeoffset NOT NULL,
-                    [CreatedAt] datetimeoffset NOT NULL
+                    [ContentVersion] bigint NOT NULL
                 );
 
                 CREATE TABLE [dms].[Descriptor] (
                     [DescriptorId] int IDENTITY(1,1) NOT NULL CONSTRAINT [PK_Descriptor] PRIMARY KEY,
                     [DocumentId] bigint NOT NULL UNIQUE REFERENCES [dms].[Document] ([DocumentId]) ON DELETE CASCADE,
                     [ResourceKeyId] smallint NOT NULL,
+                    [ContentLastModifiedAt] datetimeoffset NOT NULL,
                     [Namespace] varchar(255) NOT NULL,
                     [CodeValue] varchar(50) NOT NULL,
                     [ShortDescription] varchar(75) NOT NULL,
@@ -81,23 +80,20 @@ public class Given_Mssql_DocumentCacheMaterializer_Descriptor
                     [DocumentUuid],
                     [ResourceKeyId],
                     [CreatedByOwnershipTokenId],
-                    [ContentVersion],
-                    [ContentLastModifiedAt],
-                    [CreatedAt]
+                    [ContentVersion]
                 )
                 VALUES (
                     5000970301,
                     'aaaaaaaa-bbbb-cccc-dddd-000000000301',
                     13,
                     NULL,
-                    222,
-                    '2026-07-30T14:15:16+00:00',
-                    '2026-07-30T14:15:16+00:00'
+                    222
                 );
 
                 INSERT INTO [dms].[Descriptor] (
                     [DocumentId],
                     [ResourceKeyId],
+                    [ContentLastModifiedAt],
                     [Namespace],
                     [CodeValue],
                     [ShortDescription],
@@ -108,6 +104,7 @@ public class Given_Mssql_DocumentCacheMaterializer_Descriptor
                 VALUES (
                     5000970301,
                     13,
+                    '2026-07-30T14:15:16+00:00',
                     'uri://ed-fi.org/SchoolTypeDescriptor',
                     'Alternative',
                     'Alternative',

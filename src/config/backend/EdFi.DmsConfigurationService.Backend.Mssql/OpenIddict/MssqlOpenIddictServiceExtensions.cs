@@ -24,6 +24,9 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict
             string authority
         )
         {
+            // The OpenIddict stores open their connections from DatabaseOptions too.
+            services.AddMssqlSessionLanguagePin();
+
             // Add identity options
             services.AddOpenIddictIdentityOptions(configuration);
             services.AddSigningKeyServices();

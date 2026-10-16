@@ -52,8 +52,9 @@
     first write after restore. Referential integrity, because --disable-triggers suppressed foreign-key
     enforcement during the load: every foreign key declared in the DMS-owned schemas is validated
     against the data from the catalog, and no trigger may be left disabled, since a declared constraint
-    whose enforcement trigger is still off is not a constraint. Stamp distributions, because a trigger
-    that fired would have rewritten ContentVersion in place and left the row count identical. And the
+    whose enforcement trigger is still off is not a constraint. Stamp distributions and owner-keyed
+    tuple checksums, because changed or swapped owner timestamps can leave row counts and timestamp
+    extrema identical. And the
     fingerprint, document count and singleton state, against a freshly provisioned reference database or
     explicit expected values.
 
@@ -1105,7 +1106,9 @@ function ConvertTo-StampDistributionMap {
 }
 
 # Row counts cannot see a rewritten stamp: the trigger that would corrupt these values updates rows in
-# place, leaving the count identical. Comparing the distribution is what detects it.
+# place, leaving the count identical. Retain the version distribution on Document; compare
+# owner tuples in DocumentId order as well, so interior changes and timestamp swaps are visible.
+# Hash each tuple before aggregation to bound its size; compact DescriptorId is deliberately absent.
 function Get-StampDistribution {
     [CmdletBinding()]
     [OutputType([System.Collections.Generic.Dictionary[string, string]])]
@@ -1116,9 +1119,7 @@ function Get-StampDistribution {
 
     $part = [System.Collections.Generic.List[string]]::new()
     $part.Add('SELECT ''dms.Document'' AS t, COUNT(*)::text || ''|'' ||
-        COALESCE(MIN("ContentVersion")::text, ''-'') || ''|'' || COALESCE(MAX("ContentVersion")::text, ''-'') || ''|'' ||
-        COALESCE(MIN("ContentLastModifiedAt")::text, ''-'') || ''|'' || COALESCE(MAX("ContentLastModifiedAt")::text, ''-'') || ''|'' ||
-        COALESCE(MIN("CreatedAt")::text, ''-'') || ''|'' || COALESCE(MAX("CreatedAt")::text, ''-'') AS v
+        COALESCE(MIN("ContentVersion")::text, ''-'') || ''|'' || COALESCE(MAX("ContentVersion")::text, ''-'') AS v
     FROM dms."Document"')
 
     foreach ($table in $SampleTable) {
@@ -1126,11 +1127,13 @@ function Get-StampDistribution {
         $quoted = '"' + $schemaName.Replace('"', '""') + '"."' + $tableName.Replace('"', '""') + '"'
         $part.Add("SELECT '$table' AS t, COUNT(*)::text || '|' ||
             COALESCE(MIN(""ContentVersion"")::text, '-') || '|' || COALESCE(MAX(""ContentVersion"")::text, '-') || '|' ||
-            COALESCE(MIN(""ContentLastModifiedAt"")::text, '-') || '|' || COALESCE(MAX(""ContentLastModifiedAt"")::text, '-') AS v
+            COALESCE(MIN(""ContentLastModifiedAt"")::text, '-') || '|' || COALESCE(MAX(""ContentLastModifiedAt"")::text, '-') || '|' ||
+            md5(COALESCE(string_agg(md5(json_build_array(""DocumentId"", ""ContentVersion"",
+                ""ContentLastModifiedAt"" AT TIME ZONE 'UTC')::text), '' ORDER BY ""DocumentId""), '')) AS v
         FROM $quoted")
     }
 
-    $sql = ($part -join "`nUNION ALL`n") + "`nORDER BY t;"
+    $sql = "SET TIME ZONE 'UTC';`n" + ($part -join "`nUNION ALL`n") + "`nORDER BY t;"
 
     $rows = Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser `
         -DatabaseName $DatabaseName -Sql $sql
@@ -1902,8 +1905,8 @@ foreach ($table in $stagedDescriptorTable) {
     if (-not $copyShape.ContainsKey($table)) { throw "Missing source-shape/inventory coverage: $table." }
 }
 $documentShape = Get-CopyColumnShape -DatabaseName $TargetDatabase -QualifiedTable 'dms.Document'
-foreach ($name in @('ContentVersion', 'ContentLastModifiedAt')) {
-    if ($name -cnotin @($documentShape.Name)) { throw "DMS-1404 requires retained document stamp $name." }
+foreach ($name in @('ContentVersion')) {
+    if ($name -cnotin @($documentShape.Name)) { throw "Carry-forward requires retained document metadata $name." }
 }
 $requestedTable = @($script:DmsDataTable | ForEach-Object { "dms.$_" }) + @($bulkTable | Where-Object { $_ -cnotin $stagedDescriptorTable })
 
@@ -2279,15 +2282,20 @@ if ($sampleTable.Count -eq 0) {
 $sourceStamp = Get-StampDistribution -DatabaseName $SourceDatabase -SampleTable (@("dms.Descriptor") + $sampleTable)
 $targetStamp = Get-StampDistribution -DatabaseName $TargetDatabase -SampleTable (@("dms.Descriptor") + $sampleTable)
 
+$stampRecord = [System.Collections.Generic.List[string]]::new()
+$stampRecord.Add("Table`tSourceDistribution`tTargetDistribution")
 $stampFailure = [System.Collections.Generic.List[string]]::new()
 foreach ($name in (Get-OrdinalSortedUnique -Value (@($sourceStamp.Keys) + @($targetStamp.Keys)))) {
     $sourceValue = if ($sourceStamp.ContainsKey($name)) { $sourceStamp[$name] } else { "absent" }
     $targetValue = if ($targetStamp.ContainsKey($name)) { $targetStamp[$name] } else { "absent" }
 
+    $stampRecord.Add("$name`t$sourceValue`t$targetValue")
     if ($sourceValue -ne $targetValue) {
         $stampFailure.Add("$name stamp distribution differs: source=$sourceValue target=$targetValue")
     }
 }
+Save-Record -Path (Join-Path $OutputDirectory "stamps.$SourceDatabase-vs-$TargetDatabase.tsv") `
+    -Content (($stampRecord -join "`n") + "`n")
 Write-Output "  stamp distributions compared: $((Get-OrdinalSortedUnique -Value (@($sourceStamp.Keys) + @($targetStamp.Keys))).Count), differing: $($stampFailure.Count)"
 
 $record = [System.Collections.Generic.List[string]]::new()

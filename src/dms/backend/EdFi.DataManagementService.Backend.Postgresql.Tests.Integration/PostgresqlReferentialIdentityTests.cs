@@ -582,6 +582,7 @@ public class PostgresqlReferentialIdentityTests
             ComputeExpectedReferentialIds(NewStudentUniqueId, "resA-1", "resB-1", "unified-1");
 
         // Capture before-snapshots of content stamps for all four documents
+        await BackdateOwnerTimestampsAsync();
         DocumentStampState beforeStudent;
         DocumentStampState beforeResourceA;
         DocumentStampState beforeResourceB;
@@ -592,28 +593,28 @@ public class PostgresqlReferentialIdentityTests
             beforeStudent = await GetDocumentStampStateAsync(
                 snapshotConnection,
                 transaction: null,
-                studentDocumentId
+                studentDocumentId,
+                "Student"
             );
             beforeResourceA = await GetDocumentStampStateAsync(
                 snapshotConnection,
                 transaction: null,
-                resourceADocumentId
+                resourceADocumentId,
+                "ResourceA"
             );
             beforeResourceB = await GetDocumentStampStateAsync(
                 snapshotConnection,
                 transaction: null,
-                resourceBDocumentId
+                resourceBDocumentId,
+                "ResourceB"
             );
             beforeKeyUnified = await GetDocumentStampStateAsync(
                 snapshotConnection,
                 transaction: null,
-                keyUnifiedDocumentId
+                keyUnifiedDocumentId,
+                "KeyUnifiedResource"
             );
         }
-
-        // PostgreSQL's now() is transaction-start time; advance the wall clock on a
-        // separate connection so the next transaction sees a strictly later timestamp.
-        await DelayForDistinctTimestampsAsync();
 
         // Act — open an explicit transaction, UPDATE the parent identity, then
         // observe the cascade through the same connection BEFORE COMMIT.
@@ -665,10 +666,30 @@ public class PostgresqlReferentialIdentityTests
 
         // Assert (pre-commit) — ContentVersion / ContentLastModifiedAt strictly bumped
         // on the parent and on every cascaded dependent.
-        var inTxnStudent = await GetDocumentStampStateAsync(connection, transaction, studentDocumentId);
-        var inTxnResourceA = await GetDocumentStampStateAsync(connection, transaction, resourceADocumentId);
-        var inTxnResourceB = await GetDocumentStampStateAsync(connection, transaction, resourceBDocumentId);
-        var inTxnKeyUnified = await GetDocumentStampStateAsync(connection, transaction, keyUnifiedDocumentId);
+        var inTxnStudent = await GetDocumentStampStateAsync(
+            connection,
+            transaction,
+            studentDocumentId,
+            "Student"
+        );
+        var inTxnResourceA = await GetDocumentStampStateAsync(
+            connection,
+            transaction,
+            resourceADocumentId,
+            "ResourceA"
+        );
+        var inTxnResourceB = await GetDocumentStampStateAsync(
+            connection,
+            transaction,
+            resourceBDocumentId,
+            "ResourceB"
+        );
+        var inTxnKeyUnified = await GetDocumentStampStateAsync(
+            connection,
+            transaction,
+            keyUnifiedDocumentId,
+            "KeyUnifiedResource"
+        );
 
         inTxnStudent.ContentVersion.Should().BeGreaterThan(beforeStudent.ContentVersion);
         inTxnStudent.ContentLastModifiedAt.Should().BeAfter(beforeStudent.ContentLastModifiedAt);
@@ -713,22 +734,26 @@ public class PostgresqlReferentialIdentityTests
             var postCommitStudent = await GetDocumentStampStateAsync(
                 postCommitConnection,
                 transaction: null,
-                studentDocumentId
+                studentDocumentId,
+                "Student"
             );
             var postCommitResourceA = await GetDocumentStampStateAsync(
                 postCommitConnection,
                 transaction: null,
-                resourceADocumentId
+                resourceADocumentId,
+                "ResourceA"
             );
             var postCommitResourceB = await GetDocumentStampStateAsync(
                 postCommitConnection,
                 transaction: null,
-                resourceBDocumentId
+                resourceBDocumentId,
+                "ResourceB"
             );
             var postCommitKeyUnified = await GetDocumentStampStateAsync(
                 postCommitConnection,
                 transaction: null,
-                keyUnifiedDocumentId
+                keyUnifiedDocumentId,
+                "KeyUnifiedResource"
             );
 
             postCommitStudent.ContentVersion.Should().Be(inTxnStudent.ContentVersion);
@@ -776,6 +801,7 @@ public class PostgresqlReferentialIdentityTests
             "unified-1"
         );
 
+        await BackdateOwnerTimestampsAsync();
         DocumentStampState beforeStudent;
         DocumentStampState beforeResourceA;
         await using (var snapshotConnection = new NpgsqlConnection(_database.ConnectionString))
@@ -784,16 +810,16 @@ public class PostgresqlReferentialIdentityTests
             beforeStudent = await GetDocumentStampStateAsync(
                 snapshotConnection,
                 transaction: null,
-                studentDocumentId
+                studentDocumentId,
+                "Student"
             );
             beforeResourceA = await GetDocumentStampStateAsync(
                 snapshotConnection,
                 transaction: null,
-                resourceADocumentId
+                resourceADocumentId,
+                "ResourceA"
             );
         }
-
-        await DelayForDistinctTimestampsAsync();
 
         await using (var connection = new NpgsqlConnection(_database.ConnectionString))
         {
@@ -843,12 +869,14 @@ public class PostgresqlReferentialIdentityTests
             var postRollbackStudent = await GetDocumentStampStateAsync(
                 postRollbackConnection,
                 transaction: null,
-                studentDocumentId
+                studentDocumentId,
+                "Student"
             );
             var postRollbackResourceA = await GetDocumentStampStateAsync(
                 postRollbackConnection,
                 transaction: null,
-                resourceADocumentId
+                resourceADocumentId,
+                "ResourceA"
             );
 
             postRollbackStudent.ContentVersion.Should().Be(beforeStudent.ContentVersion);
@@ -934,6 +962,7 @@ public class PostgresqlReferentialIdentityTests
             ("$.edOrgDependentResourceReference.educationOrganizationId", "200")
         );
 
+        await BackdateOwnerTimestampsAsync();
         DocumentStampState beforeSchool;
         DocumentStampState beforeEdOrgDep;
         DocumentStampState beforeEdOrgDepChild;
@@ -943,21 +972,22 @@ public class PostgresqlReferentialIdentityTests
             beforeSchool = await GetDocumentStampStateAsync(
                 snapshotConnection,
                 transaction: null,
-                schoolDocumentId
+                schoolDocumentId,
+                "School"
             );
             beforeEdOrgDep = await GetDocumentStampStateAsync(
                 snapshotConnection,
                 transaction: null,
-                edOrgDepDocumentId
+                edOrgDepDocumentId,
+                "EdOrgDependentResource"
             );
             beforeEdOrgDepChild = await GetDocumentStampStateAsync(
                 snapshotConnection,
                 transaction: null,
-                edOrgDepChildDocumentId
+                edOrgDepChildDocumentId,
+                "EdOrgDependentChildResource"
             );
         }
-
-        await DelayForDistinctTimestampsAsync();
 
         await using var connection = new NpgsqlConnection(_database.ConnectionString);
         await connection.OpenAsync();
@@ -1007,12 +1037,23 @@ public class PostgresqlReferentialIdentityTests
             );
 
         // Assert (pre-commit) — ContentVersion / ContentLastModifiedAt strictly bumped on every impacted document.
-        var inTxnSchool = await GetDocumentStampStateAsync(connection, transaction, schoolDocumentId);
-        var inTxnEdOrgDep = await GetDocumentStampStateAsync(connection, transaction, edOrgDepDocumentId);
+        var inTxnSchool = await GetDocumentStampStateAsync(
+            connection,
+            transaction,
+            schoolDocumentId,
+            "School"
+        );
+        var inTxnEdOrgDep = await GetDocumentStampStateAsync(
+            connection,
+            transaction,
+            edOrgDepDocumentId,
+            "EdOrgDependentResource"
+        );
         var inTxnEdOrgDepChild = await GetDocumentStampStateAsync(
             connection,
             transaction,
-            edOrgDepChildDocumentId
+            edOrgDepChildDocumentId,
+            "EdOrgDependentChildResource"
         );
 
         inTxnSchool.ContentVersion.Should().BeGreaterThan(beforeSchool.ContentVersion);
@@ -1055,17 +1096,20 @@ public class PostgresqlReferentialIdentityTests
             var postCommitSchool = await GetDocumentStampStateAsync(
                 postCommitConnection,
                 transaction: null,
-                schoolDocumentId
+                schoolDocumentId,
+                "School"
             );
             var postCommitEdOrgDep = await GetDocumentStampStateAsync(
                 postCommitConnection,
                 transaction: null,
-                edOrgDepDocumentId
+                edOrgDepDocumentId,
+                "EdOrgDependentResource"
             );
             var postCommitEdOrgDepChild = await GetDocumentStampStateAsync(
                 postCommitConnection,
                 transaction: null,
-                edOrgDepChildDocumentId
+                edOrgDepChildDocumentId,
+                "EdOrgDependentChildResource"
             );
 
             postCommitSchool.ContentVersion.Should().Be(inTxnSchool.ContentVersion);
@@ -1659,15 +1703,17 @@ public class PostgresqlReferentialIdentityTests
     private static async Task<DocumentStampState> GetDocumentStampStateAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        long documentId
+        long documentId,
+        string rootTable
     )
     {
         await using var cmd = connection.CreateCommand();
         cmd.Transaction = transaction;
-        cmd.CommandText = """
-            SELECT "ContentVersion", "ContentLastModifiedAt"
-            FROM "dms"."Document"
-            WHERE "DocumentId" = @documentId;
+        cmd.CommandText = $"""
+            SELECT doc."ContentVersion", owner."ContentLastModifiedAt", owner."ContentVersion"
+            FROM "dms"."Document" doc
+            JOIN "edfi"."{rootTable}" owner ON owner."DocumentId" = doc."DocumentId"
+            WHERE doc."DocumentId" = @documentId;
             """;
         cmd.Parameters.Add(new NpgsqlParameter("documentId", documentId));
 
@@ -1677,6 +1723,7 @@ public class PostgresqlReferentialIdentityTests
             throw new InvalidOperationException($"No dms.Document row for DocumentId={documentId}.");
         }
 
+        reader.GetInt64(2).Should().Be(reader.GetInt64(0), "the owner version must match its document");
         return new DocumentStampState(reader.GetInt64(0), ReadDateTimeOffset(reader.GetValue(1)));
     }
 
@@ -1725,8 +1772,26 @@ public class PostgresqlReferentialIdentityTests
         return rows;
     }
 
-    private async Task DelayForDistinctTimestampsAsync()
+    private async Task BackdateOwnerTimestampsAsync()
     {
-        await _database.ExecuteNonQueryAsync("""SELECT pg_sleep(0.02);""");
+        foreach (
+            var rootTable in new[]
+            {
+                "Student",
+                "ResourceA",
+                "ResourceB",
+                "KeyUnifiedResource",
+                "School",
+                "EdOrgDependentResource",
+                "EdOrgDependentChildResource",
+            }
+        )
+        {
+            await _database.ExecuteNonQueryAsync(
+                $"""
+                UPDATE "edfi"."{rootTable}" SET "ContentLastModifiedAt" = '2000-01-01T00:00:00Z';
+                """
+            );
+        }
     }
 }

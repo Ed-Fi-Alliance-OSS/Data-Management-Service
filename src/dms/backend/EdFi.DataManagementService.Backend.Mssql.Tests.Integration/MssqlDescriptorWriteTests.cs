@@ -92,6 +92,19 @@ public class Given_MssqlDescriptorWriteHandler
         var insertResult = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest);
         var documentUuid = ((UpsertResult.InsertSuccess)insertResult).NewDocumentUuid;
 
+        await using (var connection = new SqlConnection(_database.ConnectionString))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE descriptor SET [ContentLastModifiedAt] = '2000-01-01'
+                FROM [dms].[Descriptor] descriptor
+                JOIN [dms].[Document] doc ON doc.[DocumentId] = descriptor.[DocumentId]
+                WHERE doc.[DocumentUuid] = @documentUuid;
+                """;
+            command.Parameters.Add(new SqlParameter("@documentUuid", documentUuid.Value));
+            await command.ExecuteNonQueryAsync();
+        }
         var stampsAfterInsert = await ReadTrackingStampsAsync(documentUuid);
 
         var putRequest = CreatePutRequest(
@@ -111,7 +124,7 @@ public class Given_MssqlDescriptorWriteHandler
         var stampsAfterUpdate = await ReadTrackingStampsAsync(documentUuid);
 
         stampsAfterUpdate.ContentVersion.Should().BeGreaterThan(stampsAfterInsert.ContentVersion);
-        stampsAfterUpdate.ContentLastModifiedAt.Should().BeOnOrAfter(stampsAfterInsert.ContentLastModifiedAt);
+        stampsAfterUpdate.ContentLastModifiedAt.Should().BeAfter(stampsAfterInsert.ContentLastModifiedAt);
     }
 
     [Test]
@@ -551,14 +564,16 @@ public class Given_MssqlDescriptorWriteHandler
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT [ContentVersion], [ContentLastModifiedAt]
-            FROM [dms].[Document]
-            WHERE [DocumentUuid] = @documentUuid;
+            SELECT doc.[ContentVersion], descriptor.[ContentLastModifiedAt], descriptor.[ContentVersion]
+            FROM [dms].[Document] doc
+            JOIN [dms].[Descriptor] descriptor ON descriptor.[DocumentId] = doc.[DocumentId]
+            WHERE doc.[DocumentUuid] = @documentUuid;
             """;
         command.Parameters.Add(new SqlParameter("@documentUuid", documentUuid.Value));
         await using var reader = await command.ExecuteReaderAsync();
         (await reader.ReadAsync()).Should().BeTrue("document should exist");
 
+        reader.GetInt64(2).Should().Be(reader.GetInt64(0));
         return new DocumentTrackingStamps(reader.GetInt64(0), reader.GetDateTime(1));
     }
 

@@ -14,6 +14,7 @@ using EdFi.DataManagementService.Backend.Tests.Unit.Composite;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
+using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -111,6 +112,56 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
         resolution.ImmediateResult.Should().BeNull();
         session.Commands.Should().ContainSingle();
         session.Commands[0].Parameters.Should().OnlyContain(parameter => parameter.Name.Contains("_s0"));
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Rewritten_Proposed_Namespace_Parameter
+    {
+        private IReadOnlyList<RelationalParameter> _proposedParameters = null!;
+        private NpgsqlParameter _configuredProposed = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var request = CreateRequest(withNamespace: true, withRelationship: false);
+            var session = new ScriptedWriteSession(CreateReader(CreateAuthorizedTable()));
+
+            await CreateSut()
+                .ResolveAsync(
+                    request,
+                    CreateMergeResult(request),
+                    RelationalWriteSecondCommandMode.AuthorizationOnly,
+                    session
+                );
+
+            _proposedParameters =
+            [
+                .. session
+                    .Commands.SelectMany(static command => command.Parameters)
+                    .Where(static parameter =>
+                        parameter.Name.Contains("proposedNamespace_s0", StringComparison.Ordinal)
+                    ),
+            ];
+            _configuredProposed = new NpgsqlParameter { Value = DBNull.Value };
+
+            if (_proposedParameters.Count == 1)
+            {
+                _proposedParameters[0].ConfigureParameter?.Invoke(_configuredProposed);
+            }
+        }
+
+        [Test]
+        public void It_sends_one_proposed_namespace_parameter()
+        {
+            _proposedParameters.Should().ContainSingle();
+        }
+
+        [Test]
+        public void It_keeps_the_string_type_on_the_rewritten_parameter()
+        {
+            _configuredProposed.DbType.Should().Be(DbType.String);
+        }
     }
 
     [Test]
@@ -430,6 +481,49 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
             );
 
         (await act.Should().ThrowAsync<FakeDbException>()).Which.Should().BeSameAs(providerFailure);
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Namespace_Only_Failure_That_Is_Not_An_Authorization_Denial
+    {
+        private FakeDbException _providerFailure = null!;
+        private Exception? _thrown;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var request = CreateRequest(withNamespace: true, withRelationship: false);
+            _providerFailure = new FakeDbException("duplicate key", "23505");
+            var session = new ScriptedWriteSession(_providerFailure);
+            var sut = CreateSut(new StubProviderFailureExtractor("23505", "duplicate key"));
+
+            try
+            {
+                await sut.ResolveAsync(
+                    request,
+                    CreateMergeResult(request),
+                    RelationalWriteSecondCommandMode.AuthorizationOnly,
+                    session
+                );
+            }
+            catch (Exception exception)
+            {
+                _thrown = exception;
+            }
+        }
+
+        [Test]
+        public void It_rethrows_the_provider_failure_itself()
+        {
+            _thrown.Should().BeSameAs(_providerFailure);
+        }
+
+        [Test]
+        public void It_keeps_the_stack_from_where_the_command_failed()
+        {
+            (_thrown?.StackTrace).Should().Contain("ScriptedDbCommand.ExecuteDbDataReader");
+        }
     }
 
     private static CompositeRelationalWriteSecondCommand CreateSut(

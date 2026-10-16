@@ -480,7 +480,6 @@ internal sealed class DocumentCacheAdminCliStateInspector(
     )
     {
         PostgresqlGeneratedDdlTestDatabase database = RequirePostgresqlDatabase();
-        DateTimeOffset observedAt = DateTimeOffset.UtcNow;
         Guid documentUuid = Guid.NewGuid();
         IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await database.QueryRowsAsync(
             """
@@ -493,20 +492,17 @@ internal sealed class DocumentCacheAdminCliStateInspector(
             INSERT INTO "dms"."Document" (
                 "DocumentUuid",
                 "ResourceKeyId",
-                "ContentVersion",
-                "ContentLastModifiedAt"
+                "ContentVersion"
             )
             SELECT
                 @documentUuid,
                 resource_key."ResourceKeyId",
-                @contentVersion,
-                @observedAt
+                @contentVersion
             FROM resource_key
             RETURNING "DocumentId";
             """,
             new NpgsqlParameter("documentUuid", NpgsqlDbType.Uuid) { Value = documentUuid },
-            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion },
-            new NpgsqlParameter("observedAt", NpgsqlDbType.TimestampTz) { Value = observedAt }
+            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion }
         );
 
         long documentId = RequireInt64(rows.Single(), "DocumentId");
@@ -518,7 +514,6 @@ internal sealed class DocumentCacheAdminCliStateInspector(
     )
     {
         MssqlGeneratedDdlTestDatabase database = RequireMssqlDatabase();
-        DateTime observedAt = DateTime.UtcNow;
         Guid documentUuid = Guid.NewGuid();
         IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await database.QueryRowsAsync(
             """
@@ -532,24 +527,21 @@ internal sealed class DocumentCacheAdminCliStateInspector(
             INSERT INTO [dms].[Document] (
                 [DocumentUuid],
                 [ResourceKeyId],
-                [ContentVersion],
-                [ContentLastModifiedAt]
+                [ContentVersion]
             )
             OUTPUT inserted.[DocumentId]
             INTO @inserted
             SELECT
                 @documentUuid,
                 [resource_key].[ResourceKeyId],
-                @contentVersion,
-                @observedAt
+                @contentVersion
             FROM [resource_key];
 
             SELECT [DocumentId]
             FROM @inserted;
             """,
             new SqlParameter("documentUuid", documentUuid),
-            new SqlParameter("contentVersion", contentVersion),
-            new SqlParameter("observedAt", observedAt)
+            new SqlParameter("contentVersion", contentVersion)
         );
 
         long documentId = RequireInt64(rows.Single(), "DocumentId");
@@ -587,10 +579,12 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                     resource_key."ResourceVersion",
                     @contentVersion,
                     @streamEtag,
-                    document."ContentLastModifiedAt",
+                    descriptor."ContentLastModifiedAt",
                     @documentJson::jsonb,
                     @computedAt
                 FROM "dms"."Document" AS document
+                INNER JOIN "dms"."Descriptor" AS descriptor
+                    ON descriptor."DocumentId" = document."DocumentId"
                 INNER JOIN "dms"."ResourceKey" AS resource_key
                     ON resource_key."ResourceKeyId" = document."ResourceKeyId"
                 WHERE document."DocumentId" = @documentId;
@@ -640,10 +634,12 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                     [resource_key].[ResourceVersion],
                     @contentVersion,
                     @streamEtag,
-                    [document].[ContentLastModifiedAt],
+                    [descriptor].[ContentLastModifiedAt],
                     @documentJson,
                     @computedAt
                 FROM [dms].[Document] AS [document]
+                INNER JOIN [dms].[Descriptor] AS [descriptor]
+                    ON [descriptor].[DocumentId] = [document].[DocumentId]
                 INNER JOIN [dms].[ResourceKey] AS [resource_key]
                     ON [resource_key].[ResourceKeyId] = [document].[ResourceKeyId]
                 WHERE [document].[DocumentId] = @documentId;
@@ -750,14 +746,12 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                 INSERT INTO "dms"."Document" (
                     "DocumentUuid",
                     "ResourceKeyId",
-                    "ContentVersion",
-                    "ContentLastModifiedAt"
+                    "ContentVersion"
                 )
                 SELECT
                     @documentUuid,
                     resource_key."ResourceKeyId",
-                    @contentVersion,
-                    @observedAt
+                    @contentVersion
                 FROM resource_key
                 RETURNING "DocumentId", "ResourceKeyId", "ContentVersion"
             )
@@ -824,16 +818,14 @@ internal sealed class DocumentCacheAdminCliStateInspector(
             INSERT INTO [dms].[Document] (
                 [DocumentUuid],
                 [ResourceKeyId],
-                [ContentVersion],
-                [ContentLastModifiedAt]
+                [ContentVersion]
             )
             OUTPUT inserted.[DocumentId], inserted.[ResourceKeyId], inserted.[ContentVersion]
             INTO @inserted
             SELECT
                 @documentUuid,
                 [resource_key].[ResourceKeyId],
-                @contentVersion,
-                @observedAt
+                @contentVersion
             FROM [resource_key];
 
             INSERT INTO [dms].[Descriptor] (
@@ -1221,14 +1213,12 @@ internal sealed class DocumentCacheAdminCliPostgresqlInsertTransaction : IAsyncD
                 INSERT INTO "dms"."Document" (
                     "DocumentUuid",
                     "ResourceKeyId",
-                    "ContentVersion",
-                    "ContentLastModifiedAt"
+                    "ContentVersion"
                 )
                 SELECT
                     @documentUuid,
                     resource_key."ResourceKeyId",
-                    @contentVersion,
-                    @observedAt
+                    @contentVersion
                 FROM resource_key
                 RETURNING "DocumentId";
                 """;
@@ -1237,9 +1227,6 @@ internal sealed class DocumentCacheAdminCliPostgresqlInsertTransaction : IAsyncD
             );
             command.Parameters.Add(
                 new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion }
-            );
-            command.Parameters.Add(
-                new NpgsqlParameter("observedAt", NpgsqlDbType.TimestampTz) { Value = DateTimeOffset.UtcNow }
             );
 
             object? result = await command.ExecuteScalarAsync();
@@ -1484,16 +1471,14 @@ internal sealed class DocumentCacheAdminCliMssqlInsertTransaction : IAsyncDispos
                 INSERT INTO [dms].[Document] (
                     [DocumentUuid],
                     [ResourceKeyId],
-                    [ContentVersion],
-                    [ContentLastModifiedAt]
+                    [ContentVersion]
                 )
                 OUTPUT inserted.[DocumentId]
                 INTO @inserted
                 SELECT
                     @documentUuid,
                     [resource_key].[ResourceKeyId],
-                    @contentVersion,
-                    @observedAt
+                    @contentVersion
                 FROM [resource_key];
 
                 SELECT [DocumentId]
@@ -1501,7 +1486,6 @@ internal sealed class DocumentCacheAdminCliMssqlInsertTransaction : IAsyncDispos
                 """;
             command.Parameters.Add(new SqlParameter("documentUuid", Guid.NewGuid()));
             command.Parameters.Add(new SqlParameter("contentVersion", contentVersion));
-            command.Parameters.Add(new SqlParameter("observedAt", DateTime.UtcNow));
 
             object? result = await command.ExecuteScalarAsync();
             long documentId = result is not null
@@ -1676,8 +1660,8 @@ internal sealed class DocumentCacheAdminCliProcessHarness : IAsyncDisposable
         process.StartInfo.Environment["DOTNET_ENVIRONMENT"] = "";
         process.StartInfo.Environment["ASPNETCORE_ENVIRONMENT"] = "";
         process.StartInfo.Environment["AppSettings__Datastore"] = Target.AppSettingsDatastore;
-        process.StartInfo.Environment["AppSettings__UseApiSchemaPath"] = "true";
-        process.StartInfo.Environment["AppSettings__ApiSchemaPath"] = Target.ApiSchemaDirectory;
+        process.StartInfo.Environment["AppSettings__ApiSchema__UseCustomPath"] = "true";
+        process.StartInfo.Environment["AppSettings__ApiSchema__Path"] = Target.ApiSchemaDirectory;
         process.StartInfo.Environment["ConfigurationServiceSettings__BaseUrl"] =
             ConfigurationService.BaseUri.ToString();
         process.StartInfo.Environment["ConfigurationServiceSettings__ClientId"] =
@@ -1727,8 +1711,11 @@ internal sealed class DocumentCacheAdminCliProcessHarness : IAsyncDisposable
             ["AppSettings"] = new JsonObject
             {
                 ["Datastore"] = target.AppSettingsDatastore,
-                ["UseApiSchemaPath"] = true,
-                ["ApiSchemaPath"] = target.ApiSchemaDirectory,
+                ["ApiSchema"] = new JsonObject
+                {
+                    ["UseCustomPath"] = true,
+                    ["Path"] = target.ApiSchemaDirectory,
+                },
                 ["AllowIdentityUpdateOverrides"] = string.Empty,
                 ["MaximumPageSize"] = 500,
                 ["DefaultPartitionCount"] = 10,

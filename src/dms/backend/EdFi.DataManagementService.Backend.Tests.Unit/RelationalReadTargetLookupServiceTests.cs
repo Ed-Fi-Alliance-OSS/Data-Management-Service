@@ -16,11 +16,12 @@ public class Given_RelationalReadTargetLookupService
 {
     private static readonly QualifiedResourceName _requestResource = new("Ed-Fi", "Student");
 
-    [TestCase(SqlDialect.Pgsql, "dms.\"Document\"")]
-    [TestCase(SqlDialect.Mssql, "[dms].[Document]")]
+    [TestCase(SqlDialect.Pgsql, "\"dms\".\"Document\"", "\"edfi\".\"Student\"")]
+    [TestCase(SqlDialect.Mssql, "[dms].[Document]", "[edfi].[Student]")]
     public async Task It_returns_not_found_when_document_uuid_does_not_match_a_persisted_document(
         SqlDialect dialect,
-        string expectedTableFragment
+        string expectedTableFragment,
+        string expectedRootTableFragment
     )
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
@@ -29,7 +30,7 @@ public class Given_RelationalReadTargetLookupService
         ]);
         var sut = new RelationalReadTargetLookupService(commandExecutor);
 
-        var result = await sut.ResolveForGetByIdAsync(
+        var result = await sut.ResolveForCacheCandidateAsync(
             CreateMappingSet(dialect),
             _requestResource,
             documentUuid
@@ -40,13 +41,19 @@ public class Given_RelationalReadTargetLookupService
         commandExecutor.Commands[0].CommandText.Should().Contain(expectedTableFragment);
         commandExecutor
             .Commands[0]
+            .CommandText.Should()
+            .Contain($"LEFT JOIN {expectedRootTableFragment} owner");
+        commandExecutor.Commands[0].CommandText.Should().NotContain("document.\"ContentLastModifiedAt\"");
+        commandExecutor.Commands[0].CommandText.Should().NotContain("document.[ContentLastModifiedAt]");
+        commandExecutor
+            .Commands[0]
             .Parameters.Select(parameter => parameter.Value)
             .Should()
-            .Equal(documentUuid.Value);
+            .Equal(documentUuid.Value, (short)1);
     }
 
-    [TestCase(SqlDialect.Pgsql, "dms.\"Document\"")]
-    [TestCase(SqlDialect.Mssql, "[dms].[Document]")]
+    [TestCase(SqlDialect.Pgsql, "\"edfi\".\"Student\"")]
+    [TestCase(SqlDialect.Mssql, "[edfi].[Student]")]
     public async Task It_returns_existing_document_when_document_uuid_matches_the_requested_resource(
         SqlDialect dialect,
         string expectedTableFragment
@@ -69,7 +76,7 @@ public class Given_RelationalReadTargetLookupService
         ]);
         var sut = new RelationalReadTargetLookupService(commandExecutor);
 
-        var result = await sut.ResolveForGetByIdAsync(
+        var result = await sut.ResolveForCacheCandidateAsync(
             CreateMappingSet(dialect),
             _requestResource,
             documentUuid
@@ -78,7 +85,7 @@ public class Given_RelationalReadTargetLookupService
         result
             .Should()
             .BeEquivalentTo(
-                new RelationalReadTargetLookupResult.ExistingDocument(
+                new RelationalReadTargetLookupResult.ExistingDocumentWithTimestamp(
                     404L,
                     documentUuid,
                     907L,
@@ -86,19 +93,23 @@ public class Given_RelationalReadTargetLookupService
                 )
             );
         commandExecutor.Commands.Should().ContainSingle();
-        commandExecutor.Commands[0].CommandText.Should().Contain(expectedTableFragment);
+        commandExecutor.Commands[0].CommandText.Should().Contain($"LEFT JOIN {expectedTableFragment} owner");
+        commandExecutor.Commands[0].CommandText.Should().Contain("owner.");
+        commandExecutor.Commands[0].CommandText.Should().Contain("ContentLastModifiedAt");
+        commandExecutor.Commands[0].CommandText.Should().NotContain("document.\"ContentLastModifiedAt\"");
+        commandExecutor.Commands[0].CommandText.Should().NotContain("document.[ContentLastModifiedAt]");
         commandExecutor
             .Commands[0]
             .Parameters.Select(parameter => parameter.Value)
             .Should()
-            .Equal(documentUuid.Value);
+            .Equal(documentUuid.Value, (short)1);
     }
 
     [Test]
     public void It_rejects_existing_document_without_a_real_content_last_modified_timestamp()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
-        var existingDocument = new RelationalReadTargetLookupResult.ExistingDocument(
+        var existingDocument = new RelationalReadTargetLookupResult.ExistingDocumentWithTimestamp(
             404L,
             documentUuid,
             907L,
@@ -106,14 +117,19 @@ public class Given_RelationalReadTargetLookupService
         );
 
         Action constructAction = () =>
-            _ = new RelationalReadTargetLookupResult.ExistingDocument(404L, documentUuid, 907L, default);
+            _ = new RelationalReadTargetLookupResult.ExistingDocumentWithTimestamp(
+                404L,
+                documentUuid,
+                907L,
+                default
+            );
         Action cloneAction = () => _ = existingDocument with { ContentLastModifiedAt = default };
 
         constructAction.Should().Throw<ArgumentException>().WithMessage("*ContentLastModifiedAt*");
         cloneAction.Should().Throw<ArgumentException>().WithMessage("*ContentLastModifiedAt*");
     }
 
-    [TestCase(SqlDialect.Pgsql, "dms.\"Document\"")]
+    [TestCase(SqlDialect.Pgsql, "\"dms\".\"Document\"")]
     [TestCase(SqlDialect.Mssql, "[dms].[Document]")]
     public async Task It_distinguishes_a_uuid_that_exists_for_the_wrong_resource(
         SqlDialect dialect,
@@ -129,14 +145,14 @@ public class Given_RelationalReadTargetLookupService
                         ("DocumentUuid", documentUuid.Value),
                         ("ResourceKeyId", (short)11),
                         ("ContentVersion", 1234L),
-                        ("ContentLastModifiedAt", new DateTimeOffset(2026, 4, 11, 12, 30, 45, TimeSpan.Zero))
+                        ("ContentLastModifiedAt", null)
                     )
                 ),
             ]),
         ]);
         var sut = new RelationalReadTargetLookupService(commandExecutor);
 
-        var result = await sut.ResolveForGetByIdAsync(
+        var result = await sut.ResolveForCacheCandidateAsync(
             CreateMappingSet(dialect),
             _requestResource,
             documentUuid
@@ -152,11 +168,220 @@ public class Given_RelationalReadTargetLookupService
             );
         commandExecutor.Commands.Should().ContainSingle();
         commandExecutor.Commands[0].CommandText.Should().Contain(expectedTableFragment);
+        commandExecutor.Commands[0].CommandText.Should().Contain("LEFT JOIN");
         commandExecutor
             .Commands[0]
             .Parameters.Select(parameter => parameter.Value)
             .Should()
-            .Equal(documentUuid.Value);
+            .Equal(documentUuid.Value, (short)1);
+    }
+
+    [TestCase(SqlDialect.Pgsql, "\"dms\".\"Descriptor\"")]
+    [TestCase(SqlDialect.Mssql, "[dms].[Descriptor]")]
+    public async Task It_uses_the_descriptor_document_id_for_descriptor_reads(
+        SqlDialect dialect,
+        string expectedDescriptorTable
+    )
+    {
+        var descriptorResource = new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor");
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var timestamp = new DateTimeOffset(2026, 4, 11, 12, 30, 45, TimeSpan.Zero);
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    RelationalAccessTestData.CreateRow(
+                        ("DocumentId", 4_000_000_345L),
+                        ("DocumentUuid", documentUuid.Value),
+                        ("ResourceKeyId", (short)13),
+                        ("ContentVersion", 907L),
+                        ("ContentLastModifiedAt", timestamp)
+                    )
+                ),
+            ]),
+        ]);
+
+        var result = await new RelationalReadTargetLookupService(
+            commandExecutor
+        ).ResolveForCacheCandidateAsync(CreateMappingSet(dialect), descriptorResource, documentUuid);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalReadTargetLookupResult.ExistingDocumentWithTimestamp(
+                    4_000_000_345L,
+                    documentUuid,
+                    907L,
+                    timestamp
+                )
+            );
+        commandExecutor.Commands.Should().ContainSingle();
+        var sql = commandExecutor.Commands[0].CommandText;
+        sql.Should().Contain($"LEFT JOIN {expectedDescriptorTable} owner");
+        sql.Should()
+            .Contain(
+                dialect == SqlDialect.Pgsql
+                    ? "owner.\"DocumentId\" = document.\"DocumentId\""
+                    : "owner.[DocumentId] = document.[DocumentId]"
+            );
+        sql.Should().NotContain("owner.\"DescriptorId\"").And.NotContain("owner.[DescriptorId]");
+        commandExecutor
+            .Commands[0]
+            .Parameters.Select(parameter => parameter.Value)
+            .Should()
+            .Equal(documentUuid.Value, (short)13);
+    }
+
+    [TestCase(SqlDialect.Pgsql, false)]
+    [TestCase(SqlDialect.Mssql, false)]
+    [TestCase(SqlDialect.Pgsql, true)]
+    [TestCase(SqlDialect.Mssql, true)]
+    public async Task It_rechecks_document_existence_before_classifying_a_missing_owner_timestamp(
+        SqlDialect dialect,
+        bool documentSurvives
+    )
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var documentRow = RelationalAccessTestData.CreateRow(
+            ("DocumentId", 404L),
+            ("DocumentUuid", documentUuid.Value),
+            ("ResourceKeyId", (short)1),
+            ("ContentVersion", 907L)
+        );
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    RelationalAccessTestData.CreateRow(
+                        ("DocumentId", 404L),
+                        ("DocumentUuid", documentUuid.Value),
+                        ("ResourceKeyId", (short)1),
+                        ("ContentVersion", 907L),
+                        ("ContentLastModifiedAt", null)
+                    )
+                ),
+            ]),
+            new InMemoryRelationalCommandExecution([
+                documentSurvives
+                    ? InMemoryRelationalResultSet.Create(documentRow)
+                    : InMemoryRelationalResultSet.Create(),
+            ]),
+        ]);
+        var sut = new RelationalReadTargetLookupService(commandExecutor);
+
+        if (documentSurvives)
+        {
+            Func<Task> act = () =>
+                sut.ResolveForCacheCandidateAsync(CreateMappingSet(dialect), _requestResource, documentUuid);
+            await act.Should()
+                .ThrowAsync<InvalidOperationException>()
+                .WithMessage(
+                    $"Relational GET target lookup for document uuid '{documentUuid.Value}' returned a row without ContentLastModifiedAt."
+                );
+        }
+        else
+        {
+            var result = await sut.ResolveForCacheCandidateAsync(
+                CreateMappingSet(dialect),
+                _requestResource,
+                documentUuid
+            );
+            result.Should().BeOfType<RelationalReadTargetLookupResult.NotFound>();
+        }
+
+        commandExecutor.Commands.Should().HaveCount(2);
+        commandExecutor.Commands[0].CommandText.Should().Contain("LEFT JOIN").And.Contain("owner.");
+        var reread = commandExecutor.Commands[1];
+        reread
+            .CommandText.Should()
+            .Contain(
+                dialect == SqlDialect.Pgsql
+                    ? "FROM dms.\"Document\" document"
+                    : "FROM [dms].[Document] document"
+            )
+            .And.NotContain("JOIN")
+            .And.NotContain("ContentLastModifiedAt")
+            .And.NotContain("owner.");
+        reread.Parameters.Select(parameter => parameter.Name).Should().Equal("@documentUuid");
+        reread.Parameters.Select(parameter => parameter.Value).Should().Equal(documentUuid.Value);
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_resolves_get_identity_and_version_without_reading_the_root(SqlDialect dialect)
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    RelationalAccessTestData.CreateRow(
+                        ("DocumentId", 404L),
+                        ("DocumentUuid", documentUuid.Value),
+                        ("ResourceKeyId", (short)1),
+                        ("ContentVersion", 907L)
+                    )
+                ),
+            ]),
+        ]);
+
+        var result = await new RelationalReadTargetLookupService(commandExecutor).ResolveForGetByIdAsync(
+            CreateMappingSet(dialect),
+            _requestResource,
+            documentUuid
+        );
+
+        result.Should().Be(new RelationalReadTargetLookupResult.ExistingDocument(404L, documentUuid, 907L));
+        var command = commandExecutor.Commands.Should().ContainSingle().Subject;
+        command
+            .CommandText.Should()
+            .Contain(
+                dialect == SqlDialect.Pgsql
+                    ? "FROM dms.\"Document\" document"
+                    : "FROM [dms].[Document] document"
+            )
+            .And.NotContain("JOIN")
+            .And.NotContain("ContentLastModifiedAt");
+        command.Parameters.Select(parameter => parameter.Name).Should().Equal("@documentUuid");
+        command.Parameters.Select(parameter => parameter.Value).Should().Equal(documentUuid.Value);
+    }
+
+    [TestCase(SqlDialect.Pgsql, false)]
+    [TestCase(SqlDialect.Mssql, false)]
+    [TestCase(SqlDialect.Pgsql, true)]
+    [TestCase(SqlDialect.Mssql, true)]
+    public async Task It_preserves_missing_and_wrong_resource_results_without_reading_the_root(
+        SqlDialect dialect,
+        bool wrongResource
+    )
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                wrongResource
+                    ? InMemoryRelationalResultSet.Create(
+                        RelationalAccessTestData.CreateRow(
+                            ("DocumentId", 808L),
+                            ("DocumentUuid", documentUuid.Value),
+                            ("ResourceKeyId", (short)11),
+                            ("ContentVersion", 1234L)
+                        )
+                    )
+                    : InMemoryRelationalResultSet.Create(),
+            ]),
+        ]);
+
+        var result = await new RelationalReadTargetLookupService(commandExecutor).ResolveForGetByIdAsync(
+            CreateMappingSet(dialect),
+            _requestResource,
+            documentUuid
+        );
+
+        RelationalReadTargetLookupResult expected = wrongResource
+            ? new RelationalReadTargetLookupResult.WrongResource(
+                documentUuid,
+                new QualifiedResourceName("Ed-Fi", "School")
+            )
+            : new RelationalReadTargetLookupResult.NotFound();
+        result.Should().Be(expected);
+        commandExecutor.Commands.Should().ContainSingle().Which.CommandText.Should().NotContain("JOIN");
     }
 
     private static MappingSet CreateMappingSet(SqlDialect dialect)

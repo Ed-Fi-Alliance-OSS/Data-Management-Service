@@ -5,6 +5,7 @@
 
 using System.Data.Common;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
@@ -35,14 +36,16 @@ public abstract class Given_RepresentationRestampCdcStateTests
 
     private protected abstract CdcStateProviderOperations ProviderOperations { get; }
 
-    [Test]
-    public async Task It_publishes_a_real_tracking_restamp_after_projector_drain()
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_publishes_a_real_tracking_restamp_after_projector_drain(bool resourceScope)
     {
         using var cancellation = new CancellationTokenSource(TimeSpan.FromMinutes(8));
         await using RepresentationRestampCdcStateFixture fixture =
             await RepresentationRestampCdcStateFixture.StartAsync(ProviderOperations, cancellation.Token);
 
         (CdcStateRecord original, CdcStateRecord restamped) = await fixture.CaptureRealRestampAsync(
+            resourceScope,
             cancellation.Token
         );
 
@@ -317,13 +320,13 @@ internal sealed class PostgresqlCdcStateProviderOperations()
                 SELECT "ResourceKeyId"
                 FROM "dms"."ResourceKey"
                 WHERE "ProjectName" = 'Ed-Fi'
-                  AND "ResourceName" = 'SchoolTypeDescriptor'
+                  AND "ResourceName" = @resourceName
             ),
             inserted_document AS (
                 INSERT INTO "dms"."Document" (
-                    "DocumentUuid", "ResourceKeyId", "ContentLastModifiedAt"
+                    "DocumentUuid", "ResourceKeyId"
                 )
-                SELECT @documentUuid, resource_key."ResourceKeyId", @observedAt
+                SELECT @documentUuid, resource_key."ResourceKeyId"
                 FROM resource_key
                 RETURNING "DocumentId", "ResourceKeyId", "ContentVersion"
             )
@@ -491,14 +494,14 @@ internal sealed class SqlServerCdcStateProviderOperations()
                 SELECT [ResourceKeyId]
                 FROM [dms].[ResourceKey]
                 WHERE [ProjectName] = N'Ed-Fi'
-                  AND [ResourceName] = N'SchoolTypeDescriptor'
+                  AND [ResourceName] = @resourceName
             )
             INSERT INTO [dms].[Document] (
-                [DocumentUuid], [ResourceKeyId], [ContentLastModifiedAt]
+                [DocumentUuid], [ResourceKeyId]
             )
             OUTPUT inserted.[DocumentId], inserted.[ResourceKeyId], inserted.[ContentVersion]
             INTO @inserted_document
-            SELECT @documentUuid, [resource_key].[ResourceKeyId], @observedAt
+            SELECT @documentUuid, [resource_key].[ResourceKeyId]
             FROM [resource_key];
 
             INSERT INTO [dms].[Descriptor] (
@@ -567,15 +570,10 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
 
         try
         {
-            int providerPort = await ReadMappedProviderPortAsync(
+            CdcConnectorTemplateRequest request = await CdcGeneratedSchemaFixture.CreateRequestAsync(
                 pinnedFixture,
                 providerOperations,
                 cancellationToken
-            );
-            await ProvisionGeneratedDmsSchemaAsync(providerPort, providerOperations, cancellationToken);
-            CdcConnectorTemplateRequest request = await pinnedFixture.CreateRequestAsync(
-                cancellationToken,
-                generatedSchema: true
             );
             var fixture = new RepresentationRestampCdcStateFixture(
                 providerOperations,
@@ -598,30 +596,112 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
     }
 
     public async Task<(CdcStateRecord Original, CdcStateRecord Restamped)> CaptureRealRestampAsync(
+        bool resourceScope,
         CancellationToken cancellationToken
     )
     {
-        SeededDocument source = await SeedCanonicalDescriptorAsync(cancellationToken);
+        SeededDocument neighbor = await SeedCanonicalDescriptorAsync(
+            Guid.Parse("9622f938-2c1a-4f99-9bc4-10970b1c2650"),
+            "AcademicSubjectDescriptor",
+            "Neighbor",
+            new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            cancellationToken
+        );
+        SeededDocument source = await SeedCanonicalDescriptorAsync(
+            Guid.Parse(DocumentUuid),
+            "SchoolTypeDescriptor",
+            "RestampCdc",
+            new DateTimeOffset(2001, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            cancellationToken
+        );
+        DateTimeOffset neighborTimestamp = await AssertDescriptorStampsAsync(
+            neighbor,
+            neighbor.ContentVersion,
+            cancellationToken
+        );
         (await ReadRequiredContentVersionAsync(source.DocumentId, cancellationToken))
             .Should()
             .Be(source.ContentVersion);
         (await ReadProjectionWorkCountAsync(source.DocumentId, cancellationToken)).Should().Be(1);
         (await ReadProjectionWorkCountAsync(source.DescriptorId, cancellationToken)).Should().Be(0);
-        await AssertDescriptorStampsAsync(source, source.ContentVersion, cancellationToken);
+        DateTimeOffset createdTimestamp = await AssertDescriptorStampsAsync(
+            source,
+            source.ContentVersion,
+            cancellationToken
+        );
+        createdTimestamp.Should().Be(new DateTimeOffset(2001, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        neighborTimestamp.Should().Be(new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero));
         await DrainOrdinaryProjectorAsync(cancellationToken);
         await AssertCacheOwnershipAsync(source, cancellationToken);
-        CdcStateRecord original = (await ConsumeRecordsAsync(1, cancellationToken))[0];
-        original.Value.GetProperty("contentVersion").GetInt64().Should().Be(source.ContentVersion);
+        IReadOnlyList<CdcStateRecord> createdRecords = await ConsumeRecordsAsync(2, cancellationToken);
+        CdcStateRecord created = createdRecords.Single(record => record.Key == DocumentUuid);
+        await AssertPublishedStateAsync(
+            created,
+            source,
+            source.ContentVersion,
+            createdTimestamp,
+            "Restamp CDC",
+            cancellationToken
+        );
 
-        await ExecuteTrackingRestampAsync(source.Uuid, cancellationToken);
+        // A real representation change advances the version; backdate the owner before projection
+        // so subsequent visible timestamp assertions do not depend on crossing a clock second.
+        await UpdateDescriptionAsync(source, "Changed CDC", cancellationToken);
+        long changedVersion = await ReadCanonicalContentVersionAsync(source.DocumentId, cancellationToken);
+        changedVersion.Should().BeGreaterThan(source.ContentVersion);
+        DateTimeOffset changedTimestamp = await AssertDescriptorStampsAsync(
+            source,
+            changedVersion,
+            cancellationToken
+        );
+        changedTimestamp.Should().BeAfter(createdTimestamp);
+        await BackdateOwnerAsync(
+            source.DocumentId,
+            new DateTimeOffset(2002, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            cancellationToken
+        );
+        changedTimestamp = await AssertDescriptorStampsAsync(source, changedVersion, cancellationToken);
+        changedTimestamp.Should().Be(new DateTimeOffset(2002, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        await DrainOrdinaryProjectorAsync(cancellationToken);
+        CdcStateRecord original = (await ConsumeRecordsAsync(3, cancellationToken))[^1];
+        await AssertPublishedStateAsync(
+            original,
+            source,
+            changedVersion,
+            changedTimestamp,
+            "Changed CDC",
+            cancellationToken
+        );
+
+        await UpdateDescriptionAsync(source, "Changed CDC", cancellationToken);
+        (await AssertDescriptorStampsAsync(source, changedVersion, cancellationToken))
+            .Should()
+            .Be(changedTimestamp);
+        (await ReadProjectionWorkCountAsync(source.DocumentId, cancellationToken)).Should().Be(0);
+        await DrainOrdinaryProjectorAsync(cancellationToken);
+        await AssertPublishedStateAsync(
+            original,
+            source,
+            changedVersion,
+            changedTimestamp,
+            "Changed CDC",
+            cancellationToken
+        );
+
+        await ExecuteTrackingRestampAsync(source.Uuid, resourceScope, cancellationToken);
         long canonicalVersion = await ReadCanonicalContentVersionAsync(source.DocumentId, cancellationToken);
-        canonicalVersion.Should().BeGreaterThan(source.ContentVersion);
+        canonicalVersion.Should().BeGreaterThan(changedVersion);
         (await ReadRequiredContentVersionAsync(source.DocumentId, cancellationToken))
             .Should()
             .Be(canonicalVersion);
         (await ReadProjectionWorkCountAsync(source.DocumentId, cancellationToken)).Should().Be(1);
         (await ReadProjectionWorkCountAsync(source.DescriptorId, cancellationToken)).Should().Be(0);
-        await AssertDescriptorStampsAsync(source, canonicalVersion, cancellationToken);
+        DateTimeOffset restampedTimestamp = await AssertDescriptorStampsAsync(
+            source,
+            canonicalVersion,
+            cancellationToken
+        );
+        restampedTimestamp.Should().BeAfter(changedTimestamp);
 
         await DrainOrdinaryProjectorAsync(cancellationToken);
         await AssertCacheOwnershipAsync(source, cancellationToken);
@@ -630,32 +710,37 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
             .Should()
             .Be(canonicalVersion);
 
-        IReadOnlyList<CdcStateRecord> records = await ConsumeRecordsAsync(2, cancellationToken);
+        IReadOnlyList<CdcStateRecord> records = await ConsumeRecordsAsync(4, cancellationToken);
+        records
+            .Select(record => record.Value.GetProperty("contentVersion").GetInt64())
+            .Should()
+            .BeEquivalentTo(
+                new[] { neighbor.ContentVersion, source.ContentVersion, changedVersion, canonicalVersion }
+            );
+        await AssertPublishedStateAsync(
+            records[^1],
+            source,
+            canonicalVersion,
+            restampedTimestamp,
+            "Changed CDC",
+            cancellationToken
+        );
+        (await AssertDescriptorStampsAsync(neighbor, neighbor.ContentVersion, cancellationToken))
+            .Should()
+            .Be(neighborTimestamp);
+        (await ReadProjectionWorkCountAsync(neighbor.DocumentId, cancellationToken)).Should().Be(0);
+        await AssertPublishedStateAsync(
+            createdRecords.Single(record => record.Key == neighbor.Uuid.ToString()),
+            neighbor,
+            neighbor.ContentVersion,
+            neighborTimestamp,
+            "Restamp CDC",
+            cancellationToken
+        );
         return (original, records[^1]);
     }
 
     public async ValueTask DisposeAsync() => await _pinnedFixture.DisposeAsync();
-
-    private static async Task ProvisionGeneratedDmsSchemaAsync(
-        int providerPort,
-        CdcStateProviderOperations providerOperations,
-        CancellationToken cancellationToken
-    )
-    {
-        await providerOperations.ResetDatabaseAsync(providerPort, DatabaseName, cancellationToken);
-        await using DbConnection connection = providerOperations.OpenConnection(
-            providerOperations.ProviderAdminConnectionString(providerPort, DatabaseName)
-        );
-        await connection.OpenAsync(cancellationToken);
-        await ExecuteSqlScriptAsync(
-            connection,
-            providerOperations.FullDdl,
-            providerOperations,
-            cancellationToken
-        );
-        await ExecuteSqlAsync(connection, providerOperations.SetTrackingLifecycleSql, cancellationToken);
-        await ExecuteSqlAsync(connection, providerOperations.UpsertSourceIdentitySql, cancellationToken);
-    }
 
     private async Task<IReadOnlyList<CdcStateRecord>> ConsumeRecordsAsync(
         int expectedCount,
@@ -698,7 +783,13 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
         return new CdcStateRecord(fields[0], fields[1], document.RootElement.Clone());
     }
 
-    private async Task<SeededDocument> SeedCanonicalDescriptorAsync(CancellationToken cancellationToken)
+    private async Task<SeededDocument> SeedCanonicalDescriptorAsync(
+        Guid uuid,
+        string resourceName,
+        string codeValue,
+        DateTimeOffset observedAt,
+        CancellationToken cancellationToken
+    )
     {
         await using DbConnection connection = _providerOperations.OpenConnection(
             await ConnectionStringAsync(cancellationToken)
@@ -708,15 +799,13 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
         command.CommandText = _providerOperations.PrepareDescriptorSeedSql;
         await command.ExecuteNonQueryAsync(cancellationToken);
         command.CommandText = _providerOperations.SeedCanonicalDescriptorSql;
-        DateTimeOffset observedAt = DateTimeOffset.UtcNow;
-        command.Parameters.Add(_providerOperations.Parameter("documentUuid", Guid.Parse(DocumentUuid)));
+        command.Parameters.Add(_providerOperations.Parameter("documentUuid", uuid));
         command.Parameters.Add(
             _providerOperations.Parameter("observedAt", _providerOperations.TimestampValue(observedAt))
         );
-        command.Parameters.Add(
-            _providerOperations.Parameter("namespace", "uri://ed-fi.org/SchoolTypeDescriptor")
-        );
-        command.Parameters.Add(_providerOperations.Parameter("codeValue", "RestampCdc"));
+        command.Parameters.Add(_providerOperations.Parameter("resourceName", resourceName));
+        command.Parameters.Add(_providerOperations.Parameter("namespace", $"uri://ed-fi.org/{resourceName}"));
+        command.Parameters.Add(_providerOperations.Parameter("codeValue", codeValue));
         command.Parameters.Add(_providerOperations.Parameter("shortDescription", "Restamp CDC"));
         long documentId;
         int descriptorId;
@@ -728,10 +817,15 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
         }
         ((long)descriptorId).Should().NotBe(documentId);
         long contentVersion = await ReadCanonicalContentVersionAsync(documentId, cancellationToken);
-        return new SeededDocument(documentId, Guid.Parse(DocumentUuid), contentVersion, descriptorId);
+        await BackdateOwnerAsync(documentId, observedAt, cancellationToken);
+        return new SeededDocument(documentId, uuid, contentVersion, descriptorId);
     }
 
-    private async Task ExecuteTrackingRestampAsync(Guid documentUuid, CancellationToken cancellationToken)
+    private async Task ExecuteTrackingRestampAsync(
+        Guid documentUuid,
+        bool resourceScope,
+        CancellationToken cancellationToken
+    )
     {
         var target = _providerOperations.CreateCliTarget(
             await ConnectionStringAsync(cancellationToken),
@@ -739,7 +833,10 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
             DocumentCacheAdminCliFixture.Shared.ApiSchemaDirectory
         );
         await using var harness = await DocumentCacheAdminCliProcessHarness.CreateAsync(target);
-        DocumentCacheAdminCliProcessResult preview = await harness.RunAsync(
+        string[] scope = resourceScope
+            ? ["--project-name", "Ed-Fi", "--resource-name", "SchoolTypeDescriptor"]
+            : ["--document-uuid", documentUuid.ToString()];
+        DocumentCacheAdminCliProcessResult preview = await harness.RunAsync([
             "restamp-preview",
             "--data-store-id",
             TargetDataStoreId.ToString(),
@@ -747,12 +844,11 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
             "tracking",
             "--reason",
             "CDC restamp integration test",
-            "--document-uuid",
-            documentUuid.ToString(),
+            .. scope,
             "--offline-writer-admission",
             "closedAndDrained",
-            "--json"
-        );
+            "--json",
+        ]);
         preview.ExitCode.Should().Be(0, preview.StandardError);
         Guid operationId = preview.ReadStandardOutputJsonObject()["result"]!["operationId"]!.GetValue<Guid>();
 
@@ -783,8 +879,8 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
                 new Dictionary<string, string?>
                 {
                     ["AppSettings:Datastore"] = _providerOperations.AppSettingsDatastore,
-                    ["AppSettings:UseApiSchemaPath"] = "true",
-                    ["AppSettings:ApiSchemaPath"] = DocumentCacheAdminCliFixture.Shared.ApiSchemaDirectory,
+                    ["AppSettings:ApiSchema:UseCustomPath"] = "true",
+                    ["AppSettings:ApiSchema:Path"] = DocumentCacheAdminCliFixture.Shared.ApiSchemaDirectory,
                 }
             )
             .Build();
@@ -867,54 +963,13 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
 
     private async Task<string> ConnectionStringAsync(CancellationToken cancellationToken) =>
         _providerOperations.ProviderAdminConnectionString(
-            await ReadMappedProviderPortAsync(_pinnedFixture, _providerOperations, cancellationToken),
+            await CdcGeneratedSchemaFixture.ReadMappedProviderPortAsync(
+                _pinnedFixture,
+                _providerOperations,
+                cancellationToken
+            ),
             DatabaseName
         );
-
-    private static async Task<int> ReadMappedProviderPortAsync(
-        CdcConnectorTemplatePinnedImageFixture pinnedFixture,
-        CdcStateProviderOperations providerOperations,
-        CancellationToken cancellationToken
-    )
-    {
-        string providerContainerName =
-            $"{pinnedFixture.KafkaBootstrapServers.Split(':', 2)[0][..^"-broker".Length]}-provider";
-        string containerPort =
-            providerOperations.Provider == CdcProvider.Postgresql ? "5432/tcp" : "1433/tcp";
-        DockerCommandResult result = await new DockerCli().RunAsync(
-            ["port", providerContainerName, containerPort],
-            cancellationToken
-        );
-        string endpoint = result.StandardOutput.Trim();
-        return int.Parse(
-            endpoint[(endpoint.LastIndexOf(':') + 1)..],
-            System.Globalization.CultureInfo.InvariantCulture
-        );
-    }
-
-    private static async Task ExecuteSqlScriptAsync(
-        DbConnection connection,
-        string sql,
-        CdcStateProviderOperations providerOperations,
-        CancellationToken cancellationToken
-    )
-    {
-        foreach (string batch in providerOperations.SplitDdlBatches(sql))
-        {
-            await ExecuteSqlAsync(connection, batch, cancellationToken);
-        }
-    }
-
-    private static async Task ExecuteSqlAsync(
-        DbConnection connection,
-        string sql,
-        CancellationToken cancellationToken
-    )
-    {
-        await using DbCommand command = connection.CreateCommand();
-        command.CommandText = sql;
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
 
     private string Quote(string name) =>
         _providerOperations.Provider == CdcProvider.Postgresql ? $"\"{name}\"" : $"[{name}]";
@@ -927,7 +982,7 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
         (await ReadScalarAsync(sql, source.DescriptorId, cancellationToken)).Should().Be(0);
     }
 
-    private async Task AssertDescriptorStampsAsync(
+    private async Task<DateTimeOffset> AssertDescriptorStampsAsync(
         SeededDocument source,
         long expectedVersion,
         CancellationToken cancellationToken
@@ -941,7 +996,7 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
         command.CommandText = $"""
             SELECT descriptor.{Quote("DescriptorId")}, descriptor.{Quote("DocumentId")},
                    document.{Quote("ContentVersion")}, descriptor.{Quote("ContentVersion")},
-                   document.{Quote("ContentLastModifiedAt")}, descriptor.{Quote("ContentLastModifiedAt")}
+                   descriptor.{Quote("ContentLastModifiedAt")}
             FROM {Quote("dms")}.{Quote("Descriptor")} descriptor
             JOIN {Quote("dms")}.{Quote("Document")} document ON document.{Quote(
                 "DocumentId"
@@ -955,8 +1010,91 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
         reader.GetInt64(1).Should().Be(source.DocumentId);
         reader.GetInt64(2).Should().Be(expectedVersion);
         reader.GetInt64(3).Should().Be(expectedVersion);
-        reader.GetDateTime(4).Should().Be(reader.GetDateTime(5));
+        DateTimeOffset timestamp = new(DateTime.SpecifyKind(reader.GetDateTime(4), DateTimeKind.Utc));
         (await reader.ReadAsync(cancellationToken)).Should().BeFalse();
+        return timestamp;
+    }
+
+    private async Task BackdateOwnerAsync(long documentId, DateTimeOffset timestamp, CancellationToken token)
+    {
+        await using DbConnection connection = _providerOperations.OpenConnection(
+            await ConnectionStringAsync(token)
+        );
+        await connection.OpenAsync(token);
+        await using DbCommand command = connection.CreateCommand();
+        command.CommandText =
+            $"UPDATE {Quote("dms")}.{Quote("Descriptor")} SET {Quote("ContentLastModifiedAt")} = @timestamp WHERE {Quote("DocumentId")} = @documentId;";
+        command.Parameters.Add(
+            _providerOperations.Parameter("timestamp", _providerOperations.TimestampValue(timestamp))
+        );
+        command.Parameters.Add(_providerOperations.Parameter("documentId", documentId));
+        (await command.ExecuteNonQueryAsync(token)).Should().Be(1);
+    }
+
+    private async Task UpdateDescriptionAsync(
+        SeededDocument source,
+        string description,
+        CancellationToken token
+    )
+    {
+        await using DbConnection connection = _providerOperations.OpenConnection(
+            await ConnectionStringAsync(token)
+        );
+        await connection.OpenAsync(token);
+        await using DbCommand command = connection.CreateCommand();
+        command.CommandText =
+            $"UPDATE {Quote("dms")}.{Quote("Descriptor")} SET {Quote("ShortDescription")} = @description WHERE {Quote("DocumentId")} = @documentId;";
+        command.Parameters.Add(_providerOperations.Parameter("description", description));
+        command.Parameters.Add(_providerOperations.Parameter("documentId", source.DocumentId));
+        (await command.ExecuteNonQueryAsync(token)).Should().Be(1);
+    }
+
+    private async Task AssertPublishedStateAsync(
+        CdcStateRecord record,
+        SeededDocument source,
+        long version,
+        DateTimeOffset timestamp,
+        string description,
+        CancellationToken token
+    )
+    {
+        record.Key.Should().Be(source.Uuid.ToString());
+        record.Value.GetProperty("documentUuid").GetGuid().Should().Be(source.Uuid);
+        record.Value.GetProperty("contentVersion").GetInt64().Should().Be(version);
+        string formatted = LastModifiedDateFormatter.Format(timestamp);
+        record.Value.GetProperty("lastModifiedAt").GetString().Should().Be(formatted);
+        record
+            .Value.GetProperty("document")
+            .GetProperty("_lastModifiedDate")
+            .GetString()
+            .Should()
+            .Be(formatted);
+        record
+            .Value.GetProperty("document")
+            .GetProperty("shortDescription")
+            .GetString()
+            .Should()
+            .Be(description);
+        await using DbConnection connection = _providerOperations.OpenConnection(
+            await ConnectionStringAsync(token)
+        );
+        await connection.OpenAsync(token);
+        await using DbCommand command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT {Quote("DocumentUuid")}, {Quote("ContentVersion")}, {Quote("LastModifiedAt")}, {Quote("DocumentJson")}, {Quote("StreamEtag")} FROM {Quote("dms")}.{Quote("DocumentCache")} WHERE {Quote("DocumentId")} = @documentId;";
+        command.Parameters.Add(_providerOperations.Parameter("documentId", source.DocumentId));
+        await using DbDataReader reader = await command.ExecuteReaderAsync(token);
+        (await reader.ReadAsync(token)).Should().BeTrue();
+        reader.GetGuid(0).Should().Be(source.Uuid);
+        reader.GetInt64(1).Should().Be(version);
+        DateTime.SpecifyKind(reader.GetDateTime(2), DateTimeKind.Utc).Should().Be(timestamp.UtcDateTime);
+        JsonObject expectedBody = JsonNode
+            .Parse(record.Value.GetProperty("document").GetRawText())!
+            .AsObject();
+        reader.GetString(4).Should().Be(expectedBody["_etag"]!.GetValue<string>());
+        expectedBody.Remove("_etag");
+        JsonNode.DeepEquals(expectedBody, JsonNode.Parse(reader.GetString(3))).Should().BeTrue();
+        (await reader.ReadAsync(token)).Should().BeFalse();
     }
 
     private async Task<long> ReadCanonicalContentVersionAsync(

@@ -509,15 +509,13 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
             INSERT INTO [dms].[Document] (
                 [DocumentUuid],
                 [ResourceKeyId],
-                [ContentVersion],
-                [ContentLastModifiedAt]
+                [ContentVersion]
             )
             OUTPUT INSERTED.[DocumentId] INTO @insertedDocument
             VALUES (
                 @documentUuid,
                 @resourceKeyId,
-                @contentVersion,
-                @lastModifiedAt
+                @contentVersion
             );
 
             SELECT [DocumentId]
@@ -525,8 +523,7 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
             """,
             new SqlParameter("@documentUuid", SqlDbType.UniqueIdentifier) { Value = documentUuid },
             new SqlParameter("@resourceKeyId", SqlDbType.SmallInt) { Value = resourceKeyId },
-            new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion },
-            new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = LastModifiedAt.UtcDateTime }
+            new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion }
         );
 
         return new SourceDocument(
@@ -584,14 +581,12 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
             INSERT INTO [dms].[Document] (
                 [DocumentUuid],
                 [ResourceKeyId],
-                [ContentVersion],
-                [ContentLastModifiedAt]
+                [ContentVersion]
             )
             SELECT
                 [requested].[DocumentUuid],
                 [requested].[ResourceKeyId],
-                [requested].[ContentVersion],
-                @lastModifiedAt
+                [requested].[ContentVersion]
             FROM @requested AS [requested];
 
             SELECT
@@ -607,8 +602,7 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
             new SqlParameter("@sourceDocumentsJson", SqlDbType.NVarChar, -1)
             {
                 Value = JsonSerializer.Serialize(seeds),
-            },
-            new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = LastModifiedAt.UtcDateTime }
+            }
         );
 
         return rows.Select(row => new SourceDocument(
@@ -830,16 +824,11 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
         await _database.ExecuteNonQueryAsync(
             """
             UPDATE [dms].[Document]
-            SET [ContentVersion] = @contentVersion,
-                [ContentLastModifiedAt] = @lastModifiedAt
+            SET [ContentVersion] = @contentVersion
             WHERE [DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", SqlDbType.BigInt) { Value = documentId },
-            new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion },
-            new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2)
-            {
-                Value = LastModifiedAt.AddMinutes(5).UtcDateTime,
-            }
+            new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion }
         );
     }
 

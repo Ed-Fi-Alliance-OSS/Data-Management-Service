@@ -179,6 +179,18 @@ internal sealed class ThrowingRelationalReadTargetLookupService : IRelationalRea
             "Relational query execution should not route through get-by-id read target lookup."
         );
     }
+
+    public Task<RelationalReadTargetLookupResult> ResolveForCacheCandidateAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw new AssertionException(
+            "Relational query execution should not route through get-by-id read target lookup."
+        );
+    }
 }
 
 /// <summary>
@@ -207,6 +219,22 @@ internal sealed class InterceptingRelationalReadTargetLookupService(
     {
         var lookupResult = await _inner
             .ResolveForGetByIdAsync(mappingSet, resource, documentUuid, cancellationToken)
+            .ConfigureAwait(false);
+
+        await _recorder.InvokeAfterTargetLookupAsync(cancellationToken);
+
+        return lookupResult;
+    }
+
+    public async Task<RelationalReadTargetLookupResult> ResolveForCacheCandidateAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var lookupResult = await _inner
+            .ResolveForCacheCandidateAsync(mappingSet, resource, documentUuid, cancellationToken)
             .ConfigureAwait(false);
 
         await _recorder.InvokeAfterTargetLookupAsync(cancellationToken);

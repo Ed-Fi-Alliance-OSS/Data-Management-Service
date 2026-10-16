@@ -5,6 +5,7 @@
 
 using System.Data.Common;
 using System.Text.RegularExpressions;
+using EdFi.DataManagementService.SchemaTools.Introspection;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Npgsql;
@@ -31,6 +32,78 @@ internal static partial class ProvisionTestHelper
         "ResourceKey",
         "SchemaComponent",
     ];
+
+    internal static void AssertContentStampOwnership(ProvisionedSchemaManifest manifest)
+    {
+        var documentColumns = manifest.Columns.Where(c => c.SchemaName == "dms" && c.TableName == "Document");
+        documentColumns
+            .Select(c => c.ColumnName)
+            .Should()
+            .BeEquivalentTo(
+                "DocumentId",
+                "DocumentUuid",
+                "ResourceKeyId",
+                "CreatedByOwnershipTokenId",
+                "ContentVersion"
+            );
+        var documentVersion = documentColumns.Single(c => c.ColumnName == "ContentVersion");
+        documentVersion.IsNullable.Should().BeFalse();
+        documentVersion.DataType.Should().Be("bigint");
+        documentVersion.DefaultExpression.Should().Contain("ChangeVersionSequence");
+
+        // The fixture's resource roots and Descriptor retain version mirrors and own their timestamps.
+        var owners = manifest
+            .Columns.Where(c =>
+                c.ColumnName == "ContentVersion"
+                && !(c.SchemaName == "dms" && c.TableName is "Document" or "DocumentCache")
+            )
+            .ToArray();
+        owners.Should().Contain(c => c.SchemaName == "dms" && c.TableName == "Descriptor");
+        owners.Should().Contain(c => c.SchemaName != "dms");
+        foreach (var owner in owners)
+        {
+            var timestamp = manifest
+                .Columns.Should()
+                .ContainSingle(c =>
+                    c.SchemaName == owner.SchemaName
+                    && c.TableName == owner.TableName
+                    && c.ColumnName == "ContentLastModifiedAt"
+                )
+                .Subject;
+            timestamp.IsNullable.Should().BeFalse();
+            timestamp
+                .DataType.Should()
+                .Be(manifest.Dialect == "pgsql" ? "timestamp with time zone" : "datetime2");
+            timestamp
+                .DefaultExpression.Should()
+                .Be(manifest.Dialect == "pgsql" ? "now()" : "(sysutcdatetime())");
+        }
+    }
+
+    internal static DateTime AssertCachedContentStamp(
+        DbConnection connection,
+        string ownerSchema,
+        string ownerTable
+    )
+    {
+        using var command = connection.CreateCommand();
+        // Double-quoted identifiers work on both test providers; owner names are fixture constants.
+        command.CommandText = $"""
+            SELECT cache."LastModifiedAt", owner."ContentLastModifiedAt",
+                cache."ContentVersion", document."ContentVersion", owner."ContentVersion"
+            FROM "dms"."DocumentCache" cache
+            INNER JOIN "dms"."Document" document ON document."DocumentId" = cache."DocumentId"
+            INNER JOIN "{ownerSchema}"."{ownerTable}" owner ON owner."DocumentId" = document."DocumentId"
+            """;
+        using var reader = command.ExecuteReader();
+        reader.Read().Should().BeTrue("the cached document must have an authoritative owner");
+        var timestamp = reader.GetDateTime(0);
+        timestamp.Should().Be(reader.GetDateTime(1));
+        reader.GetInt64(2).Should().Be(reader.GetInt64(3));
+        reader.GetInt64(4).Should().Be(reader.GetInt64(3));
+        reader.Read().Should().BeFalse("these fixtures seed exactly one cache row");
+        return timestamp;
+    }
 
     internal sealed record DocumentCacheMutableStateSnapshot(
         Guid SourceIdentity,
@@ -268,42 +341,35 @@ internal static partial class ProvisionTestHelper
                         "CacheAheadRecoveryRequired" = TRUE
                     WHERE "StateId" = 1;
 
-                    WITH selected_resource AS (
-                        SELECT "ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion"
-                        FROM dms."ResourceKey"
-                        ORDER BY "ResourceKeyId"
-                        LIMIT 1
-                    ),
-                    inserted_document AS (
+                    WITH inserted_document AS (
                         INSERT INTO dms."Document" ("DocumentUuid", "ResourceKeyId")
                         SELECT gen_random_uuid(), "ResourceKeyId"
-                        FROM selected_resource
-                        RETURNING "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion", "ContentLastModifiedAt"
+                        FROM dms."ResourceKey"
+                        WHERE "ProjectName" = 'Ed-Fi' AND "ResourceName" = 'AcademicHonorCategoryDescriptor'
+                        RETURNING "DocumentId", "ResourceKeyId"
                     )
+                    INSERT INTO dms."Descriptor" (
+                        "DocumentId", "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription"
+                    )
+                    SELECT "DocumentId", "ResourceKeyId", 'uri://ed-fi.org/AcademicHonorCategoryDescriptor',
+                        'preserved', 'preserved'
+                    FROM inserted_document;
+
                     INSERT INTO dms."DocumentCache" (
-                        "DocumentId",
-                        "DocumentUuid",
-                        "ProjectName",
-                        "ResourceName",
-                        "ResourceVersion",
-                        "ContentVersion",
-                        "StreamEtag",
-                        "LastModifiedAt",
-                        "DocumentJson"
+                        "DocumentId", "DocumentUuid", "ProjectName", "ResourceName", "ResourceVersion",
+                        "ContentVersion", "StreamEtag", "LastModifiedAt", "DocumentJson"
                     )
                     SELECT
-                        inserted_document."DocumentId",
-                        inserted_document."DocumentUuid",
-                        selected_resource."ProjectName",
-                        selected_resource."ResourceName",
-                        selected_resource."ResourceVersion",
-                        inserted_document."ContentVersion",
-                        'preserved-etag-' || inserted_document."ContentVersion"::text,
-                        inserted_document."ContentLastModifiedAt",
-                        '{"id":"preserved"}'::jsonb
-                    FROM inserted_document
-                    INNER JOIN selected_resource
-                        ON selected_resource."ResourceKeyId" = inserted_document."ResourceKeyId";
+                        document."DocumentId", document."DocumentUuid", resource_key."ProjectName",
+                        resource_key."ResourceName", resource_key."ResourceVersion", document."ContentVersion",
+                        'preserved-etag-' || document."ContentVersion"::text,
+                        descriptor."ContentLastModifiedAt", '{"id":"preserved"}'::jsonb
+                    FROM dms."Document" document
+                    INNER JOIN dms."Descriptor" descriptor
+                        ON descriptor."DocumentId" = document."DocumentId"
+                    INNER JOIN dms."ResourceKey" resource_key
+                        ON resource_key."ResourceKeyId" = document."ResourceKeyId"
+                    WHERE descriptor."CodeValue" = 'preserved';
                     """
                 : """
                     UPDATE [dms].[DocumentCacheState]
@@ -313,50 +379,40 @@ internal static partial class ProvisionTestHelper
 
                     DECLARE @inserted_document TABLE (
                         [DocumentId] bigint NOT NULL,
-                        [DocumentUuid] uniqueidentifier NOT NULL,
-                        [ResourceKeyId] smallint NOT NULL,
-                        [ContentVersion] bigint NOT NULL,
-                        [ContentLastModifiedAt] datetime2(7) NOT NULL
+                        [ResourceKeyId] smallint NOT NULL
                     );
 
                     INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-                    OUTPUT
-                        inserted.[DocumentId],
-                        inserted.[DocumentUuid],
-                        inserted.[ResourceKeyId],
-                        inserted.[ContentVersion],
-                        inserted.[ContentLastModifiedAt]
-                    INTO @inserted_document
-                    SELECT TOP (1) NEWID(), [ResourceKeyId]
+                    OUTPUT inserted.[DocumentId], inserted.[ResourceKeyId] INTO @inserted_document
+                    SELECT NEWID(), [ResourceKeyId]
                     FROM [dms].[ResourceKey]
-                    ORDER BY [ResourceKeyId];
+                    WHERE [ProjectName] = N'Ed-Fi' AND [ResourceName] = N'AcademicHonorCategoryDescriptor';
+
+                    INSERT INTO [dms].[Descriptor] (
+                        [DocumentId], [ResourceKeyId], [Namespace], [CodeValue], [ShortDescription]
+                    )
+                    SELECT [DocumentId], [ResourceKeyId], N'uri://ed-fi.org/AcademicHonorCategoryDescriptor',
+                        N'preserved', N'preserved'
+                    FROM @inserted_document;
 
                     INSERT INTO [dms].[DocumentCache] (
-                        [DocumentId],
-                        [DocumentUuid],
-                        [ProjectName],
-                        [ResourceName],
-                        [ResourceVersion],
-                        [ContentVersion],
-                        [StreamEtag],
-                        [LastModifiedAt],
-                        [DocumentJson]
+                        [DocumentId], [DocumentUuid], [ProjectName], [ResourceName], [ResourceVersion],
+                        [ContentVersion], [StreamEtag], [LastModifiedAt], [DocumentJson]
                     )
                     SELECT
-                        inserted_document.[DocumentId],
-                        inserted_document.[DocumentUuid],
-                        resource_key.[ProjectName],
-                        resource_key.[ResourceName],
-                        resource_key.[ResourceVersion],
-                        inserted_document.[ContentVersion],
-                        CONCAT(N'preserved-etag-', CONVERT(varchar(20), inserted_document.[ContentVersion])),
-                        inserted_document.[ContentLastModifiedAt],
-                        N'{"id":"preserved"}'
-                    FROM @inserted_document inserted_document
+                        document.[DocumentId], document.[DocumentUuid], resource_key.[ProjectName],
+                        resource_key.[ResourceName], resource_key.[ResourceVersion], document.[ContentVersion],
+                        CONCAT(N'preserved-etag-', CONVERT(varchar(20), document.[ContentVersion])),
+                        descriptor.[ContentLastModifiedAt], N'{"id":"preserved"}'
+                    FROM [dms].[Document] document
+                    INNER JOIN [dms].[Descriptor] descriptor
+                        ON descriptor.[DocumentId] = document.[DocumentId]
                     INNER JOIN [dms].[ResourceKey] resource_key
-                        ON resource_key.[ResourceKeyId] = inserted_document.[ResourceKeyId];
+                        ON resource_key.[ResourceKeyId] = document.[ResourceKeyId]
+                    WHERE descriptor.[CodeValue] = N'preserved';
                     """;
         command.ExecuteNonQuery();
+        GetDmsTableCount(connection, dialect, "DocumentCache").Should().Be(1);
     }
 
     internal static DocumentCacheMutableStateSnapshot ReadDocumentCacheMutableStateSnapshot(

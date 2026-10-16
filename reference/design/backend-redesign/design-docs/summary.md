@@ -126,11 +126,10 @@ Source documents:
 `reference/design/backend-redesign/design-docs/update-tracking.md` adds representation-sensitive metadata using write-time stamping, with indirect impacts realized via retained native FK-cascade updates to canonical stored identity columns that back local reference-identity bindings. Identity projection changes do not allocate a separate document-level stamp; they are reflected through the same content stamp when they change the stored representation:
 
 - Global sequence: `dms.ChangeVersionSequence` (`bigint`).
-- `dms.Document` token columns:
-  - `ContentVersion` (global monotonic stamp for representation changes and identity-projection changes; also serves as `ChangeVersion`).
-  - `ContentLastModifiedAt`. Identity-projection changes are captured by the same content stamps because they change the stored representation.
+- `dms.Document.ContentVersion` is the global monotonic stamp for representation and identity-projection changes; it also serves as `ChangeVersion` and drives concurrency/enqueueing.
+- `ContentLastModifiedAt` is authoritative on the resource root or `dms.Descriptor`. Changes advance the document version and refresh the owner timestamp in the same transaction; `dms.Document` has no copy of the timestamp.
 - Change Queries surface (see [change-queries.md](change-queries.md)):
-  - per-resource `ContentVersion` / `ContentLastModifiedAt` mirror on every `StorageKind = RelationalTables` root and on `dms.Descriptor`; backs resource and descriptor `?minChangeVersion=X&maxChangeVersion=Y` reads as a single-table range filter.
+  - per-resource `ContentVersion` mirror and authoritative `ContentLastModifiedAt` on every `StorageKind = RelationalTables` root and on `dms.Descriptor`; backs resource and descriptor `?minChangeVersion=X&maxChangeVersion=Y` reads as a single-table range filter.
   - per-resource `tracked_changes_<schema>.<resource>` tables and shared `tracked_changes_edfi.Descriptor`;
     back `/deletes` and `/keyChanges`. Descriptor history routes by `ResourceKeyId`, retains owning
     `DocumentId`/UUID and old/new namespace/code snapshots without a live-owner FK. Resource
@@ -255,9 +254,9 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
    - Identity changes therefore propagate transitively via retained native FK cascades, without application-managed closure traversal.
 
 6. **Update tracking (stored metadata + tracked-change rows)**
-   - Any representation-affecting change (including cascaded updates to canonical stored identity columns backing local bindings) bumps `dms.Document.ContentVersion/ContentLastModifiedAt`.
+   - Any representation-affecting change (including cascaded updates to canonical stored identity columns backing local bindings) bumps `dms.Document.ContentVersion` and refreshes the authoritative root/descriptor `ContentLastModifiedAt` in the same transaction.
    - Identity projection changes are captured by the same content stamps because they change the stored representation.
-   - The `*_Stamp` triggers mirror the new `ContentVersion`/`ContentLastModifiedAt` onto the resource root (or `dms.Descriptor`) and append tombstone/key-change rows to the corresponding `tracked_changes_*` table when applicable (see [change-queries.md](change-queries.md)).
+   - The `*_Stamp` triggers mirror the new `ContentVersion` onto the resource root (or `dms.Descriptor`), generate its authoritative timestamp there, and append tombstone/key-change rows to the corresponding `tracked_changes_*` table when applicable (see [change-queries.md](change-queries.md)).
 
 ## Read path (GET by id / query)
 
@@ -266,7 +265,7 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
 - **GET by id**
   1. Resolve `DocumentUuid → DocumentId`.
   2. Authorize the request against stored values (namespace/ownership/relationship/custom-view strategies as configured) using token-derived authorization context; see `auth.md`.
-  3. Hydrate relational tables and reconstitute JSON; compose `_etag` from `ContentVersion` plus the current representation `variantKey`; serve `_lastModifiedDate/ChangeVersion` from `dms.Document`; and project reference identity fields from local reference-identity binding columns (which may be presence-gated aliases under key unification).
+  3. Hydrate relational tables and reconstitute JSON; compose `_etag` from `ContentVersion` plus the current representation `variantKey`; serve `ChangeVersion` from `dms.Document` and `_lastModifiedDate` from the joined resource root/descriptor; and project reference identity fields from local reference-identity binding columns (which may be presence-gated aliases under key unification).
 
 - **Query**
   - Query compilation is constrained to root-table paths (`queryFieldMapping` does not cross array boundaries).
@@ -275,7 +274,7 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
     - materialize a page keyset of `DocumentId`s,
     - hydrate root + child + extension tables by joining each table to the page keyset in one command (multiple result sets),
     - batch descriptor URI reconstruction keyed by compact `DescriptorId`,
-    - compose `_etag` from `ContentVersion` plus the current representation `variantKey`, and serve `_lastModifiedDate/ChangeVersion` from `dms.Document` without dependency-token expansion.
+    - compose `_etag` from `ContentVersion` plus the current representation `variantKey`, and serve `ChangeVersion` from `dms.Document` and `_lastModifiedDate` from the joined resource root/descriptor without dependency-token expansion.
 
 ## Schema management and DDL generation
 
@@ -297,9 +296,11 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
 - (Optional) ahead-of-time mapping pack compilation and file distribution keyed by `EffectiveSchemaHash` to avoid runtime plan compilation under load (see `reference/design/backend-redesign/design-docs/aot-compilation.md`).
 - DMS runtime remains validate-only and fails fast on schema mismatch per database (no in-process migration/hot reload).
 
-### Reprovisioning and DMS-1401 handoff
+<a id="reprovisioning-and-dms-1401-handoff"></a>
 
-DMS-1404 retains `RelationalMappingVersion = v3` for 8.1. Bump at most once per release
+### Reprovisioning and the combined DMS-1401 schema
+
+The combined DMS-1404/DMS-1401 schema retains `RelationalMappingVersion = v3` for 8.1. Bump at most once per release
 when mapping changes; do not lower it or bump again before 8.1 ships. Generated DDL and
 mapping-set output are not included in `EffectiveSchemaHash`, so this mapping-only change
 can leave it unchanged. Older databases need deliberate reprovisioning on currently
@@ -314,12 +315,13 @@ and validating the allocator. Restoring an unchanged legacy schema does not perf
 
 DMS-1404's closure/handoff includes its working RI runtime on fresh schemas on both engines,
 regenerated fixtures, reusable descriptor catalog assertions, working loaders/copy conversion,
-and unequal-ID metadata/stamping/restamping/cache checks. Both document stamp columns remain
-present and authoritative. DMS-1401 owns timestamp removal and ownership changes, plus the
+and unequal-ID metadata/stamping/restamping/cache checks. At that historical handoff, both document stamp columns were
+present and authoritative. The combined DMS-1401 schema retains only the document version and
+makes root/descriptor timestamps authoritative. DMS-1401 also owns the
 planned combined Minimal/Populated template source/restore matrix and affected consumer pins.
 Its package gates are deferred from DMS-1404 closure; assertions must check both catalogs
 against the implementation baseline before API probes and alongside the timestamp gate.
-Until compatible packages are verified, use freshly provisioned DMS-1404 databases and defer
+Until compatible packages are verified, use databases freshly provisioned from the combined current DDL and defer
 template-backed deployment. Final v8.1 publication, release-view promotion and deployment pins
 remain in the release workflow. See the [full handoff](../../../../docs/RELATIONAL-BACKEND.md#descriptor-catalog-checks-and-template-handoff).
 

@@ -139,9 +139,14 @@ type identity before retrying. Live rows accept those same qualified forms or an
 resource name matching the owning document's type; their `ResourceKeyId` comes from that document.
 
 Document IDs/UUIDs, document-level RI rows, content stamps and history IDs/versions remain intact.
-Both document stamp columns remain required here; DMS-1401 owns the timestamp change. The tool
-retains row-count, FK, trigger-state, fingerprint, singleton, stamp-distribution and source-identity
-checks. It initializes the native descriptor backing sequence from allocated compact keys. Copy
+The current combined target omits both `dms.Document.ContentLastModifiedAt` and
+`dms.Document.CreatedAt`; legacy source-shaped staging can still contain them, but the target
+insert omits them as source-only. The document `ContentVersion` check remains. Authoritative
+descriptor and sampled stamp-bearing root rows retain their exact timestamps and versions, checked
+using deterministic `DocumentId`-ordered stamp-tuple checksums as well as distributions; swapping
+timestamps while preserving min/max must fail. The sampled-root scope is unchanged. The tool retains
+row-count, FK, trigger-state, fingerprint, singleton and source-identity checks. It initializes the
+native descriptor backing sequence from allocated compact keys. Copy
 and Checkpoint resolve that sequence from catalog ownership and check `last_value`, `is_called`
 and increment against `MAX(DescriptorId)` without calling `nextval`. Document, collection and
 change-version sequences retain their existing checks.
@@ -152,7 +157,8 @@ retrying. A pre-existing staging schema is refused. The conversion is within thi
 introduces no in-place migration. The historical restore recipe and provenance below still describe
 the published artifact at its recorded revision. Shared template rebuilds and restore verification
 for the combined DMS-1404/DMS-1401 schema belong to DMS-1401; a full Northridge reload or dataset
-republication is not a DMS-1404 completion gate.
+republication is not a prerequisite for either physical change. See the
+[combined template/deployment requirements](../../docs/RELATIONAL-BACKEND.md#descriptor-catalog-checks-and-template-handoff).
 
 The live regression runs the actual custom-dump conversion on PostgreSQL 16.8, with descriptor
 document keys above `Int32.MaxValue`, unequal native target keys, exact root/nested/extension/

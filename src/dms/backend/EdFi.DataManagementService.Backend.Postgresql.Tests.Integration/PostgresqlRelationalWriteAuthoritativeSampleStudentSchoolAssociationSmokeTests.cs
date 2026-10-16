@@ -1115,9 +1115,10 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "ContentLastModifiedAt"
-            FROM "dms"."Document"
-            WHERE "DocumentUuid" = @documentUuid;
+            SELECT root."ContentLastModifiedAt"
+            FROM "dms"."Document" document
+            JOIN "edfi"."StudentSchoolAssociation" root ON root."DocumentId" = document."DocumentId"
+            WHERE document."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
         );
@@ -4415,8 +4416,7 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion",
-                "ContentLastModifiedAt", "CreatedAt"
+            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
             FROM "dms"."Document"
             ORDER BY "DocumentId";
             """
@@ -4435,14 +4435,6 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
                 AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
                     row,
                     "ContentVersion"
-                ),
-                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetDateTimeOffset(
-                    row,
-                    "ContentLastModifiedAt"
-                ),
-                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetDateTimeOffset(
-                    row,
-                    "CreatedAt"
                 )
             ))
             .ToArray();

@@ -143,7 +143,13 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
             await connection.ExecuteAsync(sql, new { Id = roleId, Name = roleName }, transaction);
         }
 
-        public async Task InsertApplicationAsync(
+        /// <summary>
+        /// The unique constraint on <c>OpenIddictApplication.ClientId</c> (0012). It is the only
+        /// violation this insert reports as an outcome.
+        /// </summary>
+        private const string DuplicateClientIdConstraint = "UX_OpenIddictApplication_ClientId";
+
+        public async Task<OpenIddictApplicationInsertOutcome> InsertApplicationAsync(
             Guid id,
             string clientId,
             string clientSecret,
@@ -162,21 +168,35 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
                 VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements, @Type, SYSUTCDATETIME(), @ProtocolMappers)
                 """;
 
-            await connection.ExecuteAsync(
-                sql,
-                new
-                {
-                    Id = id,
-                    ClientId = clientId,
-                    ClientSecret = clientSecret,
-                    DisplayName = displayName,
-                    Permissions = JsonSerializer.Serialize(permissions),
-                    Requirements = JsonSerializer.Serialize(requirements),
-                    Type = type,
-                    ProtocolMappers = protocolMappers,
-                },
-                transaction
-            );
+            try
+            {
+                await connection.ExecuteAsync(
+                    sql,
+                    new
+                    {
+                        Id = id,
+                        ClientId = clientId,
+                        ClientSecret = clientSecret,
+                        DisplayName = displayName,
+                        Permissions = JsonSerializer.Serialize(permissions),
+                        Requirements = JsonSerializer.Serialize(requirements),
+                        Type = type,
+                        ProtocolMappers = protocolMappers,
+                    },
+                    transaction
+                );
+
+                return OpenIddictApplicationInsertOutcome.Inserted;
+            }
+            catch (SqlException ex) when (ex.IsUniqueViolation(DuplicateClientIdConstraint))
+            {
+                // Only the client-key constraint is classified; the helper reads the violated name
+                // from where SQL Server quotes it, never from the duplicate value the message ends
+                // with. The statement was rolled back by the engine and the caller's transaction is
+                // still open; rolling it back is the caller's decision, which also discards any
+                // row it wrote earlier in the same attempt.
+                return OpenIddictApplicationInsertOutcome.DuplicateClientId;
+            }
         }
 
         public async Task<Guid?> FindScopeIdByNameAsync(

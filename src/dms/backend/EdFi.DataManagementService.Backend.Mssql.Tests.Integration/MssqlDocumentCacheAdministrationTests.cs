@@ -1299,23 +1299,20 @@ public class Given_A_Mssql_DocumentCacheAdministration_Workflow
             INSERT INTO [dms].[Document] (
                 [DocumentUuid],
                 [ResourceKeyId],
-                [ContentVersion],
-                [ContentLastModifiedAt]
+                [ContentVersion]
             )
             OUTPUT INSERTED.[DocumentId] INTO @inserted ([DocumentId])
             VALUES (
                 @documentUuid,
                 @resourceKeyId,
-                @contentVersion,
-                @lastModifiedAt
+                @contentVersion
             );
 
             SELECT [DocumentId] FROM @inserted;
             """,
             new SqlParameter("@documentUuid", SqlDbType.UniqueIdentifier) { Value = documentUuid },
             new SqlParameter("@resourceKeyId", SqlDbType.SmallInt) { Value = resourceKeyId },
-            new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion },
-            new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = ObservedAt }
+            new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion }
         );
 
         var source = new SourceDocument(

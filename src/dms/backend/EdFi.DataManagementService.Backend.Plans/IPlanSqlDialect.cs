@@ -147,21 +147,27 @@ internal interface IPlanSqlDialect
     );
 
     /// <summary>
-    /// Appends a <c>SELECT</c> statement that joins <c>dms.Document</c> metadata to the
-    /// materialized keyset table, returning document metadata columns for the page,
+    /// Appends a <c>SELECT</c> statement that joins <c>dms.Document</c> and the resource root
+    /// to the materialized keyset table, returning metadata columns for the page,
     /// ordered by selected-page ordinal when available, otherwise deterministically by
     /// <c>DocumentId</c>.
     /// </summary>
     /// <param name="writer">The SQL writer to append to.</param>
     /// <param name="keyset">The keyset table contract specifying table and column names.</param>
-    void AppendDocumentMetadataSelect(SqlWriter writer, KeysetTableContract keyset);
+    /// <param name="rootTable">The compiled resource root that owns the timestamp.</param>
+    void AppendDocumentMetadataSelect(SqlWriter writer, KeysetTableContract keyset, DbTableName rootTable);
 
     /// <summary>
     /// Appends a <c>SELECT</c> statement that returns metadata for a single document id parameter.
     /// </summary>
     /// <param name="writer">The SQL writer to append to.</param>
     /// <param name="documentIdParameterName">The bare document id parameter name.</param>
-    void AppendSingleDocumentMetadataSelect(SqlWriter writer, string documentIdParameterName);
+    /// <param name="rootTable">The compiled resource root that owns the timestamp.</param>
+    void AppendSingleDocumentMetadataSelect(
+        SqlWriter writer,
+        string documentIdParameterName,
+        DbTableName rootTable
+    );
 
     /// <summary>
     /// Appends a predicate comparison against the supplied table alias and column.
@@ -181,8 +187,9 @@ internal interface IPlanSqlDialect
 }
 
 /// <summary>
-/// Shared document metadata column names used by metadata SELECT emitters and consumed by ordinal
-/// in <see cref="HydrationReader.ReadDocumentMetadataAsync"/>.
+/// Shared metadata column names used by metadata SELECT emitters and consumed by ordinal in
+/// <see cref="HydrationReader.ReadDocumentMetadataAsync"/>. The timestamp comes from the resource root;
+/// the remaining columns come from <c>dms.Document</c>.
 /// </summary>
 /// <remarks>
 /// The ordinal positions defined here form a contract between the SQL emitter and the reader.
@@ -209,7 +216,7 @@ internal static class DocumentMetadataColumns
     ];
 
     /// <summary>
-    /// Appends the shared document metadata SELECT body using dialect-neutral quoting. When an
+    /// Appends the shared resource metadata SELECT body using dialect-neutral quoting. When an
     /// ordinal column is available on the keyset table, selected pages retain that order; otherwise
     /// rows are ordered deterministically by <c>DocumentId</c>.
     /// </summary>
@@ -217,6 +224,7 @@ internal static class DocumentMetadataColumns
         SqlWriter writer,
         KeysetTableContract keyset,
         DbTableName documentTable,
+        DbTableName rootTable,
         string? keysetOrdinalColumnName = null
     )
     {
@@ -229,6 +237,13 @@ internal static class DocumentMetadataColumns
             .Append("FROM ")
             .AppendTable(documentTable)
             .AppendLine(" d")
+            .Append("INNER JOIN ")
+            .AppendTable(rootTable)
+            .Append(" r ON r.")
+            .Append(quotedDocumentIdColumn)
+            .Append(" = d.")
+            .Append(quotedDocumentIdColumn)
+            .AppendLine()
             .Append("INNER JOIN ")
             .AppendRelation(keyset.Table)
             .Append(" k ON d.")
@@ -262,7 +277,8 @@ internal static class DocumentMetadataColumns
     internal static void AppendSingleDocumentMetadataSelectBody(
         SqlWriter writer,
         DbTableName documentTable,
-        string documentIdParameterName
+        string documentIdParameterName,
+        DbTableName rootTable
     )
     {
         var quotedDocumentIdColumn = writer.Dialect.QuoteIdentifier(DocumentId);
@@ -273,6 +289,13 @@ internal static class DocumentMetadataColumns
             .Append("FROM ")
             .AppendTable(documentTable)
             .AppendLine(" d")
+            .Append("INNER JOIN ")
+            .AppendTable(rootTable)
+            .Append(" r ON r.")
+            .Append(quotedDocumentIdColumn)
+            .Append(" = d.")
+            .Append(quotedDocumentIdColumn)
+            .AppendLine()
             .Append("WHERE d.")
             .Append(quotedDocumentIdColumn)
             .Append(" = ")
@@ -289,7 +312,13 @@ internal static class DocumentMetadataColumns
 
         for (var i = 0; i < ColumnsInOrdinalOrder.Length; i++)
         {
-            writer.Append("    d.").Append(writer.Dialect.QuoteIdentifier(ColumnsInOrdinalOrder[i]));
+            var column = ColumnsInOrdinalOrder[i];
+            var tableAlias = column == ContentLastModifiedAt ? "r" : "d";
+            writer
+                .Append("    ")
+                .Append(tableAlias)
+                .Append(".")
+                .Append(writer.Dialect.QuoteIdentifier(column));
             writer.AppendLine(i + 1 < ColumnsInOrdinalOrder.Length ? "," : "");
         }
     }
