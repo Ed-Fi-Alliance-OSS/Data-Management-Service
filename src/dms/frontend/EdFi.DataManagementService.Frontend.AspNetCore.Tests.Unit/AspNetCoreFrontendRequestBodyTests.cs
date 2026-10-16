@@ -22,45 +22,6 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 [Parallelizable]
 public class Given_AspNetCoreFrontend_Request_Body_Extraction
 {
-    private static IEnumerable<object[]> IndexedDuplicateCases()
-    {
-        (string Json, string Path)[] examples =
-        [
-            (
-                """{"studentUniqueId":"1","addresses":[{"city":"a","streetNumberName":"b"},{"city":"x","city":"y"}]}""",
-                "$.addresses[1].city"
-            ),
-            (
-                """{"studentUniqueId":"1","addresses":[{"city":"a"}],"electronicMails":[{"x":"1","x":"2"}]}""",
-                "$.electronicMails[0].x"
-            ),
-            (
-                """[{"LastSurname":"a"},{"BirthLocation":{"City":"x","City":"y"}}]""",
-                "$[1].BirthLocation.City"
-            ),
-        ];
-        foreach (var (json, path) in examples)
-        {
-            foreach (string operation in json.StartsWith('[') ? new[] { "search" } : ["upsert", "update"])
-            {
-                yield return [json, path, operation];
-            }
-        }
-        (string Sequence, string Suffix)[] matrix =
-        [
-            ("""{"x":1,"x":2}""", "[0].x"),
-            ("""{"before":1,"x":1,"x":2}""", "[0].x"),
-            ("""{"a":1,"b":2},{"before":0,"x":1,"x":2}""", "[1].x"),
-            ("""{},{"before":1,"groups":[{"a":1},{"before":0,"x":1,"x":2}]}""", "[1].groups[1].x"),
-        ];
-        foreach (var (sequence, suffix) in matrix)
-        {
-            yield return ["{\"items\":[" + sequence + "]}", "$.items" + suffix, "upsert"];
-            yield return ["{\"items\":[" + sequence + "]}", "$.items" + suffix, "update"];
-            yield return ["[" + sequence + "]", "$" + suffix, "search"];
-        }
-    }
-
     private static async Task<FrontendRequest> ExtractRequest(string json, string operation)
     {
         FrontendRequest captured = new("", null, null, [], [], new TraceId(""), []);
@@ -96,12 +57,48 @@ public class Given_AspNetCoreFrontend_Request_Body_Extraction
         return captured;
     }
 
-    [TestFixtureSource(
-        typeof(Given_AspNetCoreFrontend_Request_Body_Extraction),
-        nameof(IndexedDuplicateCases)
-    )]
+    [TestFixtureSource(nameof(IndexedDuplicateCases))]
     public class Given_An_Indexed_Duplicate(string json, string expectedPath, string operation)
     {
+        private static IEnumerable<object[]> IndexedDuplicateCases()
+        {
+            (string Json, string Path)[] examples =
+            [
+                (
+                    """{"studentUniqueId":"1","addresses":[{"city":"a","streetNumberName":"b"},{"city":"x","city":"y"}]}""",
+                    "$.addresses[1].city"
+                ),
+                (
+                    """{"studentUniqueId":"1","addresses":[{"city":"a"}],"electronicMails":[{"x":"1","x":"2"}]}""",
+                    "$.electronicMails[0].x"
+                ),
+                (
+                    """[{"LastSurname":"a"},{"BirthLocation":{"City":"x","City":"y"}}]""",
+                    "$[1].BirthLocation.City"
+                ),
+            ];
+            foreach (var (json, path) in examples)
+            {
+                foreach (string operation in json.StartsWith('[') ? new[] { "search" } : ["upsert", "update"])
+                {
+                    yield return [json, path, operation];
+                }
+            }
+            (string Sequence, string Suffix)[] matrix =
+            [
+                ("""{"x":1,"x":2}""", "[0].x"),
+                ("""{"before":1,"x":1,"x":2}""", "[0].x"),
+                ("""{"a":1,"b":2},{"before":0,"x":1,"x":2}""", "[1].x"),
+                ("""{},{"before":1,"groups":[{"a":1},{"before":0,"x":1,"x":2}]}""", "[1].groups[1].x"),
+            ];
+            foreach (var (sequence, suffix) in matrix)
+            {
+                yield return ["{\"items\":[" + sequence + "]}", "$.items" + suffix, "upsert"];
+                yield return ["{\"items\":[" + sequence + "]}", "$.items" + suffix, "update"];
+                yield return ["[" + sequence + "]", "$" + suffix, "search"];
+            }
+        }
+
         private FrontendRequest _captured = null!;
 
         [SetUp]
