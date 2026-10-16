@@ -1,4 +1,4 @@
-# Product Requirements Document: Ed-Fi Configuration Management Service (CS) v8.2
+# Product Requirements Document: Ed-Fi API Configuration Service (CS) v8.2
 
 > **Status**: Draft \
 > **Owner**: Vinaya Mayya \
@@ -47,10 +47,9 @@ Early draft of potential 8.2 requirements.
 
 ## 4. Open Questions and Decision Log
 
-- **Error conformance scope**: Decide whether unresolved-reference errors
-  should use `400` or `409`, and whether OAuth-standard error shapes and
-  dynamic claims-management responses should be converted to the Ed-Fi error
-  contract or explicitly documented as exceptions.
+- **Error conformance scope**: Decide whether `/connect/token` errors should
+  stay in the Ed-Fi error contract or move to the RFC 6749 OAuth error shape
+  used by `/connect/revoke`.
 - **OpenAPI disablement**: Decide whether API metadata exposure should be
   controlled by configuration, environment, or deployment topology.
 - **Dependency-aware health reporting**: Decide which dependencies (database,

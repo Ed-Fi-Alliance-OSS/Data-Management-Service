@@ -1,4 +1,4 @@
-# Product Requirements Document: Ed-Fi Configuration Management Service (CS) v8.1
+# Product Requirements Document: Ed-Fi API Configuration Service (CS) v8.1
 
 > **Status**: Planned \
 > **Owner**: Vinaya Mayya \
@@ -71,16 +71,16 @@ in CS v8.0.
 
 ### 2.2 Identity Provider and Authentication
 
-- **FR-AUTH-11**: In self-contained mode, CS SHOULD periodically remove
+- **FR-AUTH-14**: In self-contained mode, CS SHOULD periodically remove
   expired access-token records from its own storage on a configurable interval,
   defaulting to enabled with a 30-minute sweep interval. In Keycloak mode, CS
   SHOULD NOT implement its own token-cleanup mechanism, since Keycloak owns its
   own token and session lifecycle.
-- **FR-AUTH-12**: CS SHOULD require client authentication for token
+- **FR-AUTH-15**: CS SHOULD require client authentication for token
   revocation, SHOULD allow a client to revoke only its own tokens, and SHOULD
   avoid responses that reveal whether a submitted token was valid, so
   revocation cannot be used to enumerate or deny service to other clients.
-- **FR-AUTH-13**: When CS provisions API credentials through an external
+- **FR-AUTH-16**: When CS provisions API credentials through an external
   identity provider, it SHOULD report success only once the credential is
   fully usable for authorized API access, and SHOULD return a recoverable
   failure when downstream provisioning cannot be completed, so operators are
@@ -96,10 +96,10 @@ in CS v8.0.
 
 ### 2.4 Data Store Management
 
-- **FR-DATASTORE-10**: Updating a data store or data-store derivative without
+- **FR-DATASTORE-11**: Updating a data store or data-store derivative without
   supplying a new connection value SHOULD preserve the previously stored
   value rather than requiring the caller to resupply it.
-- **FR-DATASTORE-11**: CS SHOULD validate that a submitted connection value is
+- **FR-DATASTORE-12**: CS SHOULD validate that a submitted connection value is
   a genuine, correctly formatted connection string for the target database
   engine before storing it, and SHOULD reject a previously issued (already
   protected) connection value if a caller resubmits it as new input, so that
@@ -215,7 +215,7 @@ in CS v8.0.
 
 ### 2.15 Vendor Configuration
 
-- **FR-VENDOR-5**: CS SHOULD allow a vendor to be created or updated without
+- **FR-VENDOR-6**: CS SHOULD allow a vendor to be created or updated without
   a namespace prefix, so deployments that do not rely on namespace-based
   authorization are not forced to supply an irrelevant value.
 
@@ -268,8 +268,7 @@ in CS v8.0.
 - Several CS v8.0 requirements originally drafted for v8.1 have no
   confirmed v8.1 delivery and have been moved to the draft
   [CS v8.2 PRD](./PRD-CS-v8.2.md): claim-set-existence
-  validation on application writes, the `400` vs. `409` decision for
-  unresolved caller-supplied references, independent control of Swagger/OpenAPI
+  validation on application writes, independent control of Swagger/OpenAPI
   generation, and a dependency-aware health endpoint.
 
 ## 5. Open Questions and Decision Log

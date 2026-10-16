@@ -1,4 +1,4 @@
-# Product Requirements Document: Ed-Fi Configuration Management Service (CS) v8.0
+# Product Requirements Document: Ed-Fi API Configuration Service (CS) v8.0
 
 > **Status**: Published - describes platform capabilities as implemented in Ed-Fi
 > API Configuration Service v8.0 \
@@ -306,7 +306,7 @@ graph TB
 
 External systems and dependencies:
 
-- **Ed-Fi API service (Ed-Fi API)**: the downstream consumer of CS's
+- **Ed-Fi API**: the downstream consumer of CS's
   configuration. Ed-Fi API retrieves and caches vendor/application/API-client
   data-store associations, tenant/route-context configuration, Profile
   definitions, and authorization metadata (claim sets, resource claims,
@@ -386,10 +386,11 @@ External systems and dependencies:
 - **FR-AUTH-10**: Endpoint authorization SHALL be enforced per HTTP method:
   `GET` endpoints SHALL accept either `full_access` or `readonly_access`;
   `POST`, `PUT`, and `DELETE` endpoints SHALL require `full_access`; the
-  authorization-metadata endpoint, claim-set list endpoint, and API-client
-  list/lookup endpoints SHALL accept any of the three defined scopes; and
-  health, discovery, metadata, OAuth `/connect/*`, and self-contained OIDC
-  discovery/JWKS endpoints SHALL remain anonymous.
+  endpoints listed in FR-AUTH-6 SHALL accept any of the three defined scopes;
+  and health, discovery, metadata, OAuth `/connect/*`, and self-contained OIDC
+  discovery/JWKS endpoints SHALL remain anonymous. In addition to the scope,
+  every protected endpoint SHALL require the role claim configured by
+  `IdentitySettings:ConfigServiceRole` (default `cms-client`)
 - **FR-AUTH-11**: CS SHALL expose an anonymous
   `GET /.well-known/openiddict-status` endpoint in both identity-provider
   modes, reporting the configured authority and its discovery, JWKS, and token
@@ -828,12 +829,11 @@ asynchronous job tracking, and rate limiting are deferred to later releases; see
 
 ## 7. Glossary
 
-- **CS**: Ed-Fi Configuration Management Service — the administrative
+- **CS**: Ed-Fi API Configuration Service — the administrative
   control plane and OAuth identity provider for the Ed-Fi API v8 (Ed-Fi API)
   platform.
-- **Ed-Fi API**: Ed-Fi API service ("Data Management Service") — the platform's
-  resource/data-management API, and CS's primary internal client.
-- **`dmscs` schema**: The CS configuration database schema (short for "DMS
+- **Ed-Fi API**:  the platform's resource/data-management API, and CS's primary internal client.
+- **`dmscs` schema**: The configuration service database schema (short for "DMS
   Configuration Service"), distinct from any schema used by Ed-Fi API's operational
   data.
 - **Application**: An administrative representation of a client application,

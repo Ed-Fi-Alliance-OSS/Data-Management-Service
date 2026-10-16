@@ -1,6 +1,6 @@
 ## Authorization Model
 
-CMS has no fallback authorization policy: any plain `MapGet`/`MapPost` endpoint is
+Configuration Service has no fallback authorization policy: any plain `MapGet`/`MapPost` endpoint is
 anonymous. Map protected endpoints with the `MapSecured*` or `MapLimitedAccess` helpers
 in `Infrastructure/Authorization/EndpointBuilderExtensions.cs`; they compose the
 service-role and scope policies. Use `MapLimitedAccess` only for reads DMS performs.
@@ -15,11 +15,11 @@ the `Tenant` header as restricting a caller to a tenant, or document tenant isol
 a security property.
 
 When `AppSettings:MultiTenancy` is enabled, `TenantResolutionMiddleware` resolves the
-header before authentication; CMS tokens carry no tenant claim. Any appropriately
-scoped CMS caller can therefore select any valid tenant. Keep repository queries
+header before authentication; Configuration Service tokens carry no tenant claim. Any
+appropriately scoped caller can therefore select any valid tenant. Keep repository queries
 tenant-scoped with `TenantContext.TenantWhereClause()` for partition correctness, not
-access control. Tenant-level security requires separate CMS deployments, databases,
-and credentials.
+access control. Tenant-level security requires separate Configuration Service
+deployments, databases, and credentials.
 
 ## Datastore Selection
 
@@ -41,8 +41,6 @@ when changing them; do not add configuration flags that are not read by runtime 
 - `AppSettings:IdentityProvider`: JWKS and `openid-configuration` are mapped only in
   `self-contained` mode.
 - `AppSettings:MultiTenancy`: `TenantModule` (`/v3/tenants`) is mapped only when enabled.
-- `AppSettings:EnableApplicationResetEndpoint`: controls mapping of the application
-  credential-reset endpoint.
 - `IdentitySettings:AllowRegistration`: `/connect/register` is always mapped and
   returns 403 when disabled.
 - `ClaimsOptions:DangerouslyEnableUnrestrictedClaimsLoading`: the `/management/*`
