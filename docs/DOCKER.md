@@ -22,6 +22,7 @@ is `postgresql`, `src/dms/run.sh` waits for PostgreSQL by parsing host, port, an
 username from `DATABASE_CONNECTION_STRING_ADMIN`.
 The wait is skipped when `DATABASE_CONNECTION_STRING_ADMIN` is absent or yields no
 host, and DMS starts without waiting.
+The shipped Docker Compose files set a default for the variable; to leave it out there, see [Secrets on the shipped Compose files](./OPERATIONS.md#secrets-on-the-shipped-compose-files).
 
 ```none
 AppSettings__Datastore=<Database engine: postgresql or mssql. Defaults to postgresql>

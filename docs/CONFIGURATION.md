@@ -784,6 +784,9 @@ qualifier above.
 >     skipping the readiness wait and starts .NET without waiting.
 >   - `DATABASE_CONNECTION_STRING_ADMIN`, which that wait connects with. It is
 >     optional: without a host the script skips the wait.
+>     The shipped Compose files give it a default, so leaving it out there takes a
+>     `!reset null` override; see
+>     [Secrets on the shipped Compose files](./OPERATIONS.md#secrets-on-the-shipped-compose-files).
 >   - `AppSettings__ApiSchema__UseCustomPath` and `AppSettings__ApiSchema__Path`, which decide
 >     whether and where it downloads the schema packages. A plugin that supplies
 >     either sends .NET to read a directory the script did not fill.
@@ -793,7 +796,8 @@ qualifier above.
 > environment source and the command-line source both exist when they are read, so for them the command line wins when a deployment
 > supplies one. The `run.sh` values are not read as .NET configuration there at all,
 > only from the container's environment, so a deployment on the stock image sets
-> them in the environment even when a plugin also supplies them.
+> the ones it uses in the environment even when a plugin also supplies them.
+> `DATABASE_CONNECTION_STRING_ADMIN` is the one it can leave out.
 
 ### Configuration Service plugins
 
@@ -824,19 +828,15 @@ unchanged, with these points stated for the Configuration Service itself:
 **Values a plugin source cannot usefully supply in the Configuration Service:**
 
 - The `Plugins` section, for the reason above.
-- The values `src/config/run.sh`, the container entry point, reads from the
-  environment before the .NET process starts, to wait for the database:
-  - `AppSettings__Datastore`, which decides whether the script waits for PostgreSQL
-    or for a SQL Server TCP endpoint. It defaults to `postgresql` when unset.
-  - `DatabaseSettings__DatabaseConnection`, from which it parses the host and port
-    it waits on. If the PostgreSQL branch cannot parse a host from it, because it is
-    absent, empty, or written with capitalized keywords such as `Host=`, the script
-    prints that it is skipping the readiness wait and starts .NET without waiting.
-    The SQL Server branch skips the same way.
-
+- `AppSettings__Datastore`, which `src/config/run.sh`, the container entry point, reads from the environment before the .NET process starts, to decide whether to wait for PostgreSQL or for a SQL Server TCP endpoint.
+  It defaults to `postgresql` when unset.
   A plugin that supplies `AppSettings:Datastore` changes what .NET then uses, but not what the script already waited for, so on the stock image set it in the environment.
-  A plugin that supplies `DatabaseSettings:DatabaseConnection` is served to .NET only if the environment does not also set it, because the environment value outranks every plugin source.
-  Remove the variable from the environment to serve it from a plugin: the script then skips its wait, and .NET reports a connection error itself and exits if the database is not ready, so a restart policy is needed to recover.
+
+**The Configuration Service's own connection string can come from a plugin source.**
+`src/config/run.sh` also reads `DatabaseSettings__DatabaseConnection` from the environment, to parse the host and port it waits on.
+If the PostgreSQL branch finds no `host=` setting in it, because it is absent, empty, or written with capitalized keywords such as `Host=`, the script prints that it is skipping the readiness wait and starts .NET without waiting; the SQL Server branch skips the same way.
+A plugin that supplies `DatabaseSettings:DatabaseConnection` is served to .NET only if the environment does not also set it, because the environment value outranks every plugin source.
+Remove the variable from the environment to serve it from a plugin: the script then skips its wait, and .NET reports a connection error itself if the database is not ready, and with the default `AppSettings:DeployDatabaseOnStartup=true` exits, so a restart policy is needed to recover.
 
 There is no `AppSettings:StartupStatusFilePath` equivalent in the Configuration
 Service. A plugin loading or composition failure is written to standard error and

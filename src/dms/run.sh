@@ -9,15 +9,24 @@ set +x
 
 datastore=$(printf '%s' "${AppSettings__Datastore:-postgresql}" | tr '[:upper:]' '[:lower:]')
 
+# Prints the value of one setting in a semicolon-separated connection string. The key has to start
+# a setting, so a value such as password=ghost=... is never read as the host.
+connection_string_value() {
+    printf '%s\n' "$1" \
+        | grep -Eo "(^|;)[[:space:]]*$2[[:space:]]*=[^;]*" \
+        | head -n 1 \
+        | sed -E 's/^;?[[:space:]]*'"$2"'[[:space:]]*=[[:space:]]*//; s/[[:space:]]*$//'
+}
+
 if [ "$datastore" = "postgresql" ]; then
     # Safely extract a few environment variables from the admin connection string
-    host=$(echo "${DATABASE_CONNECTION_STRING_ADMIN:-}" | grep -Eo "host([^;]+)" | awk -F= '{print $2}')
-    port=$(echo "${DATABASE_CONNECTION_STRING_ADMIN:-}" | grep -Eo "port([^;]+)" | awk -F= '{print $2}')
-    username=$(echo "${DATABASE_CONNECTION_STRING_ADMIN:-}" | grep -Eo "username([^;]+)" | awk -F= '{print $2}')
+    host=$(connection_string_value "${DATABASE_CONNECTION_STRING_ADMIN:-}" host)
+    port=$(connection_string_value "${DATABASE_CONNECTION_STRING_ADMIN:-}" port)
+    username=$(connection_string_value "${DATABASE_CONNECTION_STRING_ADMIN:-}" username)
 
     if [ -z "${host}" ]; then
         # Let .NET surface a real connection error rather than blocking startup forever.
-        echo "Could not parse a PostgreSQL host from DATABASE_CONNECTION_STRING_ADMIN; skipping readiness wait."
+        echo "No host= setting found in DATABASE_CONNECTION_STRING_ADMIN; skipping the PostgreSQL readiness wait."
     else
         until pg_isready -h "${host}" -p "${port}" -U "${username}"; do
             echo "Waiting for PostgreSQL to start..."

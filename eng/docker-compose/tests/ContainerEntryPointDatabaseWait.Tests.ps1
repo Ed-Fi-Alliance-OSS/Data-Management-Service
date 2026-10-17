@@ -6,7 +6,10 @@
 # Covers the PostgreSQL readiness wait in the container entry scripts src/config/run.sh and
 # src/dms/run.sh. pg_isready, nc and dotnet are stubbed on PATH. The pg_isready stub exits 0 so
 # that a script which wrongly enters the wait loop finishes at once and fails an assertion
-# instead of hanging.
+# instead of hanging. pg_isready records each argument in brackets, so an argument that is
+# missing, empty or split in two is visible. Every case runs under bash and under sh: the
+# Dockerfile images run the scripts with bash, the Nuget.Dockerfile images with busybox ash, and
+# sh (dash on the CI runner) is the closest POSIX shell available to stand in for ash.
 
 Describe "Container entry point database wait" {
     BeforeAll {
@@ -16,6 +19,7 @@ Describe "Container entry point database wait" {
 
         function Invoke-EntryPoint {
             param(
+                [string]$Shell,
                 [string]$ScriptRelativePath,
                 [hashtable]$Environment
             )
@@ -33,9 +37,15 @@ Describe "Container entry point database wait" {
 
             foreach ($stubName in $logPaths.Keys) {
                 $stubPath = Join-Path $stubDirectory $stubName
+                $record = if ($stubName -eq "pg_isready") {
+                    "printf '[%s]' `"`$@`" >> `"$($logPaths[$stubName])`"; echo >> `"$($logPaths[$stubName])`""
+                }
+                else {
+                    "echo `"`$*`" >> `"$($logPaths[$stubName])`""
+                }
                 @"
 #!/bin/sh
-echo "`$*" >> "$($logPaths[$stubName])"
+$record
 exit 0
 "@ | Set-Content -LiteralPath $stubPath -Encoding utf8
                 & chmod +x $stubPath
@@ -49,7 +59,8 @@ exit 0
             }
 
             try {
-                # Start from a clean slate so ambient values cannot leak into a case.
+                # Start from a clean slate so ambient values cannot leak into a case. A $null value
+                # in $Environment leaves the variable unset; an empty string sets it to empty.
                 foreach ($name in $envNames) {
                     if ($name -ne "PATH") {
                         Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
@@ -62,7 +73,7 @@ exit 0
                     }
                 }
 
-                $runOutput = & bash (Join-Path $script:sourceRepoRoot $ScriptRelativePath) 2>&1
+                $runOutput = & $Shell (Join-Path $script:sourceRepoRoot $ScriptRelativePath) 2>&1
                 $exitCode = $LASTEXITCODE
             }
             finally {
@@ -81,9 +92,9 @@ exit 0
 
             $lines = @($runOutput | ForEach-Object { "$_" })
             [pscustomobject]@{
-                ExitCode = $exitCode
-                Lines    = $lines
-                Text     = ($lines -join [Environment]::NewLine)
+                ExitCode     = $exitCode
+                Lines        = $lines
+                Text         = ($lines -join [Environment]::NewLine)
                 PgIsReadyLog = $logPaths.pg_isready
                 NcLog        = $logPaths.nc
                 DotnetLog    = $logPaths.dotnet
@@ -91,31 +102,35 @@ exit 0
         }
     }
 
-    Context "<Name>" -ForEach @(
-        @{
-            Name         = "src/config/run.sh"
-            Script       = "src/config/run.sh"
-            Variable     = "DatabaseSettings__DatabaseConnection"
-            Dll          = "EdFi.DmsConfigurationService.Frontend.AspNetCore.dll"
-            ExtraEnv     = @{}
-        }
-        @{
-            Name         = "src/dms/run.sh"
-            Script       = "src/dms/run.sh"
-            Variable     = "DATABASE_CONNECTION_STRING_ADMIN"
-            Dll          = "EdFi.DataManagementService.Frontend.AspNetCore.dll"
-            ExtraEnv     = @{ AppSettings__ApiSchema__UseCustomPath = "false" }
+    Context "<Script> under <Shell>" -ForEach @(
+        foreach ($shell in @("bash", "sh")) {
+            @{
+                Script   = "src/config/run.sh"
+                Shell    = $shell
+                Variable = "DatabaseSettings__DatabaseConnection"
+                Dll      = "EdFi.DmsConfigurationService.Frontend.AspNetCore.dll"
+                ExtraEnv = @{}
+            }
+            @{
+                Script   = "src/dms/run.sh"
+                Shell    = $shell
+                Variable = "DATABASE_CONNECTION_STRING_ADMIN"
+                Dll      = "EdFi.DataManagementService.Frontend.AspNetCore.dll"
+                ExtraEnv = @{ AppSettings__ApiSchema__UseCustomPath = "false" }
+            }
         }
     ) {
         BeforeAll {
+            $skipLine = "No host= setting found in $Variable; skipping the PostgreSQL readiness wait."
+
             function Invoke-Case {
-                param([string]$Value)
+                param([AllowNull()][object]$Value)
 
                 $environment = @{ $Variable = $Value }
                 foreach ($key in $ExtraEnv.Keys) {
                     $environment[$key] = $ExtraEnv[$key]
                 }
-                Invoke-EntryPoint -ScriptRelativePath $Script -Environment $environment
+                Invoke-EntryPoint -Shell $Shell -ScriptRelativePath $Script -Environment $environment
             }
 
             function Assert-WaitSkipped {
@@ -124,51 +139,78 @@ exit 0
                 $Result.ExitCode | Should -Be 0 -Because $Result.Text
                 Test-Path -LiteralPath $Result.PgIsReadyLog |
                     Should -BeFalse -Because "pg_isready must not be invoked when no host can be parsed"
-                @($Result.Lines | Where-Object { $_ -match [regex]::Escape($Variable) -and $_ -match "(?i)skipp" }).Count |
-                    Should -Be 1 -Because "output must say once that the wait was skipped and name $Variable"
+                @($Result.Lines | Where-Object { $_ -ceq $skipLine }).Count |
+                    Should -Be 1 -Because "output must say exactly once that the wait was skipped"
                 Get-Content -LiteralPath $Result.DotnetLog | Should -Contain $Dll
+                $Result.Text | Should -Not -Match ([regex]::Escape($script:marker))
+            }
+
+            function Assert-WaitedWith {
+                param($Result, [string]$ExpectedArguments)
+
+                $Result.ExitCode | Should -Be 0 -Because $Result.Text
+                $pgIsReadyInvocations = @(Get-Content -LiteralPath $Result.PgIsReadyLog)
+                $pgIsReadyInvocations.Count | Should -Be 1
+                $pgIsReadyInvocations[0] | Should -BeExactly $ExpectedArguments
+                Get-Content -LiteralPath $Result.DotnetLog | Should -Contain $Dll
+                $Result.Text | Should -Not -Match ([regex]::Escape($script:marker))
+                Get-Content -LiteralPath $Result.PgIsReadyLog -Raw |
+                    Should -Not -Match ([regex]::Escape($script:marker))
             }
         }
 
-        It "skips the PostgreSQL wait when the connection variable is unset" -Skip:(-not (Get-Command -Name bash -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
-            $result = Invoke-Case -Value $null
-            Assert-WaitSkipped $result
+        It "skips the PostgreSQL wait when the connection variable is unset" -Skip:(-not (Get-Command -Name $Shell -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
+            Assert-WaitSkipped (Invoke-Case -Value $null)
         }
 
-        It "skips the PostgreSQL wait when the connection variable is empty" -Skip:(-not (Get-Command -Name bash -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
-            $result = Invoke-Case -Value ""
-            Assert-WaitSkipped $result
+        It "skips the PostgreSQL wait when the connection variable is empty" -Skip:(-not (Get-Command -Name $Shell -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
+            Assert-WaitSkipped (Invoke-Case -Value "")
         }
 
-        It "skips the PostgreSQL wait for capitalized keywords and does not print the password" -Skip:(-not (Get-Command -Name bash -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
-            $result = Invoke-Case -Value "Host=db;Port=5432;Username=postgres;Password=$($script:marker)"
-            Assert-WaitSkipped $result
-            $result.Text | Should -Not -Match ([regex]::Escape($script:marker))
+        It "skips the PostgreSQL wait for capitalized keywords and does not print the password" -Skip:(-not (Get-Command -Name $Shell -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
+            Assert-WaitSkipped (Invoke-Case -Value "Host=db;Port=5432;Username=postgres;Password=$($script:marker)")
         }
 
-        It "waits with the parsed host, port and username for the shipped lowercase value" -Skip:(-not (Get-Command -Name bash -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
+        It "does not take a host from inside another setting's value" -Skip:(-not (Get-Command -Name $Shell -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
+            Assert-WaitSkipped (Invoke-Case -Value "Host=db;Password=ghost=$($script:marker)")
+        }
+
+        It "waits with the parsed host, port and username for the shipped lowercase value" -Skip:(-not (Get-Command -Name $Shell -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
             $result = Invoke-Case -Value "host=dms-postgresql;port=5432;username=postgres;password=$($script:marker);database=edfi_config;"
+            Assert-WaitedWith $result "[-h][dms-postgresql][-p][5432][-U][postgres]"
+        }
 
-            $result.ExitCode | Should -Be 0 -Because $result.Text
-            $pgIsReadyInvocations = @(Get-Content -LiteralPath $result.PgIsReadyLog)
-            $pgIsReadyInvocations.Count | Should -Be 1
-            $pgIsReadyInvocations[0] | Should -BeExactly "-h dms-postgresql -p 5432 -U postgres"
-            Get-Content -LiteralPath $result.DotnetLog | Should -Contain $Dll
-            $result.Text | Should -Not -Match ([regex]::Escape($script:marker))
+        It "waits with only the host setting's value when another value contains host=" -Skip:(-not (Get-Command -Name $Shell -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
+            $result = Invoke-Case -Value "host=dms-postgresql;port=5432;username=postgres;password=ghost=$($script:marker);"
+            Assert-WaitedWith $result "[-h][dms-postgresql][-p][5432][-U][postgres]"
+        }
+
+        It "passes an empty port to pg_isready when the lowercase value omits it" -Skip:(-not (Get-Command -Name $Shell -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
+            $result = Invoke-Case -Value "host=dms-postgresql;username=postgres;password=$($script:marker);"
+            Assert-WaitedWith $result "[-h][dms-postgresql][-p][][-U][postgres]"
+        }
+
+        It "passes an empty username to pg_isready when the lowercase value omits it" -Skip:(-not (Get-Command -Name $Shell -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
+            $result = Invoke-Case -Value "host=dms-postgresql;port=5432;password=$($script:marker);"
+            Assert-WaitedWith $result "[-h][dms-postgresql][-p][5432][-U][]"
         }
     }
 
-    Context "src/config/run.sh with the SQL Server datastore" {
-        It "skips the TCP wait when the connection variable is unset" -Skip:(-not (Get-Command -Name bash -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
-            $result = Invoke-EntryPoint -ScriptRelativePath "src/config/run.sh" -Environment @{
-                AppSettings__Datastore                = "mssql"
+    Context "src/config/run.sh with the SQL Server datastore under <Shell>" -ForEach @(
+        @{ Shell = "bash" }
+        @{ Shell = "sh" }
+    ) {
+        It "skips the TCP wait when the connection variable is unset" -Skip:(-not (Get-Command -Name $Shell -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
+            $result = Invoke-EntryPoint -Shell $Shell -ScriptRelativePath "src/config/run.sh" -Environment @{
+                AppSettings__Datastore               = "mssql"
                 DatabaseSettings__DatabaseConnection = $null
             }
 
             $result.ExitCode | Should -Be 0 -Because $result.Text
             Test-Path -LiteralPath $result.NcLog | Should -BeFalse -Because "nc must not be invoked when no host can be parsed"
-            $result.Text |
-                Should -Match "Could not parse a SQL Server host from DatabaseSettings__DatabaseConnection; skipping TCP readiness wait\."
+            @($result.Lines | Where-Object {
+                    $_ -ceq "Could not parse a SQL Server host from DatabaseSettings__DatabaseConnection; skipping TCP readiness wait."
+                }).Count | Should -Be 1
             Get-Content -LiteralPath $result.DotnetLog |
                 Should -Contain "EdFi.DmsConfigurationService.Frontend.AspNetCore.dll"
         }

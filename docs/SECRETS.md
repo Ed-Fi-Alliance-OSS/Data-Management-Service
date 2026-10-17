@@ -94,7 +94,7 @@ vault key of that name like any other.
 The container entry point, `src/config/run.sh`, reads that variable before .NET starts, to wait for the database.
 When it cannot parse a PostgreSQL host from the variable, because the variable is absent or empty, it prints that it is skipping the readiness wait and starts .NET without waiting.
 A value in the environment still outranks any plugin source, so a key the vault serves must not also be set there.
-Without the wait, .NET reports a connection error itself if the database is not ready yet, and the process exits.
+Without the wait, .NET reports a connection error itself if the database is not ready yet, and with the default `AppSettings:DeployDatabaseOnStartup=true` the process exits.
 A restart policy, such as the `restart: unless-stopped` on the shipped Compose files, brings it back once the database is up; without one it stays down.
 See [Configuration Service plugins](./CONFIGURATION.md#configuration-service-plugins).
 
@@ -105,6 +105,8 @@ It carries elevated database credentials, and its only consumer is the DMS conta
 No configuration source of any origin can serve a value read before there is a configuration to read it from, so a deployment that sets it supplies it from the deployment environment, the way it already supplies its other secret environment variables.
 A deployment that does not need the wait can leave it unset: when the entry point cannot parse a PostgreSQL host from it, it prints that it is skipping the readiness wait and starts DMS without waiting.
 DMS itself never reads the variable, and if the database is not up yet, its startup check retries on the first request.
+On the shipped Compose files, `local-dms.yml` and `published-dms.yml` give the variable a default, a superuser connection string for the bundled `dms-postgresql` service, so deleting it from `.env` still puts that credential in the container.
+To leave it out there, reset it under `dms` with `DATABASE_CONNECTION_STRING_ADMIN: !reset null` in a deployment-owned override; see [Secrets on the shipped Compose files](./OPERATIONS.md#secrets-on-the-shipped-compose-files).
 
 ### Rotating a process-global secret takes a restart
 

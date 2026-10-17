@@ -706,6 +706,10 @@ string removed, the stock Configuration Service entry point skips its database w
 and .NET reports a connection error itself if the database is not ready yet, so keep
 a restart policy on `config`, as [Secrets](./SECRETS.md) describes.
 
+`DATABASE_CONNECTION_STRING_ADMIN` on `dms` is not a vault key, because only the DMS entry point reads it, but it carries superuser credentials and the shipped files give it a default.
+To keep it out of the container, reset it in the same override with `DATABASE_CONNECTION_STRING_ADMIN: !reset null` under `dms`.
+DMS then starts without waiting for PostgreSQL.
+
 ## Logging
 
 See [Logging Policy](./LOGGING.md)
