@@ -5,8 +5,10 @@
 
 #Requires -Version 7
 # Containers must be exclusively owned disposable test instances. Tests create/drop only
-# uniquely named databases. The synthetic package proves the real restore/catalog/data path;
-# API registration is intercepted at its first call (full serveability is the release matrix).
+# uniquely named databases. The synthetic package is built by the producer's own catalog-facts,
+# DMS-only gate, dump, and restore-manifest steps, so it proves the real restore/catalog/manifest/
+# data path; API registration is intercepted at its first call (full serveability is the release
+# matrix).
 foreach ($case in @(
         @{ Engine = 'postgresql'; Dialect = 'pgsql'; Container = $env:DMS_TEMPLATE_TEST_PG_CONTAINER },
         @{ Engine = 'mssql'; Dialect = 'mssql'; Container = $env:DMS_TEMPLATE_TEST_MSSQL_CONTAINER }
@@ -21,6 +23,9 @@ foreach ($case in @(
             Import-Module (Join-Path $templates 'Template-Management.psm1') -Force
             Import-Module (Join-Path $templates '../Dms-Management.psm1') -Force
             Import-Module (Join-Path $templates 'Template-Schema.psm1') -Force
+            # BeforeEach mocks Import-Module, so the verifier's manifest helpers must already be loaded.
+            Import-Module (Join-Path $templates 'Template-RestoreCore.psm1') -Force
+            Import-Module (Join-Path $templates 'Template-RestoreTrust.psm1') -Force
             $password = $env:DMS_TEMPLATE_TEST_MSSQL_PASSWORD ?? 'EdFi_Dms1!'
             $source = 't17_source_' + [Guid]::NewGuid().ToString('N')
             $script:restored = 't17_restored_' + [Guid]::NewGuid().ToString('N')
@@ -38,22 +43,24 @@ foreach ($case in @(
             }
             function Invoke-TestPackageCapture([string]$Label) {
                 $directory = Join-Path $TestDrive $Label
-                New-Item -ItemType Directory $directory | Out-Null
-                if ($Engine -eq 'mssql') {
-                    $remote = "/var/opt/mssql/data/$source.bak"
-                    Invoke-TestSql $master "BACKUP DATABASE [$source] TO DISK = N'$remote' WITH INIT;" | Out-Null
-                    $artifact = Join-Path $directory 'template.bak'
-                    & docker cp "$($Container):$remote" $artifact
-                    if ($LASTEXITCODE -ne 0) { throw 'Could not copy test backup' }
-                    & docker exec $Container rm -f $remote
-                }
-                else {
-                    $artifact = Join-Path $directory 'template.sql'
-                    & docker exec $Container pg_dump -U postgres --no-owner --no-privileges $source | Set-Content $artifact
-                    if ($LASTEXITCODE -ne 0) { throw 'Could not dump test database' }
-                }
-                Compress-Archive -Path $artifact -DestinationPath (Join-Path $directory 'package.zip')
+                $staging = Join-Path $directory 'staging'
+                New-Item -ItemType Directory $staging | Out-Null
+                $artifactName = if ($Engine -eq 'mssql') { 'Focused.Template.bak' } else { 'Focused.Template.sql' }
+                # The verifier checks the packaged restore manifest against the restored database, so
+                # build the package the way Build-TemplateNuGetPackage does: capture the source facts,
+                # pass the DMS-only gate, dump, and write restore-manifest.json beside the artifact.
+                & (Get-Module Template-Management) {
+                    param($Engine, $Container, $Database, $SaSecret, $Directory, $ArtifactName)
+                    $schemas = @(Get-UserSchemaNames -DatabaseEngine $Engine -ContainerName $Container -DatabaseName $Database -MssqlPassword $SaSecret)
+                    $facts = Get-TemplateSourceCatalogFacts -DatabaseEngine $Engine -ContainerName $Container -DatabaseName $Database -MssqlPassword $SaSecret -ArtifactSchemaName ([string[]]$schemas)
+                    $partition = Assert-DmsOnlyTemplateSource -Facts $facts -DatabaseEngine $Engine -DatabaseName $Database
+                    Invoke-DatabaseDump -DatabaseEngine $Engine -ContainerName $Container -DatabaseName $Database -DatabaseSchemas $schemas -BackupDirectory $Directory -BackupFileName $ArtifactName -MssqlPassword $SaSecret | Out-Null
+                    Write-TemplateRestoreManifest -Facts $facts -Partition $partition -Config @{ Id = 'Focused.Template'; DatabaseBackupName = $ArtifactName } `
+                        -PackageVersion '0.0.0-test' -DatabaseEngine $Engine -TemplateKind Minimal -StandardVersion '5.2.0' -BackupDirectory $Directory | Out-Null
+                } $Engine $Container $source $password $staging $artifactName
+                Compress-Archive -Path (Join-Path $staging '*') -DestinationPath (Join-Path $directory 'package.zip')
                 Move-Item (Join-Path $directory 'package.zip') (Join-Path $directory 'Focused.Template.nupkg')
+                Remove-Item -LiteralPath $staging -Recurse -Force
                 return $directory
             }
             # Re-adds one removed dms.Document column (the combined tree drops both ContentLastModifiedAt and
@@ -134,12 +141,12 @@ SELECT "DocumentId", "ResourceKeyId", 'uri://template', 'school', 'School' FROM 
         }
 
         It 'Restores the correct package through both catalogs and data checks to the API boundary' {
-            { & $script:verify -SourceDatabaseName $source -VerificationDatabaseName $script:restored -PackageDirectory $script:correctPackage -ExpectedModelManifestPath $script:manifest -DatabaseEngine $Engine -ContainerName $Container -MssqlPassword $password } | Should -Throw 'API checkpoint after live catalogs and data'
+            { & $script:verify -SourceDatabaseName $source -VerificationDatabaseName $script:restored -ExpectedTemplateKind Minimal -PackageDirectory $script:correctPackage -ExpectedModelManifestPath $script:manifest -DatabaseEngine $Engine -ContainerName $Container -MssqlPassword $password } | Should -Throw 'API checkpoint after live catalogs and data'
             Should -Invoke Get-CmsToken -Times 1 -Exactly
             @(Invoke-TestSql $script:restored $fingerprintSql) | Should -Be $fingerprint
         }
         It 'Rejects a pre-change restored package with the same fingerprint before API setup' {
-            { & $script:verify -SourceDatabaseName $source -VerificationDatabaseName $script:restored -PackageDirectory $script:oldPackage -ExpectedModelManifestPath $script:manifest -DatabaseEngine $Engine -ContainerName $Container -MssqlPassword $password } | Should -Throw "Template schema catalog assertions failed for '$script:restored'."
+            { & $script:verify -SourceDatabaseName $source -VerificationDatabaseName $script:restored -ExpectedTemplateKind Minimal -PackageDirectory $script:oldPackage -ExpectedModelManifestPath $script:manifest -DatabaseEngine $Engine -ContainerName $Container -MssqlPassword $password } | Should -Throw "Template schema catalog assertions failed for '$script:restored'."
             Should -Invoke Get-CmsToken -Times 0 -Exactly
             @(Invoke-TestSql $script:restored $fingerprintSql) | Should -Be $fingerprint
         }
@@ -147,14 +154,14 @@ SELECT "DocumentId", "ResourceKeyId", 'uri://template', 'school', 'School' FROM 
             Invoke-TestDocumentStampMutation $true
             try {
                 # A deliberately nonexistent package proves the source gate precedes restore.
-                { & $script:verify -SourceDatabaseName $source -VerificationDatabaseName $script:restored -PackageDirectory (Join-Path $TestDrive 'never-restored') -ExpectedModelManifestPath $script:manifest -DatabaseEngine $Engine -ContainerName $Container -MssqlPassword $password } | Should -Throw "Template schema catalog assertions failed for '$source'."
+                { & $script:verify -SourceDatabaseName $source -VerificationDatabaseName $script:restored -ExpectedTemplateKind Minimal -PackageDirectory (Join-Path $TestDrive 'never-restored') -ExpectedModelManifestPath $script:manifest -DatabaseEngine $Engine -ContainerName $Container -MssqlPassword $password } | Should -Throw "Template schema catalog assertions failed for '$source'."
                 Should -Invoke Get-CmsToken -Times 0 -Exactly
                 @(Invoke-TestSql $source $fingerprintSql) | Should -Be $fingerprint
             }
             finally { Invoke-TestDocumentStampMutation $false }
         }
         It 'Rejects a pre-change restored package that still carries CreatedAt before API setup' {
-            { & $script:verify -SourceDatabaseName $source -VerificationDatabaseName $script:restored -PackageDirectory $script:createdAtPackage -ExpectedModelManifestPath $script:manifest -DatabaseEngine $Engine -ContainerName $Container -MssqlPassword $password } | Should -Throw "*database '$script:restored' still carries CreatedAt*"
+            { & $script:verify -SourceDatabaseName $source -VerificationDatabaseName $script:restored -ExpectedTemplateKind Minimal -PackageDirectory $script:createdAtPackage -ExpectedModelManifestPath $script:manifest -DatabaseEngine $Engine -ContainerName $Container -MssqlPassword $password } | Should -Throw "*database '$script:restored' still carries CreatedAt*"
             Should -Invoke Get-CmsToken -Times 0 -Exactly
             @(Invoke-TestSql $script:restored $fingerprintSql) | Should -Be $fingerprint
         }
@@ -162,7 +169,7 @@ SELECT "DocumentId", "ResourceKeyId", 'uri://template', 'school', 'School' FROM 
             Invoke-TestDocumentStampMutation $true 'CreatedAt'
             try {
                 # A deliberately nonexistent package proves the source gate precedes restore.
-                { & $script:verify -SourceDatabaseName $source -VerificationDatabaseName $script:restored -PackageDirectory (Join-Path $TestDrive 'never-restored') -ExpectedModelManifestPath $script:manifest -DatabaseEngine $Engine -ContainerName $Container -MssqlPassword $password } | Should -Throw "*database '$source' still carries CreatedAt*"
+                { & $script:verify -SourceDatabaseName $source -VerificationDatabaseName $script:restored -ExpectedTemplateKind Minimal -PackageDirectory (Join-Path $TestDrive 'never-restored') -ExpectedModelManifestPath $script:manifest -DatabaseEngine $Engine -ContainerName $Container -MssqlPassword $password } | Should -Throw "*database '$source' still carries CreatedAt*"
                 Should -Invoke Get-CmsToken -Times 0 -Exactly
                 @(Invoke-TestSql $source $fingerprintSql) | Should -Be $fingerprint
             }

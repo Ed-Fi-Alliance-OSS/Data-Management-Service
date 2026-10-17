@@ -61,6 +61,13 @@ on:
         # Consumed only on the release-promotion path (env.ARTIFACTS_USERNAME); restore uses the PAT
         # alone. Optional so non-publishing callers and forks without the secret do not hard-fail.
         required: false
+      TEMPLATE_ATTESTATION_PRIVATE_KEY:
+        # PKCS#8 ECDSA P-256 private key (PEM) for the 'edfi-alliance-ci' trust-policy
+        # producer. Optional: without it the build is UNATTESTED (loud notice) and restore
+        # consumers refuse the published package (fail-closed). Generate with
+        # eng/DatabaseTemplates/new-template-dev-trust.ps1 -Purpose CI; the matching public
+        # key belongs in eng/docker-compose/template-trust-policy.json via a reviewed commit.
+        required: false
       SLACK_WEBHOOK_URL:
         required: false
     outputs:
@@ -256,12 +263,52 @@ jobs:
             throw "DMS did not become ready within the timeout period"
           }
 
+      # Attestation signing is gated on the TEMPLATE_ATTESTATION_PRIVATE_KEY secret: with it,
+      # the packed template is attested for the tracked-policy producer 'edfi-alliance-ci'
+      # and the companion attestation package is built beside it; without it, the build
+      # proceeds UNATTESTED with a loud notice and restore consumers refuse the package
+      # (fail-closed). The key never touches the workspace: it lands under RUNNER_TEMP and
+      # is removed by the cleanup step below.
+      - name: Materialize attestation signing key
+        id: attestation-signer
+        env:
+          TEMPLATE_ATTESTATION_PRIVATE_KEY: ${{ secrets.TEMPLATE_ATTESTATION_PRIVATE_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TEMPLATE_ATTESTATION_PRIVATE_KEY)) {
+            Write-Host "::notice title=Unattested template build::TEMPLATE_ATTESTATION_PRIVATE_KEY is not configured; this template package will be UNATTESTED and restore consumers will refuse it (fail-closed)."
+            "signer-available=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+          else {
+            $signerKeyPath = Join-Path $env:RUNNER_TEMP "template-attestation-signer.pem"
+            Set-Content -LiteralPath $signerKeyPath -Value $env:TEMPLATE_ATTESTATION_PRIVATE_KEY
+            "signer-available=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            "signer-key-path=$signerKeyPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+
       - name: Generate Populated Template package
         run: |
           Import-Module ./Template-Management.psm1 -Force
 
+          # The producer compares the source database with the DDL of the schema files it was
+          # provisioned from, so resolve the same SCHEMA_PACKAGES set the provision step used.
+          Import-Module ../schema-package-utility.psm1 -Force
+          $schemaFiles = @(Resolve-SchemaFilesFromEnvironmentFile `
+                  -EnvironmentFilePath '../docker-compose/${{ inputs.environment_file }}' `
+                  -Configuration Release `
+                  -RepoRoot '${{ github.workspace }}' `
+                  -SchemaDirectory (Join-Path $env:RUNNER_TEMP 'template-source-schema') `
+                  -DownloaderDotnetRunArgs @('--no-launch-profile'))
+
           # Generate unique application name for this run
           $uniqueAppName = "Demo application ${{ github.run_id }}"
+
+          # Attestation is secret-gated (see the attestation-signer step); the splat is empty
+          # on unattested builds so the invocation below is identical either way.
+          $attestationArguments = @{}
+          if ('${{ steps.attestation-signer.outputs.signer-available }}' -eq 'true') {
+            $attestationArguments.AttestationSignerKeyPath = '${{ steps.attestation-signer.outputs.signer-key-path }}'
+            $attestationArguments.AttestationProducer = 'edfi-alliance-ci'
+          }
 
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
           Build-Template `
@@ -278,8 +325,18 @@ jobs:
                   -DataStoreDatabaseName $env:TEMPLATE_DB_NAME `
                   -DataStoreId $env:TEMPLATE_DATA_STORE_ID `
                   -DumpAllUserSchemas `
-                  -DatabaseEngine '${{ inputs.database_engine }}'
+                  -DatabaseEngine '${{ inputs.database_engine }}' `
+                  -SchemaFilePath $schemaFiles `
+                  @attestationArguments
         working-directory: eng/DatabaseTemplates/
+
+      - name: Remove attestation signing key
+        if: always()
+        run: |
+          $signerKeyPath = Join-Path $env:RUNNER_TEMP "template-attestation-signer.pem"
+          if (Test-Path -LiteralPath $signerKeyPath) {
+            Remove-Item -LiteralPath $signerKeyPath -Force
+          }
 
       # A loader that exits 0 does not guarantee it wrote anything: gate on populated content
       # here, before the package is uploaded or published, so an empty bulk load cannot slip
@@ -339,7 +396,7 @@ jobs:
           # Validate the full implementation baseline and retain the exact SQL used by both gates.
           ./Assert-TemplateSchema.ps1 -ExpectedModelManifestPath $modelManifest -DatabaseEngine '${{ inputs.database_engine }}' -RenderSql |
             Set-Content (Join-Path $evidenceDirectory 'catalog-assertions.sql')
-          $packages = @(Get-ChildItem -LiteralPath . -Filter '*.nupkg')
+          $packages = @(Get-ChildItem -LiteralPath . -Filter '*.nupkg' | Where-Object { $_.Name -notlike '*.Attestation.*' })
           if ($packages.Count -ne 1) { throw "Expected exactly one template package for this leg." }
           $engineContainer = if ($dialect -eq 'mssql') { 'dms-mssql' } else { 'dms-postgresql' }
           $engineImage = & docker inspect $engineContainer --format '{{.Config.Image}} {{.Image}}'
@@ -364,6 +421,7 @@ jobs:
           $verifyParams = @{
             SourceDatabaseName = $env:TEMPLATE_DB_NAME
             DatabaseEngine = '${{ inputs.database_engine }}'
+            ExpectedTemplateKind = 'Populated'
             ExpectedModelManifestPath = $modelManifest
           }
           if ([bool]::Parse('${{ inputs.require_populated_data }}')) {
@@ -429,7 +487,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: "${{ inputs.package_name }}-NuGet"
-          path: ${{ github.workspace }}/eng/DatabaseTemplates/*.nupkg
+          path: |
+            ${{ github.workspace }}/eng/DatabaseTemplates/*.nupkg
+            ${{ github.workspace }}/eng/DatabaseTemplates/*.nupkg.attestation.json
           if-no-files-found: error
           retention-days: 30
 
@@ -531,11 +591,69 @@ jobs:
 
       - name: Push Populated Template Package to Azure
         run: |
-          $artifact = (Get-ChildItem -Name -Include *.nupkg)
-          
-          $artifact | ForEach-Object {
+          $allPackages = @(Get-ChildItem -Name -Include *.nupkg)
+          $companionPackages = @($allPackages | Where-Object { $_ -like "*.Attestation.*" })
+          $templatePackages = @($allPackages | Where-Object { $_ -notlike "*.Attestation.*" })
+          $attestationDocuments = @(Get-ChildItem -Name -Include *.nupkg.attestation.json)
+
+          # Publication coupling: a signed template must never publish without its companion
+          # attestation package. Companions publish FIRST, so the template cannot land on the
+          # feed unless its companion already has; any push failure fails this step.
+          if ($attestationDocuments.Count -gt 0 -and $companionPackages.Count -eq 0) {
+            throw "Attested build artifact carries an attestation document but no companion attestation package; refusing to publish a signed template without its companion."
+          }
+          if ($companionPackages.Count -gt 0 -and $attestationDocuments.Count -eq 0) {
+            throw "Build artifact carries a companion attestation package but no attestation document; refusing to publish an inconsistent artifact."
+          }
+
+          # Duplicate coupling: a rebuild of the same version has different bytes, and
+          # --skip-duplicate would keep a companion left by an earlier partial publication and
+          # pair it with this run's template. With a companion, every package the feed already
+          # holds at this version must be this run's exact bytes, checked before any push; those
+          # are not pushed again, the rest push without --skip-duplicate so a racing push fails.
+          $packagesOnFeed = @()
+          $duplicateHandling = @("--skip-duplicate")
+          if ($companionPackages.Count -gt 0) {
+            $duplicateHandling = @()
+            $feedHeaders = @{ Authorization = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(":$env:ARTIFACTS_API_KEY")) }
+            $packageBaseAddress = @((Invoke-RestMethod -Uri $env:ARTIFACTS_FEED_URL -Headers $feedHeaders).resources |
+                Where-Object { $_.'@type' -like 'PackageBaseAddress/3.0.0*' } | ForEach-Object { $_.'@id' })[0]
+            if ([string]::IsNullOrWhiteSpace($packageBaseAddress)) {
+              throw "The feed's service index advertises no PackageBaseAddress/3.0.0 resource; cannot check for packages already published at this version."
+            }
+            foreach ($package in @($companionPackages) + @($templatePackages)) {
+              $packageId = if ($package -like "*.Attestation.*") { "${{ inputs.package_name }}.Attestation" } else { "${{ inputs.package_name }}" }
+              if (-not $package.StartsWith("$packageId.", [StringComparison]::OrdinalIgnoreCase)) {
+                throw "Package file '$package' is not named for package id '$packageId'."
+              }
+              $lowerId = $packageId.ToLowerInvariant()
+              $lowerVersion = $package.Substring($packageId.Length + 1, $package.Length - $packageId.Length - 7).ToLowerInvariant()
+              $feedCopy = Join-Path $env:RUNNER_TEMP "feed-copy-$lowerId.$lowerVersion.nupkg"
+              $response = Invoke-WebRequest -Uri "$packageBaseAddress$lowerId/$lowerVersion/$lowerId.$lowerVersion.nupkg" -Headers $feedHeaders -OutFile $feedCopy -SkipHttpErrorCheck -PassThru
+              if ($response.StatusCode -eq 404) {
+                continue
+              }
+              if ($response.StatusCode -ne 200) {
+                throw "Checking the feed for $packageId $lowerVersion failed with HTTP $($response.StatusCode)."
+              }
+              if ((Get-FileHash -LiteralPath $feedCopy -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash) {
+                throw "The feed already holds $packageId $lowerVersion with different bytes than this run's package; refusing to publish, because the template and its companion attestation must come from the same build."
+              }
+              $packagesOnFeed += $package
+            }
+          }
+
+          @($companionPackages) + @($templatePackages) | ForEach-Object {
+              if ($packagesOnFeed -contains $_) {
+                Write-Host "$_ is already on the feed with identical bytes; not pushing it again."
+                return
+              }
               Write-Host "Pushing $_ to ${{ env.ARTIFACTS_FEED_URL }}"
-              dotnet nuget push $_ --api-key "${{ env.ARTIFACTS_API_KEY }}" --source "${{ env.ARTIFACTS_FEED_URL }}" --skip-duplicate
+              $global:LASTEXITCODE = 0
+              dotnet nuget push $_ --api-key "${{ env.ARTIFACTS_API_KEY }}" --source "${{ env.ARTIFACTS_FEED_URL }}" @duplicateHandling
+              if ($LASTEXITCODE -ne 0) {
+                throw "Package push failed for '$_' with exit code $LASTEXITCODE."
+              }
            }
 
   promote-azure-package:
@@ -551,16 +669,41 @@ jobs:
 
       - name: Promote Populated Template Azure Package
         run: |
+          Import-Module ./package-helpers.psm1
+
+          $releaseVersion = "${{ github.ref_name }}" -replace "v", ""
+          $companionPackageName = "${{ inputs.package_name }}.Attestation"
+          $credential = New-Object -TypeName PSCredential -ArgumentList "${{ env.ARTIFACTS_USERNAME }}", (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
+
+          # Promotion coupling mirrors publication: when the companion attestation package
+          # exists at this version (attested-era release), it promotes FIRST so the template
+          # cannot reach the release view without it. A 404 means an unattested-era release:
+          # the template still promotes and restore consumers refuse it (fail-closed). Any
+          # other probe outcome is fatal rather than guessed at.
+          $probeUri = "${{ env.ARTIFACTS_PACKAGES_URL }}/nuget/packages/$companionPackageName/versions/${releaseVersion}?api-version=5.0-preview.1"
+          $probeResponse = Invoke-WebRequest -Uri $probeUri -Method Get -Credential $credential -SkipHttpErrorCheck
+          $promoteCompanion = $probeResponse.StatusCode -eq 200
+          if (-not $promoteCompanion -and $probeResponse.StatusCode -ne 404) {
+            throw "Companion attestation package probe failed with HTTP $($probeResponse.StatusCode) for $companionPackageName@$releaseVersion."
+          }
+          if (-not $promoteCompanion) {
+            Write-Host "::notice title=Unattested-era release::Companion attestation package $companionPackageName@$releaseVersion is not on the feed; promoting the template package only. Restore consumers refuse unattested packages (fail-closed)."
+          }
+
           $arguments = @{
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
             Username    = "${{ env.ARTIFACTS_USERNAME }}"
             ViewId      = "release"
             ReleaseRef  = "${{ github.ref_name }}"
             Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
-            PackageName = "${{ inputs.package_name}}"
           }
 
-          Import-Module ./package-helpers.psm1
+          if ($promoteCompanion) {
+            $arguments.PackageName = $companionPackageName
+            Invoke-Promote @arguments
+          }
+
+          $arguments.PackageName = "${{ inputs.package_name }}"
           Invoke-Promote @arguments
 
   attach-sbom-and-provenance-to-release:

@@ -287,8 +287,10 @@ A few things are specific to the MSSQL path:
   the PostgreSQL package id; composing the `.env.mssql` overlay for `-DatabaseEngine mssql`
   rewrites only its engine segment to `MsSql` (`Convert-TemplatePackageToken` in
   `env-utility.psm1`), so the same base `-EnvironmentFile` names the matching package id for
-  either engine. This section documents the CI build/publish/verify pipeline only; no local
-  bootstrap flow currently restores these packages.
+  either engine. This bullet covers the CI build, publish, and verify pipeline; to restore one
+  of these packages into a local stack, see
+  [Restoring the datastore from a database template](#restoring-the-datastore-from-a-database-template-bootstrap-restore)
+  below.
 
 For a self-contained smoke run, set `CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1`
 in your `.env` before starting or recreating the stack: the Smoke Test Utility requests
@@ -444,6 +446,185 @@ as they do for a shared-topology stack.
 Switching an existing stack between modes re-points the Configuration Service but does not move data: `dmscs` content
 already written in one database stays there. For a clean switch, tear down with `-d -v` and start
 fresh, or migrate the Configuration Service data yourself.
+
+## Restoring the datastore from a database template (bootstrap restore)
+
+`-RestoreTemplate Minimal|Populated` on either bootstrap wrapper replaces the DMS datastore
+from a trusted database-template package instead of provisioning an empty schema. The flow is
+deliberately paranoid: the exact `.nupkg` bytes are authenticated against the template trust
+policy (fail-closed - there is no unsigned or local-origin bypass), the package's restore
+manifest is cross-checked against a freshly prepared candidate workspace, the artifact is first
+replayed into a throwaway scratch database and validated (schema inventory, effective-schema
+facts, physical baseline), and only then is the target database replaced - behind stop proofs,
+with the `.bootstrap` workspace committed as a whole tree. `provision-dms-schema.ps1` is
+skipped in restore mode: the restored artifact already carries the schema and data.
+
+```powershell
+# Restore the Populated template from the configured feed
+# (requires DATABASE_TEMPLATE_NUGET_VERSION in the effective env; never floats to latest)
+./bootstrap-local-dms.ps1 -RestoreTemplate Populated
+
+# Restore from a local directory holding exactly one matching template .nupkg
+# plus its sibling .nupkg.attestation.json (no NuGet version key needed)
+./bootstrap-local-dms.ps1 -RestoreTemplate Minimal -PackageDirectory C:\path\to\packages
+
+# Same through the build script, which lives at the repository root
+../../build-dms.ps1 StartEnvironment -RestoreTemplate Populated
+
+# Optional supplemental seed AFTER the restored stack is up (explicit source required;
+# a bare -LoadSeedData is rejected in restore mode - the template already carries data)
+./bootstrap-local-dms.ps1 -RestoreTemplate Minimal -LoadSeedData -SeedTemplate Minimal
+```
+
+Restore works on both database engines (`-DatabaseEngine`) and on both wrappers
+(`bootstrap-local-dms.ps1` and `bootstrap-published-dms.ps1`). It rejects `-InfraOnly`,
+`-NoDataStore`, and `-SchoolYearRange`: one restore invocation replaces exactly one
+route-unqualified physical target. That target is the effective env's `POSTGRES_DB_NAME` or
+`MSSQL_DB_NAME`; an explicit `-DataStoreDatabaseName` must repeat it, and a different name is
+refused before the package is resolved or anything is restored, in either CMS topology. A
+PostgreSQL restore is also refused while `POSTGRES_USE_TMPFS=true`: the database would live in
+container memory and be lost when the stack restarts the database container after the restore.
+
+The package identity comes from the effective env's `DATABASE_TEMPLATE_PACKAGE`, with the
+`Minimal|Populated` and engine segments swapped to match the request; see `.env.example` for
+the three version concepts (package ID's Data Standard segment, the manifest's
+`dataStandardVersion`, and `DATABASE_TEMPLATE_NUGET_VERSION` - the package's own NuGet
+version). Trusted producers are declared in `template-trust-policy.json` plus the git-ignored
+`template-trust-policy.local.json` overlay; a locally built package must be attested by a
+development producer registered there (see the next section).
+
+### Building a dev-signed package locally
+
+Restore never accepts an unattested package, so a package built on your machine must be signed
+by a producer the trust policy knows. These are the commands the
+`tests/Invoke-BootstrapRestoreSmoke.ps1` smoke runs. Run them in one PowerShell session, starting
+from `eng/docker-compose`, and choose the template kind and package directory once; every later
+step reads them.
+
+```powershell
+$kind = 'Minimal'   # or 'Populated'; selects the seed, settings file, package, and restore
+$packageDirectory = 'C:\path\to\packages'
+```
+
+1. Register a development signer, once per machine. The private key lands in the git-ignored
+   `eng/DatabaseTemplates/.dev-trust/` directory, and the public half is registered as the
+   `local-dev` producer in the git-ignored `template-trust-policy.local.json` overlay. An
+   existing key file or producer entry is never overwritten.
+
+   ```powershell
+   ../DatabaseTemplates/new-template-dev-trust.ps1 -Purpose Dev
+   ```
+
+2. Bring up a source stack seeded with the same template kind and a dedicated Configuration
+   Service database. The package build refuses a source database that also holds the CMS
+   `dmscs` schema or the OpenIddict stores, which is where the default shared topology puts
+   them. Add the same `-DatabaseEngine`, `-DataStandardVersion`, and `-EnvironmentFile` you will
+   restore with.
+
+   ```powershell
+   ./bootstrap-local-dms.ps1 -SeparateConfigDatabase -LoadSeedData -SeedTemplate $kind
+   ```
+
+3. Build and attest the package. `Template-Management.psm1` resolves its `../` module imports
+   and `Build-TemplateNuGetPackage` writes its outputs relative to the current directory, so
+   import and run both from `eng/DatabaseTemplates`. `-StandardVersion` is the Data Standard
+   segment of the package id (`5.2.0` or `6.1.0`); `-PackageVersion` is the package's own NuGet
+   version. Use `-DatabaseEngine mssql` for SQL Server, and `-DatabaseName` when the env file
+   changes `POSTGRES_DB_NAME` or `MSSQL_DB_NAME`. `-SchemaFilePath` names the ApiSchema files the
+   source stack was provisioned from; the build refuses a source holding any object their DDL
+   does not define. The source stack's staged workspace lists them.
+
+   ```powershell
+   $schemaFiles = & (Import-Module ./bootstrap-restore.psm1 -PassThru) {
+       (Get-RestoreCandidateSchemaFact -CandidateDirectory (Resolve-Path ./.bootstrap).Path).SchemaFilePaths
+   }
+   Push-Location ../DatabaseTemplates
+   Import-Module ./Template-Management.psm1 -Force
+   Build-TemplateNuGetPackage `
+       -ConfigFilePath "./${kind}TemplateSettings.psd1" `
+       -TemplateKind $kind `
+       -StandardVersion 5.2.0 `
+       -PackageVersion 1.0.999 `
+       -DumpAllUserSchemas `
+       -DatabaseEngine postgresql `
+       -SchemaFilePath $schemaFiles `
+       -AttestationSignerKeyPath ./.dev-trust/local-dev.pem `
+       -AttestationProducer local-dev
+   Pop-Location
+   ```
+
+4. Move the package and its sibling attestation into the package directory, which must hold no
+   other template package, and delete the other build outputs (the `.sql` or `.bak` dump and
+   the `.csproj` are not git-ignored).
+
+   ```powershell
+   $packages = New-Item -ItemType Directory -Path $packageDirectory -Force
+   Get-ChildItem ../DatabaseTemplates -File -Filter "EdFi.Api.$kind.Template.*" | ForEach-Object {
+       if ($_.Extension -in '.nupkg', '.json') { Move-Item -LiteralPath $_.FullName -Destination $packages }
+       else { Remove-Item -LiteralPath $_.FullName }
+   }
+   Remove-Item ../DatabaseTemplates/restore-manifest.json -ErrorAction SilentlyContinue
+   ```
+
+   The directory then holds the template `.nupkg`, its `.nupkg.attestation.json`, and the
+   companion `.Attestation.` package, which restore ignores.
+
+5. Stop the source stack (volumes are kept), then restore the same kind. Pass the same
+   infrastructure flags to both commands.
+
+   ```powershell
+   ./bootstrap-local-dms.ps1 -d
+   ./bootstrap-local-dms.ps1 -RestoreTemplate $kind -PackageDirectory $packageDirectory
+   ```
+
+### Restoring into a stack with a separate Configuration Service database
+
+With `-SeparateConfigDatabase` the restore replaces only the DMS datastore; the dedicated
+`edfi_configurationservice` database is never touched, so on a stack that ran before it still holds
+the data store that earlier run registered. After the restore the wrapper's configure phase lists the
+CMS data stores and:
+
+* registers the data store when CMS holds none, naming the database the restore replaced (a
+  different `-DataStoreDatabaseName` never gets this far: it is refused before anything is
+  restored);
+* reuses the existing data store, with its id and without changing it, when it is the only one, is
+  not route-qualified, and its stored connection string (decrypted with
+  `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY`) names the composed database service (`dms-postgresql:5432` or
+  `dms-mssql,1433`) and exactly the restored database;
+* refuses anything else: several data stores, a route-qualified one, a value that cannot be decrypted,
+  or a different engine, server, port, or database. A matching database name alone is not enough.
+
+This check runs **after** the target database was replaced. A refusal here stops before DMS starts,
+but unlike a scratch-validation refusal (next section) it does not leave the target untouched: the
+target already holds the restored package. Correct or remove the stale data store registration in
+CMS, then rerun the restore. The refusal names the data store id and the property that differs; it
+never prints the connection string, its credentials, or the database names.
+
+### Recovering from a failed scratch validation
+
+When scratch validation refuses a package, the restore drops the scratch and preflight
+databases, removes its candidate workspace, and leaves the target database and the active
+`.bootstrap` workspace as they were. CMS and DMS are not started. The database container that
+the restore started for the scratch stage keeps running, though, so the next restore attempt
+refuses at its first stop proof. On the local PostgreSQL stack the refusal reads as follows; the
+container is `dms-mssql` on SQL Server, and the project is `dms-published` for
+`bootstrap-published-dms.ps1`:
+
+```text
+Compose project 'dms-local' still has running containers: dms-postgresql. Stop the stack before the restore touches the bootstrap workspace or the target database.
+```
+
+To recover, stop the stack **without** `-v`, then retry with a package that passes:
+
+```powershell
+# Keeps the data volumes and the active .bootstrap workspace; pass the same
+# -DatabaseEngine, -EnvironmentFile, and other infrastructure flags as the restore
+./bootstrap-local-dms.ps1 -d
+./bootstrap-local-dms.ps1 -RestoreTemplate Minimal -PackageDirectory C:\path\to\packages
+```
+
+Do not use `-d -v` here: it deletes the data volumes, including the untouched target database,
+and removes the active `.bootstrap` workspace.
 
 ## Selecting a Data Standard version (bootstrap)
 
