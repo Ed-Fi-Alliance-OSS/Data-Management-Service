@@ -180,6 +180,16 @@ function Get-SmokeTestCredential {
         Write-Host "Creating application..."
         $credentials = Add-Application -CmsUrl $ConfigServiceUrl -ApplicationName $ApplicationName -ClaimSetName $ClaimSetName -VendorId $vendorId -AccessToken $configToken -EducationOrganizationIds $EducationOrganizationIds -DataStoreIds $dataStoreIds -Tenant $Tenant
 
+        # The Configuration Service returns the secret only in this response, so a missing or
+        # unprintable value can never be recovered later. Fail here instead of returning it, and
+        # name only the field: the response content is never echoed.
+        foreach ($field in @("Key", "Secret")) {
+            $value = $credentials.$field
+            if ($value -isnot [string] -or [string]::IsNullOrWhiteSpace($value) -or $value -match '\p{Cc}') {
+                throw "The Configuration Service application response did not contain a usable $field; the response content is withheld."
+            }
+        }
+
         $key = $credentials.Key
         $secret = $credentials.Secret
 

@@ -55,6 +55,83 @@ Describe "Get-SmokeTestCredential" {
             ($EducationOrganizationIds -join ',') -eq '255901'
         }
     }
+
+    Context "credential values returned by the Configuration Service" {
+        BeforeAll {
+            # Synthetic values: '$' is a character CMS-generated secrets can contain, so the secret
+            # must come back unexpanded.
+            $script:syntheticKey = 'SYNTH-KEY-1292'
+            $script:syntheticSecret = 'SYNTH$SECRET-1292'
+            $script:recordTypes = @(
+                [System.Management.Automation.InformationRecord],
+                [System.Management.Automation.WarningRecord],
+                [System.Management.Automation.ErrorRecord],
+                [System.Management.Automation.VerboseRecord],
+                [System.Management.Automation.DebugRecord]
+            )
+
+            function script:Test-IsStreamRecord {
+                param($Item)
+                foreach ($type in $script:recordTypes) {
+                    if ($Item -is $type) { return $true }
+                }
+                return $false
+            }
+        }
+
+        It "returns the exact key, secret, and application name the Configuration Service issued" {
+            Mock Add-Application -ModuleName SmokeTest { @{ Key = 'SYNTH-KEY-1292'; Secret = 'SYNTH$SECRET-1292' } }
+
+            $credentials = Get-SmokeTestCredential -ConfigServiceUrl "http://localhost:8081" -DataStoreIds @(7)
+
+            $credentials.Key | Should -BeExactly $script:syntheticKey
+            $credentials.Secret | Should -BeExactly $script:syntheticSecret
+            $credentials.ApplicationName | Should -BeExactly "Smoke Test Application"
+        }
+
+        It "keeps the credential values off every non-success stream" {
+            Mock Add-Application -ModuleName SmokeTest { @{ Key = 'SYNTH-KEY-1292'; Secret = 'SYNTH$SECRET-1292' } }
+
+            $all = @(& { Get-SmokeTestCredential -ConfigServiceUrl "http://localhost:8081" -DataStoreIds @(7) } *>&1)
+            $records = @($all | Where-Object { Test-IsStreamRecord $_ })
+            $results = @($all | Where-Object { -not (Test-IsStreamRecord $_) })
+
+            $records.Count | Should -BeGreaterThan 0 -Because "the real progress messages must have been captured, or the leak check below proves nothing"
+            $results.Count | Should -Be 1 -Because "the credential hashtable is the only success-stream output"
+            $results[0].Secret | Should -BeExactly $script:syntheticSecret
+            foreach ($record in $records) {
+                $text = $record | Out-String
+                $text | Should -Not -Match ([regex]::Escape($script:syntheticKey))
+                $text | Should -Not -Match ([regex]::Escape($script:syntheticSecret))
+            }
+        }
+
+        It "fails without exposing values when the response <Case>" -ForEach @(
+            @{ Case = "has no Key"; Field = "Key"; Response = @{ Secret = 'SYNTH$SECRET-1292' } }
+            @{ Case = "has a null Secret"; Field = "Secret"; Response = @{ Key = 'SYNTH-KEY-1292'; Secret = $null } }
+            @{ Case = "has a blank Secret"; Field = "Secret"; Response = @{ Key = 'SYNTH-KEY-1292'; Secret = '   ' } }
+            @{ Case = "has a non-string Secret"; Field = "Secret"; Response = @{ Key = 'SYNTH-KEY-1292'; Secret = 1292 } }
+            @{ Case = "has a control character in the Key"; Field = "Key"; Response = @{ Key = "SYNTH-KEY`n1292"; Secret = 'SYNTH$SECRET-1292' } }
+            @{ Case = "has a control character in the Secret"; Field = "Secret"; Response = @{ Key = 'SYNTH-KEY-1292'; Secret = "SYNTH`tSECRET-1292" } }
+        ) {
+            $script:cannedResponse = $Response
+            Mock Add-Application -ModuleName SmokeTest { $script:cannedResponse }
+
+            $records = @(& {
+                    try { Get-SmokeTestCredential -ConfigServiceUrl "http://localhost:8081" -DataStoreIds @(7) }
+                    catch { $script:caughtFailure = $_ }
+                } *>&1)
+            $caught = $script:caughtFailure
+            $script:caughtFailure = $null
+
+            $caught | Should -Not -BeNullOrEmpty -Because "an unusable credential must never be returned as a success"
+            $caught.Exception.Message | Should -BeLike "*did not contain a usable $Field*"
+            $records | Where-Object { -not (Test-IsStreamRecord $_) } | Should -BeNullOrEmpty -Because "no credential object may reach the success stream"
+            foreach ($text in @(($caught | Out-String), $caught.Exception.ToString()) + @($records | ForEach-Object { $_ | Out-String })) {
+                $text | Should -Not -Match 'SYNTH' -Because "diagnostics must name the field, never its value"
+            }
+        }
+    }
 }
 
 Describe "Invoke-SmokeTestUtility" {
