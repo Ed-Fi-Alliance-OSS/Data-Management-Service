@@ -10,25 +10,6 @@ using EdFi.DataManagementService.Core.External.Model;
 namespace EdFi.DataManagementService.Backend;
 
 /// <summary>
-/// The natural-key resolution of one request's references.
-/// </summary>
-/// <param name="SuccessfulDocumentReferencesByPath">Resolved document references by concrete JSON path.</param>
-/// <param name="SuccessfulDescriptorReferencesByPath">Resolved descriptor references by concrete JSON path.</param>
-/// <param name="DocumentReferences">Resolved document references by natural key.</param>
-/// <param name="InvalidDocumentReferences">Document references that did not resolve, in extraction order.</param>
-/// <param name="InvalidDescriptorReferences">Descriptor references that did not resolve, in extraction order.</param>
-internal sealed record NaturalKeyResolvedReferences(
-    IReadOnlyDictionary<JsonPath, ResolvedDocumentReference> SuccessfulDocumentReferencesByPath,
-    IReadOnlyDictionary<JsonPath, ResolvedDescriptorReference> SuccessfulDescriptorReferencesByPath,
-    IResolvedDocumentReferenceMap DocumentReferences,
-    IReadOnlyList<DocumentReferenceFailure> InvalidDocumentReferences,
-    IReadOnlyList<DescriptorReferenceFailure> InvalidDescriptorReferences
-)
-{
-    public bool HasFailures => InvalidDocumentReferences.Count > 0 || InvalidDescriptorReferences.Count > 0;
-}
-
-/// <summary>
 /// The lookups a request still needs: the statement request, the natural key behind each of its entries, and the
 /// keys whose values cannot match any stored row and are therefore never bound.
 /// </summary>
@@ -39,17 +20,29 @@ internal sealed record NaturalKeyLookupBatch(
     NaturalKeyLookupRequest? LookupRequest,
     IReadOnlyList<IReadOnlyList<ReferenceLookupKey>> KeysByGroup,
     IReadOnlyList<ReferenceLookupKey> UnmatchableKeys
-);
+)
+{
+    /// <summary>
+    /// The batch of a request with no references, which needs no lookup and has nothing to classify.
+    /// </summary>
+    public static NaturalKeyLookupBatch Empty { get; } = new(null, [], []);
+}
 
 /// <summary>
 /// Request-scoped resolver that finds references by natural key. Every lookup, including a miss, is memoized
 /// under its structural <see cref="ReferenceLookupKey"/>, so a key is looked up at most once per request no matter
 /// how many identity arrays carry it.
 /// </summary>
+/// <remarks>
+/// Registered per request with the request's command executor, which serves
+/// <see cref="IReferenceResolver.ResolveAsync"/>. A write attempt creates its own instance without one: its
+/// lookup either rides the composite command or runs on the write session's executor.
+/// </remarks>
 internal sealed class NaturalKeyReferenceResolver(
     INaturalKeyLookupCommandBuilder commandBuilder,
-    IResolvedDocumentReferenceMapFactory mapFactory
-)
+    IResolvedDocumentReferenceMapFactory mapFactory,
+    IRelationalCommandExecutor? executor = null
+) : IReferenceResolver
 {
     private readonly INaturalKeyLookupCommandBuilder _commandBuilder =
         commandBuilder ?? throw new ArgumentNullException(nameof(commandBuilder));
@@ -160,10 +153,26 @@ internal sealed class NaturalKeyReferenceResolver(
     }
 
     /// <summary>
+    /// Resolves <paramref name="request"/> on the request's executor.
+    /// </summary>
+    Task<ResolvedReferenceSet> IReferenceResolver.ResolveAsync(
+        ReferenceResolverRequest request,
+        CancellationToken cancellationToken
+    ) =>
+        ResolveAsync(
+            request,
+            executor
+                ?? throw new InvalidOperationException(
+                    "This natural-key resolver has no command executor; pass one to the explicit-executor overload."
+                ),
+            cancellationToken
+        );
+
+    /// <summary>
     /// Resolves <paramref name="request"/> with the standalone multi-statement command, sending no command when
     /// every reference is memoized or unmatchable.
     /// </summary>
-    public async Task<NaturalKeyResolvedReferences> ResolveAsync(
+    public async Task<ResolvedReferenceSet> ResolveAsync(
         ReferenceResolverRequest request,
         IRelationalCommandExecutor executor,
         CancellationToken cancellationToken = default
@@ -200,7 +209,7 @@ internal sealed class NaturalKeyReferenceResolver(
     /// Classifies <paramref name="request"/> from the decoded rows of an embedded lookup built by
     /// <see cref="TryBuildLookupRequest"/>.
     /// </summary>
-    public NaturalKeyResolvedReferences ResolveFromRows(
+    public ResolvedReferenceSet ResolveFromRows(
         ReferenceResolverRequest request,
         NaturalKeyLookupBatch batch,
         NaturalKeyLookupMatch?[][] matches
@@ -250,7 +259,7 @@ internal sealed class NaturalKeyReferenceResolver(
         }
     }
 
-    private NaturalKeyResolvedReferences Classify(ReferenceResolverRequest request)
+    private ResolvedReferenceSet Classify(ReferenceResolverRequest request)
     {
         Dictionary<JsonPath, ResolvedDocumentReference> documentsByPath = [];
         List<DocumentReferenceFailure> documentFailures = [];
@@ -335,7 +344,7 @@ internal sealed class NaturalKeyReferenceResolver(
             }
         }
 
-        return new NaturalKeyResolvedReferences(
+        return new ResolvedReferenceSet(
             documentsByPath,
             descriptorsByPath,
             _mapFactory.Create(documentsByPath.Values),

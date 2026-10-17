@@ -46,9 +46,10 @@ referential IDs from resolver-facing contracts while preserving public API behav
   Trunk State" below.
 - Extend the write-session command-stream classifier (`WriteSessionCommandStreamScenarios` and the
   provider `WriteSessionCommandStreamTests`) with a natural-key lookup/capture classification that
-  recognizes the new statement shapes (`unnest(` / `OPENJSON(` lookups and the own-natural-key
-  capture subselect) alongside the existing `dms."ReferentialIdentity"` text match, so the round-trip
-  pins keep asserting what each command is, not only how many there are. After this story the create
+  recognizes the new `unnest(` / `OPENJSON(` lookup shapes alongside the existing
+  `dms."ReferentialIdentity"` text match, so the round-trip pins keep asserting what each command is,
+  not only how many there are. DMS-1452 adds the own-natural-key capture-subselect matcher together
+  with the capture statement it creates (story 10 owns the RI = 0 / natural-key = 1 transition). After this story the create
   stream classifies as one RI command (the capture subselect, until DMS-1452) that also carries the
   embedded natural-key lookup.
 - Move descriptor query preprocessing to compiled metadata, add path-attributed malformed-value 400

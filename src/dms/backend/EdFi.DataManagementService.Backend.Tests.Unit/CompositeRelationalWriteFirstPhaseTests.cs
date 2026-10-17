@@ -99,13 +99,10 @@ public class Given_The_Composite_Relational_Write_First_Phase
         {
             PostRelationshipAuthorizationPlans = CreatePostPlans(expected),
         };
-        var adapterFactory = new TestReferenceResolverAdapterFactory
-        {
-            ExceptionToThrow = new FakeDbException("reference lookup must not execute"),
-        };
+        var lookupCommandBuilder = new ThrowingNaturalKeyLookupCommandBuilder();
         var session = new ScriptedWriteSession(CreateCaptureReader(target: null));
 
-        var resolution = await CreateSut(adapterFactory).ResolveAsync(input, session);
+        var resolution = await CreateSut(lookupCommandBuilder).ResolveAsync(input, session);
 
         resolution.ImmediateResult.Should().BeSameAs(expected);
         resolution.Outcome.Should().BeNull();
@@ -153,15 +150,12 @@ public class Given_The_Composite_Relational_Write_First_Phase
             new PostBranchAuthorization.Authorized(EmptyBranchInputs()),
             new PostBranchAuthorization.Immediate(updateImmediate)
         );
-        var adapterFactory = new TestReferenceResolverAdapterFactory
-        {
-            ExceptionToThrow = new FakeDbException("reference lookup must not execute"),
-        };
+        var lookupCommandBuilder = new ThrowingNaturalKeyLookupCommandBuilder();
         var session = new ScriptedWriteSession(
             CreateCaptureReader(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value))
         );
 
-        var resolution = await CreateSut(adapterFactory).ResolveAsync(input, session);
+        var resolution = await CreateSut(lookupCommandBuilder).ResolveAsync(input, session);
 
         resolution.Outcome.Should().BeNull();
         resolution
@@ -183,13 +177,10 @@ public class Given_The_Composite_Relational_Write_First_Phase
             new PostBranchAuthorization.Immediate(createImmediate),
             new PostBranchAuthorization.Authorized(EmptyBranchInputs())
         );
-        var adapterFactory = new TestReferenceResolverAdapterFactory
-        {
-            ExceptionToThrow = new FakeDbException("reference lookup must not execute"),
-        };
+        var lookupCommandBuilder = new ThrowingNaturalKeyLookupCommandBuilder();
         var session = new ScriptedWriteSession(CreateCaptureReader(target: null));
 
-        var resolution = await CreateSut(adapterFactory).ResolveAsync(input, session);
+        var resolution = await CreateSut(lookupCommandBuilder).ResolveAsync(input, session);
 
         resolution.Outcome.Should().BeNull();
         resolution
@@ -879,20 +870,15 @@ public class Given_The_Composite_Relational_Write_First_Phase
         bool expectCompositeReferenceLookup
     )
     {
-        var referentialId = new ReferentialId(Guid.Parse("87654321-1111-2222-3333-444444444444"));
         var input = CreateInput(
             RelationalWriteOperationKind.Post,
             includeReadPlan: true,
-            documentReferences: [CreateDocumentReference(referentialId)]
+            descriptorReferences: [CreateSchoolTypeDescriptorReference()]
         ) with
         {
             StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(),
         };
-        var lookupCommand = new RelationalCommand(
-            "SELECT @lookup0 AS \"LookupMarker0\", @lookup1 AS \"LookupMarker1\" WHERE FALSE",
-            [new RelationalParameter("@lookup0", 1), new RelationalParameter("@lookup1", 2)]
-        );
-        var factory = new TestReferenceResolverAdapterFactory { EmbeddableCommand = lookupCommand };
+        var lookupCommandBuilder = new MarkerNaturalKeyLookupCommandBuilder();
         var target = new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value);
         object[] scripts = expectCompositeReferenceLookup
             ?
@@ -900,7 +886,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
                 CreateReader(
                     CreateCaptureTable(target),
                     CreateAuthorizationTable(),
-                    CreateReferenceLookupTable(),
+                    CreateNaturalKeyLookupTable(),
                     CreateDocumentMetadataTable(target, 44L),
                     CreateRootTable(target)
                 ),
@@ -909,23 +895,29 @@ public class Given_The_Composite_Relational_Write_First_Phase
             [
                 CreateCaptureReader(target),
                 CreateReader(CreateAuthorizationTable()),
+                CreateReader(CreateNaturalKeyLookupTable()),
                 CreateReader(CreateDocumentMetadataTable(target, 44L), CreateRootTable(target)),
             ];
         var session = new ScriptedWriteSession(scripts);
         var sut = CreateSut(
-            factory,
+            lookupCommandBuilder,
             commandBudget: new RelationalCommandBudget(parameterBudget, MaxRowsPerStatement: 1000)
         );
 
         var resolution = await sut.ResolveAsync(input, session);
 
         resolution.ImmediateResult.Should().BeNull();
-        session.Commands.Should().HaveCount(expectCompositeReferenceLookup ? 1 : 3);
+        session.Commands.Should().HaveCount(expectCompositeReferenceLookup ? 1 : 4);
         session
             .Commands[0]
-            .CommandText.Contains("LookupMarker", StringComparison.Ordinal)
+            .CommandText.Contains(
+                MarkerNaturalKeyLookupCommandBuilder.EmbeddableMarker,
+                StringComparison.Ordinal
+            )
             .Should()
             .Be(expectCompositeReferenceLookup);
+        lookupCommandBuilder.EmbeddableBuildCount.Should().Be(1);
+        lookupCommandBuilder.StandaloneBuildCount.Should().Be(expectCompositeReferenceLookup ? 0 : 1);
 
         if (!expectCompositeReferenceLookup)
         {
@@ -936,66 +928,44 @@ public class Given_The_Composite_Relational_Write_First_Phase
                 )
                 .Value.Should()
                 .Be(target.DocumentId);
+
+            // The standalone lookup runs once, on the session, ahead of hydration.
+            session
+                .Commands.Select(command => command.CommandText)
+                .Where(text =>
+                    text.Contains(
+                        MarkerNaturalKeyLookupCommandBuilder.StandaloneMarker,
+                        StringComparison.Ordinal
+                    )
+                )
+                .Should()
+                .ContainSingle();
+            session
+                .Commands[2]
+                .CommandText.Should()
+                .Contain(MarkerNaturalKeyLookupCommandBuilder.StandaloneMarker);
         }
+
+        resolution
+            .Outcome!.ResolvedReferences.InvalidDescriptorReferences.Select(failure => failure.Reason)
+            .Should()
+            .Equal(DescriptorReferenceFailureReason.Missing);
     }
 
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
-    public async Task It_replays_unequal_descriptor_and_document_ids_from_one_composite_command(
+    public async Task It_resolves_unequal_descriptor_and_document_ids_from_one_composite_command(
         SqlDialect dialect
     )
     {
-        var referentialId = new ReferentialId(Guid.Parse("87654321-1111-2222-3333-444444444444"));
-        var reference = RelationalAccessTestData.CreateDescriptorReference(
-            referentialId,
-            "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
-            "$.schoolTypeDescriptor"
+        var reference = CreateSchoolTypeDescriptorReference();
+        var input = CreateInput(
+            RelationalWriteOperationKind.Post,
+            dialect: dialect,
+            descriptorReferences: [reference]
         );
-        var input = CreateInput(RelationalWriteOperationKind.Post, dialect: dialect);
-        var descriptorModel = RelationalAccessTestData
-            .CreateMappingSet(new QualifiedResourceName("Ed-Fi", "Student"))
-            .Model.ConcreteResourcesInNameOrder.Single(resource =>
-                resource.StorageKind is ResourceStorageKind.SharedDescriptorTable
-            );
-        var mappingSet = input.MappingSet with
-        {
-            Model = input.MappingSet.Model with
-            {
-                ConcreteResourcesInNameOrder =
-                [
-                    .. input.MappingSet.Model.ConcreteResourcesInNameOrder,
-                    descriptorModel,
-                ],
-            },
-        };
-        input = input with
-        {
-            MappingSet = mappingSet,
-            ReferenceResolutionRequest = input.ReferenceResolutionRequest with
-            {
-                MappingSet = mappingSet,
-                DescriptorReferences = [reference],
-            },
-        };
-        var lookupRequest = ReferenceResolver.TryBuildLookupRequest(input.ReferenceResolutionRequest)!;
-        var lookupCommand =
-            dialect is SqlDialect.Pgsql
-                ? EdFi.DataManagementService.Backend.Postgresql.PostgresqlReferenceLookupCommandBuilder.Build(
-                    lookupRequest
-                )
-                : EdFi.DataManagementService.Backend.Mssql.MssqlReferenceLookupSmallListStrategy.BuildCommand(
-                    lookupRequest
-                );
-        var factory = new TestReferenceResolverAdapterFactory { EmbeddableCommand = lookupCommand };
-        var lookupTable = CreateReferenceLookupTable();
-        lookupTable.Rows.Add(
-            referentialId.Value,
-            3_000_000_003L,
-            (short)13,
-            (short)13,
-            17,
-            "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
-        );
+        var lookupTable = CreateNaturalKeyLookupTable();
+        lookupTable.Rows.Add(1, 1, 3_000_000_003L, 17, (short)13);
         var target = new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value);
         var session = new ScriptedWriteSession(
             CreateReader(
@@ -1006,32 +976,60 @@ public class Given_The_Composite_Relational_Write_First_Phase
             )
         );
 
-        var resolution = await CreateSut(factory).ResolveAsync(input, session);
+        var resolution = await CreateSut(CreateNaturalKeyLookupCommandBuilder(dialect))
+            .ResolveAsync(input, session);
 
         resolution.ImmediateResult.Should().BeNull();
-        var resolvedReferences = resolution.Outcome!.ResolvedReferences;
-        resolvedReferences.SuccessfulDescriptorReferencesByPath[reference.Path].DescriptorId.Should().Be(17);
-        resolvedReferences
-            .SuccessfulDescriptorReferencesByPath[reference.Path]
-            .DocumentId.Should()
-            .Be(3_000_000_003L);
-        resolvedReferences.LookupsByReferentialId[referentialId].Result!.DescriptorId.Should().Be(17);
-        resolvedReferences
-            .LookupsByReferentialId[referentialId]
-            .Result!.DocumentId.Should()
-            .Be(3_000_000_003L);
+        var resolvedDescriptor = resolution.Outcome!.ResolvedReferences.SuccessfulDescriptorReferencesByPath[
+            reference.Path
+        ];
+        resolvedDescriptor.DescriptorId.Should().Be(17);
+        resolvedDescriptor.DocumentId.Should().Be(3_000_000_003L);
+        resolvedDescriptor.ResourceKeyId.Should().Be(13);
+        session.Commands.Should().ContainSingle();
+        session
+            .Commands[0]
+            .CommandText.Should()
+            .Contain(dialect is SqlDialect.Pgsql ? "unnest(@" : "OPENJSON(@");
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_classifies_an_unmatchable_descriptor_as_missing_without_sending_a_lookup(
+        SqlDialect dialect
+    )
+    {
+        // No stored URI is this long, so the value is never bound and the attempt sends no lookup statement.
+        var reference = CreateSchoolTypeDescriptorReference(
+            "uri://ed-fi.org/SchoolTypeDescriptor#" + new string('x', 4100)
+        );
+        var input = CreateInput(
+            RelationalWriteOperationKind.Post,
+            dialect: dialect,
+            descriptorReferences: [reference]
+        );
+        var session = new ScriptedWriteSession(CreateCompositeReader(target: null));
+
+        var resolution = await CreateSut(new ThrowingNaturalKeyLookupCommandBuilder())
+            .ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution
+            .Outcome!.ResolvedReferences.InvalidDescriptorReferences.Should()
+            .Equal(DescriptorReferenceFailure.From(reference, DescriptorReferenceFailureReason.Missing));
         session.Commands.Should().ContainSingle();
     }
 
     private static CompositeRelationalWriteFirstPhase CreateSut(
-        TestReferenceResolverAdapterFactory? adapterFactory = null,
+        INaturalKeyLookupCommandBuilder? lookupCommandBuilder = null,
         IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null,
         RelationalCommandBudget? commandBudget = null,
         IRelationalCommandExecutor? customViewValidationCommandExecutor = null,
         IRelationalWriteExceptionClassifier? writeExceptionClassifier = null
     ) =>
         new(
-            adapterFactory ?? new TestReferenceResolverAdapterFactory(),
+            lookupCommandBuilder ?? new ThrowingNaturalKeyLookupCommandBuilder(),
+            new ResolvedDocumentReferenceMapFactory(),
             relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor,
             commandBudget: commandBudget,
             customViewValidationCommandExecutor: customViewValidationCommandExecutor,
@@ -1056,7 +1054,8 @@ public class Given_The_Composite_Relational_Write_First_Phase
         RelationalWriteOperationKind operationKind,
         bool includeReadPlan = true,
         SqlDialect dialect = SqlDialect.Pgsql,
-        IReadOnlyList<DocumentReference>? documentReferences = null
+        IReadOnlyList<DocumentReference>? documentReferences = null,
+        IReadOnlyList<DescriptorReference>? descriptorReferences = null
     )
     {
         var rootPlan = Given_Default_Relational_Write_Executor.CreateRootPlan();
@@ -1086,7 +1085,12 @@ public class Given_The_Composite_Relational_Write_First_Phase
             JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!,
             allowIdentityUpdates: false,
             new TraceId("composite-first-phase-test"),
-            new ReferenceResolverRequest(mappingSet, resourceModel.Resource, documentReferences ?? [], [])
+            new ReferenceResolverRequest(
+                mappingSet,
+                resourceModel.Resource,
+                documentReferences ?? [],
+                descriptorReferences ?? []
+            )
         );
     }
 
@@ -1463,13 +1467,19 @@ public class Given_The_Composite_Relational_Write_First_Phase
             )
         );
 
-    private static DocumentReference CreateDocumentReference(ReferentialId referentialId) =>
-        new(
-            new BaseResourceInfo(new ProjectName("Ed-Fi"), new ResourceName("School"), IsDescriptor: false),
-            new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
-            referentialId,
-            new JsonPath("$.schoolReference")
+    private static DescriptorReference CreateSchoolTypeDescriptorReference(
+        string uri = "uri://ed-fi.org/SchoolTypeDescriptor#Alternative"
+    ) =>
+        RelationalAccessTestData.CreateDescriptorReference(
+            new ReferentialId(Guid.Parse("87654321-1111-2222-3333-444444444444")),
+            uri,
+            "$.schoolTypeDescriptor"
         );
+
+    private static INaturalKeyLookupCommandBuilder CreateNaturalKeyLookupCommandBuilder(SqlDialect dialect) =>
+        dialect is SqlDialect.Pgsql
+            ? new EdFi.DataManagementService.Backend.Postgresql.PostgresqlNaturalKeyLookupCommandBuilder()
+            : new EdFi.DataManagementService.Backend.Mssql.MssqlNaturalKeyLookupCommandBuilder();
 
     // ----- Ownership --------------------------------------------------------
 
@@ -2023,15 +2033,14 @@ public class Given_The_Composite_Relational_Write_First_Phase
         return table;
     }
 
-    private static DataTable CreateReferenceLookupTable()
+    private static DataTable CreateNaturalKeyLookupTable()
     {
         var table = new DataTable();
-        table.Columns.Add("ReferentialId", typeof(Guid));
-        table.Columns.Add("DocumentId", typeof(long));
-        table.Columns.Add("ResourceKeyId", typeof(short));
-        table.Columns.Add("ReferentialIdentityResourceKeyId", typeof(short));
-        table.Columns.Add("DescriptorId", typeof(int));
-        table.Columns.Add("VerificationIdentityKey", typeof(string));
+        table.Columns.Add(NaturalKeyLookupColumns.GroupOrdinal, typeof(int));
+        table.Columns.Add(NaturalKeyLookupColumns.Ordinal, typeof(int));
+        table.Columns.Add(NaturalKeyLookupColumns.DocumentId, typeof(long));
+        table.Columns.Add(NaturalKeyLookupColumns.DescriptorId, typeof(int));
+        table.Columns.Add(NaturalKeyLookupColumns.ResourceKeyId, typeof(short));
         return table;
     }
 
@@ -2075,38 +2084,36 @@ public class Given_The_Composite_Relational_Write_First_Phase
 
     private sealed record CapturedTarget(long DocumentId, long ContentVersion, Guid DocumentUuid);
 
-    private sealed class TestReferenceResolverAdapterFactory : IReferenceResolverAdapterFactory
+    /// <summary>
+    /// Builds fixed two-parameter lookup commands whose text names the form that was built, so a test can see
+    /// which form an attempt chose and where it ran.
+    /// </summary>
+    private sealed class MarkerNaturalKeyLookupCommandBuilder : INaturalKeyLookupCommandBuilder
     {
-        public RelationalCommand? EmbeddableCommand { get; init; }
+        public const string EmbeddableMarker = "EmbeddedLookupMarker";
+        public const string StandaloneMarker = "StandaloneLookupMarker";
 
-        public DbException? ExceptionToThrow { get; init; }
+        public int EmbeddableBuildCount { get; private set; }
 
-        public IReferenceResolverAdapter CreateAdapter() => new TestReferenceResolverAdapter(this);
+        public int StandaloneBuildCount { get; private set; }
 
-        public IReferenceResolverAdapter CreateSessionAdapter(IRelationalCommandExecutor commandExecutor) =>
-            new TestReferenceResolverAdapter(this);
-
-        public RelationalCommand? TryBuildSessionLookupCommand(ReferenceLookupRequest request) =>
-            EmbeddableCommand;
-
-        private sealed class TestReferenceResolverAdapter(TestReferenceResolverAdapterFactory factory)
-            : IReferenceResolverAdapter
+        public RelationalCommand BuildCommand(NaturalKeyLookupRequest request)
         {
-            public Task<IReadOnlyList<ReferenceLookupResult>> ResolveAsync(
-                ReferenceLookupRequest request,
-                CancellationToken cancellationToken = default
-            )
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                if (factory.ExceptionToThrow is not null)
-                {
-                    throw factory.ExceptionToThrow;
-                }
-
-                return Task.FromResult<IReadOnlyList<ReferenceLookupResult>>([]);
-            }
+            StandaloneBuildCount++;
+            return CreateCommand(StandaloneMarker);
         }
+
+        public RelationalCommand BuildEmbeddableCommand(NaturalKeyLookupRequest request)
+        {
+            EmbeddableBuildCount++;
+            return CreateCommand(EmbeddableMarker);
+        }
+
+        private static RelationalCommand CreateCommand(string marker) =>
+            new(
+                $"SELECT @lookup0 AS \"{marker}0\", @lookup1 AS \"{marker}1\" WHERE FALSE",
+                [new RelationalParameter("@lookup0", 1), new RelationalParameter("@lookup1", 2)]
+            );
     }
 
     /// <summary>

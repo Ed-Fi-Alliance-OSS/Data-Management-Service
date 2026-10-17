@@ -8,7 +8,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Profile;
-using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit.Profile;
@@ -1676,16 +1676,7 @@ internal static class ProfileTestDoubles
         ResourceWritePlan writePlan
     ) => FlatteningResolvedReferenceLookupSet.Create(writePlan, EmptyResolvedReferenceSet());
 
-    internal static ResolvedReferenceSet EmptyResolvedReferenceSet() =>
-        new(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
-        );
+    internal static ResolvedReferenceSet EmptyResolvedReferenceSet() => ResolvedReferenceSets.Create();
 
     // ── Synthesizer builders and stubs ─────────────────────────────────────
 

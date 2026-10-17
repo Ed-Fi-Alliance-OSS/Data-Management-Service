@@ -445,16 +445,7 @@ internal static class OrchestrationTestHelpers
             SuperclassIdentity: null
         );
 
-    public static ResolvedReferenceSet CreateResolvedReferenceSet() =>
-        new(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
-        );
+    public static ResolvedReferenceSet CreateResolvedReferenceSet() => ResolvedReferenceSets.Create();
 
     public static BackendProfileWriteContext CreateBackendProfileWriteContext(
         ResourceWritePlan writePlan,

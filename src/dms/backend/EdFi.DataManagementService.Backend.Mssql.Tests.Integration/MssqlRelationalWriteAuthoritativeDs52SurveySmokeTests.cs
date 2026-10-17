@@ -16,6 +16,7 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -606,16 +607,20 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
         );
 
         await UpsertReferentialIdentityAsync(
-            createDocumentInfo
-                .DocumentReferences.Single(reference => reference.Path.Value == "$.schoolYearTypeReference")
-                .ReferentialId,
+            ReferentialIdOf(
+                createDocumentInfo.DocumentReferences.Single(reference =>
+                    reference.Path.Value == "$.schoolYearTypeReference"
+                )
+            ),
             _seedData.SchoolYearTypeDocumentId,
             schoolYearTypeResourceKeyId
         );
         await UpsertReferentialIdentityAsync(
-            createDocumentInfo
-                .DocumentReferences.Single(reference => reference.Path.Value == "$.sessionReference")
-                .ReferentialId,
+            ReferentialIdOf(
+                createDocumentInfo.DocumentReferences.Single(reference =>
+                    reference.Path.Value == "$.sessionReference"
+                )
+            ),
             _seedData.FallSessionDocumentId,
             sessionResourceKeyId
         );
@@ -629,16 +634,20 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
         );
 
         await UpsertReferentialIdentityAsync(
-            changedUpdateDocumentInfo
-                .DocumentReferences.Single(reference => reference.Path.Value == "$.schoolYearTypeReference")
-                .ReferentialId,
+            ReferentialIdOf(
+                changedUpdateDocumentInfo.DocumentReferences.Single(reference =>
+                    reference.Path.Value == "$.schoolYearTypeReference"
+                )
+            ),
             _seedData.SchoolYearTypeDocumentId,
             schoolYearTypeResourceKeyId
         );
         await UpsertReferentialIdentityAsync(
-            changedUpdateDocumentInfo
-                .DocumentReferences.Single(reference => reference.Path.Value == "$.sessionReference")
-                .ReferentialId,
+            ReferentialIdOf(
+                changedUpdateDocumentInfo.DocumentReferences.Single(reference =>
+                    reference.Path.Value == "$.sessionReference"
+                )
+            ),
             _seedData.SpringSessionDocumentId,
             sessionResourceKeyId
         );
@@ -865,6 +874,9 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             new SqlParameter("@totalInstructionalDays", totalInstructionalDays)
         );
     }
+
+    private static ReferentialId ReferentialIdOf(DocumentReference reference) =>
+        ReferentialIdCalculator.ReferentialIdFrom(reference.ResourceInfo, reference.DocumentIdentity);
 
     private async Task UpsertReferentialIdentityAsync(
         ReferentialId referentialId,

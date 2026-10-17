@@ -506,8 +506,6 @@ public class UpdateByIdHandlerTests
 
             public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
             {
-                var sharedReferentialId = new ReferentialId(Guid.NewGuid());
-
                 return Task.FromResult<UpdateResult>(
                     new UpdateFailureReference(
                         [
@@ -515,14 +513,12 @@ public class UpdateByIdHandlerTests
                                 Path: new JsonPath("$.schoolReference"),
                                 TargetResource: _targetResource,
                                 DocumentIdentity: new([]),
-                                ReferentialId: sharedReferentialId,
                                 Reason: DocumentReferenceFailureReason.Missing
                             ),
                             new(
                                 Path: new JsonPath("$.sessionReference.schoolReference"),
                                 TargetResource: _targetResource,
                                 DocumentIdentity: new([]),
-                                ReferentialId: sharedReferentialId,
                                 Reason: DocumentReferenceFailureReason.Missing
                             ),
                         ],
@@ -594,7 +590,6 @@ public class UpdateByIdHandlerTests
                                         "uri://ed-fi.org/calendartypedescriptor#spring"
                                     ),
                                 ]),
-                                ReferentialId: new ReferentialId(Guid.NewGuid()),
                                 Reason: DescriptorReferenceFailureReason.Missing
                             ),
                         ]
@@ -661,7 +656,6 @@ public class UpdateByIdHandlerTests
                                         "uri://ed-fi.org/schooltypedescriptor#elementary"
                                     ),
                                 ]),
-                                ReferentialId: new ReferentialId(Guid.NewGuid()),
                                 Reason: DescriptorReferenceFailureReason.DescriptorTypeMismatch
                             ),
                         ]
@@ -730,7 +724,6 @@ public class UpdateByIdHandlerTests
                                 Path: new JsonPath("$.schoolReference"),
                                 TargetResource: _documentTargetResource,
                                 DocumentIdentity: new([]),
-                                ReferentialId: new ReferentialId(Guid.NewGuid()),
                                 Reason: DocumentReferenceFailureReason.Missing
                             ),
                         ],
@@ -744,7 +737,6 @@ public class UpdateByIdHandlerTests
                                         "uri://ed-fi.org/calendartypedescriptor#spring"
                                     ),
                                 ]),
-                                ReferentialId: new ReferentialId(Guid.NewGuid()),
                                 Reason: DescriptorReferenceFailureReason.Missing
                             ),
                         ]

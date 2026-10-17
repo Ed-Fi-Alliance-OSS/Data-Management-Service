@@ -31,7 +31,6 @@ public class ValidationErrorFactoryTests
             Path: new JsonPath(path),
             TargetResource: _documentTargetResource,
             DocumentIdentity: new([]),
-            ReferentialId: new ReferentialId(Guid.NewGuid()),
             Reason: DocumentReferenceFailureReason.Missing
         );
 
@@ -44,7 +43,6 @@ public class ValidationErrorFactoryTests
             Path: new JsonPath(path),
             TargetResource: _descriptorTargetResource,
             DocumentIdentity: new([new(DocumentIdentity.DescriptorIdentityJsonPath, descriptorValue)]),
-            ReferentialId: new ReferentialId(Guid.NewGuid()),
             Reason: reason
         );
 

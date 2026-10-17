@@ -28,8 +28,7 @@
     -->
     <PropertyGroup>
         <!-- This file's directory walked up to the repository root, so each path below reads once. -->
-        <PackedContractFixtureRepositoryRoot
-        >$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', '..', '..', '..'))</PackedContractFixtureRepositoryRoot>
+        <PackedContractFixtureRepositoryRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', '..', '..', '..'))</PackedContractFixtureRepositoryRoot>
         <!--
             The feed the fixtures' own nuget.config files name. Its path cannot vary by
             configuration, because a nuget.config cannot expand an MSBuild property, so the
@@ -38,16 +37,11 @@
             Every fixture's contract PackageReferences are bracket-pinned, so several nupkgs per id
             resolve to the pinned one or fail rather than silently resolving another.
         -->
-        <PackedContractFixtureFeed
-        >$(PackedContractFixtureRepositoryRoot)eng/fixtures/plugins/.local-feed</PackedContractFixtureFeed>
-        <PackedContractFixturePackageVersion
-        >0.0.0-pcf-$(Configuration.ToLowerInvariant())</PackedContractFixturePackageVersion>
-        <CustomValidationContractProject
-        >$(PackedContractFixtureRepositoryRoot)src/dms/core/EdFi.DataManagementService.CustomValidation/EdFi.DataManagementService.CustomValidation.csproj</CustomValidationContractProject>
-        <CustomValidationPluginsContractProject
-        >$(PackedContractFixtureRepositoryRoot)src/plugins/EdFi.Api.Plugins/EdFi.Api.Plugins.csproj</CustomValidationPluginsContractProject>
-        <IdentityContractProject
-        >$(PackedContractFixtureRepositoryRoot)src/dms/core/EdFi.DataManagementService.Identity/EdFi.DataManagementService.Identity.csproj</IdentityContractProject>
+        <PackedContractFixtureFeed>$(PackedContractFixtureRepositoryRoot)eng/fixtures/plugins/.local-feed</PackedContractFixtureFeed>
+        <PackedContractFixturePackageVersion>0.0.0-pcf-$(Configuration.ToLowerInvariant())</PackedContractFixturePackageVersion>
+        <CustomValidationContractProject>$(PackedContractFixtureRepositoryRoot)src/dms/core/EdFi.DataManagementService.CustomValidation/EdFi.DataManagementService.CustomValidation.csproj</CustomValidationContractProject>
+        <CustomValidationPluginsContractProject>$(PackedContractFixtureRepositoryRoot)src/plugins/EdFi.Api.Plugins/EdFi.Api.Plugins.csproj</CustomValidationPluginsContractProject>
+        <IdentityContractProject>$(PackedContractFixtureRepositoryRoot)src/dms/core/EdFi.DataManagementService.Identity/EdFi.DataManagementService.Identity.csproj</IdentityContractProject>
     </PropertyGroup>
 
     <!--
@@ -98,9 +92,7 @@
             The build metadata a pack of those three reads: the props each tree carries, the central
             package versions they chain to, and the NuGet configuration their restore reads.
         -->
-        <PackedContractFixtureInput
-            Include="$(PackedContractFixtureRepositoryRoot)src/dms/Directory.Build.props;$(PackedContractFixtureRepositoryRoot)src/dms/Directory.Build.targets;$(PackedContractFixtureRepositoryRoot)src/plugins/Directory.Build.props;$(PackedContractFixtureRepositoryRoot)src/Directory.Packages.props;$(PackedContractFixtureRepositoryRoot)src/nuget.config"
-        />
+        <PackedContractFixtureInput Include="$(PackedContractFixtureRepositoryRoot)src/dms/Directory.Build.props;$(PackedContractFixtureRepositoryRoot)src/dms/Directory.Build.targets;$(PackedContractFixtureRepositoryRoot)src/plugins/Directory.Build.props;$(PackedContractFixtureRepositoryRoot)src/Directory.Packages.props;$(PackedContractFixtureRepositoryRoot)src/nuget.config" />
     </ItemGroup>
 
     <Target
@@ -122,12 +114,9 @@
         </ItemGroup>
 
         <PropertyGroup>
-            <PackedContractFixtureStageRoot
-            >$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(OutDir)', 'PackedContractPluginFixtures'))</PackedContractFixtureStageRoot>
-            <PackedContractFixtureStampDir
-            >$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'packedcontractfixtures'))</PackedContractFixtureStampDir>
-            <PackedContractFixtureFingerprintFile
-            >$(PackedContractFixtureStampDir)staging.fingerprint</PackedContractFixtureFingerprintFile>
+            <PackedContractFixtureStageRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(OutDir)', 'PackedContractPluginFixtures'))</PackedContractFixtureStageRoot>
+            <PackedContractFixtureStampDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'packedcontractfixtures'))</PackedContractFixtureStampDir>
+            <PackedContractFixtureFingerprintFile>$(PackedContractFixtureStampDir)staging.fingerprint</PackedContractFixtureFingerprintFile>
             <!--
                 A package cache of this staging's own, because the global packages folder is
                 consulted before any source: an already-extracted package of the same version would
@@ -135,11 +124,9 @@
                 produce. It is shared by every fixture's publish and is emptied on every repack
                 below, which is what keeps a fixed local version honest for all of them.
             -->
-            <PackedContractFixturePackageCache
-            >$(PackedContractFixtureStampDir)packages</PackedContractFixturePackageCache>
+            <PackedContractFixturePackageCache>$(PackedContractFixtureStampDir)packages</PackedContractFixturePackageCache>
             <PackedContractFixtureInputList>@(PackedContractFixtureInput->'%(Identity)@%(ModifiedTime)', '|')</PackedContractFixtureInputList>
-            <PackedContractFixtureFingerprintPrefix
-            >$(Configuration)+$(NETCoreSdkRuntimeIdentifier)+$(PackedContractFixturePackageVersion)+$([MSBuild]::StableStringHash($(PackedContractFixtureInputList)))</PackedContractFixtureFingerprintPrefix>
+            <PackedContractFixtureFingerprintPrefix>$(Configuration)+$(NETCoreSdkRuntimeIdentifier)+$(PackedContractFixturePackageVersion)+$([MSBuild]::StableStringHash($(PackedContractFixtureInputList)))</PackedContractFixtureFingerprintPrefix>
         </PropertyGroup>
 
         <ItemGroup Condition="Exists('$(PackedContractFixtureStageRoot)')">
@@ -148,8 +135,7 @@
 
         <PropertyGroup>
             <PackedContractFixtureStagedList>@(PackedContractFixtureStagedFile->'%(RecursiveDir)%(Filename)%(Extension)', '|')</PackedContractFixtureStagedList>
-            <PackedContractFixtureFingerprint
-            >$(PackedContractFixtureFingerprintPrefix)+$([MSBuild]::StableStringHash($(PackedContractFixtureStagedList)))</PackedContractFixtureFingerprint>
+            <PackedContractFixtureFingerprint>$(PackedContractFixtureFingerprintPrefix)+$([MSBuild]::StableStringHash($(PackedContractFixtureStagedList)))</PackedContractFixtureFingerprint>
         </PropertyGroup>
 
         <ReadLinesFromFile
@@ -163,7 +149,8 @@
             <PackedContractFixturePrevious>@(PackedContractFixturePreviousLine)</PackedContractFixturePrevious>
             <PackedContractFixtureStale
                 Condition="'$(PackedContractFixturePrevious)' != '$(PackedContractFixtureFingerprint)'"
-            >true</PackedContractFixtureStale>
+                >true</PackedContractFixtureStale
+            >
         </PropertyGroup>
 
         <!--
@@ -268,8 +255,7 @@
 
         <PropertyGroup>
             <PackedContractFixtureStagedListAfterPublish>@(PackedContractFixtureAfterPublish->'%(RecursiveDir)%(Filename)%(Extension)', '|')</PackedContractFixtureStagedListAfterPublish>
-            <PackedContractFixtureFingerprintAfterPublish
-            >$(PackedContractFixtureFingerprintPrefix)+$([MSBuild]::StableStringHash($(PackedContractFixtureStagedListAfterPublish)))</PackedContractFixtureFingerprintAfterPublish>
+            <PackedContractFixtureFingerprintAfterPublish>$(PackedContractFixtureFingerprintPrefix)+$([MSBuild]::StableStringHash($(PackedContractFixtureStagedListAfterPublish)))</PackedContractFixtureFingerprintAfterPublish>
         </PropertyGroup>
 
         <MakeDir Directories="$(PackedContractFixtureStampDir)" />

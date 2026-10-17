@@ -436,10 +436,6 @@ file static class MultiBatchCollectionsIntegrationTestSupport
                 addressTypeDescriptorUri.ToLowerInvariant()
             ),
         ]);
-        var descriptorReferentialId = ReferentialIdCalculator.ReferentialIdFrom(
-            descriptorResourceInfo,
-            descriptorIdentity
-        );
 
         DescriptorReference[] descriptorReferences =
         [
@@ -448,7 +444,6 @@ file static class MultiBatchCollectionsIntegrationTestSupport
                 .Select(index => new DescriptorReference(
                     ResourceInfo: descriptorResourceInfo,
                     DocumentIdentity: descriptorIdentity,
-                    ReferentialId: descriptorReferentialId,
                     Path: new JsonPath($"$.addresses[{index}].addressTypeDescriptor")
                 )),
         ];
