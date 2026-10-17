@@ -92,7 +92,7 @@ vault key of that name like any other.
 
 **On the stock Configuration Service image, `DatabaseSettings__DatabaseConnection` can be removed from the environment and served from a vault.**
 The container entry point, `src/config/run.sh`, reads that variable before .NET starts, to wait for the database.
-When it cannot parse a PostgreSQL host from the variable, because the variable is absent or empty, it prints that it is skipping the readiness wait and starts .NET without waiting.
+When it finds no lowercase `host=` setting in the variable, because the variable is absent or empty or spells its keys in another case such as `Host=`, it prints that it is skipping the readiness wait and starts .NET without waiting.
 A value in the environment still outranks any plugin source, so a key the vault serves must not also be set there.
 Without the wait, .NET reports a connection error itself if the database is not ready yet, and with the default `AppSettings:DeployDatabaseOnStartup=true` the process exits.
 A restart policy, such as the `restart: unless-stopped` on the shipped Compose files, brings it back once the database is up; without one it stays down.
@@ -101,7 +101,7 @@ See [Configuration Service plugins](./CONFIGURATION.md#configuration-service-plu
 ### The one deployment credential Phase A cannot serve
 
 **`DATABASE_CONNECTION_STRING_ADMIN` is out of reach, structurally, and it is optional.**
-It carries elevated database credentials, and its only consumer is the DMS container entry point: `src/dms/run.sh:14-16` parses the host, port, and username out of it in the shell, to wait for PostgreSQL, before the .NET host exists.
+It carries elevated database credentials, and its only consumer is the DMS container entry point: `connection_string_value` in `src/dms/run.sh` parses the host, port, and username out of it in the shell, to wait for PostgreSQL, before the .NET host exists.
 No configuration source of any origin can serve a value read before there is a configuration to read it from, so a deployment that sets it supplies it from the deployment environment, the way it already supplies its other secret environment variables.
 A deployment that does not need the wait can leave it unset: when the entry point cannot parse a PostgreSQL host from it, it prints that it is skipping the readiness wait and starts DMS without waiting.
 DMS itself never reads the variable, and if the database is not up yet, its startup check retries on the first request.

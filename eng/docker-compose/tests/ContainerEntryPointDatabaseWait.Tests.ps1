@@ -9,7 +9,9 @@
 # instead of hanging. pg_isready records each argument in brackets, so an argument that is
 # missing, empty or split in two is visible. Every case runs under bash and under sh: the
 # Dockerfile images run the scripts with bash, the Nuget.Dockerfile images with busybox ash, and
-# sh (dash on the CI runner) is the closest POSIX shell available to stand in for ash.
+# sh (dash on the CI runner) stands in for ash's shell syntax. It does not stand in for the
+# images' busybox awk, which the connection string parser runs on, so the parser is limited to
+# POSIX awk.
 
 Describe "Container entry point database wait" {
     BeforeAll {
@@ -149,6 +151,8 @@ exit 0
                 param($Result, [string]$ExpectedArguments)
 
                 $Result.ExitCode | Should -Be 0 -Because $Result.Text
+                Test-Path -LiteralPath $Result.PgIsReadyLog |
+                    Should -BeTrue -Because "pg_isready must be invoked when a host is parsed: $($Result.Text)"
                 $pgIsReadyInvocations = @(Get-Content -LiteralPath $Result.PgIsReadyLog)
                 $pgIsReadyInvocations.Count | Should -Be 1
                 $pgIsReadyInvocations[0] | Should -BeExactly $ExpectedArguments
@@ -193,6 +197,38 @@ exit 0
         It "passes an empty username to pg_isready when the lowercase value omits it" -Skip:(-not (Get-Command -Name $Shell -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
             $result = Invoke-Case -Value "host=dms-postgresql;port=5432;password=$($script:marker);"
             Assert-WaitedWith $result "[-h][dms-postgresql][-p][5432][-U][]"
+        }
+
+        # The cases below follow the .NET connection string rules the services themselves parse
+        # with: a quoted value may contain semicolons, a doubled quote inside it is a literal
+        # quote, and the last occurrence of a key wins.
+        It "reads the host setting that follows a quoted value containing ;host=" -Skip:(-not (Get-Command -Name $Shell -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
+            $result = Invoke-Case -Value "password=`"a;host=$($script:marker)`";host=dms-postgresql;port=5432;username=postgres"
+            Assert-WaitedWith $result "[-h][dms-postgresql][-p][5432][-U][postgres]"
+        }
+
+        It "skips the PostgreSQL wait when the only host= is inside a quoted value" -Skip:(-not (Get-Command -Name $Shell -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
+            Assert-WaitSkipped (Invoke-Case -Value "Host=db;Password=`"safe;host=$($script:marker);tail`"")
+        }
+
+        It "treats single-quoted values and doubled quotes as part of the value" -Skip:(-not (Get-Command -Name $Shell -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
+            $result = Invoke-Case -Value "password='x;host=$($script:marker)';host=dms-postgresql;port=5432;username=postgres;database=`"a`"`"b;host=$($script:marker)`""
+            Assert-WaitedWith $result "[-h][dms-postgresql][-p][5432][-U][postgres]"
+        }
+
+        It "removes the quotes around a quoted host and port" -Skip:(-not (Get-Command -Name $Shell -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
+            $result = Invoke-Case -Value "host=`"dms-postgresql`";port='5432';username=postgres;password=$($script:marker)"
+            Assert-WaitedWith $result "[-h][dms-postgresql][-p][5432][-U][postgres]"
+        }
+
+        It "unwraps a value surrounded by one pair of quotes, as docker run --env-file passes it" -Skip:(-not (Get-Command -Name $Shell -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
+            $result = Invoke-Case -Value "`"host=dms-postgresql;port=5432;username=postgres;password=$($script:marker)`""
+            Assert-WaitedWith $result "[-h][dms-postgresql][-p][5432][-U][postgres]"
+        }
+
+        It "uses the last occurrence of a repeated key" -Skip:(-not (Get-Command -Name $Shell -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
+            $result = Invoke-Case -Value "host=first-host;host=dms-postgresql;port=5432;username=postgres;password=$($script:marker)"
+            Assert-WaitedWith $result "[-h][dms-postgresql][-p][5432][-U][postgres]"
         }
     }
 

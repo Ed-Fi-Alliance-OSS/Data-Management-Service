@@ -9,13 +9,75 @@ set +x
 
 datastore=$(printf '%s' "${AppSettings__Datastore:-postgresql}" | tr '[:upper:]' '[:lower:]')
 
-# Prints the value of one setting in a semicolon-separated connection string. The key has to start
-# a setting, so a value such as password=ghost=... is never read as the host.
+# Prints the value of one setting in a connection string, following the .NET connection string
+# rules: a single- or double-quoted value may contain semicolons, a doubled quote inside it is a
+# literal quote, spaces around keys and unquoted values are ignored, and the last occurrence of a
+# key wins. Keys match exactly, so Host= is not host=. A whole value wrapped in one pair of quotes,
+# as docker run --env-file passes it, is unwrapped first.
 connection_string_value() {
-    printf '%s\n' "$1" \
-        | grep -Eo "(^|;)[[:space:]]*$2[[:space:]]*=[^;]*" \
-        | head -n 1 \
-        | sed -E 's/^;?[[:space:]]*'"$2"'[[:space:]]*=[[:space:]]*//; s/[[:space:]]*$//'
+    printf '%s' "$1" | awk -v want="$2" -v sq="'" '
+        { s = s (NR > 1 ? "\n" : "") $0 }
+        END {
+            n = length(s)
+            first = substr(s, 1, 1)
+            if (n >= 2 && (first == "\"" || first == sq) && substr(s, n, 1) == first) {
+                s = substr(s, 2, n - 2)
+                n -= 2
+            }
+            i = 1
+            while (i <= n) {
+                key = ""
+                while (i <= n && substr(s, i, 1) != "=" && substr(s, i, 1) != ";") {
+                    key = key substr(s, i, 1)
+                    i++
+                }
+                if (i > n || substr(s, i, 1) == ";") {
+                    i++
+                    continue
+                }
+                i++
+                while (i <= n && (substr(s, i, 1) == " " || substr(s, i, 1) == "\t")) {
+                    i++
+                }
+                value = ""
+                quote = substr(s, i, 1)
+                if (quote == "\"" || quote == sq) {
+                    i++
+                    while (i <= n) {
+                        c = substr(s, i, 1)
+                        if (c == quote && substr(s, i + 1, 1) == quote) {
+                            value = value quote
+                            i += 2
+                        } else if (c == quote) {
+                            i++
+                            break
+                        } else {
+                            value = value c
+                            i++
+                        }
+                    }
+                    while (i <= n && substr(s, i, 1) != ";") {
+                        i++
+                    }
+                } else {
+                    while (i <= n && substr(s, i, 1) != ";") {
+                        value = value substr(s, i, 1)
+                        i++
+                    }
+                    sub(/[ \t]+$/, "", value)
+                }
+                i++
+                sub(/^[ \t]+/, "", key)
+                sub(/[ \t]+$/, "", key)
+                if (key == want) {
+                    result = value
+                    found = 1
+                }
+            }
+            if (found) {
+                print result
+            }
+        }'
 }
 
 if [ "$datastore" = "postgresql" ]; then
