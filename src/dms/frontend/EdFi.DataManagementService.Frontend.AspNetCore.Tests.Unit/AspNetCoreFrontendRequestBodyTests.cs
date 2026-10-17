@@ -6,11 +6,13 @@
 using System.Text;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
@@ -20,6 +22,117 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 [Parallelizable]
 public class Given_AspNetCoreFrontend_Request_Body_Extraction
 {
+    private static async Task<FrontendRequest> ExtractRequest(string json, string operation)
+    {
+        FrontendRequest captured = new("", null, null, [], [], new TraceId(""), []);
+        IApiService api = A.Fake<IApiService>();
+        A.CallTo(() => api.Upsert(A<FrontendRequest>._, A<CancellationToken>._))
+            .Invokes(call => captured = call.GetArgument<FrontendRequest>(0)!)
+            .Returns(Task.FromResult<IFrontendResponse>(new FrontendResponse(200, null, [])));
+        A.CallTo(() => api.UpdateById(A<FrontendRequest>._, A<CancellationToken>._))
+            .Invokes(call => captured = call.GetArgument<FrontendRequest>(0)!)
+            .Returns(Task.FromResult<IFrontendResponse>(new FrontendResponse(200, null, [])));
+        A.CallTo(() => api.IdentitySearch(A<FrontendRequest>._, A<CancellationToken>._))
+            .Invokes(call => captured = call.GetArgument<FrontendRequest>(0)!)
+            .Returns(Task.FromResult<IFrontendResponse>(new FrontendResponse(200, null, [])));
+        DefaultHttpContext context = CreateHttpContext(json, "application/json");
+        switch (operation)
+        {
+            case "upsert":
+                await AspNetCoreFrontend.Upsert(context, api, "ed-fi/schools", AppSettings());
+                break;
+            case "update":
+                await AspNetCoreFrontend.UpdateById(context, api, "ed-fi/schools/id", AppSettings());
+                break;
+            default:
+                context.Request.Path = "/identity/v2/identities/search";
+                await AspNetCoreFrontend.IdentitySearch(
+                    context,
+                    api,
+                    AppSettings(),
+                    Options.Create(new KestrelServerOptions())
+                );
+                break;
+        }
+        return captured;
+    }
+
+    [TestFixtureSource(nameof(IndexedDuplicateCases))]
+    public class Given_An_Indexed_Duplicate(string json, string expectedPath, string operation)
+    {
+        private static IEnumerable<object[]> IndexedDuplicateCases()
+        {
+            (string Json, string Path)[] examples =
+            [
+                (
+                    """{"studentUniqueId":"1","addresses":[{"city":"a","streetNumberName":"b"},{"city":"x","city":"y"}]}""",
+                    "$.addresses[1].city"
+                ),
+                (
+                    """{"studentUniqueId":"1","addresses":[{"city":"a"}],"electronicMails":[{"x":"1","x":"2"}]}""",
+                    "$.electronicMails[0].x"
+                ),
+                (
+                    """[{"LastSurname":"a"},{"BirthLocation":{"City":"x","City":"y"}}]""",
+                    "$[1].BirthLocation.City"
+                ),
+            ];
+            foreach (var (json, path) in examples)
+            {
+                foreach (string operation in json.StartsWith('[') ? new[] { "search" } : ["upsert", "update"])
+                {
+                    yield return [json, path, operation];
+                }
+            }
+            (string Sequence, string Suffix)[] matrix =
+            [
+                ("""{"x":1,"x":2}""", "[0].x"),
+                ("""{"before":1,"x":1,"x":2}""", "[0].x"),
+                ("""{"a":1,"b":2},{"before":0,"x":1,"x":2}""", "[1].x"),
+                ("""{},{"before":1,"groups":[{"a":1},{"before":0,"x":1,"x":2}]}""", "[1].groups[1].x"),
+            ];
+            foreach (var (sequence, suffix) in matrix)
+            {
+                yield return ["{\"items\":[" + sequence + "]}", "$.items" + suffix, "upsert"];
+                yield return ["{\"items\":[" + sequence + "]}", "$.items" + suffix, "update"];
+                yield return ["[" + sequence + "]", "$" + suffix, "search"];
+            }
+        }
+
+        private FrontendRequest _captured = null!;
+
+        [SetUp]
+        public async Task Setup() => _captured = await ExtractRequest(json, operation);
+
+        [Test]
+        public void It_carries_the_exact_indexed_duplicate_path() =>
+            _captured.DuplicatePropertyPath.Should().Be(expectedPath);
+
+        [Test]
+        public void It_does_not_set_the_raw_body() => _captured.Body.Should().BeNull();
+
+        [Test]
+        public void It_does_not_report_a_parse_error() => _captured.BodyParseErrorMessage.Should().BeNull();
+    }
+
+    [TestFixture("upsert")]
+    [TestFixture("update")]
+    [TestFixture("search")]
+    public class Given_Malformed_Json_After_A_Duplicate(string operation)
+    {
+        private FrontendRequest _captured = null!;
+
+        [SetUp]
+        public async Task Setup() => _captured = await ExtractRequest("""{"x":1,"x":2,}""", operation);
+
+        [Test]
+        public void It_preserves_malformed_after_duplicate_reporting() =>
+            _captured.BodyParseErrorMessage.Should().NotBeNullOrEmpty();
+
+        [Test]
+        public void It_does_not_report_a_duplicate() => _captured.DuplicatePropertyPath.Should().BeNull();
+    }
+
     private static IOptions<AppSettings> AppSettings() =>
         Options.Create(
             new AppSettings

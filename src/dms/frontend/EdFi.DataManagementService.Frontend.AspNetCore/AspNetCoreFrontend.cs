@@ -80,7 +80,12 @@ public static class AspNetCoreFrontend
                 return new JsonBodyExtractionResult(
                     JsonNode.Parse(body),
                     null,
-                    FindDuplicatePropertyPath(body)
+                    DuplicatePropertyPathScanner.TryFindFirstDuplicatePropertyPath(
+                        body,
+                        out string duplicatePath
+                    )
+                        ? duplicatePath
+                        : null
                 );
             }
             catch (Exception ex)
@@ -203,128 +208,6 @@ public static class AspNetCoreFrontend
 
         return true;
     }
-
-    private static string? FindDuplicatePropertyPath(ReadOnlySpan<byte> json)
-    {
-        var reader = new Utf8JsonReader(
-            json,
-            new JsonReaderOptions { CommentHandling = JsonCommentHandling.Skip }
-        );
-
-        var pathStack = new Stack<JsonPathSegment>();
-        var propertyNamesStack = new Stack<HashSet<string>>();
-
-        while (reader.Read())
-        {
-            switch (reader.TokenType)
-            {
-                case JsonTokenType.StartObject:
-                    propertyNamesStack.Push([]);
-                    break;
-
-                case JsonTokenType.EndObject:
-                    if (propertyNamesStack.Count > 0)
-                    {
-                        propertyNamesStack.Pop();
-                    }
-
-                    if (pathStack.Count > 0 && !pathStack.Peek().IsArray)
-                    {
-                        pathStack.Pop();
-                    }
-                    break;
-
-                case JsonTokenType.StartArray:
-                    pathStack.Push(new JsonPathSegment(IsArray: true, PropertyName: null, ArrayIndex: 0));
-                    break;
-
-                case JsonTokenType.EndArray:
-                    if (pathStack.Count > 0 && pathStack.Peek().IsArray)
-                    {
-                        pathStack.Pop();
-                    }
-
-                    if (pathStack.Count > 0 && !pathStack.Peek().IsArray)
-                    {
-                        pathStack.Pop();
-                    }
-                    break;
-
-                case JsonTokenType.PropertyName:
-                    string propertyName = reader.GetString()!;
-
-                    if (propertyNamesStack.Count > 0)
-                    {
-                        var currentProperties = propertyNamesStack.Peek();
-                        if (!currentProperties.Add(propertyName))
-                        {
-                            return BuildJsonPath(pathStack, propertyName);
-                        }
-                    }
-
-                    pathStack.Push(
-                        new JsonPathSegment(IsArray: false, PropertyName: propertyName, ArrayIndex: 0)
-                    );
-                    break;
-
-                case JsonTokenType.String:
-                case JsonTokenType.Number:
-                case JsonTokenType.True:
-                case JsonTokenType.False:
-                case JsonTokenType.Null:
-                    if (pathStack.Count > 0 && !pathStack.Peek().IsArray)
-                    {
-                        pathStack.Pop();
-                    }
-
-                    if (pathStack.Count > 0 && pathStack.Peek().IsArray)
-                    {
-                        var arraySegment = pathStack.Pop();
-                        pathStack.Push(arraySegment with { ArrayIndex = arraySegment.ArrayIndex + 1 });
-                    }
-                    break;
-            }
-
-            if (
-                (reader.TokenType == JsonTokenType.EndObject || reader.TokenType == JsonTokenType.EndArray)
-                && pathStack.Count > 0
-                && pathStack.Peek().IsArray
-            )
-            {
-                var arraySegment = pathStack.Pop();
-                pathStack.Push(arraySegment with { ArrayIndex = arraySegment.ArrayIndex + 1 });
-            }
-        }
-
-        return null;
-    }
-
-    private static string BuildJsonPath(Stack<JsonPathSegment> pathStack, string duplicatePropertyName)
-    {
-        var segments = pathStack.ToArray();
-        Array.Reverse(segments);
-
-        var pathBuilder = new StringBuilder("$");
-
-        for (int i = 0; i < segments.Length; i++)
-        {
-            var segment = segments[i];
-
-            if (segment.IsArray)
-            {
-                pathBuilder.Append($"[{segment.ArrayIndex}]");
-            }
-            else if (segment.PropertyName != null)
-            {
-                pathBuilder.Append($".{segment.PropertyName}");
-            }
-        }
-
-        pathBuilder.Append($".{duplicatePropertyName}");
-        return pathBuilder.ToString();
-    }
-
-    private sealed record JsonPathSegment(bool IsArray, string? PropertyName, int ArrayIndex);
 
     private readonly record struct JsonBodyExtractionResult(
         JsonNode? ParsedBody,
