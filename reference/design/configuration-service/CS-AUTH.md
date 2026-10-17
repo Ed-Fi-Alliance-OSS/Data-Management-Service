@@ -35,8 +35,7 @@ and not a bearer access token. Both identity provider modes enforce it and both 
 [Token revocation](#token-revocation).
 
 `/connect/token` accepts client credentials as HTTP Basic or as form fields in both identity provider modes, with Basic taking precedence.
-A Basic header that parses supplies both `client_id` and `client_secret`.
-Form fields only fill a value that Basic left empty.
+Each value a parsed Basic header supplies wins, and a form field only fills a value Basic left empty, such as the empty secret in `Basic base64("id:")`.
 A malformed Basic value falls back to the form fields.
 A request that carries both Basic and form credentials is not rejected at `/connect/token`, unlike `/connect/revoke`.
 
@@ -46,7 +45,7 @@ The `self-contained` provider issues the scopes registered for the client.
 
 Under Keycloak, a requested scope that Keycloak rejects answers `400` with `type` `urn:ed-fi:api:bad-request` and `errors` of `["invalid_scope. <description>"]`, for example `invalid_scope. Invalid scopes: edfi_admin_api/readonly_access`.
 It used to answer `502`.
-Other Keycloak failures, such as an unreachable server, a 5xx or any other `400` error code, still answer `502`.
+Other Keycloak failures keep their previous answers: a failed connection, a 5xx or any other `400` error code answers `502`, and a name-resolution failure or a timeout answers `500`.
 The `self-contained` provider does not reject an ungranted scope and falls back to the registered scopes.
 
 Both `/openapi/v1.json` and `/metadata/specifications` declare an `oauth2_client_credentials` scheme whose `tokenUrl` is the document's own server URL (request scheme, host and path base) followed by `/connect/token`.
@@ -119,9 +118,9 @@ each part as a form value:
   id or the secret is empty, or when anything other than one or more spaces separates
   `Basic` from the value.
 
-`/connect/token` keeps its lenient parser, which uses `Uri.UnescapeDataString` and falls back to
-form fields when the Basic value cannot be decoded. For a secret sent without encoding, the two
-parsers agree or differ as follows:
+`/connect/token` keeps its lenient parser in both identity provider modes; it uses
+`Uri.UnescapeDataString` and falls back to form fields when the Basic value cannot be decoded.
+For a secret sent without encoding, the two parsers agree or differ as follows:
 
 - **A literal `+`.** `/connect/token` keeps it; revocation decodes it to a space, compares a
   different secret and answers `401 invalid_client`.

@@ -52,9 +52,10 @@ window.EdFiReviewSwagger = (function () {
         return match ? `/${match[1]}-config` : null;
     }
 
-    // The Configuration Service spec declares no security scheme, so Swagger UI would offer no
-    // Authorize button and every call would get 401. Add its real flow: client credentials (in the
-    // request body) posted to <prefix>/connect/token with one of the two Management API scopes.
+    // Configuration Service images up to 8.1.0-beta.0.1 declare no security scheme, so Swagger UI would
+    // offer no Authorize button and every call would get 401. Add their real flow: client credentials
+    // (in the request body) posted to <prefix>/connect/token with one of the two Management API scopes.
+    // Newer images declare the scheme themselves, and a declared scheme is kept as it is.
     function withConfigurationServiceSecurity(spec, specUrl, origin) {
         const prefix = configurationServicePrefix(specUrl);
         if (!prefix || !spec || typeof spec !== "object") {
@@ -92,8 +93,9 @@ window.EdFiReviewSwagger = (function () {
     }
 
     // Swagger UI's client-credentials flow sends the client id and secret only as an HTTP Basic
-    // header, but the Configuration Service token endpoint reads them from the form body (400
-    // without them). Move them into the form for that endpoint; the DMS token endpoint takes Basic.
+    // header, but Configuration Service images up to 8.1.0-beta.0.1 read them only from the form body
+    // under Keycloak (400 without them). Move them into the form for that endpoint, which newer images
+    // also accept; the DMS token endpoint takes Basic.
     function withClientCredentialsInBody(request) {
         const headers = request.headers || {};
         const headerName = Object.keys(headers).find(name => name.toLowerCase() === "authorization");

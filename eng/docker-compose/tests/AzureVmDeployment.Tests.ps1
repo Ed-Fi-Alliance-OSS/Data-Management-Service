@@ -1102,8 +1102,9 @@ Describe "Azure VM Swagger UI" {
     }
 
     It "moves the client credentials Swagger UI sends as HTTP Basic into the Configuration Service token form" {
-        # Swagger UI's client-credentials flow only sends an Authorization: Basic header; the Configuration
-        # Service token endpoint reads client_id and client_secret from the form body and answers 400 without them.
+        # Swagger UI's client-credentials flow only sends an Authorization: Basic header; Configuration Service
+        # images up to 8.1.0-beta.0.1 read client_id and client_secret only from the form body under Keycloak
+        # and answer 400 without them.
         $results = & $script:runHelper ("[" +
             "h.withClientCredentialsInBody({ url: 'https://host.example/mt-config/connect/token', headers: { Authorization: 'Basic ' + btoa('cid:se:cret'), Tenant: 't1' }, body: 'grant_type=client_credentials&scope=edfi_admin_api%2Ffull_access' }), " +
             "h.withClientCredentialsInBody({ url: 'https://host.example/st-dms/oauth/token', headers: { Authorization: 'Basic ' + btoa('key:secret') }, body: 'grant_type=client_credentials' }), " +
