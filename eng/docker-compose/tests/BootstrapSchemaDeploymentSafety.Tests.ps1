@@ -1064,6 +1064,69 @@ exit $ExitCode
     }
 
     Context "instance configuration" {
+        BeforeAll {
+            # Synthetic smoke credentials. '$' is a character CMS-generated secrets can contain, so the
+            # secret must reach the result unexpanded.
+            $script:syntheticSmokeKey = 'SYNTH-KEY-1292'
+            $script:syntheticSmokeSecret = 'SYNTH$SECRET-1292'
+
+            # Stages a SmokeTest.psm1 stand-in where configure imports it. The stand-in records the
+            # forwarded URL, data store ids, and tenant - never the credential - and returns the
+            # synthetic credential the way Get-SmokeTestCredential does.
+            function script:New-StubSmokeTestModule {
+                param([string]$CapturePath)
+
+                $smokeModuleDir = Join-Path $script:repo.RepoRoot "eng/smoke_test/modules"
+                New-Item -ItemType Directory -Path $smokeModuleDir -Force | Out-Null
+                @"
+function Get-SmokeTestCredential {
+    param([string] `$ConfigServiceUrl, [long[]] `$DataStoreIds, [string] `$Tenant)
+    Add-Content -LiteralPath '$CapturePath' -Value `"smoke url=`$ConfigServiceUrl ids=`$(`$DataStoreIds -join ',') tenant=`$Tenant`"
+    return @{ Key = 'SYNTH-KEY-1292'; Secret = 'SYNTH`$SECRET-1292'; VendorId = [long]9; ApplicationName = 'Smoke Test Application' }
+}
+Export-ModuleMember -Function Get-SmokeTestCredential
+"@ | Set-Content -LiteralPath (Join-Path $smokeModuleDir "SmokeTest.psm1") -Encoding utf8
+            }
+
+            function script:Assert-SyntheticSmokeTestCredential {
+                param($Result)
+
+                @($Result.SmokeTestCredential.PSObject.Properties.Name) | Should -Be @("Key", "Secret", "ApplicationName")
+                $Result.SmokeTestCredential.Key | Should -BeExactly $script:syntheticSmokeKey
+                $Result.SmokeTestCredential.Secret | Should -BeExactly $script:syntheticSmokeSecret
+                $Result.SmokeTestCredential.ApplicationName | Should -BeExactly "Smoke Test Application"
+            }
+
+            # -Force is required: dot-prefixed files and directories (.bootstrap, .env.*) are hidden on
+            # Linux and would otherwise be silently missing from both snapshots.
+            function script:Get-FileHashSnapshot {
+                param([string]$Root)
+
+                $snapshot = @{}
+                foreach ($file in @(Get-ChildItem -LiteralPath $Root -Recurse -File -Force)) {
+                    $snapshot[$file.FullName] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+                }
+                return $snapshot
+            }
+
+            function script:Get-CreatedOrModifiedFile {
+                param([hashtable]$Before, [string]$Root)
+
+                $after = Get-FileHashSnapshot -Root $Root
+                return @($after.Keys | Where-Object { -not $Before.ContainsKey($_) -or $Before[$_] -ne $after[$_] })
+            }
+
+            function script:Test-IsStreamRecord {
+                param($Item)
+
+                return $Item -is [System.Management.Automation.InformationRecord] -or
+                    $Item -is [System.Management.Automation.WarningRecord] -or
+                    $Item -is [System.Management.Automation.ErrorRecord] -or
+                    $Item -is [System.Management.Automation.VerboseRecord] -or
+                    $Item -is [System.Management.Automation.DebugRecord]
+            }
+        }
+
         It "returns a structured object for NoDataStore route-unqualified selection" {
             . $script:repo.ConfigureScript
 
@@ -1105,22 +1168,14 @@ exit $ExitCode
                 Should -Throw -ExpectedMessage "*route-qualified*"
         }
 
-        It "creates smoke credentials for the selected NoDataStore target and tenant" {
+        It "returns the smoke credentials created for the selected NoDataStore target and tenant" {
             $envFile = Join-Path $script:repo.DockerComposeRoot "env-with-tenant.env"
             Get-Content -LiteralPath $script:repo.EnvFile |
                 Set-Content -LiteralPath $envFile -Encoding utf8
             Add-Content -LiteralPath $envFile -Value "DMS_CONFIGURATION_SERVICE_TENANT=tenant-a"
 
             $capturePath = Join-Path $script:repo.RepoRoot "smoke-capture.txt"
-            $smokeModuleDir = Join-Path $script:repo.RepoRoot "eng/smoke_test/modules"
-            New-Item -ItemType Directory -Path $smokeModuleDir -Force | Out-Null
-            @"
-function Get-SmokeTestCredential {
-    param([string] `$ConfigServiceUrl, [long[]] `$DataStoreIds, [string] `$Tenant)
-    Add-Content -LiteralPath '$capturePath' -Value `"smoke url=`$ConfigServiceUrl ids=`$(`$DataStoreIds -join ',') tenant=`$Tenant`"
-}
-Export-ModuleMember -Function Get-SmokeTestCredential
-"@ | Set-Content -LiteralPath (Join-Path $smokeModuleDir "SmokeTest.psm1") -Encoding utf8
+            New-StubSmokeTestModule -CapturePath $capturePath
 
             . $script:repo.ConfigureScript
 
@@ -1138,22 +1193,17 @@ Export-ModuleMember -Function Get-SmokeTestCredential
                 )
             }
 
-            Invoke-ConfigureLocalDataStore -EnvironmentFile $envFile -NoDataStore -AddSmokeTestCredentials | Out-Null
+            $result = Invoke-ConfigureLocalDataStore -EnvironmentFile $envFile -NoDataStore -AddSmokeTestCredentials
 
-            @(Get-Content -LiteralPath $capturePath) | Should -Contain "smoke url=http://localhost:18081 ids=77 tenant=tenant-a"
+            @(Get-Content -LiteralPath $capturePath) | Should -Be @("smoke url=http://localhost:18081 ids=77 tenant=tenant-a")
+            Assert-SyntheticSmokeTestCredential -Result $result
+            $result.SelectedDataStoreIds | Should -Be @([long]77)
+            $result.Tenant | Should -Be "tenant-a"
         }
 
-        It "creates smoke credentials for all selected school-year data stores" {
+        It "returns the smoke credentials created for all selected school-year data stores" {
             $capturePath = Join-Path $script:repo.RepoRoot "smoke-schoolyear-capture.txt"
-            $smokeModuleDir = Join-Path $script:repo.RepoRoot "eng/smoke_test/modules"
-            New-Item -ItemType Directory -Path $smokeModuleDir -Force | Out-Null
-            @"
-function Get-SmokeTestCredential {
-    param([string] `$ConfigServiceUrl, [long[]] `$DataStoreIds, [string] `$Tenant)
-    Add-Content -LiteralPath '$capturePath' -Value `"smoke ids=`$(`$DataStoreIds -join ',') tenant=`$Tenant`"
-}
-Export-ModuleMember -Function Get-SmokeTestCredential
-"@ | Set-Content -LiteralPath (Join-Path $smokeModuleDir "SmokeTest.psm1") -Encoding utf8
+            New-StubSmokeTestModule -CapturePath $capturePath
 
             . $script:repo.ConfigureScript
 
@@ -1166,9 +1216,147 @@ Export-ModuleMember -Function Get-SmokeTestCredential
                 )
             }
 
-            Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile -SchoolYearRange "2024-2025" -AddSmokeTestCredentials | Out-Null
+            $result = Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile -SchoolYearRange "2024-2025" -AddSmokeTestCredentials
 
-            @(Get-Content -LiteralPath $capturePath) | Should -Contain "smoke ids=101,102 tenant="
+            @(Get-Content -LiteralPath $capturePath) | Should -Be @("smoke url=http://localhost:18081 ids=101,102 tenant=")
+            Assert-SyntheticSmokeTestCredential -Result $result
+            $result.SelectedDataStoreIds | Should -Be @([long]101, [long]102)
+            @($result.RouteContexts).Count | Should -Be 2
+        }
+
+        It "returns the smoke credentials created for the default data store" {
+            $capturePath = Join-Path $script:repo.RepoRoot "smoke-default-capture.txt"
+            New-StubSmokeTestModule -CapturePath $capturePath
+
+            . $script:repo.ConfigureScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Add-DataStore { return [long]303 }
+
+            $result = Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile -AddSmokeTestCredentials
+
+            @(Get-Content -LiteralPath $capturePath) | Should -Be @("smoke url=http://localhost:18081 ids=303 tenant=")
+            Assert-SyntheticSmokeTestCredential -Result $result
+            $result.SelectedDataStoreIds | Should -Be @([long]303)
+        }
+
+        It "omits SmokeTestCredential and never creates credentials without the flag (<Branch>)" -ForEach @(
+            @{ Branch = "NoDataStore"; Arguments = @{ NoDataStore = $true } }
+            @{ Branch = "SchoolYearRange"; Arguments = @{ SchoolYearRange = "2024-2025" } }
+            @{ Branch = "default"; Arguments = @{} }
+        ) {
+            $capturePath = Join-Path $script:repo.RepoRoot "smoke-unflagged-capture.txt"
+            New-StubSmokeTestModule -CapturePath $capturePath
+
+            . $script:repo.ConfigureScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DataStore { return @([pscustomobject]@{ id = 77; name = "Existing"; dataStoreContexts = @() }) }
+            function Add-DmsSchoolYearInstances { return @(@{ DataStoreId = [long]101; Year = 2024 }, @{ DataStoreId = [long]102; Year = 2025 }) }
+            function Add-DataStore { return [long]303 }
+
+            # The configure script runs under StrictMode -Version Latest, so an unassigned credential
+            # variable would throw here rather than produce a result.
+            $results = @(Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile @Arguments)
+
+            $results.Count | Should -Be 1
+            $results[0].PSObject.Properties["SmokeTestCredential"] | Should -BeNullOrEmpty
+            Test-Path -LiteralPath $capturePath | Should -BeFalse -Because "no smoke application may be created without the flag"
+        }
+
+        It "does not carry a credential from a flagged call into a later unflagged call" {
+            $capturePath = Join-Path $script:repo.RepoRoot "smoke-repeat-capture.txt"
+            New-StubSmokeTestModule -CapturePath $capturePath
+
+            . $script:repo.ConfigureScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Add-DataStore { return [long]303 }
+
+            $flagged = Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile -AddSmokeTestCredentials
+            $unflagged = Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile
+
+            Assert-SyntheticSmokeTestCredential -Result $flagged
+            $unflagged.PSObject.Properties["SmokeTestCredential"] | Should -BeNullOrEmpty
+            @(Get-Content -LiteralPath $capturePath).Count | Should -Be 1
+        }
+
+        It "emits exactly one result object with the existing fields unchanged when the flag is set" {
+            New-StubSmokeTestModule -CapturePath (Join-Path $script:repo.RepoRoot "smoke-shape-capture.txt")
+
+            . $script:repo.ConfigureScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Add-DataStore { return [long]303 }
+
+            $results = @(Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile -AddSmokeTestCredentials)
+
+            $results.Count | Should -Be 1
+            @($results[0].PSObject.Properties.Name | Where-Object { $_ -ne "CMSReadOnlyAccess" }) |
+                Should -Be @("SelectedDataStoreIds", "DataStoreIds", "RouteContexts", "Tenant", "SchoolYears", "HasRouteQualifiedDataStores", "SmokeTestCredential")
+            $results[0].DataStoreIds | Should -Be @([long]303)
+            $results[0].Tenant | Should -Be ""
+            $results[0].HasRouteQualifiedDataStores | Should -BeFalse
+        }
+
+        It "keeps smoke credentials off non-success streams and out of files the run writes" {
+            $capturePath = Join-Path $script:repo.RepoRoot "smoke-leak-capture.txt"
+            New-StubSmokeTestModule -CapturePath $capturePath
+
+            . $script:repo.ConfigureScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Add-DataStore { return [long]303 }
+
+            # Baseline after staging: the stand-in module deliberately embeds the synthetic secret, so
+            # only files the run itself creates or modifies are scanned.
+            $before = Get-FileHashSnapshot -Root $script:repo.RepoRoot
+            $all = @(& {
+                    $VerbosePreference = "Continue"
+                    $DebugPreference = "Continue"
+                    Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile -AddSmokeTestCredentials
+                } *>&1)
+            $changed = @(Get-CreatedOrModifiedFile -Before $before -Root $script:repo.RepoRoot)
+
+            $records = @($all | Where-Object { Test-IsStreamRecord $_ })
+            $results = @($all | Where-Object { -not (Test-IsStreamRecord $_) })
+            $results.Count | Should -Be 1
+            Assert-SyntheticSmokeTestCredential -Result $results[0]
+            $records.Count | Should -BeGreaterThan 0 -Because "configure's progress messages must have been captured, or the leak check proves nothing"
+            foreach ($record in $records) {
+                $text = $record | Out-String
+                $text | Should -Not -Match ([regex]::Escape($script:syntheticSmokeKey))
+                $text | Should -Not -Match ([regex]::Escape($script:syntheticSmokeSecret))
+            }
+
+            @($changed | Where-Object { (Split-Path -Leaf $_) -eq (Split-Path -Leaf $capturePath) }).Count |
+                Should -Be 1 -Because "the run's own capture log must be among the scanned files, or the file check is vacuous"
+            foreach ($file in $changed) {
+                Select-String -LiteralPath $file -SimpleMatch -Pattern $script:syntheticSmokeKey, $script:syntheticSmokeSecret |
+                    Should -BeNullOrEmpty -Because "'$file' was written by this run"
+            }
+        }
+
+        It "round-trips the smoke credential through JSON unchanged" {
+            New-StubSmokeTestModule -CapturePath (Join-Path $script:repo.RepoRoot "smoke-json-capture.txt")
+
+            . $script:repo.ConfigureScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Add-DataStore { return [long]303 }
+
+            $result = Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile -AddSmokeTestCredentials
+            $roundTripped = $result | ConvertTo-Json -Depth 5 | ConvertFrom-Json
+
+            $roundTripped.SmokeTestCredential.Key | Should -BeExactly $script:syntheticSmokeKey
+            $roundTripped.SmokeTestCredential.Secret | Should -BeExactly $script:syntheticSmokeSecret
+            $roundTripped.SmokeTestCredential.ApplicationName | Should -BeExactly "Smoke Test Application"
         }
 
         It "uses an explicit database name when creating the default local data store" {
@@ -1258,7 +1446,7 @@ else { Add-Content -LiteralPath '$sequencePath' -Value 'start-legacy' }
             @"
 param([string] `$EnvironmentFile, [string] `$SchoolYearRange, [switch] `$NoDataStore, [switch] `$AddSmokeTestCredentials)
 Add-Content -LiteralPath '$sequencePath' -Value `"configure range=`$SchoolYearRange noDataStore=`$NoDataStore smoke=`$AddSmokeTestCredentials`"
-[pscustomobject]@{
+`$result = [pscustomobject]@{
     DataStoreIds = [long[]] @(101, 102)
     SelectedDataStoreIds = [long[]] @(101, 102)
     RouteContexts = @(
@@ -1269,6 +1457,11 @@ Add-Content -LiteralPath '$sequencePath' -Value `"configure range=`$SchoolYearRa
     SchoolYears = [int[]] @(2024, 2025)
     HasRouteQualifiedDataStores = `$true
 }
+# Same contract as the real configure phase: the credential block is present only when requested.
+if (`$AddSmokeTestCredentials) {
+    `$result | Add-Member -NotePropertyName SmokeTestCredential -NotePropertyValue ([pscustomobject][ordered]@{ Key = 'SYNTH-KEY-1292'; Secret = 'SYNTH`$SECRET-1292'; ApplicationName = 'Smoke Test Application' })
+}
+`$result
 "@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "configure-local-data-store.ps1") -Encoding utf8
 
             @"

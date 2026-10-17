@@ -92,7 +92,9 @@ Describe "Get-SmokeTestCredential" {
         It "keeps the credential values off every non-success stream" {
             Mock Add-Application -ModuleName SmokeTest { @{ Key = 'SYNTH-KEY-1292'; Secret = 'SYNTH$SECRET-1292' } }
 
-            $all = @(& { Get-SmokeTestCredential -ConfigServiceUrl "http://localhost:8081" -DataStoreIds @(7) } *>&1)
+            # *>&1 only captures streams that are enabled; -Verbose -Debug turn those two on so a future
+            # write of either value on them is observed.
+            $all = @(& { Get-SmokeTestCredential -ConfigServiceUrl "http://localhost:8081" -DataStoreIds @(7) -Verbose -Debug } *>&1)
             $records = @($all | Where-Object { Test-IsStreamRecord $_ })
             $results = @($all | Where-Object { -not (Test-IsStreamRecord $_) })
 
@@ -118,7 +120,7 @@ Describe "Get-SmokeTestCredential" {
             Mock Add-Application -ModuleName SmokeTest { $script:cannedResponse }
 
             $records = @(& {
-                    try { Get-SmokeTestCredential -ConfigServiceUrl "http://localhost:8081" -DataStoreIds @(7) }
+                    try { Get-SmokeTestCredential -ConfigServiceUrl "http://localhost:8081" -DataStoreIds @(7) -Verbose -Debug }
                     catch { $script:caughtFailure = $_ }
                 } *>&1)
             $caught = $script:caughtFailure
