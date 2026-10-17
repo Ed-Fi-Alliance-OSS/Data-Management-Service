@@ -20,6 +20,8 @@ The following environment variables are commonly used when starting the Ed-Fi AP
 container. `AppSettings__Datastore` defaults to `postgresql`. When the datastore
 is `postgresql`, `src/dms/run.sh` waits for PostgreSQL by parsing host, port, and
 username from `DATABASE_CONNECTION_STRING_ADMIN`.
+The wait is skipped when `DATABASE_CONNECTION_STRING_ADMIN` is absent or yields no
+host, and DMS starts without waiting.
 
 ```none
 AppSettings__Datastore=<Database engine: postgresql or mssql. Defaults to postgresql>

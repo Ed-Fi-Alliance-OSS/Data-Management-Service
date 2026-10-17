@@ -15,12 +15,17 @@ if [ "$datastore" = "postgresql" ]; then
   port=$(echo ${DatabaseSettings__DatabaseConnection} | grep -Eo "port([^;]+)" | awk -F= '{print $2}')
   username=$(echo ${DatabaseSettings__DatabaseConnection} | grep -Eo "username([^;]+)" | awk -F= '{print $2}')
 
-  until pg_isready -h ${host} -p ${port} -U ${username}; do
-    echo "Waiting for PostgreSQL to start..."
-    sleep 2
-  done
+  if [ -z "${host}" ]; then
+    # Let .NET surface a real connection error rather than blocking startup forever.
+    echo "Could not parse a PostgreSQL host from DatabaseSettings__DatabaseConnection; skipping readiness wait."
+  else
+    until pg_isready -h ${host} -p ${port} -U ${username}; do
+      echo "Waiting for PostgreSQL to start..."
+      sleep 2
+    done
 
-  echo "PostgreSQL is ready."
+    echo "PostgreSQL is ready."
+  fi
 else
   # sqlcmd is not available in this image, so wait for the SQL Server TCP endpoint
   # to accept connections before starting. SqlClient accepts several aliases for

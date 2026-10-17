@@ -777,9 +777,13 @@ qualifier above.
 >   environment before the .NET process starts:
 >   - `AppSettings__Datastore`, which decides whether it waits for PostgreSQL. It
 >     defaults to `postgresql` when unset, so a plugin that supplies `mssql` while
->     the environment leaves it unset still gets the PostgreSQL wait, which does not
->     end.
->   - `DATABASE_CONNECTION_STRING_ADMIN`, which that wait connects with.
+>     the environment leaves it unset still gets the PostgreSQL wait whenever
+>     `DATABASE_CONNECTION_STRING_ADMIN` names a PostgreSQL host, and that wait does
+>     not end if no PostgreSQL is there. If the admin string is absent or yields no
+>     host, for example a SQL Server `Server=` string, the script prints that it is
+>     skipping the readiness wait and starts .NET without waiting.
+>   - `DATABASE_CONNECTION_STRING_ADMIN`, which that wait connects with. It is
+>     optional: without a host the script skips the wait.
 >   - `AppSettings__ApiSchema__UseCustomPath` and `AppSettings__ApiSchema__Path`, which decide
 >     whether and where it downloads the schema packages. A plugin that supplies
 >     either sends .NET to read a directory the script did not fill.
@@ -825,12 +829,14 @@ unchanged, with these points stated for the Configuration Service itself:
   - `AppSettings__Datastore`, which decides whether the script waits for PostgreSQL
     or for a SQL Server TCP endpoint. It defaults to `postgresql` when unset.
   - `DatabaseSettings__DatabaseConnection`, from which it parses the host and port
-    it waits on.
+    it waits on. If the PostgreSQL branch cannot parse a host from it, because it is
+    absent, empty, or written with capitalized keywords such as `Host=`, the script
+    prints that it is skipping the readiness wait and starts .NET without waiting.
+    The SQL Server branch skips the same way.
 
-  A plugin that supplies either changes what .NET then uses, but not what the script
-  already waited for: the wait still targets the engine and host the environment
-  named, and may never end if that is not the database the deployment runs. On the
-  stock image, set both in the environment.
+  A plugin that supplies `AppSettings:Datastore` changes what .NET then uses, but not what the script already waited for, so on the stock image set it in the environment.
+  A plugin that supplies `DatabaseSettings:DatabaseConnection` is served to .NET only if the environment does not also set it, because the environment value outranks every plugin source.
+  Remove the variable from the environment to serve it from a plugin: the script then skips its wait, and .NET reports a connection error itself and exits if the database is not ready, so a restart policy is needed to recover.
 
 There is no `AppSettings:StartupStatusFilePath` equivalent in the Configuration
 Service. A plugin loading or composition failure is written to standard error and

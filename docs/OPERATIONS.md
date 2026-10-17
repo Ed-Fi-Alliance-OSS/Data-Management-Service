@@ -668,15 +668,12 @@ For running the recipes against a local development stack through
 
 ### Secrets on the shipped Compose files
 
-A secret a plugin serves from a vault must not also be supplied by the environment,
-because an environment variable outranks every plugin source; see
-[Secrets](./SECRETS.md#the-process-global-secrets-phase-a-serves). The shipped
-Compose files map five of those secrets from `.env` variables, and deleting a
-variable does not remove the mapping: Compose sets the key to an empty string, which
-outranks the vault. An empty `DatabaseSettings__EncryptionKey` stops the
-Configuration Service at startup. The others do not: the host starts and then fails
-requests, and an empty `IdentitySettings__EncryptionKey` fails only once the
-self-contained identity provider issues its first token.
+A secret a plugin serves from a vault must not also be supplied by the environment, because an environment variable outranks every plugin source; see [Secrets](./SECRETS.md#the-process-global-secrets-phase-a-serves).
+The shipped Compose files map six of those secrets from `.env` variables, and deleting a variable does not remove the mapping.
+For five of them, Compose sets the key to an empty string, which outranks the vault.
+An empty `DatabaseSettings__EncryptionKey` stops the Configuration Service at startup.
+The others do not: the host starts and then fails requests, and an empty `IdentitySettings__EncryptionKey` fails only once the self-contained identity provider issues its first token.
+The sixth, `DatabaseSettings__DatabaseConnection`, has a default in the Compose files, so deleting its variable sends the Configuration Service to the bundled `dms-postgresql` database instead of the one the vault names.
 
 Remove each key the vault serves in the same deployment-owned override that sets
 `Plugins__Allowed`, with `!reset null`. A service block goes only in the override for
@@ -692,6 +689,7 @@ services:
       ConfigurationServiceSettings__EncryptionKey: !reset null
   config:
     environment:
+      DatabaseSettings__DatabaseConnection: !reset null
       DatabaseSettings__EncryptionKey: !reset null
       IdentitySettings__ClientSecret: !reset null
       IdentitySettings__EncryptionKey: !reset null
@@ -703,10 +701,10 @@ launch scripts read them directly to register identity clients and provision
 databases. `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` feeds both
 `DatabaseSettings__EncryptionKey` on `config` and
 `ConfigurationServiceSettings__EncryptionKey` on `dms`, so clearing it for one host
-would blank the key the other still reads from the environment. Do not reset
-`DatabaseSettings__DatabaseConnection`: the stock Configuration Service entry point
-reads it before .NET starts, so it stays in the environment, as
-[Secrets](./SECRETS.md) describes.
+would blank the key the other still reads from the environment. With the connection
+string removed, the stock Configuration Service entry point skips its database wait
+and .NET reports a connection error itself if the database is not ready yet, so keep
+a restart policy on `config`, as [Secrets](./SECRETS.md) describes.
 
 ## Logging
 
