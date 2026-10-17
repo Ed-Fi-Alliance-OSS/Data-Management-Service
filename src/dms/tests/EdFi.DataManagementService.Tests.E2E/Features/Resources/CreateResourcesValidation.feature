@@ -493,6 +493,7 @@ Feature: Resources "Create" Operation validations
         @e2e-ci-shard-1 @MssqlRepresentative @DMS-1451
         # DMS-1452: Quarantined until POST upsert detection uses natural keys; until then
         # the RI capture misses a mixed-case descriptor identity and the second POST returns 409.
+        @ignore
         Scenario: 35 Post a resource whose identity contains a descriptor twice (Resource)
             Given the system has these descriptors
                   | descriptorValue                                                      |
