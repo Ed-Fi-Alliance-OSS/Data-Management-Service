@@ -1249,7 +1249,6 @@ public class TokenEndpointTests
 /// <c>Given_…</c> classes. The identity provider is read while services are registered, so it is set with
 /// <c>UseSetting</c>; the unreachable connection string only lets the host boot (the token manager is faked).
 /// </summary>
-[TestFixture]
 public class TokenEndpointBasicAuthTests
 {
     private static AuthenticationHeaderValue Basic(string credentials) =>
@@ -1425,7 +1424,6 @@ public class TokenEndpointBasicAuthTests
 /// An empty <c>scope</c> (omitted or <c>scope=</c>) is not forwarded to the identity provider; a non-empty
 /// one is forwarded unchanged. Non-fixture container; the runnable fixtures are the nested <c>Given_…</c> classes.
 /// </summary>
-[TestFixture]
 public class TokenEndpointScopeForwardingTests
 {
     private static List<KeyValuePair<string, string>> Form(params (string Key, string Value)[] fields) =>
@@ -4681,7 +4679,6 @@ internal sealed class RevocationLogCapture : ILoggerProvider, ISupportExternalSc
 /// provider's <c>error</c> and <c>error_description</c>; any other provider failure keeps the 502. Non-fixture
 /// container; the runnable fixtures are the nested <c>Given_…</c> classes.
 /// </summary>
-[TestFixture]
 public class TokenEndpointInvalidScopeTests
 {
     public abstract class ProviderFailureRequest

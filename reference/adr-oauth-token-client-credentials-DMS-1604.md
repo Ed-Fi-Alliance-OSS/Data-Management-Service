@@ -86,7 +86,8 @@ Both accept a Basic header:
   ([`BasicAuthHelper.RFC6749.parseHeader`](https://github.com/keycloak/keycloak/blob/26.1.0/core/src/main/java/org/keycloak/util/BasicAuthHelper.java)).
 
 The Configuration Service reads a Basic header only in self-contained mode; it reads form
-credentials in every mode. In Keycloak mode, DMS calls Keycloak directly rather than the
+credentials in every mode. (Since DMS-1598, in 8.1, it reads a Basic header in Keycloak mode as
+well.) In Keycloak mode, DMS calls Keycloak directly rather than the
 Configuration Service, and Keycloak accepts Basic. So Basic works with every upstream DMS forwards to.
 
 ## Decision

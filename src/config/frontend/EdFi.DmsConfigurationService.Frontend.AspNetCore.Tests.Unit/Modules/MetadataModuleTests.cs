@@ -451,7 +451,7 @@ public class MetadataModuleTests
     public async Task MetadataSpecifications_Declares_Tenancy_As_Anonymous()
     {
         // Arrange
-        // DMS-1508: GET /tenancy is anonymous. MetadataModule adds a document-wide OAuth requirement,
+        // DMS-1508: GET /tenancy is anonymous. The document carries a document-wide OAuth requirement,
         // so without an empty operation-level security array the operation would inherit it.
         await using var factory = CreateFactory();
         using var client = factory.CreateClient();
