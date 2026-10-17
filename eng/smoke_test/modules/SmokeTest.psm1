@@ -316,9 +316,12 @@ function Get-SmokeTestCredentialSummary {
         $lines.Add("Run the non-destructive API smoke tests:")
         $lines.Add("  Set-Location -LiteralPath $(& $quote $smokeTestDirectory)")
         $lines.Add("  ./Invoke-NonDestructiveApiTests.ps1 -BaseUrl $(& $quote $baseUrl) -OAuthUrl $(& $quote "$baseUrl/oauth/token") -Key $(& $quote $values.Key) -Secret $(& $quote $values.Secret)")
-        if ($baseUrl -eq "<dms-base-url>") {
-            $lines.Add("Replace <dms-base-url> with the IDE-hosted DMS URL once it is healthy.")
-        }
+    }
+
+    # Shared by the command and the qualified URL lines: both carry the placeholder when the DMS URL
+    # is not known yet.
+    if ($baseUrl -eq "<dms-base-url>") {
+        $lines.Add("Replace <dms-base-url> with the IDE-hosted DMS URL once it is healthy.")
     }
 
     if ($SelfContainedIdentity) {

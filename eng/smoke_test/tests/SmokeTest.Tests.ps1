@@ -231,15 +231,28 @@ Describe "Get-SmokeTestCredentialSummary" {
             ))
     }
 
-    It "keeps the placeholder inside tenant-only lines when the DMS URL is not known yet" {
+    It "keeps the placeholder inside tenant-only lines, with the replacement instruction, when the DMS URL is not known yet" {
         $lines = @(Get-SmokeTestCredentialSummary -Credential $script:credential -Tenant 'tenant-a')
 
         $lines | Should -Be (@("--- Smoke test credentials ---") + $script:credentialLines + @(
                 "Tenant:      tenant-a",
                 "DMS base:    <dms-base-url>/tenant-a",
                 "Token URL:   <dms-base-url>/tenant-a/oauth/token",
-                $script:routeNote
+                $script:routeNote,
+                "Replace <dms-base-url> with the IDE-hosted DMS URL once it is healthy."
             ))
+    }
+
+    It "keeps the placeholder inside per-store school-year lines, with exactly one replacement instruction, when the DMS URL is not known yet" {
+        $lines = @(Get-SmokeTestCredentialSummary -Credential $script:credential -RouteContexts $script:schoolYearContexts)
+
+        $lines | Should -Be (@("--- Smoke test credentials ---") + $script:credentialLines + @(
+                "Data store 101 (school year 2024): DMS base <dms-base-url>/2024  token <dms-base-url>/2024/oauth/token",
+                "Data store 102 (school year 2025): DMS base <dms-base-url>/2025  token <dms-base-url>/2025/oauth/token",
+                $script:routeNote,
+                "Replace <dms-base-url> with the IDE-hosted DMS URL once it is healthy."
+            ))
+        @($lines | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" }) | Should -BeNullOrEmpty
     }
 
     It "prints one line per school-year data store, without a command, <Case>" -ForEach @(
