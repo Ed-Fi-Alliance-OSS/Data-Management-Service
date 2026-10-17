@@ -317,7 +317,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
             }
             else
             {
-                ApplyChildResourceClaim(resourceClaim, existingClaims, claimSetName);
+                ApplyChildResourceClaim(fragmentFilePath, resourceClaim, existingClaims, claimSetName);
                 definesClaimSet = true;
             }
         }
@@ -435,20 +435,35 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
     }
 
     /// <summary>
-    /// Applies child resource claim transformation
+    /// Applies child resource claim transformation. The grant name is resolved exactly as written
+    /// first, and only when no claim has that name is its singular form tried. When neither matches,
+    /// a warning is logged and the entry is skipped.
     /// </summary>
     private void ApplyChildResourceClaim(
+        string fragmentFilePath,
         ResourceClaim resourceClaim,
         List<TransformationClaim> existingClaims,
         string claimSetName
     )
     {
-        string singularName = PluralToSingular(resourceClaim.Name!);
-        TransformationClaim? existingClaim = existingClaims
-            .SelectMany(x => SearchRecursive(x, singularName))
-            .FirstOrDefault();
+        string name = resourceClaim.Name!;
+        string singularName = PluralToSingular(name);
+        TransformationClaim? existingClaim = FindClaim(existingClaims, name);
+        if (existingClaim is null && singularName != name)
+        {
+            existingClaim = FindClaim(existingClaims, singularName);
+        }
 
-        if (existingClaim != null)
+        if (existingClaim is null)
+        {
+            logger.LogWarning(
+                "Fragment {FragmentFile} grants claim set {ClaimSetName} access to {ResourceClaimName}, which matches no resource claim by that name or its singular form; the entry is skipped",
+                fragmentFilePath,
+                claimSetName,
+                name
+            );
+        }
+        else
         {
             List<TransformationClaimSetAction> actions = new List<TransformationClaimSetAction>();
             List<ClaimSetResourceClaimActionAuthStrategies?> actionsAndAuthStrategies =
@@ -503,6 +518,9 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
             }
         }
     }
+
+    private static TransformationClaim? FindClaim(List<TransformationClaim> existingClaims, string name) =>
+        existingClaims.SelectMany(x => SearchRecursive(x, name)).FirstOrDefault();
 
     /// <summary>
     /// Recursively searches for a claim with specified name (ported from CmsHierarchy.SearchRecursive)
