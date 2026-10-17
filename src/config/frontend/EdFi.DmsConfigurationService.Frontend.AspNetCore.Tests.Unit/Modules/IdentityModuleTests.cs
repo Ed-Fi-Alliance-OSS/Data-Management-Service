@@ -5,6 +5,7 @@
 
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
@@ -1239,6 +1240,272 @@ public class TokenEndpointTests
             )!;
             JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
         }
+    }
+}
+
+/// <summary>
+/// HTTP Basic client credentials at <c>/connect/token</c> are parsed in every identity provider mode, and a
+/// parsed Basic header wins over form credentials. Non-fixture container; the runnable fixtures are the nested
+/// <c>Given_…</c> classes. The identity provider is read while services are registered, so it is set with
+/// <c>UseSetting</c>; the unreachable connection string only lets the host boot (the token manager is faked).
+/// </summary>
+public class TokenEndpointBasicAuthTests
+{
+    private static AuthenticationHeaderValue Basic(string credentials) =>
+        new("Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes(credentials)));
+
+    private static List<KeyValuePair<string, string>> Form(params (string Key, string Value)[] fields) =>
+        [.. fields.Select(field => new KeyValuePair<string, string>(field.Key, field.Value))];
+
+    private static (string Key, string Value)[] GrantFields =>
+        [("grant_type", "client_credentials"), ("scope", "edfi_admin_api/full_access")];
+
+    public abstract class PostedTokenRequest
+    {
+        private const string UnreachableDatabase =
+            "host=127.0.0.1;port=1;database=unreachable;username=none;timeout=1";
+
+        private static ITokenManager CreateTokenManager()
+        {
+            var tokenManager = A.Fake<ITokenManager>();
+            A.CallTo(() =>
+                    tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
+                )
+                .Returns(
+                    new TokenResult.Success(
+                        """{"access_token":"input123token","expires_in":900,"token_type":"bearer"}"""
+                    )
+                );
+            return tokenManager;
+        }
+
+        private static WebApplicationFactory<Program> CreateFactory(
+            string identityProvider,
+            ITokenManager tokenManager
+        ) =>
+            new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("AppSettings:IdentityProvider", identityProvider);
+                builder.UseSetting("DatabaseSettings:DatabaseConnection", UnreachableDatabase);
+                builder.ConfigureServices(collection =>
+                {
+                    collection.AddTransient((_) => new TokenRequest.Validator());
+                    collection.AddTransient((_) => tokenManager);
+                });
+            });
+
+        private static bool Carries(
+            IEnumerable<KeyValuePair<string, string>> credentials,
+            string clientId,
+            string clientSecret
+        ) =>
+            credentials.Any(pair => pair.Key == "client_id" && pair.Value == clientId)
+            && credentials.Any(pair => pair.Key == "client_secret" && pair.Value == clientSecret);
+
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        protected ITokenManager TokenManager = null!;
+        protected HttpResponseMessage Response = null!;
+        private string _body = string.Empty;
+
+        protected abstract string IdentityProvider { get; }
+        protected abstract AuthenticationHeaderValue? Authorization { get; }
+        protected abstract List<KeyValuePair<string, string>> FormFields { get; }
+
+        [SetUp]
+        public async Task Act()
+        {
+            TokenManager = CreateTokenManager();
+            _factory = CreateFactory(IdentityProvider, TokenManager);
+            _client = _factory.CreateClient();
+            _client.DefaultRequestHeaders.Authorization = Authorization;
+            Response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(FormFields));
+            _body = await Response.Content.ReadAsStringAsync();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            Response.Dispose();
+            _client.Dispose();
+            _factory.Dispose();
+        }
+
+        [Test]
+        public void It_returns_ok() => Response.StatusCode.Should().Be(HttpStatusCode.OK, _body);
+
+        protected List<KeyValuePair<string, string>> ForwardedPairs() =>
+            [
+                .. Fake.GetCalls(TokenManager)
+                    .Where(call => call.Method.Name == nameof(ITokenManager.GetAccessTokenAsync))
+                    .SelectMany(call => (IEnumerable<KeyValuePair<string, string>>)call.Arguments[0]!),
+            ];
+
+        protected void TokenManagerMustHaveReceived(string clientId, string clientSecret) =>
+            A.CallTo(() =>
+                    TokenManager.GetAccessTokenAsync(
+                        A<IEnumerable<KeyValuePair<string, string>>>.That.Matches(credentials =>
+                            Carries(credentials, clientId, clientSecret)
+                        )
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+    }
+
+    [TestFixture]
+    public class Given_keycloak_mode_with_a_basic_header_and_form_grant_fields : PostedTokenRequest
+    {
+        protected override string IdentityProvider => "keycloak";
+        protected override AuthenticationHeaderValue? Authorization => Basic("CSClient1:test123@Puiu");
+        protected override List<KeyValuePair<string, string>> FormFields => Form(GrantFields);
+
+        [Test]
+        public void It_passes_the_basic_credentials_to_the_token_manager() =>
+            TokenManagerMustHaveReceived("CSClient1", "test123@Puiu");
+    }
+
+    [TestFixture]
+    public class Given_keycloak_mode_with_form_only_credentials : PostedTokenRequest
+    {
+        protected override string IdentityProvider => "keycloak";
+        protected override AuthenticationHeaderValue? Authorization => null;
+
+        protected override List<KeyValuePair<string, string>> FormFields =>
+            Form([("client_id", "FormClient"), ("client_secret", "form-secret"), .. GrantFields]);
+
+        [Test]
+        public void It_passes_the_form_credentials_to_the_token_manager() =>
+            TokenManagerMustHaveReceived("FormClient", "form-secret");
+    }
+
+    [TestFixture]
+    public class Given_keycloak_mode_with_a_basic_header_and_different_form_credentials : PostedTokenRequest
+    {
+        protected override string IdentityProvider => "keycloak";
+        protected override AuthenticationHeaderValue? Authorization => Basic("BasicClient:basic-secret");
+
+        protected override List<KeyValuePair<string, string>> FormFields =>
+            Form([("client_id", "FormClient"), ("client_secret", "form-secret"), .. GrantFields]);
+
+        [Test]
+        public void It_passes_the_basic_credentials_to_the_token_manager() =>
+            TokenManagerMustHaveReceived("BasicClient", "basic-secret");
+    }
+
+    [TestFixture]
+    public class Given_keycloak_mode_with_a_malformed_basic_header_and_form_credentials : PostedTokenRequest
+    {
+        protected override string IdentityProvider => "keycloak";
+        protected override AuthenticationHeaderValue? Authorization => new("Basic", "not*base64!");
+
+        protected override List<KeyValuePair<string, string>> FormFields =>
+            Form([("client_id", "FormClient"), ("client_secret", "form-secret"), .. GrantFields]);
+
+        [Test]
+        public void It_passes_the_form_credentials_to_the_token_manager() =>
+            TokenManagerMustHaveReceived("FormClient", "form-secret");
+    }
+
+    [TestFixture]
+    public class Given_self_contained_mode_with_a_basic_header_and_form_grant_fields : PostedTokenRequest
+    {
+        protected override string IdentityProvider => "self-contained";
+        protected override AuthenticationHeaderValue? Authorization => Basic("CSClient1:test123@Puiu");
+        protected override List<KeyValuePair<string, string>> FormFields => Form(GrantFields);
+
+        [Test]
+        public void It_passes_the_basic_credentials_to_the_token_manager() =>
+            TokenManagerMustHaveReceived("CSClient1", "test123@Puiu");
+    }
+}
+
+/// <summary>
+/// An empty <c>scope</c> (omitted or <c>scope=</c>) is not forwarded to the identity provider; a non-empty
+/// one is forwarded unchanged. Non-fixture container; the runnable fixtures are the nested <c>Given_…</c> classes.
+/// </summary>
+public class TokenEndpointScopeForwardingTests
+{
+    private static List<KeyValuePair<string, string>> Form(params (string Key, string Value)[] fields) =>
+        [
+            new("client_id", "CSClient1"),
+            new("client_secret", "test123@Puiu"),
+            new("grant_type", "client_credentials"),
+            .. fields.Select(field => new KeyValuePair<string, string>(field.Key, field.Value)),
+        ];
+
+    public abstract class ScopeRequest : TokenEndpointBasicAuthTests.PostedTokenRequest
+    {
+        protected override AuthenticationHeaderValue? Authorization => null;
+
+        [Test]
+        public void It_forwards_client_id_client_secret_and_grant_type_in_order() =>
+            ForwardedPairs()
+                .Select(pair => pair.Key)
+                .Where(key => key != "scope")
+                .Should()
+                .Equal("client_id", "client_secret", "grant_type");
+    }
+
+    public abstract class EmptyScopeRequest : ScopeRequest
+    {
+        [Test]
+        public void It_does_not_forward_a_scope_pair() =>
+            ForwardedPairs().Should().NotContain(pair => pair.Key == "scope");
+    }
+
+    public abstract class FullAccessScopeRequest : ScopeRequest
+    {
+        protected override List<KeyValuePair<string, string>> FormFields =>
+            Form(("scope", "edfi_admin_api/full_access"));
+
+        [Test]
+        public void It_forwards_the_scope_unchanged() =>
+            ForwardedPairs()
+                .Should()
+                .ContainSingle(pair => pair.Key == "scope")
+                .Which.Value.Should()
+                .Be("edfi_admin_api/full_access");
+    }
+
+    [TestFixture]
+    public class Given_keycloak_mode_without_a_scope_field : EmptyScopeRequest
+    {
+        protected override string IdentityProvider => "keycloak";
+        protected override List<KeyValuePair<string, string>> FormFields => Form();
+    }
+
+    [TestFixture]
+    public class Given_keycloak_mode_with_an_empty_scope : EmptyScopeRequest
+    {
+        protected override string IdentityProvider => "keycloak";
+        protected override List<KeyValuePair<string, string>> FormFields => Form(("scope", ""));
+    }
+
+    [TestFixture]
+    public class Given_keycloak_mode_with_a_scope : FullAccessScopeRequest
+    {
+        protected override string IdentityProvider => "keycloak";
+    }
+
+    [TestFixture]
+    public class Given_self_contained_mode_without_a_scope_field : EmptyScopeRequest
+    {
+        protected override string IdentityProvider => "self-contained";
+        protected override List<KeyValuePair<string, string>> FormFields => Form();
+    }
+
+    [TestFixture]
+    public class Given_self_contained_mode_with_an_empty_scope : EmptyScopeRequest
+    {
+        protected override string IdentityProvider => "self-contained";
+        protected override List<KeyValuePair<string, string>> FormFields => Form(("scope", ""));
+    }
+
+    [TestFixture]
+    public class Given_self_contained_mode_with_a_scope : FullAccessScopeRequest
+    {
+        protected override string IdentityProvider => "self-contained";
     }
 }
 
@@ -4404,5 +4671,132 @@ internal sealed class RevocationLogCapture : ILoggerProvider, ISupportExternalSc
                 new Record(category, logLevel, eventId, formatter(state, exception), pairs, scopes, exception)
             );
         }
+    }
+}
+
+/// <summary>
+/// An identity-provider rejection of the request itself (<c>invalid_scope</c>) is answered with a 400 carrying the
+/// provider's <c>error</c> and <c>error_description</c>; any other provider failure keeps the 502. Non-fixture
+/// container; the runnable fixtures are the nested <c>Given_…</c> classes.
+/// </summary>
+public class TokenEndpointInvalidScopeTests
+{
+    public abstract class ProviderFailureRequest
+    {
+        private const string UnreachableDatabase =
+            "host=127.0.0.1;port=1;database=unreachable;username=none;timeout=1";
+
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        protected HttpResponseMessage Response = null!;
+        protected string Body = string.Empty;
+
+        protected abstract IdentityProviderError ProviderError { get; }
+
+        [SetUp]
+        public async Task Act()
+        {
+            var tokenManager = A.Fake<ITokenManager>();
+            A.CallTo(() =>
+                    tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
+                )
+                .Returns(new TokenResult.FailureIdentityProvider(ProviderError));
+
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("AppSettings:IdentityProvider", "keycloak");
+                builder.UseSetting("DatabaseSettings:DatabaseConnection", UnreachableDatabase);
+                builder.ConfigureServices(collection =>
+                {
+                    collection.AddTransient((_) => new TokenRequest.Validator());
+                    collection.AddTransient((_) => tokenManager);
+                });
+            });
+            _client = _factory.CreateClient();
+            Response = await _client.PostAsync(
+                "/connect/token",
+                new FormUrlEncodedContent([
+                    new KeyValuePair<string, string>("client_id", "CSClient1"),
+                    new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
+                    new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                    new KeyValuePair<string, string>("scope", "edfi_admin_api/readonly_access"),
+                ])
+            );
+            Body = await Response.Content.ReadAsStringAsync();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            Response.Dispose();
+            _client.Dispose();
+            _factory.Dispose();
+        }
+    }
+
+    [TestFixture]
+    public class Given_the_identity_provider_rejects_the_scope : ProviderFailureRequest
+    {
+        protected override IdentityProviderError ProviderError =>
+            new IdentityProviderError.InvalidScope(
+                """{"error":"invalid_scope","error_description":"Invalid scopes: edfi_admin_api/readonly_access"}"""
+            );
+
+        [Test]
+        public void It_returns_400() => Response.StatusCode.Should().Be(HttpStatusCode.BadRequest, Body);
+
+        [Test]
+        public void It_returns_problem_json() =>
+            (Response.Content.Headers.ContentType?.MediaType).Should().Be("application/problem+json");
+
+        [Test]
+        public void It_returns_the_bad_request_body_with_the_provider_error()
+        {
+            var actual = JsonNode.Parse(Body)!;
+            actual["correlationId"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
+            var expected = JsonNode.Parse(
+                """
+                {
+                  "detail": "The request could not be processed. See 'errors' for details.",
+                  "type": "urn:ed-fi:api:bad-request",
+                  "title": "Bad Request",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {},
+                  "errors": ["invalid_scope. Invalid scopes: edfi_admin_api/readonly_access"]
+                }
+                """.Replace("{correlationId}", actual["correlationId"]!.GetValue<string>())
+            );
+            JsonNode.DeepEquals(actual, expected).Should().BeTrue(Body);
+        }
+    }
+
+    [TestFixture]
+    public class Given_the_identity_provider_rejects_the_request_with_invalid_request : ProviderFailureRequest
+    {
+        protected override IdentityProviderError ProviderError =>
+            new IdentityProviderError(
+                """{"error":"invalid_request","error_description":"Missing form parameter: grant_type"}"""
+            );
+
+        [Test]
+        public void It_still_returns_502() =>
+            Response.StatusCode.Should().Be(HttpStatusCode.BadGateway, Body);
+
+        [Test]
+        public void It_returns_the_bad_gateway_type() =>
+            JsonNode.Parse(Body)!["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-gateway");
+    }
+
+    [TestFixture]
+    public class Given_the_identity_provider_is_unreachable : ProviderFailureRequest
+    {
+        protected override IdentityProviderError ProviderError =>
+            new IdentityProviderError.Unreachable("No connection could be made.");
+
+        [Test]
+        public void It_still_returns_502() =>
+            Response.StatusCode.Should().Be(HttpStatusCode.BadGateway, Body);
     }
 }

@@ -53,7 +53,15 @@ public static class WebApplicationExtensions
         {
             foreach (var routeBuilder in modules)
             {
-                routeBuilder.MapEndpoints(endpoints);
+                // An empty-prefix group leaves every route pattern unchanged and carries the tag, which
+                // also covers lambda handlers that would otherwise be tagged with the assembly name.
+                var group = endpoints.MapGroup(string.Empty);
+                if (OpenApiModuleTags.ByModule.TryGetValue(routeBuilder.GetType(), out var tag))
+                {
+                    group.WithTags(tag);
+                }
+
+                routeBuilder.MapEndpoints(group);
             }
         });
     }

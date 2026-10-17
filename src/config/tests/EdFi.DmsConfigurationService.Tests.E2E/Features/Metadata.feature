@@ -116,3 +116,52 @@ Feature: Metadata endpoints
               And the response body contains OpenAPI specification
                   | Field                       | Value |
                   | paths./tenancy.get.security | []    |
+
+        @DMS-1598
+        Scenario Outline: 10 The OpenAPI document declares the token URL as the public address of the service
+             When a GET request is made to "<Document>"
+             Then it should respond with 200
+              And the OpenAPI specification token URL should equal the configured base URL followed by "/connect/token"
+              And the OpenAPI specification token URL should equal the first server URL followed by "/connect/token"
+
+        Examples:
+                  | Document                 |
+                  | /openapi/v1.json         |
+                  | /metadata/specifications |
+
+        @DMS-1598
+        Scenario Outline: 11 The OpenAPI document declares exactly the admin API scopes
+             When a GET request is made to "<Document>"
+             Then it should respond with 200
+              And the OpenAPI specification OAuth scopes should be exactly
+                  | Scope                                       |
+                  | edfi_admin_api/full_access                  |
+                  | edfi_admin_api/readonly_access              |
+                  | edfi_admin_api/authMetadata_readonly_access |
+
+        Examples:
+                  | Document                 |
+                  | /openapi/v1.json         |
+                  | /metadata/specifications |
+
+        @DMS-1598
+        Scenario Outline: 12 The token endpoint is documented as anonymous
+             When a GET request is made to "<Document>"
+             Then it should respond with 200
+              And the OpenAPI specification field "paths./connect/token/{contextPath}.post.security" should be an empty array
+
+        Examples:
+                  | Document                 |
+                  | /openapi/v1.json         |
+                  | /metadata/specifications |
+
+        @DMS-1598
+        Scenario Outline: 13 No OpenAPI tag is named after an internal module
+             When a GET request is made to "<Document>"
+             Then it should respond with 200
+              And the OpenAPI specification should have tags and none should end with "Module"
+
+        Examples:
+                  | Document                 |
+                  | /openapi/v1.json         |
+                  | /metadata/specifications |
