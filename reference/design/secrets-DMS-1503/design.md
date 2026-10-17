@@ -133,6 +133,7 @@ The count correction changes nothing structural, and the two extra `appsettings.
 `DATABASE_CONNECTION_STRING_ADMIN` carries elevated database credentials, and the shipped compose files default it to `username=postgres` with `${POSTGRES_PASSWORD}` (`eng/docker-compose/local-dms.yml:43`, `eng/docker-compose/published-dms.yml:38`).
 Its consumer is the DMS container entrypoint rather than the host: `src/dms/run.sh:14-16` parses host, port, and username out of it in the shell, before `dotnet` starts, to wait for PostgreSQL readiness, and no production `.cs` file reads it.
 A value consumed before the .NET host exists is a value no configuration source can serve, Phase A's included, so it stays a deployment-environment value, and [Phase A](#phase-a-the-process-global-secrets) lists it beside the two configuration surfaces Phase A cannot reach.
+**Superseded in part by DMS-1622:** the entry point now skips its readiness wait when the string has no `host=` setting, so the variable is optional and DMS starts without it, and the parse moved into `connection_string_value` in the same script; it is still out of Phase A's reach.
 
 **The connection strings are a different problem, and they are the one the ODS documentation is actually about.**
 

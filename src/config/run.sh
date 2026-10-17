@@ -9,18 +9,94 @@ set +x
 
 datastore=$(echo "${AppSettings__Datastore:-postgresql}" | tr '[:upper:]' '[:lower:]')
 
+# Prints the value of one setting in a connection string, following the .NET connection string
+# rules: a single- or double-quoted value may contain semicolons, a doubled quote inside it is a
+# literal quote, spaces around keys and unquoted values are ignored, and the last occurrence of a
+# key wins. Keys match exactly, so Host= is not host=. A whole value wrapped in one pair of quotes,
+# as docker run --env-file passes it, is unwrapped first.
+connection_string_value() {
+  printf '%s' "$1" | awk -v want="$2" -v sq="'" '
+    { s = s (NR > 1 ? "\n" : "") $0 }
+    END {
+      n = length(s)
+      first = substr(s, 1, 1)
+      if (n >= 2 && (first == "\"" || first == sq) && substr(s, n, 1) == first) {
+        s = substr(s, 2, n - 2)
+        n -= 2
+      }
+      i = 1
+      while (i <= n) {
+        key = ""
+        while (i <= n && substr(s, i, 1) != "=" && substr(s, i, 1) != ";") {
+          key = key substr(s, i, 1)
+          i++
+        }
+        if (i > n || substr(s, i, 1) == ";") {
+          i++
+          continue
+        }
+        i++
+        while (i <= n && (substr(s, i, 1) == " " || substr(s, i, 1) == "\t")) {
+          i++
+        }
+        value = ""
+        quote = substr(s, i, 1)
+        if (quote == "\"" || quote == sq) {
+          i++
+          while (i <= n) {
+            c = substr(s, i, 1)
+            if (c == quote && substr(s, i + 1, 1) == quote) {
+              value = value quote
+              i += 2
+            } else if (c == quote) {
+              i++
+              break
+            } else {
+              value = value c
+              i++
+            }
+          }
+          while (i <= n && substr(s, i, 1) != ";") {
+            i++
+          }
+        } else {
+          while (i <= n && substr(s, i, 1) != ";") {
+            value = value substr(s, i, 1)
+            i++
+          }
+          sub(/[ \t]+$/, "", value)
+        }
+        i++
+        sub(/^[ \t]+/, "", key)
+        sub(/[ \t]+$/, "", key)
+        if (key == want) {
+          result = value
+          found = 1
+        }
+      }
+      if (found) {
+        print result
+      }
+    }'
+}
+
 if [ "$datastore" = "postgresql" ]; then
   # Safely extract a few environment variables from the admin connection string
-  host=$(echo ${DatabaseSettings__DatabaseConnection} | grep -Eo "host([^;]+)" | awk -F= '{print $2}')
-  port=$(echo ${DatabaseSettings__DatabaseConnection} | grep -Eo "port([^;]+)" | awk -F= '{print $2}')
-  username=$(echo ${DatabaseSettings__DatabaseConnection} | grep -Eo "username([^;]+)" | awk -F= '{print $2}')
+  host=$(connection_string_value "${DatabaseSettings__DatabaseConnection:-}" host)
+  port=$(connection_string_value "${DatabaseSettings__DatabaseConnection:-}" port)
+  username=$(connection_string_value "${DatabaseSettings__DatabaseConnection:-}" username)
 
-  until pg_isready -h ${host} -p ${port} -U ${username}; do
-    echo "Waiting for PostgreSQL to start..."
-    sleep 2
-  done
+  if [ -z "${host}" ]; then
+    # Let .NET surface a real connection error rather than blocking startup forever.
+    echo "No host= setting found in DatabaseSettings__DatabaseConnection; skipping the PostgreSQL readiness wait."
+  else
+    until pg_isready -h "${host}" -p "${port}" -U "${username}"; do
+      echo "Waiting for PostgreSQL to start..."
+      sleep 2
+    done
 
-  echo "PostgreSQL is ready."
+    echo "PostgreSQL is ready."
+  fi
 else
   # sqlcmd is not available in this image, so wait for the SQL Server TCP endpoint
   # to accept connections before starting. SqlClient accepts several aliases for
