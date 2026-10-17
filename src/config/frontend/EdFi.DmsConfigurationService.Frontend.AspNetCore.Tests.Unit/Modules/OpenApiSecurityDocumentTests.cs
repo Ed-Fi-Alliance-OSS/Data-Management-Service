@@ -39,7 +39,8 @@ public class OpenApiSecurityDocumentTests
 
     private static async Task<JsonDocument> FetchDocumentAsync(
         bool multiTenancy = false,
-        string? authority = null
+        string? authority = null,
+        string? host = null
     )
     {
         using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -61,6 +62,10 @@ public class OpenApiSecurityDocumentTests
             });
         });
         using var client = factory.CreateClient();
+        if (host is not null)
+        {
+            client.DefaultRequestHeaders.Host = host;
+        }
 
         var response = await client.GetAsync("/config/openapi/v1.json");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -245,6 +250,36 @@ public class OpenApiSecurityDocumentTests
                 .GetString()
                 .Should()
                 .Be("http://localhost/config/connect/token");
+        }
+    }
+
+    [TestFixture]
+    public class Given_the_document_requested_on_another_host
+    {
+        private JsonDocument _document = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _document = await FetchDocumentAsync(host: "cms.example.org");
+        }
+
+        [TearDown]
+        public void TearDown() => _document.Dispose();
+
+        [Test]
+        public void It_builds_the_token_url_from_the_requested_host()
+        {
+            _document
+                .RootElement.GetProperty("components")
+                .GetProperty("securitySchemes")
+                .GetProperty(SchemeName)
+                .GetProperty("flows")
+                .GetProperty("clientCredentials")
+                .GetProperty("tokenUrl")
+                .GetString()
+                .Should()
+                .Be("http://cms.example.org/config/connect/token");
         }
     }
 

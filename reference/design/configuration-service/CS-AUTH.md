@@ -46,9 +46,10 @@ The `self-contained` provider issues the scopes registered for the client.
 Under Keycloak, a requested scope that Keycloak rejects answers `400` with `type` `urn:ed-fi:api:bad-request` and `errors` of `["invalid_scope. <description>"]`, for example `invalid_scope. Invalid scopes: edfi_admin_api/readonly_access`.
 It used to answer `502`.
 Other Keycloak failures keep their previous answers: a failed connection, a 5xx or any other `400` error code answers `502`, and a name-resolution failure or a timeout answers `500`.
-The `self-contained` provider does not reject an ungranted scope and falls back to the registered scopes.
+The `self-contained` provider does not reject an ungranted scope: it issues the requested scopes the client holds, and the client's registered scopes when it holds none of them.
 
 Both `/openapi/v1.json` and `/metadata/specifications` declare an `oauth2_client_credentials` scheme whose `tokenUrl` is the document's own server URL (request scheme, host and path base) followed by `/connect/token`.
+The token URL follows the address the document was requested on, as the server URL and the DMS OpenAPI token URL do; the discovery document instead builds its endpoints from `IdentitySettings:Authority`, because services fetch it to validate tokens.
 The scheme lists the scopes `edfi_admin_api/full_access`, `edfi_admin_api/readonly_access` and `edfi_admin_api/authMetadata_readonly_access`.
 Operations that need no token (`/connect/*`, `GET /`, `GET /tenancy`, `GET /health` and discovery) declare an empty `security` array.
 A stock Swagger UI can therefore authorize against the Configuration Service in both modes.

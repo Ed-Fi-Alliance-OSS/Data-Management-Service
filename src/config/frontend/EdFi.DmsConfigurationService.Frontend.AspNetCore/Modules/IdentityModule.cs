@@ -240,7 +240,7 @@ public class IdentityModule : IEndpointModule
         // Support HTTP Basic authentication in every identity provider mode
         TryParseBasicAuthCredentials(httpContext, logger, out clientId, out clientSecret);
 
-        // Read form data for all parameters (and as fallback for credentials when Basic auth is absent)
+        // Read form data for all parameters (and for any credential the Basic header did not supply)
         if (httpContext.Request.HasFormContentType)
         {
             var form = await httpContext.Request.ReadFormAsync();

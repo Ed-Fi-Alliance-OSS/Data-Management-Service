@@ -4748,7 +4748,7 @@ public class TokenEndpointInvalidScopeTests
 
         [Test]
         public void It_returns_problem_json() =>
-            Response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+            (Response.Content.Headers.ContentType?.MediaType).Should().Be("application/problem+json");
 
         [Test]
         public void It_returns_the_bad_request_body_with_the_provider_error()
