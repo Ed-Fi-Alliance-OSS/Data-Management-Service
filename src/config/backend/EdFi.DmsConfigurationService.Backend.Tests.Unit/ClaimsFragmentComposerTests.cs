@@ -1097,7 +1097,7 @@ public class ClaimsFragmentComposerTests
                     [
                       {
                         "name": "http://ed-fi.org/identity/claims/domains/relationshipBasedData",
-                        "claims": [{ "name": "{{StatisticsClaim}}" }, { "name": "{{StatisticClaim}}" }]
+                        "claims": [{ "name": "{{StatisticClaim}}" }, { "name": "{{StatisticsClaim}}" }]
                       }
                     ]
                     """
@@ -1132,8 +1132,10 @@ public class ClaimsFragmentComposerTests
         }
     }
 
-    [TestFixture]
-    public class Given_a_fragment_with_a_grant_entry_that_matches_no_claim : ClaimsFragmentComposerTests
+    [TestFixture("ds52")]
+    [TestFixture("ds61")]
+    public class Given_a_fragment_with_a_grant_entry_that_matches_no_claim(string standardFolder)
+        : ClaimsFragmentComposerTests
     {
         private const string FragmentFile = "partly-unmatched-claimset.json";
         private const string ClaimSetName = "Partly-Unmatched";
@@ -1144,7 +1146,7 @@ public class ClaimsFragmentComposerTests
         public void Arrange_and_act()
         {
             _result = ComposeWithFragments(
-                BaseDocument(),
+                EmbeddedBaseDocument(standardFolder),
                 (FragmentFile, GrantFragment(ClaimSetName, "ed-fi/academicWeeks", UnmatchedEntry))
             );
         }
@@ -1158,7 +1160,7 @@ public class ClaimsFragmentComposerTests
         [Test]
         public void It_still_applies_the_matching_entry()
         {
-            JsonObject? grant = GrantOnAcademicWeek(_result, ClaimSetName);
+            JsonObject? grant = GrantOn(_result, ClaimUriPrefix + "ed-fi/academicWeek", ClaimSetName);
 
             grant.Should().NotBeNull();
             ReadActionNames(grant!).Should().Equal("Read");
