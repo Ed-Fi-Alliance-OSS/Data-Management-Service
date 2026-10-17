@@ -500,7 +500,7 @@ that is not in the configured claims source.
 ### Upgrading an Existing Deployment: Fragment Grant Names
 
 Earlier releases converted every non-parent fragment entry's name to its singular form before matching it, so an entry naming a claim that ends in `s`, such as `domains/educationOrganizations` or `ed-fi/candidateDemographics`, matched nothing and was skipped without a warning.
-Such an entry now matches its claim and grants the actions it lists.
+Such an entry now matches its claim and grants the actions named in its `authorizationStrategyOverridesForCRUD` list; its `actions` list, including any `enabled` value, is not used.
 A database whose claims are already loaded keeps them after an upgrade, so the change applies the next time claims are composed from fragments: when the service starts on an empty database, or after a claims reload.
 Before that happens, review your fragments for entries that never took effect, and remove any whose access you do not want to grant.
 
@@ -552,6 +552,7 @@ The `Authorization: Bearer $TOKEN` header shown in the examples above is enforce
 
 4. **A fragment grant has no effect**
    - Check the service log for a warning containing "matches no resource claim"; it names the fragment file, the claim set and the entry that was skipped
+   - The warning is logged only when claims are composed from the fragments, which a restart against a database that already has claims does not do, so a missing warning after such a restart does not mean the entry matched
    - Write the claim's own name, as described in [Fragment File Structure](#fragment-file-structure)
    - The service loads claims at startup only into an empty database, so restarting after a fragment changes does not change claims that are already loaded
    - Confirm the grant with `GET /v3/authorizationMetadata?claimSetName=<name>`; it lists leaf resource claims only, so a grant on a domain such as `domains/systemDescriptors` appears on the claims under that domain, not on the domain itself
