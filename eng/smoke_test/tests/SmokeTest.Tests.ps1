@@ -136,6 +136,166 @@ Describe "Get-SmokeTestCredential" {
     }
 }
 
+Describe "Get-SmokeTestCredentialSummary" {
+    BeforeAll {
+        Import-Module "$PSScriptRoot/../modules/SmokeTest.psm1" -Force
+
+        $script:smokeTestDirectory = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../eng/smoke_test"))
+        $script:credential = [pscustomobject]@{ Key = 'SYNTH-KEY-1292'; Secret = 'SYNTH$SECRET-1292'; ApplicationName = 'Smoke Test Application' }
+        $script:credentialLines = @(
+            "Application: Smoke Test Application",
+            "Key:         SYNTH-KEY-1292",
+            'Secret:      SYNTH$SECRET-1292',
+            "The Configuration Service returns this secret only once. These bootstrap scripts do not write it to logs or files; your terminal, transcripts, or host logging may still retain it. Store it now."
+        )
+        $script:routeNote = "Tenant- or route-qualified smoke runs have not been validated with the smoke console; pass the matching DMS base as -BaseUrl and the token URL as -OAuthUrl."
+        $script:schoolYearContexts = @(
+            [pscustomobject]@{ DataStoreId = [long]101; ContextKey = 'schoolYear'; ContextValue = '2024' },
+            [pscustomobject]@{ DataStoreId = [long]102; ContextKey = 'schoolYear'; ContextValue = '2025' }
+        )
+
+        # Parses one emitted command line and returns its parameters' values exactly as PowerShell
+        # would bind them, so the test checks the quoting by execution semantics, not by text.
+        function script:Get-CommandArgument {
+            param([string]$Line)
+
+            $tokens = $null
+            $errors = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseInput($Line.Trim(), [ref]$tokens, [ref]$errors)
+            $errors.Count | Should -Be 0 -Because "the emitted command must parse"
+            $command = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true)
+            $arguments = @{}
+            $elements = @($command.CommandElements)
+            for ($i = 1; $i -lt $elements.Count - 1; $i++) {
+                if ($elements[$i] -is [System.Management.Automation.Language.CommandParameterAst]) {
+                    $valueAst = $elements[$i + 1]
+                    $valueAst | Should -BeOfType [System.Management.Automation.Language.StringConstantExpressionAst]
+                    $valueAst.StringConstantType | Should -Be 'SingleQuoted' -Because "no value may be subject to expansion"
+                    $arguments[$elements[$i].ParameterName] = $valueAst.Value
+                }
+            }
+            return $arguments
+        }
+    }
+
+    It "builds the exact summary and copyable command for a known Docker DMS base URL" {
+        $lines = @(Get-SmokeTestCredentialSummary -Credential $script:credential -DmsBaseUrl 'http://localhost:8080/')
+
+        $lines | Should -Be (@("--- Smoke test credentials ---") + $script:credentialLines + @(
+                "Run the non-destructive API smoke tests:",
+                "  Set-Location -LiteralPath '$($script:smokeTestDirectory)'",
+                "  ./Invoke-NonDestructiveApiTests.ps1 -BaseUrl 'http://localhost:8080' -OAuthUrl 'http://localhost:8080/oauth/token' -Key 'SYNTH-KEY-1292' -Secret 'SYNTH`$SECRET-1292'"
+            ))
+    }
+
+    It "points Set-Location at exactly the repository's eng/smoke_test directory" {
+        $lines = @(Get-SmokeTestCredentialSummary -Credential $script:credential -DmsBaseUrl 'http://localhost:8080')
+        $setLocation = Get-CommandArgument -Line ($lines | Where-Object { $_ -like "*Set-Location*" })
+
+        $setLocation["LiteralPath"] | Should -BeExactly $script:smokeTestDirectory
+        Test-Path -LiteralPath (Join-Path $setLocation["LiteralPath"] "Invoke-NonDestructiveApiTests.ps1") | Should -BeTrue
+    }
+
+    It "quotes every command value so PowerShell binds it unchanged" {
+        $tricky = @{ Key = "K'ey`$1"; Secret = "a'b`$c$([char]0x2018)d``e`"f"; ApplicationName = 'Smoke Test Application' }
+        $baseUrl = "http://localhost:8080/o'k`$x"
+
+        $lines = @(Get-SmokeTestCredentialSummary -Credential $tricky -DmsBaseUrl $baseUrl)
+        $arguments = Get-CommandArgument -Line ($lines | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" })
+
+        $arguments["Key"] | Should -BeExactly $tricky.Key
+        $arguments["Secret"] | Should -BeExactly $tricky.Secret
+        $arguments["BaseUrl"] | Should -BeExactly $baseUrl
+        $arguments["OAuthUrl"] | Should -BeExactly "$baseUrl/oauth/token"
+    }
+
+    It "uses a placeholder base URL when the DMS URL is not known yet" {
+        $lines = @(Get-SmokeTestCredentialSummary -Credential $script:credential)
+
+        $lines | Should -Be (@("--- Smoke test credentials ---") + $script:credentialLines + @(
+                "Run the non-destructive API smoke tests:",
+                "  Set-Location -LiteralPath '$($script:smokeTestDirectory)'",
+                "  ./Invoke-NonDestructiveApiTests.ps1 -BaseUrl '<dms-base-url>' -OAuthUrl '<dms-base-url>/oauth/token' -Key 'SYNTH-KEY-1292' -Secret 'SYNTH`$SECRET-1292'",
+                "Replace <dms-base-url> with the IDE-hosted DMS URL once it is healthy."
+            ))
+    }
+
+    It "prints tenant-qualified base and token URLs, without a command or data store label, for a tenant-only result" {
+        $lines = @(Get-SmokeTestCredentialSummary -Credential $script:credential -DmsBaseUrl 'http://localhost:8080' -Tenant 'tenant-a' -RouteContexts @())
+
+        $lines | Should -Be (@("--- Smoke test credentials ---") + $script:credentialLines + @(
+                "Tenant:      tenant-a",
+                "DMS base:    http://localhost:8080/tenant-a",
+                "Token URL:   http://localhost:8080/tenant-a/oauth/token",
+                $script:routeNote
+            ))
+    }
+
+    It "keeps the placeholder inside tenant-only lines when the DMS URL is not known yet" {
+        $lines = @(Get-SmokeTestCredentialSummary -Credential $script:credential -Tenant 'tenant-a')
+
+        $lines | Should -Be (@("--- Smoke test credentials ---") + $script:credentialLines + @(
+                "Tenant:      tenant-a",
+                "DMS base:    <dms-base-url>/tenant-a",
+                "Token URL:   <dms-base-url>/tenant-a/oauth/token",
+                $script:routeNote
+            ))
+    }
+
+    It "prints one line per school-year data store, without a command, <Case>" -ForEach @(
+        @{ Case = "without a tenant"; Tenant = ""; Expected = @(
+                "Data store 101 (school year 2024): DMS base http://localhost:8080/2024  token http://localhost:8080/2024/oauth/token",
+                "Data store 102 (school year 2025): DMS base http://localhost:8080/2025  token http://localhost:8080/2025/oauth/token"
+            ) }
+        @{ Case = "with a tenant"; Tenant = "tenant-a"; Expected = @(
+                "Tenant:      tenant-a",
+                "Data store 101 (school year 2024): DMS base http://localhost:8080/tenant-a/2024  token http://localhost:8080/tenant-a/2024/oauth/token",
+                "Data store 102 (school year 2025): DMS base http://localhost:8080/tenant-a/2025  token http://localhost:8080/tenant-a/2025/oauth/token"
+            ) }
+    ) {
+        $lines = @(Get-SmokeTestCredentialSummary -Credential $script:credential -DmsBaseUrl 'http://localhost:8080' -Tenant $Tenant -RouteContexts $script:schoolYearContexts)
+
+        $lines | Should -Be (@("--- Smoke test credentials ---") + $script:credentialLines + $Expected + @($script:routeNote))
+    }
+
+    It "adds the token-limit prerequisite for self-contained identity" {
+        $lines = @(Get-SmokeTestCredentialSummary -Credential @{ Key = 'SYNTH-KEY-1292'; Secret = 'SYNTH$SECRET-1292'; ApplicationName = 'Smoke Test Application' } -DmsBaseUrl 'http://localhost:8080' -SelfContainedIdentity)
+
+        $lines[-1] | Should -BeExactly "Self-contained identity: set CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1 before starting the stack (see eng/smoke_test/SMOKETEST.md); the default limit stops the smoke run."
+        $lines.Count | Should -Be 9
+    }
+
+    It "replaces the run instructions with failure guidance when the run did not complete" {
+        $lines = @(Get-SmokeTestCredentialSummary -Credential $script:credential -DmsBaseUrl 'http://localhost:8080' -Tenant 'tenant-a' -SelfContainedIdentity -Incomplete)
+
+        $lines | Should -Be (@("--- Smoke test credentials (created before the failure; the stack is NOT ready) ---") + $script:credentialLines + @(
+                "Fix the failure; CMS will reject a second 'Smoke Test Application' for this vendor (see README)."
+            ))
+    }
+
+    It "rejects <Case> without exposing any value" -ForEach @(
+        @{ Case = "a missing credential"; Credential = $null; DmsBaseUrl = ""; Field = "Key" }
+        @{ Case = "a missing ApplicationName"; Credential = @{ Key = 'SYNTH-KEY-1292'; Secret = 'SYNTH$SECRET-1292' }; DmsBaseUrl = ""; Field = "ApplicationName" }
+        @{ Case = "a null Key"; Credential = @{ Key = $null; Secret = 'SYNTH$SECRET-1292'; ApplicationName = 'App' }; DmsBaseUrl = ""; Field = "Key" }
+        @{ Case = "a blank Secret"; Credential = @{ Key = 'SYNTH-KEY-1292'; Secret = ' '; ApplicationName = 'App' }; DmsBaseUrl = ""; Field = "Secret" }
+        @{ Case = "a non-string Secret"; Credential = @{ Key = 'SYNTH-KEY-1292'; Secret = 1292; ApplicationName = 'App' }; DmsBaseUrl = ""; Field = "Secret" }
+        @{ Case = "a control character in the Key"; Credential = @{ Key = "SYNTH`r-KEY"; Secret = 'SYNTH$SECRET-1292'; ApplicationName = 'App' }; DmsBaseUrl = ""; Field = "Key" }
+        @{ Case = "a control character in the DMS base URL"; Credential = @{ Key = 'SYNTH-KEY-1292'; Secret = 'SYNTH$SECRET-1292'; ApplicationName = 'App' }; DmsBaseUrl = "http://SYNTH`n:8080"; Field = "DMS base URL" }
+    ) {
+        $failure = { Get-SmokeTestCredentialSummary -Credential $Credential -DmsBaseUrl $DmsBaseUrl } | Should -Throw -PassThru
+
+        $failure.Exception.Message | Should -BeLike "*$Field*"
+        ($failure | Out-String) + $failure.Exception.ToString() | Should -Not -Match 'SYNTH'
+    }
+
+    It "returns only strings, with no host or diagnostic records, even with Verbose and Debug enabled" {
+        $all = @(& { Get-SmokeTestCredentialSummary -Credential $script:credential -DmsBaseUrl 'http://localhost:8080' -SelfContainedIdentity -Verbose -Debug } *>&1)
+
+        $all.Count | Should -Be 9
+        $all | ForEach-Object { $_ | Should -BeOfType [string] }
+    }
+}
+
 Describe "Invoke-SmokeTestUtility" {
     BeforeAll {
         Import-Module "$PSScriptRoot/../modules/SmokeTest.psm1" -Force
