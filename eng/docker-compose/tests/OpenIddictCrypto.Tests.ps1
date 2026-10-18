@@ -148,10 +148,10 @@ Describe "OpenIddict MSSQL guarded database creation (DMS-1270 Phase 1b)" {
             Pop-Location
         }
 
-        # The OpenIddictKey insert path uses a real ADO.NET SqlConnection, not docker exec - mock it
-        # to a no-op so these tests exercise only the guarded-create/postcondition logic under test,
-        # without attempting a real SQL Server connection.
-        Mock Invoke-MssqlParameterizedQuery { }
+        # The OpenIddictKey initialization path uses a real ADO.NET SqlConnection, not docker exec -
+        # mock it to report a created key so these tests exercise only the guarded-create/postcondition
+        # logic under test, without attempting a real SQL Server connection.
+        Mock Invoke-MssqlParameterizedQuery { "created" }
     }
 
     # Real sqlcmd emits result rows as separate output objects, and a bare SELECT is followed by a
@@ -775,5 +775,278 @@ Describe "OpenIddict SQL Server client provisioning from configured values" {
         $permissions = @($sql | Where-Object { $_ -match 'SET Permissions' })
         $permissions | Should -HaveCount 1
         $permissions[0] | Should -Match ([regex]::Escape('N''["edfi_admin_api/full\"access\\scope"]'''))
+    }
+}
+
+Describe "OpenIddict signing-key initialization builders (DMS-1292)" {
+    It "classifies the newest active key without inserting, locking or raising" {
+        $sql = New-OpenIddictKeyStateCheckSql -EncryptionKey "state-check-passphrase"
+
+        $sql | Should -Match 'WHERE "IsActive" = TRUE\s+ORDER BY "CreatedAt" DESC\s+LIMIT 1;' -Because "the check must read the key the Configuration Service signs with"
+        $sql | Should -Match "(?s)BEGIN\s+PERFORM pgp_sym_decrypt\(newest_private_key::bytea, 'state-check-passphrase'\);.*EXCEPTION WHEN OTHERS THEN\s+key_state := 'active-undecryptable';"
+        $sql | Should -Not -Match 'INSERT INTO "dmscs"\."OpenIddictKey"' -Because "the state check must never change a row"
+        $sql | Should -Not -Match 'pgp_sym_encrypt' -Because "the state check carries no key material"
+        $sql | Should -Not -Match 'pg_advisory'
+        $sql | Should -Not -Match 'RAISE' -Because "a raised error would log the statement text, passphrase included"
+        $sql | Should -Match "SELECT state FROM openiddict_key_initialization_state;\s*$"
+    }
+
+    It "creates a key only under the lock, and decrypt-checks a key another initializer created first" {
+        $sql = New-OpenIddictKeyInitializationSql -EncryptionKey "initialization-passphrase"
+
+        $lock = $sql.IndexOf("PERFORM pg_advisory_xact_lock(1292000001);")
+        $select = $sql.IndexOf('SELECT "PrivateKey" INTO newest_private_key')
+        $lock | Should -BeGreaterThan -1
+        $select | Should -BeGreaterThan $lock -Because "the active-key recheck must run under the lock"
+        $sql | Should -Match ("(?s)IF newest_private_key IS NOT NULL THEN\s+BEGIN\s+PERFORM pgp_sym_decrypt\(newest_private_key::bytea, 'initialization-passphrase'\);\s+" +
+            "key_state := 'active-ok';\s+EXCEPTION WHEN OTHERS THEN\s+key_state := 'active-undecryptable';\s+END;\s+ELSE\s+" +
+            'INSERT INTO "dmscs"\."OpenIddictKey".*' + "key_state := 'created';\s+END IF;")
+        ([regex]::Matches($sql, 'INSERT INTO "dmscs"\."OpenIddictKey"')).Count | Should -Be 1
+        $sql | Should -Not -Match 'RAISE'
+    }
+
+    It "keeps a quote-bearing encryption key inside its literals" {
+        $sql = New-OpenIddictKeyInitializationSql -EncryptionKey "Identity'Encryption;Key"
+
+        $sql | Should -Match ([regex]::Escape("pgp_sym_decrypt(newest_private_key::bytea, 'Identity''Encryption;Key')"))
+        $sql | Should -Match ([regex]::Escape("'Identity''Encryption;Key'), TRUE);"))
+        $sql | Should -Not -Match ([regex]::Escape("'Identity'Encryption"))
+    }
+
+    It "rejects an input carrying the reserved dollar-quote tag without naming it" {
+        $encryptionKey = 'prefix$openiddict_key_initialization$suffix'
+
+        foreach ($builder in @("New-OpenIddictKeyStateCheckSql", "New-OpenIddictKeyInitializationSql")) {
+            $failure = { & $builder -EncryptionKey $encryptionKey } | Should -Throw "*reserved dollar-quote tag*" -PassThru
+            $failure.Exception.Message | Should -Not -BeLike "*prefix*" -Because "$builder must withhold the configured value"
+        }
+    }
+
+    It "serializes SQL Server initialization in one transaction and binds the secret as a parameter" {
+        $encryptionKey = "SqlServer'Initialization;Key"
+
+        $command = New-OpenIddictKeyInitializationCommand -EncryptionKey $encryptionKey
+
+        $command.Sql | Should -Match "SET XACT_ABORT ON;"
+        $command.Sql | Should -Match ([regex]::Escape("EXEC @lockResult = sp_getapplock @Resource = N'dmscs.OpenIddictKey.Initialize', @LockMode = N'Exclusive', @LockOwner = N'Transaction', @LockTimeout = 30000;"))
+        $command.Sql | Should -Match "IF @lockResult < 0\s+THROW 51292,"
+        $command.Sql | Should -Match ("(?s)IF @newestPrivateKey IS NULL\s+BEGIN\s+INSERT INTO dmscs\.OpenIddictKey.*SET @keyState = N'created';\s+END\s+" +
+            "ELSE IF DECRYPTBYPASSPHRASE\(@EncryptionKey, @newestPrivateKey\) IS NOT NULL\s+SET @keyState = N'active-ok';\s+ELSE\s+SET @keyState = N'active-undecryptable';")
+        $command.Sql | Should -Match "COMMIT TRANSACTION;\s+SELECT @keyState;\s*$"
+        $command.Sql | Should -Not -Match ([regex]::Escape($encryptionKey))
+        $command.Parameters.EncryptionKey | Should -Be $encryptionKey
+        $command.Parameters.PrivateKey | Should -Not -BeNullOrEmpty
+        $command.Parameters.PublicKey.GetType() | Should -Be ([byte[]])
+    }
+}
+
+Describe "OpenIddict signing-key initialization in -InitDb (DMS-1292)" {
+    BeforeAll {
+        $script:SyntheticPassphrase = "Synthetic-Dms1292-Passphrase'x"
+        $script:SyntheticPrivateKey = "SYNTHETIC-DMS1292-PRIVATE-KEY-MATERIAL"
+        $script:FixedUndecryptableError = "*newest active OpenIddict signing key cannot be decrypted with the configured encryption key; no signing key was changed*"
+    }
+
+    Context "PostgreSQL" {
+        BeforeEach {
+            Push-Location $script:DockerComposePath
+            try {
+                . ./setup-openiddict.ps1 -EnvironmentFile "" -DbType "Postgresql" `
+                    -ConnectionString "Host=localhost;Port=5432;Database=edfi_configurationservice;Username=postgres;" `
+                    -DbName "edfi_configurationservice" -PostgresContainerName "dms-postgresql-test" -EncryptionKey $script:SyntheticPassphrase
+            }
+            finally {
+                Pop-Location
+            }
+
+            Mock Invoke-PostgresGuardedDatabaseCreate { }
+            Mock Invoke-DbQuery { }
+            Mock New-OpenIddictKeyPair -ModuleName "OpenIddict-Crypto" {
+                [PSCustomObject]@{ PublicKey = [Convert]::ToBase64String([byte[]](1, 2, 3)); PrivateKey = $script:SyntheticPrivateKey }
+            }
+
+            # The state each phase reports. Phase B is the script that takes the advisory lock.
+            $script:PhaseAState = "none"
+            $script:PhaseBState = "created"
+            Mock Invoke-PostgresOpenIddictKeyScript { $script:PhaseAState } -ParameterFilter { $Script -notmatch "pg_advisory_xact_lock" }
+            Mock Invoke-PostgresOpenIddictKeyScript { $script:PhaseBState } -ParameterFilter { $Script -match "pg_advisory_xact_lock" }
+        }
+
+        It "creates the initial key when no active key exists" {
+            $output = Invoke-InitDbScripts 6>&1 | ForEach-Object { [string]$_ }
+
+            $output | Should -Contain "OpenIddict signing key: created the initial active key"
+            Should -Invoke Invoke-PostgresOpenIddictKeyScript -Times 1 -Exactly -ParameterFilter { $Script -notmatch "pg_advisory_xact_lock" }
+            Should -Invoke Invoke-PostgresOpenIddictKeyScript -Times 1 -Exactly -ParameterFilter { $Script -match "pg_advisory_xact_lock" }
+        }
+
+        It "reuses a decryptable active key without generating key material" {
+            $script:PhaseAState = "active-ok"
+
+            $output = Invoke-InitDbScripts 6>&1 | ForEach-Object { [string]$_ }
+
+            $output | Should -Contain "OpenIddict signing key: reusing the existing active key"
+            Should -Invoke Invoke-PostgresOpenIddictKeyScript -Times 0 -Exactly -ParameterFilter { $Script -match "pg_advisory_xact_lock" }
+            Should -Invoke New-OpenIddictKeyPair -ModuleName "OpenIddict-Crypto" -Times 0 -Exactly -Because "the ordinary rerun must not generate or send a candidate key"
+        }
+
+        It "stops with the fixed error, changing nothing, when the newest active key does not decrypt" {
+            $script:PhaseAState = "active-undecryptable"
+
+            { Invoke-InitDbScripts 6>$null } | Should -Throw $script:FixedUndecryptableError
+            Should -Invoke Invoke-PostgresOpenIddictKeyScript -Times 0 -Exactly -ParameterFilter { $Script -match "pg_advisory_xact_lock" }
+        }
+
+        It "stops with the fixed error when a concurrent initializer created a key this passphrase cannot decrypt" {
+            $script:PhaseBState = "active-undecryptable"
+
+            { Invoke-InitDbScripts 6>$null } | Should -Throw $script:FixedUndecryptableError
+            Should -Invoke Invoke-PostgresOpenIddictKeyScript -Times 1 -Exactly -ParameterFilter { $Script -match "pg_advisory_xact_lock" }
+        }
+
+        It "reuses a decryptable key a concurrent initializer created first" {
+            $script:PhaseBState = "active-ok"
+
+            $output = Invoke-InitDbScripts 6>&1 | ForEach-Object { [string]$_ }
+
+            $output | Should -Contain "OpenIddict signing key: reusing the existing active key"
+        }
+
+        It "fails on an unexpected state rather than treating it as success" {
+            $script:PhaseAState = "something-else"
+
+            { Invoke-InitDbScripts 6>$null } | Should -Throw "*unexpected result*"
+        }
+
+        It "never runs the bare key insert" {
+            Invoke-InitDbScripts 6>$null
+
+            Should -Invoke Invoke-DbQuery -Times 0 -Exactly -ParameterFilter { $Sql -match 'OpenIddictKey" \("KeyId"' }
+        }
+
+        It "keeps the passphrase and key material off every stream, on success and on failure" {
+            $output = & {
+                $VerbosePreference = "Continue"
+                $DebugPreference = "Continue"
+                Invoke-InitDbScripts
+                $script:PhaseAState = "active-undecryptable"
+                try { Invoke-InitDbScripts } catch { $_ }
+            } *>&1 | ForEach-Object { [string]$_ }
+            $text = $output -join "`n"
+
+            $text | Should -BeLike "*created the initial active key*" -Because "the success path must have run"
+            $text | Should -BeLike "*cannot be decrypted*" -Because "the failure path must have run"
+            $text.Contains($script:SyntheticPassphrase) | Should -BeFalse
+            $text.Contains($script:SyntheticPassphrase.Replace("'", "''")) | Should -BeFalse
+            $text.Contains($script:SyntheticPrivateKey) | Should -BeFalse
+        }
+    }
+
+    Context "PostgreSQL script transport" {
+        BeforeAll {
+            # A plain function stands in for docker, as in the guarded-database-creation tests, so the
+            # test sees what reaches stdin as well as the arguments.
+            function script:Invoke-KeyScriptWithDockerShim {
+                param([int]$Exit, [string[]]$Output, [string]$Script)
+
+                $calls = [System.Collections.Generic.List[object]]::new()
+                $exitCode = $Exit
+                $psqlOutput = $Output
+                Set-Item -Path Function:\global:docker -Value {
+                    $piped = @($input)
+                    $calls.Add([PSCustomObject]@{
+                        ArgLine        = (@($args | ForEach-Object { $_ }) -join " ")
+                        ExpectingInput = $MyInvocation.ExpectingInput
+                        Stdin          = (($piped | ForEach-Object { [string]$_ }) -join "`n")
+                    })
+                    $global:LASTEXITCODE = $exitCode
+                    return $psqlOutput
+                }.GetNewClosure()
+
+                $caught = $null
+                $result = $null
+                try { $result = Invoke-PostgresOpenIddictKeyScript -Script $Script }
+                catch { $caught = $_ }
+                finally { Remove-Item Function:\docker -Force -ErrorAction SilentlyContinue }
+
+                return [PSCustomObject]@{ Call = $calls[0]; Result = $result; Error = $caught }
+            }
+        }
+
+        BeforeEach {
+            Push-Location $script:DockerComposePath
+            try {
+                . ./setup-openiddict.ps1 -EnvironmentFile "" -DbType "Postgresql" `
+                    -ConnectionString "Host=localhost;Port=5432;Database=edfi_configurationservice;Username=postgres;" `
+                    -PostgresContainerName "dms-postgresql-test" -EncryptionKey "unused"
+            }
+            finally {
+                Pop-Location
+            }
+        }
+
+        It "sends the script on stdin, never as an argument, with error text suppressed" {
+            $keyScript = New-OpenIddictKeyStateCheckSql -EncryptionKey "Transport-Passphrase-1292"
+
+            $run = Invoke-KeyScriptWithDockerShim -Exit 0 -Output @("active-ok") -Script $keyScript
+
+            $run.Result | Should -Be "active-ok"
+            $run.Call.ExpectingInput | Should -BeTrue
+            $run.Call.Stdin | Should -BeExactly $keyScript
+            $run.Call.ArgLine | Should -Not -BeLike "*Transport-Passphrase-1292*"
+            $run.Call.ArgLine | Should -BeLike "*-v ON_ERROR_STOP=1*"
+            $run.Call.ArgLine | Should -BeLike "*-v VERBOSITY=sqlstate*"
+            $run.Call.ArgLine | Should -BeLike "*-f -*"
+            $run.Call.ArgLine | Should -BeLike "*-d edfi_configurationservice*"
+        }
+
+        It "fails with the SQLSTATE only, withholding the captured output" {
+            $run = Invoke-KeyScriptWithDockerShim -Exit 3 -Output @("psql:<stdin>:4: ERROR:  42501", "Transport-Passphrase-1292") `
+                -Script (New-OpenIddictKeyStateCheckSql -EncryptionKey "Transport-Passphrase-1292")
+
+            $run.Error.Exception.Message | Should -BeLike "*SQLSTATE: 42501*"
+            $run.Error.Exception.Message | Should -Not -BeLike "*Transport-Passphrase-1292*"
+        }
+    }
+
+    Context "SQL Server" {
+        BeforeEach {
+            Push-Location $script:DockerComposePath
+            try {
+                . ./setup-openiddict.ps1 -EnvironmentFile "" -DbType "MSSQL" -DbName "edfi_configurationservice" -DbUser "sa" `
+                    -DbPassword "abcdefgh1!" -MssqlContainerName "dms-mssql-test" -EncryptionKey $script:SyntheticPassphrase
+            }
+            finally {
+                Pop-Location
+            }
+
+            Mock Invoke-DbQuery { "1" } -ParameterFilter { $Sql -match "DB_ID" }
+            Mock Invoke-DbQuery { "" } -ParameterFilter { $Sql -notmatch "DB_ID" }
+            $script:MssqlState = "created"
+            Mock Invoke-MssqlParameterizedQuery { $script:MssqlState }
+        }
+
+        It "runs the locked initialization command, not the bare insert" {
+            $output = Invoke-InitDbScripts 6>&1 | ForEach-Object { [string]$_ }
+
+            $output | Should -Contain "OpenIddict signing key: created the initial active key"
+            Should -Invoke Invoke-MssqlParameterizedQuery -Times 1 -Exactly -ParameterFilter {
+                $Sql -match "sp_getapplock" -and $Sql -match "DECRYPTBYPASSPHRASE" -and $Parameters.EncryptionKey -eq $script:SyntheticPassphrase
+            }
+        }
+
+        It "reports a reused key" {
+            $script:MssqlState = "active-ok"
+
+            $output = Invoke-InitDbScripts 6>&1 | ForEach-Object { [string]$_ }
+
+            $output | Should -Contain "OpenIddict signing key: reusing the existing active key"
+        }
+
+        It "stops with the fixed error when the newest active key does not decrypt" {
+            $script:MssqlState = "active-undecryptable"
+
+            { Invoke-InitDbScripts 6>$null } | Should -Throw $script:FixedUndecryptableError
+        }
     }
 }
