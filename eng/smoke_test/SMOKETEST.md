@@ -78,10 +78,17 @@ $credentials = Get-SmokeTestCredential -ConfigServiceUrl "http://localhost:8081"
   (default: empty, meaning single tenant)
 
 The function returns the key and secret to the caller and does not write them to the
-console. Keep them in a variable and pass them onward rather than echoing them.
+console. Keep them in a variable and pass them onward rather than echoing them. It fails,
+naming only the field, when the Configuration Service response does not contain a usable
+key or secret.
 
 ### Example
 
-The `Usage` section above is a complete example. For a working invocation inside a
-larger script, see `eng/docker-compose/start-published-dms.ps1`, which calls
-`Get-SmokeTestCredential` when run with `-AddSmokeTestCredentials`.
+The `Usage` section above is a complete example.
+
+The bootstrap scripts' `-AddSmokeTestCredentials` flag also calls `Get-SmokeTestCredential` and
+delivers the key and secret to you:
+- `configure-local-data-store.ps1` returns them in the `SmokeTestCredential` property of its result.
+- `bootstrap-local-dms.ps1`, `bootstrap-published-dms.ps1` and `start-published-dms.ps1` print a summary with a copyable `Invoke-NonDestructiveApiTests.ps1` command, built by `Get-SmokeTestCredentialSummary`.
+
+See "Smoke-test credentials" in `eng/docker-compose/README.md`.

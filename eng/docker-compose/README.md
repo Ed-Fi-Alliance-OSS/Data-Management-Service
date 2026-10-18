@@ -295,11 +295,66 @@ in your `.env` before starting or recreating the stack: the Smoke Test Utility r
 a new token for each resource GET and otherwise exceeds the default limit of 15.
 Restore the configured limit and recreate the stack after the smoke run.
 
-After the stack is up, run the smoke tests the same way as for PostgreSQL:
+After the stack is up, run the smoke tests the same way as for PostgreSQL. The script imports its
+modules relative to the current directory, so run it from `eng/smoke_test`. For `$key` and `$secret`, see
+[Smoke-test credentials](#smoke-test-credentials--addsmoketestcredentials).
 
 ```pwsh
-../smoke_test/Invoke-NonDestructiveApiTests.ps1 -BaseUrl "http://localhost:8080" -Key $key -Secret $secret
+cd ../smoke_test
+./Invoke-NonDestructiveApiTests.ps1 -BaseUrl "http://localhost:8080" -Key $key -Secret $secret
 ```
+
+## Smoke-test credentials (`-AddSmokeTestCredentials`)
+
+`-AddSmokeTestCredentials` creates a "Smoke Test Application" (vendor "Smoke Test Vendor", claim set
+`EdFiSandbox`) in the Configuration Service for `eng/smoke_test/Invoke-NonDestructiveApiTests.ps1`. The
+Configuration Service returns the application's secret **only once**, in its create response, so each
+entry point hands it to you in exactly one place.
+
+* **`bootstrap-local-dms.ps1` / `bootstrap-published-dms.ps1`:**
+  * The wrapper prints a smoke-test credential summary as its **last** output, on every run shape: Docker-hosted, `-LoadSeedData`, `-InfraOnly`, `-InfraOnly -DmsBaseUrl`, and `-EnableKafkaCdc`.
+  * If a later phase fails after the credential was created, it prints the summary under a "created before the failure; the stack is NOT ready" header, then reports the original error.
+* **`configure-local-data-store.ps1`:** the structured result gains a `SmokeTestCredential` property (`Key`, `Secret`, `ApplicationName`). Capture it, because the secret is not shown anywhere else:
+
+  ```pwsh
+  $configure = ./configure-local-data-store.ps1 -AddSmokeTestCredentials -EnvironmentFile ./.env.ide
+  $configure.SmokeTestCredential.Key
+  $configure.SmokeTestCredential.Secret
+  ```
+
+  Running it without capturing the result prints the whole object, secret included. Treat the result as sensitive: do not log or persist it.
+* **`start-published-dms.ps1`** (direct full start, a transitional flag):
+  * creates the application after it registers the data stores, for those data stores and the configured tenant (with `-NoDataStore`, for the first existing data store in that tenant);
+  * then prints the summary.
+  * It does **not** provision the DMS schema. Use it against an already-provisioned database, or use `bootstrap-published-dms.ps1`.
+
+For a single route-unqualified data store, the summary includes a copyable command. Every value is a
+single-quoted PowerShell literal, so characters such as `$` in a generated secret stay literal:
+
+```text
+--- Smoke test credentials ---
+Application: Smoke Test Application
+Key:         <key>
+Secret:      <secret>
+The Configuration Service returns this secret only once. These bootstrap scripts do not write it to logs or files; your terminal, transcripts, or host logging may still retain it. Store it now.
+Run the non-destructive API smoke tests:
+  Set-Location -LiteralPath '<repo>\eng\smoke_test'
+  ./Invoke-NonDestructiveApiTests.ps1 -BaseUrl 'http://localhost:8080' -OAuthUrl 'http://localhost:8080/oauth/token' -Key '<key>' -Secret '<secret>'
+```
+
+* **DMS URL not known yet** (`-InfraOnly` without `-DmsBaseUrl`): the command uses a `<dms-base-url>` placeholder for you to replace once the IDE-hosted DMS is healthy.
+* **Tenant or school-year (`-SchoolYearRange`) data stores:** the summary lists the tenant- or year-qualified DMS base and token URLs instead of a command. Smoke runs against qualified routes have not been validated with the Smoke Test Utility.
+* **Self-contained identity:** the summary also reminds you that `CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1` must be set **before the stack starts** (see above and `eng/smoke_test/SMOKETEST.md`).
+
+> [!IMPORTANT]
+> Pass `-AddSmokeTestCredentials` only once per Configuration Service. The application name is unique
+> per vendor, so a later run with the flag against the same Configuration Service fails, even after an
+> earlier run failed. That includes a `-NoDataStore` follow-up wrapper run. Omit the flag on follow-up runs,
+> or remove the existing "Smoke Test Application" first.
+
+The flag is not honored by `start-local-dms.ps1` (which has no such parameter), by
+`start-published-dms.ps1 -InfraOnly`, or by the retained-CDC lifecycle and CDC retry paths of the
+wrappers.
 
 ## Configuration Service database topology
 
@@ -760,7 +815,8 @@ cd eng/docker-compose
 
 The wrapper prints IDE next-step guidance (staged schema path and, when `DMS_CONFIGURATION_SERVICE_CLIENT_*`
 keys are set in the env file, `CMSReadOnlyAccess` client id and scope — never the secret value)
-after provisioning completes.
+after provisioning completes. With `-AddSmokeTestCredentials`, it ends with the
+[smoke-test credential summary](#smoke-test-credentials--addsmoketestcredentials).
 
 ### Two IDE workflow shapes
 
@@ -787,6 +843,8 @@ wait passes.
 > so the configure phase reuses the existing data store; without it, the configure phase registers
 > the same name again and the Configuration Service rejects it with 400:
 > `./bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> -NoDataStore -EnvironmentFile ./.env.ide [-LoadSeedData ...]`
+> Do not repeat `-AddSmokeTestCredentials` on that follow-up run: the Configuration Service rejects a
+> second "Smoke Test Application" for the same vendor.
 >
 > `-NoDataStore` supports exactly one existing route-unqualified data store. If the earlier run
 > used `-SchoolYearRange` (or otherwise created route-qualified data stores), do **not** re-run the
@@ -819,7 +877,8 @@ cd eng/docker-compose
 ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath ...
 ./prepare-dms-claims.ps1
 ./start-local-dms.ps1 -InfraOnly -IdentityProvider self-contained -EnvironmentFile ./.env.ide
-./configure-local-data-store.ps1 -AddSmokeTestCredentials -EnvironmentFile ./.env.ide
+$configure = ./configure-local-data-store.ps1 -AddSmokeTestCredentials -EnvironmentFile ./.env.ide
+$configure.SmokeTestCredential  # Key, Secret, ApplicationName - returned only once; store them now
 ./provision-dms-schema.ps1 -EnvironmentFile ./.env.ide
 # Start DMS in your IDE now.
 ./start-local-dms.ps1 -InfraOnly -DmsBaseUrl "http://localhost:5198" -EnvironmentFile ./.env.ide  # post-provision health wait only
