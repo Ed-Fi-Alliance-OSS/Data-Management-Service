@@ -93,6 +93,6 @@ delivers the key and secret to you:
   - **Completed run, no tenant, single route-unqualified data store:** a copyable `Invoke-NonDestructiveApiTests.ps1` command. If the DMS URL is not known yet, the command uses a `<dms-base-url>` placeholder and the summary says to replace it.
   - **Tenant or school-year data stores:** the qualified DMS base and token URLs instead of a command. Smoke runs against those routes have not been validated.
   - **Run that failed after the credential was created:** no run instructions.
-  - **`start-published-dms.ps1` rerun against an already-running self-contained stack:** restart the DMS container before running the printed command (see the direct-start note in the README section below).
+  - **`start-published-dms.ps1` rerun against an already-running self-contained stack:** the existing signing key is kept, so the printed command works without restarting DMS (see the direct-start note in the README section below).
 
 See "Smoke-test credentials" in `eng/docker-compose/README.md`.
