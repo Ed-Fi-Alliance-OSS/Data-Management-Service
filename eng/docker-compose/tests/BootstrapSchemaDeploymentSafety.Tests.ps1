@@ -1474,12 +1474,21 @@ param([string] `$EnvironmentFile, [int[]] `$SchoolYear, [long[]] `$DataStoreId, 
 Add-Content -LiteralPath '$sequencePath' -Value `"seed years=`$(`$SchoolYear -join ',') ids=`$(`$DataStoreId -join ',')`"
 "@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "load-dms-seed-data.ps1") -Encoding utf8
 
-            & $script:repo.WrapperScript `
-                -EnvironmentFile $script:repo.EnvFile `
-                -LoadSeedData `
-                -SeedDataPath $script:repo.DockerComposeRoot `
-                -SchoolYearRange "2024-2025" `
-                -AddSmokeTestCredentials
+            # -AddSmokeTestCredentials makes the wrapper format its summary with the real smoke-test
+            # module from its repository-relative path.
+            $smokeModuleDir = Join-Path $script:repo.RepoRoot "eng/smoke_test/modules"
+            New-Item -ItemType Directory -Path $smokeModuleDir -Force | Out-Null
+            Copy-Item -LiteralPath (Join-Path $script:sourceRepoRoot "eng/smoke_test/modules/SmokeTest.psm1") -Destination $smokeModuleDir
+
+            $output = @(& $script:repo.WrapperScript `
+                    -EnvironmentFile $script:repo.EnvFile `
+                    -LoadSeedData `
+                    -SeedDataPath $script:repo.DockerComposeRoot `
+                    -SchoolYearRange "2024-2025" `
+                    -AddSmokeTestCredentials)
+
+            @($output | Where-Object { "$_" -eq "--- Smoke test credentials ---" }).Count | Should -Be 1
+            $output[-1] | Should -BeLike "Self-contained identity:*"
 
             $sequence = @(Get-Content -LiteralPath $sequencePath)
             $sequence[0] | Should -Be "start-infra EnableConfig=True"

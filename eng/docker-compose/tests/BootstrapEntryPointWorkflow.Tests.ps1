@@ -107,6 +107,13 @@ Export-ModuleMember -Function Test-CdcInfrastructureInvocation, Test-CdcDeployme
                 -LiteralPath (Join-Path $script:sourceRepoRoot "eng/schema-package-utility.psm1") `
                 -Destination (Join-Path $engRoot "schema-package-utility.psm1")
 
+            # The wrapper formats the -AddSmokeTestCredentials summary with the real smoke-test module,
+            # imported from its repository-relative path; that module imports Dms-Management.psm1.
+            $smokeModuleRoot = Join-Path $engRoot "smoke_test/modules"
+            New-Item -ItemType Directory -Path $smokeModuleRoot -Force | Out-Null
+            Copy-Item -LiteralPath (Join-Path $script:sourceRepoRoot "eng/smoke_test/modules/SmokeTest.psm1") -Destination $smokeModuleRoot
+            Copy-Item -LiteralPath (Join-Path $script:sourceRepoRoot "eng/Dms-Management.psm1") -Destination $engRoot
+
             $envFile = Join-Path $dockerComposeRoot ".env.example"
             @"
 POSTGRES_PASSWORD=secret-pass
@@ -225,10 +232,27 @@ $forwardRecording
                 [Parameter(Mandatory)]
                 [string]$CallLogPath,
 
-                [long[]]$DataStoreIds = @(42)
+                [long[]]$DataStoreIds = @(42),
+
+                # Shape of the returned result, mirroring configure-local-data-store.ps1: a tenant,
+                # school-year route contexts for data stores 101/2024 and 102/2025, and - like the real
+                # phase - a synthetic SmokeTestCredential only when -AddSmokeTestCredentials is bound,
+                # unless -OmitSmokeTestCredential models a phase that breaks that contract.
+                [string]$Tenant = "",
+
+                [switch]$SchoolYearContexts,
+
+                [switch]$OmitSmokeTestCredential
             )
 
             $idsJson = ($DataStoreIds | ForEach-Object { "[long]$_" }) -join ', '
+            $routeContexts = if ($SchoolYearContexts) {
+                "@([pscustomobject]@{ DataStoreId = [long]101; ContextKey = 'schoolYear'; ContextValue = '2024' }, [pscustomobject]@{ DataStoreId = [long]102; ContextKey = 'schoolYear'; ContextValue = '2025' })"
+            }
+            else {
+                "@()"
+            }
+            $smokeCredentialCondition = if ($OmitSmokeTestCredential) { "`$false" } else { "`$AddSmokeTestCredentials" }
             $scriptPath = Join-Path $Directory "configure-local-data-store.ps1"
             @"
 param(
@@ -239,14 +263,18 @@ param(
     [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
 )
 Add-Content -LiteralPath '$CallLogPath' -Value "configure smoke=`$AddSmokeTestCredentials"
-[pscustomobject]@{
+`$result = [pscustomobject]@{
     DataStoreIds              = [long[]] @($idsJson)
     SelectedDataStoreIds      = [long[]] @($idsJson)
-    RouteContexts             = @()
-    Tenant                    = ''
+    RouteContexts             = $routeContexts
+    Tenant                    = '$Tenant'
     SchoolYears               = [int[]] @()
-    HasRouteQualifiedDataStores = `$false
+    HasRouteQualifiedDataStores = `$$([bool]$SchoolYearContexts)
 }
+if ($smokeCredentialCondition) {
+    `$result | Add-Member -NotePropertyName SmokeTestCredential -NotePropertyValue ([pscustomobject][ordered]@{ Key = 'SYNTH-KEY-1292'; Secret = 'SYNTH`$SECRET-1292'; ApplicationName = 'Smoke Test Application' })
+}
+`$result
 "@ | Set-Content -LiteralPath $scriptPath -Encoding utf8
             return $scriptPath
         }
@@ -514,7 +542,7 @@ $failureStatement
 
     AfterEach {
         if ($null -ne $script:repo) {
-            Get-Module bootstrap-wrapper, bootstrap-manifest, bootstrap-claims-gate, env-utility |
+            Get-Module bootstrap-wrapper, bootstrap-manifest, bootstrap-claims-gate, env-utility, SmokeTest, Dms-Management -All |
                 Where-Object { $_.Path -like "$($script:repo.RepoRoot)*" } |
                 Remove-Module -Force -ErrorAction SilentlyContinue
         }
@@ -1630,6 +1658,331 @@ $failure
             $seedIndex = $log.IndexOf(($log | Where-Object { $_ -like "seed*" }))
             $healthWaitIndex | Should -BeGreaterThan $provisionIndex
             $seedIndex | Should -BeGreaterThan $healthWaitIndex
+        }
+    }
+
+    # =========================================================================
+    # DMS-1292 - -AddSmokeTestCredentials delivery. The CMS returns the smoke application's secret
+    #   once; configure returns it in its structured result, and the wrapper must print the
+    #   operator summary exactly once at the end of every run that created it - including runs a
+    #   later phase fails - on the success stream only.
+    # =========================================================================
+    Context "smoke-test credential delivery (DMS-1292)" {
+        BeforeAll {
+            $script:syntheticSmokeKey = 'SYNTH-KEY-1292'
+            $script:syntheticSmokeSecret = 'SYNTH$SECRET-1292'
+            $script:smokeSummaryHeader = "--- Smoke test credentials ---"
+            $script:smokeIncompleteHeader = "--- Smoke test credentials (created before the failure; the stack is NOT ready) ---"
+            $script:smokePlaceholderLine = "Replace <dms-base-url> with the IDE-hosted DMS URL once it is healthy."
+
+            # Runs an entry script with every stream merged, collecting items as they arrive so the
+            # output written before a terminating error (the summary) is kept along with the error.
+            function script:Invoke-WrapperCapture {
+                param([string]$ScriptPath, [hashtable]$Arguments)
+
+                $collected = [System.Collections.Generic.List[object]]::new()
+                $caught = $null
+                try {
+                    & $ScriptPath @Arguments *>&1 | ForEach-Object { $collected.Add($_) }
+                }
+                catch {
+                    $caught = $_
+                }
+
+                $items = $collected.ToArray()
+                return [pscustomobject]@{
+                    Items = $items
+                    Strings = @($items | Where-Object { $_ -is [string] })
+                    Records = @($items | Where-Object { $_ -isnot [string] })
+                    Error = $caught
+                }
+            }
+
+            # The summary block: from its header to the end of the success strings. Asserts the header
+            # appears exactly once, which also proves nothing follows a second copy.
+            function script:Get-SummaryBlock {
+                param([string[]]$Strings, [string]$Header)
+
+                $headerIndexes = @(for ($i = 0; $i -lt $Strings.Count; $i++) { if ($Strings[$i] -like "--- Smoke test credentials*") { $i } })
+                $headerIndexes.Count | Should -Be 1 -Because "the summary must be printed exactly once"
+                $Strings[$headerIndexes[0]] | Should -BeExactly $Header
+                return @($Strings[$headerIndexes[0]..($Strings.Count - 1)])
+            }
+
+            function script:Get-CommandArgument {
+                param([string]$Line)
+
+                $tokens = $null
+                $errors = $null
+                $ast = [System.Management.Automation.Language.Parser]::ParseInput($Line.Trim(), [ref]$tokens, [ref]$errors)
+                $errors.Count | Should -Be 0
+                $command = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true)
+                $arguments = @{}
+                $elements = @($command.CommandElements)
+                for ($i = 1; $i -lt $elements.Count - 1; $i++) {
+                    if ($elements[$i] -is [System.Management.Automation.Language.CommandParameterAst]) {
+                        $elements[$i + 1].StringConstantType | Should -Be 'SingleQuoted'
+                        $arguments[$elements[$i].ParameterName] = $elements[$i + 1].Value
+                    }
+                }
+                return $arguments
+            }
+
+            function script:Assert-NoCredentialLeak {
+                param([object[]]$Records, [hashtable]$FilesBefore)
+
+                foreach ($record in $Records) {
+                    $text = $record | Out-String
+                    $text | Should -Not -Match ([regex]::Escape($script:syntheticSmokeKey))
+                    $text | Should -Not -Match ([regex]::Escape($script:syntheticSmokeSecret))
+                }
+
+                # Files this run created or modified; the staged configure stand-in embeds the synthetic
+                # credential by design and is excluded by being in the baseline. -Force enumerates the
+                # dot-prefixed .bootstrap tree on Linux.
+                $changed = @(
+                    Get-ChildItem -LiteralPath $script:repo.RepoRoot -Recurse -File -Force |
+                        Where-Object { -not $FilesBefore.ContainsKey($_.FullName) -or $FilesBefore[$_.FullName] -ne (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
+                )
+                # This fixture has no bootstrap-manifest.psm1, so the run's effective env is the composed
+                # data-standard overlay under the dot-prefixed .derived directory rather than
+                # .bootstrap/.env.derived.
+                @($changed | Where-Object { $_.Directory.Name -eq ".derived" }).Count | Should -BeGreaterThan 0 -Because "the run's derived env files must be among the scanned files, or the scan is vacuous"
+                foreach ($file in $changed) {
+                    Select-String -LiteralPath $file.FullName -SimpleMatch -Pattern $script:syntheticSmokeKey, $script:syntheticSmokeSecret |
+                        Should -BeNullOrEmpty -Because "'$($file.FullName)' was written by this run"
+                }
+            }
+
+            function script:Get-RepoFileSnapshot {
+                $snapshot = @{}
+                foreach ($file in @(Get-ChildItem -LiteralPath $script:repo.RepoRoot -Recurse -File -Force)) {
+                    $snapshot[$file.FullName] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+                }
+                return $snapshot
+            }
+
+            # A phase script that records its call and then fails with a specific exception type, so the
+            # error the wrapper rethrows can be compared by identity with a no-flag control run.
+            function script:New-FailingPhaseScript {
+                param([string]$FileName, [string]$CallLogPath, [string]$Message, [switch]$OnlyWhenDmsOnly)
+
+                $condition = if ($OnlyWhenDmsOnly) { "`$PSBoundParameters.ContainsKey('DmsOnly')" } else { "`$true" }
+                @"
+param([switch] `$DmsOnly, [switch] `$InfraOnly, [Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
+Add-Content -LiteralPath '$CallLogPath' -Value "$FileName dmsOnly=`$DmsOnly"
+if ($condition) { throw [System.IO.InvalidDataException]::new('$Message') }
+"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot $FileName) -Encoding utf8
+            }
+        }
+
+        It "prints the summary once, last, with the Docker DMS command, for a <Wrapper> run" -ForEach @(
+            @{ Wrapper = "local"; StartScript = "start-local-dms.ps1"; Entry = "WrapperScript" }
+            @{ Wrapper = "published"; StartScript = "start-published-dms.ps1"; Entry = "PublishedWrapperScript" }
+        ) {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-smoke-$Wrapper.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog -FileName $StartScript | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            $before = Get-RepoFileSnapshot
+
+            $run = Invoke-WrapperCapture -ScriptPath $script:repo.$Entry -Arguments @{ EnvironmentFile = $script:repo.EnvFile; AddSmokeTestCredentials = $true }
+
+            $run.Error | Should -BeNullOrEmpty
+            @(Get-Content -LiteralPath $callLog) | Should -Contain "start-dms DmsBaseUrl= rebuild=False writerGuidanceSuppressed=False"
+            $summary = Get-SummaryBlock -Strings $run.Strings -Header $script:smokeSummaryHeader
+            $summary | Should -Contain "Key:         SYNTH-KEY-1292"
+            $summary | Should -Contain 'Secret:      SYNTH$SECRET-1292'
+            $setLocation = Get-CommandArgument -Line ($summary | Where-Object { $_ -like "*Set-Location*" })
+            $setLocation["LiteralPath"] | Should -BeExactly ([System.IO.Path]::GetFullPath((Join-Path $script:repo.RepoRoot "eng/smoke_test")))
+            $command = Get-CommandArgument -Line ($summary | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" })
+            $command["BaseUrl"] | Should -BeExactly "http://localhost:18080"
+            $command["OAuthUrl"] | Should -BeExactly "http://localhost:18080/oauth/token"
+            $command["Key"] | Should -BeExactly $script:syntheticSmokeKey
+            $command["Secret"] | Should -BeExactly $script:syntheticSmokeSecret
+            $summary[-1] | Should -BeLike "Self-contained identity: set CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1*"
+            Assert-NoCredentialLeak -Records $run.Records -FilesBefore $before
+        }
+
+        It "prints a placeholder summary after the IDE guidance for the -InfraOnly terminal shape" {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-smoke-infraonly.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            $before = Get-RepoFileSnapshot
+
+            $run = Invoke-WrapperCapture -ScriptPath $script:repo.WrapperScript -Arguments @{ EnvironmentFile = $script:repo.EnvFile; InfraOnly = $true; AddSmokeTestCredentials = $true }
+
+            $run.Error | Should -BeNullOrEmpty
+            @(Get-Content -LiteralPath $callLog) | Where-Object { $_ -like "start-dms*" } | Should -BeNullOrEmpty
+            $summary = Get-SummaryBlock -Strings $run.Strings -Header $script:smokeSummaryHeader
+            $command = Get-CommandArgument -Line ($summary | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" })
+            $command["BaseUrl"] | Should -BeExactly "<dms-base-url>"
+            $summary | Should -Contain $script:smokePlaceholderLine
+            $guidanceIndex = [array]::FindIndex($run.Items, [Predicate[object]] { param($item) "$item" -like "*IDE Workflow: Pre-DMS preparation complete*" })
+            $headerIndex = [array]::IndexOf($run.Items, $script:smokeSummaryHeader)
+            $guidanceIndex | Should -BeGreaterOrEqual 0
+            $headerIndex | Should -BeGreaterThan $guidanceIndex -Because "the summary comes after the IDE next-step guidance"
+            Assert-NoCredentialLeak -Records $run.Records -FilesBefore $before
+        }
+
+        It "points the summary at the IDE-hosted DMS for -InfraOnly -DmsBaseUrl (LoadSeedData=<LoadSeedData>)" -ForEach @(
+            @{ LoadSeedData = $false }, @{ LoadSeedData = $true }
+        ) {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-smoke-healthwait.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingSeedScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            $arguments = @{ EnvironmentFile = $script:repo.EnvFile; InfraOnly = $true; DmsBaseUrl = "http://localhost:5198"; AddSmokeTestCredentials = $true }
+            if ($LoadSeedData) {
+                $arguments.LoadSeedData = $true
+                $arguments.SeedDataPath = $script:repo.DockerComposeRoot
+            }
+
+            $run = Invoke-WrapperCapture -ScriptPath $script:repo.WrapperScript -Arguments $arguments
+
+            $run.Error | Should -BeNullOrEmpty
+            @(@(Get-Content -LiteralPath $callLog) | Where-Object { $_ -like "seed*" }).Count | Should -Be ([int]$LoadSeedData)
+            $summary = Get-SummaryBlock -Strings $run.Strings -Header $script:smokeSummaryHeader
+            $command = Get-CommandArgument -Line ($summary | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" })
+            $command["BaseUrl"] | Should -BeExactly "http://localhost:5198"
+            $command["Secret"] | Should -BeExactly $script:syntheticSmokeSecret
+            $summary | Should -Not -Contain $script:smokePlaceholderLine
+        }
+
+        It "prints the summary after the seed phase of a Docker-hosted run" {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-smoke-seed.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            @"
+param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
+Add-Content -LiteralPath '$callLog' -Value 'seed'
+Write-Output 'seed-phase-output'
+"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "load-dms-seed-data.ps1") -Encoding utf8
+
+            $run = Invoke-WrapperCapture -ScriptPath $script:repo.WrapperScript -Arguments @{ EnvironmentFile = $script:repo.EnvFile; LoadSeedData = $true; SeedDataPath = $script:repo.DockerComposeRoot; AddSmokeTestCredentials = $true }
+
+            $run.Error | Should -BeNullOrEmpty
+            $seedIndex = [array]::IndexOf($run.Strings, "seed-phase-output")
+            $headerIndex = [array]::IndexOf($run.Strings, $script:smokeSummaryHeader)
+            $seedIndex | Should -BeGreaterOrEqual 0
+            $headerIndex | Should -BeGreaterThan $seedIndex
+            (Get-SummaryBlock -Strings $run.Strings -Header $script:smokeSummaryHeader) | Should -Contain 'Secret:      SYNTH$SECRET-1292'
+        }
+
+        It "prints tenant-qualified target lines and no command for a tenant-only result" {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-smoke-tenant.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog -Tenant "tenant-a" | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            $run = Invoke-WrapperCapture -ScriptPath $script:repo.WrapperScript -Arguments @{ EnvironmentFile = $script:repo.EnvFile; AddSmokeTestCredentials = $true }
+
+            $run.Error | Should -BeNullOrEmpty
+            $summary = Get-SummaryBlock -Strings $run.Strings -Header $script:smokeSummaryHeader
+            $summary | Should -Contain "Tenant:      tenant-a"
+            $summary | Should -Contain "DMS base:    http://localhost:18080/tenant-a"
+            $summary | Should -Contain "Token URL:   http://localhost:18080/tenant-a/oauth/token"
+            @($summary | Where-Object { $_ -like "Data store *" -or $_ -like "*Invoke-NonDestructiveApiTests.ps1*" }) | Should -BeNullOrEmpty
+        }
+
+        It "prints one target line per school-year data store and no command" {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-smoke-schoolyear.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog -DataStoreIds @(101, 102) -SchoolYearContexts | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            $run = Invoke-WrapperCapture -ScriptPath $script:repo.WrapperScript -Arguments @{ EnvironmentFile = $script:repo.EnvFile; AddSmokeTestCredentials = $true }
+
+            $run.Error | Should -BeNullOrEmpty
+            $summary = Get-SummaryBlock -Strings $run.Strings -Header $script:smokeSummaryHeader
+            $summary | Should -Contain "Data store 101 (school year 2024): DMS base http://localhost:18080/2024  token http://localhost:18080/2024/oauth/token"
+            $summary | Should -Contain "Data store 102 (school year 2025): DMS base http://localhost:18080/2025  token http://localhost:18080/2025/oauth/token"
+            @($summary | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" }) | Should -BeNullOrEmpty
+        }
+
+        It "prints no summary without the flag, including after a flagged run in the same session" {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-smoke-unflagged.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            $flagged = Invoke-WrapperCapture -ScriptPath $script:repo.WrapperScript -Arguments @{ EnvironmentFile = $script:repo.EnvFile; AddSmokeTestCredentials = $true }
+            $unflagged = Invoke-WrapperCapture -ScriptPath $script:repo.WrapperScript -Arguments @{ EnvironmentFile = $script:repo.EnvFile }
+
+            $flagged.Error | Should -BeNullOrEmpty
+            $unflagged.Error | Should -BeNullOrEmpty
+            Get-SummaryBlock -Strings $flagged.Strings -Header $script:smokeSummaryHeader | Out-Null
+            @($unflagged.Items | Where-Object { "$_" -like "*Smoke test credentials*" -or "$_" -like "*SYNTH*" }) | Should -BeNullOrEmpty
+            @(Get-Content -LiteralPath $callLog) | Where-Object { $_ -like "configure*" } | Should -Be @("configure smoke=True", "configure smoke=False")
+        }
+
+        It "stops before provisioning, without a summary, when configure returns no credential" {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-smoke-contract.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog -OmitSmokeTestCredential | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            $run = Invoke-WrapperCapture -ScriptPath $script:repo.WrapperScript -Arguments @{ EnvironmentFile = $script:repo.EnvFile; AddSmokeTestCredentials = $true }
+
+            $run.Error | Should -Not -BeNullOrEmpty
+            $run.Error.Exception.Message | Should -BeExactly "configure-local-data-store.ps1 was run with -AddSmokeTestCredentials but returned no usable SmokeTestCredential; values are withheld."
+            $log = @(Get-Content -LiteralPath $callLog)
+            $log | Should -Contain "configure smoke=True"
+            $log | Should -Not -Contain "provision"
+            @($run.Items | Where-Object { "$_" -like "*Smoke test credentials*" }) | Should -BeNullOrEmpty
+        }
+
+        It "prints the incomplete summary and rethrows the original error when <Phase> fails later" -ForEach @(
+            @{ Phase = "provision"; FileName = "provision-dms-schema.ps1"; DmsOnly = $false; Seed = $false }
+            @{ Phase = "DMS startup"; FileName = "start-local-dms.ps1"; DmsOnly = $true; Seed = $false }
+            @{ Phase = "seed"; FileName = "load-dms-seed-data.ps1"; DmsOnly = $false; Seed = $true }
+        ) {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-smoke-failure.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingSeedScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-FailingPhaseScript -FileName $FileName -CallLogPath $callLog -Message "$Phase boom" -OnlyWhenDmsOnly:$DmsOnly
+            $arguments = @{ EnvironmentFile = $script:repo.EnvFile }
+            if ($Seed) {
+                $arguments.LoadSeedData = $true
+                $arguments.SeedDataPath = $script:repo.DockerComposeRoot
+            }
+
+            # Baseline before both runs: the control run writes the derived env file first, and the
+            # flagged run may rewrite it with identical content.
+            $before = Get-RepoFileSnapshot
+            $control = Invoke-WrapperCapture -ScriptPath $script:repo.WrapperScript -Arguments $arguments
+            $flaggedArguments = $arguments.Clone()
+            $flaggedArguments.AddSmokeTestCredentials = $true
+            $run = Invoke-WrapperCapture -ScriptPath $script:repo.WrapperScript -Arguments $flaggedArguments
+
+            $control.Error | Should -Not -BeNullOrEmpty
+            @($control.Items | Where-Object { "$_" -like "*Smoke test credentials*" }) | Should -BeNullOrEmpty
+            $run.Error | Should -Not -BeNullOrEmpty
+            $run.Error.Exception | Should -BeOfType [System.IO.InvalidDataException]
+            $run.Error.Exception.Message | Should -BeExactly "$Phase boom"
+            $run.Error.FullyQualifiedErrorId | Should -BeExactly $control.Error.FullyQualifiedErrorId
+            $run.Error.Exception.GetType() | Should -Be $control.Error.Exception.GetType()
+            $summary = Get-SummaryBlock -Strings $run.Strings -Header $script:smokeIncompleteHeader
+            $summary | Should -Contain "Key:         SYNTH-KEY-1292"
+            $summary | Should -Contain 'Secret:      SYNTH$SECRET-1292'
+            @($summary | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" }) | Should -BeNullOrEmpty
+            # The error itself must not carry the credential.
+            ($run.Error | Out-String) + $run.Error.Exception.ToString() | Should -Not -Match 'SYNTH'
+            Assert-NoCredentialLeak -Records $run.Records -FilesBefore $before
         }
     }
 

@@ -199,11 +199,15 @@ if ($InfraOnly -and -not $SuppressWriterGuidance) { Write-Information 'early wri
 '@
         foreach ($name in @('start-local-dms.ps1', 'start-published-dms.ps1')) { $start | Set-Content (Join-Path $script:sandbox $name) }
         @'
-param($EnvironmentFile, $DatabaseEngine, [switch]$SeparateConfigDatabase, $DataStoreDatabaseName, [switch]$NoDataStore)
+param($EnvironmentFile, $DatabaseEngine, [switch]$SeparateConfigDatabase, $DataStoreDatabaseName, [switch]$NoDataStore, [switch]$AddSmokeTestCredentials)
 Add-Content (Join-Path $PSScriptRoot 'calls') "configure:$DatabaseEngine`:$DataStoreDatabaseName"
 if (Test-Path (Join-Path $PSScriptRoot 'configure-failure')) { throw 'Configure failed' }
 $id = if (Test-Path (Join-Path $PSScriptRoot 'mismatch')) { 43 } else { 42 }
-return [pscustomobject]@{ SelectedDataStoreIds = @($id); HasRouteQualifiedDataStores = $false }
+$result = [pscustomobject]@{ SelectedDataStoreIds = @($id); HasRouteQualifiedDataStores = $false; Tenant = ''; RouteContexts = @() }
+if ($AddSmokeTestCredentials) {
+    $result | Add-Member -NotePropertyName SmokeTestCredential -NotePropertyValue ([pscustomobject][ordered]@{ Key = 'SYNTH-KEY-1292'; Secret = 'SYNTH$SECRET-1292'; ApplicationName = 'Smoke Test Application' })
+}
+return $result
 '@ | Set-Content (Join-Path $script:sandbox 'configure-local-data-store.ps1')
         @'
 param($EnvironmentFile, $DataStoreId, $DatabaseEngine, [switch]$SeparateConfigDatabase, $CdcBindingStatePath,
@@ -468,6 +472,55 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
         $script:arguments.Remove('LoadSeedData')
         & (Join-Path $script:sandbox 'bootstrap-local-dms.ps1') @script:arguments -InfraOnly
         @(Get-Content (Join-Path $script:sandbox 'calls')).Count | Should -Be 4
+    }
+
+    Context 'smoke-test credential delivery (DMS-1292)' {
+        BeforeAll {
+            # The wrapper imports the real smoke-test module from ../smoke_test/modules beside its own
+            # directory, and that module imports ../../Dms-Management.psm1.
+            $script:smokeStageRoot = Split-Path -Parent $script:sandbox
+            New-Item -ItemType Directory (Join-Path $script:smokeStageRoot 'smoke_test/modules') -Force | Out-Null
+            Copy-Item (Join-Path $script:composeRoot '../smoke_test/modules/SmokeTest.psm1') (Join-Path $script:smokeStageRoot 'smoke_test/modules')
+            Copy-Item (Join-Path $script:composeRoot '../Dms-Management.psm1') $script:smokeStageRoot
+        }
+        AfterAll {
+            Get-Module SmokeTest, Dms-Management -All | Where-Object {
+                $_.Path -and $_.Path.StartsWith($script:smokeStageRoot + [IO.Path]::DirectorySeparatorChar)
+            } | Remove-Module -Force
+        }
+
+        It 'prints the summary at the CDC InfraOnly return' {
+            $script:arguments.Remove('LoadSeedData')
+            $output = @(& (Join-Path $script:sandbox 'bootstrap-local-dms.ps1') @script:arguments -InfraOnly -AddSmokeTestCredentials)
+
+            @(Get-Content (Join-Path $script:sandbox 'calls')).Count | Should -Be 4
+            $strings = @($output | Where-Object { $_ -is [string] })
+            @($strings | Where-Object { $_ -like '--- Smoke test credentials*' }) | Should -Be @('--- Smoke test credentials ---')
+            $strings | Should -Contain 'Key:         SYNTH-KEY-1292'
+            $strings | Should -Contain 'Secret:      SYNTH$SECRET-1292'
+            $strings | Should -Contain "  ./Invoke-NonDestructiveApiTests.ps1 -BaseUrl '<dms-base-url>' -OAuthUrl '<dms-base-url>/oauth/token' -Key 'SYNTH-KEY-1292' -Secret 'SYNTH`$SECRET-1292'"
+            $strings[-1] | Should -BeLike 'Self-contained identity:*'
+        }
+
+        It 'prints the incomplete summary and keeps the original error when provisioning fails' {
+            '' | Set-Content (Join-Path $script:sandbox 'provision-failure')
+            $collected = [System.Collections.Generic.List[object]]::new()
+            $caught = $null
+            try {
+                & (Join-Path $script:sandbox 'bootstrap-local-dms.ps1') @script:arguments -AddSmokeTestCredentials | ForEach-Object { $collected.Add($_) }
+            }
+            catch {
+                $caught = $_
+            }
+
+            $caught | Should -Not -BeNullOrEmpty
+            $caught.Exception.Message | Should -BeExactly 'Provision failed'
+            @(Get-Content (Join-Path $script:sandbox 'calls') | Where-Object { $_ -match '^(cdc|dms|seed):' }).Count | Should -Be 0
+            $strings = @($collected | Where-Object { $_ -is [string] })
+            @($strings | Where-Object { $_ -like '--- Smoke test credentials*' }) | Should -Be @('--- Smoke test credentials (created before the failure; the stack is NOT ready) ---')
+            $strings | Should -Contain 'Secret:      SYNTH$SECRET-1292'
+            ($caught | Out-String) | Should -Not -Match 'SYNTH'
+        }
     }
 
     It 'rejects <flag> before infrastructure' -ForEach @(

@@ -481,6 +481,53 @@ function Resolve-WrapperSelectedDataStoreIds {
     throw "configure-local-data-store.ps1 result is missing SelectedDataStoreIds (and the DataStoreIds alias)."
 }
 
+function Resolve-WrapperSmokeTestSummary {
+    <#
+    .SYNOPSIS
+    Formats the smoke-test credential summary from configure-local-data-store.ps1's structured
+    result, once for a completed run and once for a run that fails after the credential was
+    created. Both are built here, right after configure, so printing them later needs no import,
+    environment read, validation, or formatting. Throws a value-free contract error when the result
+    carries no usable SmokeTestCredential.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        $ConfigureResult,
+
+        [string]$DmsBaseUrl,
+
+        [switch]$SelfContainedIdentity
+    )
+
+    $readProperty = {
+        param([string]$Name)
+        if ($ConfigureResult -is [System.Collections.IDictionary]) {
+            if ($ConfigureResult.Contains($Name)) { $ConfigureResult[$Name] }
+        }
+        elseif ($null -ne $ConfigureResult -and $null -ne $ConfigureResult.PSObject.Properties[$Name]) {
+            $ConfigureResult.PSObject.Properties[$Name].Value
+        }
+    }
+
+    $summaryArgs = @{
+        Credential = & $readProperty "SmokeTestCredential"
+        DmsBaseUrl = $DmsBaseUrl
+        Tenant = [string](& $readProperty "Tenant")
+        RouteContexts = @(& $readProperty "RouteContexts")
+        SelfContainedIdentity = $SelfContainedIdentity
+    }
+
+    try {
+        return [pscustomobject]@{
+            Complete = @(Get-SmokeTestCredentialSummary @summaryArgs)
+            Incomplete = @(Get-SmokeTestCredentialSummary @summaryArgs -Incomplete)
+        }
+    }
+    catch {
+        throw "configure-local-data-store.ps1 was run with -AddSmokeTestCredentials but returned no usable SmokeTestCredential; values are withheld."
+    }
+}
+
 function Invoke-BootstrapWrapper {
     <#
     .SYNOPSIS
@@ -711,6 +758,17 @@ function Invoke-BootstrapWrapper {
         $cdcRetry = Get-CdcBootstrapRetryHandoff -Project $cdcProject -StatePath $CdcBindingStatePath -InputSettingsPath $CdcSettingsPath -DatabaseName $DataStoreDatabaseName
     }
 
+    # -AddSmokeTestCredentials delivery state. The CMS returns the application secret only once, so
+    # the summary is formatted right after configure and printed by the finally block below on every
+    # return path, including a later phase failure. The formatter module is loaded here, before any
+    # phase runs, so a missing module fails while no credential exists yet.
+    $smokeTestSummary = $null
+    $smokeTestSummaryBaseUrl = ""
+    $wrapperFailed = $false
+    if ($AddSmokeTestCredentials) {
+        Import-Module (Join-Path $PSScriptRoot "../smoke_test/modules/SmokeTest.psm1") -Force
+    }
+
     Push-Location $PSScriptRoot
     try {
         $baseEnvFile = Resolve-WrapperEnvironmentFilePath -BaseEnvironmentFile $EnvironmentFile
@@ -928,6 +986,19 @@ function Invoke-BootstrapWrapper {
             Assert-BootstrapCdcOfflineOwnership @cdcOwnership -InfrastructureReady
         }
         else {
+            # Where the printed smoke-test command points: the IDE-hosted DMS when one was named, a
+            # placeholder for the IDE shape that has none yet, otherwise the Docker-hosted DMS from the
+            # effective env. Resolved before infrastructure starts, while no credential exists yet. The
+            # isolated wrapper Pester fixtures without env-utility fall back to the placeholder.
+            if ($AddSmokeTestCredentials) {
+                if ($dmsBaseUrlSupplied) {
+                    $smokeTestSummaryBaseUrl = $DmsBaseUrl
+                }
+                elseif (-not $InfraOnly -and (Get-Command Resolve-DockerLocalDmsBaseUrl -ErrorAction SilentlyContinue)) {
+                    $smokeTestSummaryBaseUrl = Resolve-DockerLocalDmsBaseUrl -EnvValues (ReadValuesFromEnvFile $effectiveEnvFile)
+                }
+            }
+
             if ($EnableKafkaCdc) {
                 $cdcHandoff = New-BootstrapCdcHandoff -Settings $cdcSettings -InputSettingsPath $CdcSettingsPath -StatePath $CdcBindingStatePath -EnvironmentFile $effectiveEnvFile -Project $cdcProject -DatabaseName $DataStoreDatabaseName -IdentityProvider $resolvedIdentityProvider
                 $cdcHandoff | Add-Member -NotePropertyName OriginalEnvironmentFile -NotePropertyValue $callerEnvFile -Force
@@ -1024,6 +1095,14 @@ function Invoke-BootstrapWrapper {
                 throw "configure-local-data-store.ps1 must return exactly one structured result object. Returned $($configurationResults.Count)."
             }
             $configured = $configurationResults[0]
+            if ($AddSmokeTestCredentials) {
+                # Validated and formatted before anything else can fail, so the finally block only
+                # prints these cached lines.
+                $smokeTestSummary = Resolve-WrapperSmokeTestSummary `
+                    -ConfigureResult $configured `
+                    -DmsBaseUrl $smokeTestSummaryBaseUrl `
+                    -SelfContainedIdentity:($resolvedIdentityProvider -eq "self-contained")
+            }
             $configuredDataStoreIds = [long[]]@(Resolve-WrapperSelectedDataStoreIds -ConfigureResult $configured)
             if ($EnableKafkaCdc -and ($configuredDataStoreIds.Count -ne 1 -or
                 [string]$configuredDataStoreIds[0] -cne $cdcSettings.Cdc.DataStoreId)) {
@@ -1229,8 +1308,24 @@ function Invoke-BootstrapWrapper {
             throw "load-dms-seed-data.ps1 failed with exit code $LASTEXITCODE."
         }
     }
+    catch {
+        $wrapperFailed = $true
+        throw
+    }
     finally {
         Pop-Location
+
+        # The explicit operator-facing summary: success-stream output only, never a log statement.
+        # Only the cached lines are written here - no import, environment read, validation, or
+        # formatting - so a supported later failure still propagates unchanged.
+        if ($null -ne $smokeTestSummary) {
+            if ($wrapperFailed) {
+                $smokeTestSummary.Incomplete
+            }
+            else {
+                $smokeTestSummary.Complete
+            }
+        }
     }
 }
 
