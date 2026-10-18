@@ -328,7 +328,8 @@ entry point hands it to you in exactly one place.
   * then prints the summary.
   * It does **not** provision the DMS schema. Use it against an already-provisioned database, or use `bootstrap-published-dms.ps1`.
 
-For a single route-unqualified data store, the summary includes a copyable command. Every value is a
+For a completed run with a single route-unqualified data store and no tenant, the summary includes a
+copyable command. Every value is a
 single-quoted PowerShell literal, so characters such as `$` in a generated secret stay literal:
 
 ```text

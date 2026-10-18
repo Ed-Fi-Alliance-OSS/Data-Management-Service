@@ -89,6 +89,9 @@ The `Usage` section above is a complete example.
 The bootstrap scripts' `-AddSmokeTestCredentials` flag also calls `Get-SmokeTestCredential` and
 delivers the key and secret to you:
 - `configure-local-data-store.ps1` returns them in the `SmokeTestCredential` property of its result.
-- `bootstrap-local-dms.ps1`, `bootstrap-published-dms.ps1` and `start-published-dms.ps1` print a summary with a copyable `Invoke-NonDestructiveApiTests.ps1` command, built by `Get-SmokeTestCredentialSummary`.
+- `bootstrap-local-dms.ps1`, `bootstrap-published-dms.ps1` and `start-published-dms.ps1` print a credential summary built by `Get-SmokeTestCredentialSummary`. What follows the key and secret depends on the run:
+  - **Completed run, no tenant, single route-unqualified data store:** a copyable `Invoke-NonDestructiveApiTests.ps1` command. If the DMS URL is not known yet, the command uses a `<dms-base-url>` placeholder and the summary says to replace it.
+  - **Tenant or school-year data stores:** the qualified DMS base and token URLs instead of a command. Smoke runs against those routes have not been validated.
+  - **Run that failed after the credential was created:** no run instructions.
 
 See "Smoke-test credentials" in `eng/docker-compose/README.md`.
