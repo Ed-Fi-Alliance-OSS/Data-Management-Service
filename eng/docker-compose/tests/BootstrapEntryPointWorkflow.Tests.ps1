@@ -1787,7 +1787,8 @@ if ($condition) { throw [System.IO.InvalidDataException]::new('$Message') }
             New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
             $before = Get-RepoFileSnapshot
 
-            $run = Invoke-WrapperCapture -ScriptPath $script:repo.$Entry -Arguments @{ EnvironmentFile = $script:repo.EnvFile; AddSmokeTestCredentials = $true }
+            # Verbose and Debug are enabled so a credential written to either stream would be captured.
+            $run = Invoke-WrapperCapture -ScriptPath $script:repo.$Entry -Arguments @{ EnvironmentFile = $script:repo.EnvFile; AddSmokeTestCredentials = $true; Verbose = $true; Debug = $true }
 
             $run.Error | Should -BeNullOrEmpty
             @(Get-Content -LiteralPath $callLog) | Should -Contain "start-dms DmsBaseUrl= rebuild=False writerGuidanceSuppressed=False"
@@ -1813,7 +1814,7 @@ if ($condition) { throw [System.IO.InvalidDataException]::new('$Message') }
             New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
             $before = Get-RepoFileSnapshot
 
-            $run = Invoke-WrapperCapture -ScriptPath $script:repo.WrapperScript -Arguments @{ EnvironmentFile = $script:repo.EnvFile; InfraOnly = $true; AddSmokeTestCredentials = $true }
+            $run = Invoke-WrapperCapture -ScriptPath $script:repo.WrapperScript -Arguments @{ EnvironmentFile = $script:repo.EnvFile; InfraOnly = $true; AddSmokeTestCredentials = $true; Verbose = $true; Debug = $true }
 
             $run.Error | Should -BeNullOrEmpty
             @(Get-Content -LiteralPath $callLog) | Where-Object { $_ -like "start-dms*" } | Should -BeNullOrEmpty
@@ -1943,6 +1944,21 @@ Write-Output 'seed-phase-output'
             @($run.Items | Where-Object { "$_" -like "*Smoke test credentials*" }) | Should -BeNullOrEmpty
         }
 
+        It "rejects a summary base URL with control characters before configure creates any credential" {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-smoke-bad-base.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            $run = Invoke-WrapperCapture -ScriptPath $script:repo.WrapperScript -Arguments @{ EnvironmentFile = $script:repo.EnvFile; InfraOnly = $true; DmsBaseUrl = "http://localhost:5198`n"; AddSmokeTestCredentials = $true }
+
+            $run.Error | Should -Not -BeNullOrEmpty
+            $run.Error.Exception.Message | Should -BeExactly "The DMS base URL for the -AddSmokeTestCredentials summary contains control characters; the value is withheld."
+            Test-Path -LiteralPath $callLog | Should -BeFalse -Because "no phase - in particular not configure, which creates the credential - may run"
+            @($run.Items | Where-Object { "$_" -like "*Smoke test credentials*" -or "$_" -like "*SmokeTestCredential*" }) | Should -BeNullOrEmpty
+        }
+
         It "prints the incomplete summary and rethrows the original error when <Phase> fails later" -ForEach @(
             @{ Phase = "provision"; FileName = "provision-dms-schema.ps1"; DmsOnly = $false; Seed = $false }
             @{ Phase = "DMS startup"; FileName = "start-local-dms.ps1"; DmsOnly = $true; Seed = $false }
@@ -1955,7 +1971,7 @@ Write-Output 'seed-phase-output'
             New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
             New-RecordingSeedScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
             New-FailingPhaseScript -FileName $FileName -CallLogPath $callLog -Message "$Phase boom" -OnlyWhenDmsOnly:$DmsOnly
-            $arguments = @{ EnvironmentFile = $script:repo.EnvFile }
+            $arguments = @{ EnvironmentFile = $script:repo.EnvFile; Verbose = $true; Debug = $true }
             if ($Seed) {
                 $arguments.LoadSeedData = $true
                 $arguments.SeedDataPath = $script:repo.DockerComposeRoot

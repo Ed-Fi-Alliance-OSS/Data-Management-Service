@@ -997,6 +997,12 @@ function Invoke-BootstrapWrapper {
                 elseif (-not $InfraOnly -and (Get-Command Resolve-DockerLocalDmsBaseUrl -ErrorAction SilentlyContinue)) {
                     $smokeTestSummaryBaseUrl = Resolve-DockerLocalDmsBaseUrl -EnvValues (ReadValuesFromEnvFile $effectiveEnvFile)
                 }
+
+                # The summary formatter rejects a base URL with control characters. Reject it here, before
+                # configure creates the credential, so the secret is never created without a way to print it.
+                if ($smokeTestSummaryBaseUrl -match '\p{Cc}') {
+                    throw "The DMS base URL for the -AddSmokeTestCredentials summary contains control characters; the value is withheld."
+                }
             }
 
             if ($EnableKafkaCdc) {
