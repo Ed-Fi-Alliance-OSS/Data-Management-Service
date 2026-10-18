@@ -98,8 +98,8 @@ carried forward into v8.0 will be covered separately in a v8.1 companion PRD.
 ## 2. Enterprise / System Context
 
 The diagram below shows the Ed-Fi API platform's system context: the two
-host-operated services (DMS and the Configuration Service), their respective databases, and the
-external actors that connect to them.
+host-operated services (Ed-Fi API and the API Configuration Service), their
+respective databases, and the external actors that connect to them.
 
 ```mermaid
 graph TB
@@ -126,16 +126,17 @@ graph TB
 ```
 
 - **Client applications** (vendor/integrator systems such as SIS, assessment, or
-  gradebook products) connect to the **Ed-Fi API service (DMS)** to transmit and
+  gradebook products) connect to the **Ed-Fi API service** to transmit and
   retrieve student data.
 - The **Ed-Fi Admin App** user interface connects to the **Ed-Fi API Configuration
   Service** for managing configuration data (client
   credentials, claim sets, Profiles, tenant and environment routing).
-- **DMS** connects to **the Configuration Service** to retrieve and cache configuration information
-  (e.g., credentials, tenant/environment routing, Profile assignments) needed to
-  authorize and route incoming requests.
-- **DMS** and **the Configuration Service** each have their own database instance. Hosts MAY
-  optionally colocate the DMS and Configuration Service tables within a single physical database
+- **Ed-Fi API** connects to **the Configuration Service** to retrieve and cache
+  configuration information (e.g., credentials, tenant/environment routing,
+  Profile assignments) needed to authorize and route incoming requests.
+- **Ed-Fi API** and **the Configuration Service** each have their own database
+  instance. Hosts MAY optionally colocate the Ed-Fi API and Configuration Service
+  tables within a single physical database
   instance, though they remain logically distinct.
 
 This system-context split — a separate configuration/administrative service, no

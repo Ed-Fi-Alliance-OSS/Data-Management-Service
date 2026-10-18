@@ -5,7 +5,7 @@
 > **Product**: Ed-Fi API ("DMS") \
 > **Repository:** Ed-Fi-Alliance-OSS/Data-Management-Service \
 > **Jira Project:** DMS \
-> **Companion document:** [Ed-Fi API v8.0 Platform Capabilities (Implemented)](./PRD-v8.0.md)
+> **Companion document:** [Ed-Fi API v8.0 Platform Capabilities (Implemented)](./PRD-Ed-Fi-API-v8.0.md)
 
 ## 1. Product Overview
 
@@ -18,7 +18,7 @@ as a placeholder for whichever release ultimately restores them — so that
 engineering, product, and the community can prioritize closing the gap.
 
 This is a **gap-driven, forward-looking PRD**: unlike the [v8.0 companion
-PRD](./PRD-v8.0.md), which documents implemented behavior, the
+PRD](./PRD-Ed-Fi-API-v8.0.md), which documents implemented behavior, the
 requirements below describe capabilities the platform SHOULD or SHALL eventually
 provide, based on what the prior-generation platform already proved out. Some
 items are firm carryover requirements; others are flagged as open questions
