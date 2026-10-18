@@ -2003,6 +2003,226 @@ Write-Output 'seed-phase-output'
     }
 
     # =========================================================================
+    # DMS-1292 - direct start-published-dms.ps1 -AddSmokeTestCredentials. Runs the REAL start script
+    #   with docker, Start-Sleep and the identity setup script stubbed and the Configuration Service
+    #   calls answered by a recording Dms-Management.psm1 stand-in, so the real SmokeTest.psm1 creates
+    #   and formats the credential. The application must be created after the data stores, for the
+    #   data stores this run registered, in the configured tenant, and its summary printed.
+    # =========================================================================
+    Context "direct published start smoke-test credentials (DMS-1292)" {
+        BeforeEach {
+            foreach ($fileName in @('start-published-dms.ps1', 'bootstrap-manifest.psm1', 'bootstrap-claims-gate.psm1')) {
+                Copy-DockerComposeFile -FileName $fileName -Destination $script:repo.DockerComposeRoot
+            }
+            $script:cmsCallLog = Join-Path $script:repo.RepoRoot "cms-calls.txt"
+            @"
+param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
+Add-Content -LiteralPath '$($script:cmsCallLog)' -Value 'setup-openiddict'
+`$global:LASTEXITCODE = 0
+"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "setup-openiddict.ps1") -Encoding utf8
+
+            # Configuration Service stand-in, replacing the staged Dms-Management.psm1 that both the start
+            # script and SmokeTest.psm1 import. It records what each call received - never a credential -
+            # and fails data-store creation when the fail-datastore marker exists.
+            @"
+function Write-StubCall { param([string]`$Line) Add-Content -LiteralPath '$($script:cmsCallLog)' -Value `$Line }
+function Add-CmsClient { param(`$CmsUrl, `$ClientId) Write-StubCall "Add-CmsClient `$ClientId" }
+function Get-CmsToken { 'token' }
+function Add-Tenant { param(`$CmsUrl, `$AccessToken, `$TenantName) Write-StubCall "Add-Tenant `$TenantName"; [long]1 }
+function ConvertTo-PostgresCredential { param(`$UserName, `$Secret) [pscredential]::new(`$UserName, (ConvertTo-SecureString 'stub' -AsPlainText -Force)) }
+function New-DataStoreConnectionString { 'stub-connection-string' }
+function Add-DataStore {
+    param(`$CmsUrl, `$AccessToken, `$Name, `$Tenant)
+    Write-StubCall "Add-DataStore tenant=`$Tenant"
+    if (Test-Path -LiteralPath '$(Join-Path $script:repo.RepoRoot "fail-datastore")') { throw 'data store rejected' }
+    [long]303
+}
+function Add-DmsSchoolYearInstances {
+    param(`$CmsUrl, `$AccessToken, `$StartYear, `$EndYear, `$Tenant)
+    Write-StubCall "Add-DmsSchoolYearInstances `$StartYear-`$EndYear tenant=`$Tenant"
+    @([pscustomobject]@{ DataStoreId = [long]101; Year = 2024 }, [pscustomobject]@{ DataStoreId = [long]102; Year = 2025 })
+}
+function Get-DataStore { param(`$CmsUrl, `$AccessToken, `$Tenant) Write-StubCall "Get-DataStore tenant=`$Tenant"; @([pscustomobject]@{ id = [long]77 }) }
+function Find-CmsVendorByCompany { `$null }
+function Add-Vendor { [long]9 }
+function Add-Application {
+    param(`$CmsUrl, `$ApplicationName, `$VendorId, `$DataStoreIds, `$Tenant)
+    Write-StubCall "Add-Application ids=`$(`$DataStoreIds -join ',') tenant=`$Tenant"
+    @{ Id = [long]5; Key = 'SYNTH-KEY-1292'; Secret = 'SYNTH`$SECRET-1292' }
+}
+Export-ModuleMember -Function *
+"@ | Set-Content -LiteralPath (Join-Path $script:repo.RepoRoot "eng/Dms-Management.psm1") -Encoding utf8
+
+            $script:dockerCommands = [Collections.Generic.List[string]]::new()
+            $recordedCommands = $script:dockerCommands
+            $stub = {
+                $recordedCommands.Add((@($args | ForEach-Object { $_ }) -join ' '))
+                $global:LASTEXITCODE = 0
+                if ($args[0] -eq 'network') { return 'dms' }
+            }.GetNewClosure()
+            Set-Item function:script:docker -Value $stub
+            Mock Start-Sleep { }
+
+            # The start script writes these into the process environment and does not restore them.
+            $script:startScriptEnvironmentNames = @('CONFIGURATION_SERVICE_IDENTITY_PROVIDER', 'OAUTH_TOKEN_ENDPOINT', 'DMS_JWT_AUTHORITY', 'DMS_JWT_METADATA_ADDRESS', 'CONFIGURATION_SERVICE_IDENTITY_AUTHORITY')
+            $script:startScriptEnvironment = @{}
+            foreach ($name in $script:startScriptEnvironmentNames) {
+                $script:startScriptEnvironment[$name] = [Environment]::GetEnvironmentVariable($name)
+            }
+
+            $script:multiTenantEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.multitenant"
+            Get-Content -LiteralPath $script:repo.EnvFile | Set-Content -LiteralPath $script:multiTenantEnvFile -Encoding utf8
+            Add-Content -LiteralPath $script:multiTenantEnvFile -Value @("CONFIGURATION_SERVICE_MULTI_TENANCY=true", "DMS_CONFIGURATION_SERVICE_TENANT=tenant-a")
+
+            function script:Invoke-StartPublishedCapture {
+                param([hashtable]$Arguments)
+
+                $collected = [System.Collections.Generic.List[object]]::new()
+                $caught = $null
+                try {
+                    & (Join-Path $script:repo.DockerComposeRoot "start-published-dms.ps1") @Arguments *>&1 | ForEach-Object { $collected.Add($_) }
+                }
+                catch {
+                    $caught = $_
+                }
+                $items = $collected.ToArray()
+                return [pscustomobject]@{
+                    Strings = @($items | Where-Object { $_ -is [string] })
+                    Records = @($items | Where-Object { $_ -isnot [string] })
+                    Error = $caught
+                    CmsCalls = @(if (Test-Path -LiteralPath $script:cmsCallLog) { Get-Content -LiteralPath $script:cmsCallLog })
+                }
+            }
+
+            function script:Get-StartPublishedSummary {
+                param([string[]]$Strings)
+
+                $headerIndexes = @(for ($i = 0; $i -lt $Strings.Count; $i++) { if ($Strings[$i] -like "--- Smoke test credentials*") { $i } })
+                $headerIndexes.Count | Should -Be 1 -Because "the summary must be printed exactly once"
+                $headerIndexes[0] | Should -BeGreaterThan 0
+                $Strings[$headerIndexes[0] - 1] | Should -BeExactly "Direct start does not provision the DMS schema; the database must already be provisioned (provision-dms-schema.ps1), or use bootstrap-published-dms.ps1."
+                return @($Strings[$headerIndexes[0]..($Strings.Count - 1)])
+            }
+        }
+
+        AfterEach {
+            Remove-Item function:script:docker -Force -ErrorAction SilentlyContinue
+            foreach ($name in $script:startScriptEnvironmentNames) {
+                [Environment]::SetEnvironmentVariable($name, $script:startScriptEnvironment[$name])
+            }
+        }
+
+        It "creates the credential after the default data store, for that store and the tenant, and prints the tenant summary" {
+            $run = Invoke-StartPublishedCapture -Arguments @{ EnvironmentFile = $script:multiTenantEnvFile; AddSmokeTestCredentials = $true }
+
+            $run.Error | Should -BeNullOrEmpty
+            $dataStoreIndex = [array]::IndexOf($run.CmsCalls, "Add-DataStore tenant=tenant-a")
+            $applicationIndex = [array]::IndexOf($run.CmsCalls, "Add-Application ids=303 tenant=tenant-a")
+            $dataStoreIndex | Should -BeGreaterOrEqual 0
+            $applicationIndex | Should -BeGreaterThan $dataStoreIndex -Because "the application must be created after the data store it is associated with"
+            $summary = Get-StartPublishedSummary -Strings $run.Strings
+            $summary | Should -Contain "Key:         SYNTH-KEY-1292"
+            $summary | Should -Contain 'Secret:      SYNTH$SECRET-1292'
+            $summary | Should -Contain "Tenant:      tenant-a"
+            $summary | Should -Contain "DMS base:    http://localhost:18080/tenant-a"
+            $summary | Should -Contain "Token URL:   http://localhost:18080/tenant-a/oauth/token"
+            @($summary | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" -or $_ -like "Data store *" }) | Should -BeNullOrEmpty
+            $run.Strings | Should -Not -Contain "Credential values were returned to the caller and were not written to logs."
+        }
+
+        It "prints the runnable command for a single-tenant default run" {
+            $run = Invoke-StartPublishedCapture -Arguments @{ EnvironmentFile = $script:repo.EnvFile; AddSmokeTestCredentials = $true }
+
+            $run.Error | Should -BeNullOrEmpty
+            $run.CmsCalls | Should -Contain "Add-Application ids=303 tenant="
+            $summary = Get-StartPublishedSummary -Strings $run.Strings
+            $summary | Should -Contain "  Set-Location -LiteralPath '$([System.IO.Path]::GetFullPath((Join-Path $script:repo.RepoRoot 'eng/smoke_test')))'"
+            $summary | Should -Contain "  ./Invoke-NonDestructiveApiTests.ps1 -BaseUrl 'http://localhost:18080' -OAuthUrl 'http://localhost:18080/oauth/token' -Key 'SYNTH-KEY-1292' -Secret 'SYNTH`$SECRET-1292'"
+            $summary[-1] | Should -BeLike "Self-contained identity:*"
+        }
+
+        It "creates the credential for every school-year data store this run registered" {
+            $run = Invoke-StartPublishedCapture -Arguments @{ EnvironmentFile = $script:repo.EnvFile; SchoolYearRange = "2024-2025"; AddSmokeTestCredentials = $true }
+
+            $run.Error | Should -BeNullOrEmpty
+            $run.CmsCalls | Should -Contain "Add-DmsSchoolYearInstances 2024-2025 tenant="
+            $run.CmsCalls | Should -Contain "Add-Application ids=101,102 tenant="
+            $summary = Get-StartPublishedSummary -Strings $run.Strings
+            $summary | Should -Contain "Data store 101 (school year 2024): DMS base http://localhost:18080/2024  token http://localhost:18080/2024/oauth/token"
+            $summary | Should -Contain "Data store 102 (school year 2025): DMS base http://localhost:18080/2025  token http://localhost:18080/2025/oauth/token"
+            @($summary | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" }) | Should -BeNullOrEmpty
+        }
+
+        It "keeps the tenant-scoped first-data-store fallback with -NoDataStore" {
+            $run = Invoke-StartPublishedCapture -Arguments @{ EnvironmentFile = $script:multiTenantEnvFile; NoDataStore = $true; AddSmokeTestCredentials = $true }
+
+            $run.Error | Should -BeNullOrEmpty
+            @($run.CmsCalls | Where-Object { $_ -like "Add-DataStore*" -or $_ -like "Add-DmsSchoolYearInstances*" }) | Should -BeNullOrEmpty
+            $run.CmsCalls | Should -Contain "Get-DataStore tenant=tenant-a"
+            $run.CmsCalls | Should -Contain "Add-Application ids=77 tenant=tenant-a"
+            (Get-StartPublishedSummary -Strings $run.Strings) | Should -Contain "Tenant:      tenant-a"
+        }
+
+        It "creates no credential and prints no summary without the flag" {
+            $run = Invoke-StartPublishedCapture -Arguments @{ EnvironmentFile = $script:repo.EnvFile }
+
+            $run.Error | Should -BeNullOrEmpty
+            $run.CmsCalls | Should -Contain "Add-DataStore tenant="
+            @($run.CmsCalls | Where-Object { $_ -like "Add-Application*" }) | Should -BeNullOrEmpty
+            @($run.Strings | Where-Object { $_ -like "*Smoke test credentials*" -or $_ -like "*SYNTH*" }) | Should -BeNullOrEmpty
+        }
+
+        It "rejects a DMS base URL with control characters before creating the credential" {
+            $badBaseEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.badbase"
+            Get-Content -LiteralPath $script:repo.EnvFile | Where-Object { $_ -notlike "DMS_HTTP_PORTS=*" } | Set-Content -LiteralPath $badBaseEnvFile -Encoding utf8
+            Add-Content -LiteralPath $badBaseEnvFile -Value "DMS_HTTP_PORTS=18080$([char]7)"
+
+            $run = Invoke-StartPublishedCapture -Arguments @{ EnvironmentFile = $badBaseEnvFile; AddSmokeTestCredentials = $true }
+
+            $run.Error | Should -Not -BeNullOrEmpty
+            $run.Error.Exception.Message | Should -BeExactly "The DMS base URL for the -AddSmokeTestCredentials summary contains control characters; the value is withheld."
+            @($run.CmsCalls | Where-Object { $_ -like "Add-Application*" }) | Should -BeNullOrEmpty
+        }
+
+        It "creates no orphan application when data-store registration fails" {
+            "" | Set-Content -LiteralPath (Join-Path $script:repo.RepoRoot "fail-datastore")
+
+            $run = Invoke-StartPublishedCapture -Arguments @{ EnvironmentFile = $script:repo.EnvFile; AddSmokeTestCredentials = $true }
+
+            $run.Error | Should -Not -BeNullOrEmpty
+            $run.Error.Exception.Message | Should -BeLike "Failed to create data store(s): *data store rejected*"
+            @($run.CmsCalls | Where-Object { $_ -like "Add-Application*" }) | Should -BeNullOrEmpty
+        }
+
+        It "keeps the credential off every non-success stream and out of files the run writes" {
+            $before = @{}
+            foreach ($file in @(Get-ChildItem -LiteralPath $script:repo.RepoRoot -Recurse -File -Force)) {
+                $before[$file.FullName] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+            }
+
+            $run = Invoke-StartPublishedCapture -Arguments @{ EnvironmentFile = $script:repo.EnvFile; AddSmokeTestCredentials = $true; Verbose = $true; Debug = $true }
+
+            $run.Error | Should -BeNullOrEmpty
+            Get-StartPublishedSummary -Strings $run.Strings | Should -Contain 'Secret:      SYNTH$SECRET-1292'
+            $run.Records.Count | Should -BeGreaterThan 0 -Because "the start script's diagnostics must have been captured, or the check proves nothing"
+            foreach ($record in $run.Records) {
+                $text = $record | Out-String
+                $text | Should -Not -Match 'SYNTH-KEY-1292'
+                $text | Should -Not -Match ([regex]::Escape('SYNTH$SECRET-1292'))
+            }
+            $changed = @(
+                Get-ChildItem -LiteralPath $script:repo.RepoRoot -Recurse -File -Force |
+                    Where-Object { -not $before.ContainsKey($_.FullName) -or $before[$_.FullName] -ne (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
+            )
+            @($changed | Where-Object { $_.FullName -eq $script:cmsCallLog }).Count | Should -Be 1 -Because "the run's own call log must be among the scanned files, or the scan is vacuous"
+            foreach ($file in $changed) {
+                Select-String -LiteralPath $file.FullName -SimpleMatch -Pattern 'SYNTH-KEY-1292', 'SYNTH$SECRET-1292' |
+                    Should -BeNullOrEmpty -Because "'$($file.FullName)' was written by this run"
+            }
+        }
+    }
+
+    # =========================================================================
     # R6 - Config Service always included (DMS-1153 bootstrap entry-point spec)
     #   Per the spec, every non-teardown bootstrap run starts Config Service,
     #   including keycloak-backed runs. -EnableConfig is retained for backward
