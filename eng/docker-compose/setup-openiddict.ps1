@@ -900,8 +900,8 @@ BEGIN
 END;
 '@
 
-        # A rerun keeps the existing signing key: a running DMS only knows the keys it fetched at
-        # startup, so inserting a newer one would make it reject every newly issued token.
+        # A rerun preserves the existing signing key so a running DMS can validate newly issued tokens
+        # without waiting for its cached signing keys to refresh.
         Write-Host "Ensuring an active OpenIddict signing key..."
         $encryptionKey = Resolve-EnvValue $EncryptionKey
         $keyInitializationCommand = New-OpenIddictKeyInitializationCommand -EncryptionKey $encryptionKey
@@ -964,9 +964,10 @@ END$$;
     Invoke-DbQuery @'
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 '@
-    # A rerun keeps the existing signing key: a running DMS only knows the keys it fetched at
-    # startup, so inserting a newer one would make it reject every newly issued token. The state check
-    # carries no key material; a key pair is generated only when no active key exists.
+    # A rerun preserves the existing signing key so a running DMS can validate newly issued tokens
+    # without waiting for its cached signing keys to refresh. The state check carries no key material;
+    # a candidate key pair is generated only after it finds no active key, and a concurrent
+    # initializer that wins the lock first leaves that candidate unused.
     Write-Host "Ensuring an active OpenIddict signing key..."
     $encryptionKey = Resolve-EnvValue $script:EncryptionKey
     $keyState = Invoke-PostgresOpenIddictKeyScript -Script (New-OpenIddictKeyStateCheckSql -EncryptionKey $encryptionKey)
