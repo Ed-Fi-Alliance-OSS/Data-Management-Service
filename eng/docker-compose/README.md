@@ -327,6 +327,7 @@ entry point hands it to you in exactly one place.
   * creates the application after it registers the data stores, for those data stores and the configured tenant (with `-NoDataStore`, for the first existing data store in that tenant);
   * then prints the summary.
   * It does **not** provision the DMS schema. Use it against an already-provisioned database, or use `bootstrap-published-dms.ps1`.
+  * With self-contained identity, running `start-published-dms.ps1` again against an already-running provisioned stack initializes another signing key. The running DMS may continue using its previously cached keys and return 401 even though the smoke credential authenticates. After the direct start returns, restart the DMS container and wait for its configured `/health` endpoint to return 200 before running the printed smoke commands. In the default published stack, the validated restart command is `docker restart dms-published-dms-1`. Keep the delivered key/secret; do not rerun `-AddSmokeTestCredentials`, because CMS rejects a duplicate Smoke Test Application. This is an existing startup/key-refresh limitation, not credential creation or delivery failure.
 
 For a completed run with a single route-unqualified data store and no tenant, the summary includes a
 copyable command. Every value is a
