@@ -652,6 +652,9 @@ function Invoke-MssqlParameterizedQuery {
         $connection.Open()
         $command = $connection.CreateCommand()
         $command.CommandText = $Sql
+        # Longer than the command's 30 s sp_getapplock wait, so a lock timeout returns its own error
+        # rather than the default 30 s client timeout cancelling the batch first.
+        $command.CommandTimeout = 60
 
         Add-MssqlOpenIddictKeyParameters -Command $command -Parameters $Parameters
 
@@ -826,7 +829,10 @@ function Invoke-PostgresOpenIddictKeyScript {
         throw "psql failed while initializing the OpenIddict signing key (exit $LASTEXITCODE, SQLSTATE: $(if ($sqlState) { $sqlState } else { 'none reported' })). The statement and its output are withheld."
     }
 
-    return (@($output | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ }) | Select-Object -Last 1)
+    # The state is the script's last stdout row. 2>&1 merges psql's stderr in as ErrorRecords, in no
+    # guaranteed order, so diagnostics are excluded rather than allowed to replace the state.
+    return (@($output | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } |
+            ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ }) | Select-Object -Last 1)
 }
 
 function Complete-OpenIddictKeyInitialization {

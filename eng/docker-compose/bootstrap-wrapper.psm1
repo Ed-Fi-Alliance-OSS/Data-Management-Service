@@ -496,6 +496,10 @@ function Resolve-WrapperSmokeTestSummary {
 
         [string]$DmsBaseUrl,
 
+        # DMS prefixes its routes with the tenant only when its own multi-tenancy is enabled; the
+        # result's tenant scopes the Configuration Service calls either way.
+        [switch]$DmsMultiTenancy,
+
         [switch]$SelfContainedIdentity
     )
 
@@ -512,7 +516,7 @@ function Resolve-WrapperSmokeTestSummary {
     $summaryArgs = @{
         Credential = & $readProperty "SmokeTestCredential"
         DmsBaseUrl = $DmsBaseUrl
-        Tenant = [string](& $readProperty "Tenant")
+        Tenant = if ($DmsMultiTenancy) { [string](& $readProperty "Tenant") } else { "" }
         RouteContexts = @(& $readProperty "RouteContexts")
         SelfContainedIdentity = $SelfContainedIdentity
     }
@@ -764,6 +768,7 @@ function Invoke-BootstrapWrapper {
     # phase runs, so a missing module fails while no credential exists yet.
     $smokeTestSummary = $null
     $smokeTestSummaryBaseUrl = ""
+    $smokeTestDmsMultiTenancy = $false
     $wrapperFailed = $false
     if ($AddSmokeTestCredentials) {
         Import-Module (Join-Path $PSScriptRoot "../smoke_test/modules/SmokeTest.psm1") -Force
@@ -997,6 +1002,11 @@ function Invoke-BootstrapWrapper {
                 elseif (-not $InfraOnly -and (Get-Command Resolve-DockerLocalDmsBaseUrl -ErrorAction SilentlyContinue)) {
                     $smokeTestSummaryBaseUrl = Resolve-DockerLocalDmsBaseUrl -EnvValues (ReadValuesFromEnvFile $effectiveEnvFile)
                 }
+                # DMS_MULTI_TENANCY, not CONFIGURATION_SERVICE_MULTI_TENANCY, decides whether DMS serves
+                # tenant-prefixed routes. Resolved as Compose resolves it for the DMS container.
+                if (Get-Command Get-ComposeResolvedEnvValue -ErrorAction SilentlyContinue) {
+                    $smokeTestDmsMultiTenancy = (Get-ComposeResolvedEnvValue -EnvironmentValues (ReadValuesFromEnvFile $effectiveEnvFile) -Name "DMS_MULTI_TENANCY") -eq "true"
+                }
 
                 # The summary formatter rejects a base URL with control characters. Reject it here, before
                 # configure creates the credential, so the secret is never created without a way to print it.
@@ -1107,6 +1117,7 @@ function Invoke-BootstrapWrapper {
                 $smokeTestSummary = Resolve-WrapperSmokeTestSummary `
                     -ConfigureResult $configured `
                     -DmsBaseUrl $smokeTestSummaryBaseUrl `
+                    -DmsMultiTenancy:$smokeTestDmsMultiTenancy `
                     -SelfContainedIdentity:($resolvedIdentityProvider -eq "self-contained")
             }
             $configuredDataStoreIds = [long[]]@(Resolve-WrapperSelectedDataStoreIds -ConfigureResult $configured)

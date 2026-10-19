@@ -329,7 +329,7 @@ entry point hands it to you in exactly one place.
   * It does **not** provision the DMS schema. Use it against an already-provisioned database, or use `bootstrap-published-dms.ps1`.
   * With self-contained identity, running `start-published-dms.ps1` again against an already-running provisioned stack keeps the existing active OpenIddict signing key: `setup-openiddict.ps1 -InitDb` creates a key only when none is active. The running DMS therefore accepts newly issued tokens without a restart. If the newest active key cannot be decrypted with the configured `CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY`, `-InitDb` stops with an error and changes no key; repairing the key or the encryption-key configuration is an explicit operator action. Keep the delivered key/secret; do not rerun `-AddSmokeTestCredentials`, because CMS rejects a duplicate Smoke Test Application.
 
-For a completed run with a single route-unqualified data store and no tenant, the summary includes a
+For a completed run with a single route-unqualified data store and no tenant route, the summary includes a
 copyable command. Every value is a
 single-quoted PowerShell literal, so characters such as `$` in a generated secret stay literal:
 
@@ -345,7 +345,7 @@ Run the non-destructive API smoke tests:
 ```
 
 * **DMS URL not known yet** (`-InfraOnly` without `-DmsBaseUrl`): the command uses a `<dms-base-url>` placeholder for you to replace once the IDE-hosted DMS is healthy.
-* **Tenant or school-year (`-SchoolYearRange`) data stores:** the summary lists the tenant- or year-qualified DMS base and token URLs instead of a command. Smoke runs against qualified routes have not been validated with the Smoke Test Utility.
+* **Tenant routes or school-year (`-SchoolYearRange`) data stores:** the summary lists the tenant- or year-qualified DMS base and token URLs instead of a command. DMS serves tenant routes only with `DMS_MULTI_TENANCY=true`; a `DMS_CONFIGURATION_SERVICE_TENANT` used only by the Configuration Service does not qualify the URLs. Smoke runs against qualified routes have not been validated with the Smoke Test Utility.
 * **Self-contained identity:** the summary also reminds you that `CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1` must be set **before the stack starts** (see above and `eng/smoke_test/SMOKETEST.md`).
 
 > [!IMPORTANT]

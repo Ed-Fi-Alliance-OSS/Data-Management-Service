@@ -90,9 +90,9 @@ The bootstrap scripts' `-AddSmokeTestCredentials` flag also calls `Get-SmokeTest
 delivers the key and secret to you:
 - `configure-local-data-store.ps1` returns them in the `SmokeTestCredential` property of its result.
 - `bootstrap-local-dms.ps1`, `bootstrap-published-dms.ps1` and `start-published-dms.ps1` print a credential summary built by `Get-SmokeTestCredentialSummary`. What follows the key and secret depends on the run:
-  - **Completed run, no tenant, single route-unqualified data store:** a copyable `Invoke-NonDestructiveApiTests.ps1` command. If the DMS URL is not known yet, the command uses a `<dms-base-url>` placeholder and the summary says to replace it.
-  - **Tenant or school-year data stores:** the qualified DMS base and token URLs instead of a command. Smoke runs against those routes have not been validated.
+  - **Completed run, no tenant route, single route-unqualified data store:** a copyable `Invoke-NonDestructiveApiTests.ps1` command. If the DMS URL is not known yet, the command uses a `<dms-base-url>` placeholder and the summary says to replace it.
+  - **Tenant routes (`DMS_MULTI_TENANCY=true`) or school-year data stores:** the qualified DMS base and token URLs instead of a command. Smoke runs against those routes have not been validated.
   - **Run that failed after the credential was created:** no run instructions.
-  - **`start-published-dms.ps1` rerun against an already-running self-contained stack:** the existing signing key is kept, so the printed command works without restarting DMS (see the direct-start note in the README section below).
+  - **`start-published-dms.ps1` rerun against an already-running self-contained stack:** the existing signing key is kept, so the printed command works without restarting DMS (see the `start-published-dms.ps1` note in [Smoke-test credentials](../docker-compose/README.md#smoke-test-credentials--addsmoketestcredentials)).
 
 See "Smoke-test credentials" in `eng/docker-compose/README.md`.

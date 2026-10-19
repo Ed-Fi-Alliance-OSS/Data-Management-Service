@@ -947,7 +947,7 @@ Describe "OpenIddict signing-key initialization in -InitDb (DMS-1292)" {
             # A plain function stands in for docker, as in the guarded-database-creation tests, so the
             # test sees what reaches stdin as well as the arguments.
             function script:Invoke-KeyScriptWithDockerShim {
-                param([int]$Exit, [string[]]$Output, [string]$Script)
+                param([int]$Exit, [object[]]$Output, [string]$Script)
 
                 $calls = [System.Collections.Generic.List[object]]::new()
                 $exitCode = $Exit
@@ -1007,6 +1007,19 @@ Describe "OpenIddict signing-key initialization in -InitDb (DMS-1292)" {
             $run.Error.Exception.Message | Should -BeLike "*SQLSTATE: 42501*"
             $run.Error.Exception.Message | Should -Not -BeLike "*Transport-Passphrase-1292*"
         }
+
+        It "reads the state from stdout only, whatever psql diagnostics 2>&1 merges in after it" {
+            # 2>&1 turns each psql stderr line into an ErrorRecord, and PowerShell does not order the
+            # two streams relative to each other, so a diagnostic can land after the state row.
+            $diagnostic = [System.Management.Automation.ErrorRecord]::new(
+                [System.Management.Automation.RemoteException]::new("psql:<stdin>:9: NOTICE:  00000"), "NativeCommandError", "NotSpecified", $null)
+
+            $run = Invoke-KeyScriptWithDockerShim -Exit 0 -Output @("created", $diagnostic) `
+                -Script (New-OpenIddictKeyStateCheckSql -EncryptionKey "Transport-Passphrase-1292")
+
+            $run.Error | Should -BeNullOrEmpty
+            $run.Result | Should -BeExactly "created"
+        }
     }
 
     Context "SQL Server" {
@@ -1047,6 +1060,18 @@ Describe "OpenIddict signing-key initialization in -InitDb (DMS-1292)" {
             $script:MssqlState = "active-undecryptable"
 
             { Invoke-InitDbScripts 6>$null } | Should -Throw $script:FixedUndecryptableError
+        }
+
+        It "gives the command longer than the application-lock wait, so a lock timeout reports its own error" {
+            # SqlCommand's default 30 s timeout equals the lock wait and could cancel the batch first.
+            $lockTimeoutMs = [int][regex]::Match((New-OpenIddictKeyInitializationCommand -EncryptionKey "unused").Sql, '@LockTimeout = (\d+);').Groups[1].Value
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:DockerComposePath "setup-openiddict.ps1"), [ref]$null, [ref]$null)
+            $function = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq "Invoke-MssqlParameterizedQuery" }, $true)
+            $assignment = $function.Body.Find({ param($node) $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and $node.Left.Extent.Text -eq '$command.CommandTimeout' }, $true)
+
+            $lockTimeoutMs | Should -BeGreaterThan 0
+            $assignment | Should -Not -BeNullOrEmpty
+            ([int]$assignment.Right.Extent.Text) * 1000 | Should -BeGreaterThan $lockTimeoutMs
         }
     }
 }

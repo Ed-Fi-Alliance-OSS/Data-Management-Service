@@ -1709,6 +1709,20 @@ $failure
                 return @($Strings[$headerIndexes[0]..($Strings.Count - 1)])
             }
 
+            # Sets or removes the ambient DMS_MULTI_TENANCY. A $null passed to SetEnvironmentVariable
+            # arrives as an empty string, which leaves the variable defined and, under Compose
+            # precedence, overrides the env file; removal restores the unset state exactly.
+            function script:Set-AmbientDmsMultiTenancy {
+                param([AllowNull()]$Value)
+
+                if ($null -eq $Value) {
+                    Remove-Item -Path Env:DMS_MULTI_TENANCY -ErrorAction SilentlyContinue
+                }
+                else {
+                    Set-Item -Path Env:DMS_MULTI_TENANCY -Value $Value
+                }
+            }
+
             function script:Get-CommandArgument {
                 param([string]$Line)
 
@@ -1877,14 +1891,30 @@ Write-Output 'seed-phase-output'
             (Get-SummaryBlock -Strings $run.Strings -Header $script:smokeSummaryHeader) | Should -Contain 'Secret:      SYNTH$SECRET-1292'
         }
 
-        It "prints tenant-qualified target lines and no command for a tenant-only result" {
+        It "prints tenant-qualified target lines and no command for a tenant-only result when DMS multi-tenancy is enabled (<Case>)" -ForEach @(
+            @{ Case = "env file"; FileLine = "DMS_MULTI_TENANCY=true"; Ambient = $null }
+            @{ Case = "quoted env-file value"; FileLine = 'DMS_MULTI_TENANCY="true"'; Ambient = $null }
+            @{ Case = "ambient value over env-file false"; FileLine = "DMS_MULTI_TENANCY=false"; Ambient = "true" }
+        ) {
+            # Compose resolves DMS_MULTI_TENANCY with the ambient value first and strips quotes, so the
+            # summary must follow the value the DMS container actually receives.
             New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
             $callLog = Join-Path $script:repo.RepoRoot "call-log-smoke-tenant.txt"
             New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
             New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog -Tenant "tenant-a" | Out-Null
             New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            $dmsMultiTenantEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.dms-multitenant"
+            Get-Content -LiteralPath $script:repo.EnvFile | Set-Content -LiteralPath $dmsMultiTenantEnvFile -Encoding utf8
+            Add-Content -LiteralPath $dmsMultiTenantEnvFile -Value $FileLine
 
-            $run = Invoke-WrapperCapture -ScriptPath $script:repo.WrapperScript -Arguments @{ EnvironmentFile = $script:repo.EnvFile; AddSmokeTestCredentials = $true }
+            $savedAmbient = [Environment]::GetEnvironmentVariable("DMS_MULTI_TENANCY")
+            try {
+                Set-AmbientDmsMultiTenancy -Value $Ambient
+                $run = Invoke-WrapperCapture -ScriptPath $script:repo.WrapperScript -Arguments @{ EnvironmentFile = $dmsMultiTenantEnvFile; AddSmokeTestCredentials = $true }
+            }
+            finally {
+                Set-AmbientDmsMultiTenancy -Value $savedAmbient
+            }
 
             $run.Error | Should -BeNullOrEmpty
             $summary = Get-SummaryBlock -Strings $run.Strings -Header $script:smokeSummaryHeader
@@ -1892,6 +1922,41 @@ Write-Output 'seed-phase-output'
             $summary | Should -Contain "DMS base:    http://localhost:18080/tenant-a"
             $summary | Should -Contain "Token URL:   http://localhost:18080/tenant-a/oauth/token"
             @($summary | Where-Object { $_ -like "Data store *" -or $_ -like "*Invoke-NonDestructiveApiTests.ps1*" }) | Should -BeNullOrEmpty
+        }
+
+        It "prints the unqualified runnable command for a tenant-only result when DMS multi-tenancy is disabled (<Case>)" -ForEach @(
+            @{ Case = "unset"; FileLine = $null; Ambient = $null }
+            @{ Case = "ambient value over env-file true"; FileLine = "DMS_MULTI_TENANCY=true"; Ambient = "false" }
+        ) {
+            # The configure result carries the CMS tenant, but DMS registers tenant-prefixed routes only
+            # when its own multi-tenancy (DMS_MULTI_TENANCY) is enabled.
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-smoke-tenant-dms-single.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog -Tenant "tenant-a" | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            $envFile = $script:repo.EnvFile
+            if ($FileLine) {
+                $envFile = Join-Path $script:repo.DockerComposeRoot ".env.dms-single"
+                Get-Content -LiteralPath $script:repo.EnvFile | Set-Content -LiteralPath $envFile -Encoding utf8
+                Add-Content -LiteralPath $envFile -Value $FileLine
+            }
+
+            $savedAmbient = [Environment]::GetEnvironmentVariable("DMS_MULTI_TENANCY")
+            try {
+                Set-AmbientDmsMultiTenancy -Value $Ambient
+                $run = Invoke-WrapperCapture -ScriptPath $script:repo.WrapperScript -Arguments @{ EnvironmentFile = $envFile; AddSmokeTestCredentials = $true }
+            }
+            finally {
+                Set-AmbientDmsMultiTenancy -Value $savedAmbient
+            }
+
+            $run.Error | Should -BeNullOrEmpty
+            $summary = Get-SummaryBlock -Strings $run.Strings -Header $script:smokeSummaryHeader
+            $command = Get-CommandArgument -Line ($summary | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" })
+            $command["BaseUrl"] | Should -BeExactly "http://localhost:18080"
+            $command["OAuthUrl"] | Should -BeExactly "http://localhost:18080/oauth/token"
+            @($summary | Where-Object { $_ -like "*tenant-a*" }) | Should -BeNullOrEmpty
         }
 
         It "prints one target line per school-year data store and no command" {
@@ -2073,6 +2138,10 @@ Export-ModuleMember -Function *
             $script:multiTenantEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.multitenant"
             Get-Content -LiteralPath $script:repo.EnvFile | Set-Content -LiteralPath $script:multiTenantEnvFile -Encoding utf8
             Add-Content -LiteralPath $script:multiTenantEnvFile -Value @("CONFIGURATION_SERVICE_MULTI_TENANCY=true", "DMS_CONFIGURATION_SERVICE_TENANT=tenant-a")
+            # The same tenant with DMS multi-tenancy enabled too, so DMS serves tenant-prefixed routes.
+            $script:dmsMultiTenantEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.dms-multitenant"
+            Get-Content -LiteralPath $script:multiTenantEnvFile | Set-Content -LiteralPath $script:dmsMultiTenantEnvFile -Encoding utf8
+            Add-Content -LiteralPath $script:dmsMultiTenantEnvFile -Value "DMS_MULTI_TENANCY=true"
 
             function script:Invoke-StartPublishedCapture {
                 param([hashtable]$Arguments)
@@ -2113,7 +2182,7 @@ Export-ModuleMember -Function *
         }
 
         It "creates the credential after the default data store, for that store and the tenant, and prints the tenant summary" {
-            $run = Invoke-StartPublishedCapture -Arguments @{ EnvironmentFile = $script:multiTenantEnvFile; AddSmokeTestCredentials = $true }
+            $run = Invoke-StartPublishedCapture -Arguments @{ EnvironmentFile = $script:dmsMultiTenantEnvFile; AddSmokeTestCredentials = $true }
 
             $run.Error | Should -BeNullOrEmpty
             $dataStoreIndex = [array]::IndexOf($run.CmsCalls, "Add-DataStore tenant=tenant-a")
@@ -2128,6 +2197,16 @@ Export-ModuleMember -Function *
             $summary | Should -Contain "Token URL:   http://localhost:18080/tenant-a/oauth/token"
             @($summary | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" -or $_ -like "Data store *" }) | Should -BeNullOrEmpty
             $run.Strings | Should -Not -Contain "Credential values were returned to the caller and were not written to logs."
+        }
+
+        It "keeps the CMS tenant for the credential but prints the unqualified command when DMS multi-tenancy is disabled" {
+            $run = Invoke-StartPublishedCapture -Arguments @{ EnvironmentFile = $script:multiTenantEnvFile; AddSmokeTestCredentials = $true }
+
+            $run.Error | Should -BeNullOrEmpty
+            $run.CmsCalls | Should -Contain "Add-Application ids=303 tenant=tenant-a"
+            $summary = Get-StartPublishedSummary -Strings $run.Strings
+            $summary | Should -Contain "  ./Invoke-NonDestructiveApiTests.ps1 -BaseUrl 'http://localhost:18080' -OAuthUrl 'http://localhost:18080/oauth/token' -Key 'SYNTH-KEY-1292' -Secret 'SYNTH`$SECRET-1292'"
+            @($summary | Where-Object { $_ -like "*tenant-a*" }) | Should -BeNullOrEmpty
         }
 
         It "prints the runnable command for a single-tenant default run" {
@@ -2154,7 +2233,7 @@ Export-ModuleMember -Function *
         }
 
         It "keeps the tenant-scoped first-data-store fallback with -NoDataStore" {
-            $run = Invoke-StartPublishedCapture -Arguments @{ EnvironmentFile = $script:multiTenantEnvFile; NoDataStore = $true; AddSmokeTestCredentials = $true }
+            $run = Invoke-StartPublishedCapture -Arguments @{ EnvironmentFile = $script:dmsMultiTenantEnvFile; NoDataStore = $true; AddSmokeTestCredentials = $true }
 
             $run.Error | Should -BeNullOrEmpty
             @($run.CmsCalls | Where-Object { $_ -like "Add-DataStore*" -or $_ -like "Add-DmsSchoolYearInstances*" }) | Should -BeNullOrEmpty
