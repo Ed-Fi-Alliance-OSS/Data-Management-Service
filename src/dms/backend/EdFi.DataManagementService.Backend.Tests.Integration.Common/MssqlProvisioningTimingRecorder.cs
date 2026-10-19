@@ -18,6 +18,7 @@ internal static class MssqlProvisioningTimingRecorder
     private const string TimingsPathVariable = "MSSQL_FIXTURE_TIMINGS_PATH";
     private const string ShardVariable = "MSSQL_TEST_SHARD";
     private static readonly object _lock = new();
+    private static readonly HashSet<string> _warnedPaths = new(StringComparer.Ordinal);
     private const string Header =
         "TimestampUtc,Outcome,DurationSeconds,DatabaseName,CommandTimeoutSeconds,FixtureSignature,GeneratedDdlHash,Phase,LeaseStrategy,Shard,TestWorkerId,CallerMemberName,CallerFilePath,CallerLineNumber,IsDiagnostic,Detail,BatchOrdinal,BatchCount,BatchHash";
 
@@ -144,7 +145,18 @@ internal static class MssqlProvisioningTimingRecorder
         }
         catch (Exception exception)
         {
-            TryWarn(warningWriter, $"MSSQL fixture timing output unavailable ({exception.GetType().Name}).");
+            lock (_lock)
+            {
+                if (!_warnedPaths.Add(timingsPath))
+                {
+                    return;
+                }
+            }
+
+            TryWarn(
+                warningWriter,
+                $"MSSQL fixture timing output unavailable ({exception.GetType().Name}). Check {TimingsPathVariable}; further warnings for this path are suppressed."
+            );
         }
     }
 

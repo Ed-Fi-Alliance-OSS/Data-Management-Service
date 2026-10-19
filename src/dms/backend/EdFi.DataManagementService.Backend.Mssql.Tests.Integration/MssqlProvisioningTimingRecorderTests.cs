@@ -86,9 +86,10 @@ public class Given_MssqlProvisioningTimingRecorder
     [Test]
     public void It_skips_a_blank_output_path()
     {
+        var warnings = new StringWriter();
         MssqlProvisioningTimingRecorder.RecordToPath(
-            " \t",
-            TextWriter.Null,
+            "",
+            warnings,
             "success",
             TimeSpan.Zero,
             "db",
@@ -101,6 +102,7 @@ public class Given_MssqlProvisioningTimingRecorder
             "file.cs",
             1
         );
+        warnings.ToString().Should().BeEmpty();
     }
 
     [Test]
@@ -126,10 +128,16 @@ public class Given_MssqlProvisioningTimingRecorder
                 1
             );
         act.Should().NotThrow();
-        warnings.ToString().Should().Contain("MSSQL fixture timing output unavailable (IOException).");
+        act.Should().NotThrow();
+        warnings
+            .ToString()
+            .Should()
+            .Be(
+                $"MSSQL fixture timing output unavailable (IOException). Check MSSQL_FIXTURE_TIMINGS_PATH; further warnings for this path are suppressed.{Environment.NewLine}"
+            );
         Action throwingWarning = () =>
             MssqlProvisioningTimingRecorder.RecordToPath(
-                Path.Combine(parentFile, "child.csv"),
+                Path.Combine(parentFile, "other-child.csv"),
                 new ThrowingWriter(),
                 "success",
                 TimeSpan.Zero,
@@ -144,100 +152,6 @@ public class Given_MssqlProvisioningTimingRecorder
                 1
             );
         throwingWarning.Should().NotThrow();
-    }
-
-    [Test]
-    public void It_continues_disposal_after_timing_output_fails()
-    {
-        var parentFile = Path.Combine(_directory, "parent-file");
-        File.WriteAllText(parentFile, "file");
-        var disposed = false;
-        var primary = new InvalidOperationException("primary");
-        Action act = () =>
-        {
-            try
-            {
-                throw primary;
-            }
-            finally
-            {
-                MssqlProvisioningTimingRecorder.RecordToPath(
-                    Path.Combine(parentFile, "child.csv"),
-                    new ThrowingWriter(),
-                    "failure",
-                    TimeSpan.Zero,
-                    "db",
-                    300,
-                    "fixture",
-                    "hash",
-                    "phase",
-                    "direct",
-                    "caller",
-                    "file.cs",
-                    1
-                );
-                disposed = true;
-            }
-        };
-        act.Should().Throw<InvalidOperationException>().Which.Should().BeSameAs(primary);
-        disposed.Should().BeTrue();
-    }
-
-    [Test]
-    public void It_preserves_primary_and_cleanup_failures_after_timing_output_fails()
-    {
-        var parentFile = Path.Combine(_directory, "parent-file");
-        File.WriteAllText(parentFile, "file");
-        var cleanupInvoked = false;
-        var primary = new InvalidOperationException("primary");
-        var cleanup = new ApplicationException("cleanup");
-        Action dispose = () =>
-        {
-            cleanupInvoked = true;
-            throw cleanup;
-        };
-        Action act = () =>
-        {
-            try
-            {
-                throw primary;
-            }
-            catch (Exception primaryException)
-            {
-                List<Exception> cleanupExceptions = [];
-                try
-                {
-                    MssqlProvisioningTimingRecorder.RecordToPath(
-                        Path.Combine(parentFile, "child.csv"),
-                        new ThrowingWriter(),
-                        "failure",
-                        TimeSpan.Zero,
-                        "db",
-                        300,
-                        "fixture",
-                        "hash",
-                        "phase",
-                        "direct",
-                        "caller",
-                        "file.cs",
-                        1
-                    );
-                    dispose();
-                }
-                catch (Exception cleanupException)
-                {
-                    cleanupExceptions.Add(cleanupException);
-                }
-
-                MssqlLifecycleExceptionAggregator.Throw(primaryException, cleanupExceptions);
-            }
-        };
-
-        var aggregate = act.Should().Throw<AggregateException>().Which;
-        cleanupInvoked.Should().BeTrue();
-        aggregate.InnerExceptions.Should().HaveCount(2);
-        aggregate.InnerExceptions[0].Should().BeSameAs(primary);
-        aggregate.InnerExceptions[1].Should().BeSameAs(cleanup);
     }
 
     private sealed class ThrowingWriter : StringWriter

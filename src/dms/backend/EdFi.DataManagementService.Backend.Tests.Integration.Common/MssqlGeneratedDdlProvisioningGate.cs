@@ -21,6 +21,8 @@ internal sealed record MssqlGeneratedDdlProvisioningSnapshot(
 
 internal sealed class MssqlGeneratedDdlProvisioningGate
 {
+    public const string SettingName = "MSSQL_GENERATED_DDL_PROVISION_MAX_CONCURRENCY";
+
     private readonly SemaphoreSlim? _semaphore;
     private int _admittedCount;
 
@@ -42,9 +44,7 @@ internal sealed class MssqlGeneratedDdlProvisioningGate
             || maximumConcurrency < 1
         )
         {
-            throw new InvalidOperationException(
-                "MSSQL_GENERATED_DDL_PROVISION_MAX_CONCURRENCY must be a positive integer when set."
-            );
+            throw new InvalidOperationException($"{SettingName} must be a positive integer when set.");
         }
 
         MaximumConcurrency = maximumConcurrency;
@@ -56,7 +56,7 @@ internal sealed class MssqlGeneratedDdlProvisioningGate
     public int AdmittedCount => Volatile.Read(ref _admittedCount);
 
     public static Lazy<MssqlGeneratedDdlProvisioningGate> CreateLazy(Func<string> readSetting) =>
-        new(() => new MssqlGeneratedDdlProvisioningGate(readSetting() ?? ""));
+        new(() => new MssqlGeneratedDdlProvisioningGate(readSetting()));
 
     public async ValueTask<MssqlGeneratedDdlProvisioningLease> AcquireAsync()
     {

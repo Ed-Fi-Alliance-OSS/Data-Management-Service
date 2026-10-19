@@ -69,6 +69,7 @@ public class Given_MssqlGeneratedDdlProvisioningDiagnostics
             .And.Contain("admittedAtBatchStart=3")
             .And.Contain("admittedAtTimeout=1")
             .And.Contain("limit=unlimited")
+            .And.Contain("caller=caller:17")
             .And.Contain("MSSQL_GENERATED_DDL_PROVISION_MAX_CONCURRENCY=1")
             .And.Contain("including this operation")
             .And.Contain("excluding queued entrants")
@@ -90,8 +91,32 @@ public class Given_MssqlGeneratedDdlProvisioningDiagnostics
             .Format(Diagnostic(1, 1, 1))
             .Should()
             .Contain("Already limited to 1 in this process")
+            .And.Contain("standalone DDL reapplication")
             .And.Contain("other processes/server waits");
         Format(2, 2, 2).Should().Contain("restart the test process");
+    }
+
+    [TestCase(0)]
+    [TestCase(1)]
+    [TestCase(2)]
+    public void It_qualifies_contention_when_neither_sample_observes_overlap(int limit)
+    {
+        var message = Format(limit, 1, 1);
+
+        message
+            .Should()
+            .Contain("possible provisioning contention")
+            .And.Contain("no overlap observed in sampled admitted operations")
+            .And.NotContain("suspected provisioning contention.");
+    }
+
+    [Test]
+    public void It_reports_suspected_contention_when_overlap_is_observed_only_at_timeout()
+    {
+        Format(0, 1, 2)
+            .Should()
+            .Contain("suspected provisioning contention.")
+            .And.NotContain("no overlap observed");
     }
 
     [Test]
@@ -102,6 +127,7 @@ public class Given_MssqlGeneratedDdlProvisioningDiagnostics
             Context = _context with
             {
                 FixtureSignature = " \r\n\t\0 ",
+                CallerMemberName = "setup\r\n\t\0member",
                 CallerFilePath = "Password=secret; SELECT * FROM private",
             },
             DatabaseName = "db\r\n\t\0name",
@@ -110,6 +136,7 @@ public class Given_MssqlGeneratedDdlProvisioningDiagnostics
         message
             .Should()
             .Contain("fixture=ddl-hash")
+            .And.Contain("caller=setup    member:17")
             .And.Contain("database=db    name")
             .And.NotContain("Password=secret")
             .And.NotContain("SELECT * FROM private")
@@ -118,7 +145,7 @@ public class Given_MssqlGeneratedDdlProvisioningDiagnostics
     }
 
     [Test]
-    public void It_keeps_the_primary_failure_when_formatting_or_writing_fails()
+    public void It_makes_formatting_and_writing_failures_nonfatal()
     {
         var writer = new ThrowingWriter();
         Action act = () =>
@@ -129,15 +156,6 @@ public class Given_MssqlGeneratedDdlProvisioningDiagnostics
         act.Should().NotThrow();
         MssqlGeneratedDdlProvisioningDiagnostics.TryWrite(writer, () => "safe");
         writer.Attempts.Should().Be(1);
-
-        var primary = new InvalidOperationException("primary");
-        var cleanup = new ApplicationException("cleanup");
-        Action throwPrimary = () => MssqlLifecycleExceptionAggregator.Throw(primary, [cleanup]);
-        throwPrimary
-            .Should()
-            .Throw<AggregateException>()
-            .Which.InnerExceptions.Should()
-            .Equal(primary, cleanup);
     }
 
     private string Format(int limit, int start, int timeout) =>

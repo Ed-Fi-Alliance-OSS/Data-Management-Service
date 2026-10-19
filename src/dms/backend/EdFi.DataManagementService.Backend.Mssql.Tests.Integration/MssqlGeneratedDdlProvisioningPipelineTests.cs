@@ -42,7 +42,8 @@ public class Given_MssqlGeneratedDdlProvisioningPipeline
         var diagnostic = writer.ToString();
         diagnostic
             .Should()
-            .Contain("MSSQL generated-DDL provisioning timeout: suspected provisioning contention.");
+            .Contain("MSSQL generated-DDL provisioning timeout: possible provisioning contention;")
+            .And.Contain("no overlap observed in sampled admitted operations");
         diagnostic
             .Should()
             .Contain("batch=1/1")

@@ -170,6 +170,10 @@ fixture setup. These tests use `ConnectionStrings__MssqlAdmin` as described
 above; they are separate from the API-level integration project and from the
 Docker-stack E2E suite.
 
+The same provisioning gate and diagnostics also apply to the SQL Server paths
+in `src/dms/tests/EdFi.DataManagementService.Tests.Integration` and
+`src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration`.
+
 Run the backend project without a fixture or category filter to see the same
 setup failures that occur in an unfiltered test host:
 
@@ -194,15 +198,40 @@ process; it does not limit other processes or SQL Server activity. The existing
 reports process-wide admitted-operation samples at batch start and timeout,
 including the failing operation and excluding queued entrants. Those samples
 are not executing-query counts and do not prove an engine wait. The message
-labels the cause as suspected provisioning contention. If the effective limit
-is already 1, investigate other processes and server waits; reducing it further
-cannot help.
+labels provisioning contention as suspected when either sample observes
+overlap, and possible when neither does. Standalone `ApplyGeneratedDdlAsync`
+reapplication is outside the gate and its counts, including the DS52-TPDM
+idempotency check. If the effective limit is already 1, investigate this
+untracked work, other processes, and server waits; the limit cannot be reduced
+further.
+
+The diagnostic is written to stderr (`Console.Error`), rather than appended to
+the failed test's exception message. Inspect the test-run console output;
+depending on the runner and setup phase, TRX may capture it as test stderr or
+a run-level warning. It does not require CSV timing output.
 
 Optional per-fixture CSV timing output can be enabled with
 `MSSQL_FIXTURE_TIMINGS_PATH`. Output failures are best-effort and do not replace
-test failures or interrupt cleanup. Use the existing MSSQL shard categories as
-a fallback when isolating a failure; a filtered run does not replace the
-unfiltered host check.
+test failures or interrupt cleanup. An unavailable path produces at most one
+warning per configured path in a process; inspect the setting's value and its
+parent directory permissions. Paths are omitted from warnings.
+
+Backend CI uses four categories, `MssqlCiShard1` through `MssqlCiShard4`, with
+the `backup-restore` lease strategy and a provisioning concurrency limit of 2
+by default. To isolate one shard locally:
+
+```powershell
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter "Category=MssqlCiShard4"
+```
+
+Replace the category to select another shard. A filtered run is a fallback
+for diagnosis and does not replace the unfiltered host check. Controlled
+provider-timeout probes are explicit and outside these CI shards; run them
+separately when changing the diagnostic wiring:
+
+```powershell
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter "FullyQualifiedName~Given_MssqlGeneratedDdlProvisioningPipeline"
+```
 
 ## Running Unit Tests and Generate Code Coverage Report
 

@@ -36,7 +36,6 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
 {
     private const int DefaultCommandTimeoutSeconds = 300;
     private const int UtcClockAdvanceMaxPollAttempts = 500;
-    private const string ProvisionMaxConcurrencyVariable = "MSSQL_GENERATED_DDL_PROVISION_MAX_CONCURRENCY";
     private static readonly (string Schema, string Table)[] _generatedDdlBaselineTables =
     [
         ("dms", "DataStoreIdentity"),
@@ -50,7 +49,7 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
     );
     private static readonly Lazy<MssqlGeneratedDdlProvisioningGate> _generatedDdlProvisioningGate =
         MssqlGeneratedDdlProvisioningGate.CreateLazy(() =>
-            Environment.GetEnvironmentVariable(ProvisionMaxConcurrencyVariable) ?? ""
+            Environment.GetEnvironmentVariable(MssqlGeneratedDdlProvisioningGate.SettingName) ?? ""
         );
     private int _ownsDatabase = 1;
 
@@ -819,7 +818,6 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
             try
             {
                 await command.ExecuteNonQueryAsync();
-                batchStopwatch.Stop();
             }
             catch (Exception exception)
                 when (MssqlGeneratedDdlProvisioningDiagnostics.IsProvisioningCommandTimeout(

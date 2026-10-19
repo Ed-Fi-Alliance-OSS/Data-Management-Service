@@ -34,22 +34,26 @@ internal static class MssqlGeneratedDdlProvisioningDiagnostics
             : fixtureSignature;
         var database = Normalize(diagnostic.DatabaseName);
         var strategy = Normalize(diagnostic.Context.LeaseStrategy);
+        var caller = Normalize(diagnostic.Context.CallerMemberName);
+        var contention =
+            diagnostic.AdmittedAtBatchStart > 1 || diagnostic.AdmittedAtTimeout > 1
+                ? "suspected provisioning contention."
+                : "possible provisioning contention; no overlap observed in sampled admitted operations.";
         var limit =
             diagnostic.MaximumConcurrency == 0
                 ? "unlimited"
                 : diagnostic.MaximumConcurrency.ToString(CultureInfo.InvariantCulture);
         var remedy = diagnostic.MaximumConcurrency switch
         {
-            1 => "Already limited to 1 in this process; investigate other processes/server waits.",
-            0 =>
-                "To reduce in-process overlap, set MSSQL_GENERATED_DDL_PROVISION_MAX_CONCURRENCY=1 before starting the test process, then restart the test process.",
+            1 =>
+                "Already limited to 1 in this process; investigate standalone DDL reapplication, other processes/server waits.",
             _ =>
-                "To reduce in-process overlap, set MSSQL_GENERATED_DDL_PROVISION_MAX_CONCURRENCY=1 before starting the test process, then restart the test process.",
+                $"To reduce in-process overlap, set {MssqlGeneratedDdlProvisioningGate.SettingName}=1 and restart the test process.",
         };
 
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"MSSQL generated-DDL provisioning timeout: suspected provisioning contention. fixture={fixture} database={database} strategy={strategy} batch={diagnostic.BatchOrdinal}/{diagnostic.BatchCount} elapsedSeconds={diagnostic.BatchElapsed.TotalSeconds:0.000} commandTimeoutSeconds={diagnostic.CommandTimeoutSeconds} admissionWaitSeconds={diagnostic.AdmissionWaitElapsed.TotalSeconds:0.000} limit={limit} admittedAtBatchStart={diagnostic.AdmittedAtBatchStart} admittedAtTimeout={diagnostic.AdmittedAtTimeout}. Admitted counts are process-wide operations (including this operation and excluding queued entrants), not executing SQL or server-wide counts; samples do not prove an engine wait. {remedy}"
+            $"MSSQL generated-DDL provisioning timeout: {contention} fixture={fixture} caller={caller}:{diagnostic.Context.CallerLineNumber} database={database} strategy={strategy} batch={diagnostic.BatchOrdinal}/{diagnostic.BatchCount} elapsedSeconds={diagnostic.BatchElapsed.TotalSeconds:0.000} commandTimeoutSeconds={diagnostic.CommandTimeoutSeconds} admissionWaitSeconds={diagnostic.AdmissionWaitElapsed.TotalSeconds:0.000} limit={limit} admittedAtBatchStart={diagnostic.AdmittedAtBatchStart} admittedAtTimeout={diagnostic.AdmittedAtTimeout}. Admitted counts are process-wide operations (including this operation and excluding queued entrants), not executing SQL or server-wide counts; samples do not prove an engine wait. Standalone DDL reapplication is outside this gate. {remedy}"
         );
     }
 
