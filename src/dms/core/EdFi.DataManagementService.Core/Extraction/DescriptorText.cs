@@ -54,12 +54,12 @@ public static class DescriptorText
 
     /// <summary>
     /// Returns the value when it is well-formed without NUL. Throws when it is not, because request
-    /// validation must have rejected it before normalization.
+    /// validation must have rejected it before the value becomes a descriptor identity.
     /// </summary>
     public static string AssertWellFormedWithoutNul(string value) =>
         IsWellFormedWithoutNul(value)
             ? value
             : throw new InvalidOperationException(
-                "A descriptor value reached normalization without passing descriptor text validation."
+                "A descriptor value reached descriptor identity construction without passing descriptor text validation."
             );
 }

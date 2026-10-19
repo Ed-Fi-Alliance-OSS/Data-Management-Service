@@ -296,7 +296,7 @@ discriminator output retain their existing columns and behavior.
 The effective date columns remain part of the descriptor field contract, as in legacy ODS.
 DMS uses one shared descriptor table without per-descriptor marker tables.
 
-Descriptor references and identity resolution (current RI runtime):
+Descriptor references and identity resolution (natural-key resolution; RI retained for POST upserts and descriptor writes):
 
 - Resource tables' stored `DescriptorFk` values are `Int32` and their FKs target
   `dms.Descriptor(DescriptorId)` with existing `NO ACTION` deletion protection. This includes
@@ -313,8 +313,8 @@ Descriptor references and identity resolution (current RI runtime):
   trimmed or Unicode-normalized. Descriptor identity components and reference values containing
   NUL or an unpaired surrogate are rejected with a path-attributed 400.
 
-The [natural-key workstream](natural-key-resolution.md) owns later lowered-URI probes,
-query-side descriptor validation, RI removal, equality changes and stored-wins semantics.
+The [natural-key workstream](natural-key-resolution.md) owns later POST upsert capture,
+descriptor-write equality, RI removal and stored-wins semantics.
 Those proposals are not the DMS-1404 runtime contract.
 
 Descriptor update semantics:

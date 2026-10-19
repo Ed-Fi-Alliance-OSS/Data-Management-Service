@@ -464,7 +464,7 @@ later equality/index transition.
 
 > **Mapping-pack alignment pending.** The natural-key probe metadata (`NaturalKeyProbeTargets`,
 > `OwnNaturalKeyProbesByResource`, `DescriptorProbeTarget`, `NaturalKeyProbeKeyBinding`), consumed
-> by the natural-key reference resolver, and `DbColumnModel.UsesSqlServerIdentityCollation` (derived
+> by the natural-key reference resolver and the probe-based duplicate and constraint diagnostics, and `DbColumnModel.UsesSqlServerIdentityCollation` (derived
 > since DMS-1443) are not yet reflected in [`mpack-format-v1.md`](mpack-format-v1.md) or
 > [`aot-compilation.md`](aot-compilation.md). Mapping packs are out of scope for E21 (see
 > [natural-key-resolution.md § Out of scope](natural-key-resolution.md#out-of-scope)); E05 owns the

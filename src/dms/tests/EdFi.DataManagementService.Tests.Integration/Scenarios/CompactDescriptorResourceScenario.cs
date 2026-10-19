@@ -286,20 +286,12 @@ internal static class CompactDescriptorResourceScenario
         removedDescriptor.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
-    public static Task It_maintains_RI_and_copied_descriptor_keys_after_resource_identity_updates(
-        ApiIntegrationHarness harness
-    ) => UpdateItemIdentityToAnUppercaseDescriptorAsync(harness);
-
-    public static async Task It_matches_repeated_POSTs_with_case_variant_descriptors_after_a_resource_identity_update(
+    public static async Task It_maintains_RI_and_copied_descriptor_keys_after_resource_identity_updates(
         ApiIntegrationHarness harness
     )
     {
-        var (beforeDescriptor, afterDescriptor, item, bridge, consumer, changed) =
+        var (beforeDescriptor, afterDescriptor, _, bridge, _, _) =
             await UpdateItemIdentityToAnUppercaseDescriptorAsync(harness);
-        changed.Remove("id");
-        var unchanged = await ReadStampAsync(harness, item);
-        (await PostAsync(harness, Items, changed, HttpStatusCode.OK)).Should().Be(item);
-        (await ReadStampAsync(harness, item)).Should().Be(unchanged);
         (
             await PostAsync(
                 harness,
@@ -310,6 +302,27 @@ internal static class CompactDescriptorResourceScenario
         )
             .Should()
             .Be(bridge);
+        using HttpResponseMessage stale = await SendAsync(
+            harness,
+            HttpMethod.Post,
+            Consumers,
+            Consumer("stale", "bridge", "item", beforeDescriptor.Uri)
+        );
+        stale.StatusCode.Should().Be(HttpStatusCode.Conflict, await stale.Content.ReadAsStringAsync());
+        (await QueryAsync(harness, Consumers, beforeDescriptor.Uri)).Should().BeEmpty();
+        (await QueryAsync(harness, Consumers, afterDescriptor.Uri)).Count.Should().Be(1);
+    }
+
+    public static async Task It_matches_repeated_POSTs_with_case_variant_descriptors_after_a_resource_identity_update(
+        ApiIntegrationHarness harness
+    )
+    {
+        var (_, afterDescriptor, item, _, consumer, changed) =
+            await UpdateItemIdentityToAnUppercaseDescriptorAsync(harness);
+        changed.Remove("id");
+        var unchanged = await ReadStampAsync(harness, item);
+        (await PostAsync(harness, Items, changed, HttpStatusCode.OK)).Should().Be(item);
+        (await ReadStampAsync(harness, item)).Should().Be(unchanged);
         (
             await PostAsync(
                 harness,
@@ -320,15 +333,6 @@ internal static class CompactDescriptorResourceScenario
         )
             .Should()
             .Be(consumer);
-        using HttpResponseMessage stale = await SendAsync(
-            harness,
-            HttpMethod.Post,
-            Consumers,
-            Consumer("stale", "bridge", "item", beforeDescriptor.Uri)
-        );
-        stale.StatusCode.Should().Be(HttpStatusCode.Conflict, await stale.Content.ReadAsStringAsync());
-        (await QueryAsync(harness, Consumers, beforeDescriptor.Uri)).Should().BeEmpty();
-        (await QueryAsync(harness, Consumers, afterDescriptor.Uri)).Count.Should().Be(1);
     }
 
     /// <summary>
