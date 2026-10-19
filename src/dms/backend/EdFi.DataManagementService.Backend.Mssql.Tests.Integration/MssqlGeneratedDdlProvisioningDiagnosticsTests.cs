@@ -13,49 +13,91 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
 [TestFixture]
+[SetCulture("fr-FR")]
 [Category(MssqlCiShards.Shard4)]
 public class Given_MssqlGeneratedDdlProvisioningDiagnostics
 {
     private MssqlProvisioningTimingContext _context = null!;
+    private bool[] _timeoutClassifications = [];
+    private bool[] _otherClassifications = [];
+    private string _unlimitedMessage = "";
+    private string _finiteMessage = "";
+    private string _limitedMessage = "";
+    private string[] _noOverlapMessages = [];
+    private string _timeoutOverlapMessage = "";
+    private string[] _normalizedMessages = [];
+    private int _writeAttempts;
 
-    [SetUp]
-    public void Setup() => _context = new("family", "ddl-hash", "backup-restore", "caller", "safe.cs", 17);
+    [OneTimeSetUp]
+    public void OneTimeSetUp()
+    {
+        _context = new("family", "ddl-hash", "backup-restore", "caller", "safe.cs", 17);
+        _timeoutClassifications =
+        [
+            MssqlGeneratedDdlProvisioningDiagnostics.IsProvisioningCommandTimeout(
+                CreateSqlException(-2, "provider message"),
+                true
+            ),
+            MssqlGeneratedDdlProvisioningDiagnostics.IsProvisioningCommandTimeout(
+                CreateSqlException(-2, "provider message"),
+                false
+            ),
+        ];
+        Exception[] otherErrors =
+        [
+            CreateSqlException(1205, "deadlock"),
+            CreateSqlException(547, "constraint"),
+            CreateSqlException(50000, "custom"),
+            new TimeoutException(),
+            new OperationCanceledException(),
+            new InvalidOperationException(),
+        ];
+        _otherClassifications = otherErrors
+            .Select(exception =>
+                MssqlGeneratedDdlProvisioningDiagnostics.IsProvisioningCommandTimeout(exception, true)
+            )
+            .ToArray();
+        _unlimitedMessage = Format(0, 3, 1);
+        _finiteMessage = Format(2, 3, 1);
+        _limitedMessage = Format(1, 1, 1);
+        _noOverlapMessages = new[] { 0, 1, 2 }.Select(limit => Format(limit, 1, 1)).ToArray();
+        _timeoutOverlapMessage = Format(0, 1, 2);
+        _normalizedMessages = new[] { "/private/build/fixture.cs", @"C:\private\build\fixture.cs" }
+            .Select(callerFilePath =>
+                MssqlGeneratedDdlProvisioningDiagnostics.Format(
+                    Diagnostic(0, 1, 1) with
+                    {
+                        Context = _context with
+                        {
+                            FixtureSignature = " \r\n\t\0 ",
+                            CallerMemberName = "setup\r\n\t\0member",
+                            CallerFilePath = callerFilePath,
+                        },
+                        DatabaseName = "db\r\n\t\0name",
+                    }
+                )
+            )
+            .ToArray();
+        using var writer = new ThrowingWriter();
+        MssqlGeneratedDdlProvisioningDiagnostics.TryWrite(
+            writer,
+            () => throw new InvalidOperationException()
+        );
+        MssqlGeneratedDdlProvisioningDiagnostics.TryWrite(writer, () => "safe");
+        _writeAttempts = writer.Attempts;
+    }
 
     [Test]
     public void It_classifies_only_an_admitted_SqlClient_command_timeout()
     {
-        MssqlGeneratedDdlProvisioningDiagnostics
-            .IsProvisioningCommandTimeout(CreateSqlException(-2, "secret A"), true)
-            .Should()
-            .BeTrue();
-        MssqlGeneratedDdlProvisioningDiagnostics
-            .IsProvisioningCommandTimeout(CreateSqlException(-2, "secret B"), false)
-            .Should()
-            .BeFalse();
-
-        foreach (
-            var exception in new Exception[]
-            {
-                CreateSqlException(1205, "deadlock"),
-                CreateSqlException(547, "constraint"),
-                CreateSqlException(50000, "custom"),
-                new TimeoutException(),
-                new OperationCanceledException(),
-                new InvalidOperationException(),
-            }
-        )
-        {
-            MssqlGeneratedDdlProvisioningDiagnostics
-                .IsProvisioningCommandTimeout(exception, true)
-                .Should()
-                .BeFalse();
-        }
+        _timeoutClassifications.Should().Equal(true, false);
+        _otherClassifications.Should().Equal(false, false, false, false, false, false);
     }
 
     [Test]
     public void It_reports_separate_counts_and_an_actionable_unlimited_remedy()
     {
-        var message = Format(0, 3, 1);
+        var message = _unlimitedMessage;
 
         message
             .Should()
@@ -69,7 +111,7 @@ public class Given_MssqlGeneratedDdlProvisioningDiagnostics
             .And.Contain("admittedAtBatchStart=3")
             .And.Contain("admittedAtTimeout=1")
             .And.Contain("limit=unlimited")
-            .And.Contain("caller=caller:17")
+            .And.Contain("contextOrigin=safe.cs:caller:17")
             .And.Contain("MSSQL_GENERATED_DDL_PROVISION_MAX_CONCURRENCY=1")
             .And.Contain("including this operation")
             .And.Contain("excluding queued entrants")
@@ -77,43 +119,40 @@ public class Given_MssqlGeneratedDdlProvisioningDiagnostics
     }
 
     [Test]
-    [SetCulture("fr-FR")]
     public void It_formats_numbers_invariantly()
     {
-        var message = Format(2, 3, 1);
+        var message = _finiteMessage;
         message.Should().Contain("elapsedSeconds=301.250").And.Contain("admissionWaitSeconds=17.000");
     }
 
     [Test]
     public void It_explains_an_already_effective_limit_of_one()
     {
-        MssqlGeneratedDdlProvisioningDiagnostics
-            .Format(Diagnostic(1, 1, 1))
+        _limitedMessage
             .Should()
             .Contain("Already limited to 1 in this process")
             .And.Contain("standalone DDL reapplication")
-            .And.Contain("other processes/server waits");
-        Format(2, 2, 2).Should().Contain("restart the test process");
+            .And.Contain("other processes, and SQL Server waits");
+        _finiteMessage.Should().Contain("restart the test process");
     }
 
-    [TestCase(0)]
-    [TestCase(1)]
-    [TestCase(2)]
-    public void It_qualifies_contention_when_neither_sample_observes_overlap(int limit)
+    [Test]
+    public void It_qualifies_contention_when_neither_sample_observes_overlap()
     {
-        var message = Format(limit, 1, 1);
-
-        message
-            .Should()
-            .Contain("possible provisioning contention")
-            .And.Contain("no overlap observed in sampled admitted operations")
-            .And.NotContain("suspected provisioning contention.");
+        foreach (var message in _noOverlapMessages)
+        {
+            message
+                .Should()
+                .Contain("possible provisioning contention")
+                .And.Contain("no overlap observed in sampled admitted operations")
+                .And.NotContain("suspected provisioning contention.");
+        }
     }
 
     [Test]
     public void It_reports_suspected_contention_when_overlap_is_observed_only_at_timeout()
     {
-        Format(0, 1, 2)
+        _timeoutOverlapMessage
             .Should()
             .Contain("suspected provisioning contention.")
             .And.NotContain("no overlap observed");
@@ -122,40 +161,23 @@ public class Given_MssqlGeneratedDdlProvisioningDiagnostics
     [Test]
     public void It_normalizes_context_and_falls_back_to_ddl_identity()
     {
-        var diagnostic = Diagnostic(0, 1, 1) with
+        foreach (var message in _normalizedMessages)
         {
-            Context = _context with
-            {
-                FixtureSignature = " \r\n\t\0 ",
-                CallerMemberName = "setup\r\n\t\0member",
-                CallerFilePath = "Password=secret; SELECT * FROM private",
-            },
-            DatabaseName = "db\r\n\t\0name",
-        };
-        var message = MssqlGeneratedDdlProvisioningDiagnostics.Format(diagnostic);
-        message
-            .Should()
-            .Contain("fixture=ddl-hash")
-            .And.Contain("caller=setup    member:17")
-            .And.Contain("database=db    name")
-            .And.NotContain("Password=secret")
-            .And.NotContain("SELECT * FROM private")
-            .And.NotContain("\r")
-            .And.NotContain("\n");
+            message
+                .Should()
+                .Contain("fixture=ddl-hash")
+                .And.Contain("contextOrigin=fixture.cs:setup    member:17")
+                .And.Contain("database=db    name")
+                .And.NotContain("private")
+                .And.NotContain("\r")
+                .And.NotContain("\n");
+        }
     }
 
     [Test]
     public void It_makes_formatting_and_writing_failures_nonfatal()
     {
-        var writer = new ThrowingWriter();
-        Action act = () =>
-            MssqlGeneratedDdlProvisioningDiagnostics.TryWrite(
-                writer,
-                () => throw new InvalidOperationException()
-            );
-        act.Should().NotThrow();
-        MssqlGeneratedDdlProvisioningDiagnostics.TryWrite(writer, () => "safe");
-        writer.Attempts.Should().Be(1);
+        _writeAttempts.Should().Be(1);
     }
 
     private string Format(int limit, int start, int timeout) =>

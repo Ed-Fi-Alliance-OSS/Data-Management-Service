@@ -241,13 +241,13 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
         return await CreateProvisionedAsync(generatedDdl, commandTimeoutSeconds, context, databaseCollation);
     }
 
-    internal static async Task<MssqlGeneratedDdlTestDatabase> CreateProvisionedAsync(
+    internal static Task<MssqlGeneratedDdlTestDatabase> CreateProvisionedAsync(
         string generatedDdl,
         int commandTimeoutSeconds,
         MssqlProvisioningTimingContext context,
         string? databaseCollation = null
     ) =>
-        await CreateProvisionedAsync(
+        CreateProvisionedAsync(
             generatedDdl,
             commandTimeoutSeconds,
             context,
@@ -359,23 +359,9 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
             commandTimeoutSeconds,
             context,
             () => MssqlGeneratedDdlProvisioningSnapshot.NotAdmitted,
-            Console.Error
+            TextWriter.Null
         );
     }
-
-    internal Task ApplyGeneratedDdlAsync(
-        string generatedDdl,
-        int commandTimeoutSeconds,
-        MssqlProvisioningTimingContext context,
-        TextWriter diagnosticWriter
-    ) =>
-        ApplyGeneratedDdlAsync(
-            generatedDdl,
-            commandTimeoutSeconds,
-            context,
-            () => MssqlGeneratedDdlProvisioningSnapshot.NotAdmitted,
-            diagnosticWriter
-        );
 
     private async Task ApplyGeneratedDdlAsync(
         string generatedDdl,

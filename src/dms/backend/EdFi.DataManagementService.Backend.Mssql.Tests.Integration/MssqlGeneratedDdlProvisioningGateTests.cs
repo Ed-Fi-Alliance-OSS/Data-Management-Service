@@ -13,82 +13,68 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [Category(MssqlCiShards.Shard4)]
 public class Given_MssqlGeneratedDdlProvisioningGate
 {
-    [Test]
-    public void It_preserves_the_existing_configuration_parser()
+    private int[] _parsedLimits = [];
+    private Exception[] _configurationFailures = [];
+    private MssqlGeneratedDdlProvisioningGate _firstGate = null!;
+    private MssqlGeneratedDdlProvisioningGate _secondGate = null!;
+    private int _settingReads;
+    private int _invalidSettingReads;
+    private Exception[] _initializationFailures = [];
+    private int _queuedCount;
+    private bool _entrantWasQueued;
+    private int _countAfterAdmission;
+    private bool _entrantWasAdmitted;
+    private int[] _unlimitedCounts = [];
+    private TimeSpan _unlimitedWait;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
-        new MssqlGeneratedDdlProvisioningGate("").MaximumConcurrency.Should().Be(0);
-        new MssqlGeneratedDdlProvisioningGate(" \t ").MaximumConcurrency.Should().Be(0);
-        new MssqlGeneratedDdlProvisioningGate("1").MaximumConcurrency.Should().Be(1);
-        new MssqlGeneratedDdlProvisioningGate("0002").MaximumConcurrency.Should().Be(2);
-        new MssqlGeneratedDdlProvisioningGate("2147483647").MaximumConcurrency.Should().Be(int.MaxValue);
+        _parsedLimits = new[] { "", " \t ", "1", "0002", "2147483647" }
+            .Select(value => new MssqlGeneratedDdlProvisioningGate(value).MaximumConcurrency)
+            .ToArray();
+        _configurationFailures = new[] { "0", "-1", "+2", " 2", "2 ", "x", "2147483648" }
+            .Select(value => CaptureFailure(() => _ = new MssqlGeneratedDdlProvisioningGate(value)))
+            .ToArray();
 
-        foreach (var invalidValue in new[] { "0", "-1", "+2", " 2", "2 ", "x", "2147483648" })
-        {
-            Action act = () => new MssqlGeneratedDdlProvisioningGate(invalidValue);
-
-            act.Should()
-                .Throw<InvalidOperationException>()
-                .WithMessage(
-                    "*MSSQL_GENERATED_DDL_PROVISION_MAX_CONCURRENCY*must be a positive integer when set."
-                );
-        }
-    }
-
-    [Test]
-    public void It_captures_configuration_once_including_initialization_failure()
-    {
         var configuredValue = "2";
-        var readCount = 0;
+        _settingReads = 0;
         var lazyGate = MssqlGeneratedDdlProvisioningGate.CreateLazy(() =>
         {
-            readCount++;
+            _settingReads++;
             return configuredValue;
         });
-
-        var first = lazyGate.Value;
+        _firstGate = lazyGate.Value;
         configuredValue = "1";
-        var second = lazyGate.Value;
+        _secondGate = lazyGate.Value;
 
-        second.Should().BeSameAs(first);
-        second.MaximumConcurrency.Should().Be(2);
-        readCount.Should().Be(1);
-
-        var invalidReadCount = 0;
+        _invalidSettingReads = 0;
         var invalidLazyGate = MssqlGeneratedDdlProvisioningGate.CreateLazy(() =>
         {
-            invalidReadCount++;
+            _invalidSettingReads++;
             return "0";
         });
+        _initializationFailures =
+        [
+            CaptureFailure(() => _ = invalidLazyGate.Value),
+            CaptureFailure(() => _ = invalidLazyGate.Value),
+        ];
 
-        Action firstInvalidAccess = () => _ = invalidLazyGate.Value;
-        Action secondInvalidAccess = () => _ = invalidLazyGate.Value;
-
-        firstInvalidAccess.Should().Throw<InvalidOperationException>();
-        secondInvalidAccess.Should().Throw<InvalidOperationException>();
-        invalidReadCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_excludes_queued_entrants_and_admits_them_after_release()
-    {
         var gate = new MssqlGeneratedDdlProvisioningGate("2");
         var first = await gate.AcquireAsync();
         var second = await gate.AcquireAsync();
         var waiting = gate.AcquireAsync().AsTask();
-        MssqlGeneratedDdlProvisioningLease? third = null;
+        MssqlGeneratedDdlProvisioningLease third = null!;
         var firstReleased = false;
-
         try
         {
-            gate.AdmittedCount.Should().Be(2);
-            waiting.IsCompleted.Should().BeFalse();
-
+            _queuedCount = gate.AdmittedCount;
+            _entrantWasQueued = !waiting.IsCompleted;
             await first.DisposeAsync();
             firstReleased = true;
-            third = await waiting;
-
-            gate.AdmittedCount.Should().Be(2);
-            third.CaptureSnapshot().IsAdmitted.Should().BeTrue();
+            third = await waiting.WaitAsync(TimeSpan.FromSeconds(90));
+            _countAfterAdmission = gate.AdmittedCount;
+            _entrantWasAdmitted = third.CaptureSnapshot().IsAdmitted;
         }
         finally
         {
@@ -96,58 +82,84 @@ public class Given_MssqlGeneratedDdlProvisioningGate
             {
                 await first.DisposeAsync();
             }
-
             await second.DisposeAsync();
-
             if (third is null)
             {
-                third = await waiting;
+                third = await waiting.WaitAsync(TimeSpan.FromSeconds(90));
             }
-
             await third.DisposeAsync();
         }
-    }
 
-    [Test]
-    public async Task It_counts_unlimited_operations_and_disposes_each_lease_once()
-    {
-        var gate = new MssqlGeneratedDdlProvisioningGate("");
-        var leases = await Task.WhenAll(Enumerable.Range(0, 4).Select(_ => gate.AcquireAsync().AsTask()));
-
-        gate.AdmittedCount.Should().Be(4);
-        leases[0].CaptureSnapshot().AdmissionWaitElapsed.Should().Be(TimeSpan.Zero);
-
+        var unlimitedGate = new MssqlGeneratedDdlProvisioningGate("");
+        var leases = await Task.WhenAll(
+            Enumerable.Range(0, 4).Select(_ => unlimitedGate.AcquireAsync().AsTask())
+        );
+        _unlimitedWait = leases[0].CaptureSnapshot().AdmissionWaitElapsed;
+        var initialCount = unlimitedGate.AdmittedCount;
         await leases[0].DisposeAsync();
+        var afterFirstDispose = unlimitedGate.AdmittedCount;
         await leases[0].DisposeAsync();
-        gate.AdmittedCount.Should().Be(3);
-
+        var afterDoubleDispose = unlimitedGate.AdmittedCount;
         foreach (var lease in leases.Skip(1))
         {
             await lease.DisposeAsync();
         }
-
-        gate.AdmittedCount.Should().Be(0);
+        _unlimitedCounts = [initialCount, afterFirstDispose, afterDoubleDispose, unlimitedGate.AdmittedCount];
     }
 
     [Test]
-    public async Task It_releases_admission_when_the_owned_operation_throws()
+    public void It_preserves_the_existing_configuration_parser()
     {
-        var gate = new MssqlGeneratedDdlProvisioningGate("1");
-        var sentinel = new InvalidOperationException("sentinel");
-        Func<Task> operation = async () =>
+        _parsedLimits.Should().Equal(0, 0, 1, 2, int.MaxValue);
+        foreach (var failure in _configurationFailures)
         {
-            await using var lease = await gate.AcquireAsync();
-            throw sentinel;
-        };
+            failure
+                .Should()
+                .BeOfType<InvalidOperationException>()
+                .Which.Message.Should()
+                .Be("MSSQL_GENERATED_DDL_PROVISION_MAX_CONCURRENCY must be a positive integer when set.");
+        }
+    }
 
-        var thrown = await operation.Should().ThrowAsync<InvalidOperationException>();
+    [Test]
+    public void It_captures_configuration_once_including_initialization_failure()
+    {
+        _secondGate.Should().BeSameAs(_firstGate);
+        _secondGate.MaximumConcurrency.Should().Be(2);
+        _settingReads.Should().Be(1);
+        foreach (var failure in _initializationFailures)
+        {
+            failure.Should().BeOfType<InvalidOperationException>();
+        }
+        _invalidSettingReads.Should().Be(1);
+    }
 
-        thrown.Which.Should().BeSameAs(sentinel);
-        gate.AdmittedCount.Should().Be(0);
+    [Test]
+    public void It_excludes_queued_entrants_and_admits_them_after_release()
+    {
+        _queuedCount.Should().Be(2);
+        _entrantWasQueued.Should().BeTrue();
+        _countAfterAdmission.Should().Be(2);
+        _entrantWasAdmitted.Should().BeTrue();
+    }
 
-        var nextLease = await gate.AcquireAsync();
-        gate.AdmittedCount.Should().Be(1);
-        await nextLease.DisposeAsync();
-        gate.AdmittedCount.Should().Be(0);
+    [Test]
+    public void It_counts_unlimited_operations_and_disposes_each_lease_once()
+    {
+        _unlimitedCounts.Should().Equal(4, 3, 3, 0);
+        _unlimitedWait.Should().Be(TimeSpan.Zero);
+    }
+
+    private static Exception CaptureFailure(Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception exception)
+        {
+            return exception;
+        }
+        return new AssertionException("Expected the provisioning configuration to be rejected.");
     }
 }

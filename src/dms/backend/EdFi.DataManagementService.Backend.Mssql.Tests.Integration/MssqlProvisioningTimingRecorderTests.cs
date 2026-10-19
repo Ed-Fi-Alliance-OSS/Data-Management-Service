@@ -13,27 +13,19 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [Category(MssqlCiShards.Shard4)]
 public class Given_MssqlProvisioningTimingRecorder
 {
-    private string _directory = null!;
+    private string _directory = "";
+    private string[] _rows = [];
+    private string _warnings = "";
+    private string _blankPathWarnings = "";
+    private string[] _unexpectedBlankPathFiles = [];
+    private string[] _createdBlankPathFiles = [];
+    private int _warningAttempts;
 
-    [SetUp]
-    public void Setup()
+    [OneTimeSetUp]
+    public void OneTimeSetUp()
     {
         _directory = Path.Combine(Path.GetTempPath(), $"mssql-timing-{Guid.NewGuid():N}");
         Directory.CreateDirectory(_directory);
-    }
-
-    [TearDown]
-    public void TearDown()
-    {
-        if (Directory.Exists(_directory))
-        {
-            Directory.Delete(_directory, recursive: true);
-        }
-    }
-
-    [Test]
-    public void It_preserves_the_csv_contract()
-    {
         var path = Path.Combine(_directory, "timings.csv");
         MssqlProvisioningTimingRecorder.RecordToPath(
             path,
@@ -68,28 +60,90 @@ public class Given_MssqlProvisioningTimingRecorder
             "file.cs",
             8
         );
+        _rows = File.ReadAllLines(path);
 
-        var rows = File.ReadAllLines(path);
-        rows.Should().HaveCount(3);
-        rows[0]
+        string[] blankPaths = ["", " \t "];
+        var existingBlankPathFiles = blankPaths.Where(File.Exists).ToArray();
+        using var blankWarnings = new StringWriter();
+        foreach (var blankPath in blankPaths)
+        {
+            Record(blankPath, blankWarnings);
+        }
+        _blankPathWarnings = blankWarnings.ToString();
+        _unexpectedBlankPathFiles = blankPaths.Where(File.Exists).ToArray();
+        _createdBlankPathFiles = _unexpectedBlankPathFiles.Except(existingBlankPathFiles).ToArray();
+
+        var parentFile = Path.Combine(_directory, "regular-file");
+        File.WriteAllText(parentFile, "file");
+        using var warnings = new StringWriter();
+        // Both attempts must remain nonfatal; the second must not warn again.
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            Record(Path.Combine(parentFile, "child.csv"), warnings);
+        }
+        _warnings = warnings.ToString();
+
+        using var throwingWriter = new ThrowingWriter();
+        Record(Path.Combine(parentFile, "other-child.csv"), throwingWriter);
+        _warningAttempts = throwingWriter.Attempts;
+    }
+
+    [OneTimeTearDown]
+    public void OneTimeTearDown()
+    {
+        foreach (var path in _createdBlankPathFiles)
+        {
+            File.Delete(path);
+        }
+        if (Directory.Exists(_directory))
+        {
+            Directory.Delete(_directory, recursive: true);
+        }
+    }
+
+    [Test]
+    public void It_preserves_the_csv_contract()
+    {
+        _rows.Should().HaveCount(3);
+        _rows[0]
             .Should()
             .Be(
                 "TimestampUtc,Outcome,DurationSeconds,DatabaseName,CommandTimeoutSeconds,FixtureSignature,GeneratedDdlHash,Phase,LeaseStrategy,Shard,TestWorkerId,CallerMemberName,CallerFilePath,CallerLineNumber,IsDiagnostic,Detail,BatchOrdinal,BatchCount,BatchHash"
             );
-        rows[1]
+        _rows[1]
             .Should()
             .Contain(",success,2.500,db,300,\"family,variant\",hash,provision,direct,")
             .And.Contain(",7,false,,2,3,batch");
-        rows[2].Should().Contain(",failure,1.000,db2,300,family,hash2,apply,direct,");
+        _rows[2].Should().Contain(",failure,1.000,db2,300,family,hash2,apply,direct,");
     }
 
     [Test]
-    public void It_skips_a_blank_output_path()
+    public void It_skips_empty_and_whitespace_only_output_paths()
     {
-        var warnings = new StringWriter();
+        _blankPathWarnings.Should().BeEmpty();
+        _unexpectedBlankPathFiles.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_warns_only_once_per_unavailable_path()
+    {
+        _warnings
+            .Should()
+            .Be(
+                $"MSSQL fixture timing output unavailable (IOException). Check MSSQL_FIXTURE_TIMINGS_PATH; further warnings for this path are suppressed.{Environment.NewLine}"
+            );
+    }
+
+    [Test]
+    public void It_makes_warning_failures_nonfatal()
+    {
+        _warningAttempts.Should().Be(1);
+    }
+
+    private static void Record(string path, TextWriter writer) =>
         MssqlProvisioningTimingRecorder.RecordToPath(
-            "",
-            warnings,
+            path,
+            writer,
             "success",
             TimeSpan.Zero,
             "db",
@@ -102,60 +156,15 @@ public class Given_MssqlProvisioningTimingRecorder
             "file.cs",
             1
         );
-        warnings.ToString().Should().BeEmpty();
-    }
-
-    [Test]
-    public void It_makes_path_write_and_warning_failures_nonfatal()
-    {
-        var parentFile = Path.Combine(_directory, "regular-file");
-        File.WriteAllText(parentFile, "file");
-        var warnings = new StringWriter();
-        Action act = () =>
-            MssqlProvisioningTimingRecorder.RecordToPath(
-                Path.Combine(parentFile, "child.csv"),
-                warnings,
-                "success",
-                TimeSpan.Zero,
-                "db",
-                300,
-                "fixture",
-                "hash",
-                "phase",
-                "direct",
-                "caller",
-                "file.cs",
-                1
-            );
-        act.Should().NotThrow();
-        act.Should().NotThrow();
-        warnings
-            .ToString()
-            .Should()
-            .Be(
-                $"MSSQL fixture timing output unavailable (IOException). Check MSSQL_FIXTURE_TIMINGS_PATH; further warnings for this path are suppressed.{Environment.NewLine}"
-            );
-        Action throwingWarning = () =>
-            MssqlProvisioningTimingRecorder.RecordToPath(
-                Path.Combine(parentFile, "other-child.csv"),
-                new ThrowingWriter(),
-                "success",
-                TimeSpan.Zero,
-                "db",
-                300,
-                "fixture",
-                "hash",
-                "phase",
-                "direct",
-                "caller",
-                "file.cs",
-                1
-            );
-        throwingWarning.Should().NotThrow();
-    }
 
     private sealed class ThrowingWriter : StringWriter
     {
-        public override void WriteLine(string? value) => throw new IOException("warning failure");
+        public int Attempts { get; private set; }
+
+        public override void WriteLine(string? value)
+        {
+            Attempts++;
+            throw new IOException("warning failure");
+        }
     }
 }

@@ -34,6 +34,7 @@ internal static class MssqlGeneratedDdlProvisioningDiagnostics
             : fixtureSignature;
         var database = Normalize(diagnostic.DatabaseName);
         var strategy = Normalize(diagnostic.Context.LeaseStrategy);
+        var callerFile = Normalize(Path.GetFileName(diagnostic.Context.CallerFilePath.Replace('\\', '/')));
         var caller = Normalize(diagnostic.Context.CallerMemberName);
         var contention =
             diagnostic.AdmittedAtBatchStart > 1 || diagnostic.AdmittedAtTimeout > 1
@@ -46,14 +47,14 @@ internal static class MssqlGeneratedDdlProvisioningDiagnostics
         var remedy = diagnostic.MaximumConcurrency switch
         {
             1 =>
-                "Already limited to 1 in this process; investigate standalone DDL reapplication, other processes/server waits.",
+                "Already limited to 1 in this process; investigate standalone DDL reapplication, other processes, and SQL Server waits.",
             _ =>
                 $"To reduce in-process overlap, set {MssqlGeneratedDdlProvisioningGate.SettingName}=1 and restart the test process.",
         };
 
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"MSSQL generated-DDL provisioning timeout: {contention} fixture={fixture} caller={caller}:{diagnostic.Context.CallerLineNumber} database={database} strategy={strategy} batch={diagnostic.BatchOrdinal}/{diagnostic.BatchCount} elapsedSeconds={diagnostic.BatchElapsed.TotalSeconds:0.000} commandTimeoutSeconds={diagnostic.CommandTimeoutSeconds} admissionWaitSeconds={diagnostic.AdmissionWaitElapsed.TotalSeconds:0.000} limit={limit} admittedAtBatchStart={diagnostic.AdmittedAtBatchStart} admittedAtTimeout={diagnostic.AdmittedAtTimeout}. Admitted counts are process-wide operations (including this operation and excluding queued entrants), not executing SQL or server-wide counts; samples do not prove an engine wait. Standalone DDL reapplication is outside this gate. {remedy}"
+            $"MSSQL generated-DDL provisioning timeout: {contention} fixture={fixture} contextOrigin={callerFile}:{caller}:{diagnostic.Context.CallerLineNumber} database={database} strategy={strategy} batch={diagnostic.BatchOrdinal}/{diagnostic.BatchCount} elapsedSeconds={diagnostic.BatchElapsed.TotalSeconds:0.000} commandTimeoutSeconds={diagnostic.CommandTimeoutSeconds} admissionWaitSeconds={diagnostic.AdmissionWaitElapsed.TotalSeconds:0.000} limit={limit} admittedAtBatchStart={diagnostic.AdmittedAtBatchStart} admittedAtTimeout={diagnostic.AdmittedAtTimeout}. Context origin is the recorded provisioning caller; shared baselines retain their first registration. Admitted counts are process-wide operations (including this operation and excluding queued entrants), not executing SQL or server-wide counts; samples do not prove an engine wait. Standalone DDL reapplication is outside this gate. {remedy}"
         );
     }
 

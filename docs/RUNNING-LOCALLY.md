@@ -205,6 +205,14 @@ idempotency check. If the effective limit is already 1, investigate this
 untracked work, other processes, and server waits; the limit cannot be reduced
 further.
 
+Only command timeouts while applying generated-DDL batches under provisioning
+admission receive this diagnostic. Timeouts during `CREATE DATABASE`, connection
+opening, transaction commit, reset-plan discovery, snapshot creation/restoration,
+and backup/restore retain their provider failures without a contention diagnostic.
+The `contextOrigin` field identifies the recorded caller by source filename,
+member, and line; shared baselines retain the context from their first
+registration, which may differ from the fixture currently acquiring a lease.
+
 The diagnostic is written to stderr (`Console.Error`), rather than appended to
 the failed test's exception message. Inspect the test-run console output;
 depending on the runner and setup phase, TRX may capture it as test stderr or
@@ -221,6 +229,8 @@ the `backup-restore` lease strategy and a provisioning concurrency limit of 2
 by default. To isolate one shard locally:
 
 ```powershell
+$env:MSSQL_GENERATED_DDL_LEASE_STRATEGY = 'backup-restore'
+$env:MSSQL_GENERATED_DDL_PROVISION_MAX_CONCURRENCY = '2'
 dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter "Category=MssqlCiShard4"
 ```
 

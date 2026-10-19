@@ -8,17 +8,172 @@ using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Backend.Mssql.Tests.Integration.MssqlGeneratedDdlProvisioningProbe;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-[TestFixture]
+[TestFixture(false)]
+[TestFixture(true)]
 [Explicit("Runs controlled SQL Server command-timeout probes outside normal CI shards.")]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
-public class Given_MssqlGeneratedDdlProvisioningPipeline
+public class Given_MssqlGeneratedDdlProvisioningPipeline(bool throwingWriter)
 {
-    [SetUp]
-    public void Setup()
+    private Exception _exception = null!;
+    private string _diagnostic = "";
+    private int _admittedAfterFailure;
+    private int _admittedAfterReacquiring;
+    private bool _databaseExists;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        RequireSqlServer();
+        using StringWriter writer = throwingWriter ? new CaptureThenThrowWriter() : new StringWriter();
+        var gate = new MssqlGeneratedDdlProvisioningGate("1");
+        var resource = $"DMS-1330:{Guid.NewGuid():N}";
+        _exception = await RunBlockedProvisioningAsync(resource, BuildBlockedBatch(resource), gate, writer);
+        _diagnostic = writer.ToString();
+        _admittedAfterFailure = gate.AdmittedCount;
+        _databaseExists = await DoesDatabaseExistAsync(GetDiagnosticDatabaseName(_diagnostic));
+        await using var nextLease = await gate.AcquireAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(90));
+        _admittedAfterReacquiring = gate.AdmittedCount;
+    }
+
+    [Test]
+    public void It_preserves_the_real_provider_timeout_and_stack()
+    {
+        var providerException = PrimaryException(_exception).Should().BeOfType<SqlException>().Subject;
+        providerException.Number.Should().Be(-2);
+        providerException.StackTrace.Should().Contain("ExecuteGeneratedDdlBatchAsync");
+    }
+
+    [Test]
+    public void It_reports_the_provisioning_context_even_if_the_writer_throws()
+    {
+        _diagnostic
+            .Should()
+            .Contain("MSSQL generated-DDL provisioning timeout: possible provisioning contention;")
+            .And.Contain("no overlap observed in sampled admitted operations")
+            .And.Contain("batch=1/1")
+            .And.Contain("strategy=direct")
+            .And.Contain("commandTimeoutSeconds=5")
+            .And.Contain("limit=1")
+            .And.Contain("admittedAtBatchStart=1")
+            .And.Contain("admittedAtTimeout=1");
+    }
+
+    [Test]
+    public void It_releases_production_admission_after_failure()
+    {
+        _admittedAfterFailure.Should().Be(0);
+        _admittedAfterReacquiring.Should().Be(1);
+    }
+
+    [Test]
+    public void It_drops_the_failed_database() => _databaseExists.Should().BeFalse();
+}
+
+[TestFixture]
+[Explicit("Runs a controlled standalone SQL Server command-timeout probe outside normal CI shards.")]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+public class Given_MssqlGeneratedDdlProvisioningPipeline_With_Standalone_Ddl
+{
+    private Exception _exception = null!;
+    private int _remainingSchemas;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        RequireSqlServer();
+        var resource = $"DMS-1330:{Guid.NewGuid():N}";
+        await using var blocker = await AcquireBlockerAsync(resource);
+        await using var database = await MssqlGeneratedDdlTestDatabase.CreateEmptyAsync();
+        var sql =
+            $"CREATE SCHEMA dms1330_probe;\nGO\nCREATE TABLE dms1330_probe.probe (id int NOT NULL);\nGO\n{BuildBlockedBatch(resource)}";
+        var applyTask = database.ApplyGeneratedDdlAsync(sql, 5, fixtureSignature: "standalone");
+        try
+        {
+            await applyTask.WaitAsync(TimeSpan.FromSeconds(90));
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
+        finally
+        {
+            await blocker.CloseAsync();
+            try
+            {
+                await applyTask;
+            }
+            catch
+            {
+                // Preserve the observed failure while draining the operation before disposal.
+            }
+        }
+        _remainingSchemas = await database.ExecuteScalarOrDefaultAsync<int>(
+            "SELECT COUNT(*) FROM sys.schemas WHERE name = N'dms1330_probe';"
+        );
+    }
+
+    [Test]
+    public void It_preserves_the_standalone_provider_timeout() =>
+        PrimaryException(_exception).Should().BeOfType<SqlException>().Which.Number.Should().Be(-2);
+
+    [Test]
+    public void It_rolls_back_all_standalone_batches() => _remainingSchemas.Should().Be(0);
+}
+
+[TestFixture]
+[Explicit("Runs a real SQL Server provisioning failure outside normal CI shards.")]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+public class Given_MssqlGeneratedDdlProvisioningPipeline_With_A_Non_Timeout_Failure
+{
+    private Exception _exception = null!;
+    private string _diagnostic = "";
+    private int _admittedAfterFailure;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        RequireSqlServer();
+        using var writer = new StringWriter();
+        var gate = new MssqlGeneratedDdlProvisioningGate("1");
+        try
+        {
+            await using var database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(
+                "THROW 50000, 'injected failure', 1;",
+                30,
+                CreateContext("non-timeout"),
+                () => gate,
+                writer
+            );
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
+        _diagnostic = writer.ToString();
+        _admittedAfterFailure = gate.AdmittedCount;
+    }
+
+    [Test]
+    public void It_preserves_non_timeout_sql_failure_classification() =>
+        PrimaryException(_exception).Should().BeOfType<SqlException>().Which.Number.Should().Be(50000);
+
+    [Test]
+    public void It_does_not_report_provisioning_contention() => _diagnostic.Should().BeEmpty();
+
+    [Test]
+    public void It_releases_production_admission() => _admittedAfterFailure.Should().Be(0);
+}
+
+internal static class MssqlGeneratedDdlProvisioningProbe
+{
+    public static void RequireSqlServer()
     {
         if (!MssqlTestDatabaseHelper.IsConfigured())
         {
@@ -26,124 +181,7 @@ public class Given_MssqlGeneratedDdlProvisioningPipeline
         }
     }
 
-    [Test]
-    public async Task It_reports_a_real_provisioning_command_timeout_and_drops_the_failed_database()
-    {
-        var writer = new CaptureWriter();
-        var gate = new MssqlGeneratedDdlProvisioningGate("1");
-        var resource = $"DMS-1330:{Guid.NewGuid():N}";
-        var sql = BuildBlockedBatch(resource);
-
-        var exception = await RunBlockedProvisioningAsync(resource, sql, gate, writer);
-        var providerException = PrimaryException(exception).Should().BeOfType<SqlException>().Subject;
-        providerException.Number.Should().Be(-2);
-        providerException.StackTrace.Should().Contain("ExecuteGeneratedDdlBatchAsync");
-        gate.AdmittedCount.Should().Be(0);
-        var diagnostic = writer.ToString();
-        diagnostic
-            .Should()
-            .Contain("MSSQL generated-DDL provisioning timeout: possible provisioning contention;")
-            .And.Contain("no overlap observed in sampled admitted operations");
-        diagnostic
-            .Should()
-            .Contain("batch=1/1")
-            .And.Contain("strategy=direct")
-            .And.Contain("commandTimeoutSeconds=5")
-            .And.Contain("limit=1")
-            .And.Contain("admittedAtBatchStart=1")
-            .And.Contain("admittedAtTimeout=1");
-        var databaseName = GetDiagnosticDatabaseName(diagnostic);
-        (await DoesDatabaseExistAsync(databaseName)).Should().BeFalse();
-    }
-
-    [Test]
-    public async Task It_preserves_a_real_timeout_when_the_output_writer_throws()
-    {
-        var writer = new CaptureThenThrowWriter();
-        var gate = new MssqlGeneratedDdlProvisioningGate("1");
-        var resource = $"DMS-1330:{Guid.NewGuid():N}";
-
-        var exception = await RunBlockedProvisioningAsync(
-            resource,
-            BuildBlockedBatch(resource),
-            gate,
-            writer
-        );
-        PrimaryException(exception).Should().BeOfType<SqlException>().Which.Number.Should().Be(-2);
-        writer.ToString().Should().Contain("MSSQL generated-DDL provisioning timeout");
-        gate.AdmittedCount.Should().Be(0);
-        (await DoesDatabaseExistAsync(GetDiagnosticDatabaseName(writer.ToString()))).Should().BeFalse();
-    }
-
-    [Test]
-    public async Task It_rolls_back_standalone_ddl_without_a_provisioning_diagnostic()
-    {
-        var context = CreateContext("standalone");
-        var resource = $"DMS-1330:{Guid.NewGuid():N}";
-        await using var blocker = await AcquireBlockerAsync(resource);
-        var database = await MssqlGeneratedDdlTestDatabase.CreateEmptyAsync();
-        var writer = new StringWriter();
-        var sql =
-            $"CREATE SCHEMA dms1330_probe;\nGO\nCREATE TABLE dms1330_probe.probe (id int NOT NULL);\nGO\n{BuildBlockedBatch(resource)}";
-
-        var applyTask = database.ApplyGeneratedDdlAsync(sql, 5, context, writer);
-        try
-        {
-            Func<Task> act = () => applyTask.WaitAsync(TimeSpan.FromSeconds(90));
-            var exception = await act.Should().ThrowAsync<Exception>();
-            PrimaryException(exception.Which).Should().BeOfType<SqlException>().Which.Number.Should().Be(-2);
-            writer.ToString().Should().BeEmpty();
-            (
-                await database.ExecuteScalarOrDefaultAsync<int>(
-                    "SELECT COUNT(*) FROM sys.schemas WHERE name = N'dms1330_probe';"
-                )
-            )
-                .Should()
-                .Be(0);
-        }
-        finally
-        {
-            try
-            {
-                await blocker.CloseAsync();
-                try
-                {
-                    await applyTask;
-                }
-                catch
-                {
-                    // The assertion above observes the operation failure; drain it before disposing.
-                }
-            }
-            finally
-            {
-                await database.DisposeAsync();
-            }
-        }
-    }
-
-    [Test]
-    public async Task It_preserves_non_timeout_sql_failure_classification()
-    {
-        var writer = new StringWriter();
-        var gate = new MssqlGeneratedDdlProvisioningGate("1");
-        var sql = "THROW 50000, 'injected failure', 1;";
-        Func<Task> act = () =>
-            MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(
-                sql,
-                30,
-                CreateContext("non-timeout"),
-                () => gate,
-                writer
-            );
-
-        var exception = await act.Should().ThrowAsync<Exception>();
-        PrimaryException(exception.Which).Should().BeOfType<SqlException>().Which.Number.Should().Be(50000);
-        writer.ToString().Should().BeEmpty();
-        gate.AdmittedCount.Should().Be(0);
-    }
-
-    private static async Task<Exception> RunBlockedProvisioningAsync(
+    public static async Task<Exception> RunBlockedProvisioningAsync(
         string resource,
         string sql,
         MssqlGeneratedDdlProvisioningGate gate,
@@ -186,7 +224,7 @@ public class Given_MssqlGeneratedDdlProvisioningPipeline
         }
     }
 
-    private static MssqlProvisioningTimingContext CreateContext(string fixture) =>
+    public static MssqlProvisioningTimingContext CreateContext(string fixture) =>
         new(
             fixture,
             MssqlProvisioningTimingRecorder.ComputeGeneratedDdlHash(fixture),
@@ -196,7 +234,7 @@ public class Given_MssqlGeneratedDdlProvisioningPipeline
             1
         );
 
-    private static string BuildBlockedBatch(string resource) =>
+    public static string BuildBlockedBatch(string resource) =>
         $"""
             USE [master];
             DECLARE @lockResult int;
@@ -205,7 +243,7 @@ public class Given_MssqlGeneratedDdlProvisioningPipeline
             IF @lockResult < 0 THROW 50001, 'application lock request failed', 1;
             """;
 
-    private static async Task<SqlConnection> AcquireBlockerAsync(string resource)
+    public static async Task<SqlConnection> AcquireBlockerAsync(string resource)
     {
         var builder = new SqlConnectionStringBuilder(Configuration.MssqlAdminConnectionString)
         {
@@ -236,7 +274,7 @@ public class Given_MssqlGeneratedDdlProvisioningPipeline
         }
     }
 
-    private static async Task<bool> DoesDatabaseExistAsync(string databaseName)
+    public static async Task<bool> DoesDatabaseExistAsync(string databaseName)
     {
         await using var connection = new SqlConnection(Configuration.MssqlAdminConnectionString);
         await connection.OpenAsync();
@@ -247,7 +285,7 @@ public class Given_MssqlGeneratedDdlProvisioningPipeline
         return (bool)(await command.ExecuteScalarAsync())!;
     }
 
-    private static string GetDiagnosticDatabaseName(string diagnostic)
+    public static string GetDiagnosticDatabaseName(string diagnostic)
     {
         var marker = " database=";
         var start = diagnostic.IndexOf(marker, StringComparison.Ordinal) + marker.Length;
@@ -255,12 +293,10 @@ public class Given_MssqlGeneratedDdlProvisioningPipeline
         return diagnostic[start..end];
     }
 
-    private static Exception PrimaryException(Exception exception) =>
+    public static Exception PrimaryException(Exception exception) =>
         exception is AggregateException aggregate ? aggregate.InnerExceptions[0] : exception;
 
-    private sealed class CaptureWriter : StringWriter { }
-
-    private sealed class CaptureThenThrowWriter : StringWriter
+    public sealed class CaptureThenThrowWriter : StringWriter
     {
         public override void WriteLine(string? value)
         {
