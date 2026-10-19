@@ -1578,6 +1578,67 @@ exit $ExitCode
         }
     }
 
+    Context "DMS-1283 prepare override forwarding" {
+        BeforeEach {
+            $script:feedFolder = script:New-FixtureFeed
+            $script:oldToolPath = $env:DMS_SCHEMA_TOOL_PATH
+            $script:oldFallback = $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK
+            $script:oldDotnetFunction = Get-Item Function:\global:dotnet -ErrorAction SilentlyContinue
+            $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK = 'false'
+            Set-Item Function:\global:dotnet -Value { throw 'Unexpected schema-tool publish during prepare override test' }
+            $publishedDirectory = Join-Path $script:repo.BootstrapRoot 'tools/api-schema-tools'
+            New-Item -ItemType Directory -Path $publishedDirectory -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $publishedDirectory $(if ($IsWindows) { 'api-schema-tools.exe' } else { 'api-schema-tools' })) -Value 'published cache sentinel'
+        }
+
+        AfterEach {
+            $env:DMS_SCHEMA_TOOL_PATH = $script:oldToolPath
+            $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK = $script:oldFallback
+            if ($null -ne $script:oldDotnetFunction) { Set-Item Function:\global:dotnet -Value $script:oldDotnetFunction.ScriptBlock }
+            else { Remove-Item Function:\global:dotnet -ErrorAction SilentlyContinue }
+        }
+
+        It 'It_DMS1283_prepare_parameter_beats_environment_and_cache' {
+            $parameterDirectory = Join-Path $script:repo.RepoRoot 'parameter-tool'
+            $environmentDirectory = Join-Path $script:repo.RepoRoot 'environment-tool'
+            New-Item -ItemType Directory -Path $parameterDirectory, $environmentDirectory -Force | Out-Null
+            $parameterTool = script:New-FakeSchemaTool -Directory $parameterDirectory -Hash $script:hashA
+            $environmentHash = '0000000000000000000000000000000000000000000000000000000000000002'
+            $environmentTool = script:New-FakeSchemaTool -Directory $environmentDirectory -Hash $environmentHash
+            $env:DMS_SCHEMA_TOOL_PATH = $environmentTool
+
+            & $script:repo.PrepareSchemaScript -PackageFeedUrl $script:feedFolder -SchemaToolPath $parameterTool | Out-Null
+
+            (script:Get-RootManifest).schema.effectiveSchemaHash | Should -Be $script:hashA
+        }
+
+        It 'It_DMS1283_prepare_environment_override_is_used_when_parameter_is_omitted' {
+            $environmentHash = '0000000000000000000000000000000000000000000000000000000000000003'
+            $environmentDirectory = Join-Path $script:repo.RepoRoot 'environment-tool'
+            New-Item -ItemType Directory -Path $environmentDirectory -Force | Out-Null
+            $env:DMS_SCHEMA_TOOL_PATH = script:New-FakeSchemaTool -Directory $environmentDirectory -Hash $environmentHash
+
+            & $script:repo.PrepareSchemaScript -PackageFeedUrl $script:feedFolder | Out-Null
+
+            (script:Get-RootManifest).schema.effectiveSchemaHash | Should -Be $environmentHash
+        }
+
+        It 'It_DMS1283_prepare_invalid_parameter_fails_closed_despite_valid_cache' {
+            $env:DMS_SCHEMA_TOOL_PATH = script:New-FakeSchemaTool -Directory $script:repo.RepoRoot -Hash $script:hashA
+            $missingParameter = Join-Path $script:repo.RepoRoot 'missing/parameter-api-schema-tools.exe'
+
+            { & $script:repo.PrepareSchemaScript -PackageFeedUrl $script:feedFolder -SchemaToolPath $missingParameter } |
+                Should -Throw -ExpectedMessage '*configured api-schema-tools executable was not found*'
+        }
+
+        It 'It_DMS1283_prepare_invalid_environment_fails_closed_despite_valid_cache' {
+            $env:DMS_SCHEMA_TOOL_PATH = Join-Path $script:repo.RepoRoot 'missing/environment-api-schema-tools.exe'
+
+            { & $script:repo.PrepareSchemaScript -PackageFeedUrl $script:feedFolder } |
+                Should -Throw -ExpectedMessage '*configured api-schema-tools executable was not found*'
+        }
+    }
+
     Context "Given_PublishedToolLocation_AutoDiscovery" {
         It "It_Resolve-DmsSchemaTool_preserves_backslashes_in_a_missing_explicit_tool_path" {
             $resolverModulePath = Join-Path $script:repo.DockerComposeRoot 'bootstrap-schema-tool-DMS1283-stale.psm1'

@@ -514,7 +514,7 @@ $failureStatement
 
     AfterEach {
         if ($null -ne $script:repo) {
-            Get-Module bootstrap-wrapper, bootstrap-manifest, bootstrap-claims-gate, env-utility |
+            Get-Module bootstrap-wrapper, bootstrap-manifest, bootstrap-claims-gate, env-utility, bootstrap-schema-tool |
                 Where-Object { $_.Path -like "$($script:repo.RepoRoot)*" } |
                 Remove-Module -Force -ErrorAction SilentlyContinue
         }
@@ -1558,6 +1558,71 @@ $failure
                 Invoke-BootstrapWrapper -StartScriptName "start-local-dms.ps1" -EnvironmentFile $script:repo.EnvFile -InfraOnly
 
                 @(Get-Content -LiteralPath $script:callLog) | Should -Contain "prepare-claims IncludeE2EClaimSets=False"
+            }
+        }
+    }
+
+    Context 'DMS-1283 wrapper schema-tool publish failure' {
+        It 'stops staging before downstream phases when acquisition fails for <Entry> (InfraOnly=<InfraOnly>)' -ForEach @(
+            @{ Entry = 'local'; InfraOnly = $true }
+            @{ Entry = 'local'; InfraOnly = $false }
+            @{ Entry = 'published'; InfraOnly = $false }
+        ) {
+            $callLog = Join-Path $script:repo.RepoRoot 'call-log-schema-tool-publish-failure.txt'
+            New-RecordingPrepareScripts -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingSeedScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot 'bootstrap-schema-tool.psm1') -Destination $script:repo.DockerComposeRoot
+            Copy-Item -LiteralPath (Join-Path $script:sourceDockerComposeRoot 'bootstrap-manifest.psm1') -Destination $script:repo.DockerComposeRoot
+            $projectPath = Join-Path $script:repo.RepoRoot 'src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj'
+            New-Item -ItemType Directory -Path (Split-Path $projectPath -Parent) -Force | Out-Null
+            '<Project />' | Set-Content -LiteralPath $projectPath
+
+            $oldToolPath = $env:DMS_SCHEMA_TOOL_PATH
+            $oldFallback = $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK
+            $oldDotnet = Get-Item Function:\global:dotnet -ErrorAction SilentlyContinue
+            Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue
+            $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK = 'false'
+            $resolverPath = Join-Path $script:repo.DockerComposeRoot 'bootstrap-schema-tool.psm1'
+            @"
+param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
+Add-Content -LiteralPath '$callLog' -Value 'prepare-schema'
+`$previousDotnet = Get-Item Function:\global:dotnet -ErrorAction SilentlyContinue
+function global:dotnet {
+    Add-Content -LiteralPath '$callLog' -Value 'publish-failed'
+    Write-Output 'fixture restore and build diagnostic'
+    `$global:LASTEXITCODE = 17
+}
+try {
+    Import-Module '$resolverPath' -Force
+    Resolve-DmsSchemaTool
+}
+finally {
+    if (`$null -ne `$previousDotnet) { Set-Item Function:\global:dotnet -Value `$previousDotnet.ScriptBlock }
+    else { Remove-Item Function:\global:dotnet -ErrorAction SilentlyContinue }
+}
+"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot 'prepare-dms-schema.ps1') -Encoding utf8
+
+            try {
+                $entryScript = if ($Entry -eq 'published') { $script:repo.PublishedWrapperScript } else { $script:repo.WrapperScript }
+                $failure = $null
+                try {
+                    if ($Entry -eq 'local' -and $InfraOnly) { & $entryScript -EnvironmentFile $script:repo.EnvFile -InfraOnly }
+                    else { & $entryScript -EnvironmentFile $script:repo.EnvFile }
+                }
+                catch { $failure = $_.Exception.Message }
+
+                $failure | Should -Match 'Unable to acquire api-schema-tools.*exited with code 17.*fixture restore and build diagnostic'
+                @(Get-Content -LiteralPath $callLog) | Should -Be @('prepare-schema', 'publish-failed')
+            }
+            finally {
+                $env:DMS_SCHEMA_TOOL_PATH = $oldToolPath
+                $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK = $oldFallback
+                if ($null -ne $oldDotnet) { Set-Item Function:\global:dotnet -Value $oldDotnet.ScriptBlock }
+                else { Remove-Item Function:\global:dotnet -ErrorAction SilentlyContinue }
             }
         }
     }
