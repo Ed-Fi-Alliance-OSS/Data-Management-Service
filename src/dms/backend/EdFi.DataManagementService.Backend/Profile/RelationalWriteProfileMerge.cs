@@ -149,6 +149,18 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        // Request-side ancestor chains are rewritten to the stored spelling of a parent the request
+        // names in another case (SQL Server only), so every lookup the walker and the aligned and
+        // inlined scope synthesis key by the stored parent finds the request-side entries.
+        request = request with
+        {
+            ProfileRequest = AlignRequestAncestorsToStoredIdentities(
+                request.ProfileRequest,
+                request.ProfileAppliedContext,
+                request.WritePlan
+            ),
+        };
+
         // Honor Core's deferred C4 creatability for flattened root-table-owned
         // embedded-object non-collection scopes. Per-scope creatability is otherwise enforced
         // only for the root resource via RootResourceCreatable, for separate-table scopes via
@@ -1815,6 +1827,184 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// <para>If <paramref name="address"/> has no ancestor instances, returns the original
     /// reference unchanged. If no ancestor changes, returns the original reference.</para>
     /// </remarks>
+    /// <summary>
+    /// Rewrites each request-side ancestor collection instance whose semantic identity equals exactly
+    /// one visible stored row of the same scope and (already aligned) ancestor chain under the table's
+    /// <see cref="CollectionSemanticIdentityEquality.PresenceAware"/> equality, but not byte for byte,
+    /// to that stored row's identity. Applies to the parent addresses of
+    /// <see cref="ProfileAppliedWriteRequest.VisibleRequestCollectionItems"/> and to the addresses of
+    /// <see cref="ProfileAppliedWriteRequest.RequestScopeStates"/>.
+    /// </summary>
+    /// <remarks>
+    /// The planner matches a request item to a stored row under the identity comparer, and the walker
+    /// then recurses into the matched row with the stored identity. Without this alignment every
+    /// request-side entry under a parent recased by the request would be keyed by the request spelling
+    /// and fail closed as an orphan or a missing scope state. Both sides are Core-emitted raw forms
+    /// (descriptor URIs, reference natural keys), so they compare before any backend canonicalization;
+    /// only members flagged for the SQL Server identity collation can differ, which leaves every
+    /// PostgreSQL request, and every request without a casing difference, untouched. A request item's
+    /// own identity is not rewritten: the planner matches it and the overlay keeps the stored values.
+    /// </remarks>
+    internal static ProfileAppliedWriteRequest AlignRequestAncestorsToStoredIdentities(
+        ProfileAppliedWriteRequest profileRequest,
+        ProfileAppliedWriteContext? profileAppliedContext,
+        ResourceWritePlan writePlan
+    )
+    {
+        if (
+            profileAppliedContext is null
+            || profileAppliedContext.VisibleStoredCollectionRows.IsDefaultOrEmpty
+        )
+        {
+            return profileRequest;
+        }
+
+        var equalityByJsonScope = new Dictionary<string, CollectionSemanticIdentityEquality>(
+            StringComparer.Ordinal
+        );
+
+        foreach (var tablePlan in writePlan.TablePlansInDependencyOrder)
+        {
+            if (tablePlan.CollectionMergePlan is null)
+            {
+                continue;
+            }
+
+            var equality = CollectionSemanticIdentityEquality.For(tablePlan);
+
+            if (equality.HasCaseInsensitiveMembers)
+            {
+                equalityByJsonScope[tablePlan.TableModel.JsonScope.Canonical] = equality;
+            }
+        }
+
+        if (equalityByJsonScope.Count == 0)
+        {
+            return profileRequest;
+        }
+
+        var storedRows = profileAppliedContext.VisibleStoredCollectionRows;
+
+        ScopeInstanceAddress Align(ScopeInstanceAddress address)
+        {
+            var ancestors = address.AncestorCollectionInstances;
+
+            if (ancestors.IsDefaultOrEmpty)
+            {
+                return address;
+            }
+
+            ImmutableArray<AncestorCollectionInstance>.Builder? builder = null;
+
+            for (var i = 0; i < ancestors.Length; i++)
+            {
+                var ancestor = ancestors[i];
+
+                if (!equalityByJsonScope.TryGetValue(ancestor.JsonScope, out var equality))
+                {
+                    continue;
+                }
+
+                var alignedPrefix = builder is null ? ancestors[..i] : builder.ToImmutable()[..i];
+                var matches = storedRows
+                    .Select(storedRow => storedRow.Address)
+                    .Where(storedAddress =>
+                        string.Equals(storedAddress.JsonScope, ancestor.JsonScope, StringComparison.Ordinal)
+                        && AncestorChainsEqual(
+                            storedAddress.ParentAddress.AncestorCollectionInstances,
+                            alignedPrefix
+                        )
+                        && equality.PresenceAware.Equals(
+                            storedAddress.SemanticIdentityInOrder,
+                            ancestor.SemanticIdentityInOrder
+                        )
+                    )
+                    .Take(2)
+                    .ToArray();
+
+                if (
+                    matches.Length != 1
+                    || ScopeInstanceAddressComparer.SemanticIdentityEquals(
+                        matches[0].SemanticIdentityInOrder,
+                        ancestor.SemanticIdentityInOrder
+                    )
+                )
+                {
+                    continue;
+                }
+
+                builder ??= ancestors.ToBuilder();
+                builder[i] = new AncestorCollectionInstance(
+                    ancestor.JsonScope,
+                    matches[0].SemanticIdentityInOrder
+                );
+            }
+
+            return builder is null
+                ? address
+                : new ScopeInstanceAddress(address.JsonScope, builder.MoveToImmutable());
+        }
+
+        var alignedItems = profileRequest.VisibleRequestCollectionItems.Select(item =>
+        {
+            var alignedParent = Align(item.Address.ParentAddress);
+
+            return ReferenceEquals(alignedParent, item.Address.ParentAddress)
+                ? item
+                : item with
+                {
+                    Address = item.Address with { ParentAddress = alignedParent },
+                };
+        });
+        var alignedScopeStates = profileRequest.RequestScopeStates.Select(state =>
+        {
+            var alignedAddress = Align(state.Address);
+
+            return ReferenceEquals(alignedAddress, state.Address)
+                ? state
+                : state with
+                {
+                    Address = alignedAddress,
+                };
+        });
+
+        return profileRequest with
+        {
+            VisibleRequestCollectionItems = [.. alignedItems],
+            RequestScopeStates = [.. alignedScopeStates],
+        };
+    }
+
+    private static bool AncestorChainsEqual(
+        ImmutableArray<AncestorCollectionInstance> left,
+        ImmutableArray<AncestorCollectionInstance> right
+    )
+    {
+        var leftLength = left.IsDefault ? 0 : left.Length;
+        var rightLength = right.IsDefault ? 0 : right.Length;
+
+        if (leftLength != rightLength)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < leftLength; i++)
+        {
+            if (
+                !string.Equals(left[i].JsonScope, right[i].JsonScope, StringComparison.Ordinal)
+                || !ScopeInstanceAddressComparer.SemanticIdentityEquals(
+                    left[i].SemanticIdentityInOrder,
+                    right[i].SemanticIdentityInOrder
+                )
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     internal static ScopeInstanceAddress CanonicalizeAddressAncestors(
         ScopeInstanceAddress address,
         IReadOnlyDictionary<string, TableWritePlan> tablePlanByJsonScope,

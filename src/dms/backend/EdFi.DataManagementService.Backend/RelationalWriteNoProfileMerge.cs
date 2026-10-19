@@ -197,6 +197,11 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
                     mergedValues,
                     matchedCurrentRow.Values
                 );
+                mergedValues = RelationalWriteRowHelpers.RebindCollectionSemanticIdentity(
+                    collectionCandidate.TableWritePlan,
+                    mergedValues,
+                    matchedCurrentRow.Values
+                );
             }
 
             var mergedRow = CreateMergedRow(collectionCandidate.TableWritePlan, mergedValues);
@@ -387,6 +392,11 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
                 Dictionary<object?[], RelationalWriteMergedTableRow>
             >(ObjectValueArrayComparer.Instance);
 
+            // Parent scopes are keyed by physical ids; semantic identities use the shared collection
+            // equality, so a request item matches a stored row exactly when the flattener's sibling
+            // duplicate check would call the two the same item.
+            var semanticIdentityComparer = CollectionSemanticIdentityEquality.For(tableWritePlan).RawValues;
+
             foreach (var currentRow in currentRows)
             {
                 var parentScopeKey = ExtractParentScopeKey(tableWritePlan, currentRow.Values);
@@ -395,7 +405,7 @@ internal sealed class RelationalWriteNoProfileMergeSynthesizer : IRelationalWrit
                 if (!_rowsByParentKey.TryGetValue(parentScopeKey, out var rowsBySemanticIdentity))
                 {
                     rowsBySemanticIdentity = new Dictionary<object?[], RelationalWriteMergedTableRow>(
-                        ObjectValueArrayComparer.Instance
+                        semanticIdentityComparer
                     );
                     _rowsByParentKey.Add(parentScopeKey, rowsBySemanticIdentity);
                 }

@@ -355,7 +355,9 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             // table's CollectionSemanticIdentityEquality, so string members bound to a column
             // flagged UsesSqlServerIdentityCollation compare with the SQL Server identity
             // comparer: case variants that the database would store under one unique key are
-            // duplicates here, on SQL Server only.
+            // duplicates here, on SQL Server only. The no-profile merge and the profile planner
+            // match request items to stored rows with the same equality, so an item that is not a
+            // duplicate here can never bind to the same stored row as a sibling.
             //
             // - Profile mode (default): keyed on the presence-aware SemanticIdentityPart
             //   sequence. An explicit JSON null and a missing identity property are distinct

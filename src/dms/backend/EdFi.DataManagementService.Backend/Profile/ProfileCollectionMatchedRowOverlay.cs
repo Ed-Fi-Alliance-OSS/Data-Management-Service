@@ -24,6 +24,7 @@ namespace EdFi.DataManagementService.Backend.Profile;
 ///   <item>Resolve key-unification via <see cref="ProfileKeyUnificationCore.ResolveForCollectionRow"/>.</item>
 ///   <item>Rewrite parent key parts via <see cref="RelationalWriteRowHelpers.RewriteParentKeyPartValues"/>.</item>
 ///   <item>Rewrite stable row identity for continuity via <see cref="RelationalWriteRowHelpers.RewriteCollectionStableRowIdentity"/>.</item>
+///   <item>Keep stored semantic-identity spellings via <see cref="RelationalWriteRowHelpers.RebindCollectionSemanticIdentity"/>.</item>
 ///   <item>Overwrite ordinal column with <paramref name="finalOrdinal"/>.</item>
 ///   <item>Build the merged row via <see cref="RelationalWriteRowHelpers.CreateMergedTableRow"/>.</item>
 /// </list>
@@ -152,10 +153,18 @@ internal static class ProfileCollectionMatchedRowOverlay
             storedRow.ProjectedCurrentRow.Values
         );
 
-        // Step 6: Overwrite ordinal with the planner-supplied final ordinal.
-        var valuesWithOrdinal = StampOrdinal(tableWritePlan, valuesAfterStableId, finalOrdinal);
+        // Step 6: Keep the stored spelling of semantic-identity members the planner matched under
+        // the SQL Server identity comparer, so a casing-only difference never rewrites the key.
+        var valuesAfterIdentityRebind = RelationalWriteRowHelpers.RebindCollectionSemanticIdentity(
+            tableWritePlan,
+            valuesAfterStableId,
+            storedRow.ProjectedCurrentRow.Values
+        );
 
-        // Step 7: Build and return the merged row.
+        // Step 7: Overwrite ordinal with the planner-supplied final ordinal.
+        var valuesWithOrdinal = StampOrdinal(tableWritePlan, valuesAfterIdentityRebind, finalOrdinal);
+
+        // Step 8: Build and return the merged row.
         return RelationalWriteRowHelpers.CreateMergedTableRow(tableWritePlan, valuesWithOrdinal);
     }
 

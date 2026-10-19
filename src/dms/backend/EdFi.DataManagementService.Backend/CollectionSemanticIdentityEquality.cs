@@ -26,7 +26,19 @@ internal sealed class CollectionSemanticIdentityEquality
     {
         RawValues = new RawValuesComparer(memberComparers);
         PresenceAware = new PresenceAwareComparer(memberComparers);
+        HasCaseInsensitiveMembers = Array.Exists(memberComparers, comparer => comparer is not null);
     }
+
+    /// <summary>
+    /// Exact equality for every member, the semantics of a table with no flagged column.
+    /// </summary>
+    public static CollectionSemanticIdentityEquality Ordinal { get; } = new([]);
+
+    /// <summary>
+    /// True when at least one semantic-identity member compares with the SQL Server identity
+    /// comparer, so two identities can be equal without being byte-identical.
+    /// </summary>
+    public bool HasCaseInsensitiveMembers { get; }
 
     /// <summary>
     /// Storage-collapsed equality over raw semantic identity values: a missing identity
