@@ -842,8 +842,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
             ["AppSettings"] = new JsonObject
             {
                 ["Datastore"] = AppSettingsDatastoreValue(),
-                ["UseApiSchemaPath"] = true,
-                ["ApiSchemaPath"] = apiSchemaPath,
+                ["ApiSchema"] = new JsonObject { ["UseCustomPath"] = true, ["Path"] = apiSchemaPath },
                 ["AllowIdentityUpdateOverrides"] = string.Empty,
                 ["MaximumPageSize"] = 500,
                 ["DefaultPartitionCount"] = 10,

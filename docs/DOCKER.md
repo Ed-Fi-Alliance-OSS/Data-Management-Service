@@ -20,6 +20,9 @@ The following environment variables are commonly used when starting the Ed-Fi AP
 container. `AppSettings__Datastore` defaults to `postgresql`. When the datastore
 is `postgresql`, `src/dms/run.sh` waits for PostgreSQL by parsing host, port, and
 username from `DATABASE_CONNECTION_STRING_ADMIN`.
+The wait is skipped when `DATABASE_CONNECTION_STRING_ADMIN` is absent or yields no
+host, and DMS starts without waiting.
+The shipped Docker Compose files set a default for the variable; to leave it out there, see [Secrets on the shipped Compose files](./OPERATIONS.md#secrets-on-the-shipped-compose-files).
 
 ```none
 AppSettings__Datastore=<Database engine: postgresql or mssql. Defaults to postgresql>
@@ -120,8 +123,8 @@ the in-network URL the Configuration Service calls. Self-contained mode uses one
 | `IdentityProvider`                 | Selects the identity provider                                    | `keycloak`                                           | `self-contained`                              |
 | `Authority`                        | Identity provider issuer. In self-contained mode, also the base URL for every advertised discovery endpoint: omit `AppSettings:PathBase` from this value, and keep DMS `JwtAuthentication:MetadataAddress` on the same origin (scheme, host, and port). DMS `JwtAuthentication:Authority` must exactly match the issuer. | `http://dms-keycloak:8080/realms/edfi` | `http://ed-fi-api-config:8081` |
 | `EncryptionKey`                    | Key used for token encryption (self-contained only)              | _(not used)_                                         | `QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz` |
-| `TokenCleanupEnabled`              | Enables the expired-token cleanup sweep (self-contained only)    | _(not used)_                                         | `true`                                        |
-| `TokenCleanupIntervalMinutes`      | Minutes between expired-token cleanup sweeps (self-contained only) | _(not used)_                                       | `30`                                          |
+| `TokenCleanup:Enabled`            | Enables the expired-token cleanup sweep (self-contained only)    | _(not used)_                                         | `true`                                        |
+| `TokenCleanup:IntervalMinutes`    | Minutes between expired-token cleanup sweeps (self-contained only) | _(not used)_                                       | `30`                                          |
 | `BearerTokenPerClientLimit`        | Maximum active access tokens one limited client may hold (self-contained only; default `15`); further grants are rejected with HTTP 429. Exemption requires no live `dmscs.ApiClient` row and nonempty registered scopes consisting only of recognized Configuration Service admin scopes. Ed-Fi API clients remain limited. Below 1 disables enforcement globally. Compose variable: `CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT` | _(not used)_ | `15` |
 
 See [CONFIGURATION.md](./CONFIGURATION.md#identity-provider-configuration) for the

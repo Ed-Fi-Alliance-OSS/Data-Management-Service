@@ -59,8 +59,7 @@ public class Given_Mssql_DocumentCacheSourceMetadataReader
                     DocumentUuid uniqueidentifier NOT NULL,
                     ResourceKeyId smallint NOT NULL,
                     CreatedByOwnershipTokenId smallint NULL,
-                    ContentVersion bigint NOT NULL,
-                    CreatedAt datetimeoffset NOT NULL
+                    ContentVersion bigint NOT NULL
                 );
 
                 CREATE TABLE edfi.School (
@@ -73,23 +72,20 @@ public class Given_Mssql_DocumentCacheSourceMetadataReader
                     DocumentUuid,
                     ResourceKeyId,
                     CreatedByOwnershipTokenId,
-                    ContentVersion,
-                    CreatedAt
+                    ContentVersion
                 )
                 VALUES (
                     970001,
                     'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
                     11,
                     NULL,
-                    222,
-                    '2026-07-30T14:15:16+00:00'
+                    222
                 ), (
                     970003,
                     'bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee',
                     11,
                     NULL,
-                    223,
-                    '2026-07-30T14:15:16+00:00'
+                    223
                 );
 
                 INSERT INTO edfi.School (DocumentId, ContentLastModifiedAt)

@@ -75,8 +75,8 @@ services:
       SecretsSettings__ResolveTimeoutSeconds: ${CONFIGURATION_SERVICE_SECRETS_RESOLVE_TIMEOUT_SECONDS:-10}
       IdentitySettings__EncryptionKey: ${CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY:-}
       IdentitySettings__ClientSecretHashingIterations: ${CONFIGURATION_SERVICE_IDENTITY_HASHING_ITERATIONS:-210000}
-      IdentitySettings__TokenCleanupEnabled: ${CONFIGURATION_SERVICE_IDENTITY_TOKEN_CLEANUP_ENABLED:-true}
-      IdentitySettings__TokenCleanupIntervalMinutes: ${CONFIGURATION_SERVICE_IDENTITY_TOKEN_CLEANUP_INTERVAL_MINUTES:-30}
+      IdentitySettings__TokenCleanup__Enabled: ${CONFIGURATION_SERVICE_IDENTITY_TOKEN_CLEANUP_ENABLED:-true}
+      IdentitySettings__TokenCleanup__IntervalMinutes: ${CONFIGURATION_SERVICE_IDENTITY_TOKEN_CLEANUP_INTERVAL_MINUTES:-30}
       # Exemption requires no live ApiClient row and nonempty registered scopes
       # consisting only of recognized CMS admin scopes (case-sensitive).
       # Values below 1 disable enforcement globally.

@@ -4,7 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.ExceptionServices;
 using EdFi.DataManagementService.Backend.Composite;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
@@ -2013,8 +2015,11 @@ internal sealed class CompositeRelationalWriteSecondCommand(
             : null;
 
     /// <summary>
-    /// Extracts the proposed namespace value from the finalized merged root row — never the raw request
-    /// body — so the <c>LIKE</c> semantics and the AUTH1 failure mapping stay identical to the read path.
+    /// Extracts the proposed namespace value from the finalized merged root row so the <c>LIKE</c>
+    /// semantics and the AUTH1 failure mapping stay identical to the read path. The one exception is a
+    /// namespace derived from a reference whose missing-document failure was deferred: the finalized row
+    /// has no value for an unresolved reference, so the value the request body carries is authorized
+    /// instead, mirroring ODS and the namespace authorization strategy design.
     /// Returns the security-configuration failure when the plan cannot be reconciled with that row.
     /// </summary>
     private static RelationalWriteExecutorResult? TryPlanNamespace(
@@ -2032,7 +2037,9 @@ internal sealed class CompositeRelationalWriteSecondCommand(
 
         var extraction = ProposedNamespaceValueExtractor.Extract(
             namespaceAuthorization.Checks,
-            RelationalWriteFinalizedRootRow.Build(request, mergeResult)
+            RelationalWriteFinalizedRootRow.Build(request, mergeResult),
+            request.SelectedBody,
+            mergeResult.DeferredMissingDocumentReferencePaths
         );
 
         if (extraction is ProposedNamespaceValueExtractionResult.InvalidAuthorizationPlan invalid)
@@ -2386,7 +2393,9 @@ internal sealed class CompositeRelationalWriteSecondCommand(
             );
         }
 
-        throw exception;
+        // Rethrow through dispatch info so the provider frames of the original failure survive.
+        ExceptionDispatchInfo.Capture(exception).Throw();
+        throw new UnreachableException();
     }
 
     /// <summary>

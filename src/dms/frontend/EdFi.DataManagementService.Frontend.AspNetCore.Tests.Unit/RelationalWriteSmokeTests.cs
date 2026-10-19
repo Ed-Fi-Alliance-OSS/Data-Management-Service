@@ -427,8 +427,8 @@ public class Given_A_Host_Using_The_Relational_Backend
                     configuration.AddInMemoryCollection(
                         new Dictionary<string, string?>
                         {
-                            ["AppSettings:UseApiSchemaPath"] = "true",
-                            ["AppSettings:ApiSchemaPath"] = _schemaDirectory,
+                            ["AppSettings:ApiSchema:UseCustomPath"] = "true",
+                            ["AppSettings:ApiSchema:Path"] = _schemaDirectory,
                             ["AppSettings:StartupStatusFilePath"] = _startupStatusFilePath,
                         }
                     );

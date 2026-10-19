@@ -98,16 +98,12 @@ public class Given_MaterializedDocumentFixtureSeeder
         documentInsert
             .CommandText.Should()
             .Be(
-                "INSERT INTO \"dms\".\"Document\" (\"DocumentId\", \"DocumentUuid\", \"ResourceKeyId\", \"CreatedByOwnershipTokenId\", \"ContentVersion\", \"CreatedAt\") VALUES (@p0, @p1, @p2, NULL, @p3, @p4)"
+                "INSERT INTO \"dms\".\"Document\" (\"DocumentId\", \"DocumentUuid\", \"ResourceKeyId\", \"CreatedByOwnershipTokenId\", \"ContentVersion\") VALUES (@p0, @p1, @p2, NULL, @p3)"
             );
         documentInsert.Parameters.Should().Contain(parameter => Equals(parameter.Value, 970101L));
-        documentInsert
-            .Parameters.Any(parameter =>
-                parameter.Value is DateTimeOffset value
-                && value == _ordinaryFixture.SourceSetup.Documents[0].ContentLastModifiedAt
-            )
-            .Should()
-            .BeTrue();
+        // The combined dms.Document has no timestamp column; the stamp is seeded on the resource root below.
+        documentInsert.Parameters.Should().HaveCount(4);
+        documentInsert.Parameters.Should().NotContain(parameter => parameter.Value is DateTimeOffset);
 
         var sourceInsert = commands.Single(command =>
             command.CommandText.StartsWith(
@@ -179,7 +175,7 @@ public class Given_MaterializedDocumentFixtureSeeder
         documentInsert
             .CommandText.Should()
             .Be(
-                "INSERT INTO [dms].[Document] ([DocumentId], [DocumentUuid], [ResourceKeyId], [CreatedByOwnershipTokenId], [ContentVersion], [CreatedAt]) VALUES (@p0, @p1, @p2, NULL, @p3, @p4)"
+                "INSERT INTO [dms].[Document] ([DocumentId], [DocumentUuid], [ResourceKeyId], [CreatedByOwnershipTokenId], [ContentVersion]) VALUES (@p0, @p1, @p2, NULL, @p3)"
             );
 
         var descriptorInsert = commands.Single(command => command.DescriptorKey is not null);
@@ -363,10 +359,27 @@ public class Given_MaterializedDocumentFixtureSeeder
             .Contain("SET IDENTITY_INSERT [dms].[Document] ON")
             .And.Contain("INSERT INTO [dms].[Document]")
             .And.Contain("SET IDENTITY_INSERT [dms].[Document] OFF");
-        documentInsert
+        // The document row carries no timestamp; the authoritative stamp is seeded on the resource root.
+        documentInsert.Parameters.Should().NotContain(parameter => parameter.Value is DateTime);
+    }
+
+    [Test]
+    public void It_seeds_the_mssql_resource_root_stamp_as_a_configured_utc_DateTime()
+    {
+        var rootStampUpdate = new MaterializedDocumentFixtureSeeder(
+            MaterializedDocumentFixtureSqlDialect.Mssql
+        )
+            .BuildSetupCommands(_ordinaryFixture)
+            .Single(command =>
+                command.CommandText.StartsWith(
+                    "UPDATE [edfi].[StudentSchoolAssociation]",
+                    StringComparison.Ordinal
+                )
+            );
+        rootStampUpdate
             .Parameters.Any(parameter =>
                 parameter.Value is DateTime value
-                && value == _failureFixture.SourceSetup.Documents[0].ContentLastModifiedAt.UtcDateTime
+                && value == _ordinaryFixture.SourceSetup.Documents[0].ContentLastModifiedAt.UtcDateTime
                 && parameter.ConfigureParameter is not null
             )
             .Should()

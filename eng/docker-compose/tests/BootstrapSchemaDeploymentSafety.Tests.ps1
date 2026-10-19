@@ -2047,8 +2047,8 @@ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey12345678901234567
             } *>&1 | Out-String
 
             $output | Should -Match "IDE next-step guidance"
-            $output | Should -Match "AppSettings__UseApiSchemaPath = true"
-            $output | Should -Match "AppSettings__ApiSchemaPath"
+            $output | Should -Match "AppSettings__ApiSchema__UseCustomPath = true"
+            $output | Should -Match "AppSettings__ApiSchema__Path"
             $output | Should -Match "runtime-authoritative"
         }
 

@@ -517,7 +517,7 @@ public class CorrelationIdParityTests
                             // MapFallback instead of by AuthorizeAsync. DMS-1480 (#1252) made
                             // ManagementEndpointModule.MapEndpoints return early unless the
                             // enable switch is on, and it defaults to false in appsettings.json.
-                            ["AppSettings:EnableManagementEndpoints"] = "true",
+                            ["AppSettings:ManagementEndpoints:Enabled"] = "true",
                             ["AppSettings:ManagementEndpoints:RequiredRole"] = ManagementRequiredRole,
                             ["JwtAuthentication:RoleClaimType"] = RoleClaimType,
                             ["JwtAuthentication:ClientRole"] = "legacy-service",

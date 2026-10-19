@@ -1,0 +1,17 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "RestampExtension",
+    "projectVersion": "1.0.0",
+    "projectEndpointName": "restamp-extension",
+    "isExtensionProject": true,
+    "description": "Stable extension component for re-stamp transaction tests",
+    "abstractResources": {},
+    "resourceNameMapping": {},
+    "caseInsensitiveEndpointNameMapping": {},
+    "educationOrganizationHierarchy": {},
+    "educationOrganizationTypes": [],
+    "domains": [],
+    "resourceSchemas": {}
+  }
+}

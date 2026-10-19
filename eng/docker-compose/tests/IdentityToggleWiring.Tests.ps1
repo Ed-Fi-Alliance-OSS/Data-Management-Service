@@ -6,7 +6,7 @@
 Describe "Identity management toggle wiring" {
     # -ForEach arrays are evaluated at discovery time, before any BeforeAll runs, so the paths
     # are computed inline from $PSScriptRoot rather than from a script-scoped variable.
-    It "wires AppSettings__EnableIdentityManagement to DMS_ENABLE_IDENTITY_MANAGEMENT, defaulting to false like AppSettings__EnableManagementEndpoints, in <_>" -ForEach @(
+    It "wires DataManagement__IdentityManagement__Enabled to DMS_ENABLE_IDENTITY_MANAGEMENT, defaulting to false like AppSettings__ManagementEndpoints__Enabled, in <_>" -ForEach @(
         (Join-Path $PSScriptRoot "../local-dms.yml"),
         (Join-Path $PSScriptRoot "../published-dms.yml"),
         (Join-Path $PSScriptRoot "../../azure-vm/compose/docker-compose.yml")
@@ -15,8 +15,10 @@ Describe "Identity management toggle wiring" {
         Test-Path -LiteralPath $path | Should -BeTrue -Because "the compose file must exist at $path"
         $content = Get-Content -LiteralPath $path -Raw
 
-        $content | Should -Match 'AppSettings__EnableIdentityManagement:\s*"?\$\{DMS_ENABLE_IDENTITY_MANAGEMENT:-false\}"?'
-        $content | Should -Match 'AppSettings__EnableManagementEndpoints:\s*"?\$\{DMS_ENABLE_MANAGEMENT_ENDPOINTS:-false\}"?'
+        $content | Should -Match 'DataManagement__IdentityManagement__Enabled:\s*"?\$\{DMS_ENABLE_IDENTITY_MANAGEMENT:-false\}"?'
+        $content | Should -Match 'AppSettings__ManagementEndpoints__Enabled:\s*"?\$\{DMS_ENABLE_MANAGEMENT_ENDPOINTS:-false\}"?'
+        $content | Should -Not -Match 'AppSettings__Enable(IdentityManagement|ManagementEndpoints|ClaimsetReload)'
+        $content | Should -Not -Match 'DMS_ENABLE_CLAIMSET_RELOAD'
     }
 
     It "defaults DMS_ENABLE_IDENTITY_MANAGEMENT to false, like DMS_ENABLE_MANAGEMENT_ENDPOINTS, in <_>" -ForEach @(

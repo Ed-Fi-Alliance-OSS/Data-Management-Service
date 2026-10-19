@@ -76,14 +76,9 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Models
         public int ClientSecretHashingIterations { get; set; } = 210000;
 
         /// <summary>
-        /// Whether the background sweep that deletes expired OpenIddict tokens runs.
+        /// Expired-token cleanup sweep settings.
         /// </summary>
-        public bool TokenCleanupEnabled { get; set; } = true;
-
-        /// <summary>
-        /// Interval, in minutes, between expired-token cleanup sweeps.
-        /// </summary>
-        public int TokenCleanupIntervalMinutes { get; set; } = 30;
+        public TokenCleanupOptions TokenCleanup { get; set; } = new();
 
         /// <summary>
         /// Maximum number of simultaneously active access tokens a single API client may hold.

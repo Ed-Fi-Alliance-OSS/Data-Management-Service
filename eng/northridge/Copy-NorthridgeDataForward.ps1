@@ -1106,7 +1106,7 @@ function ConvertTo-StampDistributionMap {
 }
 
 # Row counts cannot see a rewritten stamp: the trigger that would corrupt these values updates rows in
-# place, leaving the count identical. Retain version/creation distributions on Document; compare
+# place, leaving the count identical. Retain the version distribution on Document; compare
 # owner tuples in DocumentId order as well, so interior changes and timestamp swaps are visible.
 # Hash each tuple before aggregation to bound its size; compact DescriptorId is deliberately absent.
 function Get-StampDistribution {
@@ -1119,8 +1119,7 @@ function Get-StampDistribution {
 
     $part = [System.Collections.Generic.List[string]]::new()
     $part.Add('SELECT ''dms.Document'' AS t, COUNT(*)::text || ''|'' ||
-        COALESCE(MIN("ContentVersion")::text, ''-'') || ''|'' || COALESCE(MAX("ContentVersion")::text, ''-'') || ''|'' ||
-        COALESCE(MIN("CreatedAt")::text, ''-'') || ''|'' || COALESCE(MAX("CreatedAt")::text, ''-'') AS v
+        COALESCE(MIN("ContentVersion")::text, ''-'') || ''|'' || COALESCE(MAX("ContentVersion")::text, ''-'') AS v
     FROM dms."Document"')
 
     foreach ($table in $SampleTable) {
@@ -1906,7 +1905,7 @@ foreach ($table in $stagedDescriptorTable) {
     if (-not $copyShape.ContainsKey($table)) { throw "Missing source-shape/inventory coverage: $table." }
 }
 $documentShape = Get-CopyColumnShape -DatabaseName $TargetDatabase -QualifiedTable 'dms.Document'
-foreach ($name in @('ContentVersion', 'CreatedAt')) {
+foreach ($name in @('ContentVersion')) {
     if ($name -cnotin @($documentShape.Name)) { throw "Carry-forward requires retained document metadata $name." }
 }
 $requestedTable = @($script:DmsDataTable | ForEach-Object { "dms.$_" }) + @($bulkTable | Where-Object { $_ -cnotin $stagedDescriptorTable })

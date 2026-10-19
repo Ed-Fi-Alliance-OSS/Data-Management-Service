@@ -59,8 +59,7 @@ public class Given_Mssql_DocumentCacheMaterializer_Descriptor
                     [DocumentUuid] uniqueidentifier NOT NULL,
                     [ResourceKeyId] smallint NOT NULL,
                     [CreatedByOwnershipTokenId] smallint NULL,
-                    [ContentVersion] bigint NOT NULL,
-                    [CreatedAt] datetimeoffset NOT NULL
+                    [ContentVersion] bigint NOT NULL
                 );
 
                 CREATE TABLE [dms].[Descriptor] (
@@ -81,16 +80,14 @@ public class Given_Mssql_DocumentCacheMaterializer_Descriptor
                     [DocumentUuid],
                     [ResourceKeyId],
                     [CreatedByOwnershipTokenId],
-                    [ContentVersion],
-                    [CreatedAt]
+                    [ContentVersion]
                 )
                 VALUES (
                     5000970301,
                     'aaaaaaaa-bbbb-cccc-dddd-000000000301',
                     13,
                     NULL,
-                    222,
-                    '2026-07-30T14:15:16+00:00'
+                    222
                 );
 
                 INSERT INTO [dms].[Descriptor] (

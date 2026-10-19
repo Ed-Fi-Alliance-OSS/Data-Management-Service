@@ -35,6 +35,24 @@ public class ApiClientModule : IEndpointModule
             httpContext.TraceIdentifier
         );
 
+    /// <summary>
+    /// Fixed 409 details for the identifier constraints. Neither names a row, key, or UUID: the
+    /// key is generated per request, so a collision is retriable by the caller and nothing in
+    /// the response may identify the row that holds the identifier.
+    /// </summary>
+    private const string DuplicateClientIdConflict =
+        "The generated client key is already in use. Retry the request.";
+
+    private const string DuplicateClientUuidConflict =
+        "The identity provider client is already associated with another API client.";
+
+    private static IResult IdentifierConflict(string detail, HttpContext httpContext) =>
+        Results.Json(
+            FailureResponse.ForConflict(detail, httpContext.TraceIdentifier),
+            contentType: "application/problem+json",
+            statusCode: (int)HttpStatusCode.Conflict
+        );
+
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints
@@ -257,6 +275,14 @@ public class ApiClientModule : IEndpointModule
                     "Identity provider error during client creation",
                     httpContext.TraceIdentifier
                 );
+            case ClientCreateResult.FailureDuplicateClientId:
+                // The provider already holds a client under the generated key and created nothing,
+                // so there is no client to delete and no row is written.
+                logger.LogWarning(
+                    "The generated client key for client {ClientId} is already registered at the identity provider; no client was created and nothing was written",
+                    SanitizeForLog(clientId)
+                );
+                return IdentifierConflict(DuplicateClientIdConflict, httpContext);
             case ClientCreateResult.Success clientSuccess:
                 clientUuid = clientSuccess.ClientUuid;
                 break;
@@ -291,7 +317,15 @@ public class ApiClientModule : IEndpointModule
                     }
                 );
             case ApiClientInsertResult.FailureApplicationNotFound:
-                await CleanUpProvisionedClientAsync(clientRepository, clientUuid, clientId, logger);
+                // No row was written, so the constraints never judged the reported UUID; it is
+                // deleted only once the check proves no row holds it.
+                await CleanUpProvisionedClientWhenUnreferencedAsync(
+                    apiClientRepository,
+                    clientRepository,
+                    clientUuid,
+                    clientId,
+                    logger
+                );
                 return Results.Json(
                     FailureResponse.ForUnresolvedReference(
                         $"Application with ID {command.ApplicationId} not found.",
@@ -301,6 +335,7 @@ public class ApiClientModule : IEndpointModule
                     statusCode: (int)HttpStatusCode.Conflict
                 );
             case ApiClientInsertResult.FailureDataStoreNotFound:
+                // Reached only after the row was inserted, which proved no row held the reported UUID.
                 await CleanUpProvisionedClientAsync(clientRepository, clientUuid, clientId, logger);
                 return Results.Json(
                     FailureResponse.ForUnresolvedReference(
@@ -311,14 +346,54 @@ public class ApiClientModule : IEndpointModule
                     statusCode: (int)HttpStatusCode.Conflict
                 );
             case ApiClientInsertResult.FailureDuplicateName:
-                await CleanUpProvisionedClientAsync(clientRepository, clientUuid, clientId, logger);
+                // A row violating both the name and the UUID constraint can be reported as either,
+                // so the name conflict does not prove the reported UUID is this request's own.
+                await CleanUpProvisionedClientWhenUnreferencedAsync(
+                    apiClientRepository,
+                    clientRepository,
+                    clientUuid,
+                    clientId,
+                    logger
+                );
                 return DuplicateName(httpContext);
+            case ApiClientInsertResult.FailureDuplicateClientId:
+                // The generated key collided with another row's. The provider client this
+                // request created is deleted only once the reference check proves no row holds
+                // its UUID; the 409 stands whatever the check and the cleanup report.
+                logger.LogWarning(
+                    "The generated client key for client {ClientId} is already in use; nothing was written",
+                    SanitizeForLog(clientId)
+                );
+                await CleanUpProvisionedClientWhenUnreferencedAsync(
+                    apiClientRepository,
+                    clientRepository,
+                    clientUuid,
+                    clientId,
+                    logger
+                );
+                return IdentifierConflict(DuplicateClientIdConflict, httpContext);
+            case ApiClientInsertResult.FailureDuplicateClientUuid:
+                // Another row already references the UUID the provider reported, so the provider
+                // client is provably in use and is never deleted.
+                logger.LogError(
+                    "Provider client {ClientUuid} (client {ClientId}) is already associated with another API client; left in place; review manually",
+                    clientUuid,
+                    SanitizeForLog(clientId)
+                );
+                return IdentifierConflict(DuplicateClientUuidConflict, httpContext);
             case ApiClientInsertResult.FailureUnknown failure:
                 logger.LogError(
                     "Failure inserting the API client row: {FailureMessage}",
                     SanitizeForLog(failure.FailureMessage)
                 );
-                await CleanUpProvisionedClientAsync(clientRepository, clientUuid, clientId, logger);
+                // An unclassified failure says nothing about the reported UUID.
+                await CleanUpProvisionedClientWhenUnreferencedAsync(
+                    apiClientRepository,
+                    clientRepository,
+                    clientUuid,
+                    clientId,
+                    logger
+                );
                 return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
 
@@ -430,6 +505,66 @@ public class ApiClientModule : IEndpointModule
             logger.LogError(
                 exception,
                 "Could not confirm deletion of provider client {ClientUuid} (client {ClientId}) after the database insert failed; cleanup outcome {Outcome}; the client may remain and must be reviewed manually",
+                clientUuid,
+                SanitizeForLog(clientId),
+                outcome
+            );
+    }
+
+    /// <summary>
+    /// Removes the identity-provider client this request provisioned after a database insert
+    /// failure that does not prove the UUID is this request's own (a key or name conflict, a
+    /// missing application, or an unclassified failure), but only once the reference check proves
+    /// no ApiClient row holds its UUID. The check is deliberately cross-tenant, so a referenced
+    /// UUID, a failed or unrecognized check, or a check that throws all leave the client in place
+    /// and report it at Error with the identifiers needed to find it. A thrown check is reported by
+    /// exception type only: its message can carry provider or database text that the sanitizer
+    /// never sees, so the exception itself is not attached. The caller's response is never
+    /// replaced by what happens here.
+    /// </summary>
+    private static async Task CleanUpProvisionedClientWhenUnreferencedAsync(
+        IApiClientRepository apiClientRepository,
+        IIdentityProviderRepository clientRepository,
+        Guid clientUuid,
+        string clientId,
+        ILogger logger
+    )
+    {
+        ApiClientUuidReferenceResult referenceResult;
+        try
+        {
+            referenceResult = await apiClientRepository.HasApiClientUuidReference(clientUuid);
+        }
+        catch (Exception ex)
+        {
+            LogLeftInPlace(ex.GetType().Name);
+            return;
+        }
+
+        switch (referenceResult)
+        {
+            case ApiClientUuidReferenceResult.None:
+                await CleanUpProvisionedClientAsync(clientRepository, clientUuid, clientId, logger);
+                return;
+
+            case ApiClientUuidReferenceResult.Referenced:
+                LogLeftInPlace(nameof(ApiClientUuidReferenceResult.Referenced));
+                return;
+
+            case ApiClientUuidReferenceResult.FailureUnknown referenceFailure:
+                LogLeftInPlace(
+                    $"{nameof(ApiClientUuidReferenceResult.FailureUnknown)}: {SanitizeForLog(referenceFailure.FailureMessage)}"
+                );
+                return;
+
+            default:
+                LogLeftInPlace(referenceResult.GetType().Name);
+                return;
+        }
+
+        void LogLeftInPlace(string outcome) =>
+            logger.LogError(
+                "Could not prove provider client {ClientUuid} (client {ClientId}) is unreferenced after the database insert failed; reference check outcome {Outcome}; left in place; review manually",
                 clientUuid,
                 SanitizeForLog(clientId),
                 outcome
@@ -723,6 +858,18 @@ public class ApiClientModule : IEndpointModule
                     // one that must be persisted.
                     async Task<bool> TryCompensateAsync()
                     {
+                        // The rollback addresses the UUID the provider reported for this update.
+                        // The stored UUID is this client's own; a replacement is this request's
+                        // only while no ApiClient row holds it. Whichever constraint the database
+                        // reported, a replacement another row holds is never addressed.
+                        if (
+                            updateSuccess.ClientUuid != existingApiClient.ClientUuid
+                            && !await IsUnreferencedReplacementAsync(updateSuccess.ClientUuid)
+                        )
+                        {
+                            return false;
+                        }
+
                         logger.LogWarning(
                             "Repository update failed for ApiClient {Id}; rolling back the identity provider",
                             id
@@ -786,6 +933,16 @@ public class ApiClientModule : IEndpointModule
                                     id
                                 );
                                 return false;
+                            case ApiClientUuidSyncResult.FailureNewUuidInUse:
+                                // The rollback UUID the provider reported is already held by another
+                                // ApiClient row: a provider inconsistency. That provider client belongs
+                                // to the other row, so it is not deleted.
+                                logger.LogError(
+                                    "The rollback client UUID {ClientUuid} for ApiClient {Id} is already held by another API client; stored client state is inconsistent; nothing was deleted",
+                                    rollbackSuccess.ClientUuid,
+                                    id
+                                );
+                                return false;
                             case ApiClientUuidSyncResult.FailureUnknown syncFailure:
                                 logger.LogError(
                                     "Failed to persist the rolled-back client UUID for ApiClient {Id}: {Message}; stored client state is inconsistent",
@@ -800,6 +957,49 @@ public class ApiClientModule : IEndpointModule
                                 );
                                 return false;
                         }
+                    }
+
+                    // True only when the reference check proves no ApiClient row holds the
+                    // replacement UUID. A referenced UUID, a failed or unrecognized check, or a
+                    // check that throws all refuse compensation and report it at Error; a thrown
+                    // check is reported by exception type only, since its message is never
+                    // sanitized.
+                    async Task<bool> IsUnreferencedReplacementAsync(Guid replacementUuid)
+                    {
+                        string outcome;
+                        try
+                        {
+                            switch (await apiClientRepository.HasApiClientUuidReference(replacementUuid))
+                            {
+                                case ApiClientUuidReferenceResult.None:
+                                    return true;
+                                case ApiClientUuidReferenceResult.Referenced:
+                                    logger.LogError(
+                                        "The identity provider reported a client UUID {ClientUuid} already held by another API client for ApiClient {Id}; stored client state is inconsistent; no compensation attempted",
+                                        replacementUuid,
+                                        id
+                                    );
+                                    return false;
+                                case ApiClientUuidReferenceResult.FailureUnknown referenceFailure:
+                                    outcome = SanitizeForLog(referenceFailure.FailureMessage);
+                                    break;
+                                case var unrecognized:
+                                    outcome = unrecognized.GetType().Name;
+                                    break;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            outcome = ex.GetType().Name;
+                        }
+
+                        logger.LogError(
+                            "Could not verify the identity provider client {ClientUuid} reported for ApiClient {Id} is unreferenced: {Outcome}; stored client state is inconsistent; no compensation attempted",
+                            replacementUuid,
+                            id,
+                            outcome
+                        );
+                        return false;
                     }
 
                     // Removes the identity provider client left by the update of a vanished
@@ -977,6 +1177,18 @@ public class ApiClientModule : IEndpointModule
                             }
 
                             return DuplicateName(httpContext);
+                        case ApiClientUpdateResult.FailureDuplicateClientUuid:
+                            // The provider reported a replacement UUID that another ApiClient row
+                            // already holds: a provider inconsistency. Compensating would call
+                            // UpdateClientAsync on that UUID, mutating the other row's provider
+                            // object, so no compensation, synchronization, deletion or outcome
+                            // resolution is attempted.
+                            logger.LogError(
+                                "The identity provider reported a client UUID {ClientUuid} already held by another API client for ApiClient {Id}; stored client state is inconsistent; no compensation attempted",
+                                updateSuccess.ClientUuid,
+                                id
+                            );
+                            return FailureResults.Unknown(httpContext.TraceIdentifier);
                         case ApiClientUpdateResult.FailureUnknown updateFailure:
                             logger.LogError(
                                 "Repository update failed for ApiClient {Id}: {Message}",

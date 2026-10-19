@@ -331,7 +331,7 @@ try {
     # with -StartDms (or `./up.sh st-dms mt-dms`).
     if ($StartDms) {
         # The DMS services bind-mount ./.bootstrap/ApiSchema at /app/ApiSchema and read the API
-        # schema exclusively from there (AppSettings__UseApiSchemaPath=true). Docker auto-creates
+        # schema exclusively from there (AppSettings__ApiSchema__UseCustomPath=true). Docker auto-creates
         # the directory empty if it was never staged, and a DMS booted against an empty schema
         # directory fails startup/health even with the databases provisioned -- so refuse early.
         $apiSchemaDir = Join-Path $composeDir ".bootstrap/ApiSchema"

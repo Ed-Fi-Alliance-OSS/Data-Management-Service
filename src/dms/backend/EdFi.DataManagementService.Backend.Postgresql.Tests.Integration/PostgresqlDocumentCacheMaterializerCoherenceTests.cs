@@ -49,8 +49,7 @@ public class Given_Postgresql_DocumentCacheMaterializer_Coherence
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL,
                 "CreatedByOwnershipTokenId" smallint NULL,
-                "ContentVersion" bigint NOT NULL,
-                "CreatedAt" timestamptz NOT NULL
+                "ContentVersion" bigint NOT NULL
             );
 
             INSERT INTO dms."Document" (
@@ -58,16 +57,14 @@ public class Given_Postgresql_DocumentCacheMaterializer_Coherence
                 "DocumentUuid",
                 "ResourceKeyId",
                 "CreatedByOwnershipTokenId",
-                "ContentVersion",
-                "CreatedAt"
+                "ContentVersion"
             )
             VALUES (
                 980101,
                 'aaaaaaaa-bbbb-cccc-dddd-000000009801',
                 11,
                 NULL,
-                222,
-                '2026-07-30T14:15:16Z'
+                222
             );
 
             CREATE SCHEMA edfi;

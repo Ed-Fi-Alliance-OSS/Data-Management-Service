@@ -919,3 +919,32 @@ Feature: Resources "Create" Operation validations
                       "birthDate": "2010-05-01"
                   }
                   """
+
+        @DMS-1594 @e2e-ci-shard-1
+        Scenario: 35 Post a duplicate property in a later array element
+             When a POST request is made to "/ed-fi/educationContents" with
+                  """
+                  {
+                    "contentIdentifier": "Testing",
+                    "namespace": "Testing",
+                    "shortDescription": "Testing",
+                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                    "learningResourceMetadataURI": "Testing",
+                    "items": [{"a":1,"b":2},{"x":1,"x":2}]
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null,
+                    "validationErrors": {
+                      "$.items[1].x": ["An item with the same key has already been added."]
+                    },
+                    "errors": []
+                  }
+                  """

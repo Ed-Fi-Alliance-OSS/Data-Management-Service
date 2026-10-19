@@ -1191,8 +1191,8 @@ internal static class RepresentationRestampE2EHarness
                 new Dictionary<string, string?>
                 {
                     ["AppSettings:Datastore"] = appSettingsDatastore,
-                    ["AppSettings:UseApiSchemaPath"] = "true",
-                    ["AppSettings:ApiSchemaPath"] = apiSchemaDirectory,
+                    ["AppSettings:ApiSchema:UseCustomPath"] = "true",
+                    ["AppSettings:ApiSchema:Path"] = apiSchemaDirectory,
                 }
             )
             .Build();
@@ -1267,8 +1267,8 @@ internal static class RepresentationRestampE2EHarness
             environment: new Dictionary<string, string>
             {
                 ["AppSettings__Datastore"] = appSettingsDatastore,
-                ["AppSettings__UseApiSchemaPath"] = "true",
-                ["AppSettings__ApiSchemaPath"] = apiSchemaDirectory,
+                ["AppSettings__ApiSchema__UseCustomPath"] = "true",
+                ["AppSettings__ApiSchema__Path"] = apiSchemaDirectory,
                 ["ConfigurationServiceSettings__BaseUrl"] = configurationServiceBaseUri.ToString(),
                 ["ConfigurationServiceSettings__ClientId"] = ConfigurationServiceClientId,
                 ["ConfigurationServiceSettings__ClientSecret"] = ConfigurationServiceClientSecret,

@@ -612,9 +612,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         );
 
     private static bool HasMissingDocumentReferenceFailures(ResolvedReferenceSet resolvedReferences) =>
-        resolvedReferences.InvalidDocumentReferences.Any(static failure =>
-            failure.Reason is DocumentReferenceFailureReason.Missing
-        );
+        resolvedReferences.MissingDocumentReferences.Any();
 
     /// <summary>
     /// Composes the served <c>_etag</c> for a just-committed write. The write response carries only

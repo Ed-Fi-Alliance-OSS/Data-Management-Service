@@ -37,10 +37,9 @@
 
 .PARAMETER TokenUrl
     OAuth token endpoint used to obtain a bearer token. This must be the Configuration Service
-    token endpoint, http://localhost:8081/connect/token by default, because the credentials are
-    sent in the request body. The DMS endpoint http://localhost:8080/oauth/token will not do:
-    it requires HTTP Basic authentication and forwards only grant_type upstream, so a body-borne
-    client id and secret reach the identity provider as an unauthenticated request.
+    token endpoint, http://localhost:8081/connect/token by default, because the request carries a
+    scope. The DMS endpoint http://localhost:8080/oauth/token accepts body credentials but forwards
+    only grant_type upstream, so the requested scope would not reach the identity provider.
 
 .PARAMETER ClientId
     API client id.

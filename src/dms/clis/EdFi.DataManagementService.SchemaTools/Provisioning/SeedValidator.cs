@@ -65,7 +65,8 @@ public static class SeedValidator
     public static void ValidateResourceKeysOrThrow(
         IReadOnlyList<ResourceKeyRow> actualRows,
         IReadOnlyList<ResourceKeyEntry> expectedKeys,
-        ILogger logger
+        ILogger logger,
+        bool includeValues = true
     )
     {
         var actualByKey = ToDictionaryOrThrow(
@@ -98,7 +99,7 @@ public static class SeedValidator
             }
             else
             {
-                var diff = GetResourceKeyDiff(expected, actual);
+                var diff = GetResourceKeyDiff(expected, actual, includeValues);
                 if (diff is not null)
                 {
                     modifiedDetails.Add($"ResourceKeyId={id}: {diff}");
@@ -129,7 +130,8 @@ public static class SeedValidator
     public static void ValidateSchemaComponentsOrThrow(
         IReadOnlyList<SchemaComponentRow> actualRows,
         IReadOnlyList<SchemaComponentInfo> expectedComponents,
-        ILogger logger
+        ILogger logger,
+        bool includeValues = true
     )
     {
         var actualByKey = ToDictionaryOrThrow(
@@ -164,7 +166,7 @@ public static class SeedValidator
             }
             else
             {
-                var diff = GetSchemaComponentDiff(expected, actual);
+                var diff = GetSchemaComponentDiff(expected, actual, includeValues);
                 if (diff is not null)
                 {
                     modifiedDetails.Add($"ProjectEndpointName={Sanitize(name)}: {diff}");
@@ -318,49 +320,69 @@ public static class SeedValidator
         return sb.ToString().TrimEnd();
     }
 
-    private static string? GetResourceKeyDiff(ResourceKeyRow expected, ResourceKeyRow actual)
+    private static string? GetResourceKeyDiff(
+        ResourceKeyRow expected,
+        ResourceKeyRow actual,
+        bool includeValues
+    )
     {
         var diffs = new List<string>();
         if (!string.Equals(expected.ProjectName, actual.ProjectName, StringComparison.Ordinal))
         {
             diffs.Add(
-                $"ProjectName expected='{Sanitize(expected.ProjectName)}' actual='{Sanitize(actual.ProjectName)}'"
+                includeValues
+                    ? $"ProjectName expected='{Sanitize(expected.ProjectName)}' actual='{Sanitize(actual.ProjectName)}'"
+                    : "ProjectName"
             );
         }
         if (!string.Equals(expected.ResourceName, actual.ResourceName, StringComparison.Ordinal))
         {
             diffs.Add(
-                $"ResourceName expected='{Sanitize(expected.ResourceName)}' actual='{Sanitize(actual.ResourceName)}'"
+                includeValues
+                    ? $"ResourceName expected='{Sanitize(expected.ResourceName)}' actual='{Sanitize(actual.ResourceName)}'"
+                    : "ResourceName"
             );
         }
         if (!string.Equals(expected.ResourceVersion, actual.ResourceVersion, StringComparison.Ordinal))
         {
             diffs.Add(
-                $"ResourceVersion expected='{Sanitize(expected.ResourceVersion)}' actual='{Sanitize(actual.ResourceVersion)}'"
+                includeValues
+                    ? $"ResourceVersion expected='{Sanitize(expected.ResourceVersion)}' actual='{Sanitize(actual.ResourceVersion)}'"
+                    : "ResourceVersion"
             );
         }
         return diffs.Count > 0 ? string.Join(", ", diffs) : null;
     }
 
-    private static string? GetSchemaComponentDiff(SchemaComponentRow expected, SchemaComponentRow actual)
+    private static string? GetSchemaComponentDiff(
+        SchemaComponentRow expected,
+        SchemaComponentRow actual,
+        bool includeValues
+    )
     {
         var diffs = new List<string>();
         if (!string.Equals(expected.ProjectName, actual.ProjectName, StringComparison.Ordinal))
         {
             diffs.Add(
-                $"ProjectName expected='{Sanitize(expected.ProjectName)}' actual='{Sanitize(actual.ProjectName)}'"
+                includeValues
+                    ? $"ProjectName expected='{Sanitize(expected.ProjectName)}' actual='{Sanitize(actual.ProjectName)}'"
+                    : "ProjectName"
             );
         }
         if (!string.Equals(expected.ProjectVersion, actual.ProjectVersion, StringComparison.Ordinal))
         {
             diffs.Add(
-                $"ProjectVersion expected='{Sanitize(expected.ProjectVersion)}' actual='{Sanitize(actual.ProjectVersion)}'"
+                includeValues
+                    ? $"ProjectVersion expected='{Sanitize(expected.ProjectVersion)}' actual='{Sanitize(actual.ProjectVersion)}'"
+                    : "ProjectVersion"
             );
         }
         if (expected.IsExtensionProject != actual.IsExtensionProject)
         {
             diffs.Add(
-                $"IsExtensionProject expected='{expected.IsExtensionProject}' actual='{actual.IsExtensionProject}'"
+                includeValues
+                    ? $"IsExtensionProject expected='{expected.IsExtensionProject}' actual='{actual.IsExtensionProject}'"
+                    : "IsExtensionProject"
             );
         }
         return diffs.Count > 0 ? string.Join(", ", diffs) : null;
@@ -383,7 +405,7 @@ public static class SeedValidator
             if (!dict.TryAdd(key, valueSelector(item)))
             {
                 throw new InvalidOperationException(
-                    $"Duplicate {keyColumnName} found in {tableName} input: {key}"
+                    $"Duplicate {keyColumnName} found in {tableName} input: {Sanitize(key.ToString())}"
                 );
             }
         }

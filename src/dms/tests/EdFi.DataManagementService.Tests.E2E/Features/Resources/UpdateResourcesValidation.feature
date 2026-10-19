@@ -1162,3 +1162,33 @@ Feature: Resources "Update" Operation validations
              Then it should respond with 204
              When a GET request is made to "/ed-fi/educationContents/{id}"
              Then the lastModifiedDate has not changed
+
+        @DMS-1594 @e2e-ci-shard-1
+        Scenario: 24 Put a duplicate property in a later array element
+             When a PUT request is made to "/ed-fi/educationContents/{id}" with
+                  """
+                  {
+                    "id": "{id}",
+                    "contentIdentifier": "Testing",
+                    "namespace": "Testing",
+                    "shortDescription": "Testing",
+                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                    "learningResourceMetadataURI": "Testing",
+                    "items": [{"a":1,"b":2},{"x":1,"x":2}]
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null,
+                    "validationErrors": {
+                      "$.items[1].x": ["An item with the same key has already been added."]
+                    },
+                    "errors": []
+                  }
+                  """

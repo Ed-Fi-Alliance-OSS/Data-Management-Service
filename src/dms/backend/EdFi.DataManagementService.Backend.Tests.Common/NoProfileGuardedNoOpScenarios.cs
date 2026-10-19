@@ -123,8 +123,7 @@ public static class NoProfileGuardedNoOpScenarios
         long DocumentId,
         Guid DocumentUuid,
         short ResourceKeyId,
-        long ContentVersion,
-        DateTimeOffset CreatedAt
+        long ContentVersion
     );
 
     public sealed record SchoolRow(
@@ -181,7 +180,7 @@ public static class NoProfileGuardedNoOpScenarios
 
     /// <summary>
     /// Asserts a guarded no-op left the full persisted rowset, ContentVersion, and every stored
-    /// update-tracking metadata (root ContentLastModifiedAt and document CreatedAt) unchanged, with the expected resource key.
+    /// update-tracking metadata (root ContentLastModifiedAt and document ContentVersion) unchanged, with the expected resource key.
     /// Guards the focused snapshot against vacuity (one document, two base and two aligned rows)
     /// before the full equality check.
     /// </summary>
@@ -220,7 +219,7 @@ public static class NoProfileGuardedNoOpScenarios
     /// Asserts a guarded no-op left the full rowset unchanged except for exactly one concurrent
     /// content-stamp write: ContentVersion is before + 1 and ContentLastModifiedAt is exactly the
     /// injected concurrent sentinel (proving the concurrent outcome was retained without an extra DMS
-    /// stamp/write), while CreatedAt and every rowset stay unchanged, with the expected resource key. Guards the focused snapshot against vacuity and
+    /// stamp/write), while every rowset stays unchanged, with the expected resource key. Guards the focused snapshot against vacuity and
     /// the sentinel against matching the pre-state (which would make retention unprovable) before the
     /// equality check.
     /// </summary>
