@@ -514,6 +514,7 @@ dotnet publish $schemaToolProject -c Release -p:UseAppHost=true -o $schemaToolOu
 
 # 2. Point to the platform-appropriate executable
 $schemaToolExe = if ($IsWindows) { "$schemaToolOutput/api-schema-tools.exe" } else { "$schemaToolOutput/api-schema-tools" }
+$env:DMS_SCHEMA_TOOL_PATH = $schemaToolExe  # Optional explicit override for subsequent prepare/bootstrap commands
 ```
 
 Standard mode (omit `-ApiSchemaPath`) stages the packages listed by the env file's

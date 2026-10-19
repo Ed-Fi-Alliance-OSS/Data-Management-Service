@@ -3161,6 +3161,7 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
             $composeReadme | Should -Match "(?is)automatically publish(?:es)?.*api-schema-tools"
             $composeReadme | Should -Match "(?is)\.NET 10 SDK"
             $composeReadme | Should -Match "(?is)manual.*publish.*refresh"
+            $composeReadme | Should -Match '(?m)^\$env:DMS_SCHEMA_TOOL_PATH = \$schemaToolExe(?:\s+#.*)?$'
             $prepareHelp | Should -Match "(?is)publishes the in-repository tool.*\.NET 10 SDK"
             $prepareHelp | Should -Match "(?is)\.NET 10 SDK"
         }
