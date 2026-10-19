@@ -348,12 +348,15 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
         foreach (var childPlan in childPlans)
         {
-            // Duplicate detection has two modes selected by FlatteningInput, each backed by a
-            // dictionary whose equality semantics match its consumer downstream:
+            // Duplicate detection has two modes selected by FlatteningInput. Both use the
+            // table's CollectionSemanticIdentityEquality, so string members bound to a column
+            // flagged UsesSqlServerIdentityCollation compare with the SQL Server identity
+            // comparer: case variants that the database would store under one unique key are
+            // duplicates here, on SQL Server only.
             //
-            // - Profile mode (default): keyed on the presence-aware SemanticIdentityKeys.BuildKey
-            //   string. An explicit JSON null and a missing identity property produce distinct
-            //   keys under the SemanticIdentityPart contract, so two siblings with the same null
+            // - Profile mode (default): keyed on the presence-aware SemanticIdentityPart
+            //   sequence. An explicit JSON null and a missing identity property are distinct
+            //   under the SemanticIdentityPart contract, so two siblings with the same null
             //   value are duplicates only when both are present-null or both are missing — never
             //   across the boundary. ProfileCollectionPlanner relies on this to pair stored rows
             //   and request candidates by presence-aware identity. The complementary
@@ -362,25 +365,25 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             //   flatten.
             //
             // - No-profile mode (ValidateStorageCollapsedCollectionIdentityUniqueness): keyed on
-            //   the raw object?[] semantic identity values via ObjectValueArrayComparer, the
-            //   exact same comparer used by
-            //   RelationalWriteNoProfileMerge.ProjectedCollectionTableState. The relational
-            //   storage model maps both missing and explicit-null identity slots to SQL NULL,
-            //   so two request siblings differing only by absent-vs-explicit-null on an identity
-            //   slot would persist indistinguishably. Rejecting such pairs here keeps the merge
-            //   from binding ambiguous request candidates to a stored row. The same comparer
-            //   also catches scalar values that .Equals but stringify differently (e.g. 1.0m
-            //   vs 1.00m), keeping flatten-time rejection aligned with merge-time matching.
+            //   the raw object?[] semantic identity values. The relational storage model maps
+            //   both missing and explicit-null identity slots to SQL NULL, so two request
+            //   siblings differing only by absent-vs-explicit-null on an identity slot would
+            //   persist indistinguishably. Rejecting such pairs here keeps the merge from binding
+            //   ambiguous request candidates to a stored row. Raw value equality also catches
+            //   scalar values that .Equals but stringify differently (e.g. 1.0m vs 1.00m).
             //
             // SemanticIdentityInOrder is built unconditionally because the profile merge
             // pipeline still consumes it on every candidate downstream of this method.
-            Dictionary<string, SemanticIdentityTrackerEntry>? presenceAwareTracker =
-                flatteningInput.ValidateStorageCollapsedCollectionIdentityUniqueness
-                    ? null
-                    : new(StringComparer.Ordinal);
+            var semanticIdentityEquality = CollectionSemanticIdentityEquality.For(childPlan.TableWritePlan);
+            Dictionary<
+                ImmutableArray<SemanticIdentityPart>,
+                SemanticIdentityTrackerEntry
+            >? presenceAwareTracker = flatteningInput.ValidateStorageCollapsedCollectionIdentityUniqueness
+                ? null
+                : new(semanticIdentityEquality.PresenceAware);
             Dictionary<object?[], SemanticIdentityTrackerEntry>? collapsedTracker =
                 flatteningInput.ValidateStorageCollapsedCollectionIdentityUniqueness
-                    ? new(StorageCollapsedIdentityHelpers.ObjectArrayComparer)
+                    ? new(semanticIdentityEquality.RawValues)
                     : null;
 
             foreach (
@@ -421,15 +424,13 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
                 SemanticIdentityTrackerEntry? firstSeen;
                 bool isDuplicate;
-                string? presenceAwareKey = null;
                 if (collapsedTracker is not null)
                 {
                     isDuplicate = collapsedTracker.TryGetValue(semanticIdentityValues, out firstSeen);
                 }
                 else
                 {
-                    presenceAwareKey = Profile.SemanticIdentityKeys.BuildKey(semanticIdentityInOrder);
-                    isDuplicate = presenceAwareTracker!.TryGetValue(presenceAwareKey, out firstSeen);
+                    isDuplicate = presenceAwareTracker!.TryGetValue(semanticIdentityInOrder, out firstSeen);
                 }
 
                 if (isDuplicate)
@@ -479,7 +480,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 }
                 else
                 {
-                    presenceAwareTracker!.Add(presenceAwareKey!, trackerEntry);
+                    presenceAwareTracker!.Add(semanticIdentityInOrder, trackerEntry);
                 }
 
                 var childParentKeyParts = RelationalWriteMergeSupport.ExtractPhysicalRowIdentityValues(
@@ -1137,9 +1138,9 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
     /// <remarks>
     /// Used by the profile-aware merge path, where candidate keys must align with
     /// visible-request-item keys reconstructed from <see cref="CollectionRowAddress"/>.
-    /// The no-profile merge path matches current rows on raw
+    /// The no-profile path checks sibling duplicates on raw
     /// <see cref="CollectionWriteCandidate.SemanticIdentityValues"/> via
-    /// <see cref="ObjectValueArrayComparer"/>; profile-aware callers leave the no-profile
+    /// <see cref="CollectionSemanticIdentityEquality.RawValues"/>; profile-aware callers leave the no-profile
     /// path's storage-collapsed-uniqueness flag off because
     /// <see cref="EdFi.DataManagementService.Backend.Profile.ProfileWriteContractValidator"/>
     /// enforces the same invariant on Core-emitted address streams before flatten. The

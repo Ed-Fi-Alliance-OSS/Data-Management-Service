@@ -224,7 +224,7 @@ public sealed record FlatteningInput
     /// When true, the shared flattener enforces that no two collection candidates under
     /// the same parent collection scope share a storage-collapsed semantic identity.
     /// Two identities collapse-equal when they are equal under
-    /// <see cref="ObjectValueArrayComparer"/> after the storage-NULL convention is applied
+    /// <see cref="CollectionSemanticIdentityEquality.RawValues"/> after the storage-NULL convention is applied
     /// (a missing identity property and an explicit JSON <c>null</c> both materialize to
     /// <c>null</c> in the values array). The no-profile executor sets this so request
     /// shapes that the relational storage model cannot represent distinctly are rejected

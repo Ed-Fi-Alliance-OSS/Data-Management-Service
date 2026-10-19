@@ -77,14 +77,6 @@ public class Given_The_Storage_Collapsed_Identity_Helpers
     }
 
     [Test]
-    public void It_Surfaces_The_Existing_ObjectValueArrayComparer_Instance()
-    {
-        StorageCollapsedIdentityHelpers
-            .ObjectArrayComparer.Should()
-            .BeSameAs(ObjectValueArrayComparer.Instance);
-    }
-
-    [Test]
     public void It_Produces_Different_Keys_For_Arrays_Differing_Only_In_Part_Order()
     {
         var ab = ImmutableArray.Create(

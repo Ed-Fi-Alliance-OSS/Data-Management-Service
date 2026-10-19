@@ -124,6 +124,31 @@ public class Given_A_Mssql_NoProfile_Post_With_Storage_Collapsed_Sibling_Identit
         failure.ValidationFailures[0].Message.Should().Contain("received duplicate semantic identity values");
     }
 
+    [Test]
+    public async Task It_returns_validation_failure_when_request_contains_case_variant_identity_siblings()
+    {
+        // City is a string semantic-identity member, so SQL Server stores it under the
+        // case-insensitive identity collation: "Austin" and "AUSTIN" would collide on the
+        // collection's unique key. The flattener must reject the pair as a duplicate (400)
+        // before any database write, instead of letting the unique violation surface.
+        var body = new JsonObject
+        {
+            ["schoolId"] = checked((int)SchoolId),
+            ["addresses"] = new JsonArray(
+                new JsonObject { ["city"] = "Austin" },
+                new JsonObject { ["city"] = "AUSTIN" }
+            ),
+        };
+
+        var result = await ExecuteUpsertAsync(body);
+
+        result.Should().BeOfType<UpsertResult.UpsertFailureValidation>();
+        var failure = (UpsertResult.UpsertFailureValidation)result;
+        failure.ValidationFailures.Should().ContainSingle();
+        failure.ValidationFailures[0].Path.Value.Should().Be("$.addresses[1]");
+        (await MssqlProfileTopLevelCollectionMergeSupport.ReadDocumentCountAsync(_database)).Should().Be(0);
+    }
+
     private async Task<UpsertResult> ExecuteUpsertAsync(JsonNode body)
     {
         using var scope = _serviceProvider.CreateScope();

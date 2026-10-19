@@ -116,6 +116,33 @@ public class Given_A_Postgresql_NoProfile_Post_With_Storage_Collapsed_Sibling_Id
         failure.ValidationFailures[0].Message.Should().Contain("received duplicate semantic identity values");
     }
 
+    [Test]
+    public async Task It_persists_both_case_variant_identity_siblings()
+    {
+        // PostgreSQL identity columns are case-sensitive, so "Austin" and "AUSTIN" are two
+        // distinct collection items; the SQL Server twin rejects the same request.
+        var body = new JsonObject
+        {
+            ["schoolId"] = checked((int)SchoolId),
+            ["addresses"] = new JsonArray(
+                new JsonObject { ["city"] = "Austin" },
+                new JsonObject { ["city"] = "AUSTIN" }
+            ),
+        };
+
+        var result = await ExecuteUpsertAsync(body);
+
+        result.Should().BeOfType<UpsertResult.InsertSuccess>();
+        var documentId = await PostgresqlProfileTopLevelCollectionMergeSupport.ReadDocumentIdAsync(
+            _database,
+            SchoolDocumentUuid
+        );
+        (await PostgresqlProfileTopLevelCollectionMergeSupport.ReadAddressesAsync(_database, documentId))
+            .Select(address => address.City)
+            .Should()
+            .Equal("Austin", "AUSTIN");
+    }
+
     private async Task<UpsertResult> ExecuteUpsertAsync(JsonNode body)
     {
         using var scope = _serviceProvider.CreateScope();

@@ -994,6 +994,65 @@ public class Given_RelationalWriteFlattener
             );
     }
 
+    [TestCase(true)]
+    [TestCase(false)]
+    public void It_rejects_case_variant_siblings_when_the_identity_column_uses_the_sql_server_identity_collation(
+        bool validateStorageCollapsedCollectionIdentityUniqueness
+    )
+    {
+        var fixture = FlattenerFixture.CreateWithSqlServerIdentityCollationOnAddressType();
+        var flatteningInput = fixture.CreateFlatteningInput(
+            selectedBody: CreateCaseVariantAddressTypeBody(),
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences(),
+            validateStorageCollapsedCollectionIdentityUniqueness: validateStorageCollapsedCollectionIdentityUniqueness
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.addresses[1]");
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public void It_keeps_case_variant_siblings_when_the_identity_column_is_not_flagged(
+        bool validateStorageCollapsedCollectionIdentityUniqueness
+    )
+    {
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: CreateCaseVariantAddressTypeBody(),
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences(),
+            validateStorageCollapsedCollectionIdentityUniqueness: validateStorageCollapsedCollectionIdentityUniqueness
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result
+            .RootRow.CollectionCandidates.Select(candidate => candidate.SemanticIdentityValues[0])
+            .Should()
+            .Equal((object?)"Home", (object?)"HOME");
+    }
+
+    private static JsonNode CreateCaseVariantAddressTypeBody() =>
+        JsonNode.Parse(
+            """
+            {
+              "addresses": [
+                {
+                  "addressType": "Home"
+                },
+                {
+                  "addressType": "HOME"
+                }
+              ]
+            }
+            """
+        )!;
+
     [Test]
     public void It_keeps_collection_siblings_distinct_in_profile_mode_when_one_omits_and_one_explicit_nulls_the_identity_property()
     {
@@ -4676,6 +4735,49 @@ public class Given_RelationalWriteFlattener
                 ),
                 ResolvedReferences: CreateResolvedReferences()
             );
+        }
+
+        public static FlattenerFixture CreateWithSqlServerIdentityCollationOnAddressType()
+        {
+            var fixture = Create();
+            var tables = fixture
+                .WritePlan.TablePlansInDependencyOrder.Select(table =>
+                {
+                    if (table.TableModel.Table.Name != "StudentAddress")
+                    {
+                        return table;
+                    }
+
+                    var bindings = table
+                        .ColumnBindings.Select(binding =>
+                            binding.Column.ColumnName.Value == "AddressType"
+                                ? binding with
+                                {
+                                    Column = binding.Column with { UsesSqlServerIdentityCollation = true },
+                                }
+                                : binding
+                        )
+                        .ToArray();
+                    return table with
+                    {
+                        TableModel = table.TableModel with
+                        {
+                            Columns = [.. bindings.Select(binding => binding.Column)],
+                        },
+                        ColumnBindings = [.. bindings],
+                    };
+                })
+                .ToArray();
+            return fixture with
+            {
+                WritePlan = new ResourceWritePlan(
+                    fixture.WritePlan.Model with
+                    {
+                        TablesInDependencyOrder = [.. tables.Select(table => table.TableModel)],
+                    },
+                    tables
+                ),
+            };
         }
 
         public static FlattenerFixture CreateWithDescriptorBindings()

@@ -8,12 +8,13 @@ namespace EdFi.DataManagementService.Backend;
 /// <summary>
 /// Equality comparer for <see cref="object"/>?[] arrays that compares element-by-element using
 /// the runtime <see cref="object.Equals(object?, object?)"/> contract. Used to key dictionaries
-/// and hash sets by raw semantic identity values without distinguishing missing identity
-/// properties from explicit JSON nulls — both collapse to a <c>null</c> array element and
-/// therefore compare equal. The shared duplicate-detection step in
-/// <c>RelationalWriteFlattener.MaterializeCollectionCandidates</c> and the row-match step in
-/// <c>RelationalWriteNoProfileMerge.ProjectedCollectionTableState</c> must agree on this
-/// collapsing rule, so they intentionally share a single comparer instance.
+/// and hash sets by raw value arrays without distinguishing missing values from explicit JSON
+/// nulls — both collapse to a <c>null</c> array element and therefore compare equal. It keys
+/// parent-scope locators (physical ids) and the no-profile merge's stored-row match.
+/// Sibling-duplicate detection in <c>RelationalWriteFlattener.MaterializeCollectionCandidates</c>
+/// uses the column-aware <see cref="CollectionSemanticIdentityEquality.RawValues"/>, which is
+/// identical to this comparer when no semantic-identity column is flagged
+/// <c>UsesSqlServerIdentityCollation</c>.
 /// </summary>
 internal sealed class ObjectValueArrayComparer : IEqualityComparer<object?[]>
 {
