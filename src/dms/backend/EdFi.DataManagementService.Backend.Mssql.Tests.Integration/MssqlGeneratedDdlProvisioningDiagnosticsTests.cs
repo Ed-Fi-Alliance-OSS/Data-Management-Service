@@ -59,9 +59,6 @@ public class Given_MssqlGeneratedDdlProvisioningDiagnostics
 
         message
             .Should()
-            .StartWith("MSSQL generated-DDL provisioning timeout: suspected provisioning contention.");
-        message
-            .Should()
             .Contain("batch=2/5")
             .And.Contain("elapsedSeconds=301.250")
             .And.Contain("commandTimeoutSeconds=300")
@@ -77,6 +74,12 @@ public class Given_MssqlGeneratedDdlProvisioningDiagnostics
     }
 
     [Test]
+    public void It_reports_suspected_contention_when_overlap_is_observed_at_batch_start() =>
+        _unlimitedMessage
+            .Should()
+            .StartWith("MSSQL generated-DDL provisioning timeout: suspected provisioning contention.");
+
+    [Test]
     public void It_formats_numbers_invariantly()
     {
         var message = _finiteMessage;
@@ -89,10 +92,29 @@ public class Given_MssqlGeneratedDdlProvisioningDiagnostics
         _limitedMessage
             .Should()
             .Contain("Already limited to 1 in this process")
-            .And.Contain("standalone DDL reapplication")
-            .And.Contain("other processes, and SQL Server waits");
-        _finiteMessage.Should().Contain("restart the test process");
+            .And.Contain("ungated in-process work")
+            .And.Contain("other test processes, and SQL Server waits/logs");
     }
+
+    [Test]
+    public void It_identifies_work_excluded_from_the_admission_samples() =>
+        _limitedMessage
+            .Should()
+            .Contain(
+                "Snapshot creation/restoration, backup/restore, resets, and standalone DDL reapplication are outside this gate."
+            );
+
+    [Test]
+    public void It_points_to_local_shard_filters_when_the_limit_cannot_be_reduced() =>
+        _limitedMessage
+            .Should()
+            .Contain(
+                "For local shard filters, see docs/RUNNING-LOCALLY.md#mssql-backend-integration-provisioning-diagnostics."
+            );
+
+    [Test]
+    public void It_requires_a_process_restart_to_change_a_finite_limit() =>
+        _finiteMessage.Should().Contain("restart the test process");
 
     [Test]
     public void It_qualifies_contention_when_neither_sample_observes_overlap()
@@ -188,11 +210,12 @@ public class Given_MssqlGeneratedDdlProvisioningTimeoutClassification
     }
 
     [Test]
-    public void It_classifies_only_an_admitted_SqlClient_command_timeout()
-    {
+    public void It_classifies_only_an_admitted_SqlClient_command_timeout() =>
         _timeoutClassifications.Should().Equal(true, false);
+
+    [Test]
+    public void It_does_not_classify_other_provider_or_non_provider_failures_as_provisioning_timeouts() =>
         _otherClassifications.Should().Equal(false, false, false, false, false, false);
-    }
 
     private static SqlException CreateSqlException(int number, string message)
     {
@@ -252,11 +275,11 @@ public class Given_MssqlGeneratedDdlProvisioningDiagnosticReporting(bool throwin
         _exception.Data["MssqlGeneratedDdlProvisioningDiagnostic"].Should().Be("provisioning diagnostic");
 
     [Test]
-    public void It_formats_once_and_emits_the_same_context()
-    {
-        _formatCalls.Should().Be(1);
+    public void It_formats_once() => _formatCalls.Should().Be(1);
+
+    [Test]
+    public void It_emits_the_same_context() =>
         _output.Should().Be($"provisioning diagnostic{Environment.NewLine}");
-    }
 
     [Test]
     public void It_retains_existing_exception_data() => _exception.Data["existing"].Should().Be("retained");
@@ -283,9 +306,9 @@ public class Given_MssqlGeneratedDdlProvisioningDiagnosticFormattingFailure
     }
 
     [Test]
-    public void It_makes_formatting_failures_nonfatal()
-    {
+    public void It_does_not_attach_a_partial_diagnostic_when_formatting_fails() =>
         _exception.Data.Contains("MssqlGeneratedDdlProvisioningDiagnostic").Should().BeFalse();
-        _output.Should().BeEmpty();
-    }
+
+    [Test]
+    public void It_does_not_emit_a_partial_diagnostic_when_formatting_fails() => _output.Should().BeEmpty();
 }

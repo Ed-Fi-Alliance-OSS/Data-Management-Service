@@ -56,9 +56,12 @@ public class Given_MssqlGeneratedDdlProvisioningGate
     }
 
     [Test]
-    public void It_preserves_the_existing_configuration_parser()
-    {
+    public void It_parses_unlimited_and_positive_limits() =>
         _parsedLimits.Should().Equal(0, 0, 1, 2, int.MaxValue);
+
+    [Test]
+    public void It_rejects_invalid_configuration()
+    {
         foreach (var failure in _configurationFailures)
         {
             failure
@@ -70,17 +73,25 @@ public class Given_MssqlGeneratedDdlProvisioningGate
     }
 
     [Test]
-    public void It_captures_configuration_once_including_initialization_failure()
+    public void It_reuses_the_initialized_gate() => _secondGate.Should().BeSameAs(_firstGate);
+
+    [Test]
+    public void It_retains_the_first_configured_limit() => _secondGate.MaximumConcurrency.Should().Be(2);
+
+    [Test]
+    public void It_reads_valid_configuration_once() => _settingReads.Should().Be(1);
+
+    [Test]
+    public void It_preserves_initialization_failures()
     {
-        _secondGate.Should().BeSameAs(_firstGate);
-        _secondGate.MaximumConcurrency.Should().Be(2);
-        _settingReads.Should().Be(1);
         foreach (var failure in _initializationFailures)
         {
             failure.Should().BeOfType<InvalidOperationException>();
         }
-        _invalidSettingReads.Should().Be(1);
     }
+
+    [Test]
+    public void It_reads_invalid_configuration_once() => _invalidSettingReads.Should().Be(1);
 
     private static Exception CaptureFailure(Action action)
     {
@@ -140,13 +151,17 @@ public class Given_MssqlGeneratedDdlProvisioningGate_With_A_Queued_Entrant
     }
 
     [Test]
-    public void It_excludes_queued_entrants_and_admits_them_after_release()
-    {
-        _queuedCount.Should().Be(2);
-        _entrantWasQueued.Should().BeTrue();
+    public void It_excludes_queued_entrants_from_the_admitted_count() => _queuedCount.Should().Be(2);
+
+    [Test]
+    public void It_queues_an_entrant_when_all_permits_are_held() => _entrantWasQueued.Should().BeTrue();
+
+    [Test]
+    public void It_replaces_the_released_entrant_in_the_admitted_count() =>
         _countAfterAdmission.Should().Be(2);
-        _entrantWasAdmitted.Should().BeTrue();
-    }
+
+    [Test]
+    public void It_admits_the_queued_entrant_after_release() => _entrantWasAdmitted.Should().BeTrue();
 }
 
 [TestFixture]
@@ -177,9 +192,9 @@ public class Given_MssqlGeneratedDdlProvisioningGate_With_Unlimited_Admission
     }
 
     [Test]
-    public void It_counts_unlimited_operations_and_disposes_each_lease_once()
-    {
+    public void It_counts_unlimited_operations_and_disposes_each_lease_once() =>
         _unlimitedCounts.Should().Equal(4, 3, 3, 0);
-        _unlimitedWait.Should().Be(TimeSpan.Zero);
-    }
+
+    [Test]
+    public void It_has_no_admission_wait_when_unlimited() => _unlimitedWait.Should().Be(TimeSpan.Zero);
 }

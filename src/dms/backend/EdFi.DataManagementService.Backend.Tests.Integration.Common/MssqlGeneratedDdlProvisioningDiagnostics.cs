@@ -47,14 +47,14 @@ internal static class MssqlGeneratedDdlProvisioningDiagnostics
         var remedy = diagnostic.MaximumConcurrency switch
         {
             1 =>
-                "Already limited to 1 in this process; investigate standalone DDL reapplication, other processes, and SQL Server waits.",
+                "Already limited to 1 in this process; investigate ungated in-process work, other test processes, and SQL Server waits/logs. For local shard filters, see docs/RUNNING-LOCALLY.md#mssql-backend-integration-provisioning-diagnostics.",
             _ =>
                 $"To reduce in-process overlap, set {MssqlGeneratedDdlProvisioningGate.SettingName}=1 and restart the test process.",
         };
 
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"MSSQL generated-DDL provisioning timeout: {contention} fixture={fixture} contextOrigin={callerFile}:{caller}:{diagnostic.Context.CallerLineNumber} database={database} strategy={strategy} batch={diagnostic.BatchOrdinal}/{diagnostic.BatchCount} elapsedSeconds={diagnostic.BatchElapsed.TotalSeconds:0.000} commandTimeoutSeconds={diagnostic.CommandTimeoutSeconds} admissionWaitSeconds={diagnostic.AdmissionWaitElapsed.TotalSeconds:0.000} limit={limit} admittedAtBatchStart={diagnostic.AdmittedAtBatchStart} admittedAtTimeout={diagnostic.AdmittedAtTimeout}. Context origin is the recorded provisioning caller; shared baselines retain their first registration. Admitted counts are process-wide operations (including this operation and excluding queued entrants), not executing SQL or server-wide counts; samples do not prove an engine wait. Standalone DDL reapplication is outside this gate. {remedy}"
+            $"MSSQL generated-DDL provisioning timeout: {contention} fixture={fixture} contextOrigin={callerFile}:{caller}:{diagnostic.Context.CallerLineNumber} database={database} strategy={strategy} batch={diagnostic.BatchOrdinal}/{diagnostic.BatchCount} elapsedSeconds={diagnostic.BatchElapsed.TotalSeconds:0.000} commandTimeoutSeconds={diagnostic.CommandTimeoutSeconds} admissionWaitSeconds={diagnostic.AdmissionWaitElapsed.TotalSeconds:0.000} limit={limit} admittedAtBatchStart={diagnostic.AdmittedAtBatchStart} admittedAtTimeout={diagnostic.AdmittedAtTimeout}. Context origin is the recorded provisioning caller; shared baselines retain their first registration. Admitted counts are process-wide operations (including this operation and excluding queued entrants), not executing SQL or server-wide counts; samples do not prove an engine wait. Snapshot creation/restoration, backup/restore, resets, and standalone DDL reapplication are outside this gate. {remedy}"
         );
     }
 

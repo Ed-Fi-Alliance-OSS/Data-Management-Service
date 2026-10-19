@@ -204,11 +204,12 @@ reports process-wide admitted-operation samples at batch start and timeout,
 including the failing operation and excluding queued entrants. Those samples
 are not executing-query counts and do not prove an engine wait. The message
 labels provisioning contention as suspected when either sample observes
-overlap, and possible when neither does. Standalone `ApplyGeneratedDdlAsync`
-reapplication is outside the gate and its counts, including the DS52-TPDM
-idempotency check. If the effective limit is already 1, investigate this
-untracked work, other processes, and server waits; the limit cannot be reduced
-further.
+overlap, and possible when neither does. Snapshot creation/restoration,
+backup/restore, resets, and standalone `ApplyGeneratedDdlAsync` reapplication
+are outside the gate and its counts, including the DS52-TPDM idempotency check.
+If the effective limit is already 1, investigate this ungated in-process work,
+other test processes, and SQL Server waits/logs; the limit cannot be reduced
+further. Use the local shard filters below to narrow the workload when investigating.
 
 Only command timeouts while applying generated-DDL batches under provisioning
 admission receive this diagnostic. Timeouts during `CREATE DATABASE`, connection
@@ -249,8 +250,12 @@ provider-timeout probes are explicit and outside these CI shards; run them
 separately when changing the diagnostic wiring:
 
 ```powershell
-dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter "FullyQualifiedName~Given_MssqlGeneratedDdlProvisioningPipeline"
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter "FullyQualifiedName~Given_MssqlGeneratedDdlProvisioningPipeline&FullyQualifiedName!~Non_Timeout"
 ```
+
+Keep the non-timeout fixture excluded from this probe command. The pinned NUnit
+adapter skips explicit probes when the filter also selects non-explicit tests.
+The non-timeout failure fixture runs in `MssqlCiShard4`.
 
 ## Running Unit Tests and Generate Code Coverage Report
 

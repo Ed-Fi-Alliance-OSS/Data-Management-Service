@@ -102,27 +102,34 @@ public class Given_MssqlProvisioningTimingRecorder
     }
 
     [Test]
-    public void It_preserves_the_csv_contract()
-    {
-        _rows.Should().HaveCount(3);
+    public void It_writes_one_row_per_record_after_the_header() => _rows.Should().HaveCount(3);
+
+    [Test]
+    public void It_preserves_the_csv_header() =>
         _rows[0]
             .Should()
             .Be(
                 "TimestampUtc,Outcome,DurationSeconds,DatabaseName,CommandTimeoutSeconds,FixtureSignature,GeneratedDdlHash,Phase,LeaseStrategy,Shard,TestWorkerId,CallerMemberName,CallerFilePath,CallerLineNumber,IsDiagnostic,Detail,BatchOrdinal,BatchCount,BatchHash"
             );
+
+    [Test]
+    public void It_preserves_the_success_record_with_batch_context() =>
         _rows[1]
             .Should()
             .Contain(",success,2.500,db,300,\"family,variant\",hash,provision,direct,")
             .And.Contain(",7,false,,2,3,batch");
-        _rows[2].Should().Contain(",failure,1.000,db2,300,family,hash2,apply,direct,");
-    }
 
     [Test]
-    public void It_skips_empty_and_whitespace_only_output_paths()
-    {
+    public void It_preserves_the_failure_record_without_batch_context() =>
+        _rows[2].Should().Contain(",failure,1.000,db2,300,family,hash2,apply,direct,");
+
+    [Test]
+    public void It_does_not_warn_for_empty_and_whitespace_only_output_paths() =>
         _blankPathWarnings.Should().BeEmpty();
+
+    [Test]
+    public void It_does_not_write_files_for_empty_and_whitespace_only_output_paths() =>
         _unexpectedBlankPathFiles.Should().BeEmpty();
-    }
 
     [Test]
     public void It_warns_only_once_per_unavailable_path()

@@ -41,12 +41,12 @@ public class Given_MssqlGeneratedDdlProvisioningPipeline(bool throwingWriter)
     }
 
     [Test]
-    public void It_preserves_the_real_provider_timeout_and_stack()
-    {
-        var providerException = PrimaryException(_exception).Should().BeOfType<SqlException>().Subject;
-        providerException.Number.Should().Be(-2);
-        providerException.StackTrace.Should().Contain("ExecuteGeneratedDdlBatchAsync");
-    }
+    public void It_preserves_the_real_provider_timeout() =>
+        PrimaryException(_exception).Should().BeOfType<SqlException>().Which.Number.Should().Be(-2);
+
+    [Test]
+    public void It_preserves_the_provider_stack() =>
+        PrimaryException(_exception).StackTrace.Should().Contain("ExecuteGeneratedDdlBatchAsync");
 
     [Test]
     public void It_reports_the_provisioning_context_even_if_the_writer_throws()
@@ -71,11 +71,10 @@ public class Given_MssqlGeneratedDdlProvisioningPipeline(bool throwingWriter)
             .Be(_diagnostic.TrimEnd());
 
     [Test]
-    public void It_releases_production_admission_after_failure()
-    {
-        _admittedAfterFailure.Should().Be(0);
-        _admittedAfterReacquiring.Should().Be(1);
-    }
+    public void It_releases_the_provisioning_lease_after_failure() => _admittedAfterFailure.Should().Be(0);
+
+    [Test]
+    public void It_allows_admission_after_failure() => _admittedAfterReacquiring.Should().Be(1);
 
     [Test]
     public void It_drops_the_failed_database() => _databaseExists.Should().BeFalse();
@@ -179,17 +178,17 @@ public class Given_MssqlGeneratedDdlProvisioningPipeline_With_A_Non_Timeout_Fail
         PrimaryException(_exception).Should().BeOfType<SqlException>().Which.Number.Should().Be(50000);
 
     [Test]
-    public void It_does_not_report_provisioning_contention()
-    {
-        _diagnostic.Should().BeEmpty();
+    public void It_does_not_report_provisioning_contention() => _diagnostic.Should().BeEmpty();
+
+    [Test]
+    public void It_does_not_attach_a_provisioning_diagnostic() =>
         PrimaryException(_exception)
             .Data.Contains("MssqlGeneratedDdlProvisioningDiagnostic")
             .Should()
             .BeFalse();
-    }
 
     [Test]
-    public void It_releases_production_admission() => _admittedAfterFailure.Should().Be(0);
+    public void It_releases_the_provisioning_lease() => _admittedAfterFailure.Should().Be(0);
 }
 
 internal static class MssqlGeneratedDdlProvisioningProbe
