@@ -3063,6 +3063,7 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
     # through the resolved PowerShell launcher, including dotnet-tool installations.
 
     BeforeAll {
+        $script:documentationRepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
         $script:ownershipChildWork = Join-Path ([System.IO.Path]::GetTempPath()) "dms-1153-ownership-child-$([Guid]::NewGuid().ToString('N'))"
         New-Item -ItemType Directory -Path $script:ownershipChildWork -Force | Out-Null
     }
@@ -3146,5 +3147,41 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
         $childState.PassedCount | Should -Be 1 -Because "exactly the one tagged staged-import probe runs in the child"
         $childState.PassedName | Should -BeLike "*composes the overlay by default, overriding a custom base SCHEMA_PACKAGES*" -Because "the passing test must be the staged-import probe itself"
         $childState.ResidueCount | Should -Be 0 -Because "every instance staged under this run's recorded workspaces must be unloaded before the file hands the session back (residue: $($childState.ResiduePath))"
+    }
+
+    Context "DMS-1283 automatic acquisition guidance" {
+        It "documents automatic publishing, the .NET 10 SDK requirement, and optional refresh" {
+            $repoRoot = $script:documentationRepoRoot
+            $gettingStarted = Get-Content -Raw -LiteralPath (Join-Path $repoRoot "GETTING_STARTED.md")
+            $composeReadme = Get-Content -Raw -LiteralPath (Join-Path $repoRoot "eng/docker-compose/README.md")
+            $prepareHelp = Get-Content -Raw -LiteralPath (Join-Path $repoRoot "eng/docker-compose/prepare-dms-schema.ps1")
+
+            $gettingStarted | Should -Match "(?is)automatically publish(?:es)?.*api-schema-tools"
+            $gettingStarted | Should -Match "(?is)\.NET 10 SDK"
+            $composeReadme | Should -Match "(?is)automatically publish(?:es)?.*api-schema-tools"
+            $composeReadme | Should -Match "(?is)\.NET 10 SDK"
+            $composeReadme | Should -Match "(?is)manual.*publish.*refresh"
+            $prepareHelp | Should -Match "(?is)publishes the in-repository tool.*\.NET 10 SDK"
+            $prepareHelp | Should -Match "(?is)\.NET 10 SDK"
+        }
+
+        It "keeps ordinary prepare usage independent of an undefined tool variable" {
+            $repoRoot = $script:documentationRepoRoot
+            $gettingStarted = Get-Content -Raw -LiteralPath (Join-Path $repoRoot "GETTING_STARTED.md")
+            $composeReadme = Get-Content -Raw -LiteralPath (Join-Path $repoRoot "eng/docker-compose/README.md")
+
+            $composeReadme | Should -Match '(?m)^\./prepare-dms-schema\.ps1$'
+            $composeReadme | Should -Not -Match '(?m)^\./prepare-dms-schema\.ps1.*-SchemaToolPath\s+\$schemaToolExe'
+        }
+
+        It "does not require manual republishing after teardown and describes mismatch rejection" {
+            $repoRoot = $script:documentationRepoRoot
+            $composeReadme = Get-Content -Raw -LiteralPath (Join-Path $repoRoot "eng/docker-compose/README.md")
+            $composeReadme | Should -Not -Match "(?is)republish.*before the next bootstrap"
+            $composeReadme | Should -Match "(?is)fingerprint-mismatch teardown-guidance error"
+            $composeReadme | Should -Not -Match "(?is)fingerprint-mismatch.*restag"
+            $composeReadme | Should -Match "(?is)different recorded package identity.*fails fast"
+            $composeReadme | Should -Not -Match "(?is)package identity no longer matches\).*then starts"
+        }
     }
 }

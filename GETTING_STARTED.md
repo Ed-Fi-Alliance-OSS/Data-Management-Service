@@ -91,9 +91,10 @@ cd Data-Management-Service/eng/docker-compose
 cp .env.example .env
 ```
 
-On a clean checkout, publish the schema tool to the location the bootstrap
-auto-discovers. Repeat this after switching branches when the tool may have
-changed:
+The bootstrap automatically publishes the schema tool from source when it
+cannot find an eligible executable, then reuses it on later runs. This first
+startup can take longer while the .NET 10 SDK publishes the tool. To refresh it
+manually after a tool change, publish it to the bootstrap cache:
 
 ```powershell
 $schemaToolProject = "../../src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj"
@@ -109,8 +110,8 @@ Start the complete local environment with the bootstrap wrapper:
 
 The wrapper stages the schema and claims workspaces, starts the infrastructure,
 configures the data store, provisions its schema, and then starts DMS. Application
-images build inside containers; the host SDK is used only for the schema tool
-published above. Startup may take around a minute.
+images build inside containers. Startup may take around a minute, with additional
+time for the first schema tool publish when no eligible executable is available.
 
 Existing local images are reused by default, and stopping the stack (even with
 `-d -v`) does not remove them. After updating your checkout, rebuild them before
