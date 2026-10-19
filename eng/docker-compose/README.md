@@ -113,7 +113,8 @@ infrastructure starts:
 
 Because `-d -v` removes `.bootstrap/`, the next bootstrap reuses an eligible tool from the build
 output directories or publishes it from source. The .NET 10 SDK is required when publishing is
-needed.
+needed. Clear or update `DMS_SCHEMA_TOOL_PATH` if it points into the deleted workspace; an
+explicit path fails closed rather than triggering automatic publishing.
 
 By default, authentication uses the Self-Contained (OpenIddict) identity provider. The environment and startup scripts are pre-configured for Self-Contained mode, and Keycloak is not required unless explicitly selected.
 
@@ -503,19 +504,25 @@ sets use Expert mode below.
 
 > **Requirement - .NET 10 SDK:** When no eligible `api-schema-tools` executable is available,
 > `prepare-dms-schema.ps1` automatically publishes the in-repo CLI as a native executable. This
-> adds publish time on the first run. A manual publish remains available to refresh the cached tool
-> after changing branches or source.
+> adds publish time on the first run. After changing the tool or its dependencies, including by
+> switching branches, refresh the cached tool with the command below or delete
+> `.bootstrap/tools/api-schema-tools` so the next bootstrap can resolve it again. The cache takes
+> precedence over build output, so building the solution alone does not refresh it. Teardown with
+> `-d -v` also clears the cache.
 
 ```pwsh
 # Optional: manually refresh the cached api-schema-tools executable
 $schemaToolProject = "../../src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj"
 $schemaToolOutput  = ".bootstrap/tools/api-schema-tools"
 dotnet publish $schemaToolProject -c Release -p:UseAppHost=true -o $schemaToolOutput
-
-# 2. Point to the platform-appropriate executable
-$schemaToolExe = if ($IsWindows) { "$schemaToolOutput/api-schema-tools.exe" } else { "$schemaToolOutput/api-schema-tools" }
-$env:DMS_SCHEMA_TOOL_PATH = $schemaToolExe  # Optional explicit override for subsequent prepare/bootstrap commands
 ```
+
+To use an executable outside the discovered locations, set `DMS_SCHEMA_TOOL_PATH` (or pass
+`-SchemaToolPath` to `prepare-dms-schema.ps1`). Explicit paths take precedence and must exist;
+an invalid override fails without automatic publishing. Clear the environment override with
+`Remove-Item Env:DMS_SCHEMA_TOOL_PATH` to restore automatic resolution.
+Use the environment override when preparation and provisioning must use the same external tool;
+`-SchemaToolPath` selects the tool only for the prepare phase.
 
 Standard mode (omit `-ApiSchemaPath`) stages the packages listed by the env file's
 `SCHEMA_PACKAGES` value; invoked without `-EnvironmentFile` (as below) it falls back to the

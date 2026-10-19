@@ -133,45 +133,25 @@ function Resolve-DmsSchemaTool {
         throw "Cannot publish api-schema-tools because the .NET SDK command 'dotnet' is unavailable. Install the .NET 10 SDK and ensure dotnet is on PATH, or set DMS_SCHEMA_TOOL_PATH to an existing executable. Source project: $safeProjectPath"
     }
 
-    try {
-        New-Item -ItemType Directory -Path $outputDirectory -Force -ErrorAction Stop | Out-Null
-    }
-    catch {
-        throw "Cannot prepare api-schema-tools publish output directory '$safeOutputDirectory'. Check filesystem permissions and available disk space, or set DMS_SCHEMA_TOOL_PATH to an existing executable. $(Format-LogSafeText $_.Exception.Message)"
-    }
-
-    $existingExecutables = @{}
-    foreach ($candidateName in $candidateNames) {
-        $candidatePath = [System.IO.Path]::GetFullPath((Join-Path $outputDirectory $candidateName))
-        if (Test-Path -LiteralPath $candidatePath -PathType Leaf) {
-            $existingExecutables[$candidatePath] = $true
-        }
-    }
-
     $publishArguments = @("publish", $projectPath, "-c", "Release", "-p:UseAppHost=true", "-o", $outputDirectory)
-    Write-Information "No eligible api-schema-tools executable was found. Publishing the source project to '$safeOutputDirectory'." -InformationAction Continue
+    Write-Information "No eligible api-schema-tools executable was found. Publishing the source project to '$safeOutputDirectory'; this first run can take longer while packages restore and the tool builds." -InformationAction Continue
 
-    $publishOutput = @()
     $publishExitCode = $null
     $invocationFailure = $null
-    $originalErrorActionPreference = $ErrorActionPreference
-    $originalNativeErrorPreference = $PSNativeCommandUseErrorActionPreference
     try {
-        $ErrorActionPreference = "Continue"
-        $PSNativeCommandUseErrorActionPreference = $false
-        $publishOutput = @(& dotnet @publishArguments 2>&1)
-        $publishExitCode = $LASTEXITCODE
+        $publishExitCode = & {
+            # Scope preferences to the native invocation, including on PowerShell versions where
+            # PSNativeCommandUseErrorActionPreference does not exist until assigned here.
+            $ErrorActionPreference = "Continue"
+            $PSNativeCommandUseErrorActionPreference = $false
+            & dotnet @publishArguments 2>&1 | Out-Host
+            $LASTEXITCODE
+        }
     }
     catch {
-        $invocationFailure = Format-LogSafeText $_.Exception.Message
-        $publishExitCode = $LASTEXITCODE
-    }
-    finally {
-        $ErrorActionPreference = $originalErrorActionPreference
-        $PSNativeCommandUseErrorActionPreference = $originalNativeErrorPreference
+        $invocationFailure = $_.Exception.Message
     }
 
-    $outputText = Format-LogSafeText (($publishOutput | ForEach-Object { [string]$_ }) -join " | ")
     $expectedName = if ($IsWindows) { "api-schema-tools.exe" } else { "api-schema-tools" }
     $expectedPath = [System.IO.Path]::GetFullPath((Join-Path $outputDirectory $expectedName))
     $publishFailure = $null
@@ -186,27 +166,17 @@ function Resolve-DmsSchemaTool {
     }
 
     if ($null -ne $publishFailure) {
-        $cleanupFailures = [System.Collections.Generic.List[string]]::new()
-        foreach ($candidateName in $candidateNames) {
-            $candidatePath = [System.IO.Path]::GetFullPath((Join-Path $outputDirectory $candidateName))
-            $parentPath = [System.IO.Path]::GetFullPath((Split-Path -Parent $candidatePath))
-            if ($existingExecutables.ContainsKey($candidatePath) -or
-                -not [string]::Equals($parentPath, $outputDirectory, [System.StringComparison]::OrdinalIgnoreCase) -or
-                -not (Test-Path -LiteralPath $candidatePath -PathType Leaf)) {
-                continue
-            }
-
+        $cleanupDetails = ""
+        if (Test-Path -LiteralPath $expectedPath -PathType Leaf) {
             try {
-                Remove-Item -LiteralPath $candidatePath -Force -ErrorAction Stop
+                Remove-Item -LiteralPath $expectedPath -Force -ErrorAction Stop
             }
             catch {
-                $cleanupFailures.Add((Format-LogSafeText $_.Exception.Message))
+                $cleanupDetails = " Cleanup also failed: $($_.Exception.Message). Remove '$safeOutputDirectory' before retrying."
             }
         }
 
-        $details = if ([string]::IsNullOrWhiteSpace($outputText)) { "" } else { " Publish output: $outputText" }
-        $cleanupDetails = if ($cleanupFailures.Count -eq 0) { "" } else { " Cleanup also failed: $($cleanupFailures -join ' | ')" }
-        throw "Unable to acquire api-schema-tools from '$safeProjectPath' into '$safeOutputDirectory'. $publishFailure$details$cleanupDetails Check the .NET 10 SDK, package restore/build output, and output directory access, or set DMS_SCHEMA_TOOL_PATH to an existing executable."
+        throw "Unable to acquire api-schema-tools from '$safeProjectPath' into '$safeOutputDirectory'. $publishFailure$cleanupDetails Check the .NET 10 SDK, package restore/build output above, and output directory access, or set DMS_SCHEMA_TOOL_PATH to an existing executable."
     }
 
     return $expectedPath

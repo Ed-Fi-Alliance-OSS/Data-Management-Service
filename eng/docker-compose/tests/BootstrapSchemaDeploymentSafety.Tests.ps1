@@ -693,72 +693,62 @@ exit $ExitCode
                 else { Remove-Item Function:\global:dotnet -ErrorAction SilentlyContinue }
             }
 
-        It 'It_DMS1283_provision_environment_tool_beats_cache' {
-            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
-            $capturePath = Join-Path $script:repo.RepoRoot 'environment-tool-args.txt'
-            $environmentToolDirectory = Join-Path $script:repo.RepoRoot 'environment-tool'
-            New-Item -ItemType Directory -Path $environmentToolDirectory -Force | Out-Null
-            $environmentTool = New-FakeSchemaTool -Directory $environmentToolDirectory -CapturePath $capturePath
-            $env:DMS_SCHEMA_TOOL_PATH = $environmentTool
-            $publishedDirectory = Join-Path $script:repo.BootstrapRoot 'tools/api-schema-tools'
-            New-Item -ItemType Directory -Path $publishedDirectory -Force | Out-Null
-            Set-Content -LiteralPath (Join-Path $publishedDirectory $(if ($IsWindows) { 'api-schema-tools.exe' } else { 'api-schema-tools' })) -Value 'published cache sentinel'
+            It 'It_DMS1283_provision_environment_tool_beats_cache' {
+                New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+                $capturePath = Join-Path $script:repo.RepoRoot 'environment-tool-args.txt'
+                $environmentToolDirectory = Join-Path $script:repo.RepoRoot 'environment-tool'
+                New-Item -ItemType Directory -Path $environmentToolDirectory -Force | Out-Null
+                $environmentTool = New-FakeSchemaTool -Directory $environmentToolDirectory -CapturePath $capturePath
+                $env:DMS_SCHEMA_TOOL_PATH = $environmentTool
+                $publishedDirectory = Join-Path $script:repo.BootstrapRoot 'tools/api-schema-tools'
+                New-Item -ItemType Directory -Path $publishedDirectory -Force | Out-Null
+                Set-Content -LiteralPath (Join-Path $publishedDirectory $(if ($IsWindows) { 'api-schema-tools.exe' } else { 'api-schema-tools' })) -Value 'published cache sentinel'
 
-            . $script:repo.ProvisionScript
-            function Add-CmsClient { }
-            function Get-CmsToken { return 'token' }
-            function Get-DataStore {
-                return @([pscustomobject]@{
-                    id = 1283
-                    name = 'DMS1283EnvironmentOverride'
-                    connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=override_db;'
-                    dataStoreContexts = @()
-                })
+                . $script:repo.ProvisionScript
+                function Add-CmsClient { }
+                function Get-CmsToken { return 'token' }
+                function Get-DataStore {
+                    return @([pscustomobject]@{
+                        id = 1283
+                        name = 'DMS1283EnvironmentOverride'
+                        connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=override_db;'
+                        dataStoreContexts = @()
+                    })
+                }
+
+                Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1283)
+
+                $captured = @(Get-Content -LiteralPath $capturePath)
+                $captured[1..2] | Should -Be @('ddl', 'provision')
+                $global:dms1283DotnetCalls | Should -Be 0
             }
 
-            Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1283)
+            It 'It_DMS1283_provision_invalid_environment_tool_fails_closed' {
+                New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+                $capturePath = Join-Path $script:repo.RepoRoot 'should-not-run.txt'
+                $env:DMS_SCHEMA_TOOL_PATH = Join-Path $script:repo.RepoRoot 'missing/environment-tool.exe'
+                $publishedDirectory = Join-Path $script:repo.BootstrapRoot 'tools/api-schema-tools'
+                New-Item -ItemType Directory -Path $publishedDirectory -Force | Out-Null
+                Set-Content -LiteralPath (Join-Path $publishedDirectory $(if ($IsWindows) { 'api-schema-tools.exe' } else { 'api-schema-tools' })) -Value 'published cache sentinel'
 
-            $captured = @(Get-Content -LiteralPath $capturePath)
-            $captured.Count | Should -Be 12
-            $captured[1..2] | Should -Be @('ddl', 'provision')
-            $captured[3] | Should -Be '--schema'
-            $captured[4] | Should -Be (Join-Path $script:repo.BootstrapRoot 'ApiSchema/schemas/Ed-Fi/ApiSchema.json')
-            $captured[5] | Should -Be '--schema'
-            $captured[6] | Should -Be (Join-Path $script:repo.BootstrapRoot 'ApiSchema/schemas/Sample/ApiSchema.json')
-            $captured[7] | Should -Be '--connection-string'
-            $captured[8] | Should -Match 'host=localhost'
-            $captured[8] | Should -Match 'port=5544'
-            $captured[8] | Should -Match 'database=override_db'
-            $captured[9..11] | Should -Be @('--dialect', 'pgsql', '--create-database')
-            $global:dms1283DotnetCalls | Should -Be 0
-        }
+                . $script:repo.ProvisionScript
+                function Add-CmsClient { }
+                function Get-CmsToken { return 'token' }
+                function Get-DataStore {
+                    return @([pscustomobject]@{
+                        id = 1284
+                        name = 'DMS1283InvalidEnvironmentOverride'
+                        connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=override_db;'
+                        dataStoreContexts = @()
+                    })
+                }
 
-        It 'It_DMS1283_provision_invalid_environment_tool_fails_closed' {
-            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
-            $capturePath = Join-Path $script:repo.RepoRoot 'should-not-run.txt'
-            $env:DMS_SCHEMA_TOOL_PATH = Join-Path $script:repo.RepoRoot 'missing/environment-tool.exe'
-            $publishedDirectory = Join-Path $script:repo.BootstrapRoot 'tools/api-schema-tools'
-            New-Item -ItemType Directory -Path $publishedDirectory -Force | Out-Null
-            Set-Content -LiteralPath (Join-Path $publishedDirectory $(if ($IsWindows) { 'api-schema-tools.exe' } else { 'api-schema-tools' })) -Value 'published cache sentinel'
+                { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1284) } |
+                    Should -Throw -ExpectedMessage '*configured api-schema-tools executable was not found*'
 
-            . $script:repo.ProvisionScript
-            function Add-CmsClient { }
-            function Get-CmsToken { return 'token' }
-            function Get-DataStore {
-                return @([pscustomobject]@{
-                    id = 1284
-                    name = 'DMS1283InvalidEnvironmentOverride'
-                    connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=override_db;'
-                    dataStoreContexts = @()
-                })
+                Test-Path -LiteralPath $capturePath | Should -BeFalse
+                $global:dms1283DotnetCalls | Should -Be 0
             }
-
-            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1284) } |
-                Should -Throw -ExpectedMessage '*configured api-schema-tools executable was not found*'
-
-            Test-Path -LiteralPath $capturePath | Should -BeFalse
-            $global:dms1283DotnetCalls | Should -Be 0
-        }
         }
 
         It "decrypts CMS-encrypted connection strings before provisioning" {

@@ -93,8 +93,11 @@ cp .env.example .env
 
 The bootstrap automatically publishes the schema tool from source when it
 cannot find an eligible executable, then reuses it on later runs. This first
-startup can take longer while the .NET 10 SDK publishes the tool. To refresh it
-manually after a tool change, publish it to the bootstrap cache:
+startup can take longer while the .NET 10 SDK publishes the tool. After changing
+the tool or switching to a branch that changes it or its dependencies, refresh
+the cached tool with the following command, or delete its cache directory so the
+next bootstrap can resolve it again. Building the solution alone does not
+refresh the cache, which takes precedence over build output:
 
 ```powershell
 $schemaToolProject = "../../src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj"
@@ -236,5 +239,8 @@ with, such as `-DatabaseEngine`, so the command stops the same services.
 ./bootstrap-local-dms.ps1 -d -v
 ```
 
-Before the next bootstrap, repeat the schema-tool publish step from the setup
-section because `-d -v` removes its `.bootstrap/tools/api-schema-tools` output.
+Because `-d -v` also clears the cached schema tool, the next bootstrap reuses an
+eligible executable from build output or publishes it automatically. Publishing
+requires the host .NET 10 SDK. If you set `DMS_SCHEMA_TOOL_PATH` to a deleted
+executable, clear or update that override before restarting; explicit paths fail
+closed rather than triggering automatic publishing.
