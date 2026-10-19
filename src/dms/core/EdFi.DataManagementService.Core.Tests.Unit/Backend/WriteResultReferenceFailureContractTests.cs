@@ -29,7 +29,6 @@ public class WriteResultReferenceFailureContractTests
                 ResourceName: new ResourceName("School"),
                 IsDescriptor: false
             );
-            var sharedReferentialId = new ReferentialId(Guid.NewGuid());
             DocumentIdentity documentIdentity = new([
                 new(new JsonPath("$.schoolReference.schoolId"), "255901001"),
             ]);
@@ -40,14 +39,12 @@ public class WriteResultReferenceFailureContractTests
                         Path: new JsonPath("$.schoolReference"),
                         TargetResource: targetResource,
                         DocumentIdentity: documentIdentity,
-                        ReferentialId: sharedReferentialId,
                         Reason: DocumentReferenceFailureReason.Missing
                     ),
                     new(
                         Path: new JsonPath("$.sessionReference.schoolReference"),
                         TargetResource: targetResource,
                         DocumentIdentity: documentIdentity,
-                        ReferentialId: sharedReferentialId,
                         Reason: DocumentReferenceFailureReason.Missing
                     ),
                 ],
@@ -106,7 +103,6 @@ public class WriteResultReferenceFailureContractTests
                                 "255901"
                             ),
                         ]),
-                        ReferentialId: new ReferentialId(Guid.NewGuid()),
                         Reason: DocumentReferenceFailureReason.IncompatibleTargetType
                     ),
                 ],
@@ -141,57 +137,6 @@ public class WriteResultReferenceFailureContractTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_An_UpsertFailureReference_With_A_Descriptor_Type_Mismatch
-        : WriteResultReferenceFailureContractTests
-    {
-        private UpsertResult.UpsertFailureReference _result = null!;
-
-        [SetUp]
-        public void Setup()
-        {
-            var targetResource = new BaseResourceInfo(
-                ProjectName: new ProjectName("ed-fi"),
-                ResourceName: new ResourceName("SchoolTypeDescriptor"),
-                IsDescriptor: true
-            );
-
-            _result = new UpsertResult.UpsertFailureReference(
-                [],
-                [
-                    new(
-                        Path: new JsonPath("$.schoolTypeDescriptor"),
-                        TargetResource: targetResource,
-                        DocumentIdentity: new([
-                            new(
-                                DocumentIdentity.DescriptorIdentityJsonPath,
-                                "uri://ed-fi.org/gradeleveldescriptor#first-grade"
-                            ),
-                        ]),
-                        ReferentialId: new ReferentialId(Guid.NewGuid()),
-                        Reason: DescriptorReferenceFailureReason.DescriptorTypeMismatch
-                    ),
-                ]
-            );
-        }
-
-        [Test]
-        public void It_carries_the_reason_and_target_resource_for_the_failing_path()
-        {
-            _result.InvalidDescriptorReferences.Should().ContainSingle();
-            _result.InvalidDescriptorReferences[0].Path.Value.Should().Be("$.schoolTypeDescriptor");
-            _result
-                .InvalidDescriptorReferences[0]
-                .TargetResource.ResourceName.Value.Should()
-                .Be("SchoolTypeDescriptor");
-            _result
-                .InvalidDescriptorReferences[0]
-                .Reason.Should()
-                .Be(DescriptorReferenceFailureReason.DescriptorTypeMismatch);
-        }
-    }
-
-    [TestFixture]
-    [Parallelizable]
     public class Given_An_UpdateFailureReference_With_A_Missing_Descriptor
         : WriteResultReferenceFailureContractTests
     {
@@ -218,7 +163,6 @@ public class WriteResultReferenceFailureContractTests
                                 "uri://ed-fi.org/calendartypedescriptor#spring"
                             ),
                         ]),
-                        ReferentialId: new ReferentialId(Guid.NewGuid()),
                         Reason: DescriptorReferenceFailureReason.Missing
                     ),
                 ]
@@ -260,7 +204,6 @@ public class WriteResultReferenceFailureContractTests
                             false
                         ),
                         DocumentIdentity: new([]),
-                        ReferentialId: new ReferentialId(Guid.NewGuid()),
                         Reason: DocumentReferenceFailureReason.Missing
                     ),
                 ],
@@ -278,7 +221,6 @@ public class WriteResultReferenceFailureContractTests
                                 "uri://ed-fi.org/schooltypedescriptor#elementary"
                             ),
                         ]),
-                        ReferentialId: new ReferentialId(Guid.NewGuid()),
                         Reason: DescriptorReferenceFailureReason.Missing
                     ),
                 ]
@@ -315,7 +257,6 @@ public class WriteResultReferenceFailureContractTests
                             false
                         ),
                         DocumentIdentity: new([]),
-                        ReferentialId: new ReferentialId(Guid.NewGuid()),
                         Reason: DocumentReferenceFailureReason.IncompatibleTargetType
                     ),
                 ],
@@ -333,7 +274,6 @@ public class WriteResultReferenceFailureContractTests
                                 "uri://ed-fi.org/calendartypedescriptor#spring"
                             ),
                         ]),
-                        ReferentialId: new ReferentialId(Guid.NewGuid()),
                         Reason: DescriptorReferenceFailureReason.Missing
                     ),
                 ]

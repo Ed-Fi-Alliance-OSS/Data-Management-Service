@@ -302,7 +302,9 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
                 && RelationalWriteSupport.ToQualifiedResourceName(reference.ResourceInfo)
                     == resolution.TargetResource
             )
-            .Select(DescriptorReferenceFailureClassifier.Missing)
+            .Select(reference =>
+                DescriptorReferenceFailure.From(reference, DescriptorReferenceFailureReason.Missing)
+            )
             .ToArray();
 
         result =

@@ -21,9 +21,11 @@ internal static class IdentityValueCanonicalizer
 
     private static string Canonicalize(JsonPath identityJsonPath, string identityValue, bool isNumeric)
     {
+        // Descriptor values stay as the client sent them: whether two spellings name the same descriptor is
+        // decided by the database's case-folded URI comparison, never by C#.
         if (DocumentIdentity.IsDescriptorIdentityPath(identityJsonPath))
         {
-            return identityValue.ToLowerInvariant();
+            return identityValue;
         }
 
         if (isNumeric)

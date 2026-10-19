@@ -476,7 +476,12 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
             VALUES (@referentialId, @documentId, @resourceKeyId);
             """,
-            new SqlParameter("@referentialId", descriptorReference.ReferentialId.Value),
+            new SqlParameter(
+                "@referentialId",
+                ReferentialIdCalculator
+                    .ReferentialIdFrom(descriptorReference.ResourceInfo, descriptorReference.DocumentIdentity)
+                    .Value
+            ),
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId)
         );
@@ -529,16 +534,12 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
             true
         );
         var descriptorIdentity = new DocumentIdentity([
-            new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri.ToLowerInvariant()),
+            new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri),
         ]);
 
         return new DescriptorReference(
             ResourceInfo: descriptorResourceInfo,
             DocumentIdentity: descriptorIdentity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(
-                descriptorResourceInfo,
-                descriptorIdentity
-            ),
             Path: new JsonPath(referenceJsonPath)
         );
     }

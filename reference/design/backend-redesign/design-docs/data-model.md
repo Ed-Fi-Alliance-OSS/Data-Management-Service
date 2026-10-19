@@ -5,8 +5,10 @@
 Draft.
 
 This document is the data-model deep dive for `overview.md`. Descriptor storage below
-reflects the current DMS-1404 RI baseline. Later natural-key proposals remain identified
-as future work and do not change this story's equality or platform contract.
+reflects the DMS-1404 compact baseline; reference resolution and descriptor filters use the
+natural-key probes, while POST upserts and descriptor writes still use RI. Later natural-key
+proposals remain identified as future work and do not change this story's equality or platform
+contract.
 
 - Overview: [overview.md](overview.md)
 - Flattening & reconstitution deep dive: [flattening-reconstitution.md](flattening-reconstitution.md)
@@ -294,24 +296,25 @@ discriminator output retain their existing columns and behavior.
 The effective date columns remain part of the descriptor field contract, as in legacy ODS.
 DMS uses one shared descriptor table without per-descriptor marker tables.
 
-Descriptor references and identity resolution (current RI runtime):
+Descriptor references and identity resolution (natural-key resolution; RI retained for POST upserts and descriptor writes):
 
 - Resource tables' stored `DescriptorFk` values are `Int32` and their FKs target
   `dms.Descriptor(DescriptorId)` with existing `NO ACTION` deletion protection. This includes
   copied document-reference identities, collections, extensions and canonical unified columns.
   Abstract identity/union projections retain compatible `Int32` values without adding new
   direct descriptor FK requirements to those projections.
-- Resolution still probes `dms.ReferentialIdentity` and joins the owning document and descriptor
-  to return both `int DescriptorId` and `long DocumentId` in the same command. Stored descriptor
-  joins and query parameters use the compact key; document/RI operations use `DocumentId`.
-- Existing RI hashing and witness checks reconstruct `Namespace + '#' + CodeValue` and keep
-  each path's current transformations and comparisons. Original-case response URIs reconstruct
+- Resolution probes `UX_Descriptor_UriLowered_ResourceKeyId` with the raw URI folded in SQL, not
+  `dms.ReferentialIdentity`, and returns both `int DescriptorId` and `long DocumentId` in the same
+  command. Stored descriptor joins and query parameters use the compact key; document/RI
+  operations use `DocumentId`.
+- RI maintenance still reconstructs `Namespace + '#' + CodeValue` for its hashing until RI is
+  removed; C# never case-folds a descriptor URI. Original-case response URIs reconstruct
   from the same stored components. Incoming references remain whole strings: they are not split on `#`,
   trimmed or Unicode-normalized. Descriptor identity components and reference values containing
   NUL or an unpaired surrogate are rejected with a path-attributed 400.
 
-The [natural-key workstream](natural-key-resolution.md) owns later lowered-URI probes,
-query-side descriptor validation, RI removal, equality changes and stored-wins semantics.
+The [natural-key workstream](natural-key-resolution.md) owns later POST upsert capture,
+descriptor-write equality, RI removal and stored-wins semantics.
 Those proposals are not the DMS-1404 runtime contract.
 
 Descriptor update semantics:

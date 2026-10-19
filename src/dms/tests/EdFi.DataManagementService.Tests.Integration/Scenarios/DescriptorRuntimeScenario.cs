@@ -609,7 +609,7 @@ internal static partial class DescriptorRuntimeScenario
             .Should()
             .Contain("validationErrors", "descriptor reference failures must explain the invalid path");
         rejectedBody.Should().Contain("primarySchoolTypeDescriptor");
-        rejectedBody.Should().Contain(descriptorUri.ToLowerInvariant());
+        rejectedBody.Should().Contain(descriptorUri);
         rejectedBody.Should().NotContain("unresolved-reference");
 
         await CreateDescriptorAsync(harness, descriptor);

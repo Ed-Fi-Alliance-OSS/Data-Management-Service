@@ -15,6 +15,7 @@ using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Profile;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Unit.Profile;
+using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -35,7 +36,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_Default_Relational_Write_Executor
 {
     private RecordingRelationalWriteSessionFactory _writeSessionFactory = null!;
-    private RecordingReferenceResolverAdapterFactory _referenceResolverAdapterFactory = null!;
+    private RecordingSessionReferenceResolver _referenceResolver = null!;
     private RecordingRelationalWriteFlattener _writeFlattener = null!;
     private RecordingRelationalWriteCurrentStateLoader _currentStateLoader = null!;
     private RecordingRelationalWriteTargetLookupResolver _targetLookupResolver = null!;
@@ -62,7 +63,7 @@ public class Given_Default_Relational_Write_Executor
     public void Setup()
     {
         _writeSessionFactory = new RecordingRelationalWriteSessionFactory();
-        _referenceResolverAdapterFactory = new RecordingReferenceResolverAdapterFactory();
+        _referenceResolver = new RecordingSessionReferenceResolver();
         _writeFlattener = new RecordingRelationalWriteFlattener();
         _currentStateLoader = new RecordingRelationalWriteCurrentStateLoader();
         _targetLookupResolver = new RecordingRelationalWriteTargetLookupResolver();
@@ -78,7 +79,7 @@ public class Given_Default_Relational_Write_Executor
     /// <summary>
     /// Builds the executor under test with the fixture's fakes. The first phase and the
     /// second-command phase are sequential test seams: they observe through
-    /// the same fakeable resolver, adapter factory, state loader, and persister the pre-composite
+    /// the same fakeable target resolver, reference resolver, state loader, and persister the pre-composite
     /// pipeline used, while their decisions run through the production policy functions.
     /// </summary>
     private DefaultRelationalWriteExecutor CreateExecutor(
@@ -94,7 +95,8 @@ public class Given_Default_Relational_Write_Executor
     ) =>
         new(
             _writeSessionFactory,
-            _referenceResolverAdapterFactory,
+            new ThrowingNaturalKeyLookupCommandBuilder(),
+            new ResolvedDocumentReferenceMapFactory(),
             _writeFlattener,
             noProfileMergeSynthesizer ?? _noProfileMergeSynthesizer,
             _profileMergeSynthesizer,
@@ -112,7 +114,7 @@ public class Given_Default_Relational_Write_Executor
             documentCacheTargetRegistry: documentCacheTargetRegistry,
             writeFirstPhase: new FakeSequentialRelationalWriteFirstPhase(
                 _targetLookupResolver,
-                _referenceResolverAdapterFactory,
+                _referenceResolver,
                 _currentStateLoader,
                 relationalParameterConfigurator,
                 relationshipAuthorizationProviderFailureExtractor,
@@ -149,18 +151,8 @@ public class Given_Default_Relational_Write_Executor
                 ),
             ]
         );
-        _referenceResolverAdapterFactory.Adapter.LookupResults =
-        [
-            new ReferenceLookupResult(documentReferentialId, 101L, 1, 1, null, "$.schoolId=255901"),
-            new ReferenceLookupResult(
-                descriptorReferentialId,
-                202L,
-                13,
-                13,
-                17,
-                "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
-            ),
-        ];
+        _referenceResolver.Script(request.ReferenceResolutionRequest.DocumentReferences[0], 101L, 1);
+        _referenceResolver.Script(request.ReferenceResolutionRequest.DescriptorReferences[0], 17, 202L, 13);
 
         var result = await _sut.ExecuteAsync(request);
 
@@ -177,13 +169,15 @@ public class Given_Default_Relational_Write_Executor
             );
         result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance);
         _writeSessionFactory.CreateAsyncCallCount.Should().Be(1);
-        _referenceResolverAdapterFactory.CreateAdapterCallCount.Should().Be(0);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
-        _referenceResolverAdapterFactory
+        _referenceResolver.CallCount.Should().Be(1);
+        _referenceResolver
             .CapturedCommandExecutor.Should()
             .BeSameAs(_writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor);
-        _referenceResolverAdapterFactory.Adapter.Requests.Should().ContainSingle();
-        _referenceResolverAdapterFactory.Adapter.Requests[0].Lookups.Should().HaveCount(2);
+        _referenceResolver
+            .Requests.Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeSameAs(request.ReferenceResolutionRequest);
         _writeFlattener.FlattenCallCount.Should().Be(1);
         _writeFlattener.CapturedInput.Should().NotBeNull();
         _writeFlattener.CapturedInput!.OperationKind.Should().Be(request.OperationKind);
@@ -196,10 +190,6 @@ public class Given_Default_Relational_Write_Executor
             );
         _writeFlattener.CapturedInput.WritePlan.Should().BeSameAs(request.WritePlan);
         _writeFlattener.CapturedInput.SelectedBody.Should().BeSameAs(request.SelectedBody);
-        _writeFlattener.CapturedInput.ResolvedReferences.DocumentReferenceOccurrences.Should().HaveCount(2);
-        _writeFlattener
-            .CapturedInput.ResolvedReferences.DescriptorReferenceOccurrences.Should()
-            .ContainSingle();
         _writeFlattener
             .CapturedInput.ResolvedReferences.SuccessfulDocumentReferencesByPath.Keys.Should()
             .BeEquivalentTo([
@@ -246,7 +236,12 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.UpsertFailureReference(
                         [],
-                        [DescriptorReferenceFailureClassifier.Missing(descriptorReference)]
+                        [
+                            DescriptorReferenceFailure.From(
+                                descriptorReference,
+                                DescriptorReferenceFailureReason.Missing
+                            ),
+                        ]
                     )
                 )
             );
@@ -291,7 +286,12 @@ public class Given_Default_Relational_Write_Executor
                                 DocumentReferenceFailureReason.Missing
                             ),
                         ],
-                        [DescriptorReferenceFailureClassifier.Missing(descriptorReference)]
+                        [
+                            DescriptorReferenceFailure.From(
+                                descriptorReference,
+                                DescriptorReferenceFailureReason.Missing
+                            ),
+                        ]
                     )
                 )
             );
@@ -784,10 +784,7 @@ public class Given_Default_Relational_Write_Executor
             RelationalWriteOperationKind.Post,
             documentReferences: [documentReference]
         );
-        _referenceResolverAdapterFactory.Adapter.LookupResults =
-        [
-            new ReferenceLookupResult(referentialId, 202L, 12, 12, null, "$.schoolId=255901"),
-        ];
+        _referenceResolver.Script(documentReference, DocumentReferenceFailureReason.IncompatibleTargetType);
 
         var result = await _sut.ExecuteAsync(request);
 
@@ -1453,14 +1450,19 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateFailureReference(
                         [],
-                        [DescriptorReferenceFailureClassifier.Missing(descriptorReference)]
+                        [
+                            DescriptorReferenceFailure.From(
+                                descriptorReference,
+                                DescriptorReferenceFailureReason.Missing
+                            ),
+                        ]
                     )
                 )
             );
         // Stored authorization plus reference resolution, both now on the session's executor.
         _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(3);
         _writeSessionFactory.Session.RelationshipAuthorizationCommands.Should().ContainSingle();
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _referenceResolver.CallCount.Should().Be(1);
         // The first phase always hydrates a surviving existing target's current state under the
         // capture lock, even when reference failures later short-circuit the attempt.
         _currentStateLoader.LoadCallCount.Should().Be(1);
@@ -1566,7 +1568,7 @@ public class Given_Default_Relational_Write_Executor
             .Which.FailureKind.Should()
             .Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
         providerFailureExtractor.ExtractCallCount.Should().Be(1);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _referenceResolver.CallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -1620,7 +1622,7 @@ public class Given_Default_Relational_Write_Executor
         logRecord.Message.Should().Contain("ProviderMessageFragment: 2|0|1|0:0:n");
         logRecord.Message.Should().Contain("MappingFailureCategory: PayloadParseFailed");
         providerFailureExtractor.ExtractCallCount.Should().Be(1);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _referenceResolver.CallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -1661,7 +1663,7 @@ public class Given_Default_Relational_Write_Executor
             .ContainSingle()
             .Which.FailureKind.Should()
             .Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _referenceResolver.CallCount.Should().Be(0);
         // The capture statement that observes the target also locks it, so no standalone lock
         // command is recorded on the session.
         _writeSessionFactory.Session.Commands.Should().BeEmpty();
@@ -1700,7 +1702,7 @@ public class Given_Default_Relational_Write_Executor
             .BeOfType<UpdateResult.UpdateFailureRelationshipNotAuthorized>()
             .Which.RelationshipFailure.ValueSource.Should()
             .Be(RelationshipAuthorizationFailureValueSource.Stored);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _referenceResolver.CallCount.Should().Be(0);
         _writeSessionFactory.Session.Commands.Should().BeEmpty();
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _readMaterializer.MaterializeCallCount.Should().Be(0);
@@ -1765,7 +1767,7 @@ public class Given_Default_Relational_Write_Executor
             .ContainSingle()
             .Which.FailureKind.Should()
             .Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _referenceResolver.CallCount.Should().Be(0);
         _writeSessionFactory.Session.Commands.Should().BeEmpty();
         // Both verbs observe their target once at the start of the session, on the session's
         // command executor, before any authorization work.
@@ -1808,7 +1810,12 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.UpsertFailureReference(
                         [],
-                        [DescriptorReferenceFailureClassifier.Missing(descriptorReference)]
+                        [
+                            DescriptorReferenceFailure.From(
+                                descriptorReference,
+                                DescriptorReferenceFailureReason.Missing
+                            ),
+                        ]
                     )
                 )
             );
@@ -1817,7 +1824,7 @@ public class Given_Default_Relational_Write_Executor
         // the session's executor.
         _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(3);
         _writeSessionFactory.Session.RelationshipAuthorizationCommands.Should().ContainSingle();
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _referenceResolver.CallCount.Should().Be(1);
         // The first phase always hydrates a surviving existing target's current state under the
         // capture lock, even when reference failures later short-circuit the attempt.
         _currentStateLoader.LoadCallCount.Should().Be(1);
@@ -2238,7 +2245,7 @@ public class Given_Default_Relational_Write_Executor
             .BeOfType<UpdateResult.UpdateFailureETagMisMatch>()
             .Which.Reason.Should()
             .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _referenceResolver.CallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -2262,7 +2269,7 @@ public class Given_Default_Relational_Write_Executor
             .BeOfType<RelationalWriteExecutorResult.Update>()
             .Which.Result.Should()
             .BeOfType<UpdateResult.UpdateFailureNotExists>();
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _referenceResolver.CallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -2295,7 +2302,7 @@ public class Given_Default_Relational_Write_Executor
             .Be(ETagPreconditionFailureReason.Concurrency);
         // References resolve inside the first phase, but the mismatch verdict returns before the
         // missing document reference could surface as a reference failure.
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _referenceResolver.CallCount.Should().Be(1);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
@@ -2331,7 +2338,7 @@ public class Given_Default_Relational_Write_Executor
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
         // References resolve inside the first phase, but the mismatch verdict returns before the
         // missing document reference could surface as a reference failure.
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _referenceResolver.CallCount.Should().Be(1);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
@@ -2371,7 +2378,7 @@ public class Given_Default_Relational_Write_Executor
         _targetLookupResolver
             .CapturedCommandExecutor.Should()
             .BeSameAs(_writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _referenceResolver.CallCount.Should().Be(1);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
@@ -2400,7 +2407,7 @@ public class Given_Default_Relational_Write_Executor
             .Which.Reason.Should()
             .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _referenceResolver.CallCount.Should().Be(1);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -2443,7 +2450,7 @@ public class Given_Default_Relational_Write_Executor
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
             );
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _referenceResolver.CallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.CapturedRequest.Should().NotBeNull();
         _noProfileMergeSynthesizer
@@ -2534,7 +2541,7 @@ public class Given_Default_Relational_Write_Executor
             );
         _targetLookupResolver.ResolveForPutCallCount.Should().Be(1);
         // Nothing downstream of the observation runs for a target that does not exist.
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _referenceResolver.CallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
@@ -2565,7 +2572,7 @@ public class Given_Default_Relational_Write_Executor
             .Which.Reason.Should()
             .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
         _targetLookupResolver.ResolveForPutCallCount.Should().Be(1);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _referenceResolver.CallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
@@ -3341,7 +3348,12 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateFailureReference(
                         [],
-                        [DescriptorReferenceFailureClassifier.Missing(invalidReference)]
+                        [
+                            DescriptorReferenceFailure.From(
+                                invalidReference,
+                                DescriptorReferenceFailureReason.Missing
+                            ),
+                        ]
                     )
                 )
             );
@@ -4098,7 +4110,7 @@ public class Given_Default_Relational_Write_Executor
                     new UpsertResult.UpsertFailureValidation([validationFailure])
                 )
             );
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _referenceResolver.CallCount.Should().Be(1);
         _writeFlattener.FlattenCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
@@ -4125,7 +4137,7 @@ public class Given_Default_Relational_Write_Executor
                     new UpdateResult.UpdateFailureValidation([validationFailure])
                 )
             );
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _referenceResolver.CallCount.Should().Be(1);
         _writeFlattener.FlattenCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
@@ -7269,7 +7281,7 @@ public class Given_Default_Relational_Write_Executor
             );
         // Refused before the current state is hydrated, so neither the precondition nor a no-op compare ran.
         _currentStateLoader.LoadCallCount.Should().Be(0);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _referenceResolver.CallCount.Should().Be(0);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
@@ -7374,7 +7386,7 @@ public class Given_Default_Relational_Write_Executor
 
         result.Should().Be(AttributedTo(createNewFailure, UpsertTargetAction.Create));
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _referenceResolver.CallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
@@ -7475,7 +7487,7 @@ public class Given_Default_Relational_Write_Executor
         // A security-configuration failure owed by the create branch is attributed to the Create action.
         result.Should().Be(AttributedTo(createNewFailure, UpsertTargetAction.Create));
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _referenceResolver.CallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
@@ -9155,46 +9167,6 @@ public class Given_Default_Relational_Write_Executor
 
     private static string QuoteIdentifier(string identifier, SqlDialect dialect) =>
         dialect == SqlDialect.Mssql ? $"[{identifier}]" : $"\"{identifier}\"";
-
-    private sealed class RecordingReferenceResolverAdapterFactory : IReferenceResolverAdapterFactory
-    {
-        public RecordingReferenceResolverAdapter Adapter { get; } = new();
-
-        public IRelationalCommandExecutor? CapturedCommandExecutor { get; private set; }
-
-        public int CreateAdapterCallCount { get; private set; }
-
-        public int CreateSessionAdapterCallCount { get; private set; }
-
-        public IReferenceResolverAdapter CreateAdapter()
-        {
-            CreateAdapterCallCount++;
-            return Adapter;
-        }
-
-        public IReferenceResolverAdapter CreateSessionAdapter(IRelationalCommandExecutor commandExecutor)
-        {
-            CreateSessionAdapterCallCount++;
-            CapturedCommandExecutor = commandExecutor;
-            return Adapter;
-        }
-    }
-
-    private sealed class RecordingReferenceResolverAdapter : IReferenceResolverAdapter
-    {
-        public List<ReferenceLookupRequest> Requests { get; } = [];
-
-        public IReadOnlyList<ReferenceLookupResult> LookupResults { get; set; } = [];
-
-        public Task<IReadOnlyList<ReferenceLookupResult>> ResolveAsync(
-            ReferenceLookupRequest request,
-            CancellationToken cancellationToken = default
-        )
-        {
-            Requests.Add(request);
-            return Task.FromResult(LookupResults);
-        }
-    }
 
     private sealed class RecordingRelationalWriteFlattener : IRelationalWriteFlattener
     {

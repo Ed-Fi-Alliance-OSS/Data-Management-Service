@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 
@@ -152,7 +153,7 @@ internal sealed record RelationalWriteSeamFixture(
                     {
                       "beginDate": "2026-08-20",
                       "schoolReference": {
-                        "schoolId": 255901
+                        "schoolId": 255911
                       }
                     },
                     {
@@ -279,7 +280,6 @@ internal sealed record RelationalWriteSeamFixture(
                 new DocumentReference(
                     SchoolResourceInfo,
                     new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
-                    new ReferentialId(Guid.Parse("11111111-1111-1111-1111-111111111111")),
                     new JsonPath("$.schoolReference")
                 )
             );
@@ -291,7 +291,6 @@ internal sealed record RelationalWriteSeamFixture(
                 new DocumentReference(
                     SchoolResourceInfo,
                     new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
-                    new ReferentialId(Guid.Parse("33333333-3333-3333-3333-333333333333")),
                     new JsonPath("$.addresses[0].periods[0].schoolReference")
                 )
             );
@@ -299,7 +298,6 @@ internal sealed record RelationalWriteSeamFixture(
                 new DocumentReference(
                     SchoolResourceInfo,
                     new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255902")]),
-                    new ReferentialId(Guid.Parse("44444444-4444-4444-4444-444444444444")),
                     new JsonPath("$.addresses[0].periods[1].schoolReference")
                 )
             );
@@ -318,7 +316,6 @@ internal sealed record RelationalWriteSeamFixture(
                             "uri://ed-fi.org/programtypedescriptor#stem"
                         ),
                     ]),
-                    new ReferentialId(Guid.Parse("22222222-2222-2222-2222-222222222222")),
                     new JsonPath("$.programTypeDescriptor")
                 )
             );
@@ -338,15 +335,7 @@ internal sealed record RelationalWriteSeamFixture(
 
     public static ResolvedReferenceSet CreateEmptyResolvedReferences()
     {
-        return new ResolvedReferenceSet(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
-        );
+        return ResolvedReferenceSets.Create();
     }
 
     public static ResolvedReferenceSet CreateReferenceFailureSet(
@@ -354,14 +343,9 @@ internal sealed record RelationalWriteSeamFixture(
         IEnumerable<DescriptorReferenceFailure>? invalidDescriptorReferences = null
     )
     {
-        return new ResolvedReferenceSet(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [.. invalidDocumentReferences ?? []],
-            InvalidDescriptorReferences: [.. invalidDescriptorReferences ?? []],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
+        return ResolvedReferenceSets.Create(
+            invalidDocumentReferences: [.. invalidDocumentReferences ?? []],
+            invalidDescriptorReferences: [.. invalidDescriptorReferences ?? []]
         );
     }
 
@@ -388,8 +372,8 @@ internal sealed record RelationalWriteSeamFixture(
             true
         );
 
-        return new ResolvedReferenceSet(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
+        return ResolvedReferenceSets.Create(
+            successfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
             {
                 [new JsonPath("$.schoolReference")] = new ResolvedDocumentReference(
                     new DocumentReference(
@@ -397,7 +381,6 @@ internal sealed record RelationalWriteSeamFixture(
                         new DocumentIdentity([
                             new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
                         ]),
-                        new ReferentialId(Guid.Parse("11111111-1111-1111-1111-111111111111")),
                         new JsonPath("$.schoolReference")
                     ),
                     DocumentId: 901L,
@@ -407,9 +390,8 @@ internal sealed record RelationalWriteSeamFixture(
                     new DocumentReference(
                         schoolResourceInfo,
                         new DocumentIdentity([
-                            new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
+                            new DocumentIdentityElement(new JsonPath("$.schoolId"), "255911"),
                         ]),
-                        new ReferentialId(Guid.Parse("33333333-3333-3333-3333-333333333333")),
                         new JsonPath("$.addresses[0].periods[0].schoolReference")
                     ),
                     DocumentId: 9901L,
@@ -421,14 +403,13 @@ internal sealed record RelationalWriteSeamFixture(
                         new DocumentIdentity([
                             new DocumentIdentityElement(new JsonPath("$.schoolId"), "255902"),
                         ]),
-                        new ReferentialId(Guid.Parse("44444444-4444-4444-4444-444444444444")),
                         new JsonPath("$.addresses[0].periods[1].schoolReference")
                     ),
                     DocumentId: 9902L,
                     ResourceKeyId: 21
                 ),
             },
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
+            successfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
             {
                 [new JsonPath("$.programTypeDescriptor")] = new ResolvedDescriptorReference(
                     new DescriptorReference(
@@ -439,19 +420,13 @@ internal sealed record RelationalWriteSeamFixture(
                                 "uri://ed-fi.org/programtypedescriptor#stem"
                             ),
                         ]),
-                        new ReferentialId(Guid.Parse("22222222-2222-2222-2222-222222222222")),
                         new JsonPath("$.programTypeDescriptor")
                     ),
                     17,
                     DocumentId: 77L,
                     ResourceKeyId: 31
                 ),
-            },
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
+            }
         );
     }
 

@@ -128,7 +128,6 @@ file static class PostgresqlIfMatchCascadeReferentialIdentityTestSupport
                 new DocumentReference(
                     StudentReferenceResourceInfo,
                     studentIdentity,
-                    ReferentialIdCalculator.ReferentialIdFrom(StudentReferenceResourceInfo, studentIdentity),
                     new JsonPath("$.studentReference")
                 ),
             ],

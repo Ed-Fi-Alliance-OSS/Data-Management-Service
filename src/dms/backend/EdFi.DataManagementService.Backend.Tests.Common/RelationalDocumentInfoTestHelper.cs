@@ -148,7 +148,10 @@ internal static class RelationalDocumentInfoTestHelper
             {
                 if (
                     existingReference.ResourceInfo != descriptorReference.ResourceInfo
-                    || existingReference.ReferentialId != descriptorReference.ReferentialId
+                    || !DocumentIdentityComparer.Instance.Equals(
+                        existingReference.DocumentIdentity,
+                        descriptorReference.DocumentIdentity
+                    )
                 )
                 {
                     throw new InvalidOperationException(

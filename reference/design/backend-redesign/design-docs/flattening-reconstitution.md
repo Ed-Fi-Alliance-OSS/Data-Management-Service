@@ -19,8 +19,9 @@ This section describes how DMS flattens JSON documents into relational tables on
 
 It also defines the minimal `ApiSchema.json` metadata needed (beyond what already exists) and proposes concrete C# shapes for implementing a high-performance, schema-driven flattener/reconstituter with good batching characteristics (no N+1 insert/query patterns).
 
-The DMS-1404 baseline uses the current RI resolver. Later natural-key probes, new validation/equality
-rules, and stored-casing rebinding are proposals in [natural-key-resolution.md](natural-key-resolution.md).
+References resolve through the natural-key resolver in
+[natural-key-resolution.md](natural-key-resolution.md). Its POST upsert detection, new equality rules,
+and stored-casing rebinding are later work.
 The illustrative C# shapes below describe plan roles rather than replacing the production contracts.
 
 ## Table of Contents
@@ -151,7 +152,7 @@ For a given `EffectiveSchemaHash` that DMS serves, DMS builds (or loads from an 
 - Column types/nullability/constraints
 - Document-reference binding plan: JSON reference paths → FK columns + reference-identity binding columns → referenced resource
 - Descriptor edge source plan: descriptor JSON paths → `int DescriptorId` FK columns,
-  resolved by the current RI lookup with the owning `bigint DocumentId`, and expected qualified descriptor type
+  resolved by the batched natural-key resolver with the owning `bigint DocumentId`, and expected qualified descriptor type
 - JSON reconstitution plan: table+column → JSON property path writer instructions
 - Reference reconstitution plan (local columns): reference-object writers populated from reference-identity binding columns (per `DocumentReferenceBinding`)
 - Abstract identity tables for polymorphic reference targets (from `abstractResources`)
@@ -353,8 +354,8 @@ For a given request, backend already has:
   - selected top-level descriptor strings trimmed (`codeValue`, `shortDescription`)
 - `DocumentInfo`:
   - resource `DocumentIdentity`
-  - descriptor references (with concrete JSON paths, including indices); Core applies the existing
-    whole-string normalization for descriptor identity extraction and RI calculation
+  - descriptor references (with concrete JSON paths, including indices); Core carries the raw
+    whole URI after validating it as well-formed without NUL, and never lowercases it
   - document references (target identities + concrete reference-object JSON paths, including indices; grouped by wildcard path; requires addition of `DocumentReference.Path` as described below)
 - optional `ProfileAppliedWriteRequest` for profile-constrained writes:
   - `WritableRequestBody`: the request body after Core applies writable profile semantics and normal canonicalization
@@ -371,29 +372,31 @@ For a given request, backend already has:
 Before writing resource tables:
 
 - Resolve all **document references**:
-  - the batched resolver probes `dms.ReferentialIdentity`, joins `dms.Document`, and verifies
-    target type and identity witnesses; document references return `bigint DocumentId`
-  - abstract compatibility and discriminator contracts remain unchanged
+  - the batched natural-key resolver probes each target's compiled natural-key index in one command
+    and maps rows back by explicit ordinal; document references return `bigint DocumentId`
+  - abstract targets return the concrete `ResourceKeyId` for the compatibility check; discriminator
+    contracts remain unchanged
 - Resolve all **descriptor references**:
-  - the same command joins `dms.Descriptor` by its unique `DocumentId` association and returns
-    both independent `int DescriptorId` and owning `bigint DocumentId`, without another round trip
+  - the same command probes `UX_Descriptor_UriLowered_ResourceKeyId`, folding the raw URI in SQL,
+    and returns both independent `int DescriptorId` and owning `bigint DocumentId`, without another
+    round trip
   - resource writes and filters bind `DescriptorId`; metadata, locks, RI, and authorization-view
     membership use the owning `DocumentId`
-  - direct and copied descriptor witnesses join stored compact keys to `DescriptorId`, reconstruct
-    `Namespace + '#' + CodeValue`, then apply the existing whole-string LOWER/verification rules
+  - descriptor-valued identity parts of a target join `dms.Descriptor` inline on the lowered URI and
+    the descriptor type's compile-time `ResourceKeyId`
 
-Memoization and flattening URI maps retain whole-string `ToLowerInvariant()` keys and ordinal
-comparison. Existing Core normalization and RI hashing remain unchanged. Do not split incoming URIs
-on `#`, trim components, or add Unicode normalization: a space before `#` stays inside the string.
-Hydration emits the original stored casing. New URI validation and engine-owned alias equality are
-later proposals; see [transactions-and-concurrency.md](transactions-and-concurrency.md#descriptor-uri-validation-boundary).
+Memoization and flattening URI maps key the raw validated URI and compare it ordinally; C# performs
+no case folding. Case variants of one descriptor are separate keys that the engine resolves to the
+same `DescriptorId`. Do not split incoming URIs on `#`, trim components, or add Unicode
+normalization: a space before `#` stays inside the string. Hydration emits the original stored
+casing. See [transactions-and-concurrency.md](transactions-and-concurrency.md#descriptor-uri-validation-boundary).
 
 For an unequal-ID trace, let a TermDescriptor have `DescriptorId = 42`, `DocumentId = 5000000042`,
 and a StudentAcademicRecord that identifies itself using that descriptor have `DocumentId = 9001`.
 The resolver's descriptor result is `(42, 5000000042)`; the StudentAcademicRecord reference result is `9001`.
 A direct term binding and a copied `studentAcademicRecordReference.termDescriptor` binding each
 store `int 42`, while `StudentAcademicRecord_DocumentId` stores `bigint 9001`. A unified alias also projects `Int32`.
-Hydration and RI witnesses join the two compact bindings to `dms.Descriptor.DescriptorId = 42`.
+Hydration and RI maintenance join the two compact bindings to `dms.Descriptor.DescriptorId = 42`.
 Namespace authorization reads that row's `Namespace`; a descriptor custom view tests its
 `DocumentId = 5000000042`. Resource history captures the old/new namespace/code snapshots through
 the compact join, then serves them after deletion without requiring that live row. Descriptor history
@@ -1122,7 +1125,7 @@ public enum ColumnKind
 
     /// <summary>
     /// An Int32 foreign key to dms.Descriptor.DescriptorId.
-    /// The RI resolver returns this compact key together with the owning Int64 DocumentId.
+    /// The natural-key resolver returns this compact key together with the owning Int64 DocumentId.
     /// Column naming convention: ..._DescriptorId
     /// </summary>
     DescriptorFk,
@@ -1490,11 +1493,11 @@ public sealed record ReferenceIdentityBinding(
 /// The descriptor resource type expected at this path (e.g. ("EdFi","GradeLevelDescriptor")).
 /// This is used for:
 /// - write-time validation (descriptor URI + ResourceKeyId must resolve through dms.Descriptor)
-/// - query-time resolution (descriptor URI → int DescriptorId through the RI resolver)
+/// - query-time resolution (descriptor URI → int DescriptorId through the natural-key resolver)
 /// </param>
 /// <param name="IsIdentityComponent">
 /// True when this descriptor value participates in the parent document's identity (the descriptor URI is part of the parent's <c>identityJsonPaths</c>).
-/// Used when reconstructing whole-URI identity witnesses and maintaining RI from compact storage.
+/// Used when reconstructing whole-URI identity values and maintaining RI from compact storage.
 /// </param>
 public sealed record DescriptorEdgeSource(
     bool IsIdentityComponent,
@@ -1882,14 +1885,14 @@ public interface IResourceFlattener
 /// </summary>
 /// <param name="DocumentReferences">
 /// Resolves a referenced resource's structural natural-key lookup key to its DocumentId.
-/// Derived from current RI resolution and used for document references. The map owns
+/// Derived from natural-key resolution and used for document references. The map owns
 /// the memberwise comparer required for DocumentIdentity; callers must not provide a raw dictionary keyed
 /// by ReferenceLookupKey.
 /// </param>
 /// <param name="DescriptorIdByKey">
-/// Maps (whole URI normalized with ToLowerInvariant(), qualified descriptor type) to int DescriptorId.
+/// Maps (raw validated whole URI, qualified descriptor type) to int DescriptorId.
 /// This flattening convenience map is derived from resolver results carrying both IDs.
-/// Normalized keys compare ordinally, preserving the current mixed-case reference behavior.
+/// Keys compare ordinally; case variants are separate keys that resolve to the same DescriptorId.
 /// Used to populate descriptor FK columns without per-row database work.
 /// </param>
 public sealed record ResolvedReferenceSet(
@@ -1932,9 +1935,9 @@ internal readonly record struct ReferenceLookupKey(
 
 /// <summary>
 /// Key used for retrieving compact descriptor IDs without per-row database work.
-/// Normalize the whole URI with the existing ToLowerInvariant() rule; compare ordinally.
+/// Keys the raw validated whole URI with no C# case folding; compare ordinally.
 /// </summary>
-public readonly record struct DescriptorKey(string NormalizedUri, QualifiedResourceName DescriptorResource);
+public readonly record struct DescriptorKey(string Uri, QualifiedResourceName DescriptorResource);
 
 /// <summary>
 /// Resolves extracted document-reference instances to referenced DocumentIds for a single write request.
@@ -2243,7 +2246,8 @@ Key points:
 
 This is a **future natural-key execution sketch**: own-natural-key capture, the schema equality
 changes, and `_storedIdentityRebinder` are proposed in [natural-key-resolution.md](natural-key-resolution.md).
-Current DMS-1404 execution uses RI and the descriptor CRUD rules in
+Reference resolution already uses the natural-key resolver; POST upsert existence detection
+(DMS-1452) and descriptor writes (DMS-1454) still use RI and the descriptor CRUD rules in
 [transactions-and-concurrency.md](transactions-and-concurrency.md#descriptor-references-_descriptorid).
 Assume `EffectiveSchemaHash` comes from the selected database's `dms.EffectiveSchema` fingerprint.
 The main branch is for `StorageKind = RelationalTables`; descriptors leave through their separate
@@ -2350,9 +2354,9 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
 ```
 
 Notes:
-- In this future sketch, `_referenceResolver.ResolveAsync(...)` uses generated natural-key probes.
+- `_referenceResolver.ResolveAsync(...)` uses the generated natural-key probes from §5.2.
   Document results retain `bigint DocumentId`; descriptor results carry `int DescriptorId` plus
-  owning `bigint DocumentId`. Current DMS-1404 obtains those roles from the RI lookup.
+  owning `bigint DocumentId`.
 - `_storageResolvedDuplicateValidator.Validate(...)` is the backend-owned second duplicate boundary from `natural-key-resolution.md`: it uses resolved `DocumentId` / `DescriptorId` values where available and the schema-contract-derived comparer for local string identity members, before merge/no-op/DML can turn invalid input into an unmapped unique-constraint failure.
 - `_storedIdentityRebinder.Rebind(...)` is a future stored-casing proposal. Future descriptor
   stored-wins semantics belong to its separate handler; current RI-matched POST applies incoming
@@ -2418,8 +2422,8 @@ private static int? ResolveDescriptorId(
         return null;
     }
 
-    // Preserve the existing whole-string lookup normalization; do not split or trim components.
-    return resolved.DescriptorIdByKey[new DescriptorKey(uri.ToLowerInvariant(), descriptorResource)];
+    // Look up the raw whole URI; do not fold case, split, or trim components.
+    return resolved.DescriptorIdByKey[new DescriptorKey(uri, descriptorResource)];
 }
 
 private static void ApplyKeyUnificationPlans(

@@ -830,7 +830,7 @@ public class ExtractDocumentInfoMiddlewareTests
                 .DocumentInfo.DescriptorReferences[0]
                 .DocumentIdentity.DocumentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/programtypedescriptor#stem");
+                .Be("uri://ed-fi.org/ProgramTypeDescriptor#STEM");
         }
 
         [Test]
@@ -848,7 +848,7 @@ public class ExtractDocumentInfoMiddlewareTests
                 .DocumentInfo.DescriptorReferences[1]
                 .DocumentIdentity.DocumentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/programtypedescriptor#finearts");
+                .Be("uri://ed-fi.org/ProgramTypeDescriptor#FineArts");
         }
     }
 

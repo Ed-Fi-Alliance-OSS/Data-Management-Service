@@ -225,10 +225,6 @@ internal static class ReferenceBackedTopLevelCollectionMergeSupport
         return new DocumentReference(
             ResourceInfo: ProgramBaseResourceInfo,
             DocumentIdentity: programIdentity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(
-                ProgramBaseResourceInfo,
-                programIdentity
-            ),
             Path: new JsonPath($"$.programs[{index}].programReference")
         );
     }
