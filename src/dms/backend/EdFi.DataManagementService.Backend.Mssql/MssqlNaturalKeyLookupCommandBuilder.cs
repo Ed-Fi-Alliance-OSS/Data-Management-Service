@@ -27,12 +27,6 @@ internal sealed class MssqlNaturalKeyLookupCommandBuilder : INaturalKeyLookupCom
     private const string OrdinalKeyName = "o";
     private const string ForceOrder = "OPTION (FORCE ORDER)";
 
-    /// <summary>
-    /// The core DDL's computed, lowered descriptor URI column that <c>UX_Descriptor_UriLowered_ResourceKeyId</c>
-    /// indexes.
-    /// </summary>
-    private const string UriLoweredColumn = "UriLowered";
-
     private static readonly string DescriptorUriType =
         $"nvarchar({NaturalKeyLookupLimits.MaxMssqlDescriptorUriProbeLength.ToString(CultureInfo.InvariantCulture)})";
 
@@ -250,7 +244,7 @@ internal sealed class MssqlNaturalKeyLookupCommandBuilder : INaturalKeyLookupCom
         sql.Append($"INNER JOIN {QuoteTable(descriptorProbe.DescriptorTable)} AS {alias}");
         sql.AppendLine();
         sql.Append(
-            $"    ON {alias}.{QuoteIdentifier(UriLoweredColumn)} = LOWER({keyColumn} COLLATE {IdentityCollation})"
+            $"    ON {alias}.{QuoteIdentifier(DescriptorProbeTarget.MssqlUriLoweredColumn)} = LOWER({keyColumn} COLLATE {IdentityCollation})"
         );
         sql.AppendLine();
         sql.Append(

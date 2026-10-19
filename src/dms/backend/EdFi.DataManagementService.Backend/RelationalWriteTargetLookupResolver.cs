@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend;
@@ -190,6 +191,50 @@ internal static class RelationalWriteTargetLookupSupport
                 new RelationalParameter(ResourceKeyIdParameterName, resourceKeyId),
             ]
         );
+    }
+
+    /// <summary>
+    /// Builds the POST target predicate over the aliased <c>dms.Document</c> row <c>d</c> from the
+    /// resource's own natural key: one scalar <c>=</c> subselect reads the root table's
+    /// <c>DocumentId</c> through the <c>UX_&lt;R&gt;_NK</c> columns, filtered to the request's resource key.
+    /// Descriptor parts compare the stored <c>int DescriptorId</c> through a lowered-URI descriptor
+    /// subselect; each identity reference compares its <c>_DocumentId</c> FK through a subselect of the
+    /// referenced root or abstract identity table. Every level is a scalar subselect, so a key that admits
+    /// more than one row fails the statement instead of silently picking one. A value no stored row can
+    /// hold binds nothing and yields the no-match predicate. Returned as a <see cref="RelationalCommand"/>
+    /// whose text is the bare predicate, so the composite rewriter can rename its parameters.
+    /// </summary>
+    public static RelationalCommand BuildNaturalKeyCaptureTargetPredicate(
+        MappingSet mappingSet,
+        ResourceWritePlan writePlan,
+        DocumentIdentity documentIdentity
+    )
+    {
+        ArgumentNullException.ThrowIfNull(mappingSet);
+        ArgumentNullException.ThrowIfNull(writePlan);
+        ArgumentNullException.ThrowIfNull(documentIdentity);
+
+        var resource = writePlan.Model.Resource;
+        var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
+        var builder = new NaturalKeyCapturePredicateBuilder(
+            mappingSet,
+            writePlan.Model.DocumentReferenceBindings,
+            RelationalWriteSupport.GetOwnNaturalKeyProbeOrThrow(mappingSet, resource),
+            documentIdentity
+        );
+        RelationalParameter resourceKeyIdParameter = new(ResourceKeyIdParameterName, resourceKeyId);
+
+        return builder.TryBuildRootSubselect(out var rootSubselect)
+            ? new RelationalCommand(
+                $"{builder.Column("d", "DocumentId")} = {rootSubselect}"
+                    + $" AND {builder.Column("d", "ResourceKeyId")} = {ResourceKeyIdParameterName}",
+                [.. builder.Parameters, resourceKeyIdParameter]
+            )
+            : new RelationalCommand(
+                $"{builder.Column("d", "DocumentId")} IS NULL"
+                    + $" AND {builder.Column("d", "ResourceKeyId")} = {ResourceKeyIdParameterName}",
+                [resourceKeyIdParameter]
+            );
     }
 
     /// <summary>
