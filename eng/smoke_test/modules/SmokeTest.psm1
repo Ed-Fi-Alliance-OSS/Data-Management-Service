@@ -296,11 +296,19 @@ function Get-SmokeTestCredentialSummary {
         return $lines.ToArray()
     }
 
+    # The tenant and route contexts come from configuration and Configuration Service records, which
+    # may hold line breaks or terminal control sequences. They are printed with those characters
+    # escaped (\u001B), and never composed into a URL, so they cannot rewrite or hide the lines above.
+    $unsafeDisplayCharacters = '[\p{Cc}\p{Zl}\p{Zp}]'
+    $display = { param([string]$Text) [regex]::Replace($Text, $unsafeDisplayCharacters, { param($match) '\u{0:X4}' -f [int][char]$match.Value }) }
+
     $contexts = @($RouteContexts | Where-Object { $null -ne $_ })
+    $unsafeRouting = (-not [string]::IsNullOrWhiteSpace($Tenant) -and $Tenant -match $unsafeDisplayCharacters) -or
+        @($contexts | Where-Object { "$($_.DataStoreId)$($_.ContextKey)$($_.ContextValue)" -match $unsafeDisplayCharacters }).Count -gt 0
     if (-not [string]::IsNullOrWhiteSpace($Tenant) -or $contexts.Count -gt 0) {
         $tenantBaseUrl = $baseUrl
         if (-not [string]::IsNullOrWhiteSpace($Tenant)) {
-            $lines.Add("Tenant:      $Tenant")
+            $lines.Add("Tenant:      $(& $display $Tenant)")
             $tenantBaseUrl = "$baseUrl/$Tenant"
         }
 
@@ -310,7 +318,14 @@ function Get-SmokeTestCredentialSummary {
         $schoolYearOnly = @($contexts | Where-Object { $_.ContextKey -cne "schoolYear" }).Count -eq 0 -and
             @($contexts | Group-Object -Property DataStoreId | Where-Object { $_.Count -gt 1 }).Count -eq 0
 
-        if ($contexts.Count -eq 0) {
+        if ($unsafeRouting) {
+            foreach ($store in @($contexts | Group-Object -Property DataStoreId)) {
+                $pairs = @($store.Group | ForEach-Object { "$(& $display $_.ContextKey)=$(& $display $_.ContextValue)" }) -join ", "
+                $lines.Add("Data store $(& $display $store.Name) route contexts: $pairs")
+            }
+            $lines.Add("No DMS base or token URL is printed: the tenant or a route context contains control or line-break characters, shown escaped above. Correct the Configuration Service tenant or data-store contexts.")
+        }
+        elseif ($contexts.Count -eq 0) {
             $lines.Add("DMS base:    $tenantBaseUrl")
             $lines.Add("Token URL:   $tenantBaseUrl/oauth/token")
         }
@@ -342,7 +357,7 @@ function Get-SmokeTestCredentialSummary {
 
     # Shared by the command and the qualified URL lines: both carry the placeholder when the DMS URL
     # is not known yet.
-    if ($baseUrl -eq "<dms-base-url>") {
+    if ($baseUrl -eq "<dms-base-url>" -and -not $unsafeRouting) {
         $lines.Add("Replace <dms-base-url> with the IDE-hosted DMS URL once it is healthy.")
     }
 

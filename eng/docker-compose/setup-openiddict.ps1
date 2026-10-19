@@ -803,7 +803,9 @@ function Invoke-PostgresOpenIddictKeyScript {
         The script carries the encryption key, and on the creation path private-key material, so it
         travels on psql's stdin rather than as a -c argument, is never echoed, and runs with
         VERBOSITY=sqlstate so a failure prints only its SQLSTATE. A failure message names that
-        SQLSTATE and nothing else from the captured output.
+        SQLSTATE and nothing else from the captured output. VERBOSITY governs only what psql shows
+        here; keeping the statement out of the server's error log is the script's own job, which is
+        why its runtime errors are caught inside it (see Join-OpenIddictKeyInitializationScript).
     #>
     param(
         [Parameter(Mandatory = $true)]
@@ -853,6 +855,14 @@ function Complete-OpenIddictKeyInitialization {
         }
         "active-unverified" {
             throw "The newest active OpenIddict signing key could not be checked: the database rejected the decryption check for a reason other than the encryption key (for example, pgcrypto permissions); no signing key was changed. Fix the database access; neither the signing key nor the encryption key is shown to be wrong."
+        }
+        "canceled" {
+            throw "OpenIddict signing-key initialization was canceled in the database (for example, by statement_timeout or a cancel request); no signing key was changed."
+        }
+        # PostgreSQL only: the initialization script caught a failure outside the decryption check.
+        # Only a SQLSTATE-shaped code is echoed; the statement and the server's error text are withheld.
+        { $_ -cmatch '^database-error [0-9A-Z]{5}$' } {
+            throw "The database rejected OpenIddict signing-key initialization while reading, locking or creating the signing key (SQLSTATE $($_.Substring(15))); no signing key was changed. Neither the signing key nor the encryption key is shown to be wrong; check the database user's access to the ""dmscs"".""OpenIddictKey"" table."
         }
         default { throw "OpenIddict signing-key initialization returned an unexpected result; no further key change was attempted." }
     }

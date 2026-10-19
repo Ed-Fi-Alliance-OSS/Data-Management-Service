@@ -996,16 +996,17 @@ function Invoke-BootstrapWrapper {
             # effective env. Resolved before infrastructure starts, while no credential exists yet. The
             # isolated wrapper Pester fixtures without env-utility fall back to the placeholder.
             if ($AddSmokeTestCredentials) {
+                $smokeTestEnvValues = if (Get-Command ReadValuesFromEnvFile -ErrorAction SilentlyContinue) { ReadValuesFromEnvFile $effectiveEnvFile }
                 if ($dmsBaseUrlSupplied) {
                     $smokeTestSummaryBaseUrl = $DmsBaseUrl
                 }
                 elseif (-not $InfraOnly -and (Get-Command Resolve-DockerLocalDmsBaseUrl -ErrorAction SilentlyContinue)) {
-                    $smokeTestSummaryBaseUrl = Resolve-DockerLocalDmsBaseUrl -EnvValues (ReadValuesFromEnvFile $effectiveEnvFile)
+                    $smokeTestSummaryBaseUrl = Resolve-DockerLocalDmsBaseUrl -EnvValues $smokeTestEnvValues
                 }
                 # DMS_MULTI_TENANCY, not CONFIGURATION_SERVICE_MULTI_TENANCY, decides whether DMS serves
                 # tenant-prefixed routes. Resolved as Compose resolves it for the DMS container.
                 if (Get-Command Get-ComposeResolvedEnvValue -ErrorAction SilentlyContinue) {
-                    $smokeTestDmsMultiTenancy = (Get-ComposeResolvedEnvValue -EnvironmentValues (ReadValuesFromEnvFile $effectiveEnvFile) -Name "DMS_MULTI_TENANCY") -eq "true"
+                    $smokeTestDmsMultiTenancy = (Get-ComposeResolvedEnvValue -EnvironmentValues $smokeTestEnvValues -Name "DMS_MULTI_TENANCY") -eq "true"
                 }
 
                 # The summary formatter rejects a base URL with control characters. Reject it here, before

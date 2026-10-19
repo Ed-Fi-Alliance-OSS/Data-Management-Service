@@ -1714,6 +1714,30 @@ CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
             }
         }
 
+        It "derives the Docker-local DMS URL from DMS_HTTP_PORTS as Compose resolves it (<Case>)" -ForEach @(
+            @{ Case = "ambient value over a different env-file value"; FileLines = @("DMS_HTTP_PORTS=8888"); Ambient = "19090"; Expected = "http://localhost:19090" }
+            @{ Case = "quoted env-file value"; FileLines = @('DMS_HTTP_PORTS="18181"'); Ambient = $null; Expected = "http://localhost:18181" }
+            @{ Case = "interpolated env-file value"; FileLines = @("DMS_PORT_SOURCE=18282", 'DMS_HTTP_PORTS=${DMS_PORT_SOURCE}'); Ambient = $null; Expected = "http://localhost:18282" }
+            @{ Case = "absent from the env file"; FileLines = @("CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=9999"); Ambient = $null; Expected = "http://localhost:8080" }
+        ) {
+            $envFile = Join-Path ([System.IO.Path]::GetTempPath()) "test-$([Guid]::NewGuid().ToString('N')).env"
+            $FileLines | Set-Content -LiteralPath $envFile -Encoding utf8
+            $savedAmbient = [Environment]::GetEnvironmentVariable("DMS_HTTP_PORTS")
+
+            try {
+                # A $null passed to SetEnvironmentVariable leaves the variable defined as ""; remove it instead.
+                if ($null -eq $Ambient) { Remove-Item -Path Env:DMS_HTTP_PORTS -ErrorAction SilentlyContinue }
+                else { Set-Item -Path Env:DMS_HTTP_PORTS -Value $Ambient }
+
+                Resolve-DockerLocalDmsBaseUrl -EnvValues (ReadValuesFromEnvFile -EnvironmentFile $envFile) | Should -BeExactly $Expected
+            }
+            finally {
+                if ($null -eq $savedAmbient) { Remove-Item -Path Env:DMS_HTTP_PORTS -ErrorAction SilentlyContinue }
+                else { Set-Item -Path Env:DMS_HTTP_PORTS -Value $savedAmbient }
+                Remove-Item -LiteralPath $envFile -Force -ErrorAction SilentlyContinue
+            }
+        }
+
         It "ReadValuesFromEnvFile preserves values containing equals signs" {
             $envFile = Join-Path ([System.IO.Path]::GetTempPath()) "test-$([Guid]::NewGuid().ToString('N')).env"
             @"

@@ -94,6 +94,6 @@ delivers the key and secret to you:
   - **Tenant routes (`DMS_MULTI_TENANCY=true`) or school-year data stores:** the qualified DMS base and token URLs instead of a command. Smoke runs against those routes have not been validated.
   - **Data store with other route contexts** (a key other than `schoolYear`, or several contexts): each context as `key=value`, with no URL.
   - **Run that failed after the credential was created:** no run instructions.
-  - **`start-published-dms.ps1` rerun against an already-running self-contained stack:** the existing signing key is kept, so the printed command works without restarting DMS (see the `start-published-dms.ps1` note in [Smoke-test credentials](../docker-compose/README.md#smoke-test-credentials--addsmoketestcredentials)).
+  - **`start-published-dms.ps1` rerun against an already-running self-contained stack:** the existing signing key is kept, so DMS needs no restart. A rerun without `-AddSmokeTestCredentials` leaves credentials delivered earlier working. A rerun with the flag prints a working command when it creates the stack's first smoke-test application; if one already exists for the vendor, the Configuration Service rejects the duplicate and no summary is printed (see the `start-published-dms.ps1` note in [Smoke-test credentials](../docker-compose/README.md#smoke-test-credentials--addsmoketestcredentials)).
 
 See "Smoke-test credentials" in `eng/docker-compose/README.md`.

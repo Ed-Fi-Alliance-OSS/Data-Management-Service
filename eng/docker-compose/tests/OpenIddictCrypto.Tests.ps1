@@ -806,6 +806,19 @@ Describe "OpenIddict signing-key initialization builders (DMS-1292)" {
         $sql | Should -Not -Match 'RAISE'
     }
 
+    It "catches every runtime failure of the <Builder> body, cancellation included, so the statement is never logged" -ForEach @(
+        @{ Builder = "New-OpenIddictKeyStateCheckSql"; FirstStep = 'SELECT "PrivateKey" INTO newest_private_key' }
+        @{ Builder = "New-OpenIddictKeyInitializationSql"; FirstStep = 'PERFORM pg_advisory_xact_lock(1292000001);' }
+    ) {
+        $sql = & $Builder -EncryptionKey "protected-passphrase"
+
+        # The lookup, lock and insert sit inside one protected block; the state row is written after it.
+        $sql | Should -Match ("(?s)BEGIN\s+BEGIN\s+" + [regex]::Escape($FirstStep) + ".*END IF;\s+EXCEPTION\s+" +
+            "WHEN query_canceled THEN\s+key_state := 'canceled';\s+WHEN OTHERS THEN\s+key_state := 'database-error ' \|\| SQLSTATE;\s+END;\s+" +
+            "INSERT INTO openiddict_key_initialization_state \(state\) VALUES \(key_state\);\s+END\s+") -Because "WHEN OTHERS does not catch query_canceled, so cancellation needs its own handler"
+        $sql | Should -Not -Match 'SQLERRM' -Because "the server's error text can quote the failing values"
+    }
+
     It "keeps a quote-bearing encryption key inside its literals" {
         $sql = New-OpenIddictKeyInitializationSql -EncryptionKey "Identity'Encryption;Key"
 
@@ -925,6 +938,25 @@ Describe "OpenIddict signing-key initialization in -InitDb (DMS-1292)" {
             $script:PhaseAState = "something-else"
 
             { Invoke-InitDbScripts 6>$null } | Should -Throw "*unexpected result*"
+        }
+
+        It "stops with a fixed database error, naming only the SQLSTATE, when phase <Phase> reports one" -ForEach @(
+            @{ Phase = "A"; PhaseA = "database-error 42501"; PhaseB = "created"; SqlState = "42501"; LockedRuns = 0 }
+            @{ Phase = "B"; PhaseA = "none"; PhaseB = "database-error 23514"; SqlState = "23514"; LockedRuns = 1 }
+        ) {
+            $script:PhaseAState = $PhaseA
+            $script:PhaseBState = $PhaseB
+
+            $failure = { Invoke-InitDbScripts 6>$null } | Should -Throw -PassThru
+            $failure.Exception.Message | Should -BeExactly "The database rejected OpenIddict signing-key initialization while reading, locking or creating the signing key (SQLSTATE $SqlState); no signing key was changed. Neither the signing key nor the encryption key is shown to be wrong; check the database user's access to the ""dmscs"".""OpenIddictKey"" table."
+            Should -Invoke Invoke-PostgresOpenIddictKeyScript -Times $LockedRuns -Exactly -ParameterFilter { $Script -match "pg_advisory_xact_lock" }
+        }
+
+        It "stops with the fixed cancellation error when the database cancels the locked phase" {
+            $script:PhaseBState = "canceled"
+
+            $failure = { Invoke-InitDbScripts 6>$null } | Should -Throw -PassThru
+            $failure.Exception.Message | Should -BeExactly "OpenIddict signing-key initialization was canceled in the database (for example, by statement_timeout or a cancel request); no signing key was changed."
         }
 
         It "never runs the bare key insert" {
@@ -1140,6 +1172,54 @@ FROM "dmscs"."OpenIddictKey" ORDER BY "Id";
 
             Invoke-LiveChild -Command "./setup-openiddict.ps1 -InitDb $(Get-LiveSetupArguments -EncryptionKey $EncryptionKey -User $User)"
         }
+
+        function script:Get-LiveServerLogLineCount {
+            return @(& docker logs $script:LivePgContainer 2>&1).Count
+        }
+
+        # Asserts that the server log written since $FromLine holds none of the initialization statement's
+        # sensitive text. A deliberately failing control statement runs first and must appear with its
+        # STATEMENT line, so the check fails rather than passing vacuously if error-statement logging is
+        # off or the log is not being read.
+        function script:Assert-LiveServerLogWithholdsStatement {
+            param([int]$FromLine, [string[]]$Sensitive)
+
+            $marker = "dms1292_log_control_" + [Guid]::NewGuid().ToString("N").Substring(0, 12)
+            $null = "SELECT 1/0 AS $marker;" | & docker exec -i $script:LivePgContainer psql -U postgres -d postgres -q -f - 2>&1
+            $log = (@(& docker logs $script:LivePgContainer 2>&1 | ForEach-Object { [string]$_ }) | Select-Object -Skip $FromLine) -join "`n"
+
+            $log | Should -Match "STATEMENT:\s+SELECT 1/0 AS $marker" -Because "the control error must be logged with its statement, or this check proves nothing"
+            foreach ($value in @($Sensitive + @('openiddict_key_initialization', 'pgp_sym_', 'MIIE'))) {
+                $log.Contains($value) | Should -BeFalse -Because "the server log must not carry the initialization statement ('$value')"
+            }
+        }
+
+        function script:Assert-LiveOutputWithholdsStatement {
+            param([string]$Text)
+
+            foreach ($sensitive in @($script:LiveKey, $script:LiveKey.Replace("'", "''"), 'openiddict_key_initialization', 'pgp_sym_', 'MIIE')) {
+                $Text.Contains($sensitive) | Should -BeFalse -Because "the client output must not carry the initialization statement ('$sensitive')"
+            }
+        }
+
+        # Creates the database through a normal run, then empties the key table so the next run takes
+        # the locked creation path.
+        function script:Initialize-LiveEmptyKeyTable {
+            (Invoke-LiveInitDb -EncryptionKey $script:LiveKey).ExitCode | Should -Be 0
+            Invoke-LivePgSql -Database $script:LiveDb -Sql 'DELETE FROM "dmscs"."OpenIddictKey";' | Out-Null
+        }
+
+        # A login role that may run every -InitDb statement; $TableGrant adds key-table privileges.
+        function script:New-LiveLimitedRole {
+            param([string]$TableGrant = "")
+
+            Invoke-LivePgSql -Database $script:LiveDb -Sql @"
+CREATE ROLE $($script:LiveRole) LOGIN;
+GRANT CONNECT, CREATE ON DATABASE $($script:LiveDb) TO $($script:LiveRole);
+GRANT USAGE, CREATE ON SCHEMA "dmscs" TO $($script:LiveRole);
+$TableGrant
+"@ | Out-Null
+        }
     }
 
     BeforeEach {
@@ -1213,6 +1293,66 @@ REVOKE EXECUTE ON FUNCTION pgp_sym_decrypt(bytea, text) FROM PUBLIC;
         $run.Text | Should -BeLike "*could not be checked: the database rejected the decryption check for a reason other than the encryption key*"
         $run.Text | Should -Not -BeLike "*cannot be decrypted*"
         @(Get-LiveKeyRows) | Should -Be $before
+    }
+
+    It "reports a denied key lookup as a database error, not a key mismatch, and keeps the statement out of the server log" {
+        (Invoke-LiveInitDb -EncryptionKey $script:LiveKey).ExitCode | Should -Be 0
+        $before = @(Get-LiveKeyRows)
+        New-LiveLimitedRole
+        $logStart = Get-LiveServerLogLineCount
+
+        $run = Invoke-LiveInitDb -EncryptionKey $script:LiveKey -User $script:LiveRole
+
+        $run.ExitCode | Should -Not -Be 0
+        $run.Text | Should -BeLike "*rejected OpenIddict signing-key initialization while reading, locking or creating the signing key (SQLSTATE 42501); no signing key was changed*"
+        $run.Text | Should -Not -BeLike "*cannot be decrypted*"
+        @(Get-LiveKeyRows) | Should -Be $before
+        Assert-LiveOutputWithholdsStatement -Text $run.Text
+        Assert-LiveServerLogWithholdsStatement -FromLine $logStart -Sensitive @($script:LiveKey, $script:LiveKey.Replace("'", "''"))
+    }
+
+    It "reports a <Case> on the creation path as <Expected>, inserts nothing, and keeps the statement out of the server log" -ForEach @(
+        @{ Case = "denied advisory lock"; Expected = "a database error"; Message = "*while reading, locking or creating the signing key (SQLSTATE 42501); no signing key was changed*"; LimitedRole = $true
+            Fault = @'
+GRANT SELECT, INSERT ON "dmscs"."OpenIddictKey" TO {role};
+GRANT USAGE ON SEQUENCE "dmscs"."OpenIddictKey_Id_seq" TO {role};
+REVOKE EXECUTE ON FUNCTION pg_advisory_xact_lock(bigint) FROM PUBLIC;
+'@ }
+        @{ Case = "rejected insert"; Expected = "a database error"; Message = "*while reading, locking or creating the signing key (SQLSTATE 23514); no signing key was changed*"; LimitedRole = $false
+            Fault = @'
+ALTER TABLE "dmscs"."OpenIddictKey" ADD CONSTRAINT dms1292_reject_insert CHECK (false) NOT VALID;
+'@ }
+        # WHEN OTHERS does not catch query_canceled; a trigger raising it stands in for statement_timeout
+        # or a cancel request without any timing.
+        @{ Case = "canceled insert"; Expected = "a cancellation"; Message = "*was canceled in the database*no signing key was changed*"; LimitedRole = $false
+            Fault = @'
+CREATE FUNCTION "dmscs".dms1292_cancel_insert() RETURNS trigger LANGUAGE plpgsql AS $cancel$
+BEGIN
+    RAISE EXCEPTION USING ERRCODE = 'query_canceled';
+END
+$cancel$;
+CREATE TRIGGER dms1292_cancel_insert BEFORE INSERT ON "dmscs"."OpenIddictKey" FOR EACH ROW EXECUTE FUNCTION "dmscs".dms1292_cancel_insert();
+'@ }
+    ) {
+        Initialize-LiveEmptyKeyTable
+        $user = "postgres"
+        if ($LimitedRole) {
+            New-LiveLimitedRole -TableGrant $Fault.Replace("{role}", $script:LiveRole)
+            $user = $script:LiveRole
+        }
+        else {
+            Invoke-LivePgSql -Database $script:LiveDb -Sql $Fault | Out-Null
+        }
+        $logStart = Get-LiveServerLogLineCount
+
+        $run = Invoke-LiveInitDb -EncryptionKey $script:LiveKey -User $user
+
+        $run.ExitCode | Should -Not -Be 0
+        $run.Text | Should -BeLike $Message
+        $run.Text | Should -Not -BeLike "*cannot be decrypted*"
+        @(Get-LiveKeyRows).Count | Should -Be 0 -Because "a failed creation must roll back its insert"
+        Assert-LiveOutputWithholdsStatement -Text $run.Text
+        Assert-LiveServerLogWithholdsStatement -FromLine $logStart -Sensitive @($script:LiveKey, $script:LiveKey.Replace("'", "''"))
     }
 }
 

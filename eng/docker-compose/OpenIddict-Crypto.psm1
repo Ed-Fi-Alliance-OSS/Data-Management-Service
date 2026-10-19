@@ -307,10 +307,10 @@ $script:OpenIddictKeyInitializationTag = '$openiddict_key_initialization$'
 # Builds the PL/pgSQL body that reads the newest active key, the one the Configuration Service signs
 # with, and sets key_state to 'active-ok' when it decrypts with this passphrase or
 # 'active-undecryptable' when pgcrypto rejects it (SQLSTATE 39000: wrong key or corrupt data). Any
-# other failure, such as a pgcrypto permission or lookup error, sets 'active-unverified', because
-# it says nothing about the key. $WhenNoActiveKey runs when no active key exists. Errors are caught
-# inside PL/pgSQL, so a failed check never raises an error that would log this statement text,
-# passphrase included.
+# other decrypt failure, such as a pgcrypto permission error, sets 'active-unverified', because it
+# says nothing about the key. $WhenNoActiveKey runs when no active key exists. A failure outside the
+# decrypt (the lookup, the lock or the insert) is caught by the block Join-OpenIddictKeyInitializationScript
+# wraps around this body, never classified here.
 function Get-OpenIddictNewestKeyStateBlock {
     param(
         [Parameter(Mandatory = $true)]
@@ -345,6 +345,15 @@ $elseClause
 "@
 }
 
+# Wraps a key-initialization body in one DO block. The DO statement text carries the encryption key
+# and, on the creation path, the candidate private key, and PostgreSQL's default
+# log_min_error_statement = error writes the text of any statement that ends in an error to the
+# server log. So every runtime error in the body (the lookup, the advisory lock, the insert) is caught
+# here and reported as the fixed state 'database-error <SQLSTATE>', and a cancellation (statement_timeout
+# or a cancel request), which WHEN OTHERS does not catch, as 'canceled'. Catching rolls back everything
+# the body did, so no key is changed. This keeps the statement out of error-statement logging only:
+# statement logging (log_statement, log_min_duration_statement), auditing extensions and a terminated
+# backend are outside what a caught error can prevent.
 function Join-OpenIddictKeyInitializationScript {
     param(
         [Parameter(Mandatory = $true)]
@@ -363,7 +372,14 @@ DECLARE
     newest_private_key text;
     key_state text := 'none';
 BEGIN
+    BEGIN
 $Body
+    EXCEPTION
+        WHEN query_canceled THEN
+            key_state := 'canceled';
+        WHEN OTHERS THEN
+            key_state := 'database-error ' || SQLSTATE;
+    END;
     INSERT INTO openiddict_key_initialization_state (state) VALUES (key_state);
 END
 $tag;
@@ -379,8 +395,9 @@ SELECT state FROM openiddict_key_initialization_state;
     The first of two setup-openiddict.ps1 -InitDb phases. The script prints one state:
     'active-ok' when the newest active key decrypts with the configured encryption key,
     'active-undecryptable' when it does not, 'active-unverified' when the check itself fails for
-    another reason, or 'none' when no active key exists. It carries the
-    encryption key but no key material, and it changes no row.
+    another reason, 'none' when no active key exists, or 'database-error <SQLSTATE>' / 'canceled'
+    when the lookup fails or is canceled. It carries the encryption key but no key material, and it
+    changes no row.
 
 .PARAMETER EncryptionKey
     Key the Configuration Service uses to decrypt the private key.
@@ -411,8 +428,9 @@ function New-OpenIddictKeyStateCheckSql {
     A transaction-scoped advisory lock serializes cooperating initializers, and the newest active key is
     read again under it. Without one, the script inserts a new key and prints 'created'. When another
     initializer created one in the meantime, nothing is inserted and that key is decrypt-checked with
-    this caller's encryption key: 'active-ok', 'active-undecryptable' or 'active-unverified'. No
-    existing row is changed.
+    this caller's encryption key: 'active-ok', 'active-undecryptable' or 'active-unverified'. A failed
+    or canceled lock, lookup or insert reports 'database-error <SQLSTATE>' or 'canceled' and inserts
+    nothing. No existing row is changed.
 
 .PARAMETER EncryptionKey
     Key used to encrypt the private key in the database.

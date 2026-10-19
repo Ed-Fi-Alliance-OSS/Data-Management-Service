@@ -1964,6 +1964,30 @@ Write-Output 'seed-phase-output'
             @($summary | Where-Object { $_ -like "*tenant-a*" }) | Should -BeNullOrEmpty
         }
 
+        It "prints the DMS port Compose publishes when the shell sets DMS_HTTP_PORTS over the env file" {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-smoke-port.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            $savedAmbient = [Environment]::GetEnvironmentVariable("DMS_HTTP_PORTS")
+            try {
+                Set-Item -Path Env:DMS_HTTP_PORTS -Value "19090"
+                $run = Invoke-WrapperCapture -ScriptPath $script:repo.WrapperScript -Arguments @{ EnvironmentFile = $script:repo.EnvFile; AddSmokeTestCredentials = $true }
+            }
+            finally {
+                if ($null -eq $savedAmbient) { Remove-Item -Path Env:DMS_HTTP_PORTS -ErrorAction SilentlyContinue }
+                else { Set-Item -Path Env:DMS_HTTP_PORTS -Value $savedAmbient }
+            }
+
+            $run.Error | Should -BeNullOrEmpty
+            $summary = Get-SummaryBlock -Strings $run.Strings -Header $script:smokeSummaryHeader
+            $command = Get-CommandArgument -Line ($summary | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" })
+            $command["BaseUrl"] | Should -BeExactly "http://localhost:19090" -Because "the env file says 18080, but Compose gives the shell value precedence"
+            $command["OAuthUrl"] | Should -BeExactly "http://localhost:19090/oauth/token"
+        }
+
         It "prints one target line per school-year data store and no command" {
             New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
             $callLog = Join-Path $script:repo.RepoRoot "call-log-smoke-schoolyear.txt"
@@ -2271,6 +2295,22 @@ Export-ModuleMember -Function *
             $summary | Should -Contain "  Set-Location -LiteralPath '$([System.IO.Path]::GetFullPath((Join-Path $script:repo.RepoRoot 'eng/smoke_test')))'"
             $summary | Should -Contain "  ./Invoke-NonDestructiveApiTests.ps1 -BaseUrl 'http://localhost:18080' -OAuthUrl 'http://localhost:18080/oauth/token' -Key 'SYNTH-KEY-1292' -Secret 'SYNTH`$SECRET-1292'"
             $summary[-1] | Should -BeLike "Self-contained identity:*"
+        }
+
+        It "prints the DMS port Compose publishes when the shell sets DMS_HTTP_PORTS over the env file" {
+            $savedAmbient = [Environment]::GetEnvironmentVariable("DMS_HTTP_PORTS")
+            try {
+                Set-Item -Path Env:DMS_HTTP_PORTS -Value "19090"
+                $run = Invoke-StartPublishedCapture -Arguments @{ EnvironmentFile = $script:repo.EnvFile; AddSmokeTestCredentials = $true }
+            }
+            finally {
+                if ($null -eq $savedAmbient) { Remove-Item -Path Env:DMS_HTTP_PORTS -ErrorAction SilentlyContinue }
+                else { Set-Item -Path Env:DMS_HTTP_PORTS -Value $savedAmbient }
+            }
+
+            $run.Error | Should -BeNullOrEmpty
+            $summary = Get-StartPublishedSummary -Strings $run.Strings
+            $summary | Should -Contain "  ./Invoke-NonDestructiveApiTests.ps1 -BaseUrl 'http://localhost:19090' -OAuthUrl 'http://localhost:19090/oauth/token' -Key 'SYNTH-KEY-1292' -Secret 'SYNTH`$SECRET-1292'" -Because "the env file says 18080, but Compose gives the shell value precedence"
         }
 
         It "creates the credential for every school-year data store this run registered" {

@@ -306,6 +306,40 @@ Describe "Get-SmokeTestCredentialSummary" {
         @($lines | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" -or $_ -like "*school year*" -or $_ -like "*/255901*" -or $_ -like "*/2024*" }) | Should -BeNullOrEmpty
     }
 
+    It "prints <Case> escaped, composes no URL, and keeps the credential exact" -ForEach @(
+        @{ Case = "a tenant with a line break"; Tenant = "tenant-a`nKey:         FORGED"; Contexts = @(); BaseUrl = 'http://localhost:8080'; Expected = @(
+                "Tenant:      tenant-a\u000AKey:         FORGED"
+            ) }
+        @{ Case = "a school-year value with a terminal escape"; Tenant = ""; Contexts = @(
+                [pscustomobject]@{ DataStoreId = [long]101; ContextKey = 'schoolYear'; ContextValue = "2024$([char]27)[2K" }
+            ); BaseUrl = 'http://localhost:8080'; Expected = @(
+                "Data store 101 route contexts: schoolYear=2024\u001B[2K"
+            ) }
+        @{ Case = "a context key with a C1 control and a tenant, before the DMS URL is known"; Tenant = "tenant-a"; Contexts = @(
+                [pscustomobject]@{ DataStoreId = [long]77; ContextKey = "district$([char]0x9B)Id"; ContextValue = "255901$([char]0x2028)" }
+            ); BaseUrl = ''; Expected = @(
+                "Tenant:      tenant-a",
+                "Data store 77 route contexts: district\u009BId=255901\u2028"
+            ) }
+    ) {
+        $credential = [pscustomobject]@{ Key = "K'ey`$1"; Secret = "a'b`$c``d`"e"; ApplicationName = 'Smoke Test Application' }
+
+        $lines = @(Get-SmokeTestCredentialSummary -Credential $credential -DmsBaseUrl $BaseUrl -Tenant $Tenant -RouteContexts $Contexts)
+
+        $lines | Should -Be (@(
+                "--- Smoke test credentials ---",
+                "Application: Smoke Test Application",
+                "Key:         $($credential.Key)",
+                "Secret:      $($credential.Secret)",
+                $script:credentialLines[3]
+            ) + $Expected + @(
+                "No DMS base or token URL is printed: the tenant or a route context contains control or line-break characters, shown escaped above. Correct the Configuration Service tenant or data-store contexts.",
+                $script:routeNote
+            ))
+        @($lines | Where-Object { $_ -match '[\p{Cc}\p{Zl}\p{Zp}]' }) | Should -BeNullOrEmpty
+        @($lines | Where-Object { $_ -like "*http*" -or $_ -like "*<dms-base-url>*" -or $_ -like "*Invoke-NonDestructiveApiTests.ps1*" }) | Should -BeNullOrEmpty
+    }
+
     It "adds the token-limit prerequisite for self-contained identity" {
         $lines = @(Get-SmokeTestCredentialSummary -Credential @{ Key = 'SYNTH-KEY-1292'; Secret = 'SYNTH$SECRET-1292'; ApplicationName = 'Smoke Test Application' } -DmsBaseUrl 'http://localhost:8080' -SelfContainedIdentity)
 
