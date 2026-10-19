@@ -499,7 +499,8 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
             $strings | Should -Contain 'Key:         SYNTH-KEY-1292'
             $strings | Should -Contain 'Secret:      SYNTH$SECRET-1292'
             $strings | Should -Contain "  ./Invoke-NonDestructiveApiTests.ps1 -BaseUrl '<dms-base-url>' -OAuthUrl '<dms-base-url>/oauth/token' -Key 'SYNTH-KEY-1292' -Secret 'SYNTH`$SECRET-1292'"
-            $strings[-1] | Should -BeLike 'Self-contained identity:*'
+            $strings[-2] | Should -BeLike 'Self-contained identity:*'
+            $strings[-1] | Should -BeLike 'IDE-hosted DMS: the target above assumes it runs with AppSettings:MultiTenancy=false,*'
         }
 
         It 'prints the incomplete summary and keeps the original error when provisioning fails' {
