@@ -236,7 +236,12 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.UpsertFailureReference(
                         [],
-                        [DescriptorReferenceFailureClassifier.Missing(descriptorReference)]
+                        [
+                            DescriptorReferenceFailure.From(
+                                descriptorReference,
+                                DescriptorReferenceFailureReason.Missing
+                            ),
+                        ]
                     )
                 )
             );
@@ -281,7 +286,12 @@ public class Given_Default_Relational_Write_Executor
                                 DocumentReferenceFailureReason.Missing
                             ),
                         ],
-                        [DescriptorReferenceFailureClassifier.Missing(descriptorReference)]
+                        [
+                            DescriptorReferenceFailure.From(
+                                descriptorReference,
+                                DescriptorReferenceFailureReason.Missing
+                            ),
+                        ]
                     )
                 )
             );
@@ -1440,7 +1450,12 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateFailureReference(
                         [],
-                        [DescriptorReferenceFailureClassifier.Missing(descriptorReference)]
+                        [
+                            DescriptorReferenceFailure.From(
+                                descriptorReference,
+                                DescriptorReferenceFailureReason.Missing
+                            ),
+                        ]
                     )
                 )
             );
@@ -1795,7 +1810,12 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.UpsertFailureReference(
                         [],
-                        [DescriptorReferenceFailureClassifier.Missing(descriptorReference)]
+                        [
+                            DescriptorReferenceFailure.From(
+                                descriptorReference,
+                                DescriptorReferenceFailureReason.Missing
+                            ),
+                        ]
                     )
                 )
             );
@@ -3328,7 +3348,12 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateFailureReference(
                         [],
-                        [DescriptorReferenceFailureClassifier.Missing(invalidReference)]
+                        [
+                            DescriptorReferenceFailure.From(
+                                invalidReference,
+                                DescriptorReferenceFailureReason.Missing
+                            ),
+                        ]
                     )
                 )
             );

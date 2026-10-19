@@ -321,7 +321,9 @@ internal sealed class NaturalKeyReferenceResolver(
             // The descriptor type is filtered in SQL, so a URI stored under another type is a miss.
             if (match is null)
             {
-                descriptorFailures.Add(DescriptorReferenceFailureClassifier.Missing(reference));
+                descriptorFailures.Add(
+                    DescriptorReferenceFailure.From(reference, DescriptorReferenceFailureReason.Missing)
+                );
                 continue;
             }
 

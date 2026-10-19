@@ -308,13 +308,9 @@ internal static class PerfFinalGateFixtureSmokeScenario
                 "the descriptor stamp trigger must mirror the document version"
             );
 
-        // Validate the descriptor referential-id formula against the control row, then hold
-        // the loader row to it.
-        await AssertDescriptorReferentialIdentityAsync(
-            connection,
-            controlDocument.DocumentId,
-            controlDescriptor.Uri
-        );
+        // Hold the loader row to the independent descriptor referential-id formula. The
+        // production write path no longer records this lowercased derivation, so the control
+        // row is not compared.
         await AssertDescriptorReferentialIdentityAsync(
             connection,
             loaderDocument.DocumentId,

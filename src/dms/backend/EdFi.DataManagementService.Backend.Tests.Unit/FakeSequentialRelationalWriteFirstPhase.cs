@@ -344,7 +344,9 @@ internal sealed class RecordingSessionReferenceResolver
             }
             else
             {
-                descriptorFailures.Add(DescriptorReferenceFailureClassifier.Missing(reference));
+                descriptorFailures.Add(
+                    DescriptorReferenceFailure.From(reference, DescriptorReferenceFailureReason.Missing)
+                );
             }
         }
 
