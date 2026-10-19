@@ -162,7 +162,6 @@ public class Given_The_Parity_Scenario_Catalog
         "NoProfileMultiBatchCollection/ChangedUpdateBatchPartitions",
         "NoProfilePostAsUpdate",
         "NoProfilePostAsUpdate/FocusedStableKey",
-        "NoProfilePostAsUpdate/ImmutableIdentityRejected",
         "NoProfilePostAsUpdate/CreateRaceConvertedToUpdate",
         "NoProfilePostAsUpdate/AuthoritativeDs52SchoolYearType",
         "NoProfilePostAsUpdate/AuthoritativeStudentAcademicRecord",

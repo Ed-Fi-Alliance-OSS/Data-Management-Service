@@ -4190,7 +4190,10 @@ public class Given_Default_Relational_Write_Executor
             new RelationalWriteExecutorInput(
                 mappingSet,
                 RelationalWriteOperationKind.Post,
-                new RelationalWriteTargetRequest.Post(new ReferentialId(Guid.NewGuid()), CreateDocumentUuid),
+                new RelationalWriteTargetRequest.Post(
+                    new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
+                    CreateDocumentUuid
+                ),
                 resourceWritePlan,
                 CreateReadPlan(otherResourceModel),
                 JsonNode.Parse("""{"name":"Lincoln High"}""")!,
@@ -4215,7 +4218,10 @@ public class Given_Default_Relational_Write_Executor
             new RelationalWriteExecutorInput(
                 mappingSet,
                 RelationalWriteOperationKind.Post,
-                new RelationalWriteTargetRequest.Post(new ReferentialId(Guid.NewGuid()), CreateDocumentUuid),
+                new RelationalWriteTargetRequest.Post(
+                    new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
+                    CreateDocumentUuid
+                ),
                 resourceWritePlan,
                 CreateReadPlan(resourceModel),
                 JsonNode.Parse("""{"name":"Lincoln High"}""")!,
@@ -4244,7 +4250,10 @@ public class Given_Default_Relational_Write_Executor
             new RelationalWriteExecutorInput(
                 mappingSet,
                 RelationalWriteOperationKind.Post,
-                new RelationalWriteTargetRequest.Post(new ReferentialId(Guid.NewGuid()), CreateDocumentUuid),
+                new RelationalWriteTargetRequest.Post(
+                    new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
+                    CreateDocumentUuid
+                ),
                 resourceWritePlan,
                 CreateReadPlan(resourceModel),
                 JsonNode.Parse("""{"name":"Lincoln High"}""")!,
@@ -4274,7 +4283,7 @@ public class Given_Default_Relational_Write_Executor
                 mappingSet,
                 RelationalWriteOperationKind.Put,
                 new RelationalWriteTargetRequest.Post(
-                    new ReferentialId(Guid.NewGuid()),
+                    new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
                     new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
                 ),
                 resourceWritePlan,
@@ -8680,7 +8689,7 @@ public class Given_Default_Relational_Write_Executor
             operationKind == RelationalWriteOperationKind.Put
                 ? new RelationalWriteTargetRequest.Put(updateDocumentUuid)
                 : new RelationalWriteTargetRequest.Post(
-                    new ReferentialId(Guid.NewGuid()),
+                    new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
                     createDocumentUuid
                 ),
             resourceWritePlan,
@@ -9204,7 +9213,7 @@ public class Given_Default_Relational_Write_Executor
         }
     }
 
-    private sealed class RecordingRelationalWriteTargetLookupResolver : IRelationalWriteTargetLookupResolver
+    private sealed class RecordingRelationalWriteTargetLookupResolver : IFakeRelationalWriteTargetLookup
     {
         public int ResolveForPostCallCount { get; private set; }
 
@@ -9261,7 +9270,7 @@ public class Given_Default_Relational_Write_Executor
         public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
             MappingSet mappingSet,
             QualifiedResourceName resource,
-            ReferentialId referentialId,
+            DocumentIdentity documentIdentity,
             DocumentUuid candidateDocumentUuid,
             IRelationalCommandExecutor commandExecutor,
             CancellationToken cancellationToken = default

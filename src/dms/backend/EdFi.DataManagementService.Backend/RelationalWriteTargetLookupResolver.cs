@@ -147,53 +147,6 @@ internal static class RelationalWriteTargetLookupSupport
     private const string DocumentUuidParameterName = "@documentUuid";
 
     /// <summary>
-    /// Builds the POST target predicate over the aliased <c>dms.Document</c> row <c>d</c> for a
-    /// composite captured-target statement. Semantically identical to
-    /// <see cref="ResolveForPostAsync"/>'s lookup — the referential-identity row selects the document,
-    /// filtered to the request's resource key — expressed as a predicate so the capture statement can
-    /// lock and observe the row in one statement. Returned as a <see cref="RelationalCommand"/> whose
-    /// text is the bare predicate, so the composite rewriter can rename its parameters.
-    /// </summary>
-    public static RelationalCommand BuildPostCaptureTargetPredicate(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        ReferentialId referentialId
-    )
-    {
-        ArgumentNullException.ThrowIfNull(mappingSet);
-
-        var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
-        var predicateSql = mappingSet.Key.Dialect switch
-        {
-            SqlDialect.Pgsql => """
-                d."DocumentId" = (
-                    SELECT referentialIdentity."DocumentId"
-                    FROM dms."ReferentialIdentity" referentialIdentity
-                    WHERE referentialIdentity."ReferentialId" = @referentialId
-                ) AND d."ResourceKeyId" = @resourceKeyId
-                """,
-            SqlDialect.Mssql => """
-                d.[DocumentId] = (
-                    SELECT referentialIdentity.[DocumentId]
-                    FROM [dms].[ReferentialIdentity] referentialIdentity
-                    WHERE referentialIdentity.[ReferentialId] = @referentialId
-                ) AND d.[ResourceKeyId] = @resourceKeyId
-                """,
-            _ => throw new NotSupportedException(
-                $"Relational POST capture predicate does not support SQL dialect '{mappingSet.Key.Dialect}'."
-            ),
-        };
-
-        return new RelationalCommand(
-            predicateSql,
-            [
-                new RelationalParameter(ReferentialIdParameterName, referentialId.Value),
-                new RelationalParameter(ResourceKeyIdParameterName, resourceKeyId),
-            ]
-        );
-    }
-
-    /// <summary>
     /// Builds the POST target predicate over the aliased <c>dms.Document</c> row <c>d</c> from the
     /// resource's own natural key: one scalar <c>=</c> subselect reads the root table's
     /// <c>DocumentId</c> through the <c>UX_&lt;R&gt;_NK</c> columns, filtered to the request's resource key.

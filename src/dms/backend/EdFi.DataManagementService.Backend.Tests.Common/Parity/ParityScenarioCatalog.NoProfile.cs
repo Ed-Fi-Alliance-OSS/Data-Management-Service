@@ -433,21 +433,6 @@ public static partial class ParityScenarioCatalog
                 + " + NoProfilePostAsUpdateScenarios.AssertFocusedFullSurfaceStateApplied"
         ),
         NoProfile(
-            "NoProfilePostAsUpdate/ImmutableIdentityRejected",
-            "POST-as-update that changes an immutable identity is rejected with UpsertFailureImmutableIdentity and commits no row changes: the document row including ContentVersion, the root including authoritative ContentLastModifiedAt, the base and aligned-extension collections, the referential identity, and the tracked-change rowset are all unchanged.",
-            ProductionBoundary.IdentityStability,
-            "RelationalWritePostAsUpdateSmokeTests",
-            "Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Change_With_A_Focused_Stable_Key_Fixture",
-            "Given_A_Mssql_Relational_Post_As_Update_Immutable_Identity_Change_With_A_Focused_Stable_Key_Fixture",
-            [
-                "It_returns_explicit_immutable_identity_failure_for_post_as_update",
-                "It_does_not_commit_row_changes_for_rejected_post_as_update",
-            ],
-            sharedEntryPoint: "NoProfilePostAsUpdateScenarios.AssertImmutableIdentityRejected"
-                + " + NoProfilePostAsUpdateScenarios.AssertRejectedPostAsUpdateCommittedNoChanges",
-            boundaryDetail: "RelationalWriteIdentityStability.TryBuildFailureResult"
-        ),
-        NoProfile(
             "NoProfilePostAsUpdate/CreateRaceConvertedToUpdate",
             "A stale create candidate converts to POST-as-update after a competing create commits, applying last-writer state without duplicate rows.",
             ProductionBoundary.NoProfilePersister,

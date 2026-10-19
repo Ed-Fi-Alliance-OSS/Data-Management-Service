@@ -582,7 +582,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             operationKind == RelationalWriteOperationKind.Put
                 ? new RelationalWriteTargetRequest.Put(updateDocumentUuid)
                 : new RelationalWriteTargetRequest.Post(
-                    new ReferentialId(Guid.Parse("99999999-8888-7777-6666-555555555555")),
+                    new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
                     createDocumentUuid
                 ),
             resourceWritePlan,
@@ -733,7 +733,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             operationKind == RelationalWriteOperationKind.Put
                 ? new RelationalWriteTargetRequest.Put(updateDocumentUuid)
                 : new RelationalWriteTargetRequest.Post(
-                    new ReferentialId(Guid.Parse("99999999-8888-7777-6666-555555555555")),
+                    new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
                     createDocumentUuid
                 ),
             writePlan,
@@ -759,7 +759,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             mappingSet,
             RelationalWriteOperationKind.Post,
             new RelationalWriteTargetRequest.Post(
-                new ReferentialId(Guid.Parse("99999999-8888-7777-6666-555555555555")),
+                new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
                 createDocumentUuid
             ),
             writePlan,
@@ -784,7 +784,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             mappingSet,
             RelationalWriteOperationKind.Post,
             new RelationalWriteTargetRequest.Post(
-                new ReferentialId(Guid.Parse("99999999-8888-7777-6666-555555555555")),
+                new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
                 createDocumentUuid
             ),
             writePlan,
@@ -971,7 +971,7 @@ public class Given_A_Root_Natural_Key_Violation_With_A_Non_Ordinal_Identity
             mappingSet,
             RelationalWriteOperationKind.Post,
             new RelationalWriteTargetRequest.Post(
-                new ReferentialId(Guid.Parse("99999999-8888-7777-6666-555555555555")),
+                new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
                 createDocumentUuid
             ),
             writePlan,
