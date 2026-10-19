@@ -433,7 +433,7 @@ file static class MultiBatchCollectionsIntegrationTestSupport
         var descriptorIdentity = new DocumentIdentity([
             new DocumentIdentityElement(
                 DocumentIdentity.DescriptorIdentityJsonPath,
-                addressTypeDescriptorUri.ToLowerInvariant()
+                addressTypeDescriptorUri
             ),
         ]);
 

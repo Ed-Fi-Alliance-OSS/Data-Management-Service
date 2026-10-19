@@ -567,7 +567,7 @@ internal static class MssqlProfileRootOnlyFixtureSupport
             true
         );
         var descriptorIdentity = new DocumentIdentity([
-            new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri.ToLowerInvariant()),
+            new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri),
         ]);
         return new DescriptorReference(
             ResourceInfo: descriptorResourceInfo,

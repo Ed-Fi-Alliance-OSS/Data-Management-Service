@@ -606,7 +606,7 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
             true
         );
         var descriptorIdentity = new DocumentIdentity([
-            new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri.ToLowerInvariant()),
+            new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri),
         ]);
         return new DescriptorReference(
             ResourceInfo: descriptorResourceInfo,

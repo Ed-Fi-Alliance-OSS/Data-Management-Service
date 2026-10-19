@@ -105,31 +105,20 @@ internal class ReferenceArrayUniquenessValidationMiddleware(ILogger logger) : IP
     }
 
     /// <summary>
-    /// Finds the index of the first reference that repeats an earlier one: the same target resource and an
-    /// ordinally equal identity, compared through <see cref="DocumentIdentityComparer"/>.
+    /// Finds the index of the first reference that repeats an earlier one: an ordinally equal identity,
+    /// compared through <see cref="DocumentIdentityComparer"/>. Every reference in an array comes from one
+    /// document path, so all of them share one target resource.
     /// </summary>
     /// <param name="documentReferences">Array of document references to check</param>
     /// <returns>Index of the first duplicate found, or -1 if no duplicates exist</returns>
     private static int FindDuplicateReferenceIndex(DocumentReference[] documentReferences)
     {
-        // Use HashSets for O(n) duplicate detection instead of O(n²)
-        Dictionary<BaseResourceInfo, HashSet<DocumentIdentity>> seenIdentitiesByResource = [];
+        // Use a HashSet for O(n) duplicate detection instead of O(n²)
+        HashSet<DocumentIdentity> seenIdentities = new(DocumentIdentityComparer.Instance);
 
         for (int i = 0; i < documentReferences.Length; i++)
         {
-            DocumentReference documentReference = documentReferences[i];
-            if (
-                !seenIdentitiesByResource.TryGetValue(
-                    documentReference.ResourceInfo,
-                    out HashSet<DocumentIdentity>? seenIdentities
-                )
-            )
-            {
-                seenIdentities = new HashSet<DocumentIdentity>(DocumentIdentityComparer.Instance);
-                seenIdentitiesByResource[documentReference.ResourceInfo] = seenIdentities;
-            }
-
-            if (!seenIdentities.Add(documentReference.DocumentIdentity))
+            if (!seenIdentities.Add(documentReferences[i].DocumentIdentity))
             {
                 return i; // Return index of first duplicate found
             }
