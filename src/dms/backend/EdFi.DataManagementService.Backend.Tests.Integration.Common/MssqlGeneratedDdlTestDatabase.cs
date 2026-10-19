@@ -828,7 +828,8 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
                         provisioningAtStart.AdmittedCount,
                         provisioningAtTimeout.AdmittedCount
                     );
-                    MssqlGeneratedDdlProvisioningDiagnostics.TryWrite(
+                    MssqlGeneratedDdlProvisioningDiagnostics.TryReport(
+                        exception,
                         diagnosticWriter,
                         () => MssqlGeneratedDdlProvisioningDiagnostics.Format(diagnostic)
                     );

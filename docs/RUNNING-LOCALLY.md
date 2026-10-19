@@ -170,6 +170,11 @@ fixture setup. These tests use `ConnectionStrings__MssqlAdmin` as described
 above; they are separate from the API-level integration project and from the
 Docker-stack E2E suite.
 
+On slow or emulated hosts, such as Apple Silicon running the amd64 SQL Server
+image, concurrent baseline provisioning can exceed the command timeout even
+when individual fixtures pass. Use the concurrency setting or shard filters
+below to reduce provisioning contention during local development.
+
 The same provisioning gate and diagnostics also apply to the SQL Server paths
 in `src/dms/tests/EdFi.DataManagementService.Tests.Integration` and
 `src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration`.
@@ -213,16 +218,19 @@ The `contextOrigin` field identifies the recorded caller by source filename,
 member, and line; shared baselines retain the context from their first
 registration, which may differ from the fixture currently acquiring a lease.
 
-The diagnostic is written to stderr (`Console.Error`), rather than appended to
-the failed test's exception message. Inspect the test-run console output;
-depending on the runner and setup phase, TRX may capture it as test stderr or
-a run-level warning. It does not require CSV timing output.
+The diagnostic is attached to the original provider exception's `Data` under
+`MssqlGeneratedDdlProvisioningDiagnostic` and also written to stderr
+(`Console.Error`). NUnit includes exception data in each affected test's setup
+failure, making the context available in console and TRX results even when
+stderr is captured only at run level. The provider exception type, number,
+message, and stack are preserved. CSV timing output is optional.
 
-Optional per-fixture CSV timing output can be enabled with
-`MSSQL_FIXTURE_TIMINGS_PATH`. Output failures are best-effort and do not replace
-test failures or interrupt cleanup. An unavailable path produces at most one
-warning per configured path in a process; inspect the setting's value and its
-parent directory permissions. Paths are omitted from warnings.
+Optional CSV timing output, with rows per phase and DDL batch, can
+be enabled with `MSSQL_FIXTURE_TIMINGS_PATH`. Output failures are best-effort
+and do not replace test failures or interrupt cleanup. An unavailable path
+produces at most one warning per configured path in a process; inspect the
+setting's value and its parent directory permissions. Paths are omitted from
+warnings.
 
 Backend CI uses four categories, `MssqlCiShard1` through `MssqlCiShard4`, with
 the `backup-restore` lease strategy and a provisioning concurrency limit of 2
@@ -234,8 +242,9 @@ $env:MSSQL_GENERATED_DDL_PROVISION_MAX_CONCURRENCY = '2'
 dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter "Category=MssqlCiShard4"
 ```
 
-Replace the category to select another shard. A filtered run is a fallback
-for diagnosis and does not replace the unfiltered host check. Controlled
+Replace the category to select another shard. On slow or emulated hosts,
+use shard filters for routine local runs and the unfiltered command above
+to reproduce whole-suite provisioning contention. Controlled
 provider-timeout probes are explicit and outside these CI shards; run them
 separately when changing the diagnostic wiring:
 

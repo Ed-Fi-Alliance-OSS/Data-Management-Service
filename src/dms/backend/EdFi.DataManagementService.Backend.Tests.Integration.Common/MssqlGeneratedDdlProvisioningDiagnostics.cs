@@ -58,11 +58,14 @@ internal static class MssqlGeneratedDdlProvisioningDiagnostics
         );
     }
 
-    public static void TryWrite(TextWriter writer, Func<string> format)
+    public static void TryReport(Exception exception, TextWriter writer, Func<string> format)
     {
         try
         {
-            writer.WriteLine(format());
+            var message = format();
+            // NUnit includes exception data in setup failures, even when stderr is only captured at run level.
+            exception.Data["MssqlGeneratedDdlProvisioningDiagnostic"] = message;
+            writer.WriteLine(message);
         }
         catch
         {

@@ -18,45 +18,17 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 public class Given_MssqlGeneratedDdlProvisioningDiagnostics
 {
     private MssqlProvisioningTimingContext _context = null!;
-    private bool[] _timeoutClassifications = [];
-    private bool[] _otherClassifications = [];
     private string _unlimitedMessage = "";
     private string _finiteMessage = "";
     private string _limitedMessage = "";
     private string[] _noOverlapMessages = [];
     private string _timeoutOverlapMessage = "";
     private string[] _normalizedMessages = [];
-    private int _writeAttempts;
 
     [OneTimeSetUp]
     public void OneTimeSetUp()
     {
         _context = new("family", "ddl-hash", "backup-restore", "caller", "safe.cs", 17);
-        _timeoutClassifications =
-        [
-            MssqlGeneratedDdlProvisioningDiagnostics.IsProvisioningCommandTimeout(
-                CreateSqlException(-2, "provider message"),
-                true
-            ),
-            MssqlGeneratedDdlProvisioningDiagnostics.IsProvisioningCommandTimeout(
-                CreateSqlException(-2, "provider message"),
-                false
-            ),
-        ];
-        Exception[] otherErrors =
-        [
-            CreateSqlException(1205, "deadlock"),
-            CreateSqlException(547, "constraint"),
-            CreateSqlException(50000, "custom"),
-            new TimeoutException(),
-            new OperationCanceledException(),
-            new InvalidOperationException(),
-        ];
-        _otherClassifications = otherErrors
-            .Select(exception =>
-                MssqlGeneratedDdlProvisioningDiagnostics.IsProvisioningCommandTimeout(exception, true)
-            )
-            .ToArray();
         _unlimitedMessage = Format(0, 3, 1);
         _finiteMessage = Format(2, 3, 1);
         _limitedMessage = Format(1, 1, 1);
@@ -78,20 +50,6 @@ public class Given_MssqlGeneratedDdlProvisioningDiagnostics
                 )
             )
             .ToArray();
-        using var writer = new ThrowingWriter();
-        MssqlGeneratedDdlProvisioningDiagnostics.TryWrite(
-            writer,
-            () => throw new InvalidOperationException()
-        );
-        MssqlGeneratedDdlProvisioningDiagnostics.TryWrite(writer, () => "safe");
-        _writeAttempts = writer.Attempts;
-    }
-
-    [Test]
-    public void It_classifies_only_an_admitted_SqlClient_command_timeout()
-    {
-        _timeoutClassifications.Should().Equal(true, false);
-        _otherClassifications.Should().Equal(false, false, false, false, false, false);
     }
 
     [Test]
@@ -174,12 +132,6 @@ public class Given_MssqlGeneratedDdlProvisioningDiagnostics
         }
     }
 
-    [Test]
-    public void It_makes_formatting_and_writing_failures_nonfatal()
-    {
-        _writeAttempts.Should().Be(1);
-    }
-
     private string Format(int limit, int start, int timeout) =>
         MssqlGeneratedDdlProvisioningDiagnostics.Format(Diagnostic(limit, start, timeout));
 
@@ -196,6 +148,51 @@ public class Given_MssqlGeneratedDdlProvisioningDiagnostics
             start,
             timeout
         );
+}
+
+[TestFixture]
+[Category(MssqlCiShards.Shard4)]
+public class Given_MssqlGeneratedDdlProvisioningTimeoutClassification
+{
+    private bool[] _timeoutClassifications = [];
+    private bool[] _otherClassifications = [];
+
+    [OneTimeSetUp]
+    public void OneTimeSetUp()
+    {
+        _timeoutClassifications =
+        [
+            MssqlGeneratedDdlProvisioningDiagnostics.IsProvisioningCommandTimeout(
+                CreateSqlException(-2, "provider message"),
+                true
+            ),
+            MssqlGeneratedDdlProvisioningDiagnostics.IsProvisioningCommandTimeout(
+                CreateSqlException(-2, "provider message"),
+                false
+            ),
+        ];
+        Exception[] otherErrors =
+        [
+            CreateSqlException(1205, "deadlock"),
+            CreateSqlException(547, "constraint"),
+            CreateSqlException(50000, "custom"),
+            new TimeoutException(),
+            new OperationCanceledException(),
+            new InvalidOperationException(),
+        ];
+        _otherClassifications = otherErrors
+            .Select(exception =>
+                MssqlGeneratedDdlProvisioningDiagnostics.IsProvisioningCommandTimeout(exception, true)
+            )
+            .ToArray();
+    }
+
+    [Test]
+    public void It_classifies_only_an_admitted_SqlClient_command_timeout()
+    {
+        _timeoutClassifications.Should().Equal(true, false);
+        _otherClassifications.Should().Equal(false, false, false, false, false, false);
+    }
 
     private static SqlException CreateSqlException(int number, string message)
     {
@@ -219,15 +216,76 @@ public class Given_MssqlGeneratedDdlProvisioningDiagnostics
             .SetValue(exception, errors);
         return exception;
     }
+}
 
-    private sealed class ThrowingWriter : StringWriter
+[TestFixture(false)]
+[TestFixture(true)]
+[Category(MssqlCiShards.Shard4)]
+public class Given_MssqlGeneratedDdlProvisioningDiagnosticReporting(bool throwingWriter)
+{
+    private Exception _exception = null!;
+    private string _output = "";
+    private int _formatCalls;
+
+    [OneTimeSetUp]
+    public void OneTimeSetUp()
     {
-        public int Attempts { get; private set; }
+        _exception = new InvalidOperationException("original failure");
+        _exception.Data["existing"] = "retained";
+        using StringWriter writer = throwingWriter
+            ? new MssqlGeneratedDdlProvisioningProbe.CaptureThenThrowWriter()
+            : new StringWriter();
+        MssqlGeneratedDdlProvisioningDiagnostics.TryReport(
+            _exception,
+            writer,
+            () =>
+            {
+                _formatCalls++;
+                return "provisioning diagnostic";
+            }
+        );
+        _output = writer.ToString();
+    }
 
-        public override void WriteLine(string? value)
-        {
-            Attempts++;
-            throw new IOException("not emitted");
-        }
+    [Test]
+    public void It_attaches_context_even_when_the_output_writer_fails() =>
+        _exception.Data["MssqlGeneratedDdlProvisioningDiagnostic"].Should().Be("provisioning diagnostic");
+
+    [Test]
+    public void It_formats_once_and_emits_the_same_context()
+    {
+        _formatCalls.Should().Be(1);
+        _output.Should().Be($"provisioning diagnostic{Environment.NewLine}");
+    }
+
+    [Test]
+    public void It_retains_existing_exception_data() => _exception.Data["existing"].Should().Be("retained");
+}
+
+[TestFixture]
+[Category(MssqlCiShards.Shard4)]
+public class Given_MssqlGeneratedDdlProvisioningDiagnosticFormattingFailure
+{
+    private Exception _exception = null!;
+    private string _output = "";
+
+    [OneTimeSetUp]
+    public void OneTimeSetUp()
+    {
+        _exception = new InvalidOperationException("original failure");
+        using var writer = new StringWriter();
+        MssqlGeneratedDdlProvisioningDiagnostics.TryReport(
+            _exception,
+            writer,
+            () => throw new InvalidOperationException("formatting failed")
+        );
+        _output = writer.ToString();
+    }
+
+    [Test]
+    public void It_makes_formatting_failures_nonfatal()
+    {
+        _exception.Data.Contains("MssqlGeneratedDdlProvisioningDiagnostic").Should().BeFalse();
+        _output.Should().BeEmpty();
     }
 }

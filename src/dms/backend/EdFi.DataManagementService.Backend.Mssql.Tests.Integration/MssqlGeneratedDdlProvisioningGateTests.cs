@@ -20,15 +20,9 @@ public class Given_MssqlGeneratedDdlProvisioningGate
     private int _settingReads;
     private int _invalidSettingReads;
     private Exception[] _initializationFailures = [];
-    private int _queuedCount;
-    private bool _entrantWasQueued;
-    private int _countAfterAdmission;
-    private bool _entrantWasAdmitted;
-    private int[] _unlimitedCounts = [];
-    private TimeSpan _unlimitedWait;
 
     [OneTimeSetUp]
-    public async Task OneTimeSetUp()
+    public void OneTimeSetUp()
     {
         _parsedLimits = new[] { "", " \t ", "1", "0002", "2147483647" }
             .Select(value => new MssqlGeneratedDdlProvisioningGate(value).MaximumConcurrency)
@@ -59,52 +53,6 @@ public class Given_MssqlGeneratedDdlProvisioningGate
             CaptureFailure(() => _ = invalidLazyGate.Value),
             CaptureFailure(() => _ = invalidLazyGate.Value),
         ];
-
-        var gate = new MssqlGeneratedDdlProvisioningGate("2");
-        var first = await gate.AcquireAsync();
-        var second = await gate.AcquireAsync();
-        var waiting = gate.AcquireAsync().AsTask();
-        MssqlGeneratedDdlProvisioningLease third = null!;
-        var firstReleased = false;
-        try
-        {
-            _queuedCount = gate.AdmittedCount;
-            _entrantWasQueued = !waiting.IsCompleted;
-            await first.DisposeAsync();
-            firstReleased = true;
-            third = await waiting.WaitAsync(TimeSpan.FromSeconds(90));
-            _countAfterAdmission = gate.AdmittedCount;
-            _entrantWasAdmitted = third.CaptureSnapshot().IsAdmitted;
-        }
-        finally
-        {
-            if (!firstReleased)
-            {
-                await first.DisposeAsync();
-            }
-            await second.DisposeAsync();
-            if (third is null)
-            {
-                third = await waiting.WaitAsync(TimeSpan.FromSeconds(90));
-            }
-            await third.DisposeAsync();
-        }
-
-        var unlimitedGate = new MssqlGeneratedDdlProvisioningGate("");
-        var leases = await Task.WhenAll(
-            Enumerable.Range(0, 4).Select(_ => unlimitedGate.AcquireAsync().AsTask())
-        );
-        _unlimitedWait = leases[0].CaptureSnapshot().AdmissionWaitElapsed;
-        var initialCount = unlimitedGate.AdmittedCount;
-        await leases[0].DisposeAsync();
-        var afterFirstDispose = unlimitedGate.AdmittedCount;
-        await leases[0].DisposeAsync();
-        var afterDoubleDispose = unlimitedGate.AdmittedCount;
-        foreach (var lease in leases.Skip(1))
-        {
-            await lease.DisposeAsync();
-        }
-        _unlimitedCounts = [initialCount, afterFirstDispose, afterDoubleDispose, unlimitedGate.AdmittedCount];
     }
 
     [Test]
@@ -134,22 +82,6 @@ public class Given_MssqlGeneratedDdlProvisioningGate
         _invalidSettingReads.Should().Be(1);
     }
 
-    [Test]
-    public void It_excludes_queued_entrants_and_admits_them_after_release()
-    {
-        _queuedCount.Should().Be(2);
-        _entrantWasQueued.Should().BeTrue();
-        _countAfterAdmission.Should().Be(2);
-        _entrantWasAdmitted.Should().BeTrue();
-    }
-
-    [Test]
-    public void It_counts_unlimited_operations_and_disposes_each_lease_once()
-    {
-        _unlimitedCounts.Should().Equal(4, 3, 3, 0);
-        _unlimitedWait.Should().Be(TimeSpan.Zero);
-    }
-
     private static Exception CaptureFailure(Action action)
     {
         try
@@ -161,5 +93,93 @@ public class Given_MssqlGeneratedDdlProvisioningGate
             return exception;
         }
         return new AssertionException("Expected the provisioning configuration to be rejected.");
+    }
+}
+
+[TestFixture]
+[Category(MssqlCiShards.Shard4)]
+public class Given_MssqlGeneratedDdlProvisioningGate_With_A_Queued_Entrant
+{
+    private int _queuedCount;
+    private bool _entrantWasQueued;
+    private int _countAfterAdmission;
+    private bool _entrantWasAdmitted;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        var gate = new MssqlGeneratedDdlProvisioningGate("2");
+        var first = await gate.AcquireAsync();
+        var second = await gate.AcquireAsync();
+        var waiting = gate.AcquireAsync().AsTask();
+        MssqlGeneratedDdlProvisioningLease third = null!;
+        var firstReleased = false;
+        try
+        {
+            _queuedCount = gate.AdmittedCount;
+            _entrantWasQueued = !waiting.IsCompleted;
+            await first.DisposeAsync();
+            firstReleased = true;
+            third = await waiting.WaitAsync(TimeSpan.FromSeconds(90));
+            _countAfterAdmission = gate.AdmittedCount;
+            _entrantWasAdmitted = third.CaptureSnapshot().IsAdmitted;
+        }
+        finally
+        {
+            if (!firstReleased)
+            {
+                await first.DisposeAsync();
+            }
+            await second.DisposeAsync();
+            if (third is null)
+            {
+                third = await waiting.WaitAsync(TimeSpan.FromSeconds(90));
+            }
+            await third.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_excludes_queued_entrants_and_admits_them_after_release()
+    {
+        _queuedCount.Should().Be(2);
+        _entrantWasQueued.Should().BeTrue();
+        _countAfterAdmission.Should().Be(2);
+        _entrantWasAdmitted.Should().BeTrue();
+    }
+}
+
+[TestFixture]
+[Category(MssqlCiShards.Shard4)]
+public class Given_MssqlGeneratedDdlProvisioningGate_With_Unlimited_Admission
+{
+    private int[] _unlimitedCounts = [];
+    private TimeSpan _unlimitedWait;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        var unlimitedGate = new MssqlGeneratedDdlProvisioningGate("");
+        var leases = await Task.WhenAll(
+            Enumerable.Range(0, 4).Select(_ => unlimitedGate.AcquireAsync().AsTask())
+        );
+        _unlimitedWait = leases[0].CaptureSnapshot().AdmissionWaitElapsed;
+        var initialCount = unlimitedGate.AdmittedCount;
+        await leases[0].DisposeAsync();
+        var afterFirstDispose = unlimitedGate.AdmittedCount;
+        await leases[0].DisposeAsync();
+        var afterDoubleDispose = unlimitedGate.AdmittedCount;
+        foreach (var lease in leases.Skip(1))
+        {
+            await lease.DisposeAsync();
+        }
+        _unlimitedCounts = [initialCount, afterFirstDispose, afterDoubleDispose, unlimitedGate.AdmittedCount];
+    }
+
+    [Test]
+    public void It_counts_unlimited_operations_and_disposes_each_lease_once()
+    {
+        _unlimitedCounts.Should().Equal(4, 3, 3, 0);
+        _unlimitedWait.Should().Be(TimeSpan.Zero);
     }
 }

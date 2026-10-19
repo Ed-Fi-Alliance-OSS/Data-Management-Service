@@ -64,6 +64,13 @@ public class Given_MssqlGeneratedDdlProvisioningPipeline(bool throwingWriter)
     }
 
     [Test]
+    public void It_attaches_the_same_diagnostic_to_the_original_provider_exception() =>
+        PrimaryException(_exception)
+            .Data["MssqlGeneratedDdlProvisioningDiagnostic"]
+            .Should()
+            .Be(_diagnostic.TrimEnd());
+
+    [Test]
     public void It_releases_production_admission_after_failure()
     {
         _admittedAfterFailure.Should().Be(0);
@@ -123,11 +130,18 @@ public class Given_MssqlGeneratedDdlProvisioningPipeline_With_Standalone_Ddl
         PrimaryException(_exception).Should().BeOfType<SqlException>().Which.Number.Should().Be(-2);
 
     [Test]
+    public void It_does_not_attach_a_provisioning_diagnostic_to_standalone_ddl() =>
+        PrimaryException(_exception)
+            .Data.Contains("MssqlGeneratedDdlProvisioningDiagnostic")
+            .Should()
+            .BeFalse();
+
+    [Test]
     public void It_rolls_back_all_standalone_batches() => _remainingSchemas.Should().Be(0);
 }
 
 [TestFixture]
-[Explicit("Runs a real SQL Server provisioning failure outside normal CI shards.")]
+[Category(MssqlCiShards.Shard4)]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
 public class Given_MssqlGeneratedDdlProvisioningPipeline_With_A_Non_Timeout_Failure
@@ -165,7 +179,14 @@ public class Given_MssqlGeneratedDdlProvisioningPipeline_With_A_Non_Timeout_Fail
         PrimaryException(_exception).Should().BeOfType<SqlException>().Which.Number.Should().Be(50000);
 
     [Test]
-    public void It_does_not_report_provisioning_contention() => _diagnostic.Should().BeEmpty();
+    public void It_does_not_report_provisioning_contention()
+    {
+        _diagnostic.Should().BeEmpty();
+        PrimaryException(_exception)
+            .Data.Contains("MssqlGeneratedDdlProvisioningDiagnostic")
+            .Should()
+            .BeFalse();
+    }
 
     [Test]
     public void It_releases_production_admission() => _admittedAfterFailure.Should().Be(0);
