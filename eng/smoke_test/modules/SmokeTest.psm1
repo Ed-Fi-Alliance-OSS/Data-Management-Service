@@ -144,7 +144,9 @@ function Get-SmokeTestCredential {
         Write-Host "Obtaining configuration service token..."
         $configToken = Get-CmsToken -CmsUrl $ConfigServiceUrl -ClientId $SysAdminId -ClientSecret $SysAdminSecret
 
-        # Step 3: Get available data stores
+        # Step 3: Get available data stores. When this helper selects the store, its school-year
+        # route contexts are returned too, since the caller does not know them.
+        $routeContexts = @()
         if ($DataStoreIds.Count -gt 0) {
             $dataStoreIds = [long[]]@($DataStoreIds)
             Write-Host "Using supplied data store IDs: $($dataStoreIds -join ', ')"
@@ -156,6 +158,11 @@ function Get-SmokeTestCredential {
             if ($dataStores -and $dataStores.Count -gt 0) {
                 $dataStoreIds = @($dataStores[0].id)
                 Write-Host "Found data store with ID: $($dataStoreIds[0])"
+                $routeContexts = @(
+                    $dataStores[0].dataStoreContexts |
+                        Where-Object { $null -ne $_ -and $_.contextKey -eq "schoolYear" } |
+                        ForEach-Object { [pscustomobject]@{ DataStoreId = [long]$dataStoreIds[0]; ContextValue = [string]$_.contextValue } }
+                )
             }
             else {
                 Write-Warning "No data stores found. Application will be created without data store association."
@@ -200,6 +207,7 @@ function Get-SmokeTestCredential {
             Secret = $secret
             VendorId = $vendorId
             ApplicationName = $ApplicationName
+            RouteContexts = $routeContexts
         }
     }
     catch {

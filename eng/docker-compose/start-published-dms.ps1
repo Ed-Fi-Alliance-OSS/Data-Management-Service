@@ -1047,6 +1047,11 @@ else {
             $smokeTestCredentialArgs.DataStoreIds = $smokeTestDataStoreIds
         }
         $smokeTestCredential = Get-SmokeTestCredential @smokeTestCredentialArgs
+        # With -NoDataStore the helper selected the data store, so its route contexts come back with
+        # the credential.
+        if ($smokeTestDataStoreIds.Count -eq 0) {
+            $smokeTestRouteContexts = @($smokeTestCredential.RouteContexts)
+        }
 
         # DMS prefixes its routes with the tenant only when its own multi-tenancy is enabled; the
         # Configuration Service tenant above still scopes the credential.

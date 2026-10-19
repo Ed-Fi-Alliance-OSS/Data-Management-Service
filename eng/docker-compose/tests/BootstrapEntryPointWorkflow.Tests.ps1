@@ -2107,7 +2107,18 @@ function Add-DmsSchoolYearInstances {
     Write-StubCall "Add-DmsSchoolYearInstances `$StartYear-`$EndYear tenant=`$Tenant"
     @([pscustomobject]@{ DataStoreId = [long]101; Year = 2024 }, [pscustomobject]@{ DataStoreId = [long]102; Year = 2025 })
 }
-function Get-DataStore { param(`$CmsUrl, `$AccessToken, `$Tenant) Write-StubCall "Get-DataStore tenant=`$Tenant"; @([pscustomobject]@{ id = [long]77 }) }
+function Get-DataStore {
+    param(`$CmsUrl, `$AccessToken, `$Tenant)
+    Write-StubCall "Get-DataStore tenant=`$Tenant"
+    # The schoolyear-datastore marker lists an existing year-qualified store first, as CMS returns it.
+    if (Test-Path -LiteralPath '$(Join-Path $script:repo.RepoRoot "schoolyear-datastore")') {
+        return @(
+            [pscustomobject]@{ id = [long]88; dataStoreContexts = @([pscustomobject]@{ id = 1; dataStoreId = 88; contextKey = 'schoolYear'; contextValue = '2024' }) },
+            [pscustomobject]@{ id = [long]89; dataStoreContexts = @([pscustomobject]@{ id = 2; dataStoreId = 89; contextKey = 'schoolYear'; contextValue = '2025' }) }
+        )
+    }
+    @([pscustomobject]@{ id = [long]77 })
+}
 function Find-CmsVendorByCompany { `$null }
 function Add-Vendor { [long]9 }
 function Add-Application {
@@ -2246,7 +2257,26 @@ Export-ModuleMember -Function *
             @($run.CmsCalls | Where-Object { $_ -like "Add-DataStore*" -or $_ -like "Add-DmsSchoolYearInstances*" }) | Should -BeNullOrEmpty
             $run.CmsCalls | Should -Contain "Get-DataStore tenant=tenant-a"
             $run.CmsCalls | Should -Contain "Add-Application ids=77 tenant=tenant-a"
-            (Get-StartPublishedSummary -Strings $run.Strings) | Should -Contain "Tenant:      tenant-a"
+            $summary = Get-StartPublishedSummary -Strings $run.Strings
+            $summary | Should -Contain "Tenant:      tenant-a"
+            @($summary | Where-Object { $_ -like "Data store *" }) | Should -BeNullOrEmpty
+        }
+
+        It "prints the selected existing school-year data store's qualified guidance with -NoDataStore" {
+            "" | Set-Content -LiteralPath (Join-Path $script:repo.RepoRoot "schoolyear-datastore")
+            $schoolYearEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.schoolyear"
+            Get-Content -LiteralPath $script:repo.EnvFile | Set-Content -LiteralPath $schoolYearEnvFile -Encoding utf8
+            Add-Content -LiteralPath $schoolYearEnvFile -Value "ROUTE_QUALIFIER_SEGMENTS=schoolYear"
+
+            $run = Invoke-StartPublishedCapture -Arguments @{ EnvironmentFile = $schoolYearEnvFile; NoDataStore = $true; AddSmokeTestCredentials = $true }
+
+            $run.Error | Should -BeNullOrEmpty
+            @($run.CmsCalls | Where-Object { $_ -like "Add-DataStore*" -or $_ -like "Add-DmsSchoolYearInstances*" }) | Should -BeNullOrEmpty
+            $run.CmsCalls | Should -Contain "Add-Application ids=88 tenant="
+            $summary = Get-StartPublishedSummary -Strings $run.Strings
+            $summary | Should -Contain "Data store 88 (school year 2024): DMS base http://localhost:18080/2024  token http://localhost:18080/2024/oauth/token"
+            $summary | Should -Contain "Tenant- or route-qualified smoke runs have not been validated with the smoke console; pass the matching DMS base as -BaseUrl and the token URL as -OAuthUrl."
+            @($summary | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" -or $_ -like "*school year 2025*" }) | Should -BeNullOrEmpty
         }
 
         It "creates no credential and prints no summary without the flag" {
