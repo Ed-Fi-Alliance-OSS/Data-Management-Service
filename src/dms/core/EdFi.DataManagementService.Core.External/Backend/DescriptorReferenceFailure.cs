@@ -10,7 +10,6 @@ namespace EdFi.DataManagementService.Core.External.Backend;
 public enum DescriptorReferenceFailureReason
 {
     Missing,
-    DescriptorTypeMismatch,
 }
 
 public sealed record DescriptorReferenceFailure(

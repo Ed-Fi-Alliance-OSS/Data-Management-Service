@@ -260,11 +260,8 @@ public partial class Given_RelationalQueryRequestPreprocessor
             .Equal("uri://ONE", "uri://two");
     }
 
-    [TestCase(DescriptorReferenceFailureReason.Missing)]
-    [TestCase(DescriptorReferenceFailureReason.DescriptorTypeMismatch)]
-    public async Task It_short_circuits_unresolved_descriptor_queries_to_an_empty_page(
-        DescriptorReferenceFailureReason failureReason
-    )
+    [Test]
+    public async Task It_short_circuits_unresolved_descriptor_queries_to_an_empty_page()
     {
         var referenceResolver = A.Fake<IReferenceResolver>();
         A.CallTo(() => referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
@@ -275,7 +272,10 @@ public partial class Given_RelationalQueryRequestPreprocessor
                             invalidDescriptorReferences:
                             [
                                 .. request.DescriptorReferences.Select(reference =>
-                                    DescriptorReferenceFailure.From(reference, failureReason)
+                                    DescriptorReferenceFailure.From(
+                                        reference,
+                                        DescriptorReferenceFailureReason.Missing
+                                    )
                                 ),
                             ]
                         )

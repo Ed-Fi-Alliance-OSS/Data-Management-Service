@@ -244,9 +244,6 @@ internal static class RelationalQueryRequestPreprocessor
             DescriptorReferenceFailureReason.Missing =>
                 $"Relational query preprocessing determined descriptor query field '{queryElement.QueryFieldName}' value "
                     + $"'{queryElement.Value}' does not resolve to descriptor resource '{targetResource}', so the query has no matches.",
-            DescriptorReferenceFailureReason.DescriptorTypeMismatch =>
-                $"Relational query preprocessing determined descriptor query field '{queryElement.QueryFieldName}' value "
-                    + $"'{queryElement.Value}' resolves to a different descriptor resource than '{targetResource}', so the query has no matches.",
             _ => throw new InvalidOperationException(
                 $"Relational query preprocessing does not recognize descriptor failure reason '{failure.Reason}'."
             ),

@@ -12274,7 +12274,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         );
         var invalidDescriptorReference = DescriptorReferenceFailure.From(
             descriptorReference,
-            DescriptorReferenceFailureReason.DescriptorTypeMismatch
+            DescriptorReferenceFailureReason.Missing
         );
 
         A.CallTo(() => _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorInput>._, A<CancellationToken>._))

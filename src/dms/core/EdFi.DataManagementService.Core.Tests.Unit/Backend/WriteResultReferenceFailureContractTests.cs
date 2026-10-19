@@ -137,56 +137,6 @@ public class WriteResultReferenceFailureContractTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_An_UpsertFailureReference_With_A_Descriptor_Type_Mismatch
-        : WriteResultReferenceFailureContractTests
-    {
-        private UpsertResult.UpsertFailureReference _result = null!;
-
-        [SetUp]
-        public void Setup()
-        {
-            var targetResource = new BaseResourceInfo(
-                ProjectName: new ProjectName("ed-fi"),
-                ResourceName: new ResourceName("SchoolTypeDescriptor"),
-                IsDescriptor: true
-            );
-
-            _result = new UpsertResult.UpsertFailureReference(
-                [],
-                [
-                    new(
-                        Path: new JsonPath("$.schoolTypeDescriptor"),
-                        TargetResource: targetResource,
-                        DocumentIdentity: new([
-                            new(
-                                DocumentIdentity.DescriptorIdentityJsonPath,
-                                "uri://ed-fi.org/gradeleveldescriptor#first-grade"
-                            ),
-                        ]),
-                        Reason: DescriptorReferenceFailureReason.DescriptorTypeMismatch
-                    ),
-                ]
-            );
-        }
-
-        [Test]
-        public void It_carries_the_reason_and_target_resource_for_the_failing_path()
-        {
-            _result.InvalidDescriptorReferences.Should().ContainSingle();
-            _result.InvalidDescriptorReferences[0].Path.Value.Should().Be("$.schoolTypeDescriptor");
-            _result
-                .InvalidDescriptorReferences[0]
-                .TargetResource.ResourceName.Value.Should()
-                .Be("SchoolTypeDescriptor");
-            _result
-                .InvalidDescriptorReferences[0]
-                .Reason.Should()
-                .Be(DescriptorReferenceFailureReason.DescriptorTypeMismatch);
-        }
-    }
-
-    [TestFixture]
-    [Parallelizable]
     public class Given_An_UpdateFailureReference_With_A_Missing_Descriptor
         : WriteResultReferenceFailureContractTests
     {

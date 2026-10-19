@@ -83,8 +83,8 @@ intermediate state. Do not "fix" it by re-adding lowercasing; DMS-1452 and DMS-1
 - Reference-array duplicate tests pass without referential IDs.
 - A production-source scan finds no `ToLowerInvariant()`/`ToLower()` applied to a descriptor
   namespace, code value, or URI in Core or backend code.
-- Command-stream pins classify the embedded natural-key lookup on both providers with unchanged
-  round-trip counts.
+- Command-stream pins classify the embedded natural-key lookup on both providers without adding
+  round trips (a large SQL Server reference batch drops from two commands to one).
 - Reference-resolution-dependent integration tests pass on PostgreSQL and SQL Server using the new
   resolver.
 - A full-pipeline E2E scenario POSTs a resource whose identity contains a descriptor URI (for

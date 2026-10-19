@@ -144,8 +144,6 @@ internal static class ValidationErrorFactory
         {
             DescriptorReferenceFailureReason.Missing =>
                 $"{failure.TargetResource.ResourceName.Value} value '{descriptorIdentity.IdentityValue}' does not exist.",
-            DescriptorReferenceFailureReason.DescriptorTypeMismatch =>
-                $"{failure.TargetResource.ResourceName.Value} value '{descriptorIdentity.IdentityValue}' is not a valid {failure.TargetResource.ResourceName.Value}.",
             _ => throw new InvalidOperationException(
                 $"Unsupported descriptor reference failure reason '{failure.Reason}'."
             ),
