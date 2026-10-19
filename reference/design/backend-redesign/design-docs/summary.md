@@ -36,8 +36,9 @@ Source documents:
 - Document relationships are stored as stable `bigint DocumentId` foreign keys; descriptor relationships use independent `int DescriptorId` foreign keys, with referenced identity natural-key fields available locally for query/reconstitution and kept consistent via dialect-specific propagation rules (no FK rewrites): PostgreSQL uses `ON UPDATE CASCADE` for abstract targets and transitively mutable concrete targets (`ON UPDATE NO ACTION` otherwise); SQL Server retains native cascades where legal and uses safe full-composite `NO ACTION` cuts selected by `sql-server-pruning.md`. That document supersedes the blanket SQL Server `ON UPDATE NO ACTION` plus `MssqlIdentityPropagationTrigger` design. Under key unification, equality-constrained per-site/per-path bindings may be generated/persisted, presence-gated aliases of canonical stored columns (see `key-unification.md`).
 - References and descriptor-valued filters resolve through generated natural-key/lowered-URI
   probes that carry the raw validated URI and fold case in SQL; a NUL in a descriptor reference or
-  filter is a 400. POST upserts and descriptor writes retain RI calculation, lookup and
-  maintenance; their natural-key cutovers and equality changes are later work in
+  filter is a 400. Resource POST upserts detect existing documents through the own-natural-key
+  capture. Descriptor writes retain RI calculation, lookup and maintenance; their natural-key
+  cutover and equality changes are later work in
   [natural-key-resolution.md](natural-key-resolution.md).
 - SQL Server identity string columns carry the explicit DMS collation
   `SQL_Latin1_General_CP1_CI_AS`, independent of the database default; PostgreSQL keeps its

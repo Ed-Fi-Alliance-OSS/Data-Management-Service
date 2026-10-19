@@ -261,8 +261,8 @@ initializer: at compatibility level 90 or above, `ANSI_WARNINGS ON` implies effe
 provisioning-only settings do not survive onto runtime connections.
 
 The current DDL retains `dms.ReferentialIdentity`, RI maintenance triggers/functions,
-PostgreSQL `dms.uuidv5()` and its `pgcrypto` dependency for POST upsert existence detection and
-descriptor writes. RI maintenance joins use `DescriptorId` and reconstruct the whole URI before
+PostgreSQL `dms.uuidv5()` and its `pgcrypto` dependency for descriptor writes; resource POST
+upsert existence detection uses the own-natural-key capture instead. RI maintenance joins use `DescriptorId` and reconstruct the whole URI before
 existing hashing transformations; document-level RI maintenance uses the owning `DocumentId`.
 Reference resolution and descriptor filters already use the lowered-URI probes; RI removal
 described in [natural-key-resolution.md](natural-key-resolution.md) belongs to later stories.

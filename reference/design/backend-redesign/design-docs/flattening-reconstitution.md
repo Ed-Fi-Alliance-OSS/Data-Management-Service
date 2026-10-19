@@ -20,8 +20,10 @@ This section describes how DMS flattens JSON documents into relational tables on
 It also defines the minimal `ApiSchema.json` metadata needed (beyond what already exists) and proposes concrete C# shapes for implementing a high-performance, schema-driven flattener/reconstituter with good batching characteristics (no N+1 insert/query patterns).
 
 References resolve through the natural-key resolver in
-[natural-key-resolution.md](natural-key-resolution.md). Its POST upsert detection, new equality rules,
-and stored-casing rebinding are later work.
+[natural-key-resolution.md](natural-key-resolution.md), and resource POST upsert detection uses the
+compiled own-natural-key capture. On SQL Server, identity values equal under the identity collation
+match and keep their stored casing. Descriptor writes still use RI and their current rules until
+DMS-1454.
 The illustrative C# shapes below describe plan roles rather than replacing the production contracts.
 
 ## Table of Contents
@@ -237,8 +239,8 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
    - derive a deterministic natural-key UNIQUE constraint on the root table:
      - scalar identity elements map to scalar columns
      - identity elements that come from document references map to the corresponding `..._DocumentId` FK columns
-   - current POST upsert detection uses RI to find the existing `DocumentId`; compiling an
-     own-natural-key probe through `UX_<R>_NK` belongs to the later natural-key workstream.
+   - POST upsert detection finds the existing `DocumentId` with an inline own-natural-key capture
+     predicate over the root natural-key columns (served by `UX_<R>_NK`), not through RI.
 
 5. Apply collection semantic-identity inputs:
    - resolve `arrayUniquenessConstraints` into scope-relative bindings for persisted multi-item collection scopes
@@ -638,10 +640,10 @@ Collection writes use merge semantics, not blanket delete-and-reinsert:
 
 - Every persisted multi-item collection scope MUST have a compiled semantic key; match by
   `(ParentScope, SemanticKey)`. Document-reference members use resolved `bigint DocumentId` and
-  descriptor members use resolved `int DescriptorId`. Later natural-key work proposes SQL Server
-  case-insensitive scalar identity matching and stored-casing rebinding before no-op/DML; see
+  descriptor members use resolved `int DescriptorId`. On SQL Server, local string semantic-key
+  members compare with the identity comparer (`OrdinalIgnoreCase`), and a matched row's CI-equal
+  members are rebound to the stored values before no-op/DML; PostgreSQL compares ordinally. See
   [natural-key-resolution.md](natural-key-resolution.md#how-the-write-path-will-preserve-stored-casing-sql-server).
-  Those equality changes are outside DMS-1404.
 - Submitted request siblings that collide on `(ParentScope, SemanticKey)` under Core's request-local comparison are invalid input and MUST fail request validation before merge/no-op/DML.
 - Backend also rejects siblings that collide only after storage resolution. `RelationalWriteFlattener` already dedupes each scope's siblings on their materialized semantic identity (resolved `DocumentId`/`DescriptorId` values plus local scalars) with a path-attributed 400; under `natural-key-resolution.md` its comparison of local string identity members uses the backend schema comparer (`OrdinalIgnoreCase` under the SQL Server identity collation, `Ordinal` on PostgreSQL) instead of ordinal equality, and its message follows Core's duplicate-item wording. Relational unique constraints on collection tables remain defense in depth for races/corruption, not the primary client-visible behavior for duplicate submitted items.
 - For profile-constrained writes, visible stored rows are the rows enumerated in `ProfileAppliedWriteContext.VisibleStoredCollectionRows` for that collection scope and parent scope instance, in caller-visible order.
@@ -2244,10 +2246,10 @@ Key points:
 
 ### 7.8 Example: POST/PUT execution (flatten + write)
 
-This is a **future natural-key execution sketch**: own-natural-key capture, the schema equality
-changes, and `_storedIdentityRebinder` are proposed in [natural-key-resolution.md](natural-key-resolution.md).
-Reference resolution already uses the natural-key resolver; POST upsert existence detection
-(DMS-1452) and descriptor writes (DMS-1454) still use RI and the descriptor CRUD rules in
+This sketch follows the natural-key write path in [natural-key-resolution.md](natural-key-resolution.md):
+reference resolution uses the natural-key resolver, POST upsert existence detection uses the
+own-natural-key capture, and the schema equality rules and stored-identity rebind apply on SQL Server.
+Descriptor writes (DMS-1454) still use RI and the descriptor CRUD rules in
 [transactions-and-concurrency.md](transactions-and-concurrency.md#descriptor-references-_descriptorid).
 Assume `EffectiveSchemaHash` comes from the selected database's `dms.EffectiveSchema` fingerprint.
 The main branch is for `StorageKind = RelationalTables`; descriptors leave through their separate
@@ -2304,16 +2306,15 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
     var writableBody = profileRequest?.WritableRequestBody ?? request.EdfiDoc;
 
     // 5) Extract logical candidates from the writable request body.
+    // 6) While extracting, the flattener rejects collection duplicates that only become visible
+    //    after storage resolution (no separate validator).
+    //    See natural-key-resolution.md#collection-duplicate-detection.
     var candidateSet = _flattener.ExtractCandidates(
         writePlan,
         documentId,
         writableBody,
         documentReferences,
         resolved);
-
-    // 6) Reject collection duplicates that only become visible after storage resolution.
-    //    See natural-key-resolution.md#collection-duplicate-detection.
-    _storageResolvedDuplicateValidator.Validate(writePlan, candidateSet, resolved);
 
     // 7) Bind candidates against current sibling sets, reserve any needed CollectionItemIds,
     //    and produce the post-merge write set.
@@ -2327,7 +2328,8 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
         tx,
         ct);
 
-    // 8) Future stored-casing proposal before proposed-value authorization/no-op detection.
+    // 8) Rebind identity values equal under the identity comparer to their stored values before
+    //    proposed-value authorization/no-op detection (SQL Server; a no-op on PostgreSQL).
     //    Future descriptor stored-wins behavior belongs to the separate descriptor handler.
     //    See natural-key-resolution.md#how-the-write-path-will-preserve-stored-casing-sql-server.
     var proposedWriteSet = _storedIdentityRebinder.Rebind(writePlan, writeSet, currentState);
@@ -2357,10 +2359,15 @@ Notes:
 - `_referenceResolver.ResolveAsync(...)` uses the generated natural-key probes from §5.2.
   Document results retain `bigint DocumentId`; descriptor results carry `int DescriptorId` plus
   owning `bigint DocumentId`.
-- `_storageResolvedDuplicateValidator.Validate(...)` is the backend-owned second duplicate boundary from `natural-key-resolution.md`: it uses resolved `DocumentId` / `DescriptorId` values where available and the schema-contract-derived comparer for local string identity members, before merge/no-op/DML can turn invalid input into an unmapped unique-constraint failure.
-- `_storedIdentityRebinder.Rebind(...)` is a future stored-casing proposal. Future descriptor
-  stored-wins semantics belong to its separate handler; current RI-matched POST applies incoming
-  components and stamps accepted changes, and current PUT uses an ordinal whole-URI guard.
+- The flattener's duplicate check in step 6 is the backend-owned second duplicate boundary from `natural-key-resolution.md`: inside candidate extraction, after reference/descriptor resolution and before merge/no-op/DML, it compares resolved `DocumentId` / `DescriptorId` values and uses the schema-contract-derived comparer for local string identity members, so invalid input is a path-attributed 400 in Core's duplicate-item shape instead of an unmapped unique-constraint failure.
+- `_storedIdentityRebinder.Rebind(...)` stands for the identity-stability rebind
+  (`RelationalWriteIdentityStability`) that runs on the merged root row before proposed
+  authorization, no-op detection and writer DML: root identity columns that differ only under the
+  identity comparer take the stored value, and any other difference is a genuine identity change.
+  The merge binder applies the same rebind to matched collection rows' semantic-key members.
+  Future descriptor stored-wins semantics belong to the separate descriptor handler; current
+  RI-matched descriptor POST applies incoming components and stamps accepted changes, and current
+  PUT uses an ordinal whole-URI guard.
 - `_writer.ExecuteAsync(...)` uses the compiled `CollectionMergePlan`s, table-local `CollectionKeyPreallocationPlan`s, batched reservations from `dms.CollectionItemIdSequence`, and `IBulkInserter` to avoid N+1 inserts while preserving stable `CollectionItemId`s for matched rows.
 - The sketch omits the explicit profile branches: profile-constrained creates consult `RootResourceCreatable`, non-collection scope behavior comes from `RequestScopeStates` / `StoredScopeStates` using `VisiblePresent`, `VisibleAbsent`, and `Hidden`, and collection merges consume `VisibleRequestCollectionItems` / `VisibleStoredCollectionRows` plus `HiddenMemberPaths`.
 - For separate-table 1:1 scopes (including document-scope `_ext` tables), execution uses `InsertSql` when the scoped row is newly `VisiblePresent`, `UpdateSql` when it already exists, and `DeleteByParentSql` only when the scope state is `VisibleAbsent`; `Hidden` scopes are preserved, and inlined `VisibleAbsent` scopes clear only their visible compiled bindings.
