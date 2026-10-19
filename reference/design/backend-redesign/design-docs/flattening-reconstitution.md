@@ -152,7 +152,7 @@ For a given `EffectiveSchemaHash` that DMS serves, DMS builds (or loads from an 
 - Column types/nullability/constraints
 - Document-reference binding plan: JSON reference paths → FK columns + reference-identity binding columns → referenced resource
 - Descriptor edge source plan: descriptor JSON paths → `int DescriptorId` FK columns,
-  resolved by the current RI lookup with the owning `bigint DocumentId`, and expected qualified descriptor type
+  resolved by the batched natural-key resolver with the owning `bigint DocumentId`, and expected qualified descriptor type
 - JSON reconstitution plan: table+column → JSON property path writer instructions
 - Reference reconstitution plan (local columns): reference-object writers populated from reference-identity binding columns (per `DocumentReferenceBinding`)
 - Abstract identity tables for polymorphic reference targets (from `abstractResources`)
@@ -2246,7 +2246,8 @@ Key points:
 
 This is a **future natural-key execution sketch**: own-natural-key capture, the schema equality
 changes, and `_storedIdentityRebinder` are proposed in [natural-key-resolution.md](natural-key-resolution.md).
-Current DMS-1404 execution uses RI and the descriptor CRUD rules in
+Reference resolution already uses the natural-key resolver; POST upsert existence detection
+(DMS-1452) and descriptor writes (DMS-1454) still use RI and the descriptor CRUD rules in
 [transactions-and-concurrency.md](transactions-and-concurrency.md#descriptor-references-_descriptorid).
 Assume `EffectiveSchemaHash` comes from the selected database's `dms.EffectiveSchema` fingerprint.
 The main branch is for `StorageKind = RelationalTables`; descriptors leave through their separate
@@ -2353,9 +2354,9 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
 ```
 
 Notes:
-- In this future sketch, `_referenceResolver.ResolveAsync(...)` uses generated natural-key probes.
+- `_referenceResolver.ResolveAsync(...)` uses the generated natural-key probes from §5.2.
   Document results retain `bigint DocumentId`; descriptor results carry `int DescriptorId` plus
-  owning `bigint DocumentId`. Current DMS-1404 obtains those roles from the RI lookup.
+  owning `bigint DocumentId`.
 - `_storageResolvedDuplicateValidator.Validate(...)` is the backend-owned second duplicate boundary from `natural-key-resolution.md`: it uses resolved `DocumentId` / `DescriptorId` values where available and the schema-contract-derived comparer for local string identity members, before merge/no-op/DML can turn invalid input into an unmapped unique-constraint failure.
 - `_storedIdentityRebinder.Rebind(...)` is a future stored-casing proposal. Future descriptor
   stored-wins semantics belong to its separate handler; current RI-matched POST applies incoming

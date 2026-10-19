@@ -457,14 +457,14 @@ Notes:
 
 The mapping set is what runtime code uses after selection. It is also the semantic target of mapping pack decode.
 
-The natural-key probe members in the following conceptual shape are future work. The current
-RI runtime does not use `DescriptorProbeTarget` or a lowered-URI index for descriptor POST or
-reference resolution. Its physical storage is the compact baseline above; the natural-key
-workstream owns the later lookup/equality/index transition.
+The batched natural-key reference resolver consumes the probe members in the following conceptual
+shape, including `DescriptorProbeTarget` and the lowered-URI index. POST upsert existence detection
+(DMS-1452) and descriptor writes (DMS-1454) still use RI; the natural-key workstream owns their
+later equality/index transition.
 
 > **Mapping-pack alignment pending.** The natural-key probe metadata (`NaturalKeyProbeTargets`,
-> `OwnNaturalKeyProbesByResource`, `DescriptorProbeTarget`, `NaturalKeyProbeKeyBinding`), proposed
-> for the later natural-key runtime, and `DbColumnModel.UsesSqlServerIdentityCollation` (derived
+> `OwnNaturalKeyProbesByResource`, `DescriptorProbeTarget`, `NaturalKeyProbeKeyBinding`), consumed
+> by the natural-key reference resolver, and `DbColumnModel.UsesSqlServerIdentityCollation` (derived
 > since DMS-1443) are not yet reflected in [`mpack-format-v1.md`](mpack-format-v1.md) or
 > [`aot-compilation.md`](aot-compilation.md). Mapping packs are out of scope for E21 (see
 > [natural-key-resolution.md § Out of scope](natural-key-resolution.md#out-of-scope)); E05 owns the
@@ -525,7 +525,7 @@ public sealed record OwnNaturalKeyProbe(
     DbColumnName DocumentIdColumn
 );
 
-// Future natural-key probe metadata; not the current RI lookup contract.
+// Natural-key probe metadata consumed by the batched reference resolver.
 // URI expressions reconstruct from components; the workstream owns lowered index metadata.
 public sealed record DescriptorProbeTarget(
     DbTableName DescriptorTable,
@@ -620,19 +620,22 @@ For a write request targeting resource `R`:
      URI text for the ordinal PUT identity guard.
 
 3. **Bulk reference + descriptor resolution**
-   - Preserve existing Core extraction, URI normalization, RI calculation and type/witness
-     verification. Incoming descriptor references are whole strings; this storage change adds
-     no component splitting/trimming, delimiter restrictions or Unicode normalization.
-   - The batched RI command joins `dms.ReferentialIdentity` to documents and descriptors.
-     Descriptor hits return `int DescriptorId` and `long DocumentId` from that join without
-     another round trip. Direct and copied descriptor identity witnesses reconstruct URI text
-     before existing transformations; document-reference results retain their document keys.
+   - Core extracts references and carries the raw validated descriptor URI; C# performs no case
+     folding. Incoming descriptor references are whole strings; there is no component
+     splitting/trimming, delimiter restriction or Unicode normalization. A NUL is a 400 before any
+     lookup.
+   - The batched natural-key resolver probes each target's compiled natural-key index in one
+     command, without reading `dms.ReferentialIdentity`. Descriptor hits probe
+     `UX_Descriptor_UriLowered_ResourceKeyId`, folding the raw URI in SQL, and return
+     `int DescriptorId` and `long DocumentId` without another round trip; document-reference
+     results retain their document keys.
    - Materialize the current `ResolvedReferenceSet` and flattener lookup maps. Direct,
      reference-derived and key-unified descriptor values supply compact `Int32` storage and
      parameters; ancestor/profile merge paths use that same key. Document references, metadata,
      locks, cache/projection work and restamps retain owning `DocumentId`.
-   - Generated natural-key probes and their input-validation, equality and memo contracts
-     remain future work in [natural-key-resolution.md](natural-key-resolution.md).
+   - The probes, memoization and validation contracts are specified in
+     [natural-key-resolution.md](natural-key-resolution.md); POST capture (DMS-1452) and
+     descriptor-write equality (DMS-1454) are later work.
 
 4. **Build the per-request reference index**
    - Build an `IDocumentReferenceInstanceIndex` for this request using:

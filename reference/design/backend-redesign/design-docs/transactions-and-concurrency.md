@@ -551,10 +551,12 @@ Ordering/paging contract:
 
 Query compilation patterns:
 - **Scalar query fields**: `queryFieldMapping` JSON path → derived root-table column → `r.Column = @value`
-- **Descriptor query fields**: preserve existing validation/whole-string normalization, resolve
-  through RI, then bind `int DescriptorId` to `r.DescriptorIdColumn = @descriptorId`. This includes
-  descriptor-valued document-reference identity fields. An unresolved URI keeps empty-match behavior;
-  original-case output and spaces inside the whole URI retain their existing semantics.
+- **Descriptor query fields**: apply the NUL check from the
+  [descriptor URI validation boundary](#descriptor-uri-validation-boundary) (400), resolve the raw
+  URI through the natural-key resolver, then bind `int DescriptorId` to
+  `r.DescriptorIdColumn = @descriptorId`. This includes descriptor-valued document-reference
+  identity fields. An unresolved URI keeps empty-match behavior; original-case output and spaces
+  inside the whole URI retain their existing semantics.
 - **Document reference identity query fields**: compile to predicates on local per-site identity binding columns (stored
   or alias), e.g.:
   - `r.Student_StudentUniqueId = @StudentUniqueId`
