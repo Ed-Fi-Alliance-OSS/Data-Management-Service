@@ -31,16 +31,27 @@ Describe 'Bounded worker diagnostic command' {
         $result.StandardOutput | Should -BeExactly ''
     }
 
-    It 'terminates a running command when the shared deadline expires without a timing race' {
+    It 'retains exactly the newest 16 KiB from <Pipe> after oversized earlier output' -ForEach @(@{ Pipe = 'Out' }, @{ Pipe = 'Error' }) {
+        $result = Invoke-CdcWorkerDiagnosticCommand -Clock ([Diagnostics.Stopwatch]::StartNew()) -FilePath pwsh -KeepTail -Arguments @(
+            '-NoProfile', '-Command', "[Console]::$Pipe.Write(('x' * 65536) + 'java.lang.OutOfMemoryError')"
+        )
+        $expected = ('x' * (16384 - 'java.lang.OutOfMemoryError'.Length)) + 'java.lang.OutOfMemoryError'
+        $result.Status | Should -Be 'OutputLimit'
+        $result.CommandExitCode | Should -Be 0
+        ($result.StandardOutput + $result.StandardError) | Should -BeExactly $expected
+    }
+
+    It 'terminates a running command when the shared deadline expires with KeepTail=<Tail> without a timing race' -ForEach @(@{ Tail = $false }, @{ Tail = $true }) {
         # The first read permits launch; the next read deterministically expires the budget.
         $clock = [pscustomobject]@{ Reads = 0 }
         $clock | Add-Member ScriptProperty ElapsedMilliseconds { $this.Reads++; if ($this.Reads -eq 1) { 0 } else { 10000 } }
-        $result = Invoke-CdcWorkerDiagnosticCommand -Clock $clock -FilePath pwsh -Arguments @('-NoProfile', '-Command', '[Console]::ReadLine(); while ($true) { Start-Sleep 1 }')
+        $result = Invoke-CdcWorkerDiagnosticCommand -Clock $clock -FilePath pwsh -KeepTail:$Tail -Arguments @('-NoProfile', '-Command', '[Console]::ReadLine(); while ($true) { Start-Sleep 1 }')
         $result.Status | Should -Be 'TimedOut'
     }
 }
 
 Describe 'Worker failure snapshot' {
+    BeforeAll { $script:realDiagnosticCommand = (Get-Command Invoke-CdcWorkerDiagnosticCommand).ScriptBlock }
     BeforeEach {
         $script:clockInstances = [Collections.Generic.List[object]]::new()
         Mock Invoke-CdcWorkerDiagnosticCommand {
@@ -71,8 +82,22 @@ Describe 'Worker failure snapshot' {
             $Arguments -contains 'label=com.docker.compose.service=kafka-cdc-worker'
         }
         Should -Invoke Invoke-CdcWorkerDiagnosticCommand -Times 1 -Exactly -ParameterFilter {
-            ($Arguments -join ' ') -ceq ('logs --tail 100 ' + ('a' * 64))
+            $KeepTail -and ($Arguments -join ' ') -ceq ('logs --tail 100 ' + ('a' * 64))
         }
+    }
+
+    It 'classifies the fatal signature at the end of oversized <Pipe> logs' -ForEach @(@{ Pipe = 'Out' }, @{ Pipe = 'Error' }) {
+        $script:logPipe = $Pipe
+        Mock Invoke-CdcWorkerDiagnosticCommand -ParameterFilter { $Arguments[0] -eq 'logs' } {
+            & $script:realDiagnosticCommand -Clock $Clock -KeepTail:$KeepTail -FilePath pwsh -Arguments @(
+                '-NoProfile', '-Command', "[Console]::$script:logPipe.Write(('earlier private-password line' * 2000) + 'java.lang.OutOfMemoryError')"
+            )
+        }
+        $record = Get-CdcRunbookWorkerDiagnostic -Project dms-local
+        $record.Status | Should -Be 'OutputLimit'
+        $record.JavaOutOfMemory | Should -BeTrue
+        $record.UnknownLogSignature | Should -BeFalse
+        ($record | ConvertTo-Json) | Should -Not -Match 'private|password|OutOfMemoryError'
     }
 
     It 'records a missing worker without inspecting any other container' {

@@ -145,8 +145,12 @@ its `cdc-runbook-e2e-setup-*.json` record includes a `worker` snapshot captured 
 governed cleanup. Discovery is restricted to the selected Compose project's
 `kafka-cdc-worker` service; zero or multiple matches are reported without inspecting
 another container. Collection shares a ten-second deadline across discovery, inspection,
-and logs, with a 16 KiB limit on each output pipe (32 KiB total per command) and at most
-100 recent log lines requested. The snapshot contains only state flags, exit/restart
+and logs, with at most 16 KiB retained from each output pipe (32 KiB total per command) and
+100 recent log lines requested. Log collection drains through EOF or the shared deadline,
+keeping the newest bytes in fixed buffers so earlier verbose lines cannot displace a late
+failure signature. Discovery and inspection stop when either pipe reaches its limit.
+Truncated logs report `OutputLimit`; deadline exhaustion reports `TimedOut`.
+The snapshot contains only state flags, exit/restart
 counts, health status, collection stage/status, and fixed Java out-of-memory and broker
 connection failure signatures. Unknown signatures and incomplete collection are explicit;
 signatures are hints, not confirmed causes. Raw log text, health-check output, configuration,

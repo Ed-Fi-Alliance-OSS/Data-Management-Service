@@ -8,10 +8,11 @@
 function Invoke-CdcWorkerDiagnosticCommand {
     <# .SYNOPSIS
     Reads private command output under the capture's shared ten-second deadline.
-    Each pipe has a fixed 16 KiB buffer; reaching either limit terminates collection.
+    Each pipe retains at most 16 KiB. Discovery and inspection stop at that limit;
+    logs use KeepTail to drain through EOF or the deadline and retain the newest bytes.
     No raw output or exception is written to any PowerShell stream or file.
     #>
-    param([string[]] $Arguments, $Clock, [string] $FilePath = 'docker')
+    param([string[]] $Arguments, $Clock, [string] $FilePath = 'docker', [switch] $KeepTail)
     $result = @{ Status = 'CollectionFailed'; StandardOutput = ''; StandardError = '' }
     if ($Clock.ElapsedMilliseconds -ge 10000) { $result.Status = 'TimedOut'; return $result }
     $process = [Diagnostics.Process]::new()
@@ -25,7 +26,10 @@ function Invoke-CdcWorkerDiagnosticCommand {
         if (-not $process.Start()) { return $result }
         $pipes = @($process.StandardOutput.BaseStream, $process.StandardError.BaseStream) | ForEach-Object {
             $buffer = [byte[]]::new(16384)
-            @{ Stream = $_; Buffer = $buffer; Count = 0; Done = $false; Read = $_.ReadAsync($buffer, 0, $buffer.Length) }
+            $readBuffer = $buffer
+            if ($KeepTail) { $readBuffer = [byte[]]::new(4096) }
+            @{ Stream = $_; Buffer = $buffer; ReadBuffer = $readBuffer; Count = 0; Done = $false; Truncated = $false;
+                Read = $_.ReadAsync($readBuffer, 0, $readBuffer.Length) }
         }
         while ($true) {
             if ($Clock.ElapsedMilliseconds -ge 10000) { $result.Status = 'TimedOut'; break }
@@ -33,13 +37,29 @@ function Invoke-CdcWorkerDiagnosticCommand {
                 if ($pipe.Done -or -not $pipe.Read.IsCompleted) { continue }
                 $count = $pipe.Read.GetAwaiter().GetResult()
                 if ($count -eq 0) { $pipe.Done = $true; continue }
+                if ($KeepTail) {
+                    # Docker emits the requested tail oldest first. Drop only old bytes,
+                    # so a late fatal error survives earlier verbose log lines/stack traces.
+                    $drop = [Math]::Max(0, $pipe.Count + $count - $pipe.Buffer.Length)
+                    if ($drop -gt 0) {
+                        [Buffer]::BlockCopy($pipe.Buffer, $drop, $pipe.Buffer, 0, $pipe.Count - $drop)
+                        $pipe.Count -= $drop
+                        $pipe.Truncated = $true
+                    }
+                    [Buffer]::BlockCopy($pipe.ReadBuffer, 0, $pipe.Buffer, $pipe.Count, $count)
+                    $pipe.Count += $count
+                    $pipe.Read = $pipe.Stream.ReadAsync($pipe.ReadBuffer, 0, $pipe.ReadBuffer.Length)
+                    continue
+                }
                 $pipe.Count += $count
                 if ($pipe.Count -eq $pipe.Buffer.Length) { $result.Status = 'OutputLimit'; break }
                 $pipe.Read = $pipe.Stream.ReadAsync($pipe.Buffer, $pipe.Count, $pipe.Buffer.Length - $pipe.Count)
             }
             if ($result.Status -eq 'OutputLimit') { break }
             if ($process.HasExited -and @($pipes | Where-Object { -not $_.Done }).Count -eq 0) {
-                $result.Status = if ($process.ExitCode -eq 0) { 'Completed' } else { 'CommandFailed' }
+                $result.Status = if ($process.ExitCode -ne 0) { 'CommandFailed' }
+                    elseif (@($pipes | Where-Object Truncated).Count) { 'OutputLimit' }
+                    else { 'Completed' }
                 $result.CommandExitCode = $process.ExitCode
                 break
             }
@@ -104,7 +124,7 @@ function Get-CdcRunbookWorkerDiagnostic {
         }
         $record.Stage = 'Logs'
         $record.Remove('CommandExitCode')
-        $result = Invoke-CdcWorkerDiagnosticCommand -Clock $clock -Arguments @('logs', '--tail', '100', $ids[0])
+        $result = Invoke-CdcWorkerDiagnosticCommand -Clock $clock -KeepTail -Arguments @('logs', '--tail', '100', $ids[0])
         $record.Status = $result.Status
         if ($result.ContainsKey('CommandExitCode')) { $record.CommandExitCode = $result.CommandExitCode }
         if ($result.Status -in @('Completed', 'OutputLimit')) {
