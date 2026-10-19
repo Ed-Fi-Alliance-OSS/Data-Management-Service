@@ -471,7 +471,12 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
             VALUES (@referentialId, @documentId, @resourceKeyId)
             ON CONFLICT ("ReferentialId") DO NOTHING;
             """,
-            new NpgsqlParameter("referentialId", descriptorReference.ReferentialId.Value),
+            new NpgsqlParameter(
+                "referentialId",
+                ReferentialIdCalculator
+                    .ReferentialIdFrom(descriptorReference.ResourceInfo, descriptorReference.DocumentIdentity)
+                    .Value
+            ),
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("resourceKeyId", resourceKeyId)
         );
@@ -524,16 +529,12 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
             true
         );
         var descriptorIdentity = new DocumentIdentity([
-            new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri.ToLowerInvariant()),
+            new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri),
         ]);
 
         return new DescriptorReference(
             ResourceInfo: descriptorResourceInfo,
             DocumentIdentity: descriptorIdentity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(
-                descriptorResourceInfo,
-                descriptorIdentity
-            ),
             Path: new JsonPath(referenceJsonPath)
         );
     }

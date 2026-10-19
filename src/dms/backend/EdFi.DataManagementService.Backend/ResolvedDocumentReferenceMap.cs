@@ -22,8 +22,8 @@ internal readonly record struct ReferenceLookupKey(
 );
 
 /// <summary>
-/// Compares <see cref="ReferenceLookupKey"/> values structurally: the target, then every identity element's path
-/// and value, ordinally and in order.
+/// Compares <see cref="ReferenceLookupKey"/> values structurally: the target, then the identity through
+/// <see cref="DocumentIdentityComparer"/>.
 /// </summary>
 internal sealed class ReferenceLookupKeyComparer : IEqualityComparer<ReferenceLookupKey>
 {
@@ -31,63 +31,23 @@ internal sealed class ReferenceLookupKeyComparer : IEqualityComparer<ReferenceLo
 
     private ReferenceLookupKeyComparer() { }
 
-    public bool Equals(ReferenceLookupKey x, ReferenceLookupKey y)
-    {
-        if (x.TargetResource != y.TargetResource)
-        {
-            return false;
-        }
+    public bool Equals(ReferenceLookupKey x, ReferenceLookupKey y) =>
+        x.TargetResource == y.TargetResource
+        && DocumentIdentityComparer.Instance.Equals(x.DocumentIdentity, y.DocumentIdentity);
 
-        var left = x.DocumentIdentity.DocumentIdentityElements;
-        var right = y.DocumentIdentity.DocumentIdentityElements;
-
-        if (left.Length != right.Length)
-        {
-            return false;
-        }
-
-        for (var index = 0; index < left.Length; index++)
-        {
-            if (
-                !string.Equals(
-                    left[index].IdentityJsonPath.Value,
-                    right[index].IdentityJsonPath.Value,
-                    StringComparison.Ordinal
-                )
-                || !string.Equals(
-                    left[index].IdentityValue,
-                    right[index].IdentityValue,
-                    StringComparison.Ordinal
-                )
-            )
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    public int GetHashCode(ReferenceLookupKey key)
-    {
-        HashCode hash = new();
-        hash.Add(key.TargetResource);
-
-        foreach (var element in key.DocumentIdentity.DocumentIdentityElements)
-        {
-            hash.Add(element.IdentityJsonPath.Value, StringComparer.Ordinal);
-            hash.Add(element.IdentityValue, StringComparer.Ordinal);
-        }
-
-        return hash.ToHashCode();
-    }
+    public int GetHashCode(ReferenceLookupKey key) =>
+        HashCode.Combine(
+            key.TargetResource,
+            DocumentIdentityComparer.Instance.GetHashCode(key.DocumentIdentity)
+        );
 }
 
 /// <summary>
 /// Resolved document references looked up by their natural key, independent of which identity array instance
-/// the caller holds.
+/// the caller holds. Public only because <see cref="ResolvedReferenceSet"/> exposes it; its only construction
+/// path, <see cref="IResolvedDocumentReferenceMapFactory"/>, stays internal.
 /// </summary>
-internal interface IResolvedDocumentReferenceMap
+public interface IResolvedDocumentReferenceMap
 {
     bool TryGetDocumentId(
         QualifiedResourceName targetResource,

@@ -123,6 +123,29 @@ internal static class CompactDescriptorHistoryScenario
         }
     }
 
+    public static async Task It_matches_a_case_variant_descriptor_repost_without_resource_history(
+        ApiIntegrationHarness harness
+    )
+    {
+        Descriptor descriptor = await CreateDescriptorAsync(
+            harness,
+            Descriptors,
+            CreateNamespace() + " ",
+            "New#MiXeD"
+        );
+        string item = await PostAsync(harness, Items, Item("item", descriptor.Uri));
+        long newest = await NewestVersionAsync(harness);
+
+        (await PostAsync(harness, Items, Item("item", descriptor.Uri.ToUpperInvariant()), HttpStatusCode.OK))
+            .Should()
+            .Be(item);
+        (await NewestVersionAsync(harness)).Should().Be(newest);
+        (await HistoryAsync(harness, Items, "keyChanges", minimum: newest + 1)).Should().BeEmpty();
+
+        await DeleteAsync(harness, item);
+        await DeleteAsync(harness, descriptor.Path);
+    }
+
     public static async Task It_snapshots_direct_and_copied_descriptor_identities_for_resource_histories(
         ApiIntegrationHarness harness
     )
@@ -165,9 +188,6 @@ internal static class CompactDescriptorHistoryScenario
             );
         }
         long newest = await NewestVersionAsync(harness);
-        (await PostAsync(harness, Items, Item("item", after.Uri.ToUpperInvariant()), HttpStatusCode.OK))
-            .Should()
-            .Be(item);
         await PutAsync(harness, item, Item("item", after.Uri));
         (await NewestVersionAsync(harness)).Should().Be(newest);
         (await HistoryAsync(harness, Items, "keyChanges", minimum: newest + 1)).Should().BeEmpty();

@@ -11,7 +11,6 @@ using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
-using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
 
 namespace EdFi.DataManagementService.Core.Extraction;
 
@@ -186,23 +185,15 @@ internal static class DescriptorExtractor
     {
         var (resourceInfo, descriptorUri, concretePath) = rawValue;
 
-        // Normalize the entire URI to lowercase for case-insensitive matching.
-        var normalizedDescriptorUriValue = descriptorUri is null
+        // The URI is carried as the client sent it; the database resolves it case-insensitively.
+        var descriptorUriValue = descriptorUri is null
             ? string.Empty
-            : DescriptorText.AssertWellFormedWithoutNul(descriptorUri).ToLowerInvariant();
+            : DescriptorText.AssertWellFormedWithoutNul(descriptorUri);
         DocumentIdentity documentIdentity = new([
-            new DocumentIdentityElement(
-                DocumentIdentity.DescriptorIdentityJsonPath,
-                normalizedDescriptorUriValue
-            ),
+            new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, descriptorUriValue),
         ]);
 
-        return new DescriptorReference(
-            resourceInfo,
-            documentIdentity,
-            ReferentialIdFrom(resourceInfo, documentIdentity),
-            new JsonPath(concretePath)
-        );
+        return new DescriptorReference(resourceInfo, documentIdentity, new JsonPath(concretePath));
     }
 
     private static BaseResourceInfo CreateDescriptorResourceInfo(QualifiedResourceName descriptorResource) =>
@@ -228,7 +219,10 @@ internal static class DescriptorExtractor
             {
                 if (
                     existingReference.ResourceInfo != descriptorReference.ResourceInfo
-                    || existingReference.ReferentialId != descriptorReference.ReferentialId
+                    || !DocumentIdentityComparer.Instance.Equals(
+                        existingReference.DocumentIdentity,
+                        descriptorReference.DocumentIdentity
+                    )
                 )
                 {
                     throw new InvalidOperationException(

@@ -56,6 +56,15 @@ public sealed class Given_Mssql_DerivativeTrackedChanges_CompactDescriptors : Ms
         );
 
     [Test]
+    [Ignore(
+        "DMS-1452: Quarantined until POST upsert detection uses natural keys; until then the referential-identity capture misses a re-POSTed identity whose descriptor spelling differs from the stored hash input and returns 409."
+    )]
+    public Task It_matches_a_case_variant_descriptor_repost_without_resource_history() =>
+        CompactDescriptorHistoryScenario.It_matches_a_case_variant_descriptor_repost_without_resource_history(
+            Harness
+        );
+
+    [Test]
     public Task It_snapshots_direct_and_copied_descriptor_identities_for_resource_histories() =>
         CompactDescriptorHistoryScenario.It_snapshots_direct_and_copied_descriptor_identities_for_resource_histories(
             Harness

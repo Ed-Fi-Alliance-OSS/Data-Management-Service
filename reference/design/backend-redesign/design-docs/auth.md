@@ -478,7 +478,7 @@ ODS executes an additional DB roundtrip for single-record authorizations, presum
 - Roundtrip #2
   - Run authorization check using the already-stored values (throw if unauthorized)
   - Run authorization check using the values from the request body (throw if unauthorized) (only if identifying values changed)
-  - Retrieve the referenced resources' DocumentIds (using the current RI resolver (descriptor results carry both IDs))
+  - Retrieve the referenced resources' DocumentIds (using the natural-key resolver (descriptor results carry both IDs))
   - Reconstitute the record and/or materialize comparable current rowsets for no-op detection
 - Roundtrip #3
   - Execute guarded no-op or update (only if it actually changed)
@@ -488,7 +488,7 @@ ODS requires at least 4 roundtrips for the same operation, and more if the resou
 #### POST
 
 - Roundtrip #1
-  - Retrieve the referenced resources' DocumentIds (using the current RI resolver (descriptor results carry both IDs)).
+  - Retrieve the referenced resources' DocumentIds (using the natural-key resolver (descriptor results carry both IDs)).
 - Roundtrip #2
   - Retrieve the DocumentId and etag by its identifying values (to check if already exists, and for reconstitution) (etag to enforce `If-Match`, if applicable)
 - Roundtrip #3
@@ -536,8 +536,9 @@ been served.
 #### GET-many
 
 - Roundtrip #1
-  - If filtering by Descriptor(s), resolve whole DescriptorUris through RI to `int DescriptorId`
-    for the resource predicate. The resolver also returns owning `bigint DocumentId`.
+  - If filtering by Descriptor(s), reject a NUL-bearing URI with 400, then resolve the raw whole
+    DescriptorUris through the natural-key resolver to `int DescriptorId` for the resource
+    predicate. The resolver also returns owning `bigint DocumentId`.
 - Roundtrip #2
   - Get the page's DocumentIds (apply authorization, filters, and offset/limit)
   - Get the TotalCount (if applicable)
@@ -593,8 +594,8 @@ async Task GetManyCourses()
     // - RelationshipsWithEdOrgsAndPeople
     // - RelationshipsWithEdOrgsAndPeopleInverted
 
-    // Omitted roundtrip #1: Resolve whole descriptor URIs through RI to int DescriptorId.
-    // Preserve current normalization; the same result also carries owning bigint DocumentId.
+    // Omitted roundtrip #1: Resolve raw whole descriptor URIs through the natural-key resolver to
+    // int DescriptorId; the probe folds case in SQL and also carries owning bigint DocumentId.
 
     var filterSql = @"
         SELECT edfi.Course.DocumentId
@@ -667,7 +668,7 @@ async Task PostCourseTranscript()
         }
     };
 
-    // Omitted roundtrip #1: Current RI lookup; the next values are illustrative.
+    // Omitted roundtrip #1: Natural-key reference resolution; the next values are illustrative.
     int resolvedCourseAttemptResultDescriptorId = 12;
     long resolvedCourseAttemptResultDocumentId = 5000000012; // for descriptor document membership
     long resolvedCourseDocumentId = 34;
@@ -840,7 +841,7 @@ async Task PostCourseTranscript()
         roundtrip3.Parameters.AddWithValue("NewStudentAcademicRecord_DocumentId", resolvedStudentAcademicRecordDocumentId);
         roundtrip3.Parameters.AddWithValue("NewEducationOrganizationId", requestBody.studentAcademicRecordReference.educationOrganizationId);
 
-        // Omitted command: Retrieve referenced resources using the current RI resolver (descriptor results carry both IDs)
+        // Omitted command: Retrieve referenced resources using the natural-key resolver (descriptor results carry both IDs)
         // Omitted command: Reconstitution queries
 
         try

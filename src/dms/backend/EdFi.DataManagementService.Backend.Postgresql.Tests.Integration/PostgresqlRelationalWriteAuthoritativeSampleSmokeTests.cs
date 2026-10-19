@@ -225,10 +225,6 @@ file static class AuthoritativeSampleWriteIntegrationTestSupport
             new DocumentReference(
                 ResourceInfo: programResourceInfo,
                 DocumentIdentity: programIdentity,
-                ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(
-                    programResourceInfo,
-                    programIdentity
-                ),
                 Path: new JsonPath("$._ext.sample.favoriteProgramReference")
             ),
         ];
@@ -255,7 +251,7 @@ file static class AuthoritativeSampleWriteIntegrationTestSupport
         var descriptorIdentity = new DocumentIdentity([
             new DocumentIdentityElement(
                 DocumentIdentity.DescriptorIdentityJsonPath,
-                favoriteProgramTypeDescriptor.ToLowerInvariant()
+                favoriteProgramTypeDescriptor
             ),
         ]);
 
@@ -264,10 +260,6 @@ file static class AuthoritativeSampleWriteIntegrationTestSupport
             new DescriptorReference(
                 ResourceInfo: descriptorResourceInfo,
                 DocumentIdentity: descriptorIdentity,
-                ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(
-                    descriptorResourceInfo,
-                    descriptorIdentity
-                ),
                 Path: new JsonPath("$._ext.sample.favoriteProgramReference.programTypeDescriptor")
             ),
         ];

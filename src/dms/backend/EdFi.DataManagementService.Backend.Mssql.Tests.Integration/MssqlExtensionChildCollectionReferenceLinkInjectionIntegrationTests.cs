@@ -413,7 +413,6 @@ public class Given_A_Mssql_School_With_Extension_Child_Collection_Bus_Reference
                 new DocumentReference(
                     ResourceInfo: busResourceInfo,
                     DocumentIdentity: busIdentity,
-                    ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(busResourceInfo, busIdentity),
                     Path: new JsonPath(
                         $"$._ext.sample.directlyOwnedBuses[{index.ToString(CultureInfo.InvariantCulture)}].directlyOwnedBusReference"
                     )

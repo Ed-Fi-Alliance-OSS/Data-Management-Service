@@ -55,7 +55,7 @@ public static class PgsqlPerfFixtureLoaderSql
 
     /// <summary>
     /// The production descriptor write inserts one referential-identity row per descriptor;
-    /// reference validation resolves descriptor URIs against it.
+    /// natural-key resolution does not read it, and it goes with DMS-1456.
     /// </summary>
     public const string DescriptorReferentialIdentityInsertSql = $"""
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")

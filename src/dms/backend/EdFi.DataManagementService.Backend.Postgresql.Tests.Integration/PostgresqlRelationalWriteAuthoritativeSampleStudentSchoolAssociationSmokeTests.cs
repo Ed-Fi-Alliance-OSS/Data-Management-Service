@@ -290,10 +290,6 @@ file static class AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupp
                 new DocumentReference(
                     ResourceInfo: targetResourceInfo,
                     DocumentIdentity: documentIdentity,
-                    ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(
-                        targetResourceInfo,
-                        documentIdentity
-                    ),
                     Path: new JsonPath(
                         $"$.alternativeGraduationPlans[{index}].alternativeGraduationPlanReference"
                     )
@@ -721,14 +717,14 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 (
                     "$.alternativeGraduationPlans[0].alternativeGraduationPlanReference.graduationPlanTypeDescriptor",
                     "GraduationPlanTypeDescriptor",
-                    GraduationPlanTypeDescriptorUri.ToLowerInvariant()
+                    GraduationPlanTypeDescriptorUri
                 )
             )
             .And.Contain(
                 (
                     "$.alternativeGraduationPlans[1].alternativeGraduationPlanReference.graduationPlanTypeDescriptor",
                     "GraduationPlanTypeDescriptor",
-                    GraduationPlanTypeDescriptorUri.ToLowerInvariant()
+                    GraduationPlanTypeDescriptorUri
                 )
             );
     }

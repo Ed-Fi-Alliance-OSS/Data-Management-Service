@@ -506,8 +506,6 @@ public class UpdateByIdHandlerTests
 
             public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
             {
-                var sharedReferentialId = new ReferentialId(Guid.NewGuid());
-
                 return Task.FromResult<UpdateResult>(
                     new UpdateFailureReference(
                         [
@@ -515,14 +513,12 @@ public class UpdateByIdHandlerTests
                                 Path: new JsonPath("$.schoolReference"),
                                 TargetResource: _targetResource,
                                 DocumentIdentity: new([]),
-                                ReferentialId: sharedReferentialId,
                                 Reason: DocumentReferenceFailureReason.Missing
                             ),
                             new(
                                 Path: new JsonPath("$.sessionReference.schoolReference"),
                                 TargetResource: _targetResource,
                                 DocumentIdentity: new([]),
-                                ReferentialId: sharedReferentialId,
                                 Reason: DocumentReferenceFailureReason.Missing
                             ),
                         ],
@@ -594,7 +590,6 @@ public class UpdateByIdHandlerTests
                                         "uri://ed-fi.org/calendartypedescriptor#spring"
                                     ),
                                 ]),
-                                ReferentialId: new ReferentialId(Guid.NewGuid()),
                                 Reason: DescriptorReferenceFailureReason.Missing
                             ),
                         ]
@@ -638,73 +633,6 @@ public class UpdateByIdHandlerTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_A_Repository_That_Returns_A_Descriptor_Type_Mismatch_Failure : UpdateByIdHandlerTests
-    {
-        internal class Repository : NotImplementedDocumentStoreRepository
-        {
-            public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
-            {
-                return Task.FromResult<UpdateResult>(
-                    new UpdateFailureReference(
-                        [],
-                        [
-                            new(
-                                Path: new JsonPath("$.calendarReference.calendarTypeDescriptor"),
-                                TargetResource: new BaseResourceInfo(
-                                    new ProjectName("ed-fi"),
-                                    new ResourceName("CalendarTypeDescriptor"),
-                                    true
-                                ),
-                                DocumentIdentity: new([
-                                    new(
-                                        DocumentIdentity.DescriptorIdentityJsonPath,
-                                        "uri://ed-fi.org/schooltypedescriptor#elementary"
-                                    ),
-                                ]),
-                                ReferentialId: new ReferentialId(Guid.NewGuid()),
-                                Reason: DescriptorReferenceFailureReason.DescriptorTypeMismatch
-                            ),
-                        ]
-                    )
-                );
-            }
-        }
-
-        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
-
-        [SetUp]
-        public async Task Setup()
-        {
-            var (updateByIdHandler, serviceProvider) = Handler(new Repository());
-            requestInfo.ScopedServiceProvider = serviceProvider;
-            await updateByIdHandler.Execute(requestInfo, NullNext);
-        }
-
-        [Test]
-        public void It_has_the_correct_response()
-        {
-            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
-
-            var body = requestInfo.FrontendResponse.Body!.AsObject();
-            body["detail"]!
-                .GetValue<string>()
-                .Should()
-                .Be("Data validation failed. See 'validationErrors' for details.");
-
-            var validationErrors = body["validationErrors"]!.AsObject();
-            validationErrors.Count.Should().Be(1);
-            validationErrors["$.calendarReference.calendarTypeDescriptor"]![0]!
-                .GetValue<string>()
-                .Should()
-                .Be(
-                    "CalendarTypeDescriptor value 'uri://ed-fi.org/schooltypedescriptor#elementary' is not a valid CalendarTypeDescriptor."
-                );
-            body["errors"]!.AsArray().Count.Should().Be(0);
-        }
-    }
-
-    [TestFixture]
-    [Parallelizable]
     public class Given_A_Repository_That_Returns_Mixed_Reference_Failures : UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -730,7 +658,6 @@ public class UpdateByIdHandlerTests
                                 Path: new JsonPath("$.schoolReference"),
                                 TargetResource: _documentTargetResource,
                                 DocumentIdentity: new([]),
-                                ReferentialId: new ReferentialId(Guid.NewGuid()),
                                 Reason: DocumentReferenceFailureReason.Missing
                             ),
                         ],
@@ -744,7 +671,6 @@ public class UpdateByIdHandlerTests
                                         "uri://ed-fi.org/calendartypedescriptor#spring"
                                     ),
                                 ]),
-                                ReferentialId: new ReferentialId(Guid.NewGuid()),
                                 Reason: DescriptorReferenceFailureReason.Missing
                             ),
                         ]

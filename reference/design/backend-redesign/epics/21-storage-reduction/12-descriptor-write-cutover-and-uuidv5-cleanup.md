@@ -51,8 +51,7 @@ consumers, and establish the re-provision rollback boundary.
 - Delete the remaining lookup surface that compiles against `ReferentialId`:
   `RelationalWriteTargetLookupSupport.ResolveForPostAsync`, `IRelationalWriteTargetLookupResolver` /
   `RelationalWriteTargetLookupResolver` with their registration and test fakes (the descriptor
-  handler is their last caller), and the SQL Server bulk RI lookup strategy
-  (`MssqlReferenceLookupBulkStrategy`) with its unit test.
+  handler is their last caller).
 - Update every production and test compile-time consumer affected by these contract/type removals.
   DMS-1456 fixture cleanup must not be needed to make the solution compile or these suites pass.
 

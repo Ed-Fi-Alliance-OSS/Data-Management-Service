@@ -17,9 +17,8 @@ namespace EdFi.DataManagementService.Backend.Tests.Common;
 /// <param name="CommitCount">Commits, counted separately from commands.</param>
 /// <param name="RollbackCount">Rollbacks, counted separately from commands.</param>
 /// <param name="ReferentialIdentityLookupCount">
-/// Commands that read <c>dms.ReferentialIdentity</c>: the in-session POST target lookup and bulk
-/// reference resolution. Both were invisible to the session recorder before they were routed
-/// through the session's command-creation seam.
+/// Commands that read <c>dms.ReferentialIdentity</c>: the in-session POST target lookup. It was invisible
+/// to the session recorder before it was routed through the session's command-creation seam.
 /// </param>
 /// <param name="HydrationBatchCount">
 /// Current-state hydration batches. Also previously invisible to the session recorder.
@@ -29,6 +28,10 @@ namespace EdFi.DataManagementService.Backend.Tests.Common;
 /// lookup. Counted separately from <paramref name="ReferentialIdentityLookupCount"/> because the two
 /// verbs resolve their target through different keys.
 /// </param>
+/// <param name="NaturalKeyLookupCount">
+/// Commands carrying a natural-key reference lookup, matched on the lookup's own group parameters so that
+/// other reads of a bound key list (SQL Server hydration's <c>OPENJSON</c>) never classify as one.
+/// </param>
 public sealed record WriteSessionCommandStreamSummary(
     int TotalCommandCount,
     int BeginCount,
@@ -36,7 +39,8 @@ public sealed record WriteSessionCommandStreamSummary(
     int RollbackCount,
     int ReferentialIdentityLookupCount,
     int HydrationBatchCount,
-    int DocumentUuidLookupCount
+    int DocumentUuidLookupCount,
+    int NaturalKeyLookupCount
 );
 
 /// <summary>
@@ -51,11 +55,12 @@ public static class WriteSessionCommandStreamScenarios
 {
     /// <summary>
     /// A POST create's first phase is one composite command whose capture statement reads
-    /// <c>dms.ReferentialIdentity</c> to observe and lock the target, and which speculatively carries
-    /// the hydration batch — the command is built before create-vs-update is known, so one command
-    /// serves both branches and the create branch pays the batch's empty result sets. Exactly one
-    /// command therefore classifies as both the referential-identity lookup and the hydration batch,
-    /// and nothing observes the target again on the normal path.
+    /// <c>dms.ReferentialIdentity</c> to observe and lock the target, which embeds the request's
+    /// natural-key reference lookup, and which speculatively carries the hydration batch — the command
+    /// is built before create-vs-update is known, so one command serves both branches and the create
+    /// branch pays the batch's empty result sets. With one lookup, one hydration batch and only two
+    /// commands, only the first command can carry all three, so the lookup is co-batched rather than a
+    /// round trip of its own, and nothing observes the target again on the normal path.
     /// </summary>
     public static void AssertCreateStreamIsFullyObserved(
         WriteSessionCommandStreamSummary summary,
@@ -65,6 +70,7 @@ public static class WriteSessionCommandStreamScenarios
         ArgumentNullException.ThrowIfNull(summary);
 
         summary.ReferentialIdentityLookupCount.Should().Be(1);
+        summary.NaturalKeyLookupCount.Should().Be(1);
         summary.DocumentUuidLookupCount.Should().Be(0);
         summary.HydrationBatchCount.Should().Be(1);
         summary.TotalCommandCount.Should().Be(expectedTotalCommandCount);
@@ -74,7 +80,8 @@ public static class WriteSessionCommandStreamScenarios
     /// <summary>
     /// A PUT against an existing target resolves it by external <c>DocumentUuid</c> in the capture
     /// statement of one composite first-phase command, which also carries the hydration batch. One
-    /// command classifies as both, and no <c>dms.ReferentialIdentity</c> read appears on this path.
+    /// command classifies as both, and no <c>dms.ReferentialIdentity</c> read appears on this path. The
+    /// request carries no reference, so no command classifies as a natural-key lookup.
     /// </summary>
     public static void AssertUpdateStreamIsFullyObserved(
         WriteSessionCommandStreamSummary summary,
@@ -86,6 +93,7 @@ public static class WriteSessionCommandStreamScenarios
         summary.HydrationBatchCount.Should().Be(1);
         summary.DocumentUuidLookupCount.Should().Be(1);
         summary.ReferentialIdentityLookupCount.Should().Be(0);
+        summary.NaturalKeyLookupCount.Should().Be(0);
         summary.TotalCommandCount.Should().Be(expectedTotalCommandCount);
         AssertCommittedTransactionBoundary(summary);
     }
@@ -118,6 +126,7 @@ public static class WriteSessionCommandStreamScenarios
 
         summary.DocumentUuidLookupCount.Should().Be(1);
         summary.ReferentialIdentityLookupCount.Should().Be(0);
+        summary.NaturalKeyLookupCount.Should().Be(0);
         summary.HydrationBatchCount.Should().Be(1);
         summary.TotalCommandCount.Should().Be(1);
         summary.BeginCount.Should().Be(1);

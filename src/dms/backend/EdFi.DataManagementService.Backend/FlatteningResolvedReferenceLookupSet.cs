@@ -61,7 +61,8 @@ internal sealed class FlatteningResolvedReferenceLookupSet
     public static FlatteningResolvedReferenceLookupSet Create(
         ResourceWritePlan writePlan,
         ResolvedReferenceSet resolvedReferences,
-        bool allowMissingDocumentReferencesForPrecedence = false
+        bool allowMissingDocumentReferencesForPrecedence = false,
+        IReadOnlyList<HydratedDescriptorRows>? storedDescriptorRows = null
     )
     {
         ArgumentNullException.ThrowIfNull(writePlan);
@@ -138,7 +139,7 @@ internal sealed class FlatteningResolvedReferenceLookupSet
             BuildIdentityBindingByColumnByBindingIndex(documentReferenceBindings),
             descriptorIdMapsByKey,
             BuildDescriptorResourceByPath(writePlan),
-            BuildDescriptorIdByUri(resolvedReferences)
+            BuildDescriptorIdByUri(resolvedReferences, storedDescriptorRows)
         );
     }
 
@@ -149,12 +150,12 @@ internal sealed class FlatteningResolvedReferenceLookupSet
     /// request-cycle resolution cache; returns <c>false</c> otherwise.
     /// </summary>
     /// <remarks>
-    /// The cache is keyed by descriptor resource and the lowercase form of the URI; the
-    /// JSON path the URI was published at is intentionally not part of the key, because
-    /// the resolver invariant guarantees a given URI resolves to a single id within a
-    /// request regardless of where it appeared. Lowercase normalization matches the
-    /// resolver pipeline (<c>DescriptorExtractor.CreateDescriptorReference</c>), letting
-    /// callers pass the raw stored-document or request value without prior normalization.
+    /// The cache is keyed by descriptor resource and the exact URI text; the JSON path the URI
+    /// was published at is intentionally not part of the key, because the resolver invariant
+    /// guarantees a given URI resolves to a single id within a request regardless of where it
+    /// appeared. C# never folds case: a stored spelling that differs from the request's hits
+    /// only when the caller seeded the stored descriptor projection, whose URI for the same
+    /// <c>DescriptorId</c> is the database's own verdict that the two spellings are equal.
     /// </remarks>
     public bool TryGetDescriptorIdByUri(
         QualifiedResourceName descriptorResource,
@@ -164,15 +165,27 @@ internal sealed class FlatteningResolvedReferenceLookupSet
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(uri);
 
-        var key = new DescriptorUriLookupKey(descriptorResource, uri.ToLowerInvariant());
+        var key = new DescriptorUriLookupKey(descriptorResource, uri);
         return _descriptorIdByUri.TryGetValue(key, out descriptorId);
     }
 
+    /// <summary>
+    /// Maps each request-resolved descriptor's (resource, URI) to its id. When
+    /// <paramref name="storedDescriptorRows"/> is supplied, each resolved descriptor is also mapped under the
+    /// stored URI of the same <c>DescriptorId</c>, so stored-side spellings resolve without C# case folding.
+    /// </summary>
     private static Dictionary<DescriptorUriLookupKey, int> BuildDescriptorIdByUri(
-        ResolvedReferenceSet resolvedReferences
+        ResolvedReferenceSet resolvedReferences,
+        IReadOnlyList<HydratedDescriptorRows>? storedDescriptorRows
     )
     {
         Dictionary<DescriptorUriLookupKey, int> result = [];
+        Dictionary<int, string> storedUriByDescriptorId = [];
+
+        foreach (var row in storedDescriptorRows?.SelectMany(rows => rows.Rows) ?? [])
+        {
+            storedUriByDescriptorId.TryAdd(row.DescriptorId, row.Uri);
+        }
 
         foreach (var resolved in resolvedReferences.SuccessfulDescriptorReferencesByPath.Values)
         {
@@ -194,15 +207,21 @@ internal sealed class FlatteningResolvedReferenceLookupSet
                 continue;
             }
 
-            // Normalize the URI to lowercase so lookup matches whether the caller has the
-            // already-lowercased resolver value or the raw stored-document casing.
-            var lookupKey = new DescriptorUriLookupKey(descriptorResource, uri.ToLowerInvariant());
+            var lookupKey = new DescriptorUriLookupKey(descriptorResource, uri);
 
             // Use TryAdd to handle duplicate URIs mapping to the same id (same descriptor
             // referenced at multiple positions/paths). The resolver invariant guarantees a
             // given URI resolves to a single id within a request, so first-write-wins is
             // safe regardless of which path the URI was first observed at.
             result.TryAdd(lookupKey, resolved.DescriptorId);
+
+            if (storedUriByDescriptorId.TryGetValue(resolved.DescriptorId, out var storedUri))
+            {
+                result.TryAdd(
+                    new DescriptorUriLookupKey(descriptorResource, storedUri),
+                    resolved.DescriptorId
+                );
+            }
         }
 
         return result;

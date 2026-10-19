@@ -67,6 +67,42 @@ public class Given_Natural_Key_Reference_Resolver(SqlDialect dialect)
     }
 
     [Test]
+    public async Task It_resolves_through_the_reference_resolver_contract_on_the_injected_executor()
+    {
+        IReferenceResolver resolver = new NaturalKeyReferenceResolver(
+            _builder,
+            new ResolvedDocumentReferenceMapFactory(),
+            _executor
+        );
+
+        var result = await resolver.ResolveAsync(
+            Request([SchoolReference("255901")], [DescriptorReference(CareerUri)])
+        );
+
+        _executor.CommandCount.Should().Be(1);
+        result
+            .SuccessfulDocumentReferencesByPath[new JsonPath("$.schoolReference")]
+            .DocumentId.Should()
+            .Be(SchoolDocumentId);
+        result
+            .SuccessfulDescriptorReferencesByPath.Should()
+            .ContainSingle()
+            .Which.Value.DescriptorId.Should()
+            .Be(CareerDescriptorId);
+    }
+
+    [Test]
+    public async Task It_rejects_the_reference_resolver_contract_without_an_executor()
+    {
+        IReferenceResolver resolver = _resolver;
+
+        var act = () => resolver.ResolveAsync(Request([SchoolReference("255901")], []));
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*no command executor*");
+        _executor.CommandCount.Should().Be(0);
+    }
+
+    [Test]
     public void It_builds_no_lookup_when_every_reference_is_memoized()
     {
         var request = Request([SchoolReference("255901")], [DescriptorReference(CareerUri)]);
@@ -436,7 +472,7 @@ public class Given_Natural_Key_Reference_Resolver(SqlDialect dialect)
             .WithMessage("*no lookup for a reference to 'Ed-Fi.School'*");
     }
 
-    private Task<NaturalKeyResolvedReferences> ResolveAsync(
+    private Task<ResolvedReferenceSet> ResolveAsync(
         IReadOnlyList<DocumentReference> documents,
         IReadOnlyList<DescriptorReference> descriptors
     ) => _resolver.ResolveAsync(Request(documents, descriptors), _executor);
@@ -531,13 +567,7 @@ public class Given_Natural_Key_Reference_Resolver(SqlDialect dialect)
         QualifiedResourceName target,
         string path,
         params (string Path, string Value)[] elements
-    ) =>
-        new(
-            ResourceInfo(target, isDescriptor: false),
-            Identity(elements),
-            new ReferentialId(Guid.NewGuid()),
-            new JsonPath(path)
-        );
+    ) => new(ResourceInfo(target, isDescriptor: false), Identity(elements), new JsonPath(path));
 
     private static DescriptorReference DescriptorReference(
         string uri,
@@ -546,7 +576,6 @@ public class Given_Natural_Key_Reference_Resolver(SqlDialect dialect)
         new(
             ResourceInfo(ProgramTypeDescriptor, isDescriptor: true),
             Identity((DocumentIdentity.DescriptorIdentityJsonPath.Value, uri)),
-            new ReferentialId(Guid.NewGuid()),
             new JsonPath(path)
         );
 

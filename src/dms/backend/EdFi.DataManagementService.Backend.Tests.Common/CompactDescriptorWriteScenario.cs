@@ -14,13 +14,54 @@ namespace EdFi.DataManagementService.Backend.Tests.Common;
 
 internal static class CompactDescriptorWriteScenario
 {
-    public static async Task ExecuteAsync(
+    public static Task ExecuteAsync(
         DbConnection connection,
         IDescriptorWriteHandler handler,
         IDescriptorReadHandler reader,
         Func<QualifiedResourceName, string, DescriptorWriteRequest> postRequest,
         QualifiedResourceName resource,
         QualifiedResourceName otherResource
+    ) =>
+        ExecuteCoreAsync(
+            connection,
+            handler,
+            reader,
+            postRequest,
+            resource,
+            otherResource,
+            casingUpdate: false
+        );
+
+    /// <summary>
+    /// Re-POSTs the stored descriptor in a different casing. Split from <see cref="ExecuteAsync"/> because the
+    /// case-variant re-POST misses its referential identity until DMS-1454, so the rest of the lifecycle keeps running.
+    /// </summary>
+    public static Task ExecuteCasingUpdateAsync(
+        DbConnection connection,
+        IDescriptorWriteHandler handler,
+        IDescriptorReadHandler reader,
+        Func<QualifiedResourceName, string, DescriptorWriteRequest> postRequest,
+        QualifiedResourceName resource,
+        QualifiedResourceName otherResource
+    ) =>
+        ExecuteCoreAsync(
+            connection,
+            handler,
+            reader,
+            postRequest,
+            resource,
+            otherResource,
+            casingUpdate: true
+        );
+
+    private static async Task ExecuteCoreAsync(
+        DbConnection connection,
+        IDescriptorWriteHandler handler,
+        IDescriptorReadHandler reader,
+        Func<QualifiedResourceName, string, DescriptorWriteRequest> postRequest,
+        QualifiedResourceName resource,
+        QualifiedResourceName otherResource,
+        bool casingUpdate
     )
     {
         const string Namespace = "uri://ed-fi.org/CompactDescriptor";
@@ -74,58 +115,62 @@ internal static class CompactDescriptorWriteScenario
         await BackdateOwnerAsync();
         afterComponents = await SnapshotAsync(create.DocumentUuid);
 
-        string casingBody = Body($"{Namespace}#CAMPUS", "MIXED");
-        UpsertResult.UpdateSuccess casing = (
-            await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(postRequest(resource, casingBody))
-        )
-            .Should()
-            .BeOfType<UpsertResult.UpdateSuccess>()
-            .Subject;
-        casing.ExistingDocumentUuid.Should().Be(create.DocumentUuid);
-        casing.ETag.Should().NotBe(components.ETag);
-        StoredDescriptor afterCasing = await SnapshotAsync(create.DocumentUuid);
-        AssertChanged(afterCasing, afterComponents, $"{Namespace}#CAMPUS", "MIXED");
+        if (casingUpdate)
+        {
+            string casingBody = Body($"{Namespace}#CAMPUS", "MIXED");
+            UpsertResult.UpdateSuccess casing = (
+                await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+                    postRequest(resource, casingBody)
+                )
+            )
+                .Should()
+                .BeOfType<UpsertResult.UpdateSuccess>()
+                .Subject;
+            casing.ExistingDocumentUuid.Should().Be(create.DocumentUuid);
+            casing.ETag.Should().NotBe(components.ETag);
+            StoredDescriptor afterCasing = await SnapshotAsync(create.DocumentUuid);
+            AssertChanged(afterCasing, afterComponents, $"{Namespace}#CAMPUS", "MIXED");
+            await AssertReadEtagAsync(resource, create.DocumentUuid, casing.ETag);
+            return;
+        }
 
         // Ordinal whole-URI equality is stricter than RI or provider identity equality.
         foreach (
             string rejectedBody in new[]
             {
-                Body($"{Namespace}#CAMPUS", "mixed"),
-                Body($"{Namespace}Changed#CAMPUS", "MIXED"),
-                Body($"{Namespace}#CAMPUS", "Other"),
+                Body($"{Namespace}#Campus", "mixed"),
+                Body($"{Namespace}Changed#Campus", "MiXeD"),
+                Body($"{Namespace}#Campus", "Other"),
             }
         )
         {
             (await handler.HandlePutAsync(Put(rejectedBody)))
                 .Should()
                 .BeOfType<UpdateResult.UpdateFailureImmutableIdentity>();
-            (await SnapshotAsync(create.DocumentUuid)).Should().Be(afterCasing);
-            await AssertReadEtagAsync(resource, create.DocumentUuid, casing.ETag);
+            (await SnapshotAsync(create.DocumentUuid)).Should().Be(afterComponents);
+            await AssertReadEtagAsync(resource, create.DocumentUuid, components.ETag);
         }
 
-        await BackdateOwnerAsync();
-        afterCasing = await SnapshotAsync(create.DocumentUuid);
-
-        string equalUriBody = Body(Namespace, "CAMPUS#MIXED");
+        string equalUriBody = Body(Namespace, "Campus#MiXeD");
         UpdateResult.UpdateSuccess equalUri = (await handler.HandlePutAsync(Put(equalUriBody)))
             .Should()
             .BeOfType<UpdateResult.UpdateSuccess>()
             .Subject;
-        equalUri.ETag.Should().NotBe(casing.ETag);
+        equalUri.ETag.Should().NotBe(components.ETag);
         StoredDescriptor afterEqualUri = await SnapshotAsync(create.DocumentUuid);
-        AssertChanged(afterEqualUri, afterCasing, Namespace, "CAMPUS#MIXED");
+        AssertChanged(afterEqualUri, afterComponents, Namespace, "Campus#MiXeD");
         await AssertReadEtagAsync(resource, create.DocumentUuid, equalUri.ETag);
 
         await BackdateOwnerAsync();
         afterEqualUri = await SnapshotAsync(create.DocumentUuid);
 
-        string descriptiveBody = Body(Namespace, "CAMPUS#MIXED", "Updated description", "2025-02-03");
+        string descriptiveBody = Body(Namespace, "Campus#MiXeD", "Updated description", "2025-02-03");
         UpdateResult.UpdateSuccess descriptive = (await handler.HandlePutAsync(Put(descriptiveBody)))
             .Should()
             .BeOfType<UpdateResult.UpdateSuccess>()
             .Subject;
         StoredDescriptor afterDescription = await SnapshotAsync(create.DocumentUuid);
-        AssertChanged(afterDescription, afterEqualUri, Namespace, "CAMPUS#MIXED");
+        AssertChanged(afterDescription, afterEqualUri, Namespace, "Campus#MiXeD");
         afterDescription.Description.Should().Be("Updated description");
         afterDescription.BeginDate.Should().Be(new DateTime(2025, 2, 3, 0, 0, 0, DateTimeKind.Unspecified));
         descriptive.ETag.Should().NotBe(equalUri.ETag);
@@ -167,7 +212,7 @@ internal static class CompactDescriptorWriteScenario
             // SQL Server ignores final spaces for indexed URI equality; RI still includes them.
             (
                 await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(
-                    postRequest(resource, Body(Namespace, "CAMPUS#MIXED "))
+                    postRequest(resource, Body(Namespace, "Campus#MiXeD "))
                 )
             )
                 .Should()

@@ -270,10 +270,6 @@ file static class AuthoritativeSampleStudentSectionAssociationIntegrationTestSup
                 new DocumentReference(
                     ResourceInfo: targetResourceInfo,
                     DocumentIdentity: documentIdentity,
-                    ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(
-                        targetResourceInfo,
-                        documentIdentity
-                    ),
                     Path: new JsonPath(
                         $"$._ext.sample.relatedGeneralStudentProgramAssociations[{index}].relatedGeneralStudentProgramAssociationReference"
                     )
@@ -328,20 +324,13 @@ file static class AuthoritativeSampleStudentSectionAssociationIntegrationTestSup
             }
 
             var descriptorIdentity = new DocumentIdentity([
-                new DocumentIdentityElement(
-                    DocumentIdentity.DescriptorIdentityJsonPath,
-                    descriptorUri.ToLowerInvariant()
-                ),
+                new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, descriptorUri),
             ]);
 
             descriptorReferences.Add(
                 new DescriptorReference(
                     ResourceInfo: descriptorResourceInfo,
                     DocumentIdentity: descriptorIdentity,
-                    ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(
-                        descriptorResourceInfo,
-                        descriptorIdentity
-                    ),
                     Path: new JsonPath(
                         $"$._ext.sample.relatedGeneralStudentProgramAssociations[{index}].relatedGeneralStudentProgramAssociationReference.programTypeDescriptor"
                     )
@@ -1082,7 +1071,10 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             reference.Path == new JsonPath("$.sectionReference")
         );
         await InsertReferentialIdentityAsync(
-            sectionReference.ReferentialId,
+            ReferentialIdCalculator.ReferentialIdFrom(
+                sectionReference.ResourceInfo,
+                sectionReference.DocumentIdentity
+            ),
             sectionDocumentId,
             sectionResourceKeyId
         );
