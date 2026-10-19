@@ -144,8 +144,8 @@ function Get-SmokeTestCredential {
         Write-Host "Obtaining configuration service token..."
         $configToken = Get-CmsToken -CmsUrl $ConfigServiceUrl -ClientId $SysAdminId -ClientSecret $SysAdminSecret
 
-        # Step 3: Get available data stores. When this helper selects the store, its school-year
-        # route contexts are returned too, since the caller does not know them.
+        # Step 3: Get available data stores. When this helper selects the store, all of its route
+        # contexts are returned too, whatever their key, since the caller does not know them.
         $routeContexts = @()
         if ($DataStoreIds.Count -gt 0) {
             $dataStoreIds = [long[]]@($DataStoreIds)
@@ -160,8 +160,8 @@ function Get-SmokeTestCredential {
                 Write-Host "Found data store with ID: $($dataStoreIds[0])"
                 $routeContexts = @(
                     $dataStores[0].dataStoreContexts |
-                        Where-Object { $null -ne $_ -and $_.contextKey -eq "schoolYear" } |
-                        ForEach-Object { [pscustomobject]@{ DataStoreId = [long]$dataStoreIds[0]; ContextValue = [string]$_.contextValue } }
+                        Where-Object { $null -ne $_ } |
+                        ForEach-Object { [pscustomobject]@{ DataStoreId = [long]$dataStoreIds[0]; ContextKey = [string]$_.contextKey; ContextValue = [string]$_.contextValue } }
                 )
             }
             else {
@@ -226,7 +226,8 @@ function Get-SmokeTestCredentialSummary {
 
     Every value in the copyable command is a single-quoted literal (generated secrets can contain
     '$'), escaped for every quote character PowerShell accepts. Tenant- or route-qualified targets
-    get base and token URLs instead of a command, because those smoke runs are not validated.
+    get base and token URLs instead of a command, because those smoke runs are not validated; route
+    contexts other than one school year per data store are listed without URLs.
     #>
     [CmdletBinding()]
     [OutputType([string[]])]
@@ -245,7 +246,7 @@ function Get-SmokeTestCredentialSummary {
         [string]
         $Tenant = "",
 
-        # Route contexts from the configure result (DataStoreId, ContextValue per school year).
+        # Route contexts from the configure result (DataStoreId, ContextKey, ContextValue).
         [object[]]
         $RouteContexts = @(),
 
@@ -303,15 +304,28 @@ function Get-SmokeTestCredentialSummary {
             $tenantBaseUrl = "$baseUrl/$Tenant"
         }
 
+        # A URL is composed only when every data store has exactly one schoolYear context. Any other
+        # key, or several contexts on one store, is routed in ROUTE_QUALIFIER_SEGMENTS order, which
+        # this formatter does not know, so those contexts are listed instead.
+        $schoolYearOnly = @($contexts | Where-Object { $_.ContextKey -cne "schoolYear" }).Count -eq 0 -and
+            @($contexts | Group-Object -Property DataStoreId | Where-Object { $_.Count -gt 1 }).Count -eq 0
+
         if ($contexts.Count -eq 0) {
             $lines.Add("DMS base:    $tenantBaseUrl")
             $lines.Add("Token URL:   $tenantBaseUrl/oauth/token")
         }
-        else {
+        elseif ($schoolYearOnly) {
             foreach ($context in $contexts) {
                 $contextBaseUrl = "$tenantBaseUrl/$($context.ContextValue)"
                 $lines.Add("Data store $($context.DataStoreId) (school year $($context.ContextValue)): DMS base $contextBaseUrl  token $contextBaseUrl/oauth/token")
             }
+        }
+        else {
+            foreach ($store in @($contexts | Group-Object -Property DataStoreId)) {
+                $pairs = @($store.Group | ForEach-Object { "$($_.ContextKey)=$($_.ContextValue)" }) -join ", "
+                $lines.Add("Data store $($store.Name) route contexts: $pairs")
+            }
+            $lines.Add("No DMS base or token URL is printed for these contexts: the DMS base is $tenantBaseUrl followed by the context values in the order ROUTE_QUALIFIER_SEGMENTS lists their keys, and the token URL is that base plus /oauth/token.")
         }
         $lines.Add("Tenant- or route-qualified smoke runs have not been validated with the smoke console; pass the matching DMS base as -BaseUrl and the token URL as -OAuthUrl.")
     }

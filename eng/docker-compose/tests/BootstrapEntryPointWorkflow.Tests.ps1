@@ -242,10 +242,14 @@ $forwardRecording
 
                 [switch]$SchoolYearContexts,
 
-                [switch]$OmitSmokeTestCredential
+                [switch]$OmitSmokeTestCredential,
+
+                # Writes a stray success-stream value before the result, breaking the one-result contract.
+                [switch]$ExtraOutput
             )
 
             $idsJson = ($DataStoreIds | ForEach-Object { "[long]$_" }) -join ', '
+            $extraOutputLine = if ($ExtraOutput) { "'stray-configure-output'" } else { "" }
             $routeContexts = if ($SchoolYearContexts) {
                 "@([pscustomobject]@{ DataStoreId = [long]101; ContextKey = 'schoolYear'; ContextValue = '2024' }, [pscustomobject]@{ DataStoreId = [long]102; ContextKey = 'schoolYear'; ContextValue = '2025' })"
             }
@@ -263,6 +267,7 @@ param(
     [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
 )
 Add-Content -LiteralPath '$CallLogPath' -Value "configure smoke=`$AddSmokeTestCredentials"
+$extraOutputLine
 `$result = [pscustomobject]@{
     DataStoreIds              = [long[]] @($idsJson)
     SelectedDataStoreIds      = [long[]] @($idsJson)
@@ -2009,6 +2014,32 @@ Write-Output 'seed-phase-output'
             @($run.Items | Where-Object { "$_" -like "*Smoke test credentials*" }) | Should -BeNullOrEmpty
         }
 
+        It "still rejects extra configure output, but prints the incomplete summary of the one credential it carried" {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-smoke-extra-output.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog -ExtraOutput | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            $arguments = @{ EnvironmentFile = $script:repo.EnvFile; Verbose = $true; Debug = $true }
+
+            $before = Get-RepoFileSnapshot
+            $control = Invoke-WrapperCapture -ScriptPath $script:repo.WrapperScript -Arguments $arguments
+            $flaggedArguments = $arguments.Clone()
+            $flaggedArguments.AddSmokeTestCredentials = $true
+            $run = Invoke-WrapperCapture -ScriptPath $script:repo.WrapperScript -Arguments $flaggedArguments
+
+            $contractError = "configure-local-data-store.ps1 must return exactly one structured result object. Returned 2."
+            $control.Error.Exception.Message | Should -BeExactly $contractError
+            $run.Error.Exception.Message | Should -BeExactly $contractError -Because "the contract failure stays the reported error"
+            $run.Error.FullyQualifiedErrorId | Should -BeExactly $control.Error.FullyQualifiedErrorId
+            @(Get-Content -LiteralPath $callLog) | Should -Not -Contain "provision"
+            $summary = Get-SummaryBlock -Strings $run.Strings -Header $script:smokeIncompleteHeader
+            $summary | Should -Contain "Key:         SYNTH-KEY-1292"
+            $summary | Should -Contain 'Secret:      SYNTH$SECRET-1292'
+            ($run.Error | Out-String) + $run.Error.Exception.ToString() | Should -Not -Match 'SYNTH'
+            Assert-NoCredentialLeak -Records $run.Records -FilesBefore $before
+        }
+
         It "rejects a summary base URL with control characters before configure creates any credential" {
             New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
             $callLog = Join-Path $script:repo.RepoRoot "call-log-smoke-bad-base.txt"
@@ -2116,6 +2147,10 @@ function Get-DataStore {
             [pscustomobject]@{ id = [long]88; dataStoreContexts = @([pscustomobject]@{ id = 1; dataStoreId = 88; contextKey = 'schoolYear'; contextValue = '2024' }) },
             [pscustomobject]@{ id = [long]89; dataStoreContexts = @([pscustomobject]@{ id = 2; dataStoreId = 89; contextKey = 'schoolYear'; contextValue = '2025' }) }
         )
+    }
+    # The district-datastore marker lists a store qualified by districtId only.
+    if (Test-Path -LiteralPath '$(Join-Path $script:repo.RepoRoot "district-datastore")') {
+        return @([pscustomobject]@{ id = [long]66; dataStoreContexts = @([pscustomobject]@{ id = 3; dataStoreId = 66; contextKey = 'districtId'; contextValue = '255901' }) })
     }
     @([pscustomobject]@{ id = [long]77 })
 }
@@ -2277,6 +2312,21 @@ Export-ModuleMember -Function *
             $summary | Should -Contain "Data store 88 (school year 2024): DMS base http://localhost:18080/2024  token http://localhost:18080/2024/oauth/token"
             $summary | Should -Contain "Tenant- or route-qualified smoke runs have not been validated with the smoke console; pass the matching DMS base as -BaseUrl and the token URL as -OAuthUrl."
             @($summary | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" -or $_ -like "*school year 2025*" }) | Should -BeNullOrEmpty
+        }
+
+        It "lists a selected districtId-qualified data store's context, with no command or URL, with -NoDataStore" {
+            "" | Set-Content -LiteralPath (Join-Path $script:repo.RepoRoot "district-datastore")
+            $districtEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.district"
+            Get-Content -LiteralPath $script:repo.EnvFile | Set-Content -LiteralPath $districtEnvFile -Encoding utf8
+            Add-Content -LiteralPath $districtEnvFile -Value "ROUTE_QUALIFIER_SEGMENTS=districtId"
+
+            $run = Invoke-StartPublishedCapture -Arguments @{ EnvironmentFile = $districtEnvFile; NoDataStore = $true; AddSmokeTestCredentials = $true }
+
+            $run.Error | Should -BeNullOrEmpty
+            $run.CmsCalls | Should -Contain "Add-Application ids=66 tenant="
+            $summary = Get-StartPublishedSummary -Strings $run.Strings
+            $summary | Should -Contain "Data store 66 route contexts: districtId=255901"
+            @($summary | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" -or $_ -like "*school year*" -or $_ -like "*/255901*" -or $_ -like "DMS base:*" }) | Should -BeNullOrEmpty
         }
 
         It "creates no credential and prints no summary without the flag" {

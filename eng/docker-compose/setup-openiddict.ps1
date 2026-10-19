@@ -849,7 +849,10 @@ function Complete-OpenIddictKeyInitialization {
         "created" { Write-Host "OpenIddict signing key: created the initial active key" }
         "active-ok" { Write-Host "OpenIddict signing key: reusing the existing active key" }
         "active-undecryptable" {
-            throw "The newest active OpenIddict signing key cannot be decrypted with the configured encryption key; no signing key was changed. Repair the key or the encryption-key configuration explicitly."
+            throw "The newest active OpenIddict signing key cannot be decrypted with the configured encryption key; no signing key was changed. Restore the encryption key this signing key was created with; replacing the signing key is an explicit operation, not part of startup (see eng/docker-compose/README.md)."
+        }
+        "active-unverified" {
+            throw "The newest active OpenIddict signing key could not be checked: the database rejected the decryption check for a reason other than the encryption key (for example, pgcrypto permissions); no signing key was changed. Fix the database access; neither the signing key nor the encryption key is shown to be wrong."
         }
         default { throw "OpenIddict signing-key initialization returned an unexpected result; no further key change was attempted." }
     }

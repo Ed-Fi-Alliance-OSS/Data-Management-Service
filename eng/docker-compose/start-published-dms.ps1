@@ -1007,7 +1007,7 @@ else {
 
                     Write-Output "Created $($dataStores.Count) school year data stores successfully"
                     $smokeTestDataStoreIds = @($dataStores | ForEach-Object { [long]$_.DataStoreId })
-                    $smokeTestRouteContexts = @($dataStores | ForEach-Object { [pscustomobject]@{ DataStoreId = [long]$_.DataStoreId; ContextValue = [string]$_.Year } })
+                    $smokeTestRouteContexts = @($dataStores | ForEach-Object { [pscustomobject]@{ DataStoreId = [long]$_.DataStoreId; ContextKey = "schoolYear"; ContextValue = [string]$_.Year } })
                 }
                 else {
                     Write-Warning "Invalid SchoolYearRange format. Expected format: StartYear-EndYear (e.g., 2022-2026)"

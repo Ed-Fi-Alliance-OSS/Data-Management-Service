@@ -56,6 +56,19 @@ Describe "Get-SmokeTestCredential" {
         }
     }
 
+    It "returns every route context of the data store it selects, <Case>" -ForEach @(
+        @{ Case = "districtId only"; Contexts = @(@{ contextKey = 'districtId'; contextValue = '255901' }) }
+        @{ Case = "districtId and schoolYear"; Contexts = @(@{ contextKey = 'districtId'; contextValue = '255901' }, @{ contextKey = 'schoolYear'; contextValue = '2024' }) }
+    ) {
+        $script:selectedContexts = @($Contexts | ForEach-Object { [pscustomobject]$_ })
+        Mock Get-DataStore -ModuleName SmokeTest { @([pscustomobject]@{ id = 77; dataStoreContexts = $script:selectedContexts }, [pscustomobject]@{ id = 78 }) }
+
+        $credentials = Get-SmokeTestCredential -ConfigServiceUrl "http://localhost:8081"
+
+        $actual = @($credentials.RouteContexts | ForEach-Object { "$($_.DataStoreId)|$($_.ContextKey)|$($_.ContextValue)" })
+        $actual | Should -Be @($Contexts | ForEach-Object { "77|$($_.contextKey)|$($_.contextValue)" })
+    }
+
     Context "credential values returned by the Configuration Service" {
         BeforeAll {
             # Synthetic values: '$' is a character CMS-generated secrets can contain, so the secret
@@ -269,6 +282,28 @@ Describe "Get-SmokeTestCredentialSummary" {
         $lines = @(Get-SmokeTestCredentialSummary -Credential $script:credential -DmsBaseUrl 'http://localhost:8080' -Tenant $Tenant -RouteContexts $script:schoolYearContexts)
 
         $lines | Should -Be (@("--- Smoke test credentials ---") + $script:credentialLines + $Expected + @($script:routeNote))
+    }
+
+    It "lists other route contexts without any command or composed URL, <Case>" -ForEach @(
+        @{ Case = "districtId only"; Tenant = ""; Contexts = @(
+                [pscustomobject]@{ DataStoreId = [long]77; ContextKey = 'districtId'; ContextValue = '255901' }
+            ); Expected = @(
+                "Data store 77 route contexts: districtId=255901",
+                "No DMS base or token URL is printed for these contexts: the DMS base is http://localhost:8080 followed by the context values in the order ROUTE_QUALIFIER_SEGMENTS lists their keys, and the token URL is that base plus /oauth/token."
+            ) }
+        @{ Case = "districtId and schoolYear on one store, with a tenant"; Tenant = "tenant-a"; Contexts = @(
+                [pscustomobject]@{ DataStoreId = [long]77; ContextKey = 'districtId'; ContextValue = '255901' },
+                [pscustomobject]@{ DataStoreId = [long]77; ContextKey = 'schoolYear'; ContextValue = '2024' }
+            ); Expected = @(
+                "Tenant:      tenant-a",
+                "Data store 77 route contexts: districtId=255901, schoolYear=2024",
+                "No DMS base or token URL is printed for these contexts: the DMS base is http://localhost:8080/tenant-a followed by the context values in the order ROUTE_QUALIFIER_SEGMENTS lists their keys, and the token URL is that base plus /oauth/token."
+            ) }
+    ) {
+        $lines = @(Get-SmokeTestCredentialSummary -Credential $script:credential -DmsBaseUrl 'http://localhost:8080' -Tenant $Tenant -RouteContexts $Contexts)
+
+        $lines | Should -Be (@("--- Smoke test credentials ---") + $script:credentialLines + $Expected + @($script:routeNote))
+        @($lines | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" -or $_ -like "*school year*" -or $_ -like "*/255901*" -or $_ -like "*/2024*" }) | Should -BeNullOrEmpty
     }
 
     It "adds the token-limit prerequisite for self-contained identity" {

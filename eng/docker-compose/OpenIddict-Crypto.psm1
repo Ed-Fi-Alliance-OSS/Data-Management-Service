@@ -306,9 +306,11 @@ $script:OpenIddictKeyInitializationTag = '$openiddict_key_initialization$'
 
 # Builds the PL/pgSQL body that reads the newest active key, the one the Configuration Service signs
 # with, and sets key_state to 'active-ok' when it decrypts with this passphrase or
-# 'active-undecryptable' when it does not. $WhenNoActiveKey runs when no active key exists. The decrypt
-# error is caught inside PL/pgSQL, so the expected failure never raises an error that would log this
-# statement text, passphrase included.
+# 'active-undecryptable' when pgcrypto rejects it (SQLSTATE 39000: wrong key or corrupt data). Any
+# other failure, such as a pgcrypto permission or lookup error, sets 'active-unverified', because
+# it says nothing about the key. $WhenNoActiveKey runs when no active key exists. Errors are caught
+# inside PL/pgSQL, so a failed check never raises an error that would log this statement text,
+# passphrase included.
 function Get-OpenIddictNewestKeyStateBlock {
     param(
         [Parameter(Mandatory = $true)]
@@ -332,8 +334,11 @@ function Get-OpenIddictNewestKeyStateBlock {
         BEGIN
             PERFORM pgp_sym_decrypt(newest_private_key::bytea, $EncryptionKeyLiteral);
             key_state := 'active-ok';
-        EXCEPTION WHEN OTHERS THEN
-            key_state := 'active-undecryptable';
+        EXCEPTION
+            WHEN SQLSTATE '39000' THEN
+                key_state := 'active-undecryptable';
+            WHEN OTHERS THEN
+                key_state := 'active-unverified';
         END;
 $elseClause
     END IF;
@@ -373,7 +378,8 @@ SELECT state FROM openiddict_key_initialization_state;
 .DESCRIPTION
     The first of two setup-openiddict.ps1 -InitDb phases. The script prints one state:
     'active-ok' when the newest active key decrypts with the configured encryption key,
-    'active-undecryptable' when it does not, or 'none' when no active key exists. It carries the
+    'active-undecryptable' when it does not, 'active-unverified' when the check itself fails for
+    another reason, or 'none' when no active key exists. It carries the
     encryption key but no key material, and it changes no row.
 
 .PARAMETER EncryptionKey
@@ -405,7 +411,8 @@ function New-OpenIddictKeyStateCheckSql {
     A transaction-scoped advisory lock serializes cooperating initializers, and the newest active key is
     read again under it. Without one, the script inserts a new key and prints 'created'. When another
     initializer created one in the meantime, nothing is inserted and that key is decrypt-checked with
-    this caller's encryption key: 'active-ok' or 'active-undecryptable'. No existing row is changed.
+    this caller's encryption key: 'active-ok', 'active-undecryptable' or 'active-unverified'. No
+    existing row is changed.
 
 .PARAMETER EncryptionKey
     Key used to encrypt the private key in the database.

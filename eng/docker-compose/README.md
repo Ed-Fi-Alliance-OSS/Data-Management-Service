@@ -313,7 +313,7 @@ entry point hands it to you in exactly one place.
 
 * **`bootstrap-local-dms.ps1` / `bootstrap-published-dms.ps1`:**
   * The wrapper prints a smoke-test credential summary as its **last** output, on every run shape: Docker-hosted, `-LoadSeedData`, `-InfraOnly`, `-InfraOnly -DmsBaseUrl`, and `-EnableKafkaCdc`.
-  * If a later phase fails after the credential was created, it prints the summary under a "created before the failure; the stack is NOT ready" header, then reports the original error.
+  * If a later phase fails after the credential was created, it prints the summary under a "created before the failure; the stack is NOT ready" header, then reports the original error. This covers phases that fail with an error. It does not cover **Ctrl+C**: PowerShell stops the pipeline and discards output written while stopping, so an interrupted run prints no summary. If you interrupt a run after its configure phase, the application may exist with no copy of its secret. Remove the "Smoke Test Application" before you run with the flag again.
 * **`configure-local-data-store.ps1`:** the structured result gains a `SmokeTestCredential` property (`Key`, `Secret`, `ApplicationName`). Capture it, because the secret is not shown anywhere else:
 
   ```pwsh
@@ -327,7 +327,7 @@ entry point hands it to you in exactly one place.
   * creates the application after it registers the data stores, for those data stores and the configured tenant (with `-NoDataStore`, for the first existing data store in that tenant);
   * then prints the summary.
   * It does **not** provision the DMS schema. Use it against an already-provisioned database, or use `bootstrap-published-dms.ps1`.
-  * With self-contained identity, running `start-published-dms.ps1` again against an already-running provisioned stack keeps the existing active OpenIddict signing key: `setup-openiddict.ps1 -InitDb` creates a key only when none is active. The running DMS therefore accepts newly issued tokens without a restart. If the newest active key cannot be decrypted with the configured `CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY`, `-InitDb` stops with an error and changes no key; repairing the key or the encryption-key configuration is an explicit operator action. Keep the delivered key/secret; do not rerun `-AddSmokeTestCredentials`, because CMS rejects a duplicate Smoke Test Application.
+  * With self-contained identity, running `start-published-dms.ps1` again against an already-running provisioned stack keeps the existing active OpenIddict signing key: `setup-openiddict.ps1 -InitDb` creates a key only when none is active. The running DMS therefore accepts newly issued tokens without a restart. For an encryption-key mismatch, see [Signing key on rerun](#signing-key-on-rerun--initdb). Keep the delivered key/secret; do not rerun `-AddSmokeTestCredentials`, because CMS rejects a duplicate Smoke Test Application.
 
 For a completed run with a single route-unqualified data store and no tenant route, the summary includes a
 copyable command. Every value is a
@@ -346,6 +346,7 @@ Run the non-destructive API smoke tests:
 
 * **DMS URL not known yet** (`-InfraOnly` without `-DmsBaseUrl`): the command uses a `<dms-base-url>` placeholder for you to replace once the IDE-hosted DMS is healthy.
 * **Tenant routes or school-year (`-SchoolYearRange`) data stores:** the summary lists the tenant- or year-qualified DMS base and token URLs instead of a command. DMS serves tenant routes only with `DMS_MULTI_TENANCY=true`; a `DMS_CONFIGURATION_SERVICE_TENANT` used only by the Configuration Service does not qualify the URLs. Smoke runs against qualified routes have not been validated with the Smoke Test Utility.
+* **Other route contexts** (a `-NoDataStore` direct start that selects a data store qualified by a key other than `schoolYear`, such as `districtId`, or by several contexts): the summary lists each context as `key=value`, with no URL, because the URL order comes from `ROUTE_QUALIFIER_SEGMENTS`.
 * **Self-contained identity:** the summary also reminds you that `CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1` must be set **before the stack starts** (see above and `eng/smoke_test/SMOKETEST.md`).
 
 > [!IMPORTANT]
@@ -1380,6 +1381,27 @@ $parameters = @{
 * `NewClientSecret` must also satisfy the Configuration Service complexity rule: lowercase, uppercase, number, and one special character from `!@#$%^&*()-_=+[]{}:;,.?`.
 * `NewClientSecret` is always the literal secret, even when it begins with `ENV:`. Use `NewClientSecretEnvironmentVariable` (naming the variable, in place of `NewClientSecret`) only when the secret must be read from that process's environment instead of the argument list.
 * Both switches can be used together or separately as needed.
+
+#### Signing key on rerun (`-InitDb`)
+
+With self-contained identity, `start-local-dms.ps1`, `start-local-config.ps1` and
+`start-published-dms.ps1` run `-InitDb` on every start, not only the first. So do the bootstrap
+wrappers, which call them.
+
+* An existing active signing key is kept. `-InitDb` creates a key only when none is active.
+* If the newest active key cannot be decrypted with the configured
+  `CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY`, `-InitDb` stops with an error and changes no
+  key. This happens, for example, after that value is changed in `.env` while the database is
+  kept, and the stack does not finish starting.
+  * To recover, restore the encryption key that the signing key was created with.
+  * Starting again with the mismatched value fails the same way, because startup never rotates
+    the key.
+* Replacing the signing key is an explicit operation, not something startup repairs. For a
+  disposable local stack, the simplest way is to remove it with its volumes (`-d -v`) and start
+  again.
+* On PostgreSQL, the database can reject the check itself, for example because of pgcrypto
+  permissions. `-InitDb` then reports that the key could not be checked and changes nothing; this
+  does not show that either key is wrong.
 
 ### Expired token cleanup (self-contained identity)
 

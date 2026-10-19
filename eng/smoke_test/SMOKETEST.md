@@ -92,6 +92,7 @@ delivers the key and secret to you:
 - `bootstrap-local-dms.ps1`, `bootstrap-published-dms.ps1` and `start-published-dms.ps1` print a credential summary built by `Get-SmokeTestCredentialSummary`. What follows the key and secret depends on the run:
   - **Completed run, no tenant route, single route-unqualified data store:** a copyable `Invoke-NonDestructiveApiTests.ps1` command. If the DMS URL is not known yet, the command uses a `<dms-base-url>` placeholder and the summary says to replace it.
   - **Tenant routes (`DMS_MULTI_TENANCY=true`) or school-year data stores:** the qualified DMS base and token URLs instead of a command. Smoke runs against those routes have not been validated.
+  - **Data store with other route contexts** (a key other than `schoolYear`, or several contexts): each context as `key=value`, with no URL.
   - **Run that failed after the credential was created:** no run instructions.
   - **`start-published-dms.ps1` rerun against an already-running self-contained stack:** the existing signing key is kept, so the printed command works without restarting DMS (see the `start-published-dms.ps1` note in [Smoke-test credentials](../docker-compose/README.md#smoke-test-credentials--addsmoketestcredentials)).
 

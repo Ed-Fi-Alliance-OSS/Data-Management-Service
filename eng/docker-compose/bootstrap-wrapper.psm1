@@ -1102,23 +1102,44 @@ function Invoke-BootstrapWrapper {
             # configure-local-data-store.ps1 throws on failure (no exit code); clear any stale native exit code first.
             $global:LASTEXITCODE = 0
             $configurationResult = & "$PSScriptRoot/configure-local-data-store.ps1" @configureArgs
-            if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
-                throw "configure-local-data-store.ps1 failed with exit code $LASTEXITCODE."
+            $configureExitCode = $LASTEXITCODE
+            $configurationResults = @($configurationResult)
+
+            # Once configure has created the credential, its summary is cached before the output
+            # contract below can throw, so the finally block prints it even when that contract fails.
+            # Only one unambiguous credential-bearing result is used, and the checks still run.
+            $smokeTestSummaryArgs = @{
+                DmsBaseUrl = $smokeTestSummaryBaseUrl
+                DmsMultiTenancy = $smokeTestDmsMultiTenancy
+                SelfContainedIdentity = ($resolvedIdentityProvider -eq "self-contained")
+            }
+            if ($AddSmokeTestCredentials) {
+                $credentialResults = @($configurationResults | Where-Object {
+                        ($_ -is [System.Collections.IDictionary] -and $_.Contains("SmokeTestCredential")) -or
+                        ($_ -isnot [System.Collections.IDictionary] -and $null -ne $_ -and $null -ne $_.PSObject.Properties["SmokeTestCredential"])
+                    })
+                if ($credentialResults.Count -eq 1) {
+                    try {
+                        $smokeTestSummary = Resolve-WrapperSmokeTestSummary -ConfigureResult $credentialResults[0] @smokeTestSummaryArgs
+                    }
+                    catch {
+                        # An unusable credential is reported by the contract check below, after the
+                        # exit-code and result-count checks, so their errors keep precedence.
+                        $smokeTestSummary = $null
+                    }
+                }
             }
 
-            $configurationResults = @($configurationResult)
+            if ($configureExitCode -is [int] -and $configureExitCode -ne 0) {
+                throw "configure-local-data-store.ps1 failed with exit code $configureExitCode."
+            }
             if ($configurationResults.Count -ne 1) {
                 throw "configure-local-data-store.ps1 must return exactly one structured result object. Returned $($configurationResults.Count)."
             }
             $configured = $configurationResults[0]
-            if ($AddSmokeTestCredentials) {
-                # Validated and formatted before anything else can fail, so the finally block only
-                # prints these cached lines.
-                $smokeTestSummary = Resolve-WrapperSmokeTestSummary `
-                    -ConfigureResult $configured `
-                    -DmsBaseUrl $smokeTestSummaryBaseUrl `
-                    -DmsMultiTenancy:$smokeTestDmsMultiTenancy `
-                    -SelfContainedIdentity:($resolvedIdentityProvider -eq "self-contained")
+            if ($AddSmokeTestCredentials -and $null -eq $smokeTestSummary) {
+                # Throws the value-free contract error: the one result carries no usable credential.
+                $smokeTestSummary = Resolve-WrapperSmokeTestSummary -ConfigureResult $configured @smokeTestSummaryArgs
             }
             $configuredDataStoreIds = [long[]]@(Resolve-WrapperSelectedDataStoreIds -ConfigureResult $configured)
             if ($EnableKafkaCdc -and ($configuredDataStoreIds.Count -ne 1 -or

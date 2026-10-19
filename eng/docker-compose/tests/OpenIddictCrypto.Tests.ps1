@@ -783,7 +783,8 @@ Describe "OpenIddict signing-key initialization builders (DMS-1292)" {
         $sql = New-OpenIddictKeyStateCheckSql -EncryptionKey "state-check-passphrase"
 
         $sql | Should -Match 'WHERE "IsActive" = TRUE\s+ORDER BY "CreatedAt" DESC\s+LIMIT 1;' -Because "the check must read the key the Configuration Service signs with"
-        $sql | Should -Match "(?s)BEGIN\s+PERFORM pgp_sym_decrypt\(newest_private_key::bytea, 'state-check-passphrase'\);.*EXCEPTION WHEN OTHERS THEN\s+key_state := 'active-undecryptable';"
+        $sql | Should -Match ("(?s)BEGIN\s+PERFORM pgp_sym_decrypt\(newest_private_key::bytea, 'state-check-passphrase'\);.*EXCEPTION\s+" +
+            "WHEN SQLSTATE '39000' THEN\s+key_state := 'active-undecryptable';\s+WHEN OTHERS THEN\s+key_state := 'active-unverified';") -Because "only pgcrypto's wrong-key-or-corrupt-data error may be reported as a key mismatch"
         $sql | Should -Not -Match 'INSERT INTO "dmscs"\."OpenIddictKey"' -Because "the state check must never change a row"
         $sql | Should -Not -Match 'pgp_sym_encrypt' -Because "the state check carries no key material"
         $sql | Should -Not -Match 'pg_advisory'
@@ -799,7 +800,7 @@ Describe "OpenIddict signing-key initialization builders (DMS-1292)" {
         $lock | Should -BeGreaterThan -1
         $select | Should -BeGreaterThan $lock -Because "the active-key recheck must run under the lock"
         $sql | Should -Match ("(?s)IF newest_private_key IS NOT NULL THEN\s+BEGIN\s+PERFORM pgp_sym_decrypt\(newest_private_key::bytea, 'initialization-passphrase'\);\s+" +
-            "key_state := 'active-ok';\s+EXCEPTION WHEN OTHERS THEN\s+key_state := 'active-undecryptable';\s+END;\s+ELSE\s+" +
+            "key_state := 'active-ok';\s+EXCEPTION\s+WHEN SQLSTATE '39000' THEN\s+key_state := 'active-undecryptable';\s+WHEN OTHERS THEN\s+key_state := 'active-unverified';\s+END;\s+ELSE\s+" +
             'INSERT INTO "dmscs"\."OpenIddictKey".*' + "key_state := 'created';\s+END IF;")
         ([regex]::Matches($sql, 'INSERT INTO "dmscs"\."OpenIddictKey"')).Count | Should -Be 1
         $sql | Should -Not -Match 'RAISE'
@@ -894,6 +895,14 @@ Describe "OpenIddict signing-key initialization in -InitDb (DMS-1292)" {
             $script:PhaseAState = "active-undecryptable"
 
             { Invoke-InitDbScripts 6>$null } | Should -Throw $script:FixedUndecryptableError
+            Should -Invoke Invoke-PostgresOpenIddictKeyScript -Times 0 -Exactly -ParameterFilter { $Script -match "pg_advisory_xact_lock" }
+        }
+
+        It "stops without blaming either key, changing nothing, when the database rejects the check itself" {
+            $script:PhaseAState = "active-unverified"
+
+            $failure = { Invoke-InitDbScripts 6>$null } | Should -Throw -PassThru
+            $failure.Exception.Message | Should -BeExactly "The newest active OpenIddict signing key could not be checked: the database rejected the decryption check for a reason other than the encryption key (for example, pgcrypto permissions); no signing key was changed. Fix the database access; neither the signing key nor the encryption key is shown to be wrong."
             Should -Invoke Invoke-PostgresOpenIddictKeyScript -Times 0 -Exactly -ParameterFilter { $Script -match "pg_advisory_xact_lock" }
         }
 
@@ -1073,5 +1082,224 @@ Describe "OpenIddict signing-key initialization in -InitDb (DMS-1292)" {
             $assignment | Should -Not -BeNullOrEmpty
             ([int]$assignment.Right.Extent.Text) * 1000 | Should -BeGreaterThan $lockTimeoutMs
         }
+    }
+}
+
+# Opt-in live suites (DMS-1292): the signing-key initialization runs against a real engine, with
+# nothing on the key path mocked. Each Describe skips itself unless its variable names a disposable
+# server, so CI lanes without one are unaffected. Every test creates and drops its own database.
+#   DMS_OPENIDDICT_KEY_LIVE_PG_CONTAINER      a PostgreSQL container whose local psql trusts postgres
+#   DMS_OPENIDDICT_KEY_LIVE_MSSQL_CONNECTION  a SqlClient connection string with server-admin rights
+# Concurrent initializers are not covered here: no existing fixture can hold one initializer inside
+# the lock while another waits without timing assumptions.
+Describe "OpenIddict signing-key initialization against live PostgreSQL (DMS-1292)" -Skip:([string]::IsNullOrWhiteSpace($env:DMS_OPENIDDICT_KEY_LIVE_PG_CONTAINER)) {
+    BeforeAll {
+        $script:LivePgContainer = $env:DMS_OPENIDDICT_KEY_LIVE_PG_CONTAINER
+        $script:LivePwsh = (Get-Command pwsh -CommandType Application | Select-Object -First 1).Source
+        $script:LiveKey = "Live-Dms1292-Encryption'Key"
+        $script:LiveWrongKey = "Live-Dms1292-Other-Key"
+
+        function script:Invoke-LivePgSql {
+            param([string]$Database, [string]$Sql)
+
+            $output = $Sql | & docker exec -i $script:LivePgContainer psql -U postgres -d $Database -v ON_ERROR_STOP=1 -q -tA -f - 2>&1
+            if ($LASTEXITCODE -ne 0) { throw "Live fixture SQL failed: $($output | Out-String)" }
+            return @($output | ForEach-Object { [string]$_ } | Where-Object { $_ })
+        }
+
+        function script:Get-LiveKeyRows {
+            Invoke-LivePgSql -Database $script:LiveDb -Sql @'
+SELECT "Id" || '|' || "KeyId" || '|' || md5("PrivateKey") || '|' || md5("PublicKey") || '|' || "IsActive" || '|' || "CreatedAt"
+FROM "dmscs"."OpenIddictKey" ORDER BY "Id";
+'@
+        }
+
+        # Runs PowerShell in a child process from eng/docker-compose, as an operator would, so each run
+        # loads setup-openiddict.ps1 afresh. Returns the exit code and all output as text; a failure's
+        # message is printed on one line, unwrapped by the console's error view.
+        function script:Invoke-LiveChild {
+            param([string]$Command)
+
+            $quotedPath = "'" + ([string]$script:DockerComposePath).Replace("'", "''") + "'"
+            $output = & $script:LivePwsh -NoProfile -NonInteractive -Command "Set-Location -LiteralPath $quotedPath; try { $Command } catch { 'FAILED: ' + `$_.Exception.Message; exit 1 }" 2>&1
+            return [PSCustomObject]@{ ExitCode = $LASTEXITCODE; Text = ($output | Out-String) }
+        }
+
+        function script:Get-LiveSetupArguments {
+            param([string]$EncryptionKey, [string]$User = "postgres")
+
+            $quote = { param([string]$Value) "'" + $Value.Replace("'", "''") + "'" }
+            return "-EnvironmentFile '' -SkipLegacyEnvironmentVariableWarning -DbType Postgresql " +
+                "-ConnectionString $(& $quote "Host=localhost;Database=$($script:LiveDb);Username=$User;") " +
+                "-DbName $(& $quote $script:LiveDb) -PostgresContainerName $(& $quote $script:LivePgContainer) " +
+                "-EncryptionKey $(& $quote $EncryptionKey)"
+        }
+
+        function script:Invoke-LiveInitDb {
+            param([string]$EncryptionKey, [string]$User = "postgres")
+
+            Invoke-LiveChild -Command "./setup-openiddict.ps1 -InitDb $(Get-LiveSetupArguments -EncryptionKey $EncryptionKey -User $User)"
+        }
+    }
+
+    BeforeEach {
+        $suffix = [Guid]::NewGuid().ToString("N").Substring(0, 12)
+        $script:LiveDb = "dms1292_keyinit_$suffix"
+        $script:LiveRole = "dms1292_limited_$suffix"
+    }
+
+    AfterEach {
+        Invoke-LivePgSql -Database "postgres" -Sql "DROP DATABASE IF EXISTS $($script:LiveDb) WITH (FORCE); DROP ROLE IF EXISTS $($script:LiveRole);" | Out-Null
+    }
+
+    It "creates one key that decrypts with the configured encryption key, then keeps it unchanged on rerun" {
+        $first = Invoke-LiveInitDb -EncryptionKey $script:LiveKey
+        $afterFirst = @(Get-LiveKeyRows)
+        $second = Invoke-LiveInitDb -EncryptionKey $script:LiveKey
+
+        $first.ExitCode | Should -Be 0 -Because $first.Text
+        $first.Text | Should -BeLike "*created the initial active key*"
+        $afterFirst.Count | Should -Be 1
+        $decryptable = Invoke-LivePgSql -Database $script:LiveDb -Sql "SELECT count(*) FROM ""dmscs"".""OpenIddictKey"" WHERE pgp_sym_decrypt(""PrivateKey""::bytea, '$($script:LiveKey.Replace("'", "''"))') IS NOT NULL;"
+        $decryptable | Should -Be "1"
+        $second.ExitCode | Should -Be 0 -Because $second.Text
+        $second.Text | Should -BeLike "*reusing the existing active key*"
+        @(Get-LiveKeyRows) | Should -Be $afterFirst -Because "a rerun must not insert, update or deactivate any key"
+    }
+
+    It "stops with the encryption-key error and changes no key when the configured key does not decrypt the active key" {
+        (Invoke-LiveInitDb -EncryptionKey $script:LiveKey).ExitCode | Should -Be 0
+        $before = @(Get-LiveKeyRows)
+
+        $run = Invoke-LiveInitDb -EncryptionKey $script:LiveWrongKey
+
+        $run.ExitCode | Should -Not -Be 0
+        $run.Text | Should -BeLike "*cannot be decrypted with the configured encryption key; no signing key was changed*"
+        $run.Text | Should -Not -BeLike "*$($script:LiveWrongKey)*"
+        @(Get-LiveKeyRows) | Should -Be $before
+    }
+
+    It "keeps a key another initializer created before the locked phase ran, inserting nothing" {
+        # The outcome of losing the race: the locked phase rechecks under the lock and finds a key.
+        (Invoke-LiveInitDb -EncryptionKey $script:LiveKey).ExitCode | Should -Be 0
+        $before = @(Get-LiveKeyRows)
+
+        $states = foreach ($key in @($script:LiveKey, $script:LiveWrongKey)) {
+            $quotedKey = "'" + $key.Replace("'", "''") + "'"
+            $run = Invoke-LiveChild -Command ". ./setup-openiddict.ps1 $(Get-LiveSetupArguments -EncryptionKey $key); Invoke-PostgresOpenIddictKeyScript -Script (New-OpenIddictKeyInitializationSql -EncryptionKey $quotedKey)"
+            $run.ExitCode | Should -Be 0 -Because $run.Text
+            ($run.Text -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -Last 1).Trim()
+        }
+
+        $states | Should -Be @("active-ok", "active-undecryptable")
+        @(Get-LiveKeyRows) | Should -Be $before
+    }
+
+    It "reports a check the database rejects as unverified, not as a key mismatch, and changes no key" {
+        (Invoke-LiveInitDb -EncryptionKey $script:LiveKey).ExitCode | Should -Be 0
+        $before = @(Get-LiveKeyRows)
+        # A role that may run every -InitDb statement except pgcrypto's decrypt function.
+        Invoke-LivePgSql -Database $script:LiveDb -Sql @"
+CREATE ROLE $($script:LiveRole) LOGIN;
+GRANT CONNECT, CREATE ON DATABASE $($script:LiveDb) TO $($script:LiveRole);
+GRANT USAGE, CREATE ON SCHEMA "dmscs" TO $($script:LiveRole);
+GRANT SELECT ON "dmscs"."OpenIddictKey" TO $($script:LiveRole);
+REVOKE EXECUTE ON FUNCTION pgp_sym_decrypt(bytea, text) FROM PUBLIC;
+"@ | Out-Null
+
+        $run = Invoke-LiveInitDb -EncryptionKey $script:LiveKey -User $script:LiveRole
+
+        $run.ExitCode | Should -Not -Be 0
+        $run.Text | Should -BeLike "*could not be checked: the database rejected the decryption check for a reason other than the encryption key*"
+        $run.Text | Should -Not -BeLike "*cannot be decrypted*"
+        @(Get-LiveKeyRows) | Should -Be $before
+    }
+}
+
+Describe "OpenIddict signing-key initialization against live SQL Server (DMS-1292)" -Skip:([string]::IsNullOrWhiteSpace($env:DMS_OPENIDDICT_KEY_LIVE_MSSQL_CONNECTION)) {
+    BeforeAll {
+        $script:LiveKey = "Live-Dms1292-Encryption'Key"
+        $script:LiveWrongKey = "Live-Dms1292-Other-Key"
+
+        function script:Invoke-LiveMssqlSql {
+            param([string]$Sql, [switch]$Master)
+
+            $builder = [System.Data.SqlClient.SqlConnectionStringBuilder]::new($env:DMS_OPENIDDICT_KEY_LIVE_MSSQL_CONNECTION)
+            # .PSBase: PowerShell's dictionary adapter would otherwise treat these names as keywords.
+            $builder.PSBase.InitialCatalog = if ($Master) { "master" } else { $script:LiveDb }
+            $connection = [System.Data.SqlClient.SqlConnection]::new($builder.PSBase.ConnectionString)
+            try {
+                $connection.Open()
+                $command = $connection.CreateCommand()
+                $command.CommandText = $Sql
+                $reader = $command.ExecuteReader()
+                $rows = [System.Collections.Generic.List[string]]::new()
+                while ($reader.Read()) { $rows.Add([string]$reader.GetValue(0)) }
+                $reader.Dispose()
+                return $rows.ToArray()
+            }
+            finally {
+                $connection.Dispose()
+            }
+        }
+
+        function script:Get-LiveKeyRows {
+            Invoke-LiveMssqlSql -Sql @'
+SELECT CONCAT(Id, '|', KeyId, '|', CONVERT(VARCHAR(64), HASHBYTES('SHA2_256', PrivateKey), 2), '|',
+    CONVERT(VARCHAR(64), HASHBYTES('SHA2_256', PublicKey), 2), '|', IsActive, '|', CONVERT(VARCHAR(30), CreatedAt, 126))
+FROM dmscs.OpenIddictKey ORDER BY Id;
+'@
+        }
+    }
+
+    BeforeEach {
+        $script:LiveDb = "dms1292_keyinit_$([Guid]::NewGuid().ToString('N').Substring(0, 12))"
+        $builder = [System.Data.SqlClient.SqlConnectionStringBuilder]::new($env:DMS_OPENIDDICT_KEY_LIVE_MSSQL_CONNECTION)
+        $builder.PSBase.InitialCatalog = $script:LiveDb
+        $livePassword = $builder.PSBase.Password
+
+        Push-Location $script:DockerComposePath
+        try {
+            . ./setup-openiddict.ps1 -EnvironmentFile "" -DbType "MSSQL" -ConnectionString $builder.PSBase.ConnectionString `
+                -DbName $script:LiveDb -DbPassword $livePassword -EncryptionKey $script:LiveKey
+        }
+        finally {
+            Pop-Location
+        }
+
+        # -InitDb runs its DDL through sqlcmd in the Compose container; here the same statements go to
+        # the live server over SqlClient. The key initialization keeps its own SqlClient path.
+        Mock Invoke-DbQuery {
+            $result = Invoke-LiveMssqlSql -Sql $Sql -Master:$UseMasterDatabase
+            if ($result.Count -gt 0) { $result }
+        }
+    }
+
+    AfterEach {
+        [System.Data.SqlClient.SqlConnection]::ClearAllPools()
+        Invoke-LiveMssqlSql -Master -Sql "IF DB_ID(N'$($script:LiveDb)') IS NOT NULL BEGIN ALTER DATABASE [$($script:LiveDb)] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [$($script:LiveDb)]; END" | Out-Null
+    }
+
+    It "creates one key that decrypts with the configured encryption key, then keeps it unchanged on rerun" {
+        $first = Invoke-InitDbScripts 6>&1 | ForEach-Object { [string]$_ }
+        $afterFirst = @(Get-LiveKeyRows)
+        $second = Invoke-InitDbScripts 6>&1 | ForEach-Object { [string]$_ }
+
+        $first | Should -Contain "OpenIddict signing key: created the initial active key"
+        $afterFirst.Count | Should -Be 1
+        $decryptable = Invoke-LiveMssqlSql -Sql "SELECT COUNT(*) FROM dmscs.OpenIddictKey WHERE DECRYPTBYPASSPHRASE(N'$($script:LiveKey.Replace("'", "''"))', PrivateKey) IS NOT NULL;"
+        $decryptable | Should -Be "1"
+        $second | Should -Contain "OpenIddict signing key: reusing the existing active key"
+        @(Get-LiveKeyRows) | Should -Be $afterFirst -Because "a rerun must not insert, update or deactivate any key"
+    }
+
+    It "stops with the encryption-key error and changes no key when the configured key does not decrypt the active key" {
+        Invoke-InitDbScripts 6>$null
+        $before = @(Get-LiveKeyRows)
+        # The -EncryptionKey value the dot-sourced setup-openiddict.ps1 reads at call time.
+        Set-Variable -Name EncryptionKey -Value $script:LiveWrongKey
+
+        { Invoke-InitDbScripts 6>$null } | Should -Throw "*cannot be decrypted with the configured encryption key; no signing key was changed*"
+        @(Get-LiveKeyRows) | Should -Be $before
     }
 }
