@@ -77,7 +77,7 @@ Feature: Token validation
                   """
                     {
                       "detail": "The request could not be processed. See 'errors' for details.",
-                      "type": "urn:ed-fi:api:security:authentication",
+                      "type": "urn:ed-fi:management-api:security:authentication",
                       "title": "Authentication Failed",
                       "status": 401,
                       "validationErrors": {},

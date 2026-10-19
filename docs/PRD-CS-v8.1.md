@@ -134,13 +134,14 @@ in CS v8.0.
   natural keys. A caller-supplied reference to an entity that does not exist
   (for example a vendor, data store, profile, application, ownership token,
   or claim set copy source) SHALL return `409 Conflict` with type
-  `urn:ed-fi:api:conflict:unresolved-reference`. A create, update, copy, or
-  import that duplicates an existing natural key (vendor company name per
-  tenant, profile name, claim set name, data store name per tenant, API client
-  name per application, data store derivative type per data store,
+  `urn:ed-fi:management-api:conflict:unresolved-reference`. A create, update,
+  copy, or import that duplicates an existing natural key (vendor company name
+  per tenant, profile name, claim set name, data store name per tenant, API
+  client name per application, data store derivative type per data store,
   application name per vendor, tenant name, data store context key) SHALL
-  return `400 Bad Request` with type `urn:ed-fi:api:bad-request:data`, with
-  the message under the duplicated field in `validationErrors`.
+  return `400 Bad Request` with type
+  `urn:ed-fi:management-api:bad-request:data`, with the message under the
+  duplicated field in `validationErrors`.
   `POST /v3/vendors` SHALL only create; an existing company name is rejected
   rather than updated. Supersedes v8.0 FR-ERROR-5 for claim sets and vendors.
 

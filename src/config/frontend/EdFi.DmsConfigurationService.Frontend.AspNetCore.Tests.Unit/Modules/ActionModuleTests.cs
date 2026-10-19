@@ -368,7 +368,7 @@ public class RegisterActionEndpointTests
         {
             var body = await GetBadRequestBodyAsync("?orderBy=uri");
 
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:parameter");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request:parameter");
             body["title"]!.GetValue<string>().Should().Be("Parameter Validation Failed");
             body["status"]!.GetValue<int>().Should().Be(400);
 
@@ -386,7 +386,7 @@ public class RegisterActionEndpointTests
         {
             var body = await GetBadRequestBodyAsync("?direction=sideways");
 
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:parameter");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request:parameter");
             body["errors"]!
                 .AsArray()
                 .Select(error => error!.GetValue<string>())

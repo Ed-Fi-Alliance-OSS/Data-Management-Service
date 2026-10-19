@@ -443,7 +443,10 @@ public class JobApiIntegrationTests
         public void It_answers_the_other_tenant_exactly_as_for_an_absent_job()
         {
             _otherTenantRead.MediaType.Should().Be("application/problem+json");
-            _otherTenantRead.Body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:not-found");
+            _otherTenantRead.Body["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:management-api:not-found");
             _otherTenantRead.Body["detail"]!
                 .GetValue<string>()
                 .Should()

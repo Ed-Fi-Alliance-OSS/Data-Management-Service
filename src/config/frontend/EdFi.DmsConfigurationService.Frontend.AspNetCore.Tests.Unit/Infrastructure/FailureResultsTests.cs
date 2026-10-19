@@ -55,7 +55,7 @@ public class FailureResultsTests
 
         [Test]
         public void It_has_the_not_found_type() =>
-            _result.Body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:not-found");
+            _result.Body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:not-found");
 
         [Test]
         public void It_has_a_body_status_matching_the_http_status() =>
@@ -94,7 +94,10 @@ public class FailureResultsTests
 
         [Test]
         public void It_has_the_internal_server_error_type() =>
-            _result.Body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:internal-server-error");
+            _result.Body["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:management-api:internal-server-error");
 
         [Test]
         public void It_has_a_body_status_matching_the_http_status() =>
@@ -127,7 +130,10 @@ public class FailureResultsTests
 
         [Test]
         public void It_has_the_authorization_type() =>
-            _result.Body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:security:authorization");
+            _result.Body["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:management-api:security:authorization");
 
         [Test]
         public void It_has_the_authorization_title() =>
@@ -246,7 +252,7 @@ public class FailureResultsTests
             _result.Body["type"]!
                 .GetValue<string>()
                 .Should()
-                .Be("urn:ed-fi:api:security:authentication:too-many-tokens");
+                .Be("urn:ed-fi:management-api:security:authentication:too-many-tokens");
 
         [Test]
         public void It_has_a_body_status_matching_the_http_status() =>

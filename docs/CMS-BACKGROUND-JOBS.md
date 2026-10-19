@@ -108,7 +108,7 @@ whose code is not registered is recorded as `HandlerFailed`.
   401.
 - `jobId` is an opaque string matched exactly (case, length, and trailing spaces included) within
   the caller's tenant. An unknown job and another tenant's job both return the same 404 problem
-  details (`urn:ed-fi:api:not-found`, detail `Job not found.`).
+  details (`urn:ed-fi:management-api:not-found`, detail `Job not found.`).
 - With multi-tenancy enabled, the `Tenant` header is required as for every tenant-scoped route.
 - A committed enqueue is visible to the very next request.
 
@@ -144,9 +144,10 @@ it on the path parameter, the declared responses (200, 401, 403, 404, and 500, e
 - Problem responses reference the framework `ProblemDetails` schema, not `problemDetails`.
 - The operation's tag is `JobModule`, as for every Configuration Service module, not `Jobs`.
 
-None of these changes a 200 response body. One runtime difference is deliberate: the not-found
-problem type is the Configuration Service `urn:ed-fi:api:not-found`, not upstream's
-`urn:ed-fi:management-api:not-found`, consistent with every other Configuration Service route.
+None of these changes a 200 response body. The not-found problem type matches upstream's
+`urn:ed-fi:management-api:not-found`: since
+[DMS-1586](https://edfi.atlassian.net/browse/DMS-1586), every Configuration Service route uses the
+Management API problem-type prefix.
 
 ## Writing a job handler
 
