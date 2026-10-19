@@ -862,6 +862,10 @@ function Complete-OpenIddictKeyInitialization {
         "canceled" {
             throw "OpenIddict signing-key initialization was canceled in the database (for example, by statement_timeout or a cancel request); no signing key was changed."
         }
+        # PostgreSQL only: lock_not_available, raised when the creation phase's bounded lock wait ends.
+        "database-error 55P03" {
+            throw "OpenIddict signing-key initialization timed out waiting for a database lock (SQLSTATE 55P03), most likely the initialization lock held by another -InitDb run; no signing key was changed. Neither the signing key nor the encryption key is shown to be wrong; rerun once the other initialization has finished."
+        }
         # PostgreSQL only: the initialization script caught a failure outside the decryption check.
         # Only a SQLSTATE-shaped code is echoed; the statement and the server's error text are withheld.
         { $_ -cmatch '^database-error [0-9A-Z]{5}$' } {

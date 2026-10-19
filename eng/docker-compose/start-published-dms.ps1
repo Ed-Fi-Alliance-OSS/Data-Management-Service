@@ -1036,6 +1036,13 @@ else {
     if($AddSmokeTestCredentials)
     {
         Import-Module ../smoke_test/modules/SmokeTest.psm1 -Force
+        # Under the registration block's own condition this run was asked to register the data stores,
+        # so an empty list means it registered none (an invalid -SchoolYearRange only warns above).
+        # Get-SmokeTestCredential would then fall back to the tenant's first data store, which this run
+        # did not register.
+        if ((-not $NoDataStore -or $SchoolYearRange) -and $smokeTestDataStoreIds.Count -eq 0) {
+            throw "No data store was registered by this run, so -AddSmokeTestCredentials has none to associate the smoke test credential with; no credential was created. Check -SchoolYearRange (format: StartYear-EndYear)."
+        }
         # The summary formatter rejects a base URL with control characters; reject it before the
         # credential exists, so it is never created without a way to print it.
         if ($dmsUrl -match '\p{Cc}') {

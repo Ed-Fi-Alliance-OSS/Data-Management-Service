@@ -2432,6 +2432,24 @@ Export-ModuleMember -Function *
             @($run.CmsCalls | Where-Object { $_ -like "Add-Application*" }) | Should -BeNullOrEmpty
         }
 
+        It "creates no credential for an unrelated data store when a malformed -SchoolYearRange registers none (-NoDataStore:<NoDataStore>)" -ForEach @(
+            # The range only warns, so the credential guard is what stops the run.
+            @{ NoDataStore = $false; RangeWarnings = 1
+                Message = "No data store was registered by this run, so -AddSmokeTestCredentials has none to associate the smoke test credential with; no credential was created. Check -SchoolYearRange (format: StartYear-EndYear)." }
+            # The parameter check rejects the combination before any registration or the guard.
+            @{ NoDataStore = $true; RangeWarnings = 0
+                Message = "Parameters -NoDataStore and -SchoolYearRange are mutually exclusive. Use -NoDataStore for manual data store creation, or use -SchoolYearRange to auto-create data stores." }
+        ) {
+            $run = Invoke-StartPublishedCapture -Arguments @{ EnvironmentFile = $script:repo.EnvFile; SchoolYearRange = "2025"; NoDataStore = $NoDataStore; AddSmokeTestCredentials = $true }
+
+            $run.Error | Should -Not -BeNullOrEmpty
+            $run.Error.Exception.Message | Should -BeExactly $Message
+            @($run.Records | Where-Object { $_ -is [System.Management.Automation.WarningRecord] -and $_.Message -like "Invalid SchoolYearRange format*" }) | Should -HaveCount $RangeWarnings
+            @($run.CmsCalls | Where-Object { $_ -like "Add-DataStore*" -or $_ -like "Add-DmsSchoolYearInstances*" }) | Should -BeNullOrEmpty
+            @($run.CmsCalls | Where-Object { $_ -like "Get-DataStore*" -or $_ -like "Add-Application*" }) | Should -BeNullOrEmpty -Because "the first-data-store fallback must not run"
+            @($run.Strings | Where-Object { $_ -like "*Smoke test credentials*" -or $_ -like "*SYNTH*" -or $_ -like "Creating smoke test credentials*" }) | Should -BeNullOrEmpty
+        }
+
         It "keeps the credential off every non-success stream and out of files the run writes" {
             $before = @{}
             foreach ($file in @(Get-ChildItem -LiteralPath $script:repo.RepoRoot -Recurse -File -Force)) {

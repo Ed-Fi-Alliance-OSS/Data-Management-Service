@@ -808,9 +808,21 @@ Describe "OpenIddict signing-key initialization builders (DMS-1292)" {
         $sql | Should -Not -Match 'RAISE'
     }
 
+    It "bounds the creation lock wait with a transaction-local lock_timeout set before the lock is requested" {
+        $sql = New-OpenIddictKeyInitializationSql -EncryptionKey "initialization-passphrase"
+
+        # set_config's third argument (is_local) scopes the value to the DO statement's transaction;
+        # a standalone SET LOCAL outside an explicit transaction would not bound the lock wait.
+        $sql | Should -Match ("(?s)" + [regex]::Escape("PERFORM set_config('lock_timeout', '30s', true);") + "\s+" +
+            [regex]::Escape("PERFORM pg_advisory_xact_lock(1292000001);")) -Because "the lock wait must already be bounded when the lock is requested"
+        ([regex]::Matches($sql, 'lock_timeout')).Count | Should -Be 1
+        $sql | Should -Not -Match '(?m)^\s*SET\s' -Because "a session-level SET would outlive the initialization"
+        New-OpenIddictKeyStateCheckSql -EncryptionKey "state-check-passphrase" | Should -Not -Match 'lock_timeout' -Because "the state check takes no lock"
+    }
+
     It "catches every runtime failure of the <Builder> body, cancellation included, so the statement is never logged" -ForEach @(
         @{ Builder = "New-OpenIddictKeyStateCheckSql"; FirstStep = 'SELECT "PrivateKey" INTO newest_private_key' }
-        @{ Builder = "New-OpenIddictKeyInitializationSql"; FirstStep = 'PERFORM pg_advisory_xact_lock(1292000001);' }
+        @{ Builder = "New-OpenIddictKeyInitializationSql"; FirstStep = "PERFORM set_config('lock_timeout', '30s', true);" }
     ) {
         $sql = & $Builder -EncryptionKey "protected-passphrase"
 
@@ -994,6 +1006,15 @@ Describe "OpenIddict signing-key initialization in -InitDb (DMS-1292)" {
 
             $failure = { Invoke-InitDbScripts 6>$null } | Should -Throw -PassThru
             $failure.Exception.Message | Should -BeExactly "OpenIddict signing-key initialization was canceled in the database (for example, by statement_timeout or a cancel request); no signing key was changed."
+        }
+
+        It "stops with the fixed lock-timeout error, not a key or permission error, when the locked phase reports 55P03" {
+            $script:PhaseBState = "database-error 55P03"
+
+            $failure = { Invoke-InitDbScripts 6>$null } | Should -Throw -PassThru
+            $failure.Exception.Message | Should -BeExactly "OpenIddict signing-key initialization timed out waiting for a database lock (SQLSTATE 55P03), most likely the initialization lock held by another -InitDb run; no signing key was changed. Neither the signing key nor the encryption key is shown to be wrong; rerun once the other initialization has finished."
+            $failure.Exception.Message.Contains($script:SyntheticPassphrase) | Should -BeFalse
+            Should -Invoke Invoke-PostgresOpenIddictKeyScript -Times 1 -Exactly -ParameterFilter { $Script -match "pg_advisory_xact_lock" }
         }
 
         It "never runs the bare key insert" {
@@ -1187,7 +1208,8 @@ Describe "OpenIddict signing-key initialization in -InitDb (DMS-1292)" {
 #   DMS_OPENIDDICT_KEY_LIVE_PG_CONTAINER      a PostgreSQL container whose local psql trusts postgres
 #   DMS_OPENIDDICT_KEY_LIVE_MSSQL_CONNECTION  a SqlClient connection string with server-admin rights
 # Concurrent initializers are not covered here: no existing fixture can hold one initializer inside
-# the lock while another waits without timing assumptions.
+# the lock while another waits without timing assumptions. A plain session holding the lock is
+# covered, for the bounded wait.
 Describe "OpenIddict signing-key initialization against live PostgreSQL (DMS-1292)" -Skip:([string]::IsNullOrWhiteSpace($env:DMS_OPENIDDICT_KEY_LIVE_PG_CONTAINER)) {
     BeforeAll {
         $script:LivePgContainer = $env:DMS_OPENIDDICT_KEY_LIVE_PG_CONTAINER
@@ -1460,6 +1482,72 @@ CREATE TRIGGER dms1292_cancel_insert BEFORE INSERT ON "dmscs"."OpenIddictKey" FO
         @(Get-LiveKeyRows).Count | Should -Be 0 -Because "a failed creation must roll back its insert"
         Assert-LiveOutputWithholdsStatement -Text $run.Text
         Assert-LiveServerLogWithholdsStatement -FromLine $logStart -Sensitive @($script:LiveKey, $script:LiveKey.Replace("'", "''"))
+    }
+
+    It "stops with the lock-timeout error and inserts nothing when another session holds the initialization lock" {
+        Initialize-LiveEmptyKeyTable
+        # The holder session takes the lock and confirms it on stdout before -InitDb starts, so the
+        # locked phase is known to wait; the only timing involved is the script's own lock_timeout.
+        $holderStart = [System.Diagnostics.ProcessStartInfo]::new("docker")
+        foreach ($argument in @("exec", "-i", $script:LivePgContainer, "psql", "-X", "-q", "-tA", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", $script:LiveDb)) {
+            $holderStart.ArgumentList.Add($argument)
+        }
+        $holderStart.RedirectStandardInput = $true
+        $holderStart.RedirectStandardOutput = $true
+        $holderStart.UseShellExecute = $false
+        $holder = [System.Diagnostics.Process]::Start($holderStart)
+        $initializer = $null
+        try {
+            $holder.StandardInput.WriteLine("SELECT pg_advisory_lock(1292000001);")
+            $holder.StandardInput.WriteLine("SELECT 'dms1292_lock_held';")
+            $holder.StandardInput.Flush()
+            do {
+                $read = $holder.StandardOutput.ReadLineAsync()
+                $read.Wait(30000) | Should -BeTrue -Because "the holder session must confirm the lock"
+                $null -eq $read.Result | Should -BeFalse -Because "the holder session ended before confirming the lock"
+            } until ($read.Result -eq "dms1292_lock_held")
+            Invoke-LivePgSql -Database $script:LiveDb -Sql "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND objid = 1292000001 AND granted;" |
+                Should -Be "1"
+
+            # The same child run as Invoke-LiveInitDb, but as a process this test can stop: if the
+            # production timeout is missing or ineffective, the watchdog fails the test instead of the
+            # wait hanging the run with the holder still open.
+            $quotedPath = "'" + ([string]$script:DockerComposePath).Replace("'", "''") + "'"
+            $initializerStart = [System.Diagnostics.ProcessStartInfo]::new($script:LivePwsh)
+            foreach ($argument in @("-NoProfile", "-NonInteractive", "-Command",
+                    "Set-Location -LiteralPath $quotedPath; try { ./setup-openiddict.ps1 -InitDb $(Get-LiveSetupArguments -EncryptionKey $script:LiveKey) } catch { 'FAILED: ' + `$_.Exception.Message; exit 1 }")) {
+                $initializerStart.ArgumentList.Add($argument)
+            }
+            $initializerStart.RedirectStandardOutput = $true
+            $initializerStart.RedirectStandardError = $true
+            $initializerStart.UseShellExecute = $false
+            $initializer = [System.Diagnostics.Process]::Start($initializerStart)
+            $stdout = $initializer.StandardOutput.ReadToEndAsync()
+            $stderr = $initializer.StandardError.ReadToEndAsync()
+            $initializer.WaitForExit(180000) | Should -BeTrue -Because "the bounded lock wait must end -InitDb; the watchdog stopped it instead"
+            $run = [PSCustomObject]@{ ExitCode = $initializer.ExitCode; Text = $stdout.Result + $stderr.Result }
+        }
+        finally {
+            # Stop a still-waiting initializer before the lock is released, so it cannot go on to insert.
+            if ($null -ne $initializer) {
+                if (-not $initializer.HasExited) {
+                    $initializer.Kill($true)
+                    $null = $initializer.WaitForExit(30000)
+                }
+                $initializer.Dispose()
+            }
+            # Ending the holder's session releases its lock.
+            $holder.StandardInput.Close()
+            if (-not $holder.WaitForExit(30000)) { $holder.Kill($true) }
+            $holder.Dispose()
+        }
+
+        $run.ExitCode | Should -Not -Be 0
+        $run.Text | Should -BeLike "*timed out waiting for a database lock (SQLSTATE 55P03)*no signing key was changed*"
+        $run.Text | Should -Not -BeLike "*cannot be decrypted*"
+        $run.Text | Should -Not -BeLike "*check the database user's access*"
+        @(Get-LiveKeyRows).Count | Should -Be 0 -Because "a timed-out creation must insert nothing"
+        Assert-LiveOutputWithholdsStatement -Text $run.Text
     }
 }
 

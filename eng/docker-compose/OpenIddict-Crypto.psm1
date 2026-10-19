@@ -456,8 +456,9 @@ function New-OpenIddictKeyStateCheckSql {
 .DESCRIPTION
     The second setup-openiddict.ps1 -InitDb phase, run only after the state check found no active key.
     A transaction-scoped advisory lock serializes cooperating initializers, and the newest active key is
-    read again under it. Without one, the script inserts a new key and prints 'created'. When another
-    initializer created one in the meantime, nothing is inserted and that key is decrypt-checked with
+    read again under it. The wait for that lock is bounded to 30 seconds by a transaction-local
+    lock_timeout; a timeout reports 'database-error 55P03'. Without an active key, the script inserts
+    a new key and prints 'created'. When another initializer created one in the meantime, nothing is inserted and that key is decrypt-checked with
     this caller's encryption key: 'active-ok', 'active-undecryptable' or 'active-unverified'. A failed
     or canceled lock, lookup or insert reports 'database-error <SQLSTATE>' or 'canceled' and inserts
     nothing. No existing row is changed.
@@ -493,8 +494,11 @@ function New-OpenIddictKeyInitializationSql {
 '@
     $stateBlock = Get-OpenIddictNewestKeyStateBlock -WhenNoActiveKey $createInitialKey
 
-    # The lock id is a fixed constant shared by every cooperating initializer of this table.
+    # The lock id is a fixed constant shared by every cooperating initializer of this table. The wait
+    # for it is bounded: set_config's third argument makes lock_timeout local to the DO statement's
+    # transaction, and a lock not granted in time raises SQLSTATE 55P03, reported as 'database-error 55P03'.
     $body = @"
+    PERFORM set_config('lock_timeout', '30s', true);
     PERFORM pg_advisory_xact_lock(1292000001);
 $stateBlock
 "@
