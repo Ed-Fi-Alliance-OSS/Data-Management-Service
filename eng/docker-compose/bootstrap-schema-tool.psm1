@@ -26,11 +26,8 @@ function Get-DmsSchemaToolCandidateDirectory {
     $repoRoot = Get-BootstrapRepoRoot
     $candidateDirectories = [System.Collections.ArrayList]::new()
 
-    # Documented publish location (README "Standard mode" / prepare-dms-schema.ps1 help):
-    # `dotnet publish ... -o .bootstrap/tools/api-schema-tools` drops the apphost executable directly in this
-    # flat directory. Probing it lets the documented wrapper shorthand
-    # (`bootstrap-local-dms.ps1` package-backed standard staging) resolve the tool after the documented one-time
-    # publish step, without requiring -SchemaToolPath (which the wrapper does not forward) or DMS_SCHEMA_TOOL_PATH.
+    # Publish destination for automatic acquisition and optional manual refresh. The flat directory contains the
+    # apphost executable plus its dependency/runtime assets.
     $publishedToolDirectory = Join-Path (Get-BootstrapRoot) "tools/api-schema-tools"
     if (Test-Path -LiteralPath $publishedToolDirectory -PathType Container) {
         $null = $candidateDirectories.Add($publishedToolDirectory)
@@ -79,9 +76,9 @@ function Resolve-DmsSchemaTool {
     .SYNOPSIS
     Resolves the absolute path to the api-schema-tools executable used by the bootstrap schema phase.
     .DESCRIPTION
-    Honors an explicit -RequestedPath when supplied, otherwise probes the in-repo build output
-    directories. PATH-resolved fallback is opt-in via DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK=true;
-    when nothing resolves, throws with build/configuration guidance.
+    Honors an explicit -RequestedPath when supplied, then probes the published and in-repo build output
+    directories. PATH-resolved fallback is opt-in via DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK=true. When no
+    eligible executable resolves, publishes the SchemaTools project to the bootstrap tool directory.
     .PARAMETER RequestedPath
     Optional explicit path to the api-schema-tools executable. When set, it must exist or resolution throws.
     #>
@@ -115,16 +112,104 @@ function Resolve-DmsSchemaTool {
     }
 
     $pathCommand = Get-Command "api-schema-tools" -ErrorAction SilentlyContinue
-    if ($null -ne $pathCommand) {
-        if ($env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK -ne "true") {
-            throw "In-repo api-schema-tools tool not found. Build src/dms/clis/EdFi.DataManagementService.SchemaTools, set DMS_SCHEMA_TOOL_PATH, or set DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK=true to opt in to PATH fallback."
-        }
-
+    if ($null -ne $pathCommand -and $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK -eq "true") {
         Write-Warning "Falling back to PATH-resolved api-schema-tools executable: $(Format-LogSafePath ($pathCommand.Source))"
         return $pathCommand.Source
     }
 
-    throw "Unable to resolve the api-schema-tools executable. Build src/dms/clis/EdFi.DataManagementService.SchemaTools or set DMS_SCHEMA_TOOL_PATH."
+    $repoRoot = Get-BootstrapRepoRoot
+    $bootstrapRoot = Get-BootstrapRoot
+    $projectPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot "src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj"))
+    $outputDirectory = [System.IO.Path]::GetFullPath((Join-Path $bootstrapRoot "tools/api-schema-tools"))
+    $safeProjectPath = Format-LogSafePath $projectPath
+    $safeOutputDirectory = Format-LogSafePath $outputDirectory
+
+    if (-not (Test-Path -LiteralPath $projectPath -PathType Leaf)) {
+        throw "Cannot publish api-schema-tools because the source project is missing: $safeProjectPath. Restore the repository checkout or set DMS_SCHEMA_TOOL_PATH to an existing executable."
+    }
+
+    $dotnetCommand = Get-Command "dotnet" -ErrorAction SilentlyContinue
+    if ($null -eq $dotnetCommand) {
+        throw "Cannot publish api-schema-tools because the .NET SDK command 'dotnet' is unavailable. Install the .NET 10 SDK and ensure dotnet is on PATH, or set DMS_SCHEMA_TOOL_PATH to an existing executable. Source project: $safeProjectPath"
+    }
+
+    try {
+        New-Item -ItemType Directory -Path $outputDirectory -Force -ErrorAction Stop | Out-Null
+    }
+    catch {
+        throw "Cannot prepare api-schema-tools publish output directory '$safeOutputDirectory'. Check filesystem permissions and available disk space, or set DMS_SCHEMA_TOOL_PATH to an existing executable. $(Format-LogSafeText $_.Exception.Message)"
+    }
+
+    $existingExecutables = @{}
+    foreach ($candidateName in $candidateNames) {
+        $candidatePath = [System.IO.Path]::GetFullPath((Join-Path $outputDirectory $candidateName))
+        if (Test-Path -LiteralPath $candidatePath -PathType Leaf) {
+            $existingExecutables[$candidatePath] = $true
+        }
+    }
+
+    $publishArguments = @("publish", $projectPath, "-c", "Release", "-p:UseAppHost=true", "-o", $outputDirectory)
+    Write-Information "No eligible api-schema-tools executable was found. Publishing the source project to '$safeOutputDirectory'." -InformationAction Continue
+
+    $publishOutput = @()
+    $publishExitCode = $null
+    $invocationFailure = $null
+    $originalErrorActionPreference = $ErrorActionPreference
+    $originalNativeErrorPreference = $PSNativeCommandUseErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $PSNativeCommandUseErrorActionPreference = $false
+        $publishOutput = @(& dotnet @publishArguments 2>&1)
+        $publishExitCode = $LASTEXITCODE
+    }
+    catch {
+        $invocationFailure = Format-LogSafeText $_.Exception.Message
+        $publishExitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $originalErrorActionPreference
+        $PSNativeCommandUseErrorActionPreference = $originalNativeErrorPreference
+    }
+
+    $outputText = Format-LogSafeText (($publishOutput | ForEach-Object { [string]$_ }) -join " | ")
+    $expectedName = if ($IsWindows) { "api-schema-tools.exe" } else { "api-schema-tools" }
+    $expectedPath = [System.IO.Path]::GetFullPath((Join-Path $outputDirectory $expectedName))
+    $publishFailure = $null
+    if ($null -ne $invocationFailure) {
+        $publishFailure = "dotnet publish invocation failed: $invocationFailure"
+    }
+    elseif ($publishExitCode -ne 0) {
+        $publishFailure = "dotnet publish exited with code $publishExitCode."
+    }
+    elseif (-not (Test-Path -LiteralPath $expectedPath -PathType Leaf)) {
+        $publishFailure = "dotnet publish completed without producing the expected executable '$expectedName'."
+    }
+
+    if ($null -ne $publishFailure) {
+        $cleanupFailures = [System.Collections.Generic.List[string]]::new()
+        foreach ($candidateName in $candidateNames) {
+            $candidatePath = [System.IO.Path]::GetFullPath((Join-Path $outputDirectory $candidateName))
+            $parentPath = [System.IO.Path]::GetFullPath((Split-Path -Parent $candidatePath))
+            if ($existingExecutables.ContainsKey($candidatePath) -or
+                -not [string]::Equals($parentPath, $outputDirectory, [System.StringComparison]::OrdinalIgnoreCase) -or
+                -not (Test-Path -LiteralPath $candidatePath -PathType Leaf)) {
+                continue
+            }
+
+            try {
+                Remove-Item -LiteralPath $candidatePath -Force -ErrorAction Stop
+            }
+            catch {
+                $cleanupFailures.Add((Format-LogSafeText $_.Exception.Message))
+            }
+        }
+
+        $details = if ([string]::IsNullOrWhiteSpace($outputText)) { "" } else { " Publish output: $outputText" }
+        $cleanupDetails = if ($cleanupFailures.Count -eq 0) { "" } else { " Cleanup also failed: $($cleanupFailures -join ' | ')" }
+        throw "Unable to acquire api-schema-tools from '$safeProjectPath' into '$safeOutputDirectory'. $publishFailure$details$cleanupDetails Check the .NET 10 SDK, package restore/build output, and output directory access, or set DMS_SCHEMA_TOOL_PATH to an existing executable."
+    }
+
+    return $expectedPath
 }
 
 function Invoke-DmsSchemaHash {
