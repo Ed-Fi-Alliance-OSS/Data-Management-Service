@@ -140,6 +140,19 @@ Controller and secured-policy fixture workers use a 1 GiB maximum Java heap, che
 
 `qualification.json` records every suite's counts and outcome. Empty selection, missing/inconsistent reports, skipped cases and nonzero process exits fail qualification. Prerequisite failures are labeled `EnvironmentUnavailable`; they are not passing behavior evidence. No automatic retry replaces a failed test scenario or suite run. Structured JSON attachments retain controller boundaries, provider/lag observations, recovery, rollout, history and cleanup evidence, linked from TRX results. Fixture validation diagnostics retain bounded code locations without exception messages or values. Public TRX files omit raw assertion output; raw logs stay in a private temporary directory and are never uploaded.
 
+When the live E2E setup wrapper fails with `CDC_RUNBOOK_EVIDENCE_DIRECTORY` set,
+its `cdc-runbook-e2e-setup-*.json` record includes a `worker` snapshot captured before
+governed cleanup. Discovery is restricted to the selected Compose project's
+`kafka-cdc-worker` service; zero or multiple matches are reported without inspecting
+another container. Collection shares a ten-second deadline across discovery, inspection,
+and logs, with a 16 KiB limit on each output pipe (32 KiB total per command) and at most
+100 recent log lines requested. The snapshot contains only state flags, exit/restart
+counts, health status, collection stage/status, and fixed Java out-of-memory and broker
+connection failure signatures. Unknown signatures and incomplete collection are explicit;
+signatures are hints, not confirmed causes. Raw log text, health-check output, configuration,
+and exception messages are never exported. The original admission failure codes and
+subsequent cleanup outcome remain separate, even if diagnostic collection fails.
+
 With `-PullImages`, each prerequisite image gets at most three pull attempts, with waits of five and fifteen seconds after failures. Exhausting those attempts reports `EnvironmentUnavailable` before any suite starts. The uploaded `image-pulls.jsonl` retains one JSON record per attempt, including failures followed by a successful retry: image reference, attempt/budget, UTC start time, duration, exit code, outcome, failure category, next retry delay, and private log filename. Categories distinguish rate limits, authorization, missing images, disk exhaustion, DNS, TLS, timeouts, connection failures, and registry availability; unrecognized errors are `Unknown`. These classifications are diagnostic hints from Docker output, not confirmed underlying causes. The corresponding `pull-<id>-<attempt>.log` files preserve complete output under the private temporary directory printed by the runner. Raw logs are never uploaded, and unsafe image references are redacted from public evidence and console messages.
 
 Operator runbooks and documentation checks belong to E19-S07; plugin publication belongs to the companion repository. API-driven Kafka scenarios belong to E19-S06. Explanatory prose remains human-reviewed; marked operator examples and relative links have focused documentation checks. Executable E19-S05 scenario-to-invariant traceability remains covered by Contract tests.

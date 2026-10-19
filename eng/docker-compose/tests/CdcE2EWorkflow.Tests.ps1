@@ -44,6 +44,7 @@ Describe 'CDC E2E setup failure export' {
         Mock Invoke-E2ECdcApiRollout -ModuleName e2e-cdc {}
         Mock Test-CdcDeployment -ModuleName e2e-cdc { return $false }
         Mock Invoke-CdcDeploymentLifecycle -ModuleName e2e-cdc {}
+        Mock Get-CdcRunbookWorkerDiagnostic -ModuleName e2e-cdc { return @{ Status = 'Completed'; Stage = 'Logs'; Exists = $true; OomKilled = $true; ExitCode = 137; JavaOutOfMemory = $true } }
         Mock Invoke-BootstrapWrapper -ModuleName e2e-cdc {
             & $BeforeCdcAdmission '/effective/.env'
         }
@@ -83,6 +84,10 @@ Describe 'CDC E2E setup failure export' {
         $record.cleanup | Should -Be $Cleanup
         # Exercise the final export boundary as well as the real writer.
         $record.privateText = 'private-unexpected-field'
+        $record.worker.RawLog = 'private-password=secret'
+        $record.worker.Health = 'private-health-output'
+        $record.worker.Running = 'private-not-a-bool'
+        $record.worker.RestartCount = 'private-not-a-number'
         $record.failureCodes += @('private-unrecognized-code', @{ secret = 'private-object' })
         $record | ConvertTo-Json -Depth 10 | Set-Content $files[0].FullName
         '{"private":"private-guid-file"}' | Set-Content (Join-Path $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY 'aabbccddeeff00112233445566778899.json')
@@ -91,7 +96,12 @@ Describe 'CDC E2E setup failure export' {
         @(Get-ChildItem $published).Count | Should -Be 1
         $json = Get-Content (Join-Path $published $files[0].Name) -Raw
         $safe = $json | ConvertFrom-Json -AsHashtable
-        @($safe.Keys | Sort-Object) | Should -Be @('cancelled', 'cleanup', 'failureCodes', 'operation', 'provider', 'succeeded')
+        @($safe.Keys | Sort-Object) | Should -Be @('cancelled', 'cleanup', 'failureCodes', 'operation', 'provider', 'succeeded', 'worker')
+        $safe.worker.Status | Should -BeExactly 'Completed'
+        $safe.worker.OomKilled | Should -BeTrue
+        $safe.worker.ExitCode | Should -Be 137
+        $safe.worker.JavaOutOfMemory | Should -BeTrue
+        @($safe.worker.Keys | Sort-Object) | Should -Be @('Exists', 'ExitCode', 'JavaOutOfMemory', 'OomKilled', 'Stage', 'Status')
         $safe.operation | Should -BeExactly 'e2e-setup'
         $safe.succeeded | Should -BeFalse
         $safe.cancelled | Should -Be $Cancelled
@@ -125,6 +135,7 @@ Describe 'Shared CDC E2E setup handoff' {
         Mock Invoke-E2ECdcApiRollout -ModuleName e2e-cdc {}
         Mock Test-CdcDeployment -ModuleName e2e-cdc { return $false }
         Mock Invoke-CdcDeploymentLifecycle -ModuleName e2e-cdc {}
+        Mock Get-CdcRunbookWorkerDiagnostic -ModuleName e2e-cdc { return @{} }
         Mock Set-Content -ModuleName e2e-cdc {}
         Mock Invoke-BootstrapWrapper -ModuleName e2e-cdc {
             & $BeforeCdcAdmission '/effective/.env'
@@ -139,6 +150,52 @@ Describe 'Shared CDC E2E setup handoff' {
         Should -Invoke Set-Content -ModuleName e2e-cdc -Times 1 -Exactly -ParameterFilter {
             $LiteralPath.StartsWith($env:CDC_RUNBOOK_EVIDENCE_DIRECTORY + [IO.Path]::DirectorySeparatorChar) -and
             $Value -notmatch 'private-setup-failure'
+        }
+    }
+
+    It 'captures the worker before cleanup and exports only safe fields' {
+        $script:events = [Collections.Generic.List[string]]::new()
+        Mock Invoke-BootstrapWrapper -ModuleName e2e-cdc {
+            $exception = [InvalidOperationException]::new('private-original-error')
+            $exception.Data['CdcFailureCodes'] = @('Worker/Unavailable')
+            throw $exception
+        }
+        Mock Test-CdcDeployment -ModuleName e2e-cdc { return $true }
+        Mock Get-CdcRunbookWorkerDiagnostic -ModuleName e2e-cdc {
+            $script:events.Add('capture')
+            return @{ Status = 'Completed'; Exists = $true; Running = $false; OomKilled = $true; ExitCode = 137; RawLog = 'private-secret' }
+        }
+        Mock Invoke-CdcDeploymentLifecycle -ModuleName e2e-cdc {
+            $script:events.Add('cleanup')
+            throw 'private-cleanup-error'
+        }
+        { Invoke-E2ECdcSetup @script:arguments } | Should -Throw '*tests were not launched*'
+        $script:events | Should -Be @('capture', 'cleanup')
+        Should -Invoke Get-CdcRunbookWorkerDiagnostic -ModuleName e2e-cdc -Times 1 -Exactly -ParameterFilter { $Project -eq 'dms-local' }
+        Should -Invoke Set-Content -ModuleName e2e-cdc -Times 1 -Exactly -ParameterFilter {
+            $record = $Value | ConvertFrom-Json
+            $record.worker.OomKilled -eq $true -and $record.worker.ExitCode -eq 137 -and
+            $record.failureCodes[0] -eq 'Worker/Unavailable' -and $record.cleanup -eq 'RetainedForReconciliation' -and
+            $Value -notmatch 'private-'
+        }
+    }
+
+    It 'continues cleanup and preserves the original failure codes when collection throws' {
+        Mock Invoke-BootstrapWrapper -ModuleName e2e-cdc {
+            $exception = [OperationCanceledException]::new('private-original-error')
+            $exception.Data['CdcFailureCodes'] = @('Worker/Unavailable')
+            throw $exception
+        }
+        Mock Test-CdcDeployment -ModuleName e2e-cdc { return $true }
+        Mock Get-CdcRunbookWorkerDiagnostic -ModuleName e2e-cdc { throw 'private-collection-error' }
+        $failure = $null
+        try { Invoke-E2ECdcSetup @script:arguments } catch { $failure = $_ }
+        $failure.Exception | Should -BeOfType ([OperationCanceledException])
+        Should -Invoke Invoke-CdcDeploymentLifecycle -ModuleName e2e-cdc -Times 1 -Exactly
+        Should -Invoke Set-Content -ModuleName e2e-cdc -Times 1 -Exactly -ParameterFilter {
+            $record = $Value | ConvertFrom-Json
+            $record.worker.Status -eq 'CollectionFailed' -and $record.cleanup -eq 'Stopped' -and
+            $record.failureCodes[0] -eq 'Worker/Unavailable' -and $Value -notmatch 'private-'
         }
     }
 
@@ -496,6 +553,9 @@ Describe 'Ordinary E2E workspace guard after CDC runtime cleanup' {
         $script:guardRoot = Join-Path $TestDrive 'guard-compose'
         New-Item -ItemType Directory $script:guardRoot | Out-Null
         Copy-Item (Join-Path $script:composeRoot '*.psm1') $script:guardRoot
+        Copy-Item (Join-Path $script:composeRoot 'cdc-worker-diagnostics.ps1') $script:guardRoot
+        New-Item -ItemType Directory -Force (Join-Path $TestDrive 'ci') | Out-Null
+        Copy-Item (Join-Path $script:composeRoot '../ci/cdc-runbook-diagnostics.ps1') (Join-Path $TestDrive 'ci')
         Copy-Item (Join-Path $script:composeRoot '../schema-package-utility.psm1') $TestDrive
         Import-Module (Join-Path $script:guardRoot 'e2e-cdc.psm1') -Force
     }
@@ -532,6 +592,9 @@ Describe 'Private API CDC attachment contract' {
         $script:attachmentRoot = Join-Path $TestDrive 'attachment-compose'
         $null = [IO.Directory]::CreateDirectory($script:attachmentRoot, [IO.UnixFileMode]448)
         Copy-Item (Join-Path $script:composeRoot '*.psm1') $script:attachmentRoot
+        Copy-Item (Join-Path $script:composeRoot 'cdc-worker-diagnostics.ps1') $script:attachmentRoot
+        New-Item -ItemType Directory -Force (Join-Path $TestDrive 'ci') | Out-Null
+        Copy-Item (Join-Path $script:composeRoot '../ci/cdc-runbook-diagnostics.ps1') (Join-Path $TestDrive 'ci')
         Copy-Item (Join-Path $script:composeRoot '*.yml') $script:attachmentRoot
         Copy-Item (Join-Path $script:composeRoot 'start-*-dms.ps1') $script:attachmentRoot
         Copy-Item (Join-Path $script:composeRoot '.env.mssql') $script:attachmentRoot
