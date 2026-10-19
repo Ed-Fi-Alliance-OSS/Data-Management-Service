@@ -14,7 +14,7 @@ This file represents how claims should be composed when all additional claimset 
   directory.
   - `e2e-readiness-checks.json` - One canonical readiness probe per E2E claim set (claim set, full leaf
     resource-claim URI, action). Bootstrap staging with `-IncludeE2EClaimSets` records these for the
-    claims-ready gate. The file is not named `*-claimset.json`, so it is never loaded as a fragment.
+    claims-ready gate. The file is not named `*-claims.json`, so it is never loaded as a fragment.
 
 ## Usage
 

@@ -35,16 +35,16 @@ environment:
 
 ### Expected Fragment Files
 The following fragment files must be present in the mounted volume (`/app/additional-claims`):
-- `001-namespace-claimset.json` (E2E-NameSpaceBasedClaimSet)
-- `002-nofurtherauth-claimset.json` (E2E-NoFurtherAuthRequiredClaimSet)
-- `003-edorgsonly-claimset.json` (E2E-RelationshipsWithEdOrgsOnlyClaimSet)
-- `003a-edorgsonly-inverted-claimset.json` (E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet)
-- `003b-edorgsonly-or-inverted-claimset.json` (E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet)
-- `003c-edorgsonly-mixed-claimset.json` (E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet)
-- `004-sample-extension-claimset.json` (top-level name `SampleExtensionClaims`; label only, parent-only fragment, grants attach to `EdFiSandbox`)
-- `005-homograph-extension-claimset.json` (top-level name `HomographExtensionClaims`; label only, parent-only fragment, grants attach to `EdFiSandbox`)
+- `001-namespace-claims.json` (E2E-NameSpaceBasedClaimSet)
+- `002-nofurtherauth-claims.json` (E2E-NoFurtherAuthRequiredClaimSet)
+- `003-edorgsonly-claims.json` (E2E-RelationshipsWithEdOrgsOnlyClaimSet)
+- `003a-edorgsonly-inverted-claims.json` (E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet)
+- `003b-edorgsonly-or-inverted-claims.json` (E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet)
+- `003c-edorgsonly-mixed-claims.json` (E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet)
+- `004-sample-extension-claims.json` (top-level name `SampleExtensionClaims`; label only, parent-only fragment, grants attach to `EdFiSandbox`)
+- `005-homograph-extension-claims.json` (top-level name `HomographExtensionClaims`; label only, parent-only fragment, grants attach to `EdFiSandbox`)
 
-The six E2E fragments (`001` through `003c`) come from the test-owned `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/Fragments/` directory, and `004`/`005` come from `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets/`. The E2E setup stages both into `eng/docker-compose/.e2e-claims/` and mounts that directory into the container: `setup-local-cms.ps1` and `build-config.ps1 E2ETest` pass `-AddE2EClaimSets` to `start-local-config.ps1`, and the DMS E2E setup does the same through `-AddExtensionSecurityMetadata`. The E2E claim sets are not declared in the embedded `Claims.json`; the Configuration Service registers each one from its fragment's top-level `name`.
+The six E2E fragments (`001` through `003c`) come from the test-owned `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/Fragments/` directory, and `004`/`005` come from `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaims/`. The E2E setup stages both into `eng/docker-compose/.e2e-claims/` and mounts that directory into the container: `setup-local-cms.ps1` and `build-config.ps1 E2ETest` pass `-AddE2EClaimSets` to `start-local-config.ps1`, and the DMS E2E setup does the same through `-AddExtensionSecurityMetadata`. The E2E claim sets are not declared in the embedded `Claims.json`; the Configuration Service registers each one from its fragment's top-level `name`.
 
 ## Test Scenarios
 
@@ -106,9 +106,9 @@ The negative authorization behavior of the `/management/*` claims endpoints is c
 
 3. **"Claim set 'E2E-NameSpaceBasedClaimSet' was not found"**
    - Verify the E2E fragment files are in `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/Fragments/`
-   - Verify the stack was started through the E2E setup, so `eng/docker-compose/.e2e-claims/` holds all eight fragments and is the mounted claims directory; a default stack mounts only `Deploy/AdditionalClaimsets` and has no E2E claim sets
+   - Verify the stack was started through the E2E setup, so `eng/docker-compose/.e2e-claims/` holds all eight fragments and is the mounted claims directory; a default stack mounts only `Deploy/AdditionalClaims` and has no E2E claim sets
    - Check Docker volume mounting in `local-config.yml` and `local-dms.yml`
-   - Ensure fragment files follow naming pattern: `*-claimset.json`
+   - Ensure fragment files follow naming pattern: `*-claims.json`
 
 4. **404 responses from management endpoints**
    - Dynamic claims loading is not enabled

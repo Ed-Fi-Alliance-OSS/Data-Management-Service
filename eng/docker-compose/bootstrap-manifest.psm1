@@ -627,13 +627,13 @@ function Initialize-E2EClaimsWorkspace {
     The directory is created only when missing and is never deleted or replaced: a later startup
     phase calls this again while CMS is bind-mounted to it, and replacing it would leave CMS mounted
     to the orphaned original. Content is synced in place instead: every intended file is copied over
-    its staged copy and stale *-claimset.json files are removed.
+    its staged copy and stale *-claims.json files are removed.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal E2E staging helper; the E2E setup scripts do not expose -WhatIf end to end.')]
     param()
 
     $sourceDirectories = @(
-        (Join-Path $script:RepoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets"),
+        (Join-Path $script:RepoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaims"),
         (Get-E2EClaimsFragmentsDirectory)
     )
 
@@ -645,7 +645,7 @@ function Initialize-E2EClaimsWorkspace {
             throw "E2E claimset fragment directory does not exist: $(Format-LogSafePath $sourceDirectory)"
         }
 
-        foreach ($fragment in @(Get-ChildItem -LiteralPath $sourceDirectory -Filter "*-claimset.json" -File | Sort-Object -Property Name)) {
+        foreach ($fragment in @(Get-ChildItem -LiteralPath $sourceDirectory -Filter "*-claims.json" -File | Sort-Object -Property Name)) {
             if ($intendedSources.ContainsKey($fragment.Name)) {
                 throw "Claimset fragment filename collision for '$(Format-LogSafeText $fragment.Name)' from '$(Format-LogSafePath $fragment.FullName)' and '$(Format-LogSafePath ($intendedSources[$fragment.Name]))'."
             }
@@ -659,7 +659,7 @@ function Initialize-E2EClaimsWorkspace {
         New-Item -ItemType Directory -Path $workspace -ErrorAction Stop | Out-Null
     }
 
-    foreach ($staged in @(Get-ChildItem -LiteralPath $workspace -Filter "*-claimset.json" -File)) {
+    foreach ($staged in @(Get-ChildItem -LiteralPath $workspace -Filter "*-claims.json" -File)) {
         if (-not $intendedSources.ContainsKey($staged.Name)) {
             Remove-Item -LiteralPath $staged.FullName -Force -ErrorAction Stop
         }

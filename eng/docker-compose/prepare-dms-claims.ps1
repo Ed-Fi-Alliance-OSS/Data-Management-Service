@@ -155,14 +155,14 @@ function Get-UserFragmentFile {
 
     $directory = Get-Item -LiteralPath $fullPath
 
-    $claimsetFiles = @(
-        Get-ChildItem -LiteralPath $directory.FullName -File -Filter "*-claimset.json" -Recurse |
+    $claimsFiles = @(
+        Get-ChildItem -LiteralPath $directory.FullName -File -Filter "*-claims.json" -Recurse |
             Sort-Object -Property FullName
     )
 
-    $files = @($claimsetFiles | ForEach-Object { $_.FullName })
+    $files = @($claimsFiles | ForEach-Object { $_.FullName })
     if ($files.Count -eq 0) {
-        throw "ClaimsDirectoryPath '$(Format-LogSafePath ($directory.FullName))' does not contain any *-claimset.json files."
+        throw "ClaimsDirectoryPath '$(Format-LogSafePath ($directory.FullName))' does not contain any *-claims.json files."
     }
 
     return $files
@@ -430,7 +430,7 @@ $extensionProjects = @(
 )
 
 $repoRoot = Get-BootstrapRepoRoot
-$shippedClaimsDirectory = Join-Path $repoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets"
+$shippedClaimsDirectory = Join-Path $repoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaims"
 $targetSources = [System.Collections.Generic.Dictionary[string, string]]::new(
     [System.StringComparer]::OrdinalIgnoreCase
 )
@@ -540,9 +540,9 @@ if ($IncludeE2EClaimSets) {
         throw "E2E claimset fragment directory does not exist: $(Format-LogSafePath $e2eFragmentsDirectory)"
     }
 
-    $e2eFragmentFiles = @(Get-ChildItem -LiteralPath $e2eFragmentsDirectory -File -Filter "*-claimset.json" | Sort-Object -Property Name)
+    $e2eFragmentFiles = @(Get-ChildItem -LiteralPath $e2eFragmentsDirectory -File -Filter "*-claims.json" | Sort-Object -Property Name)
     if ($e2eFragmentFiles.Count -eq 0) {
-        throw "E2E claimset fragment directory '$(Format-LogSafePath $e2eFragmentsDirectory)' does not contain any *-claimset.json files."
+        throw "E2E claimset fragment directory '$(Format-LogSafePath $e2eFragmentsDirectory)' does not contain any *-claims.json files."
     }
 
     foreach ($e2eFragmentFile in $e2eFragmentFiles) {

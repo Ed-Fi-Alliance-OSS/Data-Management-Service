@@ -345,7 +345,7 @@ public class Given_Embedded_Claims_Json
         grantedClaimSetNames.Should().NotContain(name => name.StartsWith("E2E-", StringComparison.Ordinal));
     }
 
-    // Every default compose deployment runs Hybrid with the shipped AdditionalClaimsets directory
+    // Every default compose deployment runs Hybrid with the shipped AdditionalClaims directory
     // mounted, so a non-parent fragment there would register its claim set in every deployment
     [TestCase("ds52")]
     [TestCase("ds61")]
@@ -358,7 +358,7 @@ public class Given_Embedded_Claims_Json
             "backend",
             "EdFi.DmsConfigurationService.Backend",
             "Deploy",
-            "AdditionalClaimsets"
+            "AdditionalClaims"
         );
         JsonObject baseClaims = LoadEmbeddedClaims(standardFolder);
 

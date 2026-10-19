@@ -613,7 +613,7 @@ for diagnostics and for other tooling to sequence a database-only startup around
 Expert mode (`-ApiSchemaPath`) and standard mode (omit `-ApiSchemaPath`) are the two schema-selection
 paths; there is no `-Extensions` parameter.
 
-`prepare-dms-claims.ps1` stages `*-claimset.json` fragments into
+`prepare-dms-claims.ps1` stages `*-claims.json` fragments into
 `.bootstrap/claims`. When a bootstrap manifest is present, startup activates
 `USE_API_SCHEMA_PATH`/`API_SCHEMA_PATH` and mounts `.bootstrap/ApiSchema` into
 the DMS container via `bootstrap-dms.yml`; staged claims are activated per

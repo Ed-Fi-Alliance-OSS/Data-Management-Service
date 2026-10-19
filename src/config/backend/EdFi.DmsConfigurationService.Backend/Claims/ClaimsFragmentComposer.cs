@@ -14,7 +14,7 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DmsConfigurationService.Backend.Claims;
 
 /// <summary>
-/// Service for composing claims from base Claims.json and fragment claimset files
+/// Service for composing claims from base Claims.json and fragment files
 /// This is a port of the transformation logic from the CmsHierarchy tool
 /// </summary>
 public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IClaimsFragmentComposer
@@ -174,7 +174,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
     }
 
     /// <summary>
-    /// Discovers fragment files matching the pattern *-claimset.json in the specified directory
+    /// Discovers fragment files matching the pattern *-claims.json in the specified directory
     /// </summary>
     public List<string> DiscoverFragmentFiles(string fragmentsPath)
     {
@@ -187,7 +187,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
             }
 
             List<string> fragmentFiles = Directory
-                .GetFiles(fragmentsPath, "*-claimset.json", SearchOption.AllDirectories)
+                .GetFiles(fragmentsPath, "*-claims.json", SearchOption.AllDirectories)
                 .Where(f => !Path.GetFileName(f).Equals("Claims.json", StringComparison.OrdinalIgnoreCase))
                 .OrderBy(f => f)
                 .ToList();

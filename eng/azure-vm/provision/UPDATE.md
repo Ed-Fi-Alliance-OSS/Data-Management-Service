@@ -97,7 +97,7 @@ Commands are labeled **[bash]** (WSL shell) or **[pwsh]** (`pwsh` inside WSL) an
    ```
 
    `ADMIN_ID` and `ADMIN_SECRET` come from step 1.
-   A claim set defined in a `*-claimset.json` file under `compose/claims` is not at risk: the reload reads those files again.
+   A claim set defined in a `*-claims.json` file under `compose/claims` is not at risk: the reload reads those files again.
 
 4. Back up the credential state.
    Stop Keycloak briefly so its H2 files are copied consistently.

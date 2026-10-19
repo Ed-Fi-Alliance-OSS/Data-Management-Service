@@ -49,15 +49,16 @@ public class ClaimsFragmentComposerTests
             // Arrange
             var fragmentFiles = new[]
             {
-                "sample-claimset.json",
-                "homograph-claimset.json",
-                "custom-extension-claimset.json",
+                "sample-claims.json",
+                "homograph-claims.json",
+                "custom-extension-claims.json",
             };
             var nonFragmentFiles = new[]
             {
                 "Claims.json", // Should be excluded (base file)
                 "config.json", // Should be excluded (wrong pattern)
                 "test-claims.txt", // Should be excluded (wrong extension)
+                "legacy-claimset.json", // Should be excluded (retired suffix)
             };
 
             foreach (var file in fragmentFiles.Concat(nonFragmentFiles))
@@ -70,15 +71,16 @@ public class ClaimsFragmentComposerTests
 
             // Assert
             Assert.That(result.Count, Is.EqualTo(3));
-            Assert.That(result, Does.Contain(Path.Combine(_testFragmentsPath, "sample-claimset.json")));
-            Assert.That(result, Does.Contain(Path.Combine(_testFragmentsPath, "homograph-claimset.json")));
+            Assert.That(result, Does.Contain(Path.Combine(_testFragmentsPath, "sample-claims.json")));
+            Assert.That(result, Does.Contain(Path.Combine(_testFragmentsPath, "homograph-claims.json")));
             Assert.That(
                 result,
-                Does.Contain(Path.Combine(_testFragmentsPath, "custom-extension-claimset.json"))
+                Does.Contain(Path.Combine(_testFragmentsPath, "custom-extension-claims.json"))
             );
             Assert.That(result, Does.Not.Contain(Path.Combine(_testFragmentsPath, "Claims.json")));
             Assert.That(result, Does.Not.Contain(Path.Combine(_testFragmentsPath, "config.json")));
             Assert.That(result, Does.Not.Contain(Path.Combine(_testFragmentsPath, "test-claims.txt")));
+            Assert.That(result, Does.Not.Contain(Path.Combine(_testFragmentsPath, "legacy-claimset.json")));
         }
 
         [Test]
@@ -113,23 +115,23 @@ public class ClaimsFragmentComposerTests
             var subDir = Path.Combine(_testFragmentsPath, "subdirectory");
             Directory.CreateDirectory(subDir);
 
-            File.WriteAllText(Path.Combine(_testFragmentsPath, "root-claimset.json"), "{}");
-            File.WriteAllText(Path.Combine(subDir, "sub-claimset.json"), "{}");
+            File.WriteAllText(Path.Combine(_testFragmentsPath, "root-claims.json"), "{}");
+            File.WriteAllText(Path.Combine(subDir, "sub-claims.json"), "{}");
 
             // Act
             var result = _composer.DiscoverFragmentFiles(_testFragmentsPath);
 
             // Assert
             Assert.That(result.Count, Is.EqualTo(2));
-            Assert.That(result, Does.Contain(Path.Combine(_testFragmentsPath, "root-claimset.json")));
-            Assert.That(result, Does.Contain(Path.Combine(subDir, "sub-claimset.json")));
+            Assert.That(result, Does.Contain(Path.Combine(_testFragmentsPath, "root-claims.json")));
+            Assert.That(result, Does.Contain(Path.Combine(subDir, "sub-claims.json")));
         }
 
         [Test]
         public void It_should_return_files_in_sorted_order()
         {
             // Arrange
-            var fragmentFiles = new[] { "z-claimset.json", "a-claimset.json", "m-claimset.json" };
+            var fragmentFiles = new[] { "z-claims.json", "a-claims.json", "m-claims.json" };
             foreach (var file in fragmentFiles)
             {
                 File.WriteAllText(Path.Combine(_testFragmentsPath, file), "{}");
@@ -140,9 +142,9 @@ public class ClaimsFragmentComposerTests
 
             // Assert
             Assert.That(result.Count, Is.EqualTo(3));
-            Assert.That(result[0], Does.EndWith("a-claimset.json"));
-            Assert.That(result[1], Does.EndWith("m-claimset.json"));
-            Assert.That(result[2], Does.EndWith("z-claimset.json"));
+            Assert.That(result[0], Does.EndWith("a-claims.json"));
+            Assert.That(result[1], Does.EndWith("m-claims.json"));
+            Assert.That(result[2], Does.EndWith("z-claims.json"));
         }
     }
 
@@ -203,7 +205,7 @@ public class ClaimsFragmentComposerTests
                   ]
                 }
                 """;
-            File.WriteAllText(Path.Combine(_testFragmentsPath, "test-claimset.json"), fragmentContent);
+            File.WriteAllText(Path.Combine(_testFragmentsPath, "test-claims.json"), fragmentContent);
 
             // Act
             var result = _composer.ComposeClaimsFromFragments(baseClaimsNodes, _testFragmentsPath);
@@ -275,8 +277,8 @@ public class ClaimsFragmentComposerTests
                 }
                 """;
 
-            File.WriteAllText(Path.Combine(_testFragmentsPath, "extension1-claimset.json"), fragment1);
-            File.WriteAllText(Path.Combine(_testFragmentsPath, "extension2-claimset.json"), fragment2);
+            File.WriteAllText(Path.Combine(_testFragmentsPath, "extension1-claims.json"), fragment1);
+            File.WriteAllText(Path.Combine(_testFragmentsPath, "extension2-claims.json"), fragment2);
 
             // Act
             var result = _composer.ComposeClaimsFromFragments(baseClaimsNodes, _testFragmentsPath);
@@ -307,7 +309,7 @@ public class ClaimsFragmentComposerTests
 
             // Create a malformed fragment file
             File.WriteAllText(
-                Path.Combine(_testFragmentsPath, "bad-claimset.json"),
+                Path.Combine(_testFragmentsPath, "bad-claims.json"),
                 "{ \"name\": invalid json without quotes }"
             );
 
@@ -334,7 +336,7 @@ public class ClaimsFragmentComposerTests
                   "name": "EmptyExtension"
                 }
                 """;
-            File.WriteAllText(Path.Combine(_testFragmentsPath, "empty-claimset.json"), fragmentContent);
+            File.WriteAllText(Path.Combine(_testFragmentsPath, "empty-claims.json"), fragmentContent);
 
             // Act
             var result = _composer.ComposeClaimsFromFragments(baseClaimsNodes, _testFragmentsPath);
@@ -543,7 +545,7 @@ public class ClaimsFragmentComposerTests
         {
             _result = ComposeWithFragments(
                 BaseDocument(),
-                ("defined-claimset.json", NonParentFragment("Fragment-Defined"))
+                ("defined-claims.json", NonParentFragment("Fragment-Defined"))
             );
         }
 
@@ -601,7 +603,7 @@ public class ClaimsFragmentComposerTests
                     ]
                     """
                 ),
-                ("declared-claimset.json", NonParentFragment("Already-Declared"))
+                ("declared-claims.json", NonParentFragment("Already-Declared"))
             );
         }
 
@@ -630,7 +632,7 @@ public class ClaimsFragmentComposerTests
         [SetUp]
         public void Arrange_and_act()
         {
-            _result = ComposeWithFragments(BaseDocument(), ("extension-claimset.json", ParentOnlyFragment));
+            _result = ComposeWithFragments(BaseDocument(), ("extension-claims.json", ParentOnlyFragment));
         }
 
         [Test]
@@ -669,7 +671,7 @@ public class ClaimsFragmentComposerTests
                   ]
                 }
                 """;
-            _result = ComposeWithFragments(BaseDocument(), ("mixed-claimset.json", MixedFragment));
+            _result = ComposeWithFragments(BaseDocument(), ("mixed-claims.json", MixedFragment));
         }
 
         [Test]
@@ -688,17 +690,14 @@ public class ClaimsFragmentComposerTests
         [SetUp]
         public void Arrange_and_act()
         {
-            _result = ComposeWithFragments(
-                BaseDocument(),
-                ("unnamed-claimset.json", NonParentFragment(null))
-            );
+            _result = ComposeWithFragments(BaseDocument(), ("unnamed-claims.json", NonParentFragment(null)));
         }
 
         [Test]
         public void It_registers_the_file_name_the_grant_is_attached_under()
         {
-            ClaimSetsNamed(_result, "unnamed-claimset").Should().ContainSingle();
-            GrantOnAcademicWeek(_result, "unnamed-claimset").Should().NotBeNull();
+            ClaimSetsNamed(_result, "unnamed-claims").Should().ContainSingle();
+            GrantOnAcademicWeek(_result, "unnamed-claims").Should().NotBeNull();
         }
     }
 
@@ -712,8 +711,8 @@ public class ClaimsFragmentComposerTests
         {
             _result = ComposeWithFragments(
                 BaseDocument(),
-                ("a-claimset.json", NonParentFragment("Shared-Defined")),
-                ("b-claimset.json", NonParentFragment("shared-defined"))
+                ("a-claims.json", NonParentFragment("Shared-Defined")),
+                ("b-claims.json", NonParentFragment("shared-defined"))
             );
         }
 
@@ -736,8 +735,8 @@ public class ClaimsFragmentComposerTests
         {
             _result = ComposeWithFragments(
                 BaseDocument(),
-                ("b-claimset.json", NonParentFragment("Second-Defined")),
-                ("a-claimset.json", NonParentFragment("First-Defined"))
+                ("b-claims.json", NonParentFragment("Second-Defined")),
+                ("a-claims.json", NonParentFragment("First-Defined"))
             );
         }
 
@@ -758,7 +757,7 @@ public class ClaimsFragmentComposerTests
         {
             _result = ComposeWithFragments(
                 BaseDocument(),
-                ("unmatched-claimset.json", NonParentFragment("Unmatched-Defined", "ed-fi/notARealResources"))
+                ("unmatched-claims.json", NonParentFragment("Unmatched-Defined", "ed-fi/notARealResources"))
             );
         }
 
@@ -785,7 +784,7 @@ public class ClaimsFragmentComposerTests
         {
             _result = ComposeWithFragments(
                 BaseDocument(),
-                ("empty-claimset.json", """{ "name": "Empty-Defined" }""")
+                ("empty-claims.json", """{ "name": "Empty-Defined" }""")
             );
         }
 
@@ -807,8 +806,8 @@ public class ClaimsFragmentComposerTests
         {
             _result = ComposeWithFragments(
                 BaseDocument(),
-                ("my vendor-claimset.json", NonParentFragment(null)),
-                ("valid-claimset.json", NonParentFragment("Valid-Defined"))
+                ("my vendor-claims.json", NonParentFragment(null)),
+                ("valid-claims.json", NonParentFragment("Valid-Defined"))
             );
         }
 
@@ -821,7 +820,7 @@ public class ClaimsFragmentComposerTests
         [Test]
         public void It_does_not_register_the_invalid_name()
         {
-            ClaimSetsNamed(_result, "my vendor-claimset").Should().BeEmpty();
+            ClaimSetsNamed(_result, "my vendor-claims").Should().BeEmpty();
         }
 
         [Test]
@@ -841,7 +840,7 @@ public class ClaimsFragmentComposerTests
         [SetUp]
         public void Arrange_and_act()
         {
-            _result = ComposeWithFragments(BaseDocument(), ("long-claimset.json", NonParentFragment(_name)));
+            _result = ComposeWithFragments(BaseDocument(), ("long-claims.json", NonParentFragment(_name)));
         }
 
         [Test]
@@ -861,7 +860,7 @@ public class ClaimsFragmentComposerTests
         [SetUp]
         public void Arrange_and_act()
         {
-            _result = ComposeWithFragments(BaseDocument(), ("limit-claimset.json", NonParentFragment(_name)));
+            _result = ComposeWithFragments(BaseDocument(), ("limit-claims.json", NonParentFragment(_name)));
         }
 
         [Test]
@@ -880,10 +879,7 @@ public class ClaimsFragmentComposerTests
         [SetUp]
         public void Arrange_and_act()
         {
-            _result = ComposeWithFragments(
-                BaseDocument(),
-                ("empty-name-claimset.json", NonParentFragment(""))
-            );
+            _result = ComposeWithFragments(BaseDocument(), ("empty-name-claims.json", NonParentFragment("")));
         }
 
         [Test]
@@ -912,7 +908,7 @@ public class ClaimsFragmentComposerTests
             _baseDocument = BaseDocument();
             _result = ComposeWithFragments(
                 _baseDocument,
-                ("defined-claimset.json", NonParentFragment("Fragment-Defined"))
+                ("defined-claims.json", NonParentFragment("Fragment-Defined"))
             );
         }
 

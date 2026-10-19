@@ -477,7 +477,7 @@ and is not prescribed here.
 Docker mounts by hand, expert mode introduces two expert-only companion parameters alongside `-ApiSchemaPath`:
 
 - `-ApiSchemaPath` - supplies the custom schema directory (normalized into the staged schema workspace)
-- `-ClaimsDirectoryPath` - supplies a directory of `*-claimset.json` files used for additive CMS
+- `-ClaimsDirectoryPath` - supplies a directory of `*-claims.json` files used for additive CMS
   hybrid-mode loading on top of the automatic base claimset set.
 - `-SeedDataPath` - supplies custom seed files (XML interchange in Phase 1, JSONL in Phase 2 per §6); without this, no seed data is loaded
 
@@ -568,13 +568,13 @@ configured artifact sources. The seed phase owns a separate seed catalog that ma
 seed data package for an extension name:
 
 1. **Schema package** (e.g., `EdFi.DataStandard52.Sample.ApiSchema`) - determines API surface
-2. **Security fragment** (e.g., `004-sample-extension-claimset.json`) - determines authorization rules
+2. **Security fragment** (e.g., `004-sample-extension-claims.json`) - determines authorization rules
 3. **Optional built-in seed data package** (when present in the seed catalog) - determines bootstrap-managed
    sample data
 
 **Version contract**: Schema and built-in seed NuGet packages for a given extension must align to the same
 Data Standard version when both artifacts exist for that extension. Security fragments (e.g.,
-`004-sample-extension-claimset.json`) are repo-bundled files, not NuGet packages, and do not carry NuGet
+`004-sample-extension-claims.json`) are repo-bundled files, not NuGet packages, and do not carry NuGet
 version metadata; their version alignment follows the artifact source that provides them. Each phase consumes
 only the metadata it owns: schema package fields in `prepare-dms-schema.ps1`, security fragment fields in
 `prepare-dms-claims.ps1`, and seed package fields in `load-dms-seed-data.ps1`.
@@ -633,11 +633,11 @@ PostgreSQL or SQL Server database as DMS:
   the core Ed-Fi claims hierarchy covering standard Data Standard resources. No external files are
   needed.
 - **`Hybrid`** - CMS loads the same embedded `Claims.json` as the base, then discovers every
-  `*-claimset.json` file in `DMS_CONFIG_CLAIMS_DIRECTORY` (container path `/app/additional-claims`)
+  `*-claims.json` file in `DMS_CONFIG_CLAIMS_DIRECTORY` (container path `/app/additional-claims`)
   and composes them in deterministic filename order on top of the base using the current CMS additive
   fragment behavior.
 
-**Fragment file contract:** each `*-claimset.json` file is a JSON object with a `resourceClaims` array
+**Fragment file contract:** each `*-claims.json` file is a JSON object with a `resourceClaims` array
 and an optional top-level `name`. When `name` is absent, the current CMS implementation falls back to the
 filename without extension as the effective claim-set name for composed attachments. Each entry in
 `resourceClaims` can carry:
@@ -669,7 +669,7 @@ through bootstrap staging would require a separate full-file `Claims.json` repla
 mode), which is outside this story.
 
 The extension claimset files live in
-`src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets/`. Docker Compose
+`src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaims/`. Docker Compose
 mounts that directory to `/app/additional-claims` inside the CMS container. `start-local-dms.ps1`
 enables hybrid mode today via the `-AddExtensionSecurityMetadata` switch and Docker startup wiring. DMS-916
 replaces that transient cross-process handoff shape with the claims section of the root bootstrap manifest
@@ -753,13 +753,13 @@ The bootstrap logic is:
 3. **Additional claimset fragments can be layered in through `-ClaimsDirectoryPath`.** When a developer
     uses `-ApiSchemaPath` with schemas that need additional security metadata or otherwise needs custom
     claimset fragments,
-    `-ClaimsDirectoryPath` points to a local directory containing one or more `*-claimset.json` files.
+    `-ClaimsDirectoryPath` points to a local directory containing one or more `*-claims.json` files.
     Bootstrap validates that the path exists, then stages those files into the same claims workspace used for
     extension-derived fragments. `-ClaimsDirectoryPath` is additive to any bootstrap-managed extension-derived
     fragments.
 
    **Contract:** If `-ClaimsDirectoryPath` is supplied and the directory does not exist or contains no
-   `*-claimset.json` files, bootstrap fails before container startup with a clear error. Bootstrap also
+   `*-claims.json` files, bootstrap fails before container startup with a clear error. Bootstrap also
     parses the embedded base `Claims.json` and fails if any staged fragment references a claim set name that
     does not already exist there.
 
@@ -775,7 +775,7 @@ The bootstrap logic is:
    surface validates only the staged conditions it directly owns:
    - duplicate filenames remain fail-fast because the staged workspace must contain one deterministic file
      per path;
-   - every staged fragment must be parseable JSON and follow the `*-claimset.json` file contract used by CMS;
+   - every staged fragment must be parseable JSON and follow the `*-claims.json` file contract used by CMS;
    - any claim set name referenced by a staged fragment must already exist in the embedded base
      `Claims.json`.
 
@@ -1556,7 +1556,7 @@ Extensions in DMS map to two concerns: (1) security metadata (claimsets) and (2)
 (ApiSchema overlays). Today the two concerns use different startup paths and neither has a single
 selection abstraction.
 
-**Claimset loading** is gated by the `-AddExtensionSecurityMetadata` flag on `start-local-dms.ps1`. When set, the script exports `DMS_CONFIG_CLAIMS_DIRECTORY=/app/additional-claims`, stages `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets` plus the test-owned E2E fragments from `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/Fragments` into `eng/docker-compose/.e2e-claims`, and the Config Service compose startup mounts that directory to that path, so the E2E claim sets are loaded too. The Config Service reads every JSON file found in the directory on startup. There is no filtering - all mounted claimset files are loaded regardless of which extensions the developer intends to use.
+**Claimset loading** is gated by the `-AddExtensionSecurityMetadata` flag on `start-local-dms.ps1`. When set, the script exports `DMS_CONFIG_CLAIMS_DIRECTORY=/app/additional-claims`, stages `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaims` plus the test-owned E2E fragments from `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/Fragments` into `eng/docker-compose/.e2e-claims`, and the Config Service compose startup mounts that directory to that path, so the E2E claim sets are loaded too. The Config Service reads every JSON file found in the directory on startup. There is no filtering - all mounted claimset files are loaded regardless of which extensions the developer intends to use.
 
 **ApiSchema overlays** are configured through package-backed environment variables:
 `USE_API_SCHEMA_PATH=true`, `API_SCHEMA_PATH=/app/ApiSchema`, and `SCHEMA_PACKAGES=...`. At container
@@ -1846,8 +1846,8 @@ Each validation rule below is owned by the phase command responsible for the aff
 | `-NoDataStore`, no `-SchoolYearRange`, multiple existing instances found in the current tenant scope | "Error: -NoDataStore requires exactly one existing DMS instance in the current tenant scope, but multiple instances were found. Tear down the extra instances or manually prepare the environment so one intended target remains before rerunning." |
 | `-NoDataStore` with `-SchoolYearRange` | "Error: -NoDataStore with -SchoolYearRange is not supported in DMS-916. Tear down and recreate the environment for multi-year runs." |
 | `-SchoolYearRange` is not in `YYYY-YYYY` format with four-digit integers and `endYear >= startYear` | "Error: -SchoolYearRange must use YYYY-YYYY format with four-digit years, and the ending year must be greater than or equal to the starting year." |
-| `-ClaimsDirectoryPath` path does not exist or contains no `*-claimset.json` files | "Error: -ClaimsDirectoryPath must point to a directory containing one or more *-claimset.json files." |
-| `-ClaimsDirectoryPath` fragments collide with staged extension fragments by filename | "Error: Claimset fragment filename collision detected for '<file>'. Each staged *-claimset.json filename must be unique before bootstrapping." |
+| `-ClaimsDirectoryPath` path does not exist or contains no `*-claims.json` files | "Error: -ClaimsDirectoryPath must point to a directory containing one or more *-claims.json files." |
+| `-ClaimsDirectoryPath` fragments collide with staged extension fragments by filename | "Error: Claimset fragment filename collision detected for '<file>'. Each staged *-claims.json filename must be unique before bootstrapping." |
 | `-ClaimsDirectoryPath` fragment references a claim set name that does not exist in the embedded `Claims.json` | "Error: Claimset fragment '<file>' references unknown claim set '<name>'. DMS-916 additive fragments may only attach to claim sets declared in the embedded Claims.json." |
 | Seed delivery runs but the pinned BulkLoadClient package cannot be resolved or does not expose the CLI surface required by the active phase | "Error: BulkLoadClient package resolution failed or the CLI surface required by the active phase (XML in Phase 1, JSONL in Phase 2) is unavailable." |
 | Seed delivery runs but the embedded claims metadata does not define the top-level `SeedLoader` claim set | "Error: Seed delivery requires the embedded CMS claims metadata to define the top-level SeedLoader claim set. Bootstrap cannot continue to BulkLoadClient until that claim set exists." |
@@ -2083,7 +2083,7 @@ The workspace is scratch-only bootstrap state; it must be excluded from source c
 
 **Layout**
 
-- `eng/docker-compose/.bootstrap/claims/` - staged `*-claimset.json` files bind-mounted into CMS
+- `eng/docker-compose/.bootstrap/claims/` - staged `*-claims.json` files bind-mounted into CMS
 - `eng/docker-compose/.bootstrap/ApiSchema/` - staged `ApiSchema*.json` files used for hashing and for both Docker-hosted and IDE-hosted DMS runs
 - `eng/docker-compose/.bootstrap/ApiSchema/bootstrap-api-schema-manifest.json` - runtime asset index for staged schema/content paths only
 - `eng/docker-compose/.bootstrap/bootstrap-manifest.json` - the only persisted bootstrap compatibility and handoff manifest for schema, claims, and seed phases

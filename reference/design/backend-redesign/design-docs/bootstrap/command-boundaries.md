@@ -74,7 +74,7 @@ content-loading story.
 
 ### 3.2 `prepare-dms-claims.ps1` — Claims and Security Staging
 
-**Primary concern:** Stage `*-claimset.json` fragments into the workspace that the Config Service will read when staged runtime startup is enabled.
+**Primary concern:** Stage `*-claims.json` fragments into the workspace that the Config Service will read when staged runtime startup is enabled.
 
 | Item | Detail |
 |---|---|

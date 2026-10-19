@@ -157,7 +157,7 @@ public class Given_E2E_Test_Fragments(string standardFolder)
             "backend",
             "EdFi.DmsConfigurationService.Backend",
             "Deploy",
-            "AdditionalClaimsets"
+            "AdditionalClaims"
         );
 
         ClaimsDocument composed = Compose(defaultFragmentsPath, e2eFragmentsPath);
@@ -292,8 +292,8 @@ public class Given_E2E_Test_Fragments(string standardFolder)
         {
             foreach (
                 string fragment in Directory
-                    .GetFiles(defaultFragmentsPath, "*-claimset.json")
-                    .Concat(Directory.GetFiles(e2eFragmentsPath, "*-claimset.json"))
+                    .GetFiles(defaultFragmentsPath, "*-claims.json")
+                    .Concat(Directory.GetFiles(e2eFragmentsPath, "*-claims.json"))
             )
             {
                 File.Copy(fragment, Path.Combine(stagedPath, Path.GetFileName(fragment)));
