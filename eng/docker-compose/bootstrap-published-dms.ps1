@@ -224,6 +224,11 @@ trap {
 }
 
 if ($v -and -not $d) { throw '-v requires -d.' }
+# Teardown is destructive and a restore request beside it is ambiguous: refuse before any
+# teardown or retained-CDC lifecycle dispatch.
+if ($d -and ($PSBoundParameters.ContainsKey('RestoreTemplate') -or $PSBoundParameters.ContainsKey('PackageDirectory'))) {
+    throw '-d cannot be combined with -RestoreTemplate or -PackageDirectory. Run teardown and restore as separate invocations.'
+}
 if ((-not $EnableKafkaCdc -or $d) -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot '.cdc-deployments/dms-published.json'))) {
     Import-Module (Join-Path $PSScriptRoot 'cdc-lifecycle.psm1')
     $lifecycleArgs = @{} + $PSBoundParameters

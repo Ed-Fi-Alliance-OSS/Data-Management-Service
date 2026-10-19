@@ -1142,6 +1142,11 @@ Describe "Build-TemplateNuGetPackage package identity derivation" {
         }
     }
 
+    BeforeEach {
+        # The privilege gate reads the live source; its own tests cover it.
+        Mock Assert-TemplateSourcePrivilege {} -ModuleName Template-Management
+    }
+
     It "derives the <Engine> package Id/Title/Description/PackageProjectName and <Extension> DatabaseBackupName for <TemplateType>/<StandardVersion>" -ForEach @(
         @{ TemplateType = 'Minimal'; StandardVersion = '5.2.0'; Engine = 'postgresql'; EngineToken = 'PostgreSql'; Extension = 'sql' }
         @{ TemplateType = 'Minimal'; StandardVersion = '5.2.0'; Engine = 'mssql'; EngineToken = 'MsSql'; Extension = 'bak' }
@@ -1446,6 +1451,11 @@ Describe "Build-TemplateNuGetPackage restore gate and manifest" {
         }
     }
 
+    BeforeEach {
+        # The privilege gate reads the live source; its own tests cover it.
+        Mock Assert-TemplateSourcePrivilege {} -ModuleName Template-Management
+    }
+
     It "refuses to dump or package when the source fails the DMS-only gate (dmscs contamination)" {
         InModuleScope Template-Management -Parameters @{ configPath = (Join-Path (Split-Path $PSScriptRoot -Parent) "MinimalTemplateSettings.psd1") } {
             param($configPath)
@@ -1701,6 +1711,11 @@ Describe "Build-TemplateNuGetPackage authoritative source comparison" {
         }
     }
 
+    BeforeEach {
+        # The privilege gate reads the live source; its own tests cover it.
+        Mock Assert-TemplateSourcePrivilege {} -ModuleName Template-Management
+    }
+
     It "refuses a source with <Name> in an otherwise allowed schema before any dump, manifest, package, or attestation" -ForEach @(
         @{ Name = "an extra auth.CopiedClients table"; Schema = "auth"; Extra = "CopiedClients"; Expected = "*objects the schema files do not define: auth.CopiedClients (table)*Nothing was dumped or packaged*" }
         @{ Name = "an extra dms.PrivateKeys table"; Schema = "dms"; Extra = "PrivateKeys"; Expected = "*objects the schema files do not define: dms.PrivateKeys (table)*Nothing was dumped or packaged*" }
@@ -1847,6 +1862,112 @@ Describe "Build-TemplateNuGetPackage authoritative source comparison" {
     }
 }
 
+Describe "Build-TemplateNuGetPackage PostgreSQL privilege gate" {
+    BeforeAll {
+        $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Push-Location $script:templatesDir
+        try {
+            Import-Module (Join-Path $script:templatesDir "Template-Management.psm1") -Force
+        }
+        finally {
+            Pop-Location
+        }
+
+        $script:sourceInventory = @{
+            schemas    = @(
+                @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
+                @{ schemaName = "edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                @{ schemaName = "public"; objects = @() },
+                @{ schemaName = "tracked_changes_edfi"; objects = @(@{ name = "School"; type = "table" }) }
+            )
+            principals = @()
+        }
+        # The privilege rows a source provisioned from the authoritative DDL holds (shape and
+        # non-owner grants taken from a live PostgreSQL 18 provisioning of the generated DDL).
+        $script:authoritativePrivilegeRows = @(
+            'function|EXECUTE|edfi_dms_enqueue_owner|edfi_dms_enqueue_owner|dms."TF_Document_EnqueueProjectionInsert"()',
+            'function|EXECUTE|postgres|-|dms.uuidv5(namespace_uuid uuid, name_text text)',
+            'function|EXECUTE|postgres|postgres|dms.uuidv5(namespace_uuid uuid, name_text text)',
+            'relation|INSERT|postgres|edfi_dms_enqueue_owner|dms."DocumentProjectionWork"',
+            'relation|SELECT|postgres|edfi_dms_enqueue_owner|dms."DocumentCacheState"',
+            'relation|SELECT|postgres|edfi_dms_enqueue_owner|dms."DocumentProjectionWork"',
+            'relation|SELECT|postgres|postgres|dms."Document"',
+            'relation|UPDATE|postgres|edfi_dms_enqueue_owner|dms."DocumentProjectionWork"',
+            'schema|CREATE|pg_database_owner|pg_database_owner|public',
+            'schema|USAGE|pg_database_owner|-|public',
+            'schema|USAGE|postgres|edfi_dms_enqueue_owner|dms',
+            'schema|USAGE|postgres|postgres|dms',
+            'type|USAGE|postgres|-|dms."Status"'
+        )
+    }
+
+    It "dumps a source holding only the privileges the authoritative DDL grants" {
+        InModuleScope Template-Management -Parameters @{
+            configPath = (Join-Path (Split-Path $PSScriptRoot -Parent) "MinimalTemplateSettings.psd1")
+            inventory  = $script:sourceInventory
+            rows       = $script:authoritativePrivilegeRows
+        } {
+            param($configPath, $inventory, $rows)
+
+            $sourceFacts = [pscustomobject]@{ DatabaseLevelObjects = @(); FullInventory = $inventory }
+            $privilegeRows = @($rows)
+            Mock Get-TemplateSourceCatalogFacts { $sourceFacts }
+            Mock Get-UserSchemaNames { @("dms", "edfi", "tracked_changes_edfi") }
+            Mock Get-TemplateAuthoritativeObjectInventory { $sourceFacts.FullInventory }
+            Mock Invoke-TemplateCatalogQuery { $privilegeRows }
+            Mock Invoke-DatabaseDump {}
+            Mock Write-TemplateRestoreManifest { "restore-manifest.json" }
+            Mock New-DatabaseTemplateCsproj {}
+            Mock Add-FileToCsProjForNuget {}
+            Mock Build-NuGetPackage {}
+
+            Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0" -TemplateKind "Minimal" `
+                -DumpAllUserSchemas -SchemaFilePath @("ApiSchema.json")
+
+            Should -Invoke Invoke-TemplateCatalogQuery -Times 1 -Exactly -ParameterFilter {
+                $Query -ceq (Get-PostgresqlPrivilegeQuerySql) -and $DatabaseName -ceq "edfi_datamanagementservice"
+            }
+            Should -Invoke Invoke-DatabaseDump -Times 1 -Exactly
+        }
+    }
+
+    It "refuses a source carrying <Name> before any dump" -ForEach @(
+        @{ Name = "a grant to an unrelated cluster role"; Row = 'relation|SELECT|postgres|reporting_reader|dms."Document"'; Violation = 'relation dms."Document" SELECT to reporting_reader (owner postgres)' }
+        @{ Name = "a column grant to an unrelated cluster role"; Row = 'column|SELECT|postgres|reporting_reader|dms."Document"."DocumentId"'; Violation = 'column dms."Document"."DocumentId" SELECT to reporting_reader (owner postgres)' }
+        @{ Name = "a table grant to PUBLIC"; Row = 'relation|SELECT|postgres|-|edfi."School"'; Violation = 'relation edfi."School" SELECT to PUBLIC (owner postgres)' }
+        @{ Name = "an enqueue function still executable by PUBLIC"; Row = 'function|EXECUTE|edfi_dms_enqueue_owner|-|dms."TF_Document_EnqueueProjectionInsert"()'; Violation = 'function dms."TF_Document_EnqueueProjectionInsert"() EXECUTE to PUBLIC (owner edfi_dms_enqueue_owner)' }
+        @{ Name = "an enqueue-owner grant the DDL does not make"; Row = 'relation|DELETE|postgres|edfi_dms_enqueue_owner|dms."DocumentProjectionWork"'; Violation = 'relation dms."DocumentProjectionWork" DELETE to edfi_dms_enqueue_owner (owner postgres)' }
+        @{ Name = "the enqueue owner's transient CREATE on dms left in place"; Row = 'schema|CREATE|postgres|edfi_dms_enqueue_owner|dms'; Violation = 'schema dms CREATE to edfi_dms_enqueue_owner (owner postgres)' }
+    ) {
+        InModuleScope Template-Management -Parameters @{
+            configPath = (Join-Path (Split-Path $PSScriptRoot -Parent) "MinimalTemplateSettings.psd1")
+            inventory  = $script:sourceInventory
+            rows       = @($script:authoritativePrivilegeRows) + @($Row)
+            violation  = $Violation
+        } {
+            param($configPath, $inventory, $rows, $violation)
+
+            $configPath | Should -Exist
+            $sourceFacts = [pscustomobject]@{ DatabaseLevelObjects = @(); FullInventory = $inventory }
+            $privilegeRows = @($rows)
+            Mock Get-TemplateSourceCatalogFacts { $sourceFacts }
+            Mock Get-UserSchemaNames { @("dms", "edfi", "tracked_changes_edfi") }
+            Mock Get-TemplateAuthoritativeObjectInventory { $sourceFacts.FullInventory }
+            Mock Invoke-TemplateCatalogQuery { $privilegeRows }
+            Mock Invoke-DatabaseDump {}
+            Mock Build-NuGetPackage {}
+
+            {
+                Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0" -TemplateKind "Minimal" `
+                    -DumpAllUserSchemas -SchemaFilePath @("ApiSchema.json")
+            } | Should -Throw "Template source database 'edfi_datamanagementservice' carries privileges the authoritative DMS DDL does not grant: $violation. *Nothing was dumped or packaged.*"
+
+            Should -Invoke Invoke-DatabaseDump -Times 0 -Exactly
+            Should -Invoke Build-NuGetPackage -Times 0 -Exactly
+        }
+    }
+}
+
 # The synthetic inventories above cannot show that the catalog query DISCOVERS an object; this
 # live suite runs the real query, through each side's own transport, against databases built
 # from one DDL, and feeds the results to the real producer and consumer gates. OPT-IN: each
@@ -1867,17 +1988,27 @@ Describe "Authoritative inventory table constraints and indexes against a live <
              CREATE TABLE dms."Alias" ("AliasId" bigint NOT NULL, "DocumentId" bigint NOT NULL REFERENCES dms."Document" ("DocumentId"), CONSTRAINT "PK_Alias" PRIMARY KEY ("AliasId"));
              CREATE INDEX "IX_Alias_DocumentId" ON dms."Alias" ("DocumentId");
              CREATE UNIQUE INDEX "UX_Document_ResourceKeyId_Uri" ON dms."Document" ("ResourceKeyId", ("DocumentId"::text || ''#''));
+             CREATE TYPE dms."Status" AS ENUM (''active'');
+             CREATE TYPE dms."Pair" AS ("Left" int, "Right" int);
              INSERT INTO dms."Document" VALUES (1, 1);'
         )
         # Constraint-backed indexes (Document_pkey, PK_Alias) appear once, as their constraint.
+        # The standalone types appear once each; their generated array types and the tables'
+        # row and array types do not appear at all.
         ExpectedAttached   = @("Document.Document_pkey|primarykey", "Document.CK_Positive|check", "Alias.PK_Alias|primarykey", "Alias.Alias_DocumentId_fkey|foreignkey",
-            "Alias.IX_Alias_DocumentId|index", "Document.UX_Document_ResourceKeyId_Uri|uniqueindex")
+            "Alias.IX_Alias_DocumentId|index", "Document.UX_Document_ResourceKeyId_Uri|uniqueindex", "Status|enum", "Pair|compositetype")
         Contamination      = @(
             @{ Index = 0; Name = "a NOT VALID check on an expected table"; Sql = 'ALTER TABLE dms."Document" ADD CONSTRAINT "RejectNewDocuments" CHECK ("DocumentId" < 0) NOT VALID;'; Extra = "dms.Document.RejectNewDocuments (check)" }
             @{ Index = 1; Name = "a constraint reusing another table's constraint name"; Sql = 'ALTER TABLE dms."Alias" ADD CONSTRAINT "CK_Positive" CHECK ("AliasId" < 0) NOT VALID;'; Extra = "dms.Alias.CK_Positive (check)" }
             @{ Index = 2; Name = "a missing required unique index"; Sql = 'DROP INDEX dms."UX_Document_ResourceKeyId_Uri";'; Missing = "dms.Document.UX_Document_ResourceKeyId_Uri (uniqueindex)" }
             @{ Index = 3; Name = "an unexpected index on an expected table"; Sql = 'CREATE INDEX "IX_Extra" ON dms."Document" ("ResourceKeyId");'; Extra = "dms.Document.IX_Extra (index)" }
             @{ Index = 4; Name = "a required unique index recreated without uniqueness"; Sql = 'DROP INDEX dms."UX_Document_ResourceKeyId_Uri"; CREATE INDEX "UX_Document_ResourceKeyId_Uri" ON dms."Document" ("ResourceKeyId", ("DocumentId"::text || ''#''));'; Extra = "dms.Document.UX_Document_ResourceKeyId_Uri (index)"; Missing = "dms.Document.UX_Document_ResourceKeyId_Uri (uniqueindex)" }
+            @{ Index = 5; Name = "a shell type in an allowed schema"; Sql = 'CREATE TYPE dms.extra;'; Extra = "dms.extra (shelltype)" }
+            # The I/O functions live in public, so the base type is the first extra reported.
+            @{ Index = 6; Name = "a standalone base type in an allowed schema"; Sql = 'CREATE TYPE dms.extrabase;
+                CREATE FUNCTION public.extrabase_in(cstring) RETURNS dms.extrabase AS ''int4in'' LANGUAGE internal IMMUTABLE STRICT;
+                CREATE FUNCTION public.extrabase_out(dms.extrabase) RETURNS cstring AS ''int4out'' LANGUAGE internal IMMUTABLE STRICT;
+                CREATE TYPE dms.extrabase (INPUT = public.extrabase_in, OUTPUT = public.extrabase_out, LIKE = int4);'; Extra = "dms.extrabase (basetype)"; ExtraAbsent = "_extrabase" }
         )
     }
     @{
@@ -1974,6 +2105,9 @@ Describe "Authoritative inventory table constraints and indexes against a live <
         $prefix = "dms_inventory_probe_$([Guid]::NewGuid().ToString('N').Substring(0, 12))"
         $script:databases = [ordered]@{ expected = "${prefix}_expected"; clean = "${prefix}_clean" }
         foreach ($row in $Contamination) { $script:databases["c$($row.Index)"] = "${prefix}_c$($row.Index)" }
+        # PostgreSQL only: a database whose one difference is a grant to an unrelated cluster role.
+        $script:grantRole = $null
+        if ($Engine -eq "postgresql") { $script:databases["grant"] = "${prefix}_grant" }
 
         foreach ($database in $script:databases.Values) {
             $createSql = if ($Engine -eq "mssql") { "CREATE DATABASE [$database];" } else { "CREATE DATABASE `"$database`";" }
@@ -1982,6 +2116,11 @@ Describe "Authoritative inventory table constraints and indexes against a live <
             foreach ($batch in @($history) + @($SchemaBatches)) { $null = Invoke-LiveQuery -Database $database -Query $batch }
         }
         foreach ($row in $Contamination) { $null = Invoke-LiveQuery -Database $script:databases["c$($row.Index)"] -Query $row.Sql }
+        if ($Engine -eq "postgresql") {
+            $script:grantRole = "${prefix}_reader"
+            $null = Invoke-LiveQuery -Database $AdminDatabase -Query "CREATE ROLE `"$($script:grantRole)`" NOLOGIN;"
+            $null = Invoke-LiveQuery -Database $script:databases["grant"] -Query "GRANT SELECT ON dms.`"Document`" TO `"$($script:grantRole)`";"
+        }
 
         $script:expectedInventory = Read-LiveInventory -Database $script:databases.expected
     }
@@ -1991,6 +2130,9 @@ Describe "Authoritative inventory table constraints and indexes against a live <
         foreach ($database in $script:databases.Values) {
             $dropSql = if ($Engine -eq "mssql") { "DROP DATABASE IF EXISTS [$database];" } else { "DROP DATABASE IF EXISTS `"$database`" WITH (FORCE);" }
             $null = Invoke-LiveQuery -Database $AdminDatabase -Query $dropSql
+        }
+        if ($null -ne $script:grantRole) {
+            $null = Invoke-LiveQuery -Database $AdminDatabase -Query "DROP ROLE IF EXISTS `"$($script:grantRole)`";"
         }
     }
 
@@ -2018,6 +2160,29 @@ Describe "Authoritative inventory table constraints and indexes against a live <
             Should -Not -Throw
     }
 
+    It "reads privileges live: accepts the clean database and refuses a grant to an unrelated cluster role at both gates" -Skip:([string]::IsNullOrWhiteSpace($Container) -or $Engine -ne "postgresql") {
+        # The other cluster role exists either way; only the database holding a grant to it fails.
+        $producerGate = {
+            param($database)
+            InModuleScope Template-Management -Parameters @{ container = $script:live.Container; database = $database } {
+                param($container, $database)
+                Assert-TemplateSourcePrivilege -DatabaseName $database -ContainerName $container
+            }
+        }
+        $consumerGate = {
+            param($database)
+            Assert-PostgresqlArtifactPrivilege -PrivilegeRow (Invoke-LiveQuery -Database $database -Query (Get-PostgresqlPrivilegeQuerySql)) `
+                -SourceDescription "Restore scratch database '$database'" -FailureSuffix "Refused."
+        }
+
+        { & $producerGate $script:databases.clean } | Should -Not -Throw
+        { & $consumerGate $script:databases.clean } | Should -Not -Throw
+
+        $violation = "relation dms.`"Document`" SELECT to $($script:grantRole) (owner postgres)"
+        { & $producerGate $script:databases["grant"] } | Should -Throw "*carries privileges the authoritative DMS DDL does not grant: $violation.*Nothing was dumped or packaged.*"
+        { & $consumerGate $script:databases["grant"] } | Should -Throw "*carries privileges the authoritative DMS DDL does not grant: $violation.*"
+    }
+
     It "rejects <Name> at the producer gate and at the consumer gate" -ForEach $Contamination -Skip:([string]::IsNullOrWhiteSpace($Container)) {
         $database = $script:databases["c$Index"]
         # A row names what is extra, what is missing, or both; the gates report extras first.
@@ -2038,6 +2203,13 @@ Describe "Authoritative inventory table constraints and indexes against a live <
         { Assert-RestoreScratchMatchesAuthoritativeInventory -AuthoritativeInventory $script:expectedInventory `
                 -ScratchInventory (Read-LiveInventory -Database $database) -ScratchDatabaseName $database } |
             Should -Throw $consumerPattern
+
+        if ($_.ContainsKey("ExtraAbsent")) {
+            # A type PostgreSQL generates for the extra object is not inventoried on its own.
+            $absentName = $_.ExtraAbsent
+            @((Read-LiveInventory -Database $database).schemas | ForEach-Object { $_.objects } | Where-Object { $_.name -ceq $absentName }) |
+                Should -BeNullOrEmpty
+        }
     }
 }
 
@@ -2051,6 +2223,11 @@ Describe "Build-TemplateNuGetPackage attestation" {
         finally {
             Pop-Location
         }
+    }
+
+    BeforeEach {
+        # The privilege gate reads the live source; its own tests cover it.
+        Mock Assert-TemplateSourcePrivilege {} -ModuleName Template-Management
     }
 
     It "attests the exact packed bytes: sibling document verifies against the trust policy and a later repack invalidates it" {
@@ -2215,6 +2392,83 @@ Describe "Build-TemplateNuGetPackage attestation" {
 
                 @(Get-ChildItem -Path "." -Filter "*.attestation.json").Count | Should -Be 0
                 Should -Invoke Build-TemplateAttestationCompanionPackage -Times 0 -Exactly
+            }
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    It "never attests a stale same-version package when <Name>" -ForEach @(
+        @{ Name = "dotnet restore fails"; RestoreExit = 1; PackExit = 0; Expected = "*dotnet restore failed*" }
+        @{ Name = "dotnet pack fails"; RestoreExit = 0; PackExit = 1; Expected = "*dotnet pack failed*" }
+        @{ Name = "dotnet pack succeeds without writing the package"; RestoreExit = 0; PackExit = 0; Expected = "*did not write the template package*" }
+    ) {
+        $workDir = Join-Path $TestDrive ([Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $workDir -Force | Out-Null
+        Push-Location $workDir
+        try {
+            InModuleScope Template-Management -Parameters @{
+                configPath  = (Join-Path (Split-Path $PSScriptRoot -Parent) "MinimalTemplateSettings.psd1")
+                workDir     = $workDir
+                restoreExit = $RestoreExit
+                packExit    = $PackExit
+                expected    = $Expected
+            } {
+                param($configPath, $workDir, $restoreExit, $packExit, $expected)
+
+                $configPath | Should -Exist
+                $exitCodes = @{ restore = $restoreExit; pack = $packExit }
+                $signingKey = New-TemplateAttestationSigningKey -PrivateKeyPath (Join-Path $workDir "signer.pem")
+                $inventory = @{
+                    schemas    = @(@{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) }, @{ schemaName = "edfi"; objects = @(@{ name = "School"; type = "table" }) }, @{ schemaName = "tracked_changes_edfi"; objects = @(@{ name = "School"; type = "table" }) }, @{ schemaName = "public"; objects = @() })
+                    principals = @()
+                }
+                $cleanFacts = [pscustomobject]@{
+                    ApiSchemaFormatVersion     = "1.0.0"
+                    EffectiveSchemaHash        = ("ab" * 32)
+                    ResourceKeyCount           = 42
+                    ResourceKeySeedHashB64     = [System.Convert]::ToBase64String([System.Convert]::FromHexString(("cd" * 32)))
+                    EngineVersion              = "16.8"
+                    DatabaseCompatibilityLevel = $null
+                    DocumentJsonColumnType     = "jsonb"
+                    FullInventory              = $inventory
+                    DatabaseLevelObjects       = @()
+                    ArtifactInventory          = $inventory
+                }
+
+                Mock Get-TemplateSourceCatalogFacts { $cleanFacts }
+                Mock Get-UserSchemaNames { @("dms", "edfi", "tracked_changes_edfi") }
+                Mock Get-TemplateAuthoritativeObjectInventory { $cleanFacts.FullInventory }
+                Mock Invoke-DatabaseDump {
+                    Set-Content -LiteralPath (Join-Path $BackupDirectory $BackupFileName) -Value "fake artifact bytes"
+                }
+                Mock New-DatabaseTemplateCsproj {}
+                Mock Add-FileToCsProjForNuget {}
+                Mock Invoke-TemplatePackageAttestation {}
+                Mock dotnet {
+                    $global:LASTEXITCODE = if (@($args)[0] -eq "restore") { $exitCodes.restore } else { $exitCodes.pack }
+                }
+
+                # An earlier run left a package with the same id and version in the workspace.
+                $stalePackagePath = Join-Path $workDir "EdFi.Api.Minimal.Template.PostgreSql.5.2.0.1.0.123.nupkg"
+                Set-Content -LiteralPath $stalePackagePath -Value "stale packed bytes"
+
+                {
+                    Build-TemplateNuGetPackage `
+                        -ConfigFilePath $configPath `
+                        -StandardVersion "5.2.0" `
+                        -PackageVersion "1.0.123" `
+                        -TemplateKind "Minimal" `
+                        -DumpAllUserSchemas `
+                        -SchemaFilePath "ApiSchema.json" `
+                        -AttestationSignerKeyPath $signingKey.PrivateKeyPath `
+                        -AttestationProducer "local-dev"
+                } | Should -Throw $expected
+
+                Should -Invoke Invoke-TemplatePackageAttestation -Times 0 -Exactly
+                $stalePackagePath | Should -Not -Exist
+                @(Get-ChildItem -Path $workDir -Filter "*.attestation.json").Count | Should -Be 0
             }
         }
         finally {

@@ -94,7 +94,8 @@ BeforeAll {
             [switch]$WrongNuspecVersion,
             [switch]$WrongArtifactSha,
             [switch]$SkipAttestation,
-            [switch]$TamperAfterSigning
+            [switch]$TamperAfterSigning,
+            [switch]$DuplicateManifestEntry
         )
 
         $layout = Join-Path (New-TestWorkspace) "layout"
@@ -164,6 +165,19 @@ BeforeAll {
         $packagePath = Join-Path $Directory "$PackageId.$PackageVersion.nupkg"
         $zipPath = Join-Path (New-TestWorkspace) "package.zip"
         Compress-Archive -Path (Join-Path $layout "*") -DestinationPath $zipPath -Force
+        if ($DuplicateManifestEntry) {
+            # A second archive entry under the manifest's exact name (an archive allows it, a
+            # file system does not), carrying a different manifest.
+            Add-Type -AssemblyName System.IO.Compression -ErrorAction Stop
+            $updateArchive = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Update)
+            try {
+                $writer = [System.IO.StreamWriter]::new($updateArchive.CreateEntry((Get-RestoreManifestFileName)).Open())
+                try { $writer.Write('{"version":1}') } finally { $writer.Dispose() }
+            }
+            finally {
+                $updateArchive.Dispose()
+            }
+        }
         Copy-Item -LiteralPath $zipPath -Destination $packagePath -Force
 
         $attestationPath = $null
@@ -582,8 +596,12 @@ Describe "Initialize-RestorePackageStage" {
         $stage.Manifest.templateKind | Should -Be "Minimal"
         $stage.ArtifactSha256 | Should -Be ([string]$stage.Manifest.artifactSha256)
         $stage.Producer | Should -Be "local-dev"
-        (Get-Item -LiteralPath $stage.ArtifactPath).IsReadOnly | Should -BeTrue
+        (Get-Item -LiteralPath $stage.ManifestPath).IsReadOnly | Should -BeTrue
         (Get-Item -LiteralPath $stage.PackagePath).IsReadOnly | Should -BeTrue
+        # Nothing is extracted: the stage holds only the package and manifest records, never a
+        # copy of the database artifact.
+        @(Get-ChildItem -LiteralPath $stage.StageDirectory -Recurse -File | ForEach-Object Name | Sort-Object) |
+            Should -Be @(@([System.IO.Path]::GetFileName($stage.PackagePath), (Get-RestoreManifestFileName)) | Sort-Object)
 
         Remove-RestorePackageStage -StageDirectory $stage.StageDirectory
         Test-Path -LiteralPath $stage.StageDirectory | Should -BeFalse
@@ -601,41 +619,28 @@ Describe "Initialize-RestorePackageStage" {
         @(Get-ChildItem -LiteralPath $stageRoot -Directory).Count | Should -Be 0
     }
 
-    It "validates the manifest and artifact hash from the authenticated bytes, even when the extracted files are replaced right after extraction" {
+    It "refuses <Name> from the archive metadata before reading any artifact content, and removes the stage" -ForEach @(
+        @{ Name = "a duplicate manifest entry"; Option = "DuplicateManifestEntry"; Engine = "postgresql"; Expected = "*holds more than one archive entry for: restore-manifest.json*" }
+        @{ Name = "a manifest for another engine"; Option = $null; Engine = "mssql"; Expected = "*declares databaseEngine 'postgresql'*" }
+        @{ Name = "a nuspec identity break"; Option = "WrongNuspecVersion"; Engine = "postgresql"; Expected = "*nuspec declares identity*9.9.9*" }
+        @{ Name = "an undeclared artifact"; Option = "ExtraArtifact"; Engine = "postgresql"; Expected = "*artifacts beyond the manifest-declared*undeclared-extra*" }
+        @{ Name = "a manifest-less package"; Option = "OmitManifest"; Engine = "postgresql"; Expected = "*not eligible for restore*" }
+    ) {
         $trustWorld = New-RestoreTrustWorld
         $packageDirectory = New-TestWorkspace
-        New-RestoreTestPackage -Directory $packageDirectory -TrustWorld $trustWorld | Out-Null
+        $packageOptions = @{ Directory = $packageDirectory; TrustWorld = $trustWorld; PackageId = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0" }
+        if ($null -ne $Option) { $packageOptions[$Option] = $true }
+        New-RestoreTestPackage @packageOptions | Out-Null
+        $package = Find-RestoreTemplatePackage -EnvironmentValues (New-TestEnvironmentValues) -RestoreTemplate Minimal -DatabaseEngine postgresql -PackageDirectory $packageDirectory
+        $trust = Assert-TrustedRestorePackage -Package $package -TrackedPolicyPath $trustWorld.TrackedPolicyPath -LocalPolicyPath $trustWorld.LocalPolicyPath
+        $stageRoot = New-TestWorkspace
+        Mock Get-RestorePackageArchiveEntrySha256 -ModuleName bootstrap-restore { throw "artifact content must not be read before the metadata is validated" }
 
-        # The moment the stage looks for the extracted manifest, a self-consistent forgery
-        # replaces both extracted files: a different artifact, and a manifest naming its hash
-        # and a different effective schema. Anything read back from disk would carry it.
-        $global:ForgedArtifactBytes = [System.Text.Encoding]::UTF8.GetBytes("forged artifact bytes")
-        Mock Get-ChildItem -ModuleName bootstrap-restore -ParameterFilter { $Filter -eq (Get-RestoreManifestFileName) } {
-            $found = @(Microsoft.PowerShell.Management\Get-ChildItem -LiteralPath $LiteralPath -Filter $Filter -Recurse -File)
-            foreach ($manifestFile in $found) {
-                $forgedManifest = Microsoft.PowerShell.Management\Get-Content -LiteralPath $manifestFile.FullName -Raw | ConvertFrom-Json
-                $artifactFile = Join-Path $manifestFile.DirectoryName ([string]$forgedManifest.artifactFileName)
-                [System.IO.File]::WriteAllBytes($artifactFile, $global:ForgedArtifactBytes)
-                $forgedManifest.artifactSha256 = [System.Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($global:ForgedArtifactBytes)).ToLowerInvariant()
-                $forgedManifest.effectiveSchemaHash = "cd" * 32
-                [System.IO.File]::WriteAllText($manifestFile.FullName, ($forgedManifest | ConvertTo-Json -Depth 20))
-            }
-            $found
-        }
+        { Initialize-RestorePackageStage -Package $package -AuthenticatedPackageSha256 $trust.PackageSha256 -Producer $trust.Producer -DatabaseEngine $Engine -RestoreTemplate Minimal -StageRoot $stageRoot } |
+            Should -Throw $Expected
 
-        try {
-            $stage = Invoke-TrustedFindAndStage -TrustWorld $trustWorld -PackageDirectory $packageDirectory -EnvironmentValues (New-TestEnvironmentValues)
-        }
-        finally {
-            Remove-Variable -Name ForgedArtifactBytes -Scope Global -ErrorAction SilentlyContinue
-        }
-
-        Should -Invoke Get-ChildItem -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Filter -eq (Get-RestoreManifestFileName) }
-        $stage.Manifest.effectiveSchemaHash | Should -Be ("ab" * 32) -Because "the manifest is parsed from the authenticated package bytes, not the replaced file"
-        $stage.ArtifactSha256 | Should -Be ([string]$stage.Manifest.artifactSha256)
-        $stage.ArtifactSha256 | Should -Not -Be ([System.Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes("forged artifact bytes"))).ToLowerInvariant())
-
-        Remove-RestorePackageStage -StageDirectory $stage.StageDirectory
+        Should -Invoke Get-RestorePackageArchiveEntrySha256 -ModuleName bootstrap-restore -Times 0 -Exactly
+        @(Get-ChildItem -LiteralPath $stageRoot -Directory).Count | Should -Be 0
     }
 
     It "rejects engine/kind mismatches, identity-triangle breaks, undeclared artifacts, artifact-hash mismatches, and manifest-less packages - always removing the stage" {
@@ -773,12 +778,21 @@ Describe "Retained artifact transfer" {
         $packageDirectory = New-TestWorkspace
         $package = New-RestoreTestPackage -Directory $packageDirectory -TrustWorld $trustWorld
         $stage = Invoke-TrustedFindAndStage -TrustWorld $trustWorld -PackageDirectory $packageDirectory -EnvironmentValues (New-TestEnvironmentValues)
-        $authenticatedArtifactBytes = [System.IO.File]::ReadAllBytes($stage.ArtifactPath)
+        $authenticatedArchive = [System.IO.Compression.ZipArchive]::new([System.IO.MemoryStream]::new([byte[]]$stage.PackageBytes, $false), [System.IO.Compression.ZipArchiveMode]::Read)
+        try {
+            $artifactBytes = [System.IO.MemoryStream]::new()
+            $artifactStream = $authenticatedArchive.GetEntry($stage.ArtifactEntryName).Open()
+            try { $artifactStream.CopyTo($artifactBytes) } finally { $artifactStream.Dispose() }
+            $authenticatedArtifactBytes = $artifactBytes.ToArray()
+        }
+        finally {
+            $authenticatedArchive.Dispose()
+        }
 
-        # Every host pathname that holds the package or the artifact gets other bytes: the
-        # source .nupkg, the staged .nupkg record, and every extracted file.
+        # Every host pathname that holds the package or a staged record gets other bytes: the
+        # source .nupkg, the staged .nupkg record, and the manifest record.
         $hostPaths = @($package.PackagePath) + @(Get-ChildItem -LiteralPath $stage.StageDirectory -Recurse -File | ForEach-Object FullName)
-        @($hostPaths) | Should -Contain $stage.ArtifactPath
+        @($hostPaths) | Should -Contain $stage.ManifestPath
         @($hostPaths) | Should -Contain $stage.PackagePath
         foreach ($hostPath in $hostPaths) {
             (Get-Item -LiteralPath $hostPath).IsReadOnly = $false

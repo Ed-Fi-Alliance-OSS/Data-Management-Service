@@ -209,6 +209,29 @@ Describe "New-TemplateAttestationSigningKey" {
         { New-TemplateAttestationSigningKey -PrivateKeyPath $keyPath } | Should -Throw "*Refusing to overwrite*"
     }
 
+    It "never overwrites a key file that appears after the existence check" {
+        $keyPath = Join-Path (New-TestWorkspace) "signer.pem"
+        Set-Content -LiteralPath $keyPath -Value "existing key material" -NoNewline
+
+        InModuleScope Template-RestoreTrust -Parameters @{ keyPath = $keyPath } {
+            param($keyPath)
+            $keyPath | Should -Exist
+            # Simulates the race: the pre-check sees no file, but one exists at creation time.
+            Mock Test-Path { $false } -ParameterFilter { $LiteralPath -eq $keyPath }
+            { New-TemplateAttestationSigningKey -PrivateKeyPath $keyPath } | Should -Throw
+        }
+
+        Get-Content -LiteralPath $keyPath -Raw | Should -Be "existing key material"
+    }
+
+    It "creates the private key owner read/write only on Linux and macOS" -Skip:$IsWindows {
+        $keyPath = Join-Path (New-TestWorkspace) "signer.pem"
+        New-TemplateAttestationSigningKey -PrivateKeyPath $keyPath | Out-Null
+
+        [System.IO.File]::GetUnixFileMode($keyPath) |
+            Should -Be ([System.IO.UnixFileMode]::UserRead -bor [System.IO.UnixFileMode]::UserWrite)
+    }
+
     It "generates a distinct key on every call" {
         $workspace = New-TestWorkspace
         $first = New-TemplateAttestationSigningKey -PrivateKeyPath (Join-Path $workspace "a.pem")

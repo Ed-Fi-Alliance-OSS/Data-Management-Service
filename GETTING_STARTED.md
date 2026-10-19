@@ -216,8 +216,13 @@ Use `-SeedTemplate Populated` for the populated sample. The wrapper also accepts
 ## Restore the Datastore from a Database Template Package
 
 The supported way to initialize the datastore from a database-template package
-is the bootstrap wrappers' restore mode. Set the template package ID in `.env`
-(and, for feed-based restores, the package's NuGet version):
+is the bootstrap wrappers' restore mode. Set the package's NuGet version in `.env`
+for feed-based restores. The package ID in `.env` is not always the effective one:
+a process environment value wins, `bootstrap-local-dms.ps1` always replaces it with
+the Data Standard overlay's value (following `-DataStandardVersion`), and
+`bootstrap-published-dms.ps1` does so only when `-DataStandardVersion` is passed.
+The restore then swaps in the requested kind and engine. See "Restoring the
+datastore from a database template" in `eng/docker-compose/README.md`.
 
 **Example:**
 

@@ -1295,6 +1295,7 @@ try {
             Add-Content -LiteralPath $tamperedPackage.FullName -Value "tampered" -AsByteStream:$false
 
             $failed = $false
+            $refusalMessage = $null
             try {
                 Invoke-RestoreWrapper -Arguments @{
                     EnvironmentFile  = $script:ResolvedEnvironmentFile
@@ -1305,10 +1306,14 @@ try {
             }
             catch {
                 $failed = $true
-                Write-Host "[restore-smoke] tampered package refused: $($_.Exception.Message)"
+                $refusalMessage = $_.Exception.Message
+                Write-Host "[restore-smoke] tampered package refused: $refusalMessage"
             }
-            if (-not $failed) {
-                throw "A tampered package was NOT refused; the trust gate failed."
+            # Only the authentication refusal caused by the hash mismatch proves the trust gate;
+            # an unexpected exception or a later gate fails the leg.
+            $refusalDefect = Get-RestoreSmokeTamperRefusalDefect -Refused $failed -Message $refusalMessage
+            if ($null -ne $refusalDefect) {
+                throw $refusalDefect
             }
 
             # Fails BEFORE any Docker activity: no compose containers may exist for the project.
@@ -1400,6 +1405,41 @@ try {
             }
             if (-not $failed) {
                 throw "A contaminated package was NOT refused; scratch validation failed."
+            }
+
+            # The refused restore's cleanup stops the database-only slice it started, so no
+            # container of the project may still run.
+            $global:LASTEXITCODE = 0
+            $runningContainers = @(docker ps --filter "label=com.docker.compose.project=$($script:WrapperProfile.ComposeProject)" --format '{{.Names}}' 2>&1 |
+                    Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+            if ($LASTEXITCODE -ne 0) {
+                throw "docker ps failed while proving the refused restore stopped its database-only slice."
+            }
+            if ($runningContainers.Count -gt 0) {
+                throw "Containers still run after the refused restore: $($runningContainers -join ', '). Its cleanup must stop the database-only slice it started."
+            }
+
+            # Inspection only: restart the stopped database container as it was created. Its data
+            # directory is already initialized, so no init script runs and no database is created.
+            $databaseContainer = if ($DatabaseEngine -eq "mssql") { "dms-mssql" } else { "dms-postgresql" }
+            $global:LASTEXITCODE = 0
+            docker start $databaseContainer | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                throw "docker start $databaseContainer failed while restarting the database for inspection."
+            }
+            $inspectionAdminDatabase = if ($DatabaseEngine -eq "mssql") { "master" } else { "postgres" }
+            $inspectionDeadline = (Get-Date).AddSeconds(120)
+            while ($true) {
+                try {
+                    $null = Invoke-SmokeSql -DatabaseName $inspectionAdminDatabase -Query "SELECT 1;"
+                    break
+                }
+                catch {
+                    if ((Get-Date) -ge $inspectionDeadline) {
+                        throw "The restarted database container '$databaseContainer' did not accept queries within 120 seconds: $($_.Exception.Message)"
+                    }
+                    Start-Sleep -Seconds 2
+                }
             }
 
             # Fresh volume: the target must still be ABSENT, no generated restore databases

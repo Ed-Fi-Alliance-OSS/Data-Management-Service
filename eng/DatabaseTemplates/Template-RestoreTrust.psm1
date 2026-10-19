@@ -230,7 +230,25 @@ function New-TemplateAttestationSigningKey {
     try {
         Assert-EcdsaP256Key -Ecdsa $ecdsa -KeyDescription "The generated signing key"
         $privateKeyPem = [System.Security.Cryptography.PemEncoding]::WriteString("PRIVATE KEY", $ecdsa.ExportPkcs8PrivateKey())
-        [System.IO.File]::WriteAllText($PrivateKeyPath, $privateKeyPem + "`n", [System.Text.UTF8Encoding]::new($false))
+
+        # CreateNew makes creation exclusive (a file that appeared after the check above is
+        # never overwritten). On Linux/macOS the file is created owner read/write only, so the
+        # private key is never readable by others, not even between creation and a later chmod.
+        $fileOptions = [System.IO.FileStreamOptions]::new()
+        $fileOptions.Mode = [System.IO.FileMode]::CreateNew
+        $fileOptions.Access = [System.IO.FileAccess]::Write
+        $fileOptions.Share = [System.IO.FileShare]::None
+        if (-not $IsWindows) {
+            $fileOptions.UnixCreateMode = [System.IO.UnixFileMode]::UserRead -bor [System.IO.UnixFileMode]::UserWrite
+        }
+        $keyStream = [System.IO.FileStream]::new($PrivateKeyPath, $fileOptions)
+        try {
+            $keyBytes = [System.Text.UTF8Encoding]::new($false).GetBytes($privateKeyPem + "`n")
+            $keyStream.Write($keyBytes, 0, $keyBytes.Length)
+        }
+        finally {
+            $keyStream.Dispose()
+        }
 
         $publicKeySpki = $ecdsa.ExportSubjectPublicKeyInfo()
 

@@ -601,6 +601,67 @@ Set-Content -LiteralPath (Join-Path `$env:DMS_BOOTSTRAP_ROOT_OVERRIDE 'bootstrap
         }
     }
 
+    It "copies the published schema tool into the candidate before the prepare phases, so their real tool discovery resolves the candidate's copy" {
+        # The published tool's documented location is <bootstrap root>/tools/api-schema-tools.
+        $activeRoot = Join-Path $script:candidateWorkspaceRoot "active-bootstrap"
+        $publishedTool = Join-Path $activeRoot "tools/api-schema-tools"
+        New-Item -ItemType Directory -Path $publishedTool -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $publishedTool "api-schema-tools") -Value "published apphost" -NoNewline
+        Set-Content -LiteralPath (Join-Path $publishedTool "EdFi.DataManagementService.SchemaTools.dll") -Value "published assembly" -NoNewline
+
+        # The REAL module import-time containment only accepts candidates under the real
+        # .bootstrap-restore, so this test uses a (cleaned-up) workspace there.
+        $realWorkspaceRoot = Join-Path $script:restoreWorkspaceRoot "tool-preserve-$([Guid]::NewGuid().ToString('n'))"
+        New-Item -ItemType Directory -Path $realWorkspaceRoot -Force | Out-Null
+        $stub = New-CandidatePrepareStub -Directory $script:candidateWorkspaceRoot -LogPath $script:prepareLogPath
+        $manifestModulePath = Join-Path $script:dockerComposeDir "bootstrap-manifest.psm1"
+        $schemaToolModulePath = Join-Path $script:dockerComposeDir "bootstrap-schema-tool.psm1"
+        @"
+param([string]`$EnvironmentFile)
+Import-Module '$($manifestModulePath.Replace("'", "''"))' -Force -Global
+Import-Module '$($schemaToolModulePath.Replace("'", "''"))' -Force
+Add-Content -LiteralPath '$($script:prepareLogPath.Replace("'", "''"))' -Value "schema tool=[`$(Resolve-DmsSchemaTool)]"
+Set-Content -LiteralPath (Join-Path `$env:DMS_BOOTSTRAP_ROOT_OVERRIDE 'bootstrap-manifest.json') -Value '{"version":1}'
+"@ | Set-Content -LiteralPath $stub.SchemaScriptPath -Encoding utf8
+
+        try {
+            $result = New-RestoreCandidateWorkspace `
+                -EnvironmentFile "x.env" `
+                -WorkspaceRoot $realWorkspaceRoot `
+                -PrepareSchemaScriptPath $stub.SchemaScriptPath `
+                -PrepareClaimsScriptPath $stub.ClaimsScriptPath `
+                -ActiveBootstrapRoot $activeRoot
+
+            $candidateTool = Join-Path $result.CandidateDirectory "tools/api-schema-tools"
+            @(Get-Content -LiteralPath $script:prepareLogPath)[0] | Should -Be "schema tool=[$(Join-Path $candidateTool 'api-schema-tools')]"
+            # The candidate carries the whole published tool, so the whole-tree commit keeps it.
+            Get-Content -LiteralPath (Join-Path $candidateTool "EdFi.DataManagementService.SchemaTools.dll") -Raw | Should -Be "published assembly"
+            # The active tool is read, never moved or changed.
+            Get-Content -LiteralPath (Join-Path $publishedTool "api-schema-tools") -Raw | Should -Be "published apphost"
+        }
+        finally {
+            if (Test-Path -LiteralPath $realWorkspaceRoot) {
+                Remove-Item -LiteralPath $realWorkspaceRoot -Recurse -Force
+            }
+        }
+    }
+
+    It "builds a candidate without tools when no published schema tool exists" {
+        $stub = New-CandidatePrepareStub -Directory $script:candidateWorkspaceRoot -LogPath $script:prepareLogPath
+        $activeRoot = Join-Path $script:candidateWorkspaceRoot "active-without-tools"
+        New-Item -ItemType Directory -Path $activeRoot -Force | Out-Null
+
+        $result = New-RestoreCandidateWorkspace `
+            -EnvironmentFile "x.env" `
+            -WorkspaceRoot $script:candidateWorkspaceRoot `
+            -PrepareSchemaScriptPath $stub.SchemaScriptPath `
+            -PrepareClaimsScriptPath $stub.ClaimsScriptPath `
+            -ActiveBootstrapRoot $activeRoot
+
+        Join-Path $result.CandidateDirectory "tools" | Should -Not -Exist
+        $result.CandidateManifestPath | Should -Exist
+    }
+
     It "treats a nonzero prepare exit code as failure even though the stub script did not throw" {
         $stub = New-CandidatePrepareStub -Directory $script:candidateWorkspaceRoot -LogPath $script:prepareLogPath -SchemaBehavior ExitCode
 
@@ -1035,6 +1096,25 @@ Describe "Publish-RestoreCandidateWorkspace (whole-tree commit)" {
         Test-Path -LiteralPath (Join-Path $script:activeRootUnderTest "stale-only-in-active.txt") | Should -BeFalse
         Get-Content -LiteralPath (Join-Path $script:activeRootUnderTest "bootstrap-manifest.json") -Raw | Should -Be '{"version":1}'
         Get-Content -LiteralPath (Join-Path $script:activeRootUnderTest ".hidden-marker") -Raw | Should -Be "dot"
+        # The previous tree was set aside and removed once the candidate was in place.
+        @(Get-ChildItem -LiteralPath (Join-Path $script:publishRoot ".bootstrap-restore") -Directory -Filter "previous-*") | Should -BeNullOrEmpty
+    }
+
+    It "keeps the published schema tool the candidate carries when it replaces the active tree" {
+        New-WorkspaceTree -Path $script:activeRootUnderTest -File @{
+            "bootstrap-manifest.json"             = '{"version":1,"old":true}'
+            "tools/api-schema-tools/api-schema-tools" = "published apphost"
+        } | Out-Null
+        New-WorkspaceTree -Path $script:candidateUnderTest -File @{
+            "bootstrap-manifest.json"             = '{"version":1}'
+            "tools/api-schema-tools/api-schema-tools" = "published apphost"
+        } | Out-Null
+
+        $result = Publish-RestoreCandidateWorkspace -CandidateDirectory $script:candidateUnderTest -ActiveBootstrapRoot $script:activeRootUnderTest
+
+        $result.Replaced | Should -BeTrue
+        Get-Content -LiteralPath (Join-Path $script:activeRootUnderTest "tools/api-schema-tools/api-schema-tools") -Raw | Should -Be "published apphost"
+        Get-Content -LiteralPath (Join-Path $script:activeRootUnderTest "bootstrap-manifest.json") -Raw | Should -Be '{"version":1}'
     }
 
     It "moves the candidate in when no active workspace exists" {
@@ -1046,18 +1126,73 @@ Describe "Publish-RestoreCandidateWorkspace (whole-tree commit)" {
         Get-Content -LiteralPath (Join-Path $script:activeRootUnderTest "ApiSchema/core.json") -Raw | Should -Be '{"core":true}'
     }
 
-    It "an injected failure between remove and move leaves no active workspace and an intact candidate" {
-        Mock Move-Item { throw "injected move failure" } -ModuleName bootstrap-restore
+    It "a failure publishing the candidate renames the previous tree back and keeps no backup" {
+        Mock Move-Item { throw "injected move failure" } -ModuleName bootstrap-restore -ParameterFilter { $LiteralPath -eq $script:candidateUnderTest }
+        New-WorkspaceTree -Path $script:activeRootUnderTest -File @{ "bootstrap-manifest.json" = "old"; ".hidden-marker" = "old-dot" } | Out-Null
+        New-WorkspaceTree -Path $script:candidateUnderTest | Out-Null
+
+        { Publish-RestoreCandidateWorkspace -CandidateDirectory $script:candidateUnderTest -ActiveBootstrapRoot $script:activeRootUnderTest } |
+            Should -Throw "Publishing the restore candidate failed: injected move failure The previous bootstrap workspace was restored and the restore target was not touched."
+
+        # The previous tree is back, whole, under the active name; no backup is left behind.
+        Get-Content -LiteralPath (Join-Path $script:activeRootUnderTest "bootstrap-manifest.json") -Raw | Should -Be "old"
+        Get-Content -LiteralPath (Join-Path $script:activeRootUnderTest ".hidden-marker") -Raw | Should -Be "old-dot"
+        @(Get-ChildItem -LiteralPath (Join-Path $script:publishRoot ".bootstrap-restore") -Directory -Filter "previous-*") | Should -BeNullOrEmpty
+        # The candidate is the caller's to clean up (the wrapper's finally removes it).
+        $script:candidateUnderTest | Should -Exist
+    }
+
+    It "a failure restoring the previous tree names where it was kept intact" {
+        Mock Move-Item { throw "injected move failure" } -ModuleName bootstrap-restore -ParameterFilter { $LiteralPath -eq $script:candidateUnderTest }
+        Mock Move-Item { throw "injected restore failure" } -ModuleName bootstrap-restore -ParameterFilter { $LiteralPath -like "*previous-*" }
         New-WorkspaceTree -Path $script:activeRootUnderTest -File @{ "bootstrap-manifest.json" = "old" } | Out-Null
         New-WorkspaceTree -Path $script:candidateUnderTest | Out-Null
 
         { Publish-RestoreCandidateWorkspace -CandidateDirectory $script:candidateUnderTest -ActiveBootstrapRoot $script:activeRootUnderTest } |
-            Should -Throw "*injected move failure*"
+            Should -Throw "*injected move failure*could not be restored: injected restore failure It is kept intact at '*previous-*'*"
 
-        # The accepted failure shape: never a partial/mixed tree - the active workspace is gone
-        # entirely and the candidate remains intact for diagnosis; the next run re-stages.
-        Test-Path -LiteralPath $script:activeRootUnderTest | Should -BeFalse
+        $kept = @(Get-ChildItem -LiteralPath (Join-Path $script:publishRoot ".bootstrap-restore") -Directory -Filter "previous-*")
+        $kept | Should -HaveCount 1
+        Get-Content -LiteralPath (Join-Path $kept[0].FullName "bootstrap-manifest.json") -Raw | Should -Be "old"
+    }
+
+    It "a failure setting the previous tree aside changes nothing" {
+        Mock Move-Item { throw "injected aside failure" } -ModuleName bootstrap-restore -ParameterFilter { $LiteralPath -eq $script:activeRootUnderTest }
+        New-WorkspaceTree -Path $script:activeRootUnderTest -File @{ "bootstrap-manifest.json" = "old" } | Out-Null
+        New-WorkspaceTree -Path $script:candidateUnderTest | Out-Null
+
+        { Publish-RestoreCandidateWorkspace -CandidateDirectory $script:candidateUnderTest -ActiveBootstrapRoot $script:activeRootUnderTest } |
+            Should -Throw "*injected aside failure*"
+
+        Get-Content -LiteralPath (Join-Path $script:activeRootUnderTest "bootstrap-manifest.json") -Raw | Should -Be "old"
         Get-Content -LiteralPath (Join-Path $script:candidateUnderTest ".hidden-marker") -Raw | Should -Be "dot"
+    }
+
+    It "a non-terminating provider error <Case> still stops publication and keeps the previous tree" -ForEach @(
+        @{ Case = "setting the previous tree aside"; Step = "aside" }
+        @{ Case = "renaming the candidate into place"; Step = "publish" }
+    ) {
+        # Like a real provider error, the mock's Write-Error is non-terminating unless the call
+        # itself asked for -ErrorAction Stop; the module does not inherit a caller's Stop preference.
+        $step = $Step
+        Mock Move-Item {
+            $boundAction = if ($PesterBoundParameters.ContainsKey("ErrorAction")) { $PesterBoundParameters["ErrorAction"] } else { "Continue" }
+            Write-Error -Message "injected non-terminating move failure" -ErrorAction $boundAction
+        } -ModuleName bootstrap-restore -ParameterFilter {
+            ($step -eq "aside" -and $LiteralPath -eq $script:activeRootUnderTest) -or ($step -eq "publish" -and $LiteralPath -eq $script:candidateUnderTest)
+        }
+        New-WorkspaceTree -Path $script:activeRootUnderTest -File @{ "bootstrap-manifest.json" = "old"; ".hidden-marker" = "old-dot" } | Out-Null
+        New-WorkspaceTree -Path $script:candidateUnderTest | Out-Null
+
+        { Publish-RestoreCandidateWorkspace -CandidateDirectory $script:candidateUnderTest -ActiveBootstrapRoot $script:activeRootUnderTest } |
+            Should -Throw "*injected non-terminating move failure*"
+
+        Get-Content -LiteralPath (Join-Path $script:activeRootUnderTest "bootstrap-manifest.json") -Raw | Should -Be "old"
+        Get-Content -LiteralPath (Join-Path $script:activeRootUnderTest ".hidden-marker") -Raw | Should -Be "old-dot"
+        Join-Path $script:activeRootUnderTest "candidate-x" | Should -Not -Exist -Because "the candidate must never be moved inside the active tree"
+        $script:candidateUnderTest | Should -Exist
+        @(Get-ChildItem -LiteralPath (Join-Path $script:publishRoot ".bootstrap-restore") -Directory -Filter "previous-*" -ErrorAction SilentlyContinue) |
+            Should -BeNullOrEmpty
     }
 
     It "refuses to replace an active tree holding another project's retained CDC configuration, even with every project stopped" {
@@ -1714,6 +1849,52 @@ Describe "Invoke-RestoreScratchValidation" {
         Should -Invoke Get-RestoreAuthoritativeObjectInventory -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $SchemaToolPath -ceq "/opt/external/api-schema-tools" }
     }
 
+    It "PostgreSQL: accepts a replay holding only the privileges the authoritative DDL grants" {
+        $stage = New-ScratchStage -Directory $script:scratchRoot
+        $global:ScratchPrivilegeRows = @(
+            'function|EXECUTE|edfi_dms_enqueue_owner|edfi_dms_enqueue_owner|dms."TF_Document_EnqueueProjectionInsert"()',
+            'function|EXECUTE|postgres|-|dms.uuidv5(namespace_uuid uuid, name_text text)',
+            'relation|INSERT|postgres|edfi_dms_enqueue_owner|dms."DocumentProjectionWork"',
+            'relation|SELECT|postgres|edfi_dms_enqueue_owner|dms."DocumentCacheState"',
+            'relation|SELECT|postgres|postgres|dms."Document"',
+            'schema|USAGE|pg_database_owner|-|public',
+            'schema|USAGE|postgres|edfi_dms_enqueue_owner|dms'
+        )
+        try {
+            Mock Invoke-RestoreCatalogQuery { $global:ScratchPrivilegeRows } -ModuleName bootstrap-restore -ParameterFilter { $FailureMessage -like "Failed to read the privileges of scratch database *" }
+
+            $result = Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Minimal -DatabaseEngine postgresql -PostgresUser "dmsadmin"
+
+            $result.PackageSourceIdentity | Should -Be "11111111-1111-1111-1111-111111111111"
+            Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+                $Query -ceq (Get-PostgresqlPrivilegeQuerySql) -and $DatabaseName -like "edfi_dms_restore_scratch_*" -and $PostgresUser -ceq "dmsadmin"
+            }
+        }
+        finally {
+            Remove-Variable -Name ScratchPrivilegeRows -Scope Global -ErrorAction SilentlyContinue
+        }
+    }
+
+    It "PostgreSQL: refuses a replay carrying <Name> before the authoritative comparison, and drops the scratch" -ForEach @(
+        @{ Name = "a grant to an unrelated cluster role"; Row = 'relation|SELECT|postgres|reporting_reader|dms."Document"'; Violation = 'relation dms."Document" SELECT to reporting_reader (owner postgres)' }
+        @{ Name = "an enqueue function executable by PUBLIC"; Row = 'function|EXECUTE|edfi_dms_enqueue_owner|-|dms."TF_Document_EnqueueProjectionUpdate"()'; Violation = 'function dms."TF_Document_EnqueueProjectionUpdate"() EXECUTE to PUBLIC (owner edfi_dms_enqueue_owner)' }
+    ) {
+        $stage = New-ScratchStage -Directory $script:scratchRoot
+        $global:ScratchPrivilegeRows = @('schema|USAGE|postgres|edfi_dms_enqueue_owner|dms', $Row)
+        try {
+            Mock Invoke-RestoreCatalogQuery { $global:ScratchPrivilegeRows } -ModuleName bootstrap-restore -ParameterFilter { $FailureMessage -like "Failed to read the privileges of scratch database *" }
+
+            { Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Minimal -DatabaseEngine postgresql } |
+                Should -Throw "Restore scratch database 'edfi_dms_restore_scratch_*' carries privileges the authoritative DMS DDL does not grant: $Violation. The package is refused before the target is touched."
+
+            Should -Invoke Get-RestoreAuthoritativeObjectInventory -ModuleName bootstrap-restore -Times 0 -Exactly
+            Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 2 -Exactly -ParameterFilter { $Query -like 'DROP DATABASE IF EXISTS "edfi_dms_restore_scratch_*' }
+        }
+        finally {
+            Remove-Variable -Name ScratchPrivilegeRows -Scope Global -ErrorAction SilentlyContinue
+        }
+    }
+
     It "SQL Server: cp, FILELISTONLY, then RESTORE with MOVE clauses derived from the scratch name" {
         $stage = New-ScratchStage -Directory $script:scratchRoot -DatabaseEngine mssql
         $global:ScratchFactToReturn = New-ScratchCatalogFact -DatabaseEngine mssql
@@ -1730,7 +1911,9 @@ Describe "Invoke-RestoreScratchValidation" {
         }
 
         # Minimal kind: the populated predicate never runs; the scratch is dropped in finally.
+        # The PostgreSQL privilege gate has no SQL Server counterpart.
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "*COUNT(`*)*" }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $FailureMessage -like "Failed to read the privileges*" }
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -like "IF DB_ID(N'edfi_dms_restore_scratch_*DROP DATABASE*" }
     }
 
@@ -2365,16 +2548,56 @@ Describe "Invoke-RestoreTargetReplacement" {
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $PostgresUser -cne "dmsadmin" }
     }
 
-    It "SQL Server: cp, exists-check, single-user drop, FILELISTONLY, RESTORE MOVE with target-derived names" {
+    It "SQL Server: cp, FILELISTONLY and MOVE clauses, safety recheck, exists-check, single-user drop, RESTORE MOVE with target-derived names" {
         $stage = New-ScratchStage -Directory $script:targetRoot -DatabaseEngine mssql
 
         Invoke-RestoreTargetReplacement -Stage $stage -TargetDatabaseName "edfi_datamanagementservice" -PackageSourceIdentity $script:packageSourceIdentity -DatabaseEngine mssql | Out-Null
 
         $global:TargetCallSequence[0] | Should -Be "safety"
+        # The file list is read and parsed before the last safety gate, which stays adjacent to
+        # the first destructive statement.
+        $sequence = @($global:TargetCallSequence)
+        $fileListIndex = [array]::FindIndex([string[]]$sequence, [Predicate[string]] { param($c) $c -like "*RESTORE FILELISTONLY*" })
+        $recheckIndex = [array]::FindLastIndex([string[]]$sequence, [Predicate[string]] { param($c) $c -ceq "safety" })
+        $dropIndex = [array]::FindIndex([string[]]$sequence, [Predicate[string]] { param($c) $c -like "*SINGLE_USER*DROP DATABASE*" })
+        $fileListIndex | Should -BeGreaterThan 0
+        $recheckIndex | Should -BeGreaterThan $fileListIndex
+        $dropIndex | Should -Be ($recheckIndex + 2) -Because "only the exists-check sits between the last safety gate and the drop"
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -like "*SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [[]edfi_datamanagementservice*" }
         Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
             $joined = $args -join " "
             $joined -like "*RESTORE DATABASE [[]edfi_datamanagementservice] FROM DISK = N'/var/opt/mssql/data/restore-target-*.bak' WITH MOVE N'edfi_dms' TO N'/var/opt/mssql/data/edfi_datamanagementservice.mdf', MOVE N'edfi_dms_log' TO N'/var/opt/mssql/data/edfi_datamanagementservice_log.ldf', REPLACE;*"
+        }
+    }
+
+    It "SQL Server: <Name> stops the restore before the existing target is dropped" -ForEach @(
+        @{ Name = "an unreadable file list"; Answer = $null; Expected = "*Failed to read the file list from the staged artifact*" }
+        @{ Name = "a file list without a log file"; Answer = @("edfi_dms|/var/opt/mssql/data/edfi.mdf|D|extra"); Expected = "*Could not determine the data and log logical file names*" }
+    ) {
+        $global:FileListAnswer = $Answer
+        Mock docker {
+            $global:TargetCallSequence.Add("docker " + ($args -join " "))
+            Invoke-TestContainerFileDocker -DockerArgs $args
+            $global:LASTEXITCODE = 0
+            if (($args -join " ") -like "*FILELISTONLY*") {
+                if ($null -eq $global:FileListAnswer) { $global:LASTEXITCODE = 1; return "Msg 3201: Cannot open backup device." }
+                $global:FileListAnswer
+            }
+        } -ModuleName bootstrap-restore
+        $stage = New-ScratchStage -Directory $script:targetRoot -DatabaseEngine mssql
+        try {
+            { Invoke-RestoreTargetReplacement -Stage $stage -TargetDatabaseName "edfi_datamanagementservice" -PackageSourceIdentity $script:packageSourceIdentity -DatabaseEngine mssql } |
+                Should -Throw $Expected
+
+            # The existing target was never touched: no drop, no restore, and the final safety
+            # gate (which guards the destructive statements) was never reached.
+            Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "*SINGLE_USER*" -or $Query -like "*DROP DATABASE*" }
+            Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { ($args -join " ") -like "*RESTORE DATABASE*" }
+            Should -Invoke Assert-RestoreTargetSafety -ModuleName bootstrap-restore -Times 1 -Exactly
+            Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-mssql rm -f /var/opt/mssql/data/restore-target-*.bak" }
+        }
+        finally {
+            Remove-Variable -Name FileListAnswer -Scope Global -ErrorAction SilentlyContinue
         }
     }
 
@@ -2574,6 +2797,11 @@ Describe "Invoke-RestoreTargetReplacement target-safety recheck after the transf
                 return
             }
             Invoke-TestContainerFileDocker -DockerArgs $args
+            # SQL Server reads the backup's file list before the post-transfer recheck.
+            if (($args -join " ") -like "*FILELISTONLY*") {
+                "edfi_dms|/var/opt/mssql/data/edfi.mdf|D|extra"
+                "edfi_dms_log|/var/opt/mssql/data/edfi_log.ldf|L|extra"
+            }
         } -ModuleName bootstrap-restore
         Mock Invoke-RestoreDockerInputCommand {
             $writerResult = Invoke-TestContainerInputDocker -ArgumentList $ArgumentList -InputWriter $InputWriter
@@ -2620,7 +2848,8 @@ Describe "Invoke-RestoreTargetReplacement target-safety recheck after the transf
         @($global:RecheckQueries | Where-Object {
                 $_ -notmatch 'datistemplate|database_id <= 4|server_version|ProductVersion|pg_replication_slots|is_cdc_enabled|^SELECT 1 FROM pg_database '
             }) | Should -BeNullOrEmpty
-        Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $args[0] -eq "exec" -and $args[2] -notin @("sha256sum", "rm") }
+        # SQL Server's read-only RESTORE FILELISTONLY runs before the recheck; nothing else did.
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $args[0] -eq "exec" -and $args[2] -notin @("sha256sum", "rm") -and ($args -join " ") -notlike "*RESTORE FILELISTONLY FROM DISK*" }
         # The transient in-container copy is still removed.
         Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec $Container rm -f *" }
     }

@@ -961,6 +961,22 @@ Describe "inventory catalog query SQL builders" {
         $sql | Should -BeLike "*con.contype IN ('p','u','f','c','x')*"
     }
 
+    It "lists PostgreSQL shell and standalone base types in the inventory and ownership queries, leaving generated array and row types to their object" {
+        # Live proof (CREATE TYPE dms.extra; detected, generated types accepted) is in the live
+        # inventory fixture of Template-Management.Tests.ps1.
+        InModuleScope Template-RestoreCore {
+            $filter = Get-PostgresqlStandaloneTypeFilterSql
+            $filter | Should -BeLike "*t.typtype IN ('b','p','c','d','e','r','m')*"
+            $filter | Should -BeLike "*NOT EXISTS (SELECT 1 FROM pg_catalog.pg_type elem WHERE elem.typarray = t.oid)*"
+            $filter | Should -BeLike "*EXISTS (SELECT 1 FROM pg_catalog.pg_class c WHERE c.oid = t.typrelid AND c.relkind = 'c')*"
+
+            $objectSql = Get-InventoryObjectQuerySql -DatabaseEngine postgresql
+            $objectSql.Contains("WHERE $filter") | Should -BeTrue
+            $objectSql | Should -BeLike "*WHEN 'b' THEN 'basetype' WHEN 'p' THEN 'shelltype'*"
+            (Get-PostgresqlTemplateOwnershipQuerySql -SchemaName @("dms")).Contains("WHERE $filter") | Should -BeTrue
+        }
+    }
+
     It "lists MSSQL table constraints qualified by their table, keying system-named ones by column" {
         # A system-generated name (DF__Table__Col__1A2B3C4D) differs per database, so keying
         # on it would reject a clean backup against an inventory derived from a fresh replay.

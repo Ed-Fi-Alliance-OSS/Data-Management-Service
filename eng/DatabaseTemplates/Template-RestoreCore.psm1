@@ -1108,6 +1108,24 @@ function Get-InventorySchemaQuerySql {
     return "SELECT nspname FROM pg_catalog.pg_namespace WHERE nspname !~ '^pg_' AND nspname NOT IN ($quotedNames) ORDER BY nspname;"
 }
 
+function Get-PostgresqlStandaloneTypeFilterSql {
+    <#
+    .SYNOPSIS
+    The pg_type predicate (over alias t) shared by the object inventory and the ownership
+    enumeration: every type a script can create on its own - shell types (CREATE TYPE x;),
+    base, composite, domain, enum, range, and multirange types - while the types PostgreSQL
+    generates for another object are left to that object: array types (the element type's
+    typarray) and the row type of a table, view, or other non-composite relation.
+    #>
+    param ()
+
+    return @(
+        "t.typtype IN ('b','p','c','d','e','r','m')",
+        "AND (t.typtype <> 'c' OR EXISTS (SELECT 1 FROM pg_catalog.pg_class c WHERE c.oid = t.typrelid AND c.relkind = 'c'))",
+        "AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_type elem WHERE elem.typarray = t.oid)"
+    ) -join " "
+}
+
 function Get-InventoryObjectQuerySql {
     <#
     .SYNOPSIS
@@ -1239,13 +1257,12 @@ function Get-InventoryObjectQuerySql {
         "  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d JOIN pg_catalog.pg_extension e ON e.oid = d.refobjid",
         "                  WHERE d.classid = 'pg_catalog.pg_class'::regclass AND d.objid = t.oid AND d.deptype = 'e' AND e.extname IN ($allowedExtensionList))",
         "UNION ALL",
-        # Standalone types only: a table's row type (composite over a non-'c' relation) and
-        # array types (typtype 'b') come with the object they belong to.
+        # Standalone types only (see Get-PostgresqlStandaloneTypeFilterSql), including shell
+        # and base types; generated array and relation row types come with their object.
         "SELECT n.nspname || '|' || t.typname || '|' ||",
-        "  CASE t.typtype WHEN 'c' THEN 'compositetype' WHEN 'd' THEN 'domain' WHEN 'e' THEN 'enum' WHEN 'r' THEN 'rangetype' WHEN 'm' THEN 'multirangetype' END",
+        "  CASE t.typtype WHEN 'b' THEN 'basetype' WHEN 'p' THEN 'shelltype' WHEN 'c' THEN 'compositetype' WHEN 'd' THEN 'domain' WHEN 'e' THEN 'enum' WHEN 'r' THEN 'rangetype' WHEN 'm' THEN 'multirangetype' END",
         "FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace",
-        "WHERE t.typtype IN ('c','d','e','r','m')",
-        "  AND (t.typtype <> 'c' OR EXISTS (SELECT 1 FROM pg_catalog.pg_class c WHERE c.oid = t.typrelid AND c.relkind = 'c'))",
+        "WHERE $(Get-PostgresqlStandaloneTypeFilterSql)",
         "  AND n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'",
         "  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d JOIN pg_catalog.pg_extension e ON e.oid = d.refobjid",
         "                  WHERE d.classid = 'pg_catalog.pg_type'::regclass AND d.objid = t.oid AND d.deptype = 'e' AND e.extname IN ($allowedExtensionList))",
@@ -2164,7 +2181,7 @@ function Get-PostgresqlTemplateOwnershipQuerySql {
         "    FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace",
         "  UNION ALL SELECT 'type', t.typowner, pg_catalog.format('%I.%I', n.nspname, t.typname), n.nspname",
         "    FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace",
-        "    WHERE t.typtype IN ('c','d','e','r','m') AND (t.typtype <> 'c' OR EXISTS (SELECT 1 FROM pg_catalog.pg_class c WHERE c.oid = t.typrelid AND c.relkind = 'c'))",
+        "    WHERE $(Get-PostgresqlStandaloneTypeFilterSql)",
         ") x",
         "WHERE x.ns IN ($schemaList) AND x.owner <> (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = current_user)",
         "ORDER BY 1;"
@@ -2211,6 +2228,122 @@ function ConvertTo-PostgresqlTemplateOwnershipFinalizationSql {
     }
 
     return (@("", "-- Ownership the --no-owner dump does not carry (DMS template finalization).") + $statements) -join "`n"
+}
+
+function Get-PostgresqlPrivilegeQuerySql {
+    <#
+    .SYNOPSIS
+    SQL listing every privilege held on a schema, relation, column, function, or standalone type
+    outside the PostgreSQL system schemas, as "kind|privilege|owner|grantee|identity" rows: the
+    privileges a schema-scoped dump carries and a replay re-creates. A NULL ACL is expanded to
+    the engine's built-in default (acldefault), so implicit PUBLIC privileges are visible too.
+    Role names are quoted (%I) and PUBLIC is '-', which %I never produces; the identity is the
+    last field because a quoted name may itself contain the separator.
+    #>
+    param ()
+
+    return @(
+        "SELECT a.kind || '|' || a.privilege || '|' || pg_catalog.format('%I', pg_catalog.pg_get_userbyid(a.owner)) || '|' ||",
+        "  CASE WHEN a.grantee = 0 THEN '-' ELSE pg_catalog.format('%I', pg_catalog.pg_get_userbyid(a.grantee)) END || '|' || a.identity FROM (",
+        "  SELECT 'schema' AS kind, n.nspowner AS owner, pg_catalog.format('%I', n.nspname) AS identity, n.nspname AS ns, x.grantee, x.privilege_type AS privilege",
+        "    FROM pg_catalog.pg_namespace n, LATERAL pg_catalog.aclexplode(COALESCE(n.nspacl, pg_catalog.acldefault('n', n.nspowner))) x",
+        "  UNION ALL SELECT 'relation', c.relowner, pg_catalog.format('%I.%I', n.nspname, c.relname), n.nspname, x.grantee, x.privilege_type",
+        "    FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace,",
+        "    LATERAL pg_catalog.aclexplode(COALESCE(c.relacl, pg_catalog.acldefault((CASE WHEN c.relkind = 'S' THEN 's' ELSE 'r' END)::`"char`", c.relowner))) x",
+        "    WHERE c.relkind IN ('r','p','v','m','S','f')",
+        "  UNION ALL SELECT 'column', c.relowner, pg_catalog.format('%I.%I.%I', n.nspname, c.relname, att.attname), n.nspname, x.grantee, x.privilege_type",
+        "    FROM pg_catalog.pg_attribute att JOIN pg_catalog.pg_class c ON c.oid = att.attrelid JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace,",
+        "    LATERAL pg_catalog.aclexplode(att.attacl) x",
+        "    WHERE att.attacl IS NOT NULL AND att.attnum > 0 AND NOT att.attisdropped",
+        "  UNION ALL SELECT 'function', p.proowner, pg_catalog.format('%I.%I(%s)', n.nspname, p.proname, pg_catalog.pg_get_function_identity_arguments(p.oid)), n.nspname, x.grantee, x.privilege_type",
+        "    FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace,",
+        "    LATERAL pg_catalog.aclexplode(COALESCE(p.proacl, pg_catalog.acldefault('f', p.proowner))) x",
+        "  UNION ALL SELECT 'type', t.typowner, pg_catalog.format('%I.%I', n.nspname, t.typname), n.nspname, x.grantee, x.privilege_type",
+        "    FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace,",
+        "    LATERAL pg_catalog.aclexplode(COALESCE(t.typacl, pg_catalog.acldefault('T', t.typowner))) x",
+        "    WHERE $(Get-PostgresqlStandaloneTypeFilterSql)",
+        ") a",
+        "WHERE a.ns !~ '^pg_' AND a.ns <> 'information_schema'",
+        "ORDER BY 1;"
+    ) -join "`n"
+}
+
+function Assert-PostgresqlArtifactPrivilege {
+    <#
+    .SYNOPSIS
+    Fails unless every privilege a PostgreSQL template source or replayed scratch database holds
+    is one the authoritative DMS DDL produces. Shared by the producer gate (before anything is
+    dumped) and the consumer's scratch validation (before the target is touched), because a dump
+    replays its GRANT statements against whatever roles exist on the restoring server.
+
+    .DESCRIPTION
+    Only granted privileges are judged; roles that merely exist on the cluster are not. Allowed:
+    every privilege an object's owner holds; PUBLIC's built-in defaults (EXECUTE on functions,
+    USAGE on types, USAGE on the public schema); and exactly the grants the core DDL emitter
+    makes to edfi_dms_enqueue_owner (USAGE on schema dms, SELECT/INSERT/UPDATE on
+    dms.DocumentProjectionWork, SELECT on dms.DocumentCacheState). The SECURITY DEFINER
+    functions edfi_dms_enqueue_owner owns must not be executable by PUBLIC, so PUBLIC's default
+    EXECUTE on them is a violation (the DDL revokes it). A schema-scoped dump replays these same
+    privileges, so source and scratch are judged by one rule set.
+    #>
+    param (
+        [AllowEmptyCollection()]
+        [AllowNull()]
+        [string[]]$PrivilegeRow,
+
+        [Parameter(Mandatory = $true)]
+        [string]$SourceDescription,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FailureSuffix
+    )
+
+    $enqueueOwnerRoleName = "edfi_dms_enqueue_owner"
+    # kind|identity|privilege, identities exactly as the privilege query quotes them.
+    $enqueueOwnerGrants = [System.Collections.Generic.HashSet[string]]::new([string[]]@(
+            'schema|dms|USAGE',
+            'relation|dms."DocumentProjectionWork"|SELECT',
+            'relation|dms."DocumentProjectionWork"|INSERT',
+            'relation|dms."DocumentProjectionWork"|UPDATE',
+            'relation|dms."DocumentCacheState"|SELECT'
+        ), [System.StringComparer]::Ordinal)
+    $violations = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($rawRow in @($PrivilegeRow)) {
+        if ([string]::IsNullOrWhiteSpace($rawRow)) { continue }
+        $fields = $rawRow.Trim() -split '\|', 5
+        if ($fields.Count -ne 5 -or [string]::IsNullOrWhiteSpace($fields[4])) {
+            throw "$SourceDescription returned a malformed privilege row (expected 'kind|privilege|owner|grantee|identity'): '$rawRow'. $FailureSuffix"
+        }
+        $kind, $privilege, $owner, $grantee, $identity = $fields
+
+        $allowed = if ($grantee -ceq $owner) {
+            $true
+        }
+        elseif ($grantee -ceq "-") {
+            switch ($kind) {
+                "function" { $privilege -ceq "EXECUTE" -and $owner -cne $enqueueOwnerRoleName }
+                "type" { $privilege -ceq "USAGE" }
+                "schema" { $identity -ceq "public" -and $privilege -ceq "USAGE" }
+                default { $false }
+            }
+        }
+        elseif ($grantee -ceq $enqueueOwnerRoleName) {
+            $enqueueOwnerGrants.Contains("$kind|$identity|$privilege")
+        }
+        else {
+            $false
+        }
+
+        if (-not $allowed) {
+            $granteeText = if ($grantee -ceq "-") { "PUBLIC" } else { $grantee }
+            $violations.Add("$kind $identity $privilege to $granteeText (owner $owner)")
+        }
+    }
+
+    if ($violations.Count -gt 0) {
+        throw "$SourceDescription carries privileges the authoritative DMS DDL does not grant: $($violations -join ', '). $FailureSuffix"
+    }
 }
 
 function Get-SourceIdentitySelectSql {
@@ -2345,5 +2478,7 @@ Export-ModuleMember -Function `
     Get-PostgresqlRestoreGlobalRoleSql, `
     Get-PostgresqlTemplateOwnershipQuerySql, `
     ConvertTo-PostgresqlTemplateOwnershipFinalizationSql, `
+    Get-PostgresqlPrivilegeQuerySql, `
+    Assert-PostgresqlArtifactPrivilege, `
     Get-SourceIdentitySelectSql, `
     Test-RestoredSourceIdentityValue

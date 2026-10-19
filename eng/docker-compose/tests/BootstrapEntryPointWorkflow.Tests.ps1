@@ -2048,13 +2048,14 @@ Add-Content -LiteralPath '$log' -Value "candidate-prepare-claims override=[`$env
                     Add-Content -LiteralPath $log -Value "restore:candidate"
                     try {
                         & $realModule {
-                            param($candidateEnvironmentFile, $candidateWorkspaceRoot, $schemaScriptPath, $claimsScriptPath)
+                            param($candidateEnvironmentFile, $candidateWorkspaceRoot, $schemaScriptPath, $claimsScriptPath, $fixtureActiveRoot)
                             New-RestoreCandidateWorkspace `
                                 -EnvironmentFile $candidateEnvironmentFile `
                                 -WorkspaceRoot $candidateWorkspaceRoot `
                                 -PrepareSchemaScriptPath $schemaScriptPath `
-                                -PrepareClaimsScriptPath $claimsScriptPath
-                        } $EnvironmentFile $workspaceRoot $schemaStub $claimsStub
+                                -PrepareClaimsScriptPath $claimsScriptPath `
+                                -ActiveBootstrapRoot $fixtureActiveRoot
+                        } $EnvironmentFile $workspaceRoot $schemaStub $claimsStub (Join-Path $DockerComposeRoot ".bootstrap")
                     }
                     finally {
                         # Test plumbing only. Production's finally re-imports the bootstrap-manifest
@@ -2574,12 +2575,13 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "configure dataStore=[`$Dat
             $dropLines = @($lines | Where-Object { $_ -like "restore:preflight-drop*" })
             $preflightName = "edfi_dms_restore_preflight_0123456789ab"
             if ($FailRequired) {
-                # The scratch proof passed, but its required cleanup did not: nothing stops the
-                # slice, publishes the candidate, replaces the target, or starts CMS. The finally
-                # repeats the drop best-effort.
+                # The scratch proof passed, but its required cleanup did not: nothing publishes the
+                # candidate, replaces the target, or starts CMS. The finally repeats the drop
+                # best-effort, then stops the slice this run started.
                 $dropLines | Should -Be @("restore:preflight-drop name=[$preflightName] required=True", "restore:preflight-drop name=[$preflightName] required=False")
                 Get-RestoreLogIndex -Log $lines -Pattern "restore:preflight-drop*" | Should -BeGreaterThan (Get-RestoreLogIndex -Log $lines -Pattern "restore:scratch template=Minimal")
-                @($lines | Where-Object { $_ -like "restore:stop-db*" }) | Should -BeNullOrEmpty
+                @($lines | Where-Object { $_ -like "restore:stop-db*" }).Count | Should -Be 1
+                Get-RestoreLogIndex -Log $lines -Pattern "restore:stop-db*" | Should -BeGreaterThan (Get-RestoreLogIndex -Log $lines -Pattern "restore:preflight-drop*" -Occurrence 2)
                 $lines | Should -Not -Contain "restore:publish"
                 @($lines | Where-Object { $_ -like "restore:replacement*" }) | Should -BeNullOrEmpty
                 @($lines | Where-Object { $_ -like "start-infra*" }) | Should -BeNullOrEmpty
@@ -2767,9 +2769,11 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "configure dataStore=[`$Dat
 
                 $lines = @(Get-Content -LiteralPath $script:restoreLog)
 
-                # The complete trace: the D12 order up to the scratch step, then only the cleanup.
-                # Nothing stops the database slice, re-proves the stop, publishes, restarts the
-                # database, replaces the target, or starts CMS (-InfraOnly, configure) or DMS.
+                # The complete trace: the D12 order up to the scratch step, then only the cleanup:
+                # the preflight drop while the engine is up, then the stop of the database-only
+                # slice this run started, then the stage. Nothing re-proves the stop, publishes,
+                # restarts the database, replaces the target, or starts CMS (-InfraOnly, configure)
+                # or DMS.
                 $expectedTrace = @(
                     "restore:resolve-target engine=$Engine target=edfi_datamanagementservice"
                     "restore:name-safety target=edfi_datamanagementservice"
@@ -2786,8 +2790,9 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "configure dataStore=[`$Dat
                     "start-db-only env=*preflight.env override=[[]]"
                     "restore:target-safety engine=$Engine target=edfi_datamanagementservice"
                     "restore:scratch template=Minimal"
-                    "restore:remove-stage"
                     "restore:preflight-drop engine=$Engine name=[[]edfi_dms_restore_preflight_0123456789ab]"
+                    "restore:stop-db project=dms-local engine=$Engine override=[[]]"
+                    "restore:remove-stage"
                 )
                 $lines.Count | Should -Be $expectedTrace.Count -Because "the run must stop at the scratch failure: [$($lines -join ' | ')]"
                 for ($lineIndex = 0; $lineIndex -lt $expectedTrace.Count; $lineIndex++) {
@@ -2814,6 +2819,128 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "configure dataStore=[`$Dat
                 Test-Path -LiteralPath (Join-Path $script:repo.RepoRoot "preflight.env") | Should -BeFalse
                 Test-Path -LiteralPath (Join-Path $workspaceRoot "derived/.env.restore-effective") | Should -BeFalse
                 Test-Path Env:\DMS_BOOTSTRAP_ROOT_OVERRIDE | Should -BeFalse
+            }
+            finally {
+                Remove-Module -ModuleInfo $realModule -Force -ErrorAction SilentlyContinue
+                Remove-Item Env:\DMS_BOOTSTRAP_ROOT_OVERRIDE -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "a failure <Case> runs every cleanup step and keeps the original error" -ForEach @(
+            @{ Case = "in scratch validation, with failing cleanup steps"; ThrowAt = @("Invoke-RestoreScratchValidation", "Remove-RestorePreflightDatabase", "Remove-RestorePackageStage"); StartFails = $false; Expected = "*injected Invoke-RestoreScratchValidation failure*"; StopExpected = $true }
+            @{ Case = "while the database-only slice starts"; ThrowAt = @(); StartFails = $true; Expected = "*-DbOnly (restore preflight) failed with exit code 7*"; StopExpected = $true }
+            @{ Case = "in the target replacement"; ThrowAt = @("Invoke-RestoreTargetReplacement"); StartFails = $false; Expected = "*injected Invoke-RestoreTargetReplacement failure*"; StopExpected = $true }
+            @{ Case = "in the first stop proof, before any database starts"; ThrowAt = @("Assert-DmsComposeProjectStopped"); StartFails = $false; Expected = "*injected Assert-DmsComposeProjectStopped failure*"; StopExpected = $false }
+        ) {
+            if ($StartFails) {
+                # A partial startup: the start script records the attempt, then fails.
+                @"
+param([switch] `$DbOnly, [string] `$EnvironmentFile, [Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
+Add-Content -LiteralPath '$script:restoreLog' -Value "start-db-only env=`$EnvironmentFile"
+exit 7
+"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "start-local-dms.ps1") -Encoding utf8
+            }
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot -ThrowAt $ThrowAt
+            $log = $script:restoreLog
+            $preflightEnvironmentPath = Join-Path $script:repo.RepoRoot "preflight.env"
+            # The stop records whether the env file it was handed still existed: it must run first.
+            Set-Item function:global:Stop-RestoreDatabaseOnlySlice {
+                param($ProjectName, $DatabaseEngine, $EnvironmentFile)
+                Add-Content -LiteralPath $log -Value "restore:stop-db project=$ProjectName env=[$EnvironmentFile] env-exists=$(Test-Path -LiteralPath $EnvironmentFile)"
+            }.GetNewClosure()
+
+            $thrown = { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Minimal 3>$null } | Should -Throw -PassThru
+            $thrown.Exception.Message | Should -BeLike $Expected
+
+            $lines = @(Get-Content -LiteralPath $script:restoreLog)
+            $stopLines = @($lines | Where-Object { $_ -like "restore:stop-db*" })
+            if ($StopExpected) {
+                # The cleanup stop is the last stop and uses the env file the slice started with.
+                $stopLines[-1] | Should -Be "restore:stop-db project=dms-local env=[$preflightEnvironmentPath] env-exists=True"
+                Get-RestoreLogIndex -Log $lines -Pattern "restore:stop-db*" -Occurrence $stopLines.Count |
+                    Should -BeGreaterThan (Get-RestoreLogIndex -Log $lines -Pattern "restore:preflight-drop*" -Occurrence @($lines | Where-Object { $_ -like "restore:preflight-drop*" }).Count)
+            }
+            else {
+                $stopLines | Should -BeNullOrEmpty -Because "no database-only slice was started, so none may be stopped"
+                @($lines | Where-Object { $_ -like "start-*" }) | Should -BeNullOrEmpty
+            }
+            # The stage is removed even when an earlier cleanup step failed, the env file is gone
+            # afterwards, and nothing reached CMS or DMS.
+            $lines | Should -Contain "restore:remove-stage"
+            Test-Path -LiteralPath $preflightEnvironmentPath | Should -BeFalse
+            @($lines | Where-Object { $_ -like "start-infra*" -or $_ -like "start-dms*" }) | Should -BeNullOrEmpty
+        }
+
+        It "a successful restore whose transient cleanup fails stops the database-only slice it still owns and never reaches -InfraOnly" {
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot -ThrowAt @("Remove-RestorePackageStage")
+            $log = $script:restoreLog
+            $preflightEnvironmentPath = Join-Path $script:repo.RepoRoot "preflight.env"
+            Set-Item function:global:Stop-RestoreDatabaseOnlySlice {
+                param($ProjectName, $DatabaseEngine, $EnvironmentFile)
+                Add-Content -LiteralPath $log -Value "restore:stop-db project=$ProjectName env=[$EnvironmentFile] env-exists=$(Test-Path -LiteralPath $EnvironmentFile)"
+            }.GetNewClosure()
+
+            $thrown = { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Minimal 3>$null } | Should -Throw -PassThru
+            $thrown.Exception.Message | Should -BeLike "The restore completed, but its transient cleanup did not:*injected Remove-RestorePackageStage failure*"
+
+            $lines = @(Get-Content -LiteralPath $script:restoreLog)
+            $stopLines = @($lines | Where-Object { $_ -like "restore:stop-db*" })
+            $stopLines.Count | Should -Be 2 -Because "the slice is stopped once before the commit and once by the failed cleanup"
+            $stopLines[1] | Should -Be "restore:stop-db project=dms-local env=[$preflightEnvironmentPath] env-exists=True"
+            Get-RestoreLogIndex -Log $lines -Pattern "restore:stop-db*" -Occurrence 2 |
+                Should -BeGreaterThan (Get-RestoreLogIndex -Log $lines -Pattern "restore:remove-stage")
+            Get-RestoreLogIndex -Log $lines -Pattern "restore:remove-stage" |
+                Should -BeGreaterThan (Get-RestoreLogIndex -Log $lines -Pattern "restore:replacement*")
+            Test-Path -LiteralPath $preflightEnvironmentPath | Should -BeFalse -Because "the env file is removed after the stop that needs it"
+            @($lines | Where-Object { $_ -like "start-infra*" -or $_ -like "start-dms*" -or $_ -like "configure*" }) | Should -BeNullOrEmpty
+        }
+
+        It "a workspace publication failure restores the previous workspace, removes the candidate, and never reaches the target or CMS" {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $activeRoot = $script:repo.BootstrapRoot
+            Set-Content -LiteralPath (Join-Path $activeRoot "previous-marker.txt") -Value "previous workspace" -Encoding utf8
+            $snapshotActiveTree = {
+                Get-ChildItem -LiteralPath $activeRoot -Recurse -Force | Sort-Object FullName | ForEach-Object {
+                    $relativePath = [IO.Path]::GetRelativePath($activeRoot, $_.FullName).Replace('\', '/')
+                    if ($_.PSIsContainer) { "dir $relativePath" }
+                    else { "file $relativePath $((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)" }
+                }
+            }.GetNewClosure()
+            $activeTreeBefore = @(& $snapshotActiveTree)
+
+            New-OverrideRecordingStartScriptStub -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreLog
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
+            $realModule = Install-RealRestoreCandidateAndTarget -LogPath $script:restoreLog -DockerComposeRoot $script:repo.DockerComposeRoot
+            # The REAL whole-tree commit against this fixture's workspace, with the candidate's
+            # rename into place failing.
+            & $realModule {
+                Set-Item function:script:Move-Item {
+                    param($LiteralPath, $Destination)
+                    if ($LiteralPath -like "*candidate-*") { throw "injected publication failure" }
+                    Microsoft.PowerShell.Management\Move-Item -LiteralPath $LiteralPath -Destination $Destination
+                }
+            }
+            $log = $script:restoreLog
+            Set-Item function:global:Publish-RestoreCandidateWorkspace {
+                param($CandidateDirectory)
+                Add-Content -LiteralPath $log -Value "restore:publish"
+                & $realModule { param($candidate, $active) Publish-RestoreCandidateWorkspace -CandidateDirectory $candidate -ActiveBootstrapRoot $active } $CandidateDirectory $activeRoot
+            }.GetNewClosure()
+            try {
+                { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Minimal } |
+                    Should -Throw "*Publishing the restore candidate failed: injected publication failure The previous bootstrap workspace was restored and the restore target was not touched.*"
+
+                @(& $snapshotActiveTree) | Should -Be $activeTreeBefore
+                $workspaceRoot = Join-Path $script:repo.DockerComposeRoot ".bootstrap-restore"
+                @(Get-ChildItem -LiteralPath $workspaceRoot -Directory -Filter "candidate-*" -ErrorAction SilentlyContinue) | Should -BeNullOrEmpty -Because "the wrapper's cleanup removes the unpublished candidate"
+                @(Get-ChildItem -LiteralPath $workspaceRoot -Directory -Filter "previous-*" -ErrorAction SilentlyContinue) | Should -BeNullOrEmpty
+
+                $lines = @(Get-Content -LiteralPath $script:restoreLog)
+                $lines | Should -Contain "restore:publish"
+                @($lines | Where-Object { $_ -like "restore:replacement*" }) | Should -BeNullOrEmpty
+                @($lines | Where-Object { $_ -like "start-db-only*" }).Count | Should -Be 1 -Because "the second database-only slice never starts"
+                @($lines | Where-Object { $_ -like "restore:stop-db*" }).Count | Should -Be 1 -Because "the slice was already stopped before the commit"
+                @($lines | Where-Object { $_ -like "start-infra*" -or $_ -like "start-dms*" -or $_ -like "configure*" }) | Should -BeNullOrEmpty
             }
             finally {
                 Remove-Module -ModuleInfo $realModule -Force -ErrorAction SilentlyContinue
@@ -3253,17 +3380,43 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed ids=[`$(`$DataStoreId
                 $log | Should -Contain "seed ids=[77]" -Because "the seed targets the reused data store's existing id"
             }
 
-            It "refuses a surviving data store for another database after the restore, before DMS starts (<engine>)" -ForEach @(
+            It "keeps a surviving data store for another database and registers the restored target beside it, seeding only the new id (<engine>)" -ForEach @(
+                @{ Engine = "postgresql" }
+                @{ Engine = "mssql" }
+            ) {
+                # Repeated single-target restores: another target's registration survives in the
+                # dedicated CMS database and must be neither refused, reused, nor changed.
+                Install-RealConfigurePhase
+                Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
+                Install-WrapperReuseCmsStub -LogPath $script:restoreLog -DataStores @(New-WrapperReuseDataStore -Engine $Engine -DatabaseName "edfi_other")
+                @"
+param([long[]] `$DataStoreId, [Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
+Add-Content -LiteralPath '$script:restoreLog' -Value "seed ids=[`$(`$DataStoreId -join ',')]"
+"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "load-dms-seed-data.ps1") -Encoding utf8
+
+                & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -DatabaseEngine $Engine -SeparateConfigDatabase -RestoreTemplate Minimal -LoadSeedData -SeedTemplate Minimal
+
+                $log = @(Get-Content -LiteralPath $script:restoreLog)
+                (Get-RestoreLogIndex -Log $log -Pattern "cms:add-data-store") |
+                    Should -BeGreaterThan (Get-RestoreLogIndex -Log $log -Pattern "cms:list-data-stores limit=500")
+                @($log | Where-Object { $_ -like "cms:invoke-api*" }) | Should -BeNullOrEmpty -Because "the other target's registration is neither updated nor deleted"
+                $log | Should -Contain "seed ids=[9001]" -Because "only the restored target's new data store is handed on"
+                @($log | Where-Object { $_ -like "start-dms*" }) | Should -Not -BeNullOrEmpty
+                $log | Should -Not -Contain "provision"
+            }
+
+            It "refuses a surviving data store it cannot tell apart from the restored target after the restore, before DMS starts (<engine>)" -ForEach @(
                 @{ Engine = "postgresql" }
                 @{ Engine = "mssql" }
             ) {
                 Install-RealConfigurePhase
                 Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
-                Install-WrapperReuseCmsStub -LogPath $script:restoreLog -DataStores @(New-WrapperReuseDataStore -Engine $Engine -DatabaseName "edfi_other")
+                # A letter-case variant of the restored target's name may be the same database.
+                Install-WrapperReuseCmsStub -LogPath $script:restoreLog -DataStores @(New-WrapperReuseDataStore -Engine $Engine -DatabaseName "EDFI_DataManagementService")
 
                 $thrown = { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -DatabaseEngine $Engine -SeparateConfigDatabase -RestoreTemplate Minimal } |
                     Should -Throw -PassThru
-                $thrown.Exception.Message | Should -BeLike "*cannot reuse CMS data store id=77*its database is not the restored target database*This check runs after the restore replaced the target database*"
+                $thrown.Exception.Message | Should -BeLike "*cannot reuse CMS data store id=77*differs from the restored target database only in letter case*This check runs after the restore replaced the target database*"
 
                 $log = @(Get-Content -LiteralPath $script:restoreLog)
                 # The replacement already happened: this refusal does not carry scratch validation's
@@ -3960,17 +4113,18 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                 # start-local-dms.ps1's compose set. So it is excluded, like the other
                 # non-compose-shaping options.
                 'SeparateConfigDatabase', 'DataStoreDatabaseName',
-                # Restore mode selects what the datastore is restored FROM, never which compose
-                # files a teardown must cover.
-                'RestoreTemplate', 'PackageDirectory', 'RestoreImageBuild'
+                # The restore image build never shapes the compose-file set either.
+                'RestoreImageBuild'
             )
             $rejectedCdc = @('EnableKafkaCdc', 'CdcSettingsPath', 'CdcBindingStatePath')
+            # -d with a restore input is refused outright (see "teardown combined with restore inputs").
+            $rejectedRestore = @('RestoreTemplate', 'PackageDirectory')
 
             # Completeness guard: every parameter the entry script declares must be classified here
             # as a teardown switch, forwarded, or excluded (and bound below), so a new parameter
             # fails this assertion and forces an explicit forwarding decision.
             $declared = Get-DeclaredScriptParameters -Path $script:repo.WrapperScript
-            ($declared | Sort-Object) | Should -Be ((@('d', 'v') + $forwarded + $excluded + $rejectedCdc) | Sort-Object)
+            ($declared | Sort-Object) | Should -Be ((@('d', 'v') + $forwarded + $excluded + $rejectedCdc + $rejectedRestore) | Sort-Object)
 
             # Binds every excluded parameter (the teardown short-circuit returns before the wrapper's
             # option-validation rules run, so all of them can be bound in one invocation); an unbound
@@ -3995,8 +4149,6 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                 -Rebuild `
                 -SeparateConfigDatabase `
                 -DataStoreDatabaseName ignored_by_teardown `
-                -RestoreTemplate Minimal `
-                -PackageDirectory (Join-Path $script:repo.RepoRoot "packages") `
                 -RestoreImageBuild { throw "teardown must not run the restore image build" } `
                 -d
 
@@ -4020,6 +4172,47 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             } | Should -Throw "*-v requires -d*"
 
             Test-Path -LiteralPath $callLog | Should -BeFalse -Because "no phase or teardown delegation may run when -v is supplied without -d"
+        }
+    }
+
+    Context "teardown combined with restore inputs (DMS-1271)" {
+        It "<Entry> <Label> is refused before teardown or retained-CDC lifecycle dispatch" -ForEach @(
+            foreach ($entry in @("bootstrap-local-dms.ps1", "bootstrap-published-dms.ps1")) {
+                @{ Entry = $entry; Label = "-d -RestoreTemplate"; Arguments = @{ d = $true; RestoreTemplate = "Minimal" } }
+                @{ Entry = $entry; Label = "-d -PackageDirectory"; Arguments = @{ d = $true; PackageDirectory = "packages" } }
+                @{ Entry = $entry; Label = "-d -v -RestoreTemplate -PackageDirectory"; Arguments = @{ d = $true; v = $true; RestoreTemplate = "Populated"; PackageDirectory = "packages" } }
+            }
+        ) {
+            $entryScript = Join-Path $script:repo.DockerComposeRoot $Entry
+            $project = if ($Entry -eq "bootstrap-local-dms.ps1") { "dms-local" } else { "dms-published" }
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-teardown-restore.txt"
+
+            # Every destructive path records instead of acting: the start script's teardown and the
+            # retained-CDC lifecycle that a recorded deployment would otherwise dispatch to.
+            @"
+param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
+Add-Content -LiteralPath '$callLog' -Value "teardown `$Rest"
+"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot ($Entry -replace "^bootstrap-", "start-")) -Encoding utf8
+            @"
+function Invoke-CdcDeploymentLifecycle { param(`$Project, `$StartScript, `$Parameters) Add-Content -LiteralPath '$callLog' -Value "cdc-lifecycle `$Project" }
+Export-ModuleMember -Function Invoke-CdcDeploymentLifecycle
+"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "cdc-lifecycle.psm1") -Encoding utf8
+            $deploymentRoot = Join-Path $script:repo.DockerComposeRoot ".cdc-deployments"
+            New-Item -ItemType Directory -Path $deploymentRoot -Force | Out-Null
+
+            $arguments = @{ EnvironmentFile = $script:repo.EnvFile } + $Arguments
+            if ($arguments.ContainsKey("PackageDirectory")) {
+                $arguments.PackageDirectory = Join-Path $script:repo.RepoRoot $arguments.PackageDirectory
+            }
+
+            # Without a retained deployment the plain teardown branch would run.
+            { & $entryScript @arguments } | Should -Throw "*-d cannot be combined with -RestoreTemplate or -PackageDirectory*"
+            Test-Path -LiteralPath $callLog | Should -BeFalse -Because "no teardown may run for a combined teardown and restore request"
+
+            # With a retained deployment the CDC lifecycle dispatch would run.
+            Set-Content -LiteralPath (Join-Path $deploymentRoot "$project.json") -Value "{}"
+            { & $entryScript @arguments } | Should -Throw "*-d cannot be combined with -RestoreTemplate or -PackageDirectory*"
+            Test-Path -LiteralPath $callLog | Should -BeFalse -Because "no retained-CDC lifecycle may be dispatched for a combined teardown and restore request"
         }
     }
 

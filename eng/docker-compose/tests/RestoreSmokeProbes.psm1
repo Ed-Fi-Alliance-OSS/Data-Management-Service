@@ -3461,6 +3461,33 @@ function Get-RestoreSmokeSelectionRefusalDefect {
     return @($defects)
 }
 
+function Get-RestoreSmokeTamperRefusalDefect {
+    <#
+    .SYNOPSIS
+    Why a tampered-package attempt does not prove the trust gate refused it: the restore must fail
+    with the package's "failed authentication" refusal whose reason is the signed-package hash
+    mismatch. Any other failure (an unexpected exception, a later gate, a harness error) is a
+    defect, not a proof. Returns $null when the refusal is the expected one.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [bool]$Refused,
+
+        [AllowEmptyString()]
+        [AllowNull()]
+        [string]$Message
+    )
+
+    if (-not $Refused) {
+        return "A tampered package was NOT refused; the trust gate failed."
+    }
+    if ([string]$Message -notlike "Template package '*' failed authentication: *" -or
+        [string]$Message -notlike "*does not match the resolved package bytes*") {
+        return "The tampered package failed, but not with the signed-package hash-mismatch authentication refusal: $Message"
+    }
+    return $null
+}
+
 function Get-RestoreSmokeSourceIdentityReason {
     <#
     .SYNOPSIS
@@ -4341,4 +4368,5 @@ Export-ModuleMember -Function `
     Get-RestoreSmokeSelectionDefect, `
     Get-RestoreSmokeSelectionRefusalExpectedMessage, `
     Get-RestoreSmokeSelectionRefusalDefect, `
+    Get-RestoreSmokeTamperRefusalDefect, `
     Get-RestoreSmokeResultClassification

@@ -72,11 +72,21 @@ Describe "Invoke-BootstrapRestoreSmoke static contract" {
             $script:smokeContent.Contains("Tampered-package refusal happened AFTER Docker activity") | Should -BeTrue
         }
 
+        It "the tampered-package leg accepts only the hash-mismatch authentication refusal" {
+            # Get-RestoreSmokeTamperRefusalDefect's behavior is pinned in RestoreSmokeProbes.Tests.ps1.
+            $script:smokeContent.Contains('Get-RestoreSmokeTamperRefusalDefect -Refused $failed -Message $refusalMessage') | Should -BeTrue
+        }
+
         It "the contaminated-package leg runs on both engines and asserts a scratch-validation refusal, target absence, no generated databases, no committed workspace, and only the db service" {
             $script:smokeContent.Contains("contaminated-package leg is PostgreSQL-only") | Should -BeFalse
             # SQL Server gets an engine-built .bak fixture instead of a text edit.
             $script:smokeContent.Contains("Write-SmokeMssqlContaminatedBackup -ArtifactPath") | Should -BeTrue
             $script:smokeContent.Contains("exists after a failed scratch validation on a fresh volume") | Should -BeTrue
+            # The refused restore's own cleanup stopped its database-only slice; the leg proves it
+            # before restarting the database container for inspection.
+            $script:smokeContent.Contains("Its cleanup must stop the database-only slice it started.") | Should -BeTrue
+            $script:smokeContent.IndexOf("Its cleanup must stop the database-only slice it started.") |
+                Should -BeLessThan $script:smokeContent.IndexOf("docker start `$databaseContainer")
             $script:smokeContent.Contains("Generated restore databases remain after the failure") | Should -BeTrue
             $script:smokeContent.Contains("An active .bootstrap workspace exists after a pre-commit failure") | Should -BeTrue
             $script:smokeContent.Contains("Services other than the database started for the refused restore") | Should -BeTrue

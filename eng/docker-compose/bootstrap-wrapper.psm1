@@ -1010,6 +1010,11 @@ function Invoke-BootstrapWrapper {
                 $restorePreflightEnvironmentPath = ""
                 $restorePreflightAmbientOverride = $false
                 $restoreCallerPostgresDbName = $null
+                # Set before each -DbOnly start (a partial startup is still this run's) and cleared
+                # once the slice is stopped or handed to -InfraOnly; the finally stops it otherwise.
+                $restoreDbOnlySliceStarted = $false
+                $restoreDbOnlyEnvironmentFile = ""
+                $restoreSucceeded = $false
                 try {
                     # Acquisition -> exact-bytes authentication -> immutable private staging with
                     # manifest/artifact validation (D3/D4). No Docker activity yet.
@@ -1061,6 +1066,7 @@ function Invoke-BootstrapWrapper {
                         -TargetDatabaseName $restoreTargetDatabaseName `
                         -PostgresUser $restorePostgresUser
                     $restorePreflightDatabaseName = $restorePreflight.PreflightDatabaseName
+                    $restoreDbOnlyEnvironmentFile = $restorePreflight.EnvironmentFile
                     if ($restorePreflight.IsDerived) {
                         $restorePreflightEnvironmentPath = $restorePreflight.EnvironmentFile
                     }
@@ -1079,6 +1085,7 @@ function Invoke-BootstrapWrapper {
                         $restorePreflightAmbientOverride = $true
                         $env:POSTGRES_DB_NAME = $restorePreflight.PreflightDatabaseName
                     }
+                    $restoreDbOnlySliceStarted = $true
                     $global:LASTEXITCODE = 0
                     & "$PSScriptRoot/$StartScriptName" @dbOnlyArgs
                     if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
@@ -1114,6 +1121,7 @@ function Invoke-BootstrapWrapper {
                         -ProjectName $composeProjectName `
                         -DatabaseEngine $DatabaseEngine `
                         -EnvironmentFile $restorePreflight.EnvironmentFile
+                    $restoreDbOnlySliceStarted = $false
                     Assert-DmsComposeProjectStopped -ProjectName "dms-local"
                     Assert-DmsComposeProjectStopped -ProjectName "dms-published"
 
@@ -1125,6 +1133,7 @@ function Invoke-BootstrapWrapper {
                     # Second db-only slice with the SAME preflight env, so compose does not recreate
                     # the container over an env difference; then the guarded destructive step, whose
                     # own first act re-runs the full target-safety gate.
+                    $restoreDbOnlySliceStarted = $true
                     $global:LASTEXITCODE = 0
                     & "$PSScriptRoot/$StartScriptName" @dbOnlyArgs
                     if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
@@ -1145,8 +1154,95 @@ function Invoke-BootstrapWrapper {
                     # when a failure skips this line.
                     Remove-RestorePreflightDatabase -DatabaseEngine $DatabaseEngine -PreflightDatabaseName $restorePreflightDatabaseName -PostgresUser $restorePostgresUser
                     $restorePreflightDatabaseName = ""
+                    # The running database is handed to the real-env -InfraOnly below only once the
+                    # transient cleanup in finally has succeeded; until then this run still owns it.
+                    $restoreSucceeded = $true
                 }
                 finally {
+                    # Every cleanup step runs on its own, so one failure can neither skip the others
+                    # nor replace the error that ended the run. Order: the transient database while
+                    # the engine is still up, then (after a failure) the database-only slice this run
+                    # started (same compose shape and env file; never "down", never volumes), then the
+                    # transient files, the derived env file the stop needs, and the caller's
+                    # environment. After a successful restore the slice is handed to -InfraOnly - unless
+                    # the cleanup itself fails, in which case the run throws before -InfraOnly and stops
+                    # the slice while its env file is still present.
+                    $restoreCleanupFailures = [System.Collections.Generic.List[string]]::new()
+                    if (-not [string]::IsNullOrWhiteSpace($restorePreflightDatabaseName)) {
+                        try {
+                            Remove-RestorePreflightDatabase -DatabaseEngine $DatabaseEngine -PreflightDatabaseName $restorePreflightDatabaseName -PostgresUser $restorePostgresUser
+                        }
+                        catch {
+                            $restoreCleanupFailures.Add("dropping preflight database '$restorePreflightDatabaseName': $(($_.Exception.Message | Out-String).Trim())")
+                        }
+                    }
+                    $stopOwnedSlice = {
+                        try {
+                            Stop-RestoreDatabaseOnlySlice `
+                                -ProjectName $composeProjectName `
+                                -DatabaseEngine $DatabaseEngine `
+                                -EnvironmentFile $restoreDbOnlyEnvironmentFile
+                        }
+                        catch {
+                            $restoreCleanupFailures.Add("stopping the $composeProjectName database-only slice: $(($_.Exception.Message | Out-String).Trim())")
+                        }
+                    }
+                    if ($restoreDbOnlySliceStarted -and -not $restoreSucceeded) {
+                        . $stopOwnedSlice
+                        $restoreDbOnlySliceStarted = $false
+                    }
+                    # Candidate remnants exist only when the commit did not consume them.
+                    if ($null -ne $restoreCandidateDirectory -and (Test-Path -LiteralPath $restoreCandidateDirectory)) {
+                        try {
+                            Remove-Item -LiteralPath $restoreCandidateDirectory -Recurse -Force -ErrorAction Stop
+                        }
+                        catch {
+                            $restoreCleanupFailures.Add("removing restore candidate '$restoreCandidateDirectory': $(($_.Exception.Message | Out-String).Trim())")
+                        }
+                    }
+                    if ($null -ne $restoreStage) {
+                        try {
+                            Remove-RestorePackageStage -StageDirectory $restoreStage.StageDirectory
+                        }
+                        catch {
+                            $restoreCleanupFailures.Add("removing package stage '$($restoreStage.StageDirectory)': $(($_.Exception.Message | Out-String).Trim())")
+                        }
+                        # Releases the retained package bytes for the rest of the run.
+                        $restoreStage = $null
+                    }
+                    # Only an HTTP-feed resolution returns a DownloadDirectory, which this run
+                    # created; -PackageDirectory and directory-feed resolutions return none, so a
+                    # caller-owned package directory is never removed here.
+                    if ($null -ne $restorePackage -and -not [string]::IsNullOrWhiteSpace([string]$restorePackage.DownloadDirectory) -and
+                        (Test-Path -LiteralPath $restorePackage.DownloadDirectory)) {
+                        try {
+                            Remove-Item -LiteralPath $restorePackage.DownloadDirectory -Recurse -Force -ErrorAction Stop
+                        }
+                        catch {
+                            $restoreCleanupFailures.Add("removing package download '$($restorePackage.DownloadDirectory)': $(($_.Exception.Message | Out-String).Trim())")
+                        }
+                    }
+                    # A successful restore whose cleanup failed throws before -InfraOnly: the slice it
+                    # still owns is stopped now, while its env file is present.
+                    if ($restoreDbOnlySliceStarted -and $restoreCleanupFailures.Count -gt 0) {
+                        . $stopOwnedSlice
+                        $restoreDbOnlySliceStarted = $false
+                    }
+                    # The derived preflight env file is a one-run transient consumed by the two
+                    # -DbOnly slices and the cleanup stop above; removed on every path.
+                    if (-not [string]::IsNullOrWhiteSpace($restorePreflightEnvironmentPath) -and (Test-Path -LiteralPath $restorePreflightEnvironmentPath)) {
+                        try {
+                            Remove-Item -LiteralPath $restorePreflightEnvironmentPath -Force -ErrorAction Stop
+                        }
+                        catch {
+                            $restoreCleanupFailures.Add("removing preflight env file '$restorePreflightEnvironmentPath': $(($_.Exception.Message | Out-String).Trim())")
+                            # The file that failed to go is still there for the stop.
+                            if ($restoreDbOnlySliceStarted) {
+                                . $stopOwnedSlice
+                                $restoreDbOnlySliceStarted = $false
+                            }
+                        }
+                    }
                     # An absent caller value is removed, not set to empty: PowerShell hands $null
                     # to SetEnvironmentVariable as an empty string.
                     if ($restorePreflightAmbientOverride) {
@@ -1157,31 +1253,13 @@ function Invoke-BootstrapWrapper {
                             $env:POSTGRES_DB_NAME = $restoreCallerPostgresDbName
                         }
                     }
-                    # Transient restore state never outlives the run: candidate remnants (only when
-                    # the commit did not consume them), the staged package, and the preflight
-                    # database (best-effort; the helper warns instead of throwing).
-                    if ($null -ne $restoreCandidateDirectory -and (Test-Path -LiteralPath $restoreCandidateDirectory)) {
-                        Remove-Item -LiteralPath $restoreCandidateDirectory -Recurse -Force
-                    }
-                    if ($null -ne $restoreStage) {
-                        Remove-RestorePackageStage -StageDirectory $restoreStage.StageDirectory
-                        # Releases the retained package bytes for the rest of the run.
-                        $restoreStage = $null
-                    }
-                    # Only an HTTP-feed resolution returns a DownloadDirectory, which this run
-                    # created; -PackageDirectory and directory-feed resolutions return none, so a
-                    # caller-owned package directory is never removed here.
-                    if ($null -ne $restorePackage -and -not [string]::IsNullOrWhiteSpace([string]$restorePackage.DownloadDirectory) -and
-                        (Test-Path -LiteralPath $restorePackage.DownloadDirectory)) {
-                        Remove-Item -LiteralPath $restorePackage.DownloadDirectory -Recurse -Force
-                    }
-                    if (-not [string]::IsNullOrWhiteSpace($restorePreflightDatabaseName)) {
-                        Remove-RestorePreflightDatabase -DatabaseEngine $DatabaseEngine -PreflightDatabaseName $restorePreflightDatabaseName -PostgresUser $restorePostgresUser
-                    }
-                    # The derived preflight env file is a one-run transient consumed only by the two
-                    # -DbOnly slices above; it is removed on success and on every failure path.
-                    if (-not [string]::IsNullOrWhiteSpace($restorePreflightEnvironmentPath) -and (Test-Path -LiteralPath $restorePreflightEnvironmentPath)) {
-                        Remove-Item -LiteralPath $restorePreflightEnvironmentPath -Force
+                    if ($restoreCleanupFailures.Count -gt 0) {
+                        $restoreCleanupText = $restoreCleanupFailures -join "; "
+                        if ($restoreSucceeded) {
+                            throw "The restore completed, but its transient cleanup did not: $restoreCleanupText. Remove what remains manually before rerunning."
+                        }
+                        # The failure that ended the run stays the error.
+                        Write-Warning "Restore cleanup did not complete: $restoreCleanupText. Remove what remains manually."
                     }
                 }
             }

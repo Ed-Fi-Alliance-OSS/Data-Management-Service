@@ -421,23 +421,25 @@ function Initialize-RestorePackageStage {
     .SYNOPSIS
     Stages the authenticated package into a private workspace: reads the .nupkg ONCE into
     memory, proves those bytes are the authenticated bytes, and takes everything else from
-    that same buffer - the extracted files, the restore manifest and nuspec it validates
-    (shape, requested engine/kind, package identity against the nuspec and the request), and
-    the SHA-256 of the one manifest-declared database artifact (no undeclared artifacts may sit
-    beside it). No file is reopened by path after its hash is proven, so a file replaced on
-    disk can never be read under the authenticated hash.
+    that same buffer. The archive metadata is validated directly from the in-memory archive
+    before any artifact content is read: unique entry names, exactly one restore manifest
+    (shape, requested engine/kind/Data Standard, package identity) and one nuspec agreeing on
+    the identity, and exactly one manifest-declared database artifact with no undeclared
+    artifact beside it. Only then is the artifact entry hashed against the manifest. Nothing is
+    extracted to disk and no file is reopened by path, so a file replaced on disk can never be
+    read under the authenticated hash.
 
     The authenticated buffer is RETAINED on the stage (PackageBytes, with the artifact's entry
     name in ArtifactEntryName) and is the only source either transfer reads: scratch validation
     and target restore each stream the artifact entry from it into the database container
-    (Copy-RestoreStagedArtifactToContainer). The files written under StageDirectory are records
-    and never feed a transfer, so replacing them - or the source package - after this read
-    cannot change what scratch or target restore consume. Staged files are marked read-only as
-    a guard against accidents only.
+    (Copy-RestoreStagedArtifactToContainer). The files written under StageDirectory (the
+    package and manifest records) never feed a transfer, so replacing them - or the source
+    package - after this read cannot change what scratch or target restore consume. Staged
+    files are marked read-only as a guard against accidents only.
 
     .OUTPUTS
     PSCustomObject: StageDirectory, PackagePath, PackageSha256, PackageBytes,
-    ArtifactEntryName, Manifest, ManifestPath, ArtifactPath, ArtifactSha256, Producer.
+    ArtifactEntryName, Manifest, ManifestPath, ArtifactSha256, Producer.
     #>
     param (
         [Parameter(Mandatory = $true)]
@@ -489,23 +491,28 @@ function Initialize-RestorePackageStage {
         $stagedPackagePath = Join-Path $stageDirectory ([System.IO.Path]::GetFileName($Package.PackagePath))
         [System.IO.File]::WriteAllBytes($stagedPackagePath, $packageBytes)
 
-        $contentsDirectory = Join-Path $stageDirectory "contents"
+        $packageFileName = [System.IO.Path]::GetFileName($Package.PackagePath)
         $packageArchive = [System.IO.Compression.ZipArchive]::new(
             [System.IO.MemoryStream]::new($packageBytes, $false),
             [System.IO.Compression.ZipArchiveMode]::Read)
-        try {
-            [System.IO.Compression.ZipFileExtensions]::ExtractToDirectory($packageArchive, $contentsDirectory)
-        }
-        catch {
-            throw "Failed to extract package '$([System.IO.Path]::GetFileName($Package.PackagePath))' into the restore stage: $($_.Exception.Message)"
+
+        # Archive metadata first, straight from the in-memory archive: no artifact content is
+        # read until every check below has passed.
+        $fileEntries = @($packageArchive.Entries | Where-Object { -not [string]::IsNullOrEmpty($_.Name) })
+        $duplicateEntryNames = @($fileEntries |
+                Group-Object { $_.FullName.Replace('\', '/').ToLowerInvariant() } |
+                Where-Object { $_.Count -gt 1 } |
+                ForEach-Object { $_.Group[0].FullName })
+        if ($duplicateEntryNames.Count -gt 0) {
+            throw "Package '$packageFileName' holds more than one archive entry for: $($duplicateEntryNames -join ', ')."
         }
 
-        $manifestFiles = @(Get-ChildItem -LiteralPath $contentsDirectory -Filter (Get-RestoreManifestFileName) -Recurse -File)
-        if ($manifestFiles.Count -ne 1) {
-            throw "Package '$([System.IO.Path]::GetFileName($Package.PackagePath))' must contain exactly one $(Get-RestoreManifestFileName), found $($manifestFiles.Count). Packages without a restore manifest are not eligible for restore."
+        $manifestEntries = @($fileEntries | Where-Object { $_.Name -ieq (Get-RestoreManifestFileName) })
+        if ($manifestEntries.Count -ne 1) {
+            throw "Package '$packageFileName' must contain exactly one $(Get-RestoreManifestFileName), found $($manifestEntries.Count). Packages without a restore manifest are not eligible for restore."
         }
-        $manifestEntry = Get-RestorePackageArchiveEntry -Archive $packageArchive -ContentsDirectory $contentsDirectory -ExtractedPath $manifestFiles[0].FullName
-        $manifest = Read-RestoreManifest -Path $manifestFiles[0].FullName -Content (Read-RestorePackageArchiveEntryText -Entry $manifestEntry)
+        $manifestText = Read-RestorePackageArchiveEntryText -Entry $manifestEntries[0]
+        $manifest = Read-RestoreManifest -Path "$packageFileName!/$($manifestEntries[0].FullName)" -Content $manifestText
 
         Assert-RestoreManifestMatchesRequest -Manifest $manifest -DatabaseEngine $DatabaseEngine -RestoreTemplate $RestoreTemplate -DataStandardVersion $Package.DataStandardVersion
 
@@ -516,12 +523,11 @@ function Initialize-RestorePackageStage {
             throw "The restore manifest declares package identity '$($manifest.packageId)@$($manifest.packageVersion)' but this restore resolved '$($Package.PackageId)@$($Package.PackageVersion)'."
         }
 
-        $nuspecFiles = @(Get-ChildItem -LiteralPath $contentsDirectory -Filter "*.nuspec" -Recurse -File)
-        if ($nuspecFiles.Count -ne 1) {
-            throw "Package '$([System.IO.Path]::GetFileName($Package.PackagePath))' must contain exactly one .nuspec, found $($nuspecFiles.Count)."
+        $nuspecEntries = @($fileEntries | Where-Object { $_.Name -like "*.nuspec" })
+        if ($nuspecEntries.Count -ne 1) {
+            throw "Package '$packageFileName' must contain exactly one .nuspec, found $($nuspecEntries.Count)."
         }
-        $nuspecEntry = Get-RestorePackageArchiveEntry -Archive $packageArchive -ContentsDirectory $contentsDirectory -ExtractedPath $nuspecFiles[0].FullName
-        [xml]$nuspecXml = Read-RestorePackageArchiveEntryText -Entry $nuspecEntry
+        [xml]$nuspecXml = Read-RestorePackageArchiveEntryText -Entry $nuspecEntries[0]
         $nuspecId = [string]$nuspecXml.package.metadata.id
         $nuspecVersion = [string]$nuspecXml.package.metadata.version
         if (-not $nuspecId.Equals($Package.PackageId, [System.StringComparison]::OrdinalIgnoreCase) -or
@@ -529,35 +535,32 @@ function Initialize-RestorePackageStage {
             throw "The package nuspec declares identity '$nuspecId@$nuspecVersion' but this restore resolved '$($Package.PackageId)@$($Package.PackageVersion)'."
         }
 
-        # Exactly one database artifact: the manifest-declared file, and no undeclared
+        # Exactly one database artifact: the manifest-declared entry, and no undeclared
         # .sql/.bak beside it that a later stage could be tricked into consuming.
-        $declaredArtifacts = @(Get-ChildItem -LiteralPath $contentsDirectory -Filter ([string]$manifest.artifactFileName) -Recurse -File)
-        if ($declaredArtifacts.Count -ne 1) {
-            throw "Package '$([System.IO.Path]::GetFileName($Package.PackagePath))' must contain exactly one artifact named '$($manifest.artifactFileName)', found $($declaredArtifacts.Count)."
+        $declaredArtifactEntries = @($fileEntries | Where-Object { $_.Name -ieq [string]$manifest.artifactFileName })
+        if ($declaredArtifactEntries.Count -ne 1) {
+            throw "Package '$packageFileName' must contain exactly one artifact named '$($manifest.artifactFileName)', found $($declaredArtifactEntries.Count)."
         }
-        $artifactPath = $declaredArtifacts[0].FullName
+        $artifactEntry = $declaredArtifactEntries[0]
+        $undeclaredArtifactEntries = @($fileEntries | Where-Object {
+                ($_.Name -like "*.sql" -or $_.Name -like "*.bak") -and -not [object]::ReferenceEquals($_, $artifactEntry)
+            })
+        if ($undeclaredArtifactEntries.Count -gt 0) {
+            $listing = (@($undeclaredArtifactEntries | ForEach-Object { $_.Name }) -join ", ")
+            throw "Package '$packageFileName' contains database artifacts beyond the manifest-declared '$($manifest.artifactFileName)': $listing."
+        }
 
-        $allArtifactShapedFiles = @(Get-ChildItem -LiteralPath $contentsDirectory -Recurse -File |
-                Where-Object { $_.Extension -ieq ".sql" -or $_.Extension -ieq ".bak" })
-        $undeclaredArtifacts = @($allArtifactShapedFiles | Where-Object { $_.FullName -ne $artifactPath })
-        if ($undeclaredArtifacts.Count -gt 0) {
-            $listing = (@($undeclaredArtifacts | ForEach-Object { $_.Name }) -join ", ")
-            throw "Package '$([System.IO.Path]::GetFileName($Package.PackagePath))' contains database artifacts beyond the manifest-declared '$($manifest.artifactFileName)': $listing."
-        }
-
-        # Hashed from the archive entry, not the extracted file: the packaged artifact itself
-        # must match the manifest.
-        $artifactEntry = Get-RestorePackageArchiveEntry -Archive $packageArchive -ContentsDirectory $contentsDirectory -ExtractedPath $artifactPath
-        $artifactEntryStream = $artifactEntry.Open()
-        try {
-            $artifactSha256 = [System.Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($artifactEntryStream)).ToLowerInvariant()
-        }
-        finally {
-            $artifactEntryStream.Dispose()
-        }
+        # Only now is artifact content read: hashed straight from the archive entry, never from
+        # a file on disk.
+        $artifactSha256 = Get-RestorePackageArchiveEntrySha256 -Entry $artifactEntry
         if ($artifactSha256 -cne [string]$manifest.artifactSha256) {
             throw "The packaged artifact's SHA-256 '$artifactSha256' does not match the manifest's artifactSha256 '$($manifest.artifactSha256)'."
         }
+
+        # A record of the validated manifest; nothing reads it back. The artifact is never
+        # written to the stage: both transfers stream it from PackageBytes.
+        $manifestRecordPath = Join-Path $stageDirectory (Get-RestoreManifestFileName)
+        [System.IO.File]::WriteAllText($manifestRecordPath, $manifestText, [System.Text.UTF8Encoding]::new($false))
 
         # Read-only guards against accidental edits only; a process that can write here can
         # also clear the flag. Transfers never read these files - they stream PackageBytes.
@@ -572,8 +575,7 @@ function Initialize-RestorePackageStage {
             PackageBytes      = $packageBytes
             ArtifactEntryName = $artifactEntry.FullName
             Manifest          = $manifest
-            ManifestPath      = $manifestFiles[0].FullName
-            ArtifactPath      = $artifactPath
+            ManifestPath      = $manifestRecordPath
             ArtifactSha256    = $artifactSha256
             Producer          = $Producer
         }
@@ -589,31 +591,23 @@ function Initialize-RestorePackageStage {
     }
 }
 
-function Get-RestorePackageArchiveEntry {
+function Get-RestorePackageArchiveEntrySha256 {
     <#
     .SYNOPSIS
-    The in-memory archive entry a file extracted from that archive came from, matched by its
-    path relative to the extraction directory. Staging validates the entry's bytes, never the
-    extracted file, which another process could have replaced since extraction.
+    The lowercase SHA-256 of one in-memory archive entry's bytes.
     #>
     param (
         [Parameter(Mandatory = $true)]
-        [System.IO.Compression.ZipArchive]$Archive,
-
-        [Parameter(Mandatory = $true)]
-        [string]$ContentsDirectory,
-
-        [Parameter(Mandatory = $true)]
-        [string]$ExtractedPath
+        [System.IO.Compression.ZipArchiveEntry]$Entry
     )
 
-    $relativePath = [System.IO.Path]::GetRelativePath($ContentsDirectory, $ExtractedPath).Replace('\', '/')
-    $entries = @($Archive.Entries | Where-Object { $_.FullName.Replace('\', '/') -ceq $relativePath })
-    if ($entries.Count -ne 1) {
-        throw "The staged package holds $($entries.Count) archive entries for '$relativePath'; expected exactly one."
+    $entryStream = $Entry.Open()
+    try {
+        return [System.Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($entryStream)).ToLowerInvariant()
     }
-
-    return $entries[0]
+    finally {
+        $entryStream.Dispose()
+    }
 }
 
 function Read-RestorePackageArchiveEntryText {
@@ -733,9 +727,15 @@ function New-RestoreCandidateWorkspace {
     The override is set strictly around the two prepare invocations and cleared in a finally
     block with Remove-Item (a $null assignment can leave a present-but-blank value on some
     hosts), so no later phase command can ever observe it. A prepare failure removes the partial
-    candidate and rethrows. The active .bootstrap workspace is never read or written here; only
-    the prepare phases honor the override, and every consuming phase command refuses to run
-    while it is set.
+    candidate and rethrows. The active .bootstrap workspace is never written here; only the
+    prepare phases honor the override, and every consuming phase command refuses to run while
+    it is set.
+
+    The one thing read from the active workspace is the published schema tool
+    (tools/api-schema-tools, the documented `dotnet publish` location): it is copied into the
+    candidate BEFORE the prepare phases run, so their tool discovery under the override finds
+    it, and the whole-tree commit carries it into the next active workspace instead of deleting
+    it. Schema, claims, and seed state are still regenerated by the prepare phases.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Restore-internal staging helper; the restore flow does not expose -WhatIf end to end, and a silent no-op would produce no candidate for the cross-check to validate.')]
     param (
@@ -748,11 +748,17 @@ function New-RestoreCandidateWorkspace {
         # tool; tests substitute recording stubs that honor the same override contract.
         [string]$PrepareSchemaScriptPath = "",
 
-        [string]$PrepareClaimsScriptPath = ""
+        [string]$PrepareClaimsScriptPath = "",
+
+        # Test seam; production default is the module-adjacent active workspace.
+        [string]$ActiveBootstrapRoot = ""
     )
 
     if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
         $WorkspaceRoot = $script:RestoreWorkspaceRoot
+    }
+    if ([string]::IsNullOrWhiteSpace($ActiveBootstrapRoot)) {
+        $ActiveBootstrapRoot = Join-Path $PSScriptRoot ".bootstrap"
     }
     if ([string]::IsNullOrWhiteSpace($PrepareSchemaScriptPath)) {
         $PrepareSchemaScriptPath = Join-Path $PSScriptRoot "prepare-dms-schema.ps1"
@@ -764,8 +770,15 @@ function New-RestoreCandidateWorkspace {
     $candidateDirectory = Join-Path $WorkspaceRoot "candidate-$([Guid]::NewGuid().ToString('N'))"
     New-Item -ItemType Directory -Path $candidateDirectory -Force | Out-Null
 
-    $env:DMS_BOOTSTRAP_ROOT_OVERRIDE = $candidateDirectory
     try {
+        $publishedToolDirectory = Join-Path $ActiveBootstrapRoot "tools/api-schema-tools"
+        if (Test-Path -LiteralPath $publishedToolDirectory -PathType Container) {
+            $candidateToolsDirectory = Join-Path $candidateDirectory "tools"
+            New-Item -ItemType Directory -Path $candidateToolsDirectory -Force | Out-Null
+            Copy-Item -LiteralPath $publishedToolDirectory -Destination $candidateToolsDirectory -Recurse -Force -ErrorAction Stop
+        }
+
+        $env:DMS_BOOTSTRAP_ROOT_OVERRIDE = $candidateDirectory
         foreach ($preparePhase in @(
             [pscustomobject]@{ ScriptPath = $PrepareSchemaScriptPath; Arguments = @{ EnvironmentFile = $EnvironmentFile } },
             [pscustomobject]@{ ScriptPath = $PrepareClaimsScriptPath; Arguments = @{} }
@@ -1251,10 +1264,14 @@ function Publish-RestoreCandidateWorkspace {
     Re-proves the stop precondition internally (both known compose projects, fail-closed on an
     indeterminate docker answer) before reading or writing anything, because a running service
     holds the active workspace bind-mounted. Then: a candidate byte-identical to the active tree
-    is discarded and the active tree reused as-is; anything else removes the ENTIRE active tree
-    and moves the candidate into place - never a subtree, so no partial/mixed workspace can ever
-    exist. A crash between remove and move leaves no active workspace and an intact candidate;
-    the next run re-stages from scratch (the accepted failure shape).
+    is discarded and the active tree reused as-is; anything else replaces the ENTIRE tree - never
+    a subtree, so no partial/mixed workspace is ever published. The active tree is renamed aside
+    into the restore workspace (a sibling, so on the same volume), the candidate is renamed into
+    place, and the previous tree is removed only after that succeeds. If publishing the
+    candidate fails, the previous tree is renamed back and the failure propagates; the candidate
+    is left for the caller's cleanup. This is recovery from a failed publication, not crash
+    atomicity: a process killed between the renames leaves the previous tree under
+    .bootstrap-restore/previous-*.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Restore-internal commit step; the restore flow does not expose -WhatIf end to end, and a silent no-op would leave the active workspace inconsistent with the validated candidate.')]
     param (
@@ -1294,14 +1311,54 @@ function Publish-RestoreCandidateWorkspace {
             throw "Refusing to replace the active bootstrap workspace: it holds retained CDC configuration or state for dms-local or dms-published. Nothing was replaced and the restore target was not touched. Reconcile or retire that CDC deployment through its own lifecycle, then rerun the restore."
         }
 
-        Remove-Item -LiteralPath $ActiveBootstrapRoot -Recurse -Force
     }
 
     $activeParentDirectory = Split-Path -Parent $ActiveBootstrapRoot
     if (-not [string]::IsNullOrWhiteSpace($activeParentDirectory)) {
-        New-Item -ItemType Directory -Path $activeParentDirectory -Force | Out-Null
+        New-Item -ItemType Directory -Path $activeParentDirectory -Force -ErrorAction Stop | Out-Null
     }
-    Move-Item -LiteralPath $CandidateDirectory -Destination $ActiveBootstrapRoot
+
+    # Every filesystem step below is terminating (-ErrorAction Stop): this module does not inherit
+    # the caller's $ErrorActionPreference, and a non-terminating provider error would otherwise slip
+    # past the rollback (nesting the candidate inside the active tree, or deleting the backup).
+    # The previous tree is set aside, never deleted, until the candidate is in place.
+    $previousBootstrapRoot = $null
+    if (Test-Path -LiteralPath $ActiveBootstrapRoot) {
+        $previousParentDirectory = Join-Path $activeParentDirectory ".bootstrap-restore"
+        New-Item -ItemType Directory -Path $previousParentDirectory -Force -ErrorAction Stop | Out-Null
+        $previousBootstrapRoot = Join-Path $previousParentDirectory "previous-$([Guid]::NewGuid().ToString('N'))"
+        Move-Item -LiteralPath $ActiveBootstrapRoot -Destination $previousBootstrapRoot -ErrorAction Stop
+    }
+
+    try {
+        Move-Item -LiteralPath $CandidateDirectory -Destination $ActiveBootstrapRoot -ErrorAction Stop
+    }
+    catch {
+        $publishFailure = ($_.Exception.Message | Out-String).Trim()
+        if ($null -ne $previousBootstrapRoot) {
+            try {
+                # A failed cross-volume move can leave a partial copy; it is never the workspace.
+                if (Test-Path -LiteralPath $ActiveBootstrapRoot) {
+                    Remove-Item -LiteralPath $ActiveBootstrapRoot -Recurse -Force -ErrorAction Stop
+                }
+                Move-Item -LiteralPath $previousBootstrapRoot -Destination $ActiveBootstrapRoot -ErrorAction Stop
+            }
+            catch {
+                throw "Publishing the restore candidate failed ($publishFailure), and the previous bootstrap workspace could not be restored: $(($_.Exception.Message | Out-String).Trim()) It is kept intact at '$previousBootstrapRoot'; move it back to '$ActiveBootstrapRoot' before rerunning. The restore target was not touched."
+            }
+            throw "Publishing the restore candidate failed: $publishFailure The previous bootstrap workspace was restored and the restore target was not touched."
+        }
+        throw "Publishing the restore candidate failed: $publishFailure No bootstrap workspace existed before, none was published, and the restore target was not touched."
+    }
+
+    if ($null -ne $previousBootstrapRoot) {
+        try {
+            Remove-Item -LiteralPath $previousBootstrapRoot -Recurse -Force -ErrorAction Stop
+        }
+        catch {
+            Write-Warning "The candidate was published, but the previous bootstrap workspace at '$previousBootstrapRoot' could not be removed: $(($_.Exception.Message | Out-String).Trim()) Remove it manually."
+        }
+    }
 
     return [pscustomobject]@{
         Replaced            = $true
@@ -2000,8 +2057,8 @@ function Copy-RestoreStagedArtifactToContainer {
     Stage.PackageBytes and piped as a one-file tar to `docker cp - <container>:<directory>`.
 
     .DESCRIPTION
-    No host file is opened, so replacing Stage.ArtifactPath, the staged .nupkg, or the source
-    package on disk cannot change the bytes either transfer sends. The SHA-256 of exactly the
+    No host file is opened, so replacing the staged .nupkg or manifest record, or the source
+    package on disk, cannot change the bytes either transfer sends. The SHA-256 of exactly the
     bytes streamed is compared with the manifest's artifactSha256 before returning; the caller
     then hashes the in-container copy (Assert-RestoreContainerArtifactSha256) as the
     transfer-integrity check. Every archive, stream, and process is disposed on all paths.
@@ -2454,7 +2511,8 @@ function Invoke-RestoreScratchValidation {
     hashed THERE against the manifest (the transfer-integrity check: the copy psql or RESTORE
     reads is what was sent), replayed into
     a freshly generated scratch database (never the target), and then validated: the DMS-only
-    gate over the full scratch inventory, the shared
+    gate over the full scratch inventory, the PostgreSQL privilege gate (only the grants the
+    authoritative DDL makes may survive a replay), the shared
     manifest-vs-database comparator (effective-schema fields, physical baseline including
     compatibility level and DocumentJson storage type, engine major, canonical inventory hash),
     the manifest<->candidate schema agreement, the project set against the validated partition,
@@ -2586,6 +2644,22 @@ function Invoke-RestoreScratchValidation {
             -Inventory $scratchFacts.FullInventory `
             -DatabaseLevelObject $scratchFacts.DatabaseLevelObjects `
             -SourceDescription "Restore scratch database '$scratchDatabaseName'"
+
+        # The replay re-ran every GRANT the artifact carries against this server's roles; only
+        # the privileges the authoritative DDL produces may survive into the target.
+        if ($DatabaseEngine -eq "postgresql") {
+            $privilegeRows = Invoke-RestoreCatalogQuery `
+                -DatabaseEngine $DatabaseEngine `
+                -ContainerName $ContainerName `
+                -DatabaseName $scratchDatabaseName `
+                -PostgresUser $PostgresUser `
+                -Query (Get-PostgresqlPrivilegeQuerySql) `
+                -FailureMessage "Failed to read the privileges of scratch database '$scratchDatabaseName'."
+            Assert-PostgresqlArtifactPrivilege `
+                -PrivilegeRow $privilegeRows `
+                -SourceDescription "Restore scratch database '$scratchDatabaseName'" `
+                -FailureSuffix "The package is refused before the target is touched."
+        }
 
         Assert-RestoreManifestMatchesDatabase `
             -Manifest $manifest `
@@ -2838,9 +2912,9 @@ function Invoke-RestoreTargetReplacement {
     first destructive statement (a service may have started during the transfer), then
     dispatches per engine: PostgreSQL ensures the shared restore-global role, terminates
     connections, drops and recreates the target, and replays via psql ON_ERROR_STOP;
-    SQL Server copies the backup in, single-user-drops an existing target, reads the file
-    list, and restores with one MOVE per logical file to target-derived physical names plus
-    REPLACE. Afterwards dms.DataStoreIdentity.SourceIdentity is reseeded and verified against
+    SQL Server reads the copied backup's file list and builds one MOVE per logical file to
+    target-derived physical names before that last gate, then single-user-drops an existing
+    target and restores with those MOVE clauses plus REPLACE. Afterwards dms.DataStoreIdentity.SourceIdentity is reseeded and verified against
     ALL FOUR conditions (exactly one row, a valid UUID, not the empty UUID, different from the
     package value captured in scratch) - any failure is a hard error before any service can
     select the target. The transient in-container artifact copy is removed in finally.
@@ -2937,6 +3011,21 @@ function Invoke-RestoreTargetReplacement {
             -ExpectedSha256 ([string]$manifest.artifactSha256) `
             -ConsumerDescription "any change to target database '$TargetDatabaseName'"
 
+        # SQL Server: read and parse the backup's file list and build the target's MOVE clauses
+        # BEFORE the existing target is dropped, so a metadata failure leaves it in place.
+        $moveClauses = @()
+        if ($DatabaseEngine -eq "mssql") {
+            $fileListRows = Invoke-RestoreDockerCommand `
+                -ArgumentList @("exec", "-e", "SQLCMDPASSWORD=$MssqlPassword", $ContainerName, "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-d", "master", "-C", "-b", "-h", "-1", "-W", "-s", "|", "-Q", "SET NOCOUNT ON; RESTORE FILELISTONLY FROM DISK = N'$containerArtifactPath';") `
+                -FailureMessage "Failed to read the file list from the staged artifact."
+            $backupFileList = ConvertFrom-MssqlBackupFileList -FileListOutput ([string[]]$fileListRows) -BackupFileName ([string]$manifest.artifactFileName)
+            $moveClauses = New-MssqlRestoreMoveClause `
+                -DatabaseName $TargetDatabaseName `
+                -DataLogicalNames $backupFileList.DataLogicalNames `
+                -LogLogicalNames $backupFileList.LogLogicalNames `
+                -BackupFileName ([string]$manifest.artifactFileName)
+        }
+
         Assert-RestoreTargetSafety @targetSafetyArguments
 
         if ($DatabaseEngine -eq "postgresql") {
@@ -2972,16 +3061,6 @@ function Invoke-RestoreTargetReplacement {
                     -Query "ALTER DATABASE [$TargetDatabaseName] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [$TargetDatabaseName];" `
                     -FailureMessage "Failed to drop existing target database '$TargetDatabaseName'."
             }
-
-            $fileListRows = Invoke-RestoreDockerCommand `
-                -ArgumentList @("exec", "-e", "SQLCMDPASSWORD=$MssqlPassword", $ContainerName, "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-d", "master", "-C", "-b", "-h", "-1", "-W", "-s", "|", "-Q", "SET NOCOUNT ON; RESTORE FILELISTONLY FROM DISK = N'$containerArtifactPath';") `
-                -FailureMessage "Failed to read the file list from the staged artifact."
-            $backupFileList = ConvertFrom-MssqlBackupFileList -FileListOutput ([string[]]$fileListRows) -BackupFileName ([string]$manifest.artifactFileName)
-            $moveClauses = New-MssqlRestoreMoveClause `
-                -DatabaseName $TargetDatabaseName `
-                -DataLogicalNames $backupFileList.DataLogicalNames `
-                -LogLogicalNames $backupFileList.LogLogicalNames `
-                -BackupFileName ([string]$manifest.artifactFileName)
 
             $null = Invoke-RestoreDockerCommand `
                 -ArgumentList @("exec", "-e", "SQLCMDPASSWORD=$MssqlPassword", $ContainerName, "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-d", "master", "-C", "-b", "-Q", "RESTORE DATABASE [$TargetDatabaseName] FROM DISK = N'$containerArtifactPath' WITH $($moveClauses -join ', '), REPLACE;") `

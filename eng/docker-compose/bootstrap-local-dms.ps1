@@ -355,6 +355,11 @@ trap {
 if ($v -and -not $d) {
     throw "-v requires -d. Use bootstrap-local-dms.ps1 -d -v to stop services, delete volumes, and remove the .bootstrap workspace."
 }
+# A restore request combined with teardown is ambiguous and teardown is destructive, so it is
+# refused before any teardown or retained-CDC lifecycle dispatch.
+if ($d -and ($PSBoundParameters.ContainsKey('RestoreTemplate') -or $PSBoundParameters.ContainsKey('PackageDirectory'))) {
+    throw "-d cannot be combined with -RestoreTemplate or -PackageDirectory. Run teardown and restore as separate invocations."
+}
 if ((-not $EnableKafkaCdc -or $d) -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot '.cdc-deployments/dms-local.json'))) {
     Import-Module (Join-Path $PSScriptRoot 'cdc-lifecycle.psm1')
     $lifecycleArgs = @{} + $PSBoundParameters

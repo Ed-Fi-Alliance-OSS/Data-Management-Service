@@ -455,9 +455,11 @@ deliberately paranoid: the exact `.nupkg` bytes are authenticated against the te
 policy (fail-closed - there is no unsigned or local-origin bypass), the package's restore
 manifest is cross-checked against a freshly prepared candidate workspace, the artifact is first
 replayed into a throwaway scratch database and validated (schema inventory, effective-schema
-facts, physical baseline), and only then is the target database replaced - behind stop proofs,
-with the `.bootstrap` workspace committed as a whole tree. `provision-dms-schema.ps1` is
-skipped in restore mode: the restored artifact already carries the schema and data.
+facts, physical baseline, privileges), and only then is the target database replaced - behind
+stop proofs, with the `.bootstrap` workspace committed as a whole tree. The previous tree is
+renamed aside and renamed back if publishing the candidate fails, and a schema tool published to
+`.bootstrap/tools/api-schema-tools` is carried into the new workspace. `provision-dms-schema.ps1`
+is skipped in restore mode: the restored artifact already carries the schema and data.
 
 ```powershell
 # Restore the Populated template from the configured feed
@@ -484,12 +486,37 @@ route-unqualified physical target. That target is the effective env's `POSTGRES_
 refused before the package is resolved or anything is restored, in either CMS topology. A
 PostgreSQL restore is also refused while `POSTGRES_USE_TMPFS=true`: the database would live in
 container memory and be lost when the stack restarts the database container after the restore.
+These refusals also happen before anything is restored:
 
-The package identity comes from the effective env's `DATABASE_TEMPLATE_PACKAGE`, with the
-`Minimal|Populated` and engine segments swapped to match the request; see `.env.example` for
-the three version concepts (package ID's Data Standard segment, the manifest's
-`dataStandardVersion`, and `DATABASE_TEMPLATE_NUGET_VERSION` - the package's own NuGet
-version). Trusted producers are declared in `template-trust-policy.json` plus the git-ignored
+* `-EnableKafkaCdc`: a restore skips the provision phase that produces the CDC provisioning
+  receipt. Enable CDC on a bootstrap that provisions its own schema.
+* `-d` (with or without `-v`) together with `-RestoreTemplate` or `-PackageDirectory`: teardown
+  and restore are separate invocations, and nothing is torn down.
+* A retained CDC deployment for the wrapper's compose project (`dms-local` or `dms-published`):
+  the request is refused before the retained deployment's lifecycle runs. Retire that deployment
+  with `-d -v` first.
+
+The whole-tree commit also refuses to replace an active `.bootstrap` workspace that holds retained
+CDC configuration or state for either compose project; that refusal comes after scratch validation,
+before the target is touched.
+
+The package identity comes from the effective `DATABASE_TEMPLATE_PACKAGE`, with the
+`Minimal|Populated` and engine segments swapped to match the request. Setting it in your base
+`.env` does not always decide the effective value:
+
+* A `DATABASE_TEMPLATE_PACKAGE` in the process environment wins over every env file, as it does
+  for Compose.
+* `bootstrap-local-dms.ps1` always layers the local-bootstrap Data Standard overlay
+  (`.env.bootstrap.ds52` or `.env.bootstrap.ds61`, chosen by `-DataStandardVersion`, default `5.2`)
+  over `-EnvironmentFile`. That overlay sets `DATABASE_TEMPLATE_PACKAGE`, so the base file's value
+  is replaced and the package id's Data Standard segment follows `-DataStandardVersion`.
+* `bootstrap-published-dms.ps1` layers the overlay only when `-DataStandardVersion` is passed;
+  otherwise the base env file's value is used as written.
+
+The overlays do not set `DATABASE_TEMPLATE_NUGET_VERSION` or `DATABASE_TEMPLATE_FEED_URL`, so those
+come from the base env file (or the process environment). See `.env.example` for the three version
+concepts (package ID's Data Standard segment, the manifest's `dataStandardVersion`, and
+`DATABASE_TEMPLATE_NUGET_VERSION` - the package's own NuGet version). Trusted producers are declared in `template-trust-policy.json` plus the git-ignored
 `template-trust-policy.local.json` overlay; a locally built package must be attested by a
 development producer registered there (see the next section).
 
@@ -581,18 +608,26 @@ $packageDirectory = 'C:\path\to\packages'
 
 With `-SeparateConfigDatabase` the restore replaces only the DMS datastore; the dedicated
 `edfi_configurationservice` database is never touched, so on a stack that ran before it still holds
-the data store that earlier run registered. After the restore the wrapper's configure phase lists the
-CMS data stores and:
+the data stores earlier runs registered - for this target, and for other targets restored by earlier
+explicit invocations (each invocation restores one database). After the restore the wrapper's
+configure phase lists the CMS data stores and decrypts each stored connection string with
+`CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY`. A data store serves the restored target only when
+its engine (provider and connection-string form), its server and port (the composed database
+service, `dms-postgresql:5432` or `dms-mssql,1433`), and its database (exactly the restored
+database) all match; a matching database name alone is not enough. The phase then:
 
-* registers the data store when CMS holds none, naming the database the restore replaced (a
-  different `-DataStoreDatabaseName` never gets this far: it is refused before anything is
-  restored);
-* reuses the existing data store, with its id and without changing it, when it is the only one, is
-  not route-qualified, and its stored connection string (decrypted with
-  `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY`) names the composed database service (`dms-postgresql:5432` or
-  `dms-mssql,1433`) and exactly the restored database;
-* refuses anything else: several data stores, a route-qualified one, a value that cannot be decrypted,
-  or a different engine, server, port, or database. A matching database name alone is not enough.
+* reuses the one route-unqualified data store that serves the restored target, with its id and
+  without changing it;
+* otherwise registers a new data store for the restored target under the first free name of
+  `Local Development Data Store`, `Local Development Data Store (2)`, and so on. A different
+  `-DataStoreDatabaseName` never gets this far: it is refused before anything is restored;
+* leaves every other target's data store in place, and returns only the restored target's id;
+* refuses what it cannot verify: two data stores serving the target, a route-qualified one, a
+  letter-case variant of the target's name, a stored value of this engine that cannot be decrypted
+  or read, or a listing that reaches the 500-item query page.
+
+Restoring database A, then B, then A again therefore reuses A's registration on the third run, and B
+keeps its own.
 
 This check runs **after** the target database was replaced. A refusal here stops before DMS starts,
 but unlike a scratch-validation refusal (next section) it does not leave the target untouched: the
@@ -603,9 +638,14 @@ never prints the connection string, its credentials, or the database names.
 ### Recovering from a failed scratch validation
 
 When scratch validation refuses a package, the restore drops the scratch and preflight
-databases, removes its candidate workspace, and leaves the target database and the active
-`.bootstrap` workspace as they were. CMS and DMS are not started. The database container that
-the restore started for the scratch stage keeps running, though, so the next restore attempt
+databases, stops the database-only slice it started (with the same compose files and env file,
+never `down` and never volumes), removes its candidate workspace and generated env file, and leaves
+the target database and the active `.bootstrap` workspace as they were. CMS and DMS are not
+started. Each cleanup step runs even when another fails, and the error that ended the run stays
+the error; a step that fails is reported as a warning naming what remains. The same cleanup runs
+for any failure after the database-only slice started, including a partial startup.
+
+If that stop did not complete, the database container keeps running and the next restore attempt
 refuses at its first stop proof. On the local PostgreSQL stack the refusal reads as follows; the
 container is `dms-mssql` on SQL Server, and the project is `dms-published` for
 `bootstrap-published-dms.ps1`:

@@ -700,13 +700,32 @@ function Build-NuGetPackage {
 
     $csprojPath = Join-Path $BackupDirectory $Config.PackageProjectName
 
+    # A same-version package left by an earlier run must never survive a failed pack:
+    # attestation signs whatever file sits at this path, so it is removed before packing
+    # and only a file the successful pack wrote can be attested.
+    $packagePath = Join-Path $BackupDirectory "$($Config.Id).$PackageVersion.nupkg"
+    if (Test-Path -LiteralPath $packagePath) {
+        Remove-Item -LiteralPath $packagePath -Force -ErrorAction Stop
+    }
+
     &dotnet restore $csprojPath | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "dotnet restore failed for the template package '$($Config.Id)'."
+    }
+
     &dotnet pack $csprojPath `
         --no-build `
         --no-restore `
         --output $BackupDirectory `
         -p:NoDefaultExcludes=true `
         -p:Version="$PackageVersion"
+    if ($LASTEXITCODE -ne 0) {
+        throw "dotnet pack failed for the template package '$($Config.Id)'."
+    }
+
+    if (-not (Test-Path -LiteralPath $packagePath -PathType Leaf)) {
+        throw "dotnet pack reported success but did not write the template package '$packagePath'."
+    }
 
     Write-Host "Package Created: " -ForegroundColor Green -NoNewline
     Write-Host (Get-ChildItem $csprojPath).FullName
@@ -1286,6 +1305,12 @@ function Build-TemplateNuGetPackage {
         -SchemaFilePath $SchemaFilePath `
         -MssqlPassword $MssqlPassword
 
+    # A PostgreSQL dump carries the source's GRANT statements and a restore replays them, so a
+    # privilege the authoritative DDL does not produce is refused here, before any dump.
+    if ($DatabaseEngine -eq "postgresql") {
+        Assert-TemplateSourcePrivilege -DatabaseName $DatabaseName
+    }
+
     Invoke-DatabaseDump -DatabaseEngine $DatabaseEngine -DatabaseName $DatabaseName -DatabaseSchemas $databaseSchemas -BackupDirectory './' -BackupFileName $config.DatabaseBackupName -MssqlPassword $MssqlPassword
 
     $restoreManifestPath = Write-TemplateRestoreManifest `
@@ -1746,6 +1771,32 @@ function Get-TemplateAuthoritativeObjectInventory {
         -OutputRoot $OutputRoot `
         -SchemaToolPath $SchemaToolPath `
         -MssqlPassword $MssqlPassword
+}
+
+function Assert-TemplateSourcePrivilege {
+    <#
+    .SYNOPSIS
+    The producer's privilege gate for a PostgreSQL source: reads every privilege in the source
+    and fails, before any dump, unless each is one the authoritative DMS DDL produces (the rule
+    set the consumer's scratch validation applies to the replayed artifact).
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$DatabaseName,
+
+        [string]$ContainerName = "dms-postgresql"
+    )
+
+    $privilegeRows = Invoke-TemplateCatalogQuery `
+        -DatabaseEngine postgresql `
+        -ContainerName $ContainerName `
+        -DatabaseName $DatabaseName `
+        -Query (Get-PostgresqlPrivilegeQuerySql) `
+        -FailureMessage "Failed to read the privileges of template source '$DatabaseName'; nothing was dumped."
+    Assert-PostgresqlArtifactPrivilege `
+        -PrivilegeRow $privilegeRows `
+        -SourceDescription "Template source database '$DatabaseName'" `
+        -FailureSuffix "A restore would replay them against the restoring server's roles. Nothing was dumped or packaged."
 }
 
 function Assert-TemplateSourceMatchesAuthoritativeInventory {

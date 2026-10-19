@@ -4133,6 +4133,56 @@ Describe "Get-RestoreSmokeSelectionDefect" {
     }
 }
 
+Describe "Get-RestoreSmokeTamperRefusalDefect" {
+    BeforeAll {
+        # The real refusal: a child pwsh runs the production trust gate (Assert-TrustedRestorePackage)
+        # against a package modified after it was attested, so the accepted message is the one the
+        # restore actually throws rather than a copy of it.
+        $workDirectory = Join-Path $TestDrive "tamper-refusal"
+        New-Item -ItemType Directory -Path $workDirectory -Force | Out-Null
+        $probeScript = Join-Path $workDirectory "probe.ps1"
+        @'
+param([string]$DockerComposeRoot, [string]$WorkDirectory)
+$ErrorActionPreference = "Stop"
+Import-Module (Join-Path $DockerComposeRoot "bootstrap-restore.psm1") -Force
+Import-Module (Join-Path $DockerComposeRoot "../DatabaseTemplates/Template-RestoreTrust.psm1")
+$packageId = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0"
+$packagePath = Join-Path $WorkDirectory "$packageId.1.0.1.nupkg"
+Set-Content -LiteralPath $packagePath -Value "signed package bytes"
+$key = New-TemplateAttestationSigningKey -PrivateKeyPath (Join-Path $WorkDirectory "signer.pem")
+$attestation = New-TemplateAttestation -PackageId $packageId -PackageVersion "1.0.1" -PackageSha256 (Get-FileSha256Hex -Path $packagePath) -Producer "smoke" -PrivateKeyPath $key.PrivateKeyPath
+$policyPath = Join-Path $WorkDirectory "policy.json"
+@{ version = 1; producers = @(@{ name = "smoke"; provider = "detached-attestation"; publicKeys = @(@{ keyId = $key.KeyId; algorithm = $key.Algorithm; publicKeySpkiB64 = $key.PublicKeySpkiB64 }) }) } |
+    ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $policyPath
+Add-Content -LiteralPath $packagePath -Value "tampered"
+try {
+    Assert-TrustedRestorePackage -TrackedPolicyPath $policyPath -LocalPolicyPath (Join-Path $WorkDirectory "absent.json") -Package ([pscustomobject]@{
+        PackageId = $packageId; PackageVersion = "1.0.1"; PackagePath = $packagePath; AttestationJson = $attestation
+    })
+    "NOT-REFUSED"
+}
+catch {
+    $_.Exception.Message
+}
+'@ | Set-Content -LiteralPath $probeScript -Encoding utf8
+        $script:realTamperRefusal = (& pwsh -NoProfile -NonInteractive -File $probeScript -DockerComposeRoot (Split-Path $PSScriptRoot -Parent) -WorkDirectory $workDirectory) -join "`n"
+    }
+
+    It "accepts the trust gate's refusal of a package modified after signing" {
+        $script:realTamperRefusal | Should -BeLike "*failed authentication*does not match the resolved package bytes*"
+        Get-RestoreSmokeTamperRefusalDefect -Refused $true -Message $script:realTamperRefusal | Should -BeNullOrEmpty
+    }
+
+    It "fails the leg when <Case>" -ForEach @(
+        @{ Case = "the tampered package is not refused"; Refused = $false; Message = $null; Expected = "A tampered package was NOT refused*" }
+        @{ Case = "an unexpected exception ends the attempt"; Refused = $true; Message = "docker ps failed while proving no containers were created."; Expected = "*not with the signed-package hash-mismatch authentication refusal: docker ps failed*" }
+        @{ Case = "authentication fails for another reason"; Refused = $true; Message = "Template package 'p.nupkg' failed authentication: No trust anchor in the policy matches the attestation key. Restore has no unsigned-package bypass; local origin is not trust."; Expected = "*not with the signed-package hash-mismatch authentication refusal*" }
+        @{ Case = "the hash-mismatch text arrives outside the authentication refusal"; Refused = $true; Message = "Unexpected: the attestation binds package SHA-256 'x', which does not match the resolved package bytes ('y')."; Expected = "*not with the signed-package hash-mismatch authentication refusal*" }
+    ) {
+        Get-RestoreSmokeTamperRefusalDefect -Refused $Refused -Message $Message | Should -BeLike $Expected
+    }
+}
+
 Describe "Get-RestoreSmokeSelectionRefusalDefect" {
     BeforeAll {
         $script:coreHash = "c0" * 32

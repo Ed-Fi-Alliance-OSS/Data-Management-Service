@@ -33,10 +33,12 @@ param(
 
     # Restore handoff from the bootstrap wrappers (-RestoreTemplate with -SeparateConfigDatabase):
     # the database the restore just replaced. The dedicated Configuration Service database survives
-    # a restore, so it may already hold the data store an earlier run registered; with this value the
-    # phase reuses that data store when its stored connection string targets this database on the
-    # composed database service, creates one when CMS holds none, and refuses anything else. Requires
-    # -SeparateConfigDatabase; not valid with -NoDataStore or -SchoolYearRange.
+    # a restore, so it may already hold the data store an earlier run registered for this target and
+    # data stores registered for other targets; with this value the phase reuses the one data store
+    # whose stored connection string targets this database on the composed database service,
+    # otherwise registers a new one under a name no data store uses, leaving the others in place, and
+    # refuses whatever it cannot verify. Requires -SeparateConfigDatabase; not valid with -NoDataStore
+    # or -SchoolYearRange.
     [string]$RestoreTargetDatabaseName = ""
 )
 
@@ -267,29 +269,34 @@ function Get-ExistingCompatibleDataStore {
 function Resolve-RestoreSeparateConfigDataStore {
     <#
     .SYNOPSIS
-    Restore with -SeparateConfigDatabase: decides whether the configure phase creates the
-    route-unqualified data store or reuses the one the surviving Configuration Service database
-    already holds. Returns $null when CMS holds no data store (create), the data store when exactly
-    one route-unqualified data store targets the restored database on the composed database service
-    (reuse), and throws otherwise.
+    Restore with -SeparateConfigDatabase: decides whether the configure phase reuses the CMS data
+    store that already serves the restored target or registers a new one beside the others.
+    Returns { DataStore; RegistrationName }: the one verified data store to reuse (and no name),
+    or no data store and the distinct name a new registration must use. Throws when it cannot
+    prove which data store, if any, serves the restored target.
 
     .DESCRIPTION
     A restore replaces only the DMS datastore; in separate topology the dedicated Configuration
-    Service database keeps the data store an earlier run registered, and CMS rejects a second
-    registration under the same name. -NoDataStore's selector is not enough to reuse it: it checks
-    only the count and the route contexts, and the provisioning phase that judges a reused data
-    store's stored target never runs in restore mode. So the stored connection string is decrypted
-    and compared with the registration this phase would create for the restored target:
+    Service database keeps every data store earlier runs registered, including those for OTHER
+    targets restored by earlier explicit invocations (one invocation restores one database). Those
+    registrations are preserved and never selected. A data store serves the restored target only
+    when its stored connection string, decrypted and read with the selected engine's own keyword
+    grammar, matches the registration this phase would create:
 
-      - engine: the record's provider (when CMS reports one) and the connection-string form, read
-        with the selected engine's own keyword grammar;
-      - host and port: exactly one endpoint, equal to the composed database service this phase
-        registers (dms-postgresql:5432 / dms-mssql,1433), through the same endpoint parser and port
-        comparer the start-phase topology checks use;
-      - database: exactly one name, equal (ordinal) to the restored target. A matching name alone is
-        not enough; the same name on another server is a different database.
+      - engine: the record's provider, when CMS reports one (another engine's data store is not
+        this target's), and the connection-string form;
+      - host and port: the composed database service this phase registers (dms-postgresql:5432 /
+        dms-mssql,1433), through the same endpoint parser and port comparer the start-phase
+        topology checks use; the same database name on another server is a different database;
+      - database: equal (ordinal) to the restored target.
 
-    The registration is never updated: a match is reused with its existing id.
+    Exactly one route-unqualified match is reused with its existing id; the registration is never
+    updated. With none, a new registration is created under the first free name of "Local
+    Development Data Store", "Local Development Data Store (2)", ..., so it cannot collide with
+    another target's registration. Fail closed: a data store this engine might use whose stored
+    value cannot be read, one naming the target ambiguously (several servers or databases, or a
+    letter-case variant), a route-qualified match, more than one match, or a listing that reaches
+    the query page size is refused.
 
     Refusals name the data store id and which property differs - never the stored connection
     string, its credentials, the decrypted text, or either database name. They happen AFTER the
@@ -322,67 +329,11 @@ function Resolve-RestoreSeparateConfigDataStore {
 
     $afterRestore = "This check runs after the restore replaced the target database: the target is restored, DMS was not started, and the scratch-validation guarantee that a refused restore leaves the target untouched does not apply. Correct or remove the stale CMS data store registration, then rerun the restore. The stored connection string and the database names are withheld."
 
-    if ($DataStores.Count -eq 0) {
-        return $null
-    }
-
     if ($DataStores.Count -ge $PageSize) {
         throw "Restore with -SeparateConfigDatabase listed $($DataStores.Count) CMS data stores in tenant scope '$(Format-LogSafeText $Tenant)', the query page size, so it cannot prove which one serves the restored target. $afterRestore"
     }
 
-    if ($DataStores.Count -gt 1) {
-        $listing = ($DataStores | ForEach-Object {
-            "id=$(Format-LogSafeText $_.id) name=$(Format-LogSafeText $_.name)"
-        }) -join ", "
-        throw "Restore with -SeparateConfigDatabase found $($DataStores.Count) CMS data stores in tenant scope '$(Format-LogSafeText $Tenant)' ($listing); it reuses only a single route-unqualified data store. $afterRestore"
-    }
-
-    $dataStore = $DataStores[0]
-    $refusalPrefix = "Restore with -SeparateConfigDatabase cannot reuse CMS data store id=$(Format-LogSafeText $dataStore.id) (name=$(Format-LogSafeText $dataStore.name)) for the restored target:"
-
-    $routeContexts = @(Get-DataStoreContexts -Instance $dataStore)
-    if ($routeContexts.Count -gt 0) {
-        throw "$refusalPrefix it is route-qualified. $afterRestore"
-    }
-
     $expectedProvider = if ($DatabaseEngine -eq "mssql") { "sqlserver" } else { "postgresql" }
-    $providerProperty = $dataStore.PSObject.Properties["provider"]
-    $provider = if ($null -eq $providerProperty) { "" } else { [string]$providerProperty.Value }
-    if (-not [string]::IsNullOrWhiteSpace($provider) -and
-        -not $provider.Equals($expectedProvider, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "$refusalPrefix its provider is not '$expectedProvider', so it belongs to the other database engine. $afterRestore"
-    }
-
-    $connectionStringProperty = $dataStore.PSObject.Properties["connectionString"]
-    $protectedConnectionString = if ($null -eq $connectionStringProperty) { "" } else { [string]$connectionStringProperty.Value }
-    if ([string]::IsNullOrWhiteSpace($protectedConnectionString)) {
-        throw "$refusalPrefix CMS returned no connection string for it. $afterRestore"
-    }
-
-    # The decryption helper's failures are fixed sentences that carry no key, cipher text, or
-    # decrypted text, so the reason is safe to repeat.
-    try {
-        $connectionString = ConvertFrom-CmsEncryptedConnectionString `
-            -ProtectedConnectionString $protectedConnectionString `
-            -EnvValues $EnvValues
-    }
-    catch {
-        throw "$refusalPrefix its connection string could not be read ($($_.Exception.Message)). $afterRestore"
-    }
-
-    # The parsers' own failure text can quote the value, so it is replaced by a fixed sentence.
-    try {
-        $databaseNames = @(Get-DatabaseNameFromResolvedConnectionString -ConnectionString $connectionString -DatabaseEngine $DatabaseEngine)
-        $endpoints = @(Get-EndpointFromResolvedConnectionString -ConnectionString $connectionString -DatabaseEngine $DatabaseEngine)
-    }
-    catch {
-        throw "$refusalPrefix its decrypted connection string is not a valid $DatabaseEngine connection string. $afterRestore"
-    }
-
-    if ($databaseNames.Count -eq 0 -or $endpoints.Count -eq 0) {
-        throw "$refusalPrefix its decrypted connection string does not name a $DatabaseEngine server and database, so it belongs to the other database engine or is incomplete. $afterRestore"
-    }
-
     # The endpoint this phase registers: Add-DataStore's PostgreSQL defaults, and the SQL Server
     # connection string Invoke-ConfigureLocalDataStore builds.
     $expectedEndpoint = if ($DatabaseEngine -eq "mssql") {
@@ -392,30 +343,102 @@ function Resolve-RestoreSeparateConfigDataStore {
         [pscustomobject]@{ Host = "dms-postgresql"; Port = "5432" }
     }
 
-    if ($endpoints.Count -ne 1) {
-        throw "$refusalPrefix its connection string names $($endpoints.Count) servers, not the one composed database service. $afterRestore"
+    $matchingDataStores = [System.Collections.Generic.List[object]]::new()
+    foreach ($dataStore in $DataStores) {
+        $storeLabel = "CMS data store id=$(Format-LogSafeText $dataStore.id) (name=$(Format-LogSafeText $dataStore.name))"
+        $unreadablePrefix = "Restore with -SeparateConfigDatabase cannot tell whether $storeLabel serves the restored target:"
+        $refusalPrefix = "Restore with -SeparateConfigDatabase cannot reuse $storeLabel for the restored target:"
+
+        $providerProperty = $dataStore.PSObject.Properties["provider"]
+        $provider = if ($null -eq $providerProperty) { "" } else { [string]$providerProperty.Value }
+        if (-not [string]::IsNullOrWhiteSpace($provider) -and
+            -not $provider.Equals($expectedProvider, [System.StringComparison]::OrdinalIgnoreCase)) {
+            # Another engine's data store is never this target's registration.
+            continue
+        }
+
+        $connectionStringProperty = $dataStore.PSObject.Properties["connectionString"]
+        $protectedConnectionString = if ($null -eq $connectionStringProperty) { "" } else { [string]$connectionStringProperty.Value }
+        if ([string]::IsNullOrWhiteSpace($protectedConnectionString)) {
+            throw "$unreadablePrefix CMS returned no connection string for it. $afterRestore"
+        }
+
+        # The decryption helper's failures are fixed sentences that carry no key, cipher text, or
+        # decrypted text, so the reason is safe to repeat.
+        try {
+            $connectionString = ConvertFrom-CmsEncryptedConnectionString `
+                -ProtectedConnectionString $protectedConnectionString `
+                -EnvValues $EnvValues
+        }
+        catch {
+            throw "$unreadablePrefix its connection string could not be read ($($_.Exception.Message)). $afterRestore"
+        }
+
+        # The parsers' own failure text can quote the value, so it is replaced by a fixed sentence.
+        try {
+            $databaseNames = @(Get-DatabaseNameFromResolvedConnectionString -ConnectionString $connectionString -DatabaseEngine $DatabaseEngine)
+            $endpoints = @(Get-EndpointFromResolvedConnectionString -ConnectionString $connectionString -DatabaseEngine $DatabaseEngine)
+        }
+        catch {
+            throw "$unreadablePrefix its decrypted connection string is not a valid $DatabaseEngine connection string. $afterRestore"
+        }
+
+        if ($databaseNames.Count -eq 0 -or $endpoints.Count -eq 0) {
+            throw "$unreadablePrefix its decrypted connection string does not name a $DatabaseEngine server and database, so it belongs to the other database engine or is incomplete. $afterRestore"
+        }
+
+        # An omitted port is the provider default, which is the port this phase registers.
+        $onComposedService = @($endpoints | Where-Object {
+                $endpointPort = if ([string]::IsNullOrWhiteSpace([string]$_.Port)) { $expectedEndpoint.Port } else { [string]$_.Port }
+                ([string]$_.Host).Equals($expectedEndpoint.Host, [System.StringComparison]::OrdinalIgnoreCase) -and
+                (Test-PortNumberEquivalent -Left $endpointPort -Right $expectedEndpoint.Port)
+            }).Count -gt 0
+        $namesTarget = @($databaseNames | Where-Object {
+                ([string]$_).Equals($RestoreTargetDatabaseName, [System.StringComparison]::OrdinalIgnoreCase)
+            }).Count -gt 0
+        if (-not ($onComposedService -and $namesTarget)) {
+            # Another database or another server: a different target's registration, preserved.
+            continue
+        }
+
+        # It may serve the restored target, so only its one exact form is reusable.
+        if ($endpoints.Count -ne 1) {
+            throw "$refusalPrefix its connection string names $($endpoints.Count) servers, not the one composed database service. $afterRestore"
+        }
+        if ($databaseNames.Count -ne 1) {
+            throw "$refusalPrefix its connection string names $($databaseNames.Count) databases. $afterRestore"
+        }
+        if (-not [string]::Equals($databaseNames[0], $RestoreTargetDatabaseName, [System.StringComparison]::Ordinal)) {
+            throw "$refusalPrefix its database differs from the restored target database only in letter case. $afterRestore"
+        }
+        if (@(Get-DataStoreContexts -Instance $dataStore).Count -gt 0) {
+            throw "$refusalPrefix it is route-qualified. $afterRestore"
+        }
+
+        $matchingDataStores.Add($dataStore)
     }
 
-    $endpoint = $endpoints[0]
-    if (-not ([string]$endpoint.Host).Equals($expectedEndpoint.Host, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "$refusalPrefix its server host is not the composed database service '$($expectedEndpoint.Host)'. $afterRestore"
+    if ($matchingDataStores.Count -gt 1) {
+        $listing = ($matchingDataStores | ForEach-Object {
+                "id=$(Format-LogSafeText $_.id) name=$(Format-LogSafeText $_.name)"
+            }) -join ", "
+        throw "Restore with -SeparateConfigDatabase found $($matchingDataStores.Count) CMS data stores in tenant scope '$(Format-LogSafeText $Tenant)' that serve the restored target ($listing); it reuses only a single route-unqualified data store. $afterRestore"
     }
 
-    # An omitted port is the provider default, which is the port this phase registers.
-    $port = if ([string]::IsNullOrWhiteSpace([string]$endpoint.Port)) { $expectedEndpoint.Port } else { [string]$endpoint.Port }
-    if (-not (Test-PortNumberEquivalent -Left $port -Right $expectedEndpoint.Port)) {
-        throw "$refusalPrefix its server port is not $($expectedEndpoint.Port), the composed database service's port. $afterRestore"
+    if ($matchingDataStores.Count -eq 1) {
+        return [pscustomobject]@{ DataStore = $matchingDataStores[0]; RegistrationName = $null }
     }
 
-    if ($databaseNames.Count -ne 1) {
-        throw "$refusalPrefix its connection string names $($databaseNames.Count) databases. $afterRestore"
+    $registeredNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($dataStore in $DataStores) {
+        $null = $registeredNames.Add([string]$dataStore.name)
+    }
+    $registrationName = "Local Development Data Store"
+    for ($suffix = 2; $registeredNames.Contains($registrationName); $suffix++) {
+        $registrationName = "Local Development Data Store ($suffix)"
     }
 
-    if (-not [string]::Equals($databaseNames[0], $RestoreTargetDatabaseName, [System.StringComparison]::Ordinal)) {
-        throw "$refusalPrefix its database is not the restored target database. $afterRestore"
-    }
-
-    return $dataStore
+    return [pscustomobject]@{ DataStore = $null; RegistrationName = $registrationName }
 }
 
 function Invoke-ConfigureLocalDataStore {
@@ -645,15 +668,18 @@ function Invoke-ConfigureLocalDataStore {
 
     if ($restoreReuse) {
         # Restore with -SeparateConfigDatabase: the surviving Configuration Service database may
-        # already hold the data store; reuse it only after its stored target is verified (see
-        # Resolve-RestoreSeparateConfigDataStore). With none, fall through to the normal registration.
+        # already hold this target's data store (reused only after its stored target is verified)
+        # and other targets' data stores (preserved). See Resolve-RestoreSeparateConfigDataStore.
+        # With no match, fall through to the registration under a name no data store uses.
         $dataStores = @(Get-DataStore -CmsUrl $cmsUrl -AccessToken $configToken -Tenant $tenant -Limit 500)
-        $reusedDataStore = Resolve-RestoreSeparateConfigDataStore `
+        $restoreSelection = Resolve-RestoreSeparateConfigDataStore `
             -DataStores $dataStores `
             -DatabaseEngine $DatabaseEngine `
             -RestoreTargetDatabaseName $RestoreTargetDatabaseName `
             -EnvValues $envValues `
             -Tenant $tenant
+        $reusedDataStore = $restoreSelection.DataStore
+        $registrationName = $restoreSelection.RegistrationName
         if ($null -ne $reusedDataStore) {
             Write-Information "Reusing CMS data store id=$(Format-LogSafeText $reusedDataStore.id): its stored connection string targets the restored database on the composed $DatabaseEngine service." -InformationAction Continue
             if ($AddSmokeTestCredentials) {
@@ -668,7 +694,7 @@ function Invoke-ConfigureLocalDataStore {
                 -Tenant $tenant `
                 -CmsReadOnlyAccess $cmsReadOnlyAccess
         }
-        Write-Information "No CMS data store exists for the restored target yet; registering one." -InformationAction Continue
+        Write-Information "No CMS data store exists for the restored target yet; registering one as '$(Format-LogSafeText $registrationName)'." -InformationAction Continue
     }
 
     if ($NoDataStore) {
@@ -728,6 +754,9 @@ function Invoke-ConfigureLocalDataStore {
     }
 
     Write-Information "Creating default route-unqualified data store." -InformationAction Continue
+    if (-not $restoreReuse) {
+        $registrationName = "Local Development Data Store"
+    }
     $dataStoreId = Add-DataStore `
         -CmsUrl $cmsUrl `
         -AccessToken $configToken `
@@ -735,7 +764,7 @@ function Invoke-ConfigureLocalDataStore {
         -PostgresDbName $postgresDbName `
         -ConnectionString $dataStoreConnectionString `
         -DatabaseEngine $DatabaseEngine `
-        -Name "Local Development Data Store" `
+        -Name $registrationName `
         -DataStoreType "Development" `
         -Tenant $tenant
 
