@@ -800,12 +800,13 @@ function Invoke-PostgresOpenIddictKeyScript {
     .SYNOPSIS
         Runs one PostgreSQL signing-key initialization script and returns the state it reports.
     .DESCRIPTION
-        The script carries the encryption key, and on the creation path private-key material, so it
-        travels on psql's stdin rather than as a -c argument, is never echoed, and runs with
-        VERBOSITY=sqlstate so a failure prints only its SQLSTATE. A failure message names that
-        SQLSTATE and nothing else from the captured output. VERBOSITY governs only what psql shows
-        here; keeping the statement out of the server's error log is the script's own job, which is
-        why its runtime errors are caught inside it (see Join-OpenIddictKeyInitializationScript).
+        The script carries the encryption key, and on the creation path private-key material, as COPY
+        data, so it travels on psql's stdin rather than as a -c argument, is never echoed, and runs with
+        VERBOSITY=sqlstate so a failure prints only its SQLSTATE. ON_ERROR_STOP is required, not
+        cosmetic: it stops psql before the data line if the COPY is rejected, which would otherwise be
+        sent as a statement. A failure message names that SQLSTATE and nothing else from the captured
+        output. VERBOSITY governs only what psql shows here; keeping the values out of statement text
+        and the server log is the script's own job (see Join-OpenIddictKeyInitializationScript).
     #>
     param(
         [Parameter(Mandatory = $true)]

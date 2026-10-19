@@ -783,7 +783,7 @@ Describe "OpenIddict signing-key initialization builders (DMS-1292)" {
         $sql = New-OpenIddictKeyStateCheckSql -EncryptionKey "state-check-passphrase"
 
         $sql | Should -Match 'WHERE "IsActive" = TRUE\s+ORDER BY "CreatedAt" DESC\s+LIMIT 1;' -Because "the check must read the key the Configuration Service signs with"
-        $sql | Should -Match ("(?s)BEGIN\s+PERFORM pgp_sym_decrypt\(newest_private_key::bytea, 'state-check-passphrase'\);.*EXCEPTION\s+" +
+        $sql | Should -Match ("(?s)BEGIN\s+PERFORM pgp_sym_decrypt\(newest_private_key::bytea, passphrase\);.*EXCEPTION\s+" +
             "WHEN SQLSTATE '39000' THEN\s+key_state := 'active-undecryptable';\s+WHEN OTHERS THEN\s+key_state := 'active-unverified';") -Because "only pgcrypto's wrong-key-or-corrupt-data error may be reported as a key mismatch"
         $sql | Should -Not -Match 'INSERT INTO "dmscs"\."OpenIddictKey"' -Because "the state check must never change a row"
         $sql | Should -Not -Match 'pgp_sym_encrypt' -Because "the state check carries no key material"
@@ -799,9 +799,11 @@ Describe "OpenIddict signing-key initialization builders (DMS-1292)" {
         $select = $sql.IndexOf('SELECT "PrivateKey" INTO newest_private_key')
         $lock | Should -BeGreaterThan -1
         $select | Should -BeGreaterThan $lock -Because "the active-key recheck must run under the lock"
-        $sql | Should -Match ("(?s)IF newest_private_key IS NOT NULL THEN\s+BEGIN\s+PERFORM pgp_sym_decrypt\(newest_private_key::bytea, 'initialization-passphrase'\);\s+" +
+        $sql | Should -Match ("(?s)IF newest_private_key IS NOT NULL THEN\s+BEGIN\s+PERFORM pgp_sym_decrypt\(newest_private_key::bytea, passphrase\);\s+" +
             "key_state := 'active-ok';\s+EXCEPTION\s+WHEN SQLSTATE '39000' THEN\s+key_state := 'active-undecryptable';\s+WHEN OTHERS THEN\s+key_state := 'active-unverified';\s+END;\s+ELSE\s+" +
-            'INSERT INTO "dmscs"\."OpenIddictKey".*' + "key_state := 'created';\s+END IF;")
+            [regex]::Escape('INSERT INTO "dmscs"."OpenIddictKey" ("KeyId", "PublicKey", "PrivateKey", "IsActive")') + "\s+" +
+            [regex]::Escape("VALUES (candidate_key_id, decode(candidate_public_key, 'base64'), pgp_sym_encrypt(candidate_private_key, passphrase), TRUE);") +
+            "\s+key_state := 'created';\s+END IF;")
         ([regex]::Matches($sql, 'INSERT INTO "dmscs"\."OpenIddictKey"')).Count | Should -Be 1
         $sql | Should -Not -Match 'RAISE'
     }
@@ -812,28 +814,63 @@ Describe "OpenIddict signing-key initialization builders (DMS-1292)" {
     ) {
         $sql = & $Builder -EncryptionKey "protected-passphrase"
 
-        # The lookup, lock and insert sit inside one protected block; the state row is written after it.
-        $sql | Should -Match ("(?s)BEGIN\s+BEGIN\s+" + [regex]::Escape($FirstStep) + ".*END IF;\s+EXCEPTION\s+" +
+        # The input read, lookup, lock and insert sit inside one protected block; the state row is written after it.
+        $sql | Should -Match ("(?s)BEGIN\s+BEGIN\s+" +
+            [regex]::Escape("SELECT convert_from(decode(input.encryption_key, 'base64'), 'UTF8'), input.key_id, input.public_key, input.private_key") + "\s+" +
+            [regex]::Escape("INTO STRICT passphrase, candidate_key_id, candidate_public_key, candidate_private_key") + "\s+" +
+            [regex]::Escape("FROM openiddict_key_initialization_input AS input;") + "\s+" +
+            [regex]::Escape($FirstStep) + ".*END IF;\s+EXCEPTION\s+" +
             "WHEN query_canceled THEN\s+key_state := 'canceled';\s+WHEN OTHERS THEN\s+key_state := 'database-error ' \|\| SQLSTATE;\s+END;\s+" +
             "INSERT INTO openiddict_key_initialization_state \(state\) VALUES \(key_state\);\s+END\s+") -Because "WHEN OTHERS does not catch query_canceled, so cancellation needs its own handler"
         $sql | Should -Not -Match 'SQLERRM' -Because "the server's error text can quote the failing values"
     }
 
-    It "keeps a quote-bearing encryption key inside its literals" {
-        $sql = New-OpenIddictKeyInitializationSql -EncryptionKey "Identity'Encryption;Key"
+    It "sends the encryption key <Case> only as base64 COPY data, never in statement text, from <Builder>" -ForEach @(
+        foreach ($builder in @("New-OpenIddictKeyStateCheckSql", "New-OpenIddictKeyInitializationSql")) {
+            @{ Builder = $builder; Case = "with a quote"; EncryptionKey = "Identity'Encryption;Key" }
+            @{ Builder = $builder; Case = "with the block's dollar-quote tag"; EncryptionKey = 'prefix$openiddict_key_initialization$suffix' }
+            @{ Builder = $builder; Case = "with a tab, a line break and a backslash"; EncryptionKey = "tab`tline`nback\slash" }
+            @{ Builder = $builder; Case = "that is empty"; EncryptionKey = "" }
+        }
+    ) {
+        $sql = & $Builder -EncryptionKey $EncryptionKey
+        $lines = $sql -split "`n"
 
-        $sql | Should -Match ([regex]::Escape("pgp_sym_decrypt(newest_private_key::bytea, 'Identity''Encryption;Key')"))
-        $sql | Should -Match ([regex]::Escape("'Identity''Encryption;Key'), TRUE);"))
-        $sql | Should -Not -Match ([regex]::Escape("'Identity'Encryption"))
+        # The COPY line, one data row and the end-of-data marker, in that order, before any other statement.
+        $copy = [array]::IndexOf($lines, "COPY openiddict_key_initialization_input (encryption_key, key_id, public_key, private_key) FROM STDIN;")
+        $copy | Should -Be 1
+        $lines[$copy + 2] | Should -BeExactly '\.'
+        $fields = $lines[$copy + 1] -split "`t"
+        $fields.Count | Should -Be 4
+        [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($fields[0])) | Should -BeExactly $EncryptionKey
+
+        $statements = (@($lines[0..$copy]) + @($lines[($copy + 2)..($lines.Count - 1)])) -join "`n"
+        foreach ($value in @($fields | Where-Object { $_ -and $_ -ne '\N' })) {
+            $statements.Contains($value) | Should -BeFalse -Because "a COPY data value must not also appear in statement text"
+        }
+        if ($EncryptionKey) {
+            $sql.Contains($EncryptionKey) | Should -BeFalse -Because "the encryption key travels only base64-encoded"
+            $sql.Contains($EncryptionKey.Replace("'", "''")) | Should -BeFalse
+        }
+
+        if ($Builder -eq "New-OpenIddictKeyStateCheckSql") {
+            $fields[1..3] | Should -Be @('\N', '\N', '\N') -Because "the state check carries no key material"
+        }
+        else {
+            $fields[1..3] | Should -Not -Contain '\N'
+            [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($fields[1])) | Should -Match '^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$' -Because "the key id is the base64 of a GUID, as New-OpenIddictKeyInsertSql writes it"
+            $null = [Convert]::FromBase64String($fields[2])
+            $null = [Convert]::FromBase64String($fields[3])
+        }
     }
 
-    It "rejects an input carrying the reserved dollar-quote tag without naming it" {
-        $encryptionKey = 'prefix$openiddict_key_initialization$suffix'
-
-        foreach ($builder in @("New-OpenIddictKeyStateCheckSql", "New-OpenIddictKeyInitializationSql")) {
-            $failure = { & $builder -EncryptionKey $encryptionKey } | Should -Throw "*reserved dollar-quote tag*" -PassThru
-            $failure.Exception.Message | Should -Not -BeLike "*prefix*" -Because "$builder must withhold the configured value"
+    It "refuses candidate key material that COPY's text format would read as a field or row break, withholding it" {
+        Mock New-OpenIddictKeyPair -ModuleName "OpenIddict-Crypto" {
+            [PSCustomObject]@{ PublicKey = "AQID"; PrivateKey = "NOT-BASE64`tSECRET-MATERIAL" }
         }
+
+        $failure = { New-OpenIddictKeyInitializationSql -EncryptionKey "unused" } | Should -Throw "*candidate PrivateKey is not base64*" -PassThru
+        $failure.Exception.Message | Should -Not -BeLike "*SECRET-MATERIAL*"
     }
 
     It "serializes SQL Server initialization in one transaction and binds the secret as a parameter" {
@@ -1245,6 +1282,49 @@ $TableGrant
         $second.ExitCode | Should -Be 0 -Because $second.Text
         $second.Text | Should -BeLike "*reusing the existing active key*"
         @(Get-LiveKeyRows) | Should -Be $afterFirst -Because "a rerun must not insert, update or deactivate any key"
+    }
+
+    It "keeps the encryption key and private key out of a server log that records every successful statement (<Setting>)" -ForEach @(
+        # log_min_duration_statement is what local-postgresql-diagnostics.yml and -headroom.yml set (250 ms);
+        # a zero threshold logs every statement without depending on how long one runs or waits.
+        @{ Setting = "log_min_duration_statement = 0" }
+        @{ Setting = "log_statement = 'all'" }
+    ) {
+        # Scoped to the disposable database, which -InitDb then finds already created.
+        Invoke-LivePgSql -Database "postgres" -Sql "CREATE DATABASE $($script:LiveDb);`nALTER DATABASE $($script:LiveDb) SET $Setting;" | Out-Null
+        $logStart = Get-LiveServerLogLineCount
+
+        $first = Invoke-LiveInitDb -EncryptionKey $script:LiveKey
+        $second = Invoke-LiveInitDb -EncryptionKey $script:LiveKey
+        # A successful, non-sensitive control statement in the same database, so the check fails rather
+        # than passing vacuously if the setting is not in effect or the log is not being read.
+        $marker = "dms1292_log_control_" + [Guid]::NewGuid().ToString("N").Substring(0, 12)
+        Invoke-LivePgSql -Database $script:LiveDb -Sql "SELECT '$marker';" | Out-Null
+        # Read before any fixture statement below carries the passphrase into this database's log.
+        $log = (@(& docker logs $script:LivePgContainer 2>&1 | ForEach-Object { [string]$_ }) | Select-Object -Skip $logStart) -join "`n"
+
+        $first.ExitCode | Should -Be 0 -Because $first.Text
+        $first.Text | Should -BeLike "*created the initial active key*"
+        $second.ExitCode | Should -Be 0 -Because $second.Text
+        $second.Text | Should -BeLike "*reusing the existing active key*"
+        $log | Should -Match "statement: SELECT '$marker'" -Because "the control statement must be logged, or this check proves nothing"
+
+        $privateKeys = @(Invoke-LivePgSql -Database $script:LiveDb -Sql "SELECT pgp_sym_decrypt(""PrivateKey""::bytea, '$($script:LiveKey.Replace("'", "''"))') FROM ""dmscs"".""OpenIddictKey"";")
+        $privateKeys.Count | Should -Be 1
+        $privateKey = [string]$privateKeys[0]
+        $privateKey.Length | Should -BeGreaterThan 1000 -Because "the decrypted value must be the generated PKCS#8 private key"
+        $sensitive = @(
+            $script:LiveKey,
+            $script:LiveKey.Replace("'", "''"),
+            [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($script:LiveKey)),
+            $privateKey,
+            $privateKey.Substring(400, 64)
+        )
+        foreach ($value in $sensitive) {
+            $log.Contains($value) | Should -BeFalse -Because "the server log must not carry the passphrase or private-key material"
+        }
+        $log | Should -Match ([regex]::Escape("pgp_sym_encrypt(candidate_private_key, passphrase)")) -Because "the creation statement itself must have been logged"
+        $log | Should -Match ([regex]::Escape("COPY openiddict_key_initialization_input")) -Because "the input statement itself must have been logged"
     }
 
     It "stops with the encryption-key error and changes no key when the configured key does not decrypt the active key" {

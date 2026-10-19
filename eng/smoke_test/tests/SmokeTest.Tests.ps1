@@ -284,6 +284,30 @@ Describe "Get-SmokeTestCredentialSummary" {
         $lines | Should -Be (@("--- Smoke test credentials ---") + $script:credentialLines + $Expected + @($script:routeNote))
     }
 
+    It "lists a school-year value '<Value>' that is not a plain URL path segment, without composing any URL" -ForEach @(
+        @{ Value = '2025/x' }
+        @{ Value = '2025?y' }
+        @{ Value = '2025#y' }
+        @{ Value = '2025%2F' }
+        @{ Value = '2025 x' }
+        @{ Value = '..' }
+    ) {
+        $contexts = @(
+            [pscustomobject]@{ DataStoreId = [long]88; ContextKey = 'schoolYear'; ContextValue = $Value },
+            [pscustomobject]@{ DataStoreId = [long]89; ContextKey = 'schoolYear'; ContextValue = '2026' }
+        )
+
+        $lines = @(Get-SmokeTestCredentialSummary -Credential $script:credential -DmsBaseUrl 'http://localhost:8080' -Tenant 'tenant-a' -RouteContexts $contexts)
+
+        $lines | Should -Be (@("--- Smoke test credentials ---") + $script:credentialLines + @(
+                "Tenant:      tenant-a",
+                "Data store 88 route contexts: schoolYear=$Value",
+                "Data store 89 route contexts: schoolYear=2026",
+                "No DMS base or token URL is printed: a school-year value contains characters that are reserved in a URL path segment, and DMS routing is not known to accept them escaped. Correct the Configuration Service data-store contexts.",
+                $script:routeNote
+            ))
+    }
+
     It "lists other route contexts without any command or composed URL, <Case>" -ForEach @(
         @{ Case = "districtId only"; Tenant = ""; Contexts = @(
                 [pscustomobject]@{ DataStoreId = [long]77; ContextKey = 'districtId'; ContextValue = '255901' }

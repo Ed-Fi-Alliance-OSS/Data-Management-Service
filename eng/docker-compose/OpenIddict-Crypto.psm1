@@ -300,8 +300,8 @@ SELECT @KeyId,
     }
 }
 
-# The dollar-quote tag around the PostgreSQL key-initialization blocks. A configured encryption key or
-# generated key material carrying it would end the block early, so the builders reject that input.
+# The dollar-quote tag around the PostgreSQL key-initialization block. The block is fixed text; no
+# configured or generated value is ever placed inside it.
 $script:OpenIddictKeyInitializationTag = '$openiddict_key_initialization$'
 
 # Builds the PL/pgSQL body that reads the newest active key, the one the Configuration Service signs
@@ -313,9 +313,6 @@ $script:OpenIddictKeyInitializationTag = '$openiddict_key_initialization$'
 # wraps around this body, never classified here.
 function Get-OpenIddictNewestKeyStateBlock {
     param(
-        [Parameter(Mandatory = $true)]
-        [string]$EncryptionKeyLiteral,
-
         [string]$WhenNoActiveKey = ""
     )
 
@@ -332,7 +329,7 @@ function Get-OpenIddictNewestKeyStateBlock {
     LIMIT 1;
     IF newest_private_key IS NOT NULL THEN
         BEGIN
-            PERFORM pgp_sym_decrypt(newest_private_key::bytea, $EncryptionKeyLiteral);
+            PERFORM pgp_sym_decrypt(newest_private_key::bytea, passphrase);
             key_state := 'active-ok';
         EXCEPTION
             WHEN SQLSTATE '39000' THEN
@@ -345,34 +342,68 @@ $elseClause
 "@
 }
 
-# Wraps a key-initialization body in one DO block. The DO statement text carries the encryption key
-# and, on the creation path, the candidate private key, and PostgreSQL's default
-# log_min_error_statement = error writes the text of any statement that ends in an error to the
-# server log. So every runtime error in the body (the lookup, the advisory lock, the insert) is caught
-# here and reported as the fixed state 'database-error <SQLSTATE>', and a cancellation (statement_timeout
-# or a cancel request), which WHEN OTHERS does not catch, as 'canceled'. Catching rolls back everything
-# the body did, so no key is changed. This keeps the statement out of error-statement logging only:
-# statement logging (log_statement, log_min_duration_statement), auditing extensions and a terminated
-# backend are outside what a caught error can prevent.
+# Wraps a key-initialization body in one DO block and supplies its inputs. Statement text can reach the
+# server log whether the statement succeeds or fails (log_statement, log_min_duration_statement,
+# log_min_error_statement), so the encryption key and the candidate key never appear in it. They travel
+# as the data of a COPY ... FROM STDIN, which none of those settings log, into a session temp table the
+# block reads. Each value is base64, which COPY's text format carries without escaping. psql must run
+# with ON_ERROR_STOP (Invoke-PostgresOpenIddictKeyScript): if the COPY itself were rejected, psql would
+# otherwise read the data line as a statement.
+#
+# Every runtime error in the body (the input read, the lookup, the advisory lock, the insert) is caught
+# and reported as the fixed state 'database-error <SQLSTATE>', and a cancellation (statement_timeout or
+# a cancel request), which WHEN OTHERS does not catch, as 'canceled'. Catching rolls back everything the
+# body did, so no key is changed.
 function Join-OpenIddictKeyInitializationScript {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Body
+        [string]$Body,
+
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$EncryptionKey,
+
+        # The creation path's candidate key: KeyId, PublicKey and PrivateKey, each already base64.
+        [pscustomobject]$CandidateKey
     )
 
-    $tag = $script:OpenIddictKeyInitializationTag
-    if ($Body.Contains($tag)) {
-        throw "The OpenIddict signing-key initialization script cannot be built: an input contains its reserved dollar-quote tag. The value is withheld."
+    $fields = @([Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($EncryptionKey)))
+    foreach ($name in @("KeyId", "PublicKey", "PrivateKey")) {
+        if ($null -eq $CandidateKey) {
+            $fields += '\N'
+            continue
+        }
+
+        # COPY's text format gives tabs, line breaks and backslashes a meaning; base64 has none of them.
+        $value = [string]$CandidateKey.$name
+        if ($value -match '[\t\r\n\\]') {
+            throw "The OpenIddict signing-key initialization script cannot be built: the candidate $name is not base64. The value is withheld."
+        }
+        $fields += $value
     }
+    $inputRow = $fields -join "`t"
+
+    $tag = $script:OpenIddictKeyInitializationTag
 
     return @"
+CREATE TEMP TABLE openiddict_key_initialization_input (encryption_key text NOT NULL, key_id text, public_key text, private_key text);
+COPY openiddict_key_initialization_input (encryption_key, key_id, public_key, private_key) FROM STDIN;
+$inputRow
+\.
 CREATE TEMP TABLE openiddict_key_initialization_state (state text NOT NULL);
 DO $tag
 DECLARE
+    passphrase text;
+    candidate_key_id text;
+    candidate_public_key text;
+    candidate_private_key text;
     newest_private_key text;
     key_state text := 'none';
 BEGIN
     BEGIN
+        SELECT convert_from(decode(input.encryption_key, 'base64'), 'UTF8'), input.key_id, input.public_key, input.private_key
+        INTO STRICT passphrase, candidate_key_id, candidate_public_key, candidate_private_key
+        FROM openiddict_key_initialization_input AS input;
 $Body
     EXCEPTION
         WHEN query_canceled THEN
@@ -396,8 +427,8 @@ SELECT state FROM openiddict_key_initialization_state;
     'active-ok' when the newest active key decrypts with the configured encryption key,
     'active-undecryptable' when it does not, 'active-unverified' when the check itself fails for
     another reason, 'none' when no active key exists, or 'database-error <SQLSTATE>' / 'canceled'
-    when the lookup fails or is canceled. It carries the encryption key but no key material, and it
-    changes no row.
+    when the lookup fails or is canceled. It carries the encryption key, as COPY data rather than
+    statement text, but no key material, and it changes no row.
 
 .PARAMETER EncryptionKey
     Key the Configuration Service uses to decrypt the private key.
@@ -415,8 +446,7 @@ function New-OpenIddictKeyStateCheckSql {
         [string]$EncryptionKey
     )
 
-    $encryptionKeyLiteral = ConvertTo-PostgresSqlLiteral -Value $EncryptionKey
-    return Join-OpenIddictKeyInitializationScript -Body (Get-OpenIddictNewestKeyStateBlock -EncryptionKeyLiteral $encryptionKeyLiteral)
+    return Join-OpenIddictKeyInitializationScript -Body (Get-OpenIddictNewestKeyStateBlock) -EncryptionKey $EncryptionKey
 }
 
 <#
@@ -448,13 +478,20 @@ function New-OpenIddictKeyInitializationSql {
         [string]$EncryptionKey
     )
 
-    $encryptionKeyLiteral = ConvertTo-PostgresSqlLiteral -Value $EncryptionKey
-    $insertSql = New-OpenIddictKeyInsertSql -EncryptionKey $EncryptionKey
-    $createInitialKey = @"
-        $($insertSql.Trim())
+    # The same row New-OpenIddictKeyInsertSql writes: a base64 key id, the decoded public key and the
+    # base64 private key encrypted with the passphrase.
+    $keyPair = New-OpenIddictKeyPair
+    $candidateKey = [PSCustomObject]@{
+        KeyId = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes([guid]::NewGuid().ToString()))
+        PublicKey = $keyPair.PublicKey
+        PrivateKey = $keyPair.PrivateKey
+    }
+    $createInitialKey = @'
+        INSERT INTO "dmscs"."OpenIddictKey" ("KeyId", "PublicKey", "PrivateKey", "IsActive")
+        VALUES (candidate_key_id, decode(candidate_public_key, 'base64'), pgp_sym_encrypt(candidate_private_key, passphrase), TRUE);
         key_state := 'created';
-"@
-    $stateBlock = Get-OpenIddictNewestKeyStateBlock -EncryptionKeyLiteral $encryptionKeyLiteral -WhenNoActiveKey $createInitialKey
+'@
+    $stateBlock = Get-OpenIddictNewestKeyStateBlock -WhenNoActiveKey $createInitialKey
 
     # The lock id is a fixed constant shared by every cooperating initializer of this table.
     $body = @"
@@ -462,7 +499,7 @@ function New-OpenIddictKeyInitializationSql {
 $stateBlock
 "@
 
-    return Join-OpenIddictKeyInitializationScript -Body $body
+    return Join-OpenIddictKeyInitializationScript -Body $body -EncryptionKey $EncryptionKey -CandidateKey $candidateKey
 }
 
 <#

@@ -227,7 +227,8 @@ function Get-SmokeTestCredentialSummary {
     Every value in the copyable command is a single-quoted literal (generated secrets can contain
     '$'), escaped for every quote character PowerShell accepts. Tenant- or route-qualified targets
     get base and token URLs instead of a command, because those smoke runs are not validated; route
-    contexts other than one school year per data store are listed without URLs.
+    contexts other than one school year per data store, and school-year values that are not plain URL
+    path segments, are listed without URLs.
     #>
     [CmdletBinding()]
     [OutputType([string[]])]
@@ -318,6 +319,13 @@ function Get-SmokeTestCredentialSummary {
         $schoolYearOnly = @($contexts | Where-Object { $_.ContextKey -cne "schoolYear" }).Count -eq 0 -and
             @($contexts | Group-Object -Property DataStoreId | Where-Object { $_.Count -gt 1 }).Count -eq 0
 
+        # A school-year value goes into a URL only as RFC 3986 unreserved characters, and never as a
+        # dot segment. A reserved character ('/', '?', '#', '%', a space) would change what the URL
+        # addresses, and percent-encoding it is not known to agree with DMS routing (ASP.NET Core keeps
+        # %2F encoded in route values), so such a store is listed without a URL.
+        $schoolYearUrls = $schoolYearOnly -and
+            @($contexts | Where-Object { [string]$_.ContextValue -cnotmatch '^(?!\.\.?$)[A-Za-z0-9._~-]+$' }).Count -eq 0
+
         if ($unsafeRouting) {
             foreach ($store in @($contexts | Group-Object -Property DataStoreId)) {
                 $pairs = @($store.Group | ForEach-Object { "$(& $display $_.ContextKey)=$(& $display $_.ContextValue)" }) -join ", "
@@ -329,11 +337,17 @@ function Get-SmokeTestCredentialSummary {
             $lines.Add("DMS base:    $tenantBaseUrl")
             $lines.Add("Token URL:   $tenantBaseUrl/oauth/token")
         }
-        elseif ($schoolYearOnly) {
+        elseif ($schoolYearUrls) {
             foreach ($context in $contexts) {
                 $contextBaseUrl = "$tenantBaseUrl/$($context.ContextValue)"
                 $lines.Add("Data store $($context.DataStoreId) (school year $($context.ContextValue)): DMS base $contextBaseUrl  token $contextBaseUrl/oauth/token")
             }
+        }
+        elseif ($schoolYearOnly) {
+            foreach ($context in $contexts) {
+                $lines.Add("Data store $($context.DataStoreId) route contexts: schoolYear=$($context.ContextValue)")
+            }
+            $lines.Add("No DMS base or token URL is printed: a school-year value contains characters that are reserved in a URL path segment, and DMS routing is not known to accept them escaped. Correct the Configuration Service data-store contexts.")
         }
         else {
             foreach ($store in @($contexts | Group-Object -Property DataStoreId)) {

@@ -346,7 +346,7 @@ Run the non-destructive API smoke tests:
 
 * **DMS URL not known yet** (`-InfraOnly` without `-DmsBaseUrl`): the command uses a `<dms-base-url>` placeholder for you to replace once the IDE-hosted DMS is healthy.
 * **Tenant routes or school-year (`-SchoolYearRange`) data stores:** the summary lists the tenant- or year-qualified DMS base and token URLs instead of a command. DMS serves tenant routes only with `DMS_MULTI_TENANCY=true`; a `DMS_CONFIGURATION_SERVICE_TENANT` used only by the Configuration Service does not qualify the URLs. Smoke runs against qualified routes have not been validated with the Smoke Test Utility.
-* **Other route contexts** (a `-NoDataStore` direct start that selects a data store qualified by a key other than `schoolYear`, such as `districtId`, or by several contexts): the summary lists each context as `key=value`, with no URL, because the URL order comes from `ROUTE_QUALIFIER_SEGMENTS`.
+* **Other route contexts** (a `-NoDataStore` direct start that selects a data store qualified by a key other than `schoolYear`, such as `districtId`, or by several contexts): the summary lists each context as `key=value`, with no URL, because the URL order comes from `ROUTE_QUALIFIER_SEGMENTS`. The same applies to a school-year value that is not a plain URL path segment (letters, digits, `-`, `.`, `_`, `~`), such as one containing `/` or `?`.
 * **Self-contained identity:** the summary also reminds you that `CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1` must be set **before the stack starts** (see above and `eng/smoke_test/SMOKETEST.md`).
 
 > [!IMPORTANT]
