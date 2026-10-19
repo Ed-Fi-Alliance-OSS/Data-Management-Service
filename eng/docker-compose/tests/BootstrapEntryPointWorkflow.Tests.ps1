@@ -2176,8 +2176,15 @@ Export-ModuleMember -Function *
 
         AfterEach {
             Remove-Item function:script:docker -Force -ErrorAction SilentlyContinue
+            # A $null passed to SetEnvironmentVariable arrives as an empty string and leaves the variable
+            # defined, which later suites read as a pre-existing value; remove what was originally unset.
             foreach ($name in $script:startScriptEnvironmentNames) {
-                [Environment]::SetEnvironmentVariable($name, $script:startScriptEnvironment[$name])
+                if ($null -eq $script:startScriptEnvironment[$name]) {
+                    Remove-Item -Path "Env:$name" -ErrorAction SilentlyContinue
+                }
+                else {
+                    [Environment]::SetEnvironmentVariable($name, $script:startScriptEnvironment[$name])
+                }
             }
         }
 
