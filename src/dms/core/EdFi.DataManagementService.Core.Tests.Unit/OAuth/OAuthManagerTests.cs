@@ -2610,10 +2610,10 @@ public class OAuthManagerTests
     /// </remarks>
     private static class TooManyTokensUpstream
     {
-        /// <summary>The type the Configuration Service used before DMS-1586.</summary>
+        /// <summary>The type an earlier Configuration Service used.</summary>
         public const string LegacyType = "urn:ed-fi:api:security:authentication:too-many-tokens";
 
-        /// <summary>The Management API type the Configuration Service uses from DMS-1586 on.</summary>
+        /// <summary>The Management API type the Configuration Service uses.</summary>
         public const string ManagementApiType =
             "urn:ed-fi:management-api:security:authentication:too-many-tokens";
 
@@ -2639,7 +2639,7 @@ public class OAuthManagerTests
     }
 
     /// <summary>
-    /// DMS's own token-limit type, which DMS-1586 leaves unchanged. It has the same characters as
+    /// DMS's own token-limit type, independent of the CMS prefix. It has the same characters as
     /// <see cref="TooManyTokensUpstream.LegacyType"/> but is a different contract: output assertions
     /// use this constant, so a test fed the Management API type proves DMS answers with its own type
     /// rather than echoing the upstream one.
@@ -2789,7 +2789,7 @@ public class OAuthManagerTests
             (_status, _, _body, _logger) = await UpstreamRejectsWith(upstreamBody);
         }
 
-        // Shows this fixture exercises the type the Configuration Service emits from DMS-1586 on,
+        // Shows this fixture exercises the Management API type the Configuration Service emits,
         // not the legacy one the hand-built fixtures also cover.
         [Test]
         public void It_is_fed_the_management_api_type()

@@ -160,12 +160,12 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
     private const int MaxLoggedUpstreamContentLength = 2048;
 
     /// <summary>
-    /// The <c>type</c> a Configuration Service token-limit rejection carries. Before DMS-1586 the
-    /// Configuration Service used the <c>urn:ed-fi:api</c> prefix; from DMS-1586 on it uses the
-    /// Management API's <c>urn:ed-fi:management-api</c> prefix. Both are matched exactly, so a DMS
+    /// The <c>type</c> a Configuration Service token-limit rejection carries. The Configuration
+    /// Service uses the Management API's <c>urn:ed-fi:management-api</c> prefix; an earlier
+    /// Configuration Service used <c>urn:ed-fi:api</c>. Both are matched exactly, so a DMS
     /// deployed beside either version still recognizes the rejection. Neither value is DMS's own
-    /// response type, which <see cref="Response.FailureResponse.ForTooManyTokens"/> sets and
-    /// DMS-1586 does not change.
+    /// response type, which <see cref="Response.FailureResponse.ForTooManyTokens"/> sets
+    /// independently.
     /// </summary>
     private const string LegacyTooManyTokensType = "urn:ed-fi:api:security:authentication:too-many-tokens";
 
