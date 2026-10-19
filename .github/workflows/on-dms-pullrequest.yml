@@ -256,6 +256,7 @@ jobs:
             "eng/docker-compose/tests/IdentityToggleWiring.Tests.ps1",
             "eng/docker-compose/tests/E2ETeardownSafety.Tests.ps1",
             "eng/docker-compose/tests/InstanceE2EForwarding.Tests.ps1",
+            "eng/docker-compose/tests/ContainerEntryPointDatabaseWait.Tests.ps1",
             "eng/ci/tests/BuildScriptTestGuards.Tests.ps1",
             "eng/ci/tests/Sanitize-E2EArtifacts.Tests.ps1",
             "eng/ci/tests/DmsPullRequestMssqlWorkflow.Tests.ps1",
