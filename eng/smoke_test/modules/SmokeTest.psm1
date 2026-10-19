@@ -189,11 +189,12 @@ function Get-SmokeTestCredential {
 
         # The Configuration Service returns the secret only in this response, so a missing or
         # unprintable value can never be recovered later. Fail here instead of returning it, and
-        # name only the field: the response content is never echoed.
+        # name only the field: the response content is never echoed. The application may already
+        # exist by now, so the message says to remove it before a retry.
         foreach ($field in @("Key", "Secret")) {
             $value = $credentials.$field
             if ($value -isnot [string] -or [string]::IsNullOrWhiteSpace($value) -or $value -match '\p{Cc}') {
-                throw "The Configuration Service application response did not contain a usable $field; the response content is withheld."
+                throw "The Configuration Service application response did not contain a usable $field; the response content is withheld. The application may already have been created: inspect it in the Configuration Service and remove it before retrying, because a second application with the same name is rejected."
             }
         }
 

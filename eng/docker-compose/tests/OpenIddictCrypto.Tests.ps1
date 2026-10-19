@@ -1022,17 +1022,18 @@ Describe "OpenIddict signing-key initialization in -InitDb (DMS-1292)" {
 
     Context "PostgreSQL script transport" {
         BeforeAll {
-            # A plain function stands in for docker, as in the guarded-database-creation tests, so the
-            # test sees what reaches stdin as well as the arguments.
+            # A plain function stands in for docker (or host psql), as in the guarded-database-creation
+            # tests, so the test sees what reaches stdin as well as the arguments.
             function script:Invoke-KeyScriptWithDockerShim {
-                param([int]$Exit, [object[]]$Output, [string]$Script)
+                param([int]$Exit, [object[]]$Output, [string]$Script, [string]$Command = "docker")
 
                 $calls = [System.Collections.Generic.List[object]]::new()
                 $exitCode = $Exit
                 $psqlOutput = $Output
-                Set-Item -Path Function:\global:docker -Value {
+                Set-Item -Path "Function:\global:$Command" -Value {
                     $piped = @($input)
                     $calls.Add([PSCustomObject]@{
+                        Args           = @($args | ForEach-Object { [string]$_ })
                         ArgLine        = (@($args | ForEach-Object { $_ }) -join " ")
                         ExpectingInput = $MyInvocation.ExpectingInput
                         Stdin          = (($piped | ForEach-Object { [string]$_ }) -join "`n")
@@ -1045,7 +1046,7 @@ Describe "OpenIddict signing-key initialization in -InitDb (DMS-1292)" {
                 $result = $null
                 try { $result = Invoke-PostgresOpenIddictKeyScript -Script $Script }
                 catch { $caught = $_ }
-                finally { Remove-Item Function:\docker -Force -ErrorAction SilentlyContinue }
+                finally { Remove-Item "Function:\$Command" -Force -ErrorAction SilentlyContinue }
 
                 return [PSCustomObject]@{ Call = $calls[0]; Result = $result; Error = $caught }
             }
@@ -1076,6 +1077,32 @@ Describe "OpenIddict signing-key initialization in -InitDb (DMS-1292)" {
             $run.Call.ArgLine | Should -BeLike "*-v VERBOSITY=sqlstate*"
             $run.Call.ArgLine | Should -BeLike "*-f -*"
             $run.Call.ArgLine | Should -BeLike "*-d edfi_configurationservice*"
+        }
+
+        It "skips psqlrc startup files in the container and on the host" {
+            # A shim checks the argument contract only; psql's own startup-file handling is not exercised.
+            $keyScript = New-OpenIddictKeyStateCheckSql -EncryptionKey "Transport-Passphrase-1292"
+
+            $container = Invoke-KeyScriptWithDockerShim -Exit 0 -Output @("active-ok") -Script $keyScript
+
+            Push-Location $script:DockerComposePath
+            try {
+                . ./setup-openiddict.ps1 -EnvironmentFile "" -DbType "Postgresql" `
+                    -ConnectionString "Host=localhost;Port=5432;Database=edfi_configurationservice;Username=postgres;" `
+                    -PostgresContainerName "" -EncryptionKey "unused"
+            }
+            finally {
+                Pop-Location
+            }
+            $hostRun = Invoke-KeyScriptWithDockerShim -Command "psql" -Exit 0 -Output @("active-ok") -Script $keyScript
+
+            $container.Call.Args | Should -Contain "-X"
+            $container.Result | Should -BeExactly "active-ok"
+            $hostRun.Call | Should -Not -BeNullOrEmpty -Because "the host path must invoke psql directly"
+            $hostRun.Call.Args | Should -Contain "-X"
+            $hostRun.Call.Args | Should -Contain "localhost"
+            $hostRun.Call.Stdin | Should -BeExactly $keyScript
+            $hostRun.Result | Should -BeExactly "active-ok"
         }
 
         It "fails with the SQLSTATE only, withholding the captured output" {

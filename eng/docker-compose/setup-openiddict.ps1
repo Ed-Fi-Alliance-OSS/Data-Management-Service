@@ -807,6 +807,8 @@ function Invoke-PostgresOpenIddictKeyScript {
         sent as a statement. A failure message names that SQLSTATE and nothing else from the captured
         output. VERBOSITY governs only what psql shows here; keeping the values out of statement text
         and the server log is the script's own job (see Join-OpenIddictKeyInitializationScript).
+        -X skips psqlrc startup files, which could otherwise print after the state row (\timing) or
+        override the settings above.
     #>
     param(
         [Parameter(Mandatory = $true)]
@@ -815,7 +817,7 @@ function Invoke-PostgresOpenIddictKeyScript {
 
     $effectiveConnectionString = Get-EffectiveConnectionString -ConnectionString $script:ConnectionString -DbType $script:DbType -DbHost $script:DbHost -DbPort $script:DbPort -DbName $script:DbName -DbUser $script:DbUser
     $connection = Get-ConnectionStringValue -ConnectionString $effectiveConnectionString -DbType $script:DbType
-    $psqlArgs = @("-v", "ON_ERROR_STOP=1", "-v", "VERBOSITY=sqlstate", "-q", "-tA", "-U", $connection.User, "-d", $connection.Database, "-f", "-")
+    $psqlArgs = @("-X", "-v", "ON_ERROR_STOP=1", "-v", "VERBOSITY=sqlstate", "-q", "-tA", "-U", $connection.User, "-d", $connection.Database, "-f", "-")
 
     if (-not [string]::IsNullOrEmpty($script:PostgresContainerName)) {
         $output = $Script | & docker exec -i $script:PostgresContainerName psql @psqlArgs 2>&1

@@ -500,7 +500,11 @@ function Resolve-WrapperSmokeTestSummary {
         # result's tenant scopes the Configuration Service calls either way.
         [switch]$DmsMultiTenancy,
 
-        [switch]$SelfContainedIdentity
+        [switch]$SelfContainedIdentity,
+
+        # DMS runs in the IDE with its own AppSettings:MultiTenancy, which this run does not read, so
+        # the completed summary states the value its target assumes.
+        [switch]$IdeHostedDms
     )
 
     $readProperty = {
@@ -522,8 +526,12 @@ function Resolve-WrapperSmokeTestSummary {
     }
 
     try {
+        $complete = @(Get-SmokeTestCredentialSummary @summaryArgs)
+        if ($IdeHostedDms) {
+            $complete += "IDE-hosted DMS: the target above assumes it runs with AppSettings:MultiTenancy=$(if ($DmsMultiTenancy) { 'true' } else { 'false' }), as DMS_MULTI_TENANCY resolves for this env file. This run does not read the IDE's configuration; set it to match, or the printed routes will not resolve."
+        }
         return [pscustomobject]@{
-            Complete = @(Get-SmokeTestCredentialSummary @summaryArgs)
+            Complete = $complete
             Incomplete = @(Get-SmokeTestCredentialSummary @summaryArgs -Incomplete)
         }
     }
@@ -1113,6 +1121,7 @@ function Invoke-BootstrapWrapper {
                 DmsBaseUrl = $smokeTestSummaryBaseUrl
                 DmsMultiTenancy = $smokeTestDmsMultiTenancy
                 SelfContainedIdentity = ($resolvedIdentityProvider -eq "self-contained")
+                IdeHostedDms = [bool]$InfraOnly
             }
             if ($AddSmokeTestCredentials) {
                 $credentialResults = @($configurationResults | Where-Object {

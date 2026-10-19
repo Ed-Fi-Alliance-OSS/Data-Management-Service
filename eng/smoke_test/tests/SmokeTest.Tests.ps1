@@ -140,7 +140,7 @@ Describe "Get-SmokeTestCredential" {
             $script:caughtFailure = $null
 
             $caught | Should -Not -BeNullOrEmpty -Because "an unusable credential must never be returned as a success"
-            $caught.Exception.Message | Should -BeLike "*did not contain a usable $Field*"
+            $caught.Exception.Message | Should -BeLike "*: The Configuration Service application response did not contain a usable $Field; the response content is withheld. The application may already have been created: inspect it in the Configuration Service and remove it before retrying, because a second application with the same name is rejected."
             $records | Where-Object { -not (Test-IsStreamRecord $_) } | Should -BeNullOrEmpty -Because "no credential object may reach the success stream"
             foreach ($text in @(($caught | Out-String), $caught.Exception.ToString()) + @($records | ForEach-Object { $_ | Out-String })) {
                 $text | Should -Not -Match 'SYNTH' -Because "diagnostics must name the field, never its value"

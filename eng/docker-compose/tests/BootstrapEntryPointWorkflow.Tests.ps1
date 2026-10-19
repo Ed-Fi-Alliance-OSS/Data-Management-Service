@@ -1679,6 +1679,10 @@ $failure
             $script:smokeSummaryHeader = "--- Smoke test credentials ---"
             $script:smokeIncompleteHeader = "--- Smoke test credentials (created before the failure; the stack is NOT ready) ---"
             $script:smokePlaceholderLine = "Replace <dms-base-url> with the IDE-hosted DMS URL once it is healthy."
+            function script:Get-IdeTenancyLine {
+                param([string]$Value)
+                "IDE-hosted DMS: the target above assumes it runs with AppSettings:MultiTenancy=$Value, as DMS_MULTI_TENANCY resolves for this env file. This run does not read the IDE's configuration; set it to match, or the printed routes will not resolve."
+            }
 
             # Runs an entry script with every stream merged, collecting items as they arrive so the
             # output written before a terminating error (the summary) is kept along with the error.
@@ -1841,6 +1845,7 @@ if ($condition) { throw [System.IO.InvalidDataException]::new('$Message') }
             $command = Get-CommandArgument -Line ($summary | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" })
             $command["BaseUrl"] | Should -BeExactly "<dms-base-url>"
             $summary | Should -Contain $script:smokePlaceholderLine
+            $summary[-1] | Should -BeExactly (Get-IdeTenancyLine -Value "false")
             $guidanceIndex = [array]::FindIndex($run.Items, [Predicate[object]] { param($item) "$item" -like "*IDE Workflow: Pre-DMS preparation complete*" })
             $headerIndex = [array]::IndexOf($run.Items, $script:smokeSummaryHeader)
             $guidanceIndex | Should -BeGreaterOrEqual 0
@@ -1872,6 +1877,33 @@ if ($condition) { throw [System.IO.InvalidDataException]::new('$Message') }
             $command["BaseUrl"] | Should -BeExactly "http://localhost:5198"
             $command["Secret"] | Should -BeExactly $script:syntheticSmokeSecret
             $summary | Should -Not -Contain $script:smokePlaceholderLine
+            $summary[-1] | Should -BeExactly (Get-IdeTenancyLine -Value "false")
+        }
+
+        It "states the AppSettings:MultiTenancy=true assumption for tenant-qualified IDE routes with -InfraOnly -DmsBaseUrl" {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-smoke-ide-tenant.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog -Tenant "tenant-a" | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            $ideMultiTenantEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.ide-multitenant"
+            Get-Content -LiteralPath $script:repo.EnvFile | Set-Content -LiteralPath $ideMultiTenantEnvFile -Encoding utf8
+            Add-Content -LiteralPath $ideMultiTenantEnvFile -Value "DMS_MULTI_TENANCY=true"
+
+            $savedAmbient = [Environment]::GetEnvironmentVariable("DMS_MULTI_TENANCY")
+            try {
+                Set-AmbientDmsMultiTenancy -Value $null
+                $run = Invoke-WrapperCapture -ScriptPath $script:repo.WrapperScript -Arguments @{ EnvironmentFile = $ideMultiTenantEnvFile; InfraOnly = $true; DmsBaseUrl = "http://localhost:5198"; AddSmokeTestCredentials = $true }
+            }
+            finally {
+                Set-AmbientDmsMultiTenancy -Value $savedAmbient
+            }
+
+            $run.Error | Should -BeNullOrEmpty
+            $summary = Get-SummaryBlock -Strings $run.Strings -Header $script:smokeSummaryHeader
+            $summary | Should -Contain "DMS base:    http://localhost:5198/tenant-a"
+            $summary | Should -Contain "Token URL:   http://localhost:5198/tenant-a/oauth/token"
+            $summary[-1] | Should -BeExactly (Get-IdeTenancyLine -Value "true")
         }
 
         It "prints the summary after the seed phase of a Docker-hosted run" {
