@@ -976,6 +976,45 @@ public class Given_PostgresqlDescriptorWriteHandler
         );
     }
 
+    [Test]
+    [Ignore(
+        "DMS-1454: Quarantined until descriptor writes stop hashing the request spelling; until then a case-variant descriptor re-POST misses its referential identity, collides with the stored URI and returns a write conflict."
+    )]
+    public async Task It_keeps_the_DocumentCacheMaterializer_Descriptor_casing_accepted_by_a_case_variant_post()
+    {
+        using var scope = CreateConfiguredScope();
+        await using var connection = new Npgsql.NpgsqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await CompactDescriptorCacheScenario.ExecuteCasingUpdateAsync(
+            connection,
+            _database.MappingSet,
+            _database.ConnectionString,
+            scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>(),
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheMaterializer>(),
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheWriter>(),
+            body => CreatePostRequest(_database.Fixture.SchoolTypeDescriptorResource, body)
+        );
+    }
+
+    [Test]
+    [Ignore(
+        "DMS-1454: Quarantined until descriptor writes stop hashing the request spelling; until then a case-variant descriptor re-POST misses its referential identity, collides with the stored URI and returns a write conflict."
+    )]
+    public async Task It_applies_a_case_variant_compact_descriptor_post_as_an_RI_matching_update()
+    {
+        using var scope = CreateConfiguredScope();
+        await using var connection = new NpgsqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await CompactDescriptorWriteScenario.ExecuteCasingUpdateAsync(
+            connection,
+            scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>(),
+            scope.ServiceProvider.GetRequiredService<IDescriptorReadHandler>(),
+            (resource, body) => CreatePostRequest(resource, body),
+            _database.Fixture.SchoolTypeDescriptorResource,
+            _database.Fixture.AcademicSubjectDescriptorResource
+        );
+    }
+
     private static ServiceProvider CreateServiceProvider()
     {
         var services = new ServiceCollection();

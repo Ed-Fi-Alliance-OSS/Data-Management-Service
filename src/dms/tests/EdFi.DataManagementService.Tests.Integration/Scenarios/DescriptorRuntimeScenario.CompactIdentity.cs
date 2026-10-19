@@ -14,9 +14,7 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 
 internal static partial class DescriptorRuntimeScenario
 {
-    public static async Task It_applies_RI_matching_post_component_and_casing_updates(
-        ApiIntegrationHarness harness
-    )
+    public static async Task It_applies_an_RI_matching_post_component_update(ApiIntegrationHarness harness)
     {
         DescriptorValues original = CreateDescriptorValues("compact-post", codeValue: "Campus#MiXeD");
         (string path, string etag) = await CreateDescriptorAsync(harness, original);
@@ -30,15 +28,16 @@ internal static partial class DescriptorRuntimeScenario
             .Should()
             .Be($"{original.Namespace}#{original.CodeValue}");
 
-        (StoredDescriptor afterComponents, string componentEtag) = await AssertPostUpdateAsync(
-            harness,
-            path,
-            components,
-            before,
-            etag
-        );
-        DescriptorValues casing = components with { CodeValue = "MIXED" };
-        await AssertPostUpdateAsync(harness, path, casing, afterComponents, componentEtag);
+        await AssertPostUpdateAsync(harness, path, components, before, etag);
+    }
+
+    public static async Task It_applies_an_RI_matching_post_casing_update(ApiIntegrationHarness harness)
+    {
+        DescriptorValues original = CreateDescriptorValues("compact-post-casing", codeValue: "Campus#MiXeD");
+        (string path, string etag) = await CreateDescriptorAsync(harness, original);
+        StoredDescriptor before = await ReadStoredDescriptorAsync(harness, path);
+        DescriptorValues casing = original with { CodeValue = "Campus#MIXED" };
+        await AssertPostUpdateAsync(harness, path, casing, before, etag);
     }
 
     public static async Task It_accepts_equal_whole_URI_components_on_put(ApiIntegrationHarness harness)

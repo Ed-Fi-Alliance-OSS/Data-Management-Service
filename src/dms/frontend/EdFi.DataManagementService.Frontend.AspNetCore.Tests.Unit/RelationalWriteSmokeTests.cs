@@ -771,11 +771,9 @@ public class Given_A_Host_Using_The_Relational_Backend
             return new ResolvedReferenceSet(
                 SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
                 SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-                LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
+                DocumentReferences: new ResolvedDocumentReferenceMapFactory().Create([]),
                 InvalidDocumentReferences: [],
-                InvalidDescriptorReferences: [],
-                DocumentReferenceOccurrences: [],
-                DescriptorReferenceOccurrences: []
+                InvalidDescriptorReferences: []
             );
         }
 

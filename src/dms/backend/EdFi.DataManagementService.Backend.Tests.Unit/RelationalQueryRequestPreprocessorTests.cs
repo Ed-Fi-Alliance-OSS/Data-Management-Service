@@ -6,8 +6,10 @@
 using System.Collections;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Extraction;
 using FakeItEasy;
 using FluentAssertions;
 using NUnit.Framework;
@@ -168,7 +170,7 @@ public partial class Given_RelationalQueryRequestPreprocessor
     }
 
     [Test]
-    public async Task It_resolves_mixed_case_descriptor_query_values_in_one_batched_lookup_without_relookup()
+    public async Task It_passes_mixed_case_descriptor_query_values_unchanged_in_one_batched_lookup_without_relookup()
     {
         var referenceResolver = A.Fake<IReferenceResolver>();
         ReferenceResolverRequest capturedRequest = null!;
@@ -255,14 +257,11 @@ public partial class Given_RelationalQueryRequestPreprocessor
                 reference.DocumentIdentity.DocumentIdentityElements.Single().IdentityValue
             )
             .Should()
-            .Equal("uri://one", "uri://two");
+            .Equal("uri://ONE", "uri://two");
     }
 
-    [TestCase(DescriptorReferenceFailureReason.Missing)]
-    [TestCase(DescriptorReferenceFailureReason.DescriptorTypeMismatch)]
-    public async Task It_short_circuits_unresolved_descriptor_queries_to_an_empty_page(
-        DescriptorReferenceFailureReason failureReason
-    )
+    [Test]
+    public async Task It_short_circuits_unresolved_descriptor_queries_to_an_empty_page()
     {
         var referenceResolver = A.Fake<IReferenceResolver>();
         A.CallTo(() => referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
@@ -273,7 +272,10 @@ public partial class Given_RelationalQueryRequestPreprocessor
                             invalidDescriptorReferences:
                             [
                                 .. request.DescriptorReferences.Select(reference =>
-                                    DescriptorReferenceFailure.From(reference, failureReason)
+                                    DescriptorReferenceFailure.From(
+                                        reference,
+                                        DescriptorReferenceFailureReason.Missing
+                                    )
                                 ),
                             ]
                         )
@@ -312,6 +314,223 @@ public partial class Given_RelationalQueryRequestPreprocessor
             .Contain("SchoolCategoryDescriptor");
         result.QueryElementsInOrder.Should().BeEmpty();
     }
+
+    [Test]
+    public async Task It_rejects_a_descriptor_query_value_containing_nul_without_resolving()
+    {
+        var referenceResolver = A.Fake<IReferenceResolver>();
+        var result = await RelationalQueryRequestPreprocessor.PreprocessAsync(
+            CreateMappingSet(),
+            new QualifiedResourceName("Ed-Fi", "School"),
+            [
+                CreateQueryElement(
+                    "SchoolCategoryDescriptor",
+                    "$.schoolCategoryDescriptor",
+                    "uri://ed-fi.org/SchoolCategoryDescriptor#\0",
+                    "string"
+                ),
+            ],
+            CreateSupportedQueryCapability(CreateSchoolCategoryDescriptorField()),
+            referenceResolver
+        );
+
+        result
+            .Outcome.Should()
+            .BeOfType<RelationalQueryPreprocessingOutcome.ValidationFailure>()
+            .Which.Failures.Should()
+            .Equal(
+                new WriteValidationFailure(
+                    new JsonPath("$.schoolCategoryDescriptor"),
+                    DescriptorText.InvalidValueMessage
+                )
+            );
+        result.QueryElementsInOrder.Should().BeEmpty();
+        A.CallTo(() => referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_rejects_a_malformed_descriptor_query_value_that_follows_an_invalid_id()
+    {
+        var referenceResolver = A.Fake<IReferenceResolver>();
+        var result = await RelationalQueryRequestPreprocessor.PreprocessAsync(
+            CreateMappingSet(),
+            new QualifiedResourceName("Ed-Fi", "School"),
+            [
+                CreateQueryElement("ID", "$.id", "not-a-guid", "string"),
+                CreateQueryElement(
+                    "SchoolCategoryDescriptor",
+                    "$.schoolCategoryDescriptor",
+                    "uri://ed-fi.org/SchoolCategoryDescriptor#\0",
+                    "string"
+                ),
+            ],
+            CreateSupportedQueryCapability(
+                CreateSupportedField("id", "$.id", "string", new RelationalQueryFieldTarget.DocumentUuid()),
+                CreateSchoolCategoryDescriptorField()
+            ),
+            referenceResolver
+        );
+
+        result
+            .Outcome.Should()
+            .BeOfType<RelationalQueryPreprocessingOutcome.ValidationFailure>()
+            .Which.Failures.Select(static failure => failure.Path.Value)
+            .Should()
+            .Equal("$.schoolCategoryDescriptor");
+        A.CallTo(() => referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_rejects_a_malformed_descriptor_query_value_that_follows_a_missing_descriptor()
+    {
+        var referenceResolver = A.Fake<IReferenceResolver>();
+        A.CallTo(() => referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(
+                (ReferenceResolverRequest request, CancellationToken _) =>
+                    Task.FromResult(
+                        CreateResolvedReferenceSet(
+                            invalidDescriptorReferences:
+                            [
+                                .. request.DescriptorReferences.Select(static reference =>
+                                    DescriptorReferenceFailure.From(
+                                        reference,
+                                        DescriptorReferenceFailureReason.Missing
+                                    )
+                                ),
+                            ]
+                        )
+                    )
+            );
+
+        var result = await RelationalQueryRequestPreprocessor.PreprocessAsync(
+            CreateMappingSet(),
+            new QualifiedResourceName("Ed-Fi", "School"),
+            [
+                CreateQueryElement(
+                    "SchoolCategoryDescriptor",
+                    "$.schoolCategoryDescriptor",
+                    "uri://ed-fi.org/SchoolCategoryDescriptor#Missing",
+                    "string"
+                ),
+                CreateQueryElement(
+                    "AdministrativeFundingControlDescriptor",
+                    "$.administrativeFundingControlDescriptor",
+                    "uri://ed-fi.org/AdministrativeFundingControlDescriptor#\0",
+                    "string"
+                ),
+            ],
+            CreateSupportedQueryCapability(
+                CreateSchoolCategoryDescriptorField(),
+                CreateAdministrativeFundingControlDescriptorField()
+            ),
+            referenceResolver
+        );
+
+        result
+            .Outcome.Should()
+            .BeOfType<RelationalQueryPreprocessingOutcome.ValidationFailure>()
+            .Which.Failures.Select(static failure => failure.Path.Value)
+            .Should()
+            .Equal("$.administrativeFundingControlDescriptor");
+        A.CallTo(() => referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_reports_every_malformed_descriptor_query_value_at_its_own_path()
+    {
+        var referenceResolver = A.Fake<IReferenceResolver>();
+        var result = await RelationalQueryRequestPreprocessor.PreprocessAsync(
+            CreateMappingSet(),
+            new QualifiedResourceName("Ed-Fi", "School"),
+            [
+                CreateQueryElement(
+                    "SchoolCategoryDescriptor",
+                    "$.schoolCategoryDescriptor",
+                    "uri://ed-fi.org/SchoolCategoryDescriptor#\0",
+                    "string"
+                ),
+                CreateQueryElement(
+                    "AdministrativeFundingControlDescriptor",
+                    "$.administrativeFundingControlDescriptor",
+                    "uri://ed-fi.org/AdministrativeFundingControlDescriptor#\uD800",
+                    "string"
+                ),
+            ],
+            CreateSupportedQueryCapability(
+                CreateSchoolCategoryDescriptorField(),
+                CreateAdministrativeFundingControlDescriptorField()
+            ),
+            referenceResolver
+        );
+
+        result
+            .Outcome.Should()
+            .BeOfType<RelationalQueryPreprocessingOutcome.ValidationFailure>()
+            .Which.Failures.Should()
+            .Equal(
+                new WriteValidationFailure(
+                    new JsonPath("$.schoolCategoryDescriptor"),
+                    DescriptorText.InvalidValueMessage
+                ),
+                new WriteValidationFailure(
+                    new JsonPath("$.administrativeFundingControlDescriptor"),
+                    DescriptorText.InvalidValueMessage
+                )
+            );
+        A.CallTo(() => referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_leaves_a_nul_in_a_non_descriptor_query_value_to_later_planning()
+    {
+        var referenceResolver = A.Fake<IReferenceResolver>();
+        var result = await RelationalQueryRequestPreprocessor.PreprocessAsync(
+            CreateMappingSet(),
+            new QualifiedResourceName("Ed-Fi", "School"),
+            [CreateQueryElement("NameOfInstitution", "$.nameOfInstitution", "Grand\0Bend", "string")],
+            CreateSupportedQueryCapability(
+                CreateSupportedField(
+                    "nameOfInstitution",
+                    "$.nameOfInstitution",
+                    "string",
+                    new RelationalQueryFieldTarget.RootColumn(new DbColumnName("NameOfInstitution"))
+                )
+            ),
+            referenceResolver
+        );
+
+        result.Outcome.Should().BeOfType<RelationalQueryPreprocessingOutcome.Continue>();
+        result
+            .QueryElementsInOrder.Single()
+            .Value.Should()
+            .Be(new PreprocessedRelationalQueryValue.Raw("Grand\0Bend"));
+    }
+
+    private static SupportedRelationalQueryField CreateSchoolCategoryDescriptorField() =>
+        CreateSupportedField(
+            "schoolCategoryDescriptor",
+            "$.schoolCategoryDescriptor",
+            "string",
+            new RelationalQueryFieldTarget.DescriptorIdColumn(
+                new DbColumnName("SchoolCategoryDescriptorId"),
+                new QualifiedResourceName("Ed-Fi", "SchoolCategoryDescriptor")
+            )
+        );
+
+    private static SupportedRelationalQueryField CreateAdministrativeFundingControlDescriptorField() =>
+        CreateSupportedField(
+            "administrativeFundingControlDescriptor",
+            "$.administrativeFundingControlDescriptor",
+            "string",
+            new RelationalQueryFieldTarget.DescriptorIdColumn(
+                new DbColumnName("AdministrativeFundingControlDescriptorId"),
+                new QualifiedResourceName("Ed-Fi", "AdministrativeFundingControlDescriptor")
+            )
+        );
 
     private static QueryElement CreateQueryElement(
         string queryFieldName,
@@ -409,17 +628,12 @@ public partial class Given_RelationalQueryRequestPreprocessor
         successfulDescriptorReferences ??= [];
         invalidDescriptorReferences ??= [];
 
-        return new ResolvedReferenceSet(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
-            SuccessfulDescriptorReferencesByPath: successfulDescriptorReferences.ToDictionary(
+        return ResolvedReferenceSets.Create(
+            successfulDescriptorReferencesByPath: successfulDescriptorReferences.ToDictionary(
                 static reference => reference.Reference.Path,
                 static reference => reference
             ),
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: invalidDescriptorReferences,
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
+            invalidDescriptorReferences: invalidDescriptorReferences
         );
     }
 

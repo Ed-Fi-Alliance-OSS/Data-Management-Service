@@ -8,10 +8,11 @@ namespace EdFi.DataManagementService.Core.Extraction;
 /// <summary>
 /// The text rule for descriptor identity values: well-formed UTF-16 with no NUL character. Request
 /// validation applies <see cref="IsWellFormedWithoutNul"/> and answers with a path-attributed 400;
-/// descriptor reference normalization applies <see cref="AssertWellFormedWithoutNul"/> before it
-/// lowercases and hashes a value.
+/// descriptor reference extraction applies <see cref="AssertWellFormedWithoutNul"/> before it carries
+/// the value, unchanged, into a reference identity. Public because the backend's descriptor query-filter validation
+/// applies the same rule.
 /// </summary>
-internal static class DescriptorText
+public static class DescriptorText
 {
     /// <summary>
     /// The client-facing message for a value that breaks the rule. It never echoes the value.
@@ -53,12 +54,12 @@ internal static class DescriptorText
 
     /// <summary>
     /// Returns the value when it is well-formed without NUL. Throws when it is not, because request
-    /// validation must have rejected it before normalization.
+    /// validation must have rejected it before the value becomes a descriptor identity.
     /// </summary>
     public static string AssertWellFormedWithoutNul(string value) =>
         IsWellFormedWithoutNul(value)
             ? value
             : throw new InvalidOperationException(
-                "A descriptor value reached normalization without passing descriptor text validation."
+                "A descriptor value reached descriptor identity construction without passing descriptor text validation."
             );
 }

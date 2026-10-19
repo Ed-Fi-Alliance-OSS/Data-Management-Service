@@ -10,8 +10,8 @@ namespace EdFi.DataManagementService.Performance.Harness.Fixtures;
 /// GENERATE_SERIES and must mirror <see cref="PerfDescriptorFixtureDefinition" /> exactly:
 /// dense DocumentIds, odd ordinals under the accessible namespace, Uri as namespace#codeValue,
 /// and one referential identity per descriptor derived through the database's own uuidv5
-/// function over the lowercased URI — the same derivation the production descriptor write
-/// records. The GENERATE_SERIES availability guard is shared with the primary loader.
+/// function over the lowercased URI — the pre-DMS-1451 derivation, which natural-key
+/// resolution does not read. The GENERATE_SERIES availability guard is shared with the primary loader.
 /// Production triggers and constraints stay enabled throughout.
 /// </summary>
 public static class MssqlPerfDescriptorFixtureLoaderSql
@@ -59,9 +59,9 @@ public static class MssqlPerfDescriptorFixtureLoaderSql
         """;
 
     /// <summary>
-    /// Mirrors the production descriptor write's referential identity: uuidv5 over the
-    /// project, resource, and the lowercased $.descriptor URI, computed by the database's
-    /// own function so the set-based load and the write path can never drift apart.
+    /// Seeds the pre-DMS-1451 descriptor referential identity: uuidv5 over the project,
+    /// resource, and the lowercased $.descriptor URI, computed by the database's own function.
+    /// Natural-key resolution does not read these rows; they go with DMS-1456.
     /// </summary>
     public const string ReferentialIdentityInsertSql = $"""
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])

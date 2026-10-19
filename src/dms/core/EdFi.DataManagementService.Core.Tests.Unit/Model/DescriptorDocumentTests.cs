@@ -66,7 +66,7 @@ public class DescriptorDocumentTests
     public class Given_A_Descriptor_Document_With_Non_Ascii_Identity_Text : DescriptorDocumentTests
     {
         [Test]
-        public void It_still_lowercases_the_identity()
+        public void It_keeps_the_identity_text_unchanged()
         {
             DescriptorDocument document = new(
                 JsonNode.Parse(
@@ -78,7 +78,7 @@ public class DescriptorDocumentTests
                 .ToDocumentIdentity()
                 .DocumentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/academicsubjectdescriptor#école");
+                .Be("uri://ed-fi.org/AcademicSubjectDescriptor#École");
         }
     }
 
@@ -117,7 +117,7 @@ public class DescriptorDocumentTests
             descriptorIdentity
                 .DocumentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/academicsubjectdescriptor#english");
+                .Be("uri://ed-fi.org/AcademicSubjectDescriptor#English");
         }
 
         [Test]
@@ -143,7 +143,7 @@ public class DescriptorDocumentTests
             descriptorIdentity
                 .DocumentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/academicsubjectdescriptor#english");
+                .Be("uri://ed-fi.org/AcademicSubjectDescriptor#English");
         }
     }
 }

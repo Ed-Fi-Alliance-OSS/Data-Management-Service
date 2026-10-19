@@ -31,7 +31,6 @@ public class ValidationErrorFactoryTests
             Path: new JsonPath(path),
             TargetResource: _documentTargetResource,
             DocumentIdentity: new([]),
-            ReferentialId: new ReferentialId(Guid.NewGuid()),
             Reason: DocumentReferenceFailureReason.Missing
         );
 
@@ -44,7 +43,6 @@ public class ValidationErrorFactoryTests
             Path: new JsonPath(path),
             TargetResource: _descriptorTargetResource,
             DocumentIdentity: new([new(DocumentIdentity.DescriptorIdentityJsonPath, descriptorValue)]),
-            ReferentialId: new ReferentialId(Guid.NewGuid()),
             Reason: reason
         );
 
@@ -61,7 +59,7 @@ public class ValidationErrorFactoryTests
                 [
                     CreateDescriptorReferenceFailure(
                         "$.sharedReference",
-                        DescriptorReferenceFailureReason.DescriptorTypeMismatch,
+                        DescriptorReferenceFailureReason.Missing,
                         "uri://ed-fi.org/gradeleveldescriptor#first-grade"
                     ),
                 ]
@@ -76,7 +74,7 @@ public class ValidationErrorFactoryTests
                 .Should()
                 .Equal(
                     "The referenced School item does not exist.",
-                    "SchoolTypeDescriptor value 'uri://ed-fi.org/gradeleveldescriptor#first-grade' is not a valid SchoolTypeDescriptor."
+                    "SchoolTypeDescriptor value 'uri://ed-fi.org/gradeleveldescriptor#first-grade' does not exist."
                 );
         }
     }

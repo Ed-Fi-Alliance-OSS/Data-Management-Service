@@ -57,10 +57,7 @@ internal class DescriptorDocument(JsonNode _document)
 
         DocumentIdentityElement[] descriptorElement =
         [
-            new(
-                IdentityJsonPath: DescriptorIdentityPath,
-                IdentityValue: $"{namespaceName.ToLowerInvariant()}#{codeValue.ToLowerInvariant()}"
-            ),
+            new(IdentityJsonPath: DescriptorIdentityPath, IdentityValue: $"{namespaceName}#{codeValue}"),
         ];
         return new DocumentIdentity(descriptorElement);
     }

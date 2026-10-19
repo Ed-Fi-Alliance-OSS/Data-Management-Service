@@ -15,7 +15,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -373,10 +372,6 @@ public class Given_A_Postgresql_ParentResource_With_Collection_Aligned_Extension
                 new DocumentReference(
                     ResourceInfo: sponsorResourceInfo,
                     DocumentIdentity: sponsorIdentity,
-                    ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(
-                        sponsorResourceInfo,
-                        sponsorIdentity
-                    ),
                     Path: new JsonPath(
                         $"$.parents[{index.ToString(CultureInfo.InvariantCulture)}]._ext.aligned.sponsorReference"
                     )

@@ -242,7 +242,6 @@ public class Given_Resolved_Document_Reference_Map
                     false
                 ),
                 identity,
-                new ReferentialId(Guid.NewGuid()),
                 new JsonPath(path)
             ),
             documentId,

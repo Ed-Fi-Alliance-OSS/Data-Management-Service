@@ -53,9 +53,10 @@ this storage change.
 - Identity/URI changes do not rewrite stable `..._DocumentId` foreign keys, but **do** propagate into the local canonical stored identity columns that underpin reference-identity bindings through retained native cascades. Row-local maintenance keeps only the surviving derived artifacts aligned:
   - abstract identity tables are maintained transactionally for polymorphic reference targets, and
   - update tracking metadata is maintained by normal document-version and root/descriptor timestamp stamping (no read-time dependency derivation required); see [update-tracking.md](update-tracking.md).
-- Current POST matching and reference resolution use `dms.ReferentialIdentity`; descriptor
-  joins reconstruct URI witnesses and return both the compact key and owning document key
-  without another round trip. Relational unique constraints remain the integrity backstop.
+- Reference resolution probes generated natural-key indexes; descriptor probes fold the raw URI
+  in SQL and return both the compact key and owning document key without another round trip.
+  POST matching still uses `dms.ReferentialIdentity` until its natural-key cutover. Relational
+  unique constraints remain the integrity backstop.
 - `dms.Descriptor` has native independent `int DescriptorId` allocation, a unique non-null
   `bigint DocumentId` FK, and `smallint ResourceKeyId` type identity checked against its owner
   by the stamping trigger and constrained to the resource-key catalog.
@@ -66,8 +67,9 @@ this storage change.
   expression index under the database-default collation, and a SQL Server non-persisted computed
   `Uri` index that inherits the `SQL_Latin1_General_CP1_CI_AS` identity collation of its components. Live descriptor discriminator storage is removed; shared history routes
   by `ResourceKeyId`. Abstract identity discriminators and union-view outputs remain unchanged.
-- Generated natural-key and lowered-URI probes are future work described in
-  [natural-key-resolution.md](natural-key-resolution.md), rather than the current RI lookup path.
+- Generated natural-key and lowered-URI probes are described in
+  [natural-key-resolution.md](natural-key-resolution.md); POST capture and descriptor writes move
+  to them in later work.
 
 ## High-Level Architecture
 
@@ -81,7 +83,7 @@ Keep DMS Core mostly intact:
 - Core continues to produce `DocumentInfo` (document identity + extracted references/descriptors, including reference locations) and operates on JSON bodies. When profile-specific collection filtering applies, Core also provides the request-scoped write-shaping input described above.
 - Backend repositories (`IDocumentStoreRepository`, `IQueryHandler`) become responsible for:
   1. **Flattening** incoming JSON into relational tables
-  2. **Reference resolution** (current RI lookup → `DocumentId`, plus `DescriptorId` for descriptors)
+  2. **Reference resolution** (natural-key probe → `DocumentId`, plus `DescriptorId` for descriptors)
   3. **Reconstitution** (relational → JSON) for GET/query responses
 
 This keeps persistence-state loading in backend while keeping profile semantics centralized in Core; visibility comes from profile-shaped stored JSON, while row matching remains backend-owned via compiled semantic identities.

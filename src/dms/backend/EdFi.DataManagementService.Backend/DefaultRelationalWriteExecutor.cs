@@ -19,7 +19,8 @@ namespace EdFi.DataManagementService.Backend;
 
 internal sealed class DefaultRelationalWriteExecutor(
     IRelationalWriteSessionFactory writeSessionFactory,
-    IReferenceResolverAdapterFactory referenceResolverAdapterFactory,
+    INaturalKeyLookupCommandBuilder naturalKeyLookupCommandBuilder,
+    IResolvedDocumentReferenceMapFactory resolvedDocumentReferenceMapFactory,
     IRelationalWriteFlattener writeFlattener,
     IRelationalWriteNoProfileMergeSynthesizer noProfileMergeSynthesizer,
     IRelationalWriteProfileMergeSynthesizer profileMergeSynthesizer,
@@ -76,8 +77,10 @@ internal sealed class DefaultRelationalWriteExecutor(
     private readonly IRelationalWriteFirstPhase _writeFirstPhase =
         writeFirstPhase
         ?? new CompositeRelationalWriteFirstPhase(
-            referenceResolverAdapterFactory
-                ?? throw new ArgumentNullException(nameof(referenceResolverAdapterFactory)),
+            naturalKeyLookupCommandBuilder
+                ?? throw new ArgumentNullException(nameof(naturalKeyLookupCommandBuilder)),
+            resolvedDocumentReferenceMapFactory
+                ?? throw new ArgumentNullException(nameof(resolvedDocumentReferenceMapFactory)),
             relationalParameterConfigurator,
             relationshipAuthorizationProviderFailureExtractor,
             logger,

@@ -45,4 +45,4 @@ public record SuperclassIdentity(
     /// The concrete JsonPath to the reference object in the document, including numeric indices
     /// </summary>
     JsonPath Path
-) : DocumentReference(ResourceInfo, DocumentIdentity, ReferentialId, Path);
+) : DocumentReference(ResourceInfo, DocumentIdentity, Path);
