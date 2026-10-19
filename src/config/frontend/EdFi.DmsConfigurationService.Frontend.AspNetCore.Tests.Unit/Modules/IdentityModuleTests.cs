@@ -298,7 +298,7 @@ public class RegisterEndpointTests
             """
             {
               "detail": "The request could not be processed. See 'errors' for details.",
-              "type": "urn:ed-fi:api:bad-gateway",
+              "type": "urn:ed-fi:management-api:bad-gateway",
               "title": "Bad Gateway",
               "status": 502,
               "correlationId": "{correlationId}",
@@ -487,7 +487,7 @@ public class RegisterEndpointTests
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
 
         JsonNode body = JsonNode.Parse(content)!;
-        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:security:authorization");
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:security:authorization");
         body["title"]!.GetValue<string>().Should().Be("Authorization Failed");
         body["detail"]!
             .GetValue<string>()
@@ -542,7 +542,7 @@ public class RegisterEndpointTests
             """
             {
               "detail": "The request could not be processed. See 'errors' for details.",
-              "type": "urn:ed-fi:api:bad-gateway",
+              "type": "urn:ed-fi:management-api:bad-gateway",
               "title": "Bad Gateway",
               "status": 502,
               "correlationId": "{correlationId}",
@@ -798,7 +798,7 @@ public class TokenEndpointTests
             """
             {
               "detail": "The request could not be processed. See 'errors' for details.",
-              "type": "urn:ed-fi:api:bad-gateway",
+              "type": "urn:ed-fi:management-api:bad-gateway",
               "title": "Bad Gateway",
               "status": 502,
               "correlationId": "{correlationId}",
@@ -862,7 +862,7 @@ public class TokenEndpointTests
             """
             {
               "detail": "The request could not be processed. See 'errors' for details.",
-              "type": "urn:ed-fi:api:bad-gateway",
+              "type": "urn:ed-fi:management-api:bad-gateway",
               "title": "Bad Gateway",
               "status": 502,
               "correlationId": "{correlationId}",
@@ -969,7 +969,7 @@ public class TokenEndpointTests
             """
             {
               "detail": "The request could not be processed. See 'errors' for details.",
-              "type": "urn:ed-fi:api:security:authentication",
+              "type": "urn:ed-fi:management-api:security:authentication",
               "title": "Authentication Failed",
               "status": 401,
               "correlationId": "{correlationId}",
@@ -1054,7 +1054,7 @@ public class TokenEndpointTests
                 """
                 {
                   "detail": "The request could not be processed. See 'errors' for details.",
-                  "type": "urn:ed-fi:api:security:authentication",
+                  "type": "urn:ed-fi:management-api:security:authentication",
                   "title": "Authentication Failed",
                   "status": 401,
                   "correlationId": "{correlationId}",
@@ -1143,7 +1143,7 @@ public class TokenEndpointTests
                 $$"""
                 {
                   "detail": "The caller has authenticated too many times in too short of a time period.",
-                  "type": "urn:ed-fi:api:security:authentication:too-many-tokens",
+                  "type": "urn:ed-fi:management-api:security:authentication:too-many-tokens",
                   "title": "Too Many Tokens",
                   "status": 429,
                   "correlationId": "{correlationId}",
@@ -1228,7 +1228,7 @@ public class TokenEndpointTests
                 """
                 {
                   "detail": "Unable to process the request due to a concurrent modification. Retry the request.",
-                  "type": "urn:ed-fi:api:conflict",
+                  "type": "urn:ed-fi:management-api:conflict",
                   "title": "Conflict",
                   "status": 409,
                   "correlationId": "{correlationId}",
@@ -1274,7 +1274,7 @@ public class OAuthEndpointErrorTests
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
 
         JsonObject body = JsonNode.Parse(content)!.AsObject();
-        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request");
         body["title"]!.GetValue<string>().Should().Be("Bad Request");
         body["detail"]!.GetValue<string>().Should().Be(expectedDetail);
         body["status"]!.GetValue<int>().Should().Be(400);
@@ -1379,7 +1379,7 @@ public class OAuthEndpointErrorTests
         [Test]
         public void It_returns_the_generic_bad_request_contract_with_the_fixed_form_message()
         {
-            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request");
             _body["title"]!.GetValue<string>().Should().Be("Bad Request");
             _body["detail"]!
                 .GetValue<string>()
@@ -1455,7 +1455,7 @@ public class OAuthEndpointErrorTests
             _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             _response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
             JsonObject body = JsonNode.Parse(_content)!.AsObject();
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:internal-server-error");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:internal-server-error");
             body.ContainsKey("error").Should().BeFalse();
         }
 

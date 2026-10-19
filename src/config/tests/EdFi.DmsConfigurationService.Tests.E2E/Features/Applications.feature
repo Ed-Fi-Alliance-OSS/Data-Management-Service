@@ -349,7 +349,7 @@ Feature: Applications endpoints
                   """
                   {
                     "detail": "Reference 'VendorId' does not exist.",
-                    "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                    "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                     "title": "Unresolved Reference",
                     "status": 409,
                     "correlationId": "0HN8RI9E3O45G:00000004",
@@ -374,7 +374,7 @@ Feature: Applications endpoints
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": "0HN8RI9E3O45G:00000004",
@@ -403,7 +403,7 @@ Feature: Applications endpoints
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": "0HN8RI9E3O45G:00000004",
@@ -432,7 +432,7 @@ Feature: Applications endpoints
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": "0HN8RI9E3O45G:00000004",
@@ -461,7 +461,7 @@ Feature: Applications endpoints
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
@@ -609,7 +609,7 @@ Feature: Applications endpoints
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": "0HNEJBSQ1BUK4:00000004",
@@ -711,7 +711,7 @@ Feature: Applications endpoints
                   """
                   {
                     "detail": "Profile does not exist.",
-                    "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                    "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                     "title": "Unresolved Reference",
                     "status": 409,
                     "correlationId": "0HN8RI9E3O45G:00000004",
@@ -737,7 +737,7 @@ Feature: Applications endpoints
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
@@ -881,7 +881,7 @@ Feature: Applications endpoints
                   """
                   {
                     "detail": "The request could not be processed. See 'errors' for details.",
-                    "type":"urn:ed-fi:api:security:authentication",
+                    "type":"urn:ed-fi:management-api:security:authentication",
                     "title":"Authentication Failed",
                     "status":401,
                     "validationErrors":{},
@@ -917,7 +917,7 @@ Feature: Applications endpoints
                   """
                     {
                         "detail": "Data validation failed. See 'validationErrors' for details.",
-                        "type": "urn:ed-fi:api:bad-request:data",
+                        "type": "urn:ed-fi:management-api:bad-request:data",
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
@@ -1097,7 +1097,7 @@ Feature: Applications endpoints
                   """
                   {
                     "detail": "The application has more than one API client. Reset a specific client's credentials with PUT /v3/apiClients/{id}/reset-credential.",
-                    "type": "urn:ed-fi:api:conflict",
+                    "type": "urn:ed-fi:management-api:conflict",
                     "title": "Conflict",
                     "status": 409,
                     "validationErrors": {},

@@ -2610,17 +2610,22 @@ public class OAuthManagerTests
     /// </remarks>
     private static class TooManyTokensUpstream
     {
-        public const string Type = "urn:ed-fi:api:security:authentication:too-many-tokens";
+        /// <summary>The type an earlier Configuration Service used.</summary>
+        public const string LegacyType = "urn:ed-fi:api:security:authentication:too-many-tokens";
+
+        /// <summary>The Management API type the Configuration Service uses.</summary>
+        public const string ManagementApiType =
+            "urn:ed-fi:management-api:security:authentication:too-many-tokens";
 
         public static string MessageWithLimit(string limit) =>
             $"Too many access tokens have been requested (limit is {limit}). Access tokens should "
             + "be reused until they expire.";
 
-        public static string BodyWithMessage(string message) =>
+        public static string BodyWithMessage(string message, string type) =>
             $$"""
                 {
                   "detail": "The caller has authenticated too many times in too short of a time period.",
-                  "type": "{{Type}}",
+                  "type": "{{type}}",
                   "title": "Too Many Tokens",
                   "status": 429,
                   "correlationId": "upstream-correlation-id",
@@ -2629,8 +2634,17 @@ public class OAuthManagerTests
                 }
                 """;
 
-        public static string BodyWithLimit(string limit) => BodyWithMessage(MessageWithLimit(limit));
+        public static string BodyWithLimit(string limit, string type) =>
+            BodyWithMessage(MessageWithLimit(limit), type);
     }
+
+    /// <summary>
+    /// DMS's own token-limit type, independent of the CMS prefix. It has the same characters as
+    /// <see cref="TooManyTokensUpstream.LegacyType"/> but is a different contract: output assertions
+    /// use this constant, so a test fed the Management API type proves DMS answers with its own type
+    /// rather than echoing the upstream one.
+    /// </summary>
+    private const string DmsTooManyTokensType = "urn:ed-fi:api:security:authentication:too-many-tokens";
 
     /// <summary>
     /// Drives an upstream 429 and returns the parsed response body, plus the logger, because the
@@ -2665,9 +2679,10 @@ public class OAuthManagerTests
         body["correlationId"]!.ToString().Should().Be(CorrelationId);
     }
 
-    [TestFixture]
+    [TestFixture(TooManyTokensUpstream.LegacyType)]
+    [TestFixture(TooManyTokensUpstream.ManagementApiType)]
     [Parallelizable]
-    public class Given_An_Upstream_Token_Limit_Rejection
+    public class Given_An_Upstream_Token_Limit_Rejection(string upstreamType)
     {
         private HttpStatusCode _status;
         private JsonNode _body = default!;
@@ -2675,7 +2690,9 @@ public class OAuthManagerTests
         [SetUp]
         public async Task Setup()
         {
-            (_status, _, _body, _) = await UpstreamRejectsWith(TooManyTokensUpstream.BodyWithLimit("5"));
+            (_status, _, _body, _) = await UpstreamRejectsWith(
+                TooManyTokensUpstream.BodyWithLimit("5", upstreamType)
+            );
         }
 
         [Test]
@@ -2687,7 +2704,7 @@ public class OAuthManagerTests
         [Test]
         public void It_has_the_too_many_tokens_type()
         {
-            _body["type"]!.ToString().Should().Be(TooManyTokensUpstream.Type);
+            _body["type"]!.ToString().Should().Be(DmsTooManyTokensType);
         }
 
         [Test]
@@ -2725,16 +2742,19 @@ public class OAuthManagerTests
     /// A limit other than the default, so the parser is shown to read the number rather than to
     /// recognize one canonical sentence.
     /// </summary>
-    [TestFixture]
+    [TestFixture(TooManyTokensUpstream.LegacyType)]
+    [TestFixture(TooManyTokensUpstream.ManagementApiType)]
     [Parallelizable]
-    public class Given_An_Upstream_Token_Limit_Rejection_With_A_Different_Limit
+    public class Given_An_Upstream_Token_Limit_Rejection_With_A_Different_Limit(string upstreamType)
     {
         private JsonNode _body = default!;
 
         [SetUp]
         public async Task Setup()
         {
-            (_, _, _body, _) = await UpstreamRejectsWith(TooManyTokensUpstream.BodyWithLimit("37"));
+            (_, _, _body, _) = await UpstreamRejectsWith(
+                TooManyTokensUpstream.BodyWithLimit("37", upstreamType)
+            );
         }
 
         [Test]
@@ -2757,6 +2777,7 @@ public class OAuthManagerTests
         private HttpStatusCode _status;
         private JsonNode _body = default!;
         private RecordingLogger<OAuthManager> _logger = default!;
+        private string _upstreamType = default!;
 
         [SetUp]
         public async Task Setup()
@@ -2764,7 +2785,16 @@ public class OAuthManagerTests
             string upstreamBody = CmsFailureResponse
                 .ForTooManyTokens(7, "upstream-correlation-id")
                 .ToJsonString();
+            _upstreamType = JsonNode.Parse(upstreamBody)!["type"]!.GetValue<string>();
             (_status, _, _body, _logger) = await UpstreamRejectsWith(upstreamBody);
+        }
+
+        // Shows this fixture exercises the Management API type the Configuration Service emits,
+        // not the legacy one the hand-built fixtures also cover.
+        [Test]
+        public void It_is_fed_the_management_api_type()
+        {
+            _upstreamType.Should().Be(TooManyTokensUpstream.ManagementApiType);
         }
 
         [Test]
@@ -2776,7 +2806,7 @@ public class OAuthManagerTests
         [Test]
         public void It_recognizes_the_token_limit_rejection()
         {
-            _body["type"]!.ToString().Should().Be(TooManyTokensUpstream.Type);
+            _body["type"]!.ToString().Should().Be(DmsTooManyTokensType);
         }
 
         [Test]
@@ -2796,11 +2826,13 @@ public class OAuthManagerTests
     /// <summary>
     /// The test that proves local reconstruction rather than assuming it: the upstream message is
     /// canonical in shape but carries extra text, so a parser that relayed the entry verbatim
-    /// would leak it.
+    /// would leak it. Run under both accepted upstream types, so neither one opens a path for
+    /// upstream text to reach the caller or the log.
     /// </summary>
-    [TestFixture]
+    [TestFixture(TooManyTokensUpstream.LegacyType)]
+    [TestFixture(TooManyTokensUpstream.ManagementApiType)]
     [Parallelizable]
-    public class Given_An_Upstream_Token_Limit_Rejection_Embedding_A_Secret
+    public class Given_An_Upstream_Token_Limit_Rejection_Embedding_A_Secret(string upstreamType)
     {
         private const string Sentinel = "idp-internal-07.corp.local/secret=hunter2";
 
@@ -2813,7 +2845,7 @@ public class OAuthManagerTests
         {
             string tampered = TooManyTokensUpstream.MessageWithLimit("5") + " " + Sentinel;
             (_, _raw, _body, _logger) = await UpstreamRejectsWith(
-                TooManyTokensUpstream.BodyWithMessage(tampered)
+                TooManyTokensUpstream.BodyWithMessage(tampered, upstreamType)
             );
         }
 
@@ -2987,38 +3019,68 @@ public class OAuthManagerTests
     /// <summary>
     /// Every way an upstream 429 body can deviate from the canonical one. All of them answer 429
     /// with the generic rate-limit contract rather than a partially believed token-limit body.
+    /// Each deviation that keeps a recognizable type runs once per accepted upstream type, and the
+    /// near-miss types show that only the two exact values are accepted.
     /// </summary>
     [TestFixture]
     [Parallelizable]
     public class Given_An_Upstream_429_Whose_Body_Deviates
     {
+        private const string CanonicalMessage =
+            "Too many access tokens have been requested (limit is 5). Access tokens should be reused until they expire.";
+
+        private static readonly string[] _acceptedTypes =
+        [
+            TooManyTokensUpstream.LegacyType,
+            TooManyTokensUpstream.ManagementApiType,
+        ];
+
+        private static string TypeLabel(string type) =>
+            type == TooManyTokensUpstream.LegacyType ? "legacy type" : "management-api type";
+
+        // The minimal body the parser accepts, with "type" supplied as raw JSON so that a
+        // non-string type can be expressed.
+        private static string BodyWithTypeJson(string typeJson) =>
+            $$"""
+                {
+                  "type": {{typeJson}},
+                  "title": "Too Many Tokens",
+                  "status": 429,
+                  "errors": ["{{CanonicalMessage}}"]
+                }
+                """;
+
         private static string BodyOfType(string type) =>
+            BodyWithTypeJson(System.Text.Json.JsonSerializer.Serialize(type));
+
+        private static string BodyWithStatus(string statusJson, string type) =>
             $$"""
                 {
                   "type": "{{type}}",
-                  "title": "Too Many Tokens",
-                  "status": 429,
-                  "errors": ["{{"Too many access tokens have been requested (limit is 5). Access tokens should be reused until they expire."}}"]
+                  "status": {{statusJson}},
+                  "errors": ["{{CanonicalMessage}}"]
                 }
                 """;
 
-        private static string BodyWithStatus(int status) =>
+        private static string BodyWithErrors(string errorsJson, string type) =>
             $$"""
                 {
-                  "type": "{{TooManyTokensUpstream.Type}}",
-                  "status": {{status}},
-                  "errors": ["Too many access tokens have been requested (limit is 5). Access tokens should be reused until they expire."]
-                }
-                """;
-
-        private static string BodyWithErrors(string errorsJson) =>
-            $$"""
-                {
-                  "type": "{{TooManyTokensUpstream.Type}}",
+                  "type": "{{type}}",
                   "status": 429,
                   "errors": {{errorsJson}}
                 }
                 """;
+
+        // The canonical body of the given type with one top-level member removed.
+        private static string BodyWithout(string member, string type)
+        {
+            JsonObject body = JsonNode.Parse(TooManyTokensUpstream.BodyWithLimit("5", type))!.AsObject();
+            body.Remove(member);
+            return body.ToJsonString();
+        }
+
+        private static TestCaseData Case(string upstreamBody, string name) =>
+            new TestCaseData(upstreamBody).SetName(name);
 
         private static IEnumerable<TestCaseData> DeviatingBodies()
         {
@@ -3028,34 +3090,88 @@ public class OAuthManagerTests
             yield return new TestCaseData(BodyOfType("urn:ed-fi:api:too-many-requests")).SetName(
                 "Valid problem details of a different type"
             );
-            yield return new TestCaseData(BodyWithStatus(503)).SetName("Body declares another status");
-            yield return new TestCaseData(BodyWithErrors("[]")).SetName("Empty errors array");
-            yield return new TestCaseData(
-                BodyWithErrors(
-                    """["Too many access tokens have been requested (limit is 5). Access tokens should be reused until they expire.", "and another"]"""
-                )
-            ).SetName("Multi-element errors array");
-            yield return new TestCaseData(BodyWithErrors("[5]")).SetName("Errors entry is not a string");
-            yield return new TestCaseData(BodyWithErrors("""[{"message": "nested"}]""")).SetName(
-                "Errors entry is an object"
+
+            foreach (string type in _acceptedTypes)
+            {
+                string under = $" under the {TypeLabel(type)}";
+                string canonicalMessageJson = System.Text.Json.JsonSerializer.Serialize(CanonicalMessage);
+
+                yield return Case(BodyWithStatus("503", type), "Body declares another status" + under);
+                yield return Case(BodyWithout("status", type), "Status member absent" + under);
+                yield return Case(BodyWithStatus("null", type), "Status is the JSON literal null" + under);
+                yield return Case(BodyWithStatus("\"429\"", type), "Status is a string" + under);
+                yield return Case(BodyWithStatus("429.5", type), "Status is not an integer" + under);
+                yield return Case(BodyWithout("errors", type), "Errors member absent" + under);
+                yield return Case(BodyWithErrors("null", type), "Errors is the JSON literal null" + under);
+                yield return Case(BodyWithErrors(canonicalMessageJson, type), "Errors is a string" + under);
+                yield return Case(
+                    BodyWithErrors($$"""{ "0": {{canonicalMessageJson}} }""", type),
+                    "Errors is an object" + under
+                );
+                yield return Case(BodyWithErrors("[]", type), "Empty errors array" + under);
+                yield return Case(
+                    BodyWithErrors($"""[{canonicalMessageJson}, "and another"]""", type),
+                    "Multi-element errors array" + under
+                );
+                yield return Case(BodyWithErrors("[5]", type), "Errors entry is not a string" + under);
+                yield return Case(
+                    BodyWithErrors("""[{"message": "nested"}]""", type),
+                    "Errors entry is an object" + under
+                );
+                yield return Case(
+                    BodyWithErrors("""["Rate limit reached."]""", type),
+                    "Unrecognized message" + under
+                );
+                yield return Case(
+                    TooManyTokensUpstream.BodyWithLimit("many", type),
+                    "Non-numeric limit" + under
+                );
+                yield return Case(TooManyTokensUpstream.BodyWithLimit("", type), "Absent limit" + under);
+                yield return Case(TooManyTokensUpstream.BodyWithLimit("0", type), "Zero limit" + under);
+                yield return Case(TooManyTokensUpstream.BodyWithLimit("-5", type), "Negative limit" + under);
+                yield return Case(
+                    TooManyTokensUpstream.BodyWithLimit("2147483648", type),
+                    "Limit overflowing int" + under
+                );
+                yield return Case(
+                    TooManyTokensUpstream.BodyWithLimit(" 5", type),
+                    "Limit padded with whitespace" + under
+                );
+            }
+
+            // Near misses of the accepted types. Each is otherwise the body the control test below
+            // shows is accepted, so the type alone is what turns it away.
+            const string ManagementApiType = TooManyTokensUpstream.ManagementApiType;
+            yield return Case(
+                BodyOfType(ManagementApiType + " "),
+                "Management API type with a trailing space"
             );
-            yield return new TestCaseData(BodyWithErrors("""["Rate limit reached."]""")).SetName(
-                "Unrecognized message"
+            yield return Case(
+                BodyOfType(ManagementApiType.ToUpperInvariant()),
+                "Management API type upper-cased"
             );
-            yield return new TestCaseData(TooManyTokensUpstream.BodyWithLimit("many")).SetName(
-                "Non-numeric limit"
+            yield return Case(
+                BodyOfType("urn:ed-fi:management-api:security:authentication"),
+                "Parent of the Management API type"
             );
-            yield return new TestCaseData(TooManyTokensUpstream.BodyWithLimit("")).SetName("Absent limit");
-            yield return new TestCaseData(TooManyTokensUpstream.BodyWithLimit("0")).SetName("Zero limit");
-            yield return new TestCaseData(TooManyTokensUpstream.BodyWithLimit("-5")).SetName(
-                "Negative limit"
+            yield return Case(
+                BodyOfType(ManagementApiType + ":extra"),
+                "Extension of the Management API type"
             );
-            yield return new TestCaseData(TooManyTokensUpstream.BodyWithLimit("2147483648")).SetName(
-                "Limit overflowing int"
+            yield return Case(
+                BodyOfType("urn:ed-fi:management-api:too-many-requests"),
+                "Management API rate-limit type"
             );
-            yield return new TestCaseData(TooManyTokensUpstream.BodyWithLimit(" 5")).SetName(
-                "Limit padded with whitespace"
+            yield return Case(
+                BodyOfType("urn:ed-fi:admin-api:security:authentication:too-many-tokens"),
+                "Published specification admin-api spelling"
             );
+            yield return Case(BodyWithout("type", ManagementApiType), "Type member absent");
+            yield return Case(
+                BodyWithTypeJson($"[{System.Text.Json.JsonSerializer.Serialize(ManagementApiType)}]"),
+                "Type is an array holding the Management API type"
+            );
+            yield return Case(BodyWithTypeJson("null"), "Type is the JSON literal null");
         }
 
         [TestCaseSource(nameof(DeviatingBodies))]
@@ -3065,6 +3181,21 @@ public class OAuthManagerTests
 
             status.Should().Be(HttpStatusCode.TooManyRequests);
             ShouldBeTheGenericRateLimitContract(body);
+        }
+
+        // The control for the near-miss cases: the same minimal body with an accepted type is
+        // believed, so a near miss is turned away by its type and not by anything else.
+        [TestCase(TooManyTokensUpstream.LegacyType)]
+        [TestCase(TooManyTokensUpstream.ManagementApiType)]
+        public async Task It_accepts_the_near_miss_body_when_its_type_is_accepted(string upstreamType)
+        {
+            (HttpStatusCode status, _, JsonNode body, _) = await UpstreamRejectsWith(
+                BodyOfType(upstreamType)
+            );
+
+            status.Should().Be(HttpStatusCode.TooManyRequests);
+            body["type"]!.ToString().Should().Be(DmsTooManyTokensType);
+            body["errors"]![0]!.ToString().Should().Be(CanonicalMessage);
         }
     }
 
@@ -3076,13 +3207,18 @@ public class OAuthManagerTests
     [Parallelizable]
     public class Given_An_Upstream_Status_The_New_Arm_Does_Not_Claim
     {
-        [TestCase(HttpStatusCode.ServiceUnavailable)]
-        [TestCase(HttpStatusCode.Forbidden)]
-        public async Task It_still_responds_with_the_bad_gateway_contract(HttpStatusCode upstreamStatus)
+        [TestCase(HttpStatusCode.ServiceUnavailable, TooManyTokensUpstream.LegacyType)]
+        [TestCase(HttpStatusCode.ServiceUnavailable, TooManyTokensUpstream.ManagementApiType)]
+        [TestCase(HttpStatusCode.Forbidden, TooManyTokensUpstream.LegacyType)]
+        [TestCase(HttpStatusCode.Forbidden, TooManyTokensUpstream.ManagementApiType)]
+        public async Task It_still_responds_with_the_bad_gateway_contract(
+            HttpStatusCode upstreamStatus,
+            string upstreamType
+        )
         {
             (HttpResponseMessage response, _) = await UpstreamResponds(
                 upstreamStatus,
-                TooManyTokensUpstream.BodyWithLimit("5")
+                TooManyTokensUpstream.BodyWithLimit("5", upstreamType)
             );
             JsonNode body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
 

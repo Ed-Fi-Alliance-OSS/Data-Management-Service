@@ -747,7 +747,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -768,7 +768,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -790,7 +790,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -809,7 +809,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -828,7 +828,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -1031,7 +1031,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "OriginalId 1 not found. It may have been recently deleted.",
-                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                   "title": "Unresolved Reference",
                   "status": 409,
                   "correlationId": "{correlationId}",
@@ -1238,7 +1238,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -1285,7 +1285,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -1329,7 +1329,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -1373,7 +1373,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -1437,7 +1437,7 @@ public class ClaimSetModuleTests
                 """
                 {
                     "detail": "",
-                    "type": "urn:ed-fi:api:internal-server-error",
+                    "type": "urn:ed-fi:management-api:internal-server-error",
                     "title": "Internal Server Error",
                     "status": 500,
                     "correlationId": "{correlationId}",
@@ -1496,7 +1496,7 @@ public class ClaimSetModuleTests
                 """
                 {
                     "detail": "Unable to update claim set due to multi-user conflicts. Retry the request.",
-                    "type": "urn:ed-fi:api:conflict",
+                    "type": "urn:ed-fi:management-api:conflict",
                     "title": "Conflict",
                     "status": 409,
                     "correlationId": "{correlationId}",
@@ -1536,7 +1536,7 @@ public class ClaimSetModuleTests
                 """
                 {
                     "detail": "Unable to copy claim set due to multi-user conflicts. Retry the request.",
-                    "type": "urn:ed-fi:api:conflict",
+                    "type": "urn:ed-fi:management-api:conflict",
                     "title": "Conflict",
                     "status": 409,
                     "correlationId": "{correlationId}",
@@ -1566,7 +1566,7 @@ public class ClaimSetModuleTests
                 """
                 {
                     "detail": "Unable to delete claim set due to multi-user conflicts. Retry the request.",
-                    "type": "urn:ed-fi:api:conflict",
+                    "type": "urn:ed-fi:management-api:conflict",
                     "title": "Conflict",
                     "status": 409,
                     "correlationId": "{correlationId}",
@@ -1625,7 +1625,7 @@ public class ClaimSetModuleTests
                 """
                 {
                     "detail": "The specified claim set is system-reserved and cannot be updated.",
-                    "type": "urn:ed-fi:api:bad-request",
+                    "type": "urn:ed-fi:management-api:bad-request",
                     "title": "Bad Request",
                     "status": 400,
                     "correlationId": "{correlationId}",
@@ -1669,7 +1669,7 @@ public class ClaimSetModuleTests
                 """
                 {
                     "detail": "The specified claim set is system-reserved and cannot be imported.",
-                    "type": "urn:ed-fi:api:bad-request",
+                    "type": "urn:ed-fi:management-api:bad-request",
                     "title": "Bad Request",
                     "status": 400,
                     "correlationId": "{correlationId}",

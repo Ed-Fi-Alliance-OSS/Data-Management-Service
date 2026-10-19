@@ -17,7 +17,7 @@ public static class FailureResponse
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
-    private static readonly string _typePrefix = "urn:ed-fi:api";
+    private static readonly string _typePrefix = "urn:ed-fi:management-api";
     private static readonly string _unauthorizedType = $"{_typePrefix}:security:authentication";
     private static readonly string _tooManyTokensType = $"{_unauthorizedType}:too-many-tokens";
     private static readonly string _forbiddenType = $"{_typePrefix}:security:authorization";
@@ -212,7 +212,7 @@ public static class FailureResponse
         );
 
     /// <summary>
-    /// Structured 400 <c>urn:ed-fi:api:bad-request:parameter</c> response for a query/pagination
+    /// Structured 400 <c>urn:ed-fi:management-api:bad-request:parameter</c> response for a query/pagination
     /// parameter failure (as opposed to a request-body data-validation failure). Per the Knowledge
     /// Base's "Invalid Limit Count" example, <c>validationErrors</c> stays empty and the specific,
     /// pre-sanitized reasons are carried in <c>errors</c>.
