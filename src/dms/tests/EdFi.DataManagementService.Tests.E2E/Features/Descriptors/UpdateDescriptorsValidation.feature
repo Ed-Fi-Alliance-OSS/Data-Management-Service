@@ -343,9 +343,6 @@ Feature: Update a Descriptor
                         ],
                         "$.shortDescription": [
                         "shortDescription is required."
-                        ],
-                        "$.id": [
-                        "id is required."
                         ]
                     },
                     "errors": []

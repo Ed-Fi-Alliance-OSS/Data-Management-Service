@@ -197,9 +197,6 @@ Feature: Resources "Update" Operation validations
                         ],
                         "$.namespace": [
                             "namespace is required."
-                        ],
-                        "$.id": [
-                            "id is required."
                         ]
                     },
                     "errors": []

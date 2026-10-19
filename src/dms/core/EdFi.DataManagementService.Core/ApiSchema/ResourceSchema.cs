@@ -122,7 +122,6 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
                 { "type", "string" },
                 { "description", "The item id" },
             };
-            jsonSchemaForUpdate["required"]!.AsArray().Add("id");
             return jsonSchemaForUpdate;
         });
 

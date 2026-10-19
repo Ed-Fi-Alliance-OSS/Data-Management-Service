@@ -423,7 +423,7 @@ public class ValidateDocumentMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_A_Update_Request_With_No_Id_Property : ValidateDocumentMiddlewareTests
+    public class Given_An_Update_Request_With_No_Id_Property : ValidateDocumentMiddlewareTests
     {
         private RequestInfo _requestInfo = No.RequestInfo();
 
@@ -447,21 +447,9 @@ public class ValidateDocumentMiddlewareTests
         }
 
         [Test]
-        public void It_has_a_response()
+        public void It_does_not_require_id()
         {
-            _requestInfo.FrontendResponse.Should().NotBe(No.FrontendResponse);
-        }
-
-        [Test]
-        public void It_returns_status_400()
-        {
-            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
-        }
-
-        [Test]
-        public void It_returns_message_body_with_required_validation_error()
-        {
-            _requestInfo.FrontendResponse.Body?.ToJsonString().Should().ContainAll("is required", "id");
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 

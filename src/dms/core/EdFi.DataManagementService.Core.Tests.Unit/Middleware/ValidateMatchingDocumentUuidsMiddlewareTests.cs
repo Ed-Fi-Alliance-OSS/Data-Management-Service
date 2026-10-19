@@ -118,6 +118,50 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
 
         [TestFixture]
         [Parallelizable]
+        public class Given_No_Id_In_Body : ValidateMatchingDocumentUuidsMiddlewareTests
+        {
+            private RequestInfo _requestInfo = No.RequestInfo();
+            private readonly string id = Guid.NewGuid().ToString();
+
+            [SetUp]
+            public async Task Setup()
+            {
+                var jsonData = """
+                    {
+                     "weekIdentifier": "12345",
+                     "beginDate": "2023-09-11",
+                     "endDate": "2023-09-11",
+                     "totalInstructionalDays": 300
+                    }
+                    """;
+                var frontEndRequest = new FrontendRequest(
+                    $"ed-fi/academicweeks/{id}",
+                    Body: jsonData,
+                    Form: null,
+                    Headers: [],
+                    QueryParameters: [],
+                    TraceId: new TraceId("traceId"),
+                    RouteQualifiers: []
+                );
+                _requestInfo = Context(frontEndRequest, RequestMethod.PUT);
+                _requestInfo.ParsedBody = JsonNode.Parse(jsonData)!;
+                _requestInfo.PathComponents = _requestInfo.PathComponents with
+                {
+                    Operation = new ResourcePathOperation.ById(new DocumentUuid(new(id))),
+                };
+
+                await Middleware().Execute(_requestInfo, Next());
+            }
+
+            [Test]
+            public void It_provides_no_response()
+            {
+                _requestInfo?.FrontendResponse.Should().Be(No.FrontendResponse);
+            }
+        }
+
+        [TestFixture]
+        [Parallelizable]
         public class Given_A_Different_Id_In_Body_And_Url : ValidateMatchingDocumentUuidsMiddlewareTests
         {
             private RequestInfo _requestInfo = No.RequestInfo();
