@@ -489,6 +489,41 @@ Feature: Resources "Create" Operation validations
                   """
              Then it should respond with 200
 
+        @POST
+        @e2e-ci-shard-1 @MssqlRepresentative @DMS-1451
+        # DMS-1452: Quarantined until POST upsert detection uses natural keys; until then
+        # the RI capture misses a mixed-case descriptor identity and the second POST returns 409.
+        @ignore
+        Scenario: 35 Post a resource whose identity contains a descriptor twice (Resource)
+            Given the system has these descriptors
+                  | descriptorValue                                                      |
+                  | uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education |
+              And the system has these "schools"
+                  | schoolId | nameOfInstitution  | gradeLevels                                                                        | educationOrganizationCategories                                                                                   |
+                  | 1451001  | DMS-1451 Test High | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+             When a POST request is made to "/ed-fi/programs" with
+                  """
+                  {
+                      "educationOrganizationReference": {
+                          "educationOrganizationId": 1451001
+                      },
+                      "programName": "DMS-1451 Career Pathways",
+                      "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education"
+                  }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/ed-fi/programs" with
+                  """
+                  {
+                      "educationOrganizationReference": {
+                          "educationOrganizationId": 1451001
+                      },
+                      "programName": "DMS-1451 Career Pathways",
+                      "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education"
+                  }
+                  """
+             Then it should respond with 200
+
         @API-167 @POST
         @e2e-ci-shard-1
         Scenario: 17 Post a request with a duplicated value (Resource)

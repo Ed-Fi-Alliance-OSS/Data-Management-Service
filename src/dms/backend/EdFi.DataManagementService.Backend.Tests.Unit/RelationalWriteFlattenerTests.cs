@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Unit.Profile;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -683,7 +684,7 @@ public class Given_RelationalWriteFlattener
                         {
                           "beginDate": "2026-08-20",
                           "schoolReference": {
-                            "schoolId": 255901
+                            "schoolId": 255911
                           }
                         },
                         {
@@ -910,7 +911,7 @@ public class Given_RelationalWriteFlattener
                         {
                           "beginDate": "2026-08-20",
                           "schoolReference": {
-                            "schoolId": 255901
+                            "schoolId": 255911
                           }
                         },
                         {
@@ -4456,20 +4457,16 @@ public class Given_RelationalWriteFlattener
         var resolvedDescriptorReferences = descriptorReferences?.ToArray() ?? [];
         var invalidDocumentReferenceFailures = invalidDocumentReferences?.ToArray() ?? [];
 
-        return new ResolvedReferenceSet(
-            SuccessfulDocumentReferencesByPath: resolvedDocumentReferences.ToDictionary(
+        return ResolvedReferenceSets.Create(
+            successfulDocumentReferencesByPath: resolvedDocumentReferences.ToDictionary(
                 documentReference => documentReference.Reference.Path,
                 documentReference => documentReference
             ),
-            SuccessfulDescriptorReferencesByPath: resolvedDescriptorReferences.ToDictionary(
+            successfulDescriptorReferencesByPath: resolvedDescriptorReferences.ToDictionary(
                 descriptorReference => descriptorReference.Reference.Path,
                 descriptorReference => descriptorReference
             ),
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: invalidDocumentReferenceFailures,
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
+            invalidDocumentReferences: invalidDocumentReferenceFailures
         );
     }
 
@@ -4488,7 +4485,6 @@ public class Given_RelationalWriteFlattener
                         identityElement.IdentityValue
                     )),
                 ]),
-                new ReferentialId(Guid.NewGuid()),
                 new JsonPath(path)
             ),
             documentId,
@@ -4502,7 +4498,6 @@ public class Given_RelationalWriteFlattener
             new DocumentReference(
                 _schoolResourceInfo,
                 new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255999")]),
-                new ReferentialId(Guid.NewGuid()),
                 new JsonPath(path)
             ),
             DocumentReferenceFailureReason.Missing
@@ -4521,7 +4516,6 @@ public class Given_RelationalWriteFlattener
                 new DocumentIdentity([
                     new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri),
                 ]),
-                new ReferentialId(Guid.NewGuid()),
                 new JsonPath(path)
             ),
             descriptorId,
@@ -4542,7 +4536,6 @@ public class Given_RelationalWriteFlattener
                 new DocumentIdentity([
                     new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri),
                 ]),
-                new ReferentialId(Guid.NewGuid()),
                 new JsonPath(path)
             ),
             descriptorId,
@@ -4555,9 +4548,8 @@ public class Given_RelationalWriteFlattener
         params (string Path, int DescriptorId, string Uri)[] descriptors
     )
     {
-        return new ResolvedReferenceSet(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
-            SuccessfulDescriptorReferencesByPath: descriptors.ToDictionary(
+        return ResolvedReferenceSets.Create(
+            successfulDescriptorReferencesByPath: descriptors.ToDictionary(
                 descriptor => new JsonPath(descriptor.Path),
                 descriptor => new ResolvedDescriptorReference(
                     new DescriptorReference(
@@ -4568,19 +4560,13 @@ public class Given_RelationalWriteFlattener
                                 descriptor.Uri
                             ),
                         ]),
-                        new ReferentialId(Guid.NewGuid()),
                         new JsonPath(descriptor.Path)
                     ),
                     descriptor.DescriptorId,
                     5000000000L + descriptor.DescriptorId,
                     ResourceKeyId: 31
                 )
-            ),
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
+            )
         );
     }
 
@@ -4775,7 +4761,6 @@ public class Given_RelationalWriteFlattener
                     IsDescriptor: false
                 ),
                 new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
-                new ReferentialId(Guid.Parse("11111111-1111-1111-1111-111111111111")),
                 new JsonPath("$.schoolReference")
             );
             var programDescriptorReference = new DescriptorReference(
@@ -4790,12 +4775,11 @@ public class Given_RelationalWriteFlattener
                         "uri://ed-fi.org/programtypedescriptor#stem"
                     ),
                 ]),
-                new ReferentialId(Guid.Parse("22222222-2222-2222-2222-222222222222")),
                 new JsonPath("$.programTypeDescriptor")
             );
 
-            return new ResolvedReferenceSet(
-                SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
+            return ResolvedReferenceSets.Create(
+                successfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
                 {
                     [new JsonPath("$.schoolReference")] = new ResolvedDocumentReference(
                         schoolReference,
@@ -4806,8 +4790,9 @@ public class Given_RelationalWriteFlattener
                         new ResolvedDocumentReference(
                             new DocumentReference(
                                 schoolReference.ResourceInfo,
-                                schoolReference.DocumentIdentity,
-                                new ReferentialId(Guid.Parse("33333333-3333-3333-3333-333333333333")),
+                                new DocumentIdentity([
+                                    new DocumentIdentityElement(new JsonPath("$.schoolId"), "255911"),
+                                ]),
                                 new JsonPath("$.addresses[0].periods[0].schoolReference")
                             ),
                             DocumentId: 9901L,
@@ -4817,15 +4802,16 @@ public class Given_RelationalWriteFlattener
                         new ResolvedDocumentReference(
                             new DocumentReference(
                                 schoolReference.ResourceInfo,
-                                schoolReference.DocumentIdentity,
-                                new ReferentialId(Guid.Parse("44444444-4444-4444-4444-444444444444")),
+                                new DocumentIdentity([
+                                    new DocumentIdentityElement(new JsonPath("$.schoolId"), "255902"),
+                                ]),
                                 new JsonPath("$.addresses[0].periods[1].schoolReference")
                             ),
                             DocumentId: 9902L,
                             ResourceKeyId: 21
                         ),
                 },
-                SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
+                successfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
                 {
                     [new JsonPath("$.programTypeDescriptor")] = new ResolvedDescriptorReference(
                         programDescriptorReference,
@@ -4833,26 +4819,13 @@ public class Given_RelationalWriteFlattener
                         DocumentId: 5000000077L,
                         ResourceKeyId: 31
                     ),
-                },
-                LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-                InvalidDocumentReferences: [],
-                InvalidDescriptorReferences: [],
-                DocumentReferenceOccurrences: [],
-                DescriptorReferenceOccurrences: []
+                }
             );
         }
 
         public static ResolvedReferenceSet CreateEmptyResolvedReferences()
         {
-            return new ResolvedReferenceSet(
-                SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
-                SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-                LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-                InvalidDocumentReferences: [],
-                InvalidDescriptorReferences: [],
-                DocumentReferenceOccurrences: [],
-                DescriptorReferenceOccurrences: []
-            );
+            return ResolvedReferenceSets.Create();
         }
 
         private static TableWritePlan CreateRootPlan()
@@ -5891,14 +5864,5 @@ public class Given_RelationalWriteFlattener_with_an_inlined_parent_collection
         exception.ValidationFailures[0].Message.Should().Contain("$.parents[0].detail.children[0]");
     }
 
-    private static ResolvedReferenceSet EmptyResolvedReferences() =>
-        new(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
-        );
+    private static ResolvedReferenceSet EmptyResolvedReferences() => ResolvedReferenceSets.Create();
 }

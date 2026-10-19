@@ -2331,7 +2331,7 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
 - `TrackedChangeColumnInfo` old/new column pairs and separate old/new nullability for identity paths, securable element paths, canonical key-unification storage columns, descriptor `Namespace`/`CodeValue` projections, and person `DocumentId` projections.
 - SQL Server tracked-change `Old*`/`New*` string columns whose origin includes identity carry
   `COLLATE SQL_Latin1_General_CP1_CI_AS`; PostgreSQL history strings keep the database collation.
-  Routing uses `smallint ResourceKeyId`. Lowered-URI probes remain future work.
+  Routing uses `smallint ResourceKeyId`; it does not use the lowered-URI probes.
 - `TrackedChangeDescriptorJoinInfo` and `TrackedChangePersonJoinInfo` paths used by trigger emitters, with value columns referencing them by join name rather than duplicating join definitions.
 - `DocumentStamping.ChangeTracking` attachment to the correct `TriggerKindParameters.DocumentStamping` trigger entries.
 - ChangeTracking key-change rows using the owning `DbTriggerInfo.IdentityProjectionColumns` workset, including key-unification cases where canonical storage columns change without direct alias-column updates, and presence-only alias changes do not emit key-change rows when the canonical identity storage values are unchanged.

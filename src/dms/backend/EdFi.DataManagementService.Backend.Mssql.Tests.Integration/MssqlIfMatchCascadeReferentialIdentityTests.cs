@@ -126,7 +126,6 @@ file static class MssqlIfMatchCascadeReferentialIdentityTestSupport
                 new DocumentReference(
                     StudentReferenceResourceInfo,
                     studentIdentity,
-                    ReferentialIdCalculator.ReferentialIdFrom(StudentReferenceResourceInfo, studentIdentity),
                     new JsonPath("$.studentReference")
                 ),
             ],

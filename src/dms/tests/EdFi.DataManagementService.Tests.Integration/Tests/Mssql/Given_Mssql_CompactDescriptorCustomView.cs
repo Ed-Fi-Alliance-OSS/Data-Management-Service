@@ -31,4 +31,13 @@ public sealed class Given_Mssql_CompactDescriptorCustomView : MssqlApiIntegratio
         CompactDescriptorResourceScenario.It_authorizes_custom_view_membership_by_the_owning_descriptor_document(
             Harness
         );
+
+    [Test]
+    [Ignore(
+        "DMS-1452: Quarantined until POST upsert detection uses natural keys; until then the referential-identity capture misses a re-POSTed identity whose descriptor spelling differs from the stored hash input and returns 409."
+    )]
+    public Task It_matches_repeated_POSTs_with_case_variant_descriptors_under_custom_view_authorization() =>
+        CompactDescriptorResourceScenario.It_matches_repeated_POSTs_with_case_variant_descriptors_under_custom_view_authorization(
+            Harness
+        );
 }

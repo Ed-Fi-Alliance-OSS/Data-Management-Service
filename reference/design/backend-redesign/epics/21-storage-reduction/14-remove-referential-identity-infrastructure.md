@@ -59,7 +59,7 @@ atomically removing all remaining DMS-owned ReferentialIdentity and UUIDv5 infra
   neither is a cleanup prerequisite here. Keep the SQL Server `dms.UniqueIdentifierTable`
   TVP type: `MssqlRepresentationRestampStore` (DMS-1318) binds it to select documents by
   `DocumentUuid` for the DocumentCacheAdmin `--document-uuid` restamp scope; its RI consumer
-  (`MssqlReferenceLookupBulkStrategy`) is already gone with DMS-1454.
+  (`MssqlReferenceLookupBulkStrategy`) is already gone with DMS-1451.
 - Remove operational remnants: drop `dms."ReferentialIdentity"` from the TRUNCATE list in
   `eng/azure-vm/compose/seed/clone-data.sh` (the script itself stays — it is the general seed-clone
   path referenced by `grandbend.sh` and `eng/azure-vm/docs/infrastructure.md`),

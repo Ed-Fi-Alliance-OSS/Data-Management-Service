@@ -15,76 +15,20 @@ public sealed class ReferenceResolverIntegrationFixture
 
     private ReferenceResolverIntegrationFixture(
         ReferenceResolverSeedData seedData,
-        QualifiedResourceName requestResource,
-        QualifiedResourceName schoolResource,
-        QualifiedResourceName localEducationAgencyResource,
-        QualifiedResourceName educationOrganizationResource,
         QualifiedResourceName schoolTypeDescriptorResource,
-        QualifiedResourceName academicSubjectDescriptorResource,
-        ReferentialId schoolReferentialId,
-        ReferentialId educationOrganizationAliasReferentialId,
-        ReferentialId localEducationAgencyReferentialId,
-        ReferentialId schoolTypeDescriptorReferentialId,
-        ReferentialId academicSubjectDescriptorReferentialId,
-        ReferentialId missingSchoolReferentialId,
-        ReferentialId missingSchoolTypeDescriptorReferentialId,
-        string schoolTypeDescriptorUri,
-        string academicSubjectDescriptorUri,
-        string missingSchoolTypeDescriptorUri
+        QualifiedResourceName academicSubjectDescriptorResource
     )
     {
         SeedData = seedData;
-        RequestResource = requestResource;
-        SchoolResource = schoolResource;
-        LocalEducationAgencyResource = localEducationAgencyResource;
-        EducationOrganizationResource = educationOrganizationResource;
         SchoolTypeDescriptorResource = schoolTypeDescriptorResource;
         AcademicSubjectDescriptorResource = academicSubjectDescriptorResource;
-        SchoolReferentialId = schoolReferentialId;
-        EducationOrganizationAliasReferentialId = educationOrganizationAliasReferentialId;
-        LocalEducationAgencyReferentialId = localEducationAgencyReferentialId;
-        SchoolTypeDescriptorReferentialId = schoolTypeDescriptorReferentialId;
-        AcademicSubjectDescriptorReferentialId = academicSubjectDescriptorReferentialId;
-        MissingSchoolReferentialId = missingSchoolReferentialId;
-        MissingSchoolTypeDescriptorReferentialId = missingSchoolTypeDescriptorReferentialId;
-        SchoolTypeDescriptorUri = schoolTypeDescriptorUri;
-        AcademicSubjectDescriptorUri = academicSubjectDescriptorUri;
-        MissingSchoolTypeDescriptorUri = missingSchoolTypeDescriptorUri;
     }
 
     public ReferenceResolverSeedData SeedData { get; }
 
-    public QualifiedResourceName RequestResource { get; }
-
-    public QualifiedResourceName SchoolResource { get; }
-
-    public QualifiedResourceName LocalEducationAgencyResource { get; }
-
-    public QualifiedResourceName EducationOrganizationResource { get; }
-
     public QualifiedResourceName SchoolTypeDescriptorResource { get; }
 
     public QualifiedResourceName AcademicSubjectDescriptorResource { get; }
-
-    public ReferentialId SchoolReferentialId { get; }
-
-    public ReferentialId EducationOrganizationAliasReferentialId { get; }
-
-    public ReferentialId LocalEducationAgencyReferentialId { get; }
-
-    public ReferentialId SchoolTypeDescriptorReferentialId { get; }
-
-    public ReferentialId AcademicSubjectDescriptorReferentialId { get; }
-
-    public ReferentialId MissingSchoolReferentialId { get; }
-
-    public ReferentialId MissingSchoolTypeDescriptorReferentialId { get; }
-
-    public string SchoolTypeDescriptorUri { get; }
-
-    public string AcademicSubjectDescriptorUri { get; }
-
-    public string MissingSchoolTypeDescriptorUri { get; }
 
     public static ReferenceResolverIntegrationFixture CreateDefault()
     {
@@ -107,14 +51,9 @@ public sealed class ReferenceResolverIntegrationFixture
         var academicSubjectDescriptorReferentialId = CreateReferentialId(
             "00000000-0000-0000-0000-000000000555"
         );
-        var missingSchoolReferentialId = CreateReferentialId("00000000-0000-0000-0000-000000000666");
-        var missingSchoolTypeDescriptorReferentialId = CreateReferentialId(
-            "00000000-0000-0000-0000-000000000777"
-        );
 
         const string SchoolTypeDescriptorUri = "uri://ed-fi.org/SchoolTypeDescriptor#Alternative";
         const string AcademicSubjectDescriptorUri = "uri://ed-fi.org/AcademicSubjectDescriptor#English";
-        const string MissingSchoolTypeDescriptorUri = "uri://ed-fi.org/SchoolTypeDescriptor#Missing";
 
         return new(
             seedData: new ReferenceResolverSeedData(
@@ -190,22 +129,8 @@ public sealed class ReferenceResolverIntegrationFixture
                     ),
                 ]
             ),
-            requestResource,
-            schoolResource,
-            localEducationAgencyResource,
-            educationOrganizationResource,
             schoolTypeDescriptorResource,
-            academicSubjectDescriptorResource,
-            schoolReferentialId,
-            educationOrganizationAliasReferentialId,
-            localEducationAgencyReferentialId,
-            schoolTypeDescriptorReferentialId,
-            academicSubjectDescriptorReferentialId,
-            missingSchoolReferentialId,
-            missingSchoolTypeDescriptorReferentialId,
-            SchoolTypeDescriptorUri,
-            AcademicSubjectDescriptorUri,
-            MissingSchoolTypeDescriptorUri
+            academicSubjectDescriptorResource
         );
     }
 
@@ -316,73 +241,6 @@ public sealed class ReferenceResolverIntegrationFixture
         );
     }
 
-    public DocumentReference CreateSchoolReference(string path, ReferentialId? referentialId = null)
-    {
-        return CreateDocumentReference(
-            SchoolResource,
-            new JsonPath("$.schoolId"),
-            "255901",
-            referentialId ?? SchoolReferentialId,
-            path
-        );
-    }
-
-    public DocumentReference CreateEducationOrganizationReference(
-        string path,
-        ReferentialId? referentialId = null
-    )
-    {
-        return CreateDocumentReference(
-            EducationOrganizationResource,
-            new JsonPath("$.educationOrganizationId"),
-            "255901",
-            referentialId ?? EducationOrganizationAliasReferentialId,
-            path
-        );
-    }
-
-    public DocumentReference CreateLocalEducationAgencyReference(
-        string path,
-        ReferentialId? referentialId = null
-    )
-    {
-        return CreateDocumentReference(
-            LocalEducationAgencyResource,
-            new JsonPath("$.localEducationAgencyId"),
-            "255901",
-            referentialId ?? LocalEducationAgencyReferentialId,
-            path
-        );
-    }
-
-    public DescriptorReference CreateSchoolTypeDescriptorReference(
-        string path,
-        ReferentialId? referentialId = null,
-        string? uri = null
-    )
-    {
-        return CreateDescriptorReference(
-            SchoolTypeDescriptorResource,
-            referentialId ?? SchoolTypeDescriptorReferentialId,
-            uri ?? SchoolTypeDescriptorUri,
-            path
-        );
-    }
-
-    public DescriptorReference CreateAcademicSubjectDescriptorReference(
-        string path,
-        ReferentialId? referentialId = null,
-        string? uri = null
-    )
-    {
-        return CreateDescriptorReference(
-            AcademicSubjectDescriptorResource,
-            referentialId ?? AcademicSubjectDescriptorReferentialId,
-            uri ?? AcademicSubjectDescriptorUri,
-            path
-        );
-    }
-
     private static ReferentialId CreateReferentialId(string value) => new(Guid.Parse(value));
 
     private static ConcreteResourceModel CreateConcreteResource(
@@ -485,49 +343,6 @@ public sealed class ReferenceResolverIntegrationFixture
             SourceJsonPath: new JsonPathExpression(jsonPath, []),
             TargetResource: null
         );
-
-    private static DocumentReference CreateDocumentReference(
-        QualifiedResourceName targetResource,
-        JsonPath identityPath,
-        string identityValue,
-        ReferentialId referentialId,
-        string path
-    )
-    {
-        return new(
-            ResourceInfo: new BaseResourceInfo(
-                new ProjectName(targetResource.ProjectName),
-                new ResourceName(targetResource.ResourceName),
-                IsDescriptor: false
-            ),
-            DocumentIdentity: new DocumentIdentity([
-                new DocumentIdentityElement(identityPath, identityValue),
-            ]),
-            ReferentialId: referentialId,
-            Path: new JsonPath(path)
-        );
-    }
-
-    private static DescriptorReference CreateDescriptorReference(
-        QualifiedResourceName targetResource,
-        ReferentialId referentialId,
-        string uri,
-        string path
-    )
-    {
-        return new(
-            ResourceInfo: new BaseResourceInfo(
-                new ProjectName(targetResource.ProjectName),
-                new ResourceName(targetResource.ResourceName),
-                IsDescriptor: true
-            ),
-            DocumentIdentity: new DocumentIdentity([
-                new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri),
-            ]),
-            ReferentialId: referentialId,
-            Path: new JsonPath(path)
-        );
-    }
 }
 
 public sealed record ReferenceResolverSeedData(

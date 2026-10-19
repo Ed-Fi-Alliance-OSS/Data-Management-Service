@@ -53,9 +53,10 @@ public static class ReferentialIdentityDerivation
         );
 
     /// <summary>
-    /// The referential identity of a descriptor document: the production write path keys
-    /// descriptors by the $.descriptor identity path with the URI lowercased, which is how
-    /// descriptor references are resolved during reference validation.
+    /// The referential identity the fixture loaders seed for a descriptor document: the
+    /// $.descriptor identity path with the URI lowercased. This is the pre-DMS-1451
+    /// derivation; natural-key resolution does not read these rows, and they are removed
+    /// with the rest of the referential identity infrastructure in DMS-1456.
     /// </summary>
     public static Guid DescriptorReferentialId(string descriptorResourceName, string uri) =>
         Uuidv5(

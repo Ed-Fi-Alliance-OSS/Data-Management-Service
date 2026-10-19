@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
@@ -279,8 +280,8 @@ public class Given_FlatteningResolvedReferenceLookupSet
     [Test]
     public void It_rejects_document_reference_occurrences_that_are_both_successful_and_deferred_missing()
     {
-        var resolvedReferences = new ResolvedReferenceSet(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
+        var resolvedReferences = ResolvedReferenceSets.Create(
+            successfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
             {
                 [new JsonPath("$.sections[0].schoolReference")] = CreateResolvedDocumentReference(
                     _schoolResourceInfo,
@@ -289,18 +290,13 @@ public class Given_FlatteningResolvedReferenceLookupSet
                     ("$.schoolId", "255901")
                 ),
             },
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences:
+            invalidDocumentReferences:
             [
                 CreateDocumentReferenceFailure(
                     "$.sections[0].schoolReference",
                     DocumentReferenceFailureReason.Missing
                 ),
-            ],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
+            ]
         );
 
         var act = () =>
@@ -320,20 +316,14 @@ public class Given_FlatteningResolvedReferenceLookupSet
     [Test]
     public void It_rejects_deferred_missing_document_reference_failures_that_do_not_match_compiled_bindings()
     {
-        var resolvedReferences = new ResolvedReferenceSet(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences:
+        var resolvedReferences = ResolvedReferenceSets.Create(
+            invalidDocumentReferences:
             [
                 CreateDocumentReferenceFailure(
                     "$.programs[0].schoolReference",
                     DocumentReferenceFailureReason.Missing
                 ),
-            ],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
+            ]
         );
 
         var act = () =>
@@ -509,8 +499,8 @@ public class Given_FlatteningResolvedReferenceLookupSet
             CreateDuplicateReferenceJsonPathScalarFixture();
         var lookupSet = FlatteningResolvedReferenceLookupSet.Create(
             writePlan,
-            new ResolvedReferenceSet(
-                SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
+            ResolvedReferenceSets.Create(
+                successfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
                 {
                     [new JsonPath("$.schoolReference")] = CreateResolvedDocumentReference(
                         _schoolResourceInfo,
@@ -519,13 +509,7 @@ public class Given_FlatteningResolvedReferenceLookupSet
                         ("$.localEducationAgencyId", "255902"),
                         ("$.schoolId", "255901")
                     ),
-                },
-                SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-                LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-                InvalidDocumentReferences: [],
-                InvalidDescriptorReferences: [],
-                DocumentReferenceOccurrences: [],
-                DescriptorReferenceOccurrences: []
+                }
             )
         );
 
@@ -540,8 +524,8 @@ public class Given_FlatteningResolvedReferenceLookupSet
             CreateDuplicateReferenceJsonPathScalarFixture();
         var lookupSet = FlatteningResolvedReferenceLookupSet.Create(
             writePlan,
-            new ResolvedReferenceSet(
-                SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
+            ResolvedReferenceSets.Create(
+                successfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
                 {
                     [new JsonPath("$.schoolReference")] = CreateResolvedDocumentReference(
                         _schoolResourceInfo,
@@ -550,13 +534,7 @@ public class Given_FlatteningResolvedReferenceLookupSet
                         ("$.schoolId", "255901"),
                         ("$.educationOrganizationId", "255902")
                     ),
-                },
-                SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-                LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-                InvalidDocumentReferences: [],
-                InvalidDescriptorReferences: [],
-                DocumentReferenceOccurrences: [],
-                DescriptorReferenceOccurrences: []
+                }
             )
         );
 
@@ -579,9 +557,8 @@ public class Given_FlatteningResolvedReferenceLookupSet
         // request regardless of which path it appeared at.
         var lookupSet = FlatteningResolvedReferenceLookupSet.Create(
             _writePlan,
-            new ResolvedReferenceSet(
-                SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
-                SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
+            ResolvedReferenceSets.Create(
+                successfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
                 {
                     // URI published at an inline reference path. A stored top-level
                     // collection row whose column lives at a different path
@@ -594,12 +571,7 @@ public class Given_FlatteningResolvedReferenceLookupSet
                             "uri://ed-fi.org/SchoolTypeDescriptor#Elementary",
                             descriptorId: 501
                         ),
-                },
-                LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-                InvalidDocumentReferences: [],
-                InvalidDescriptorReferences: [],
-                DocumentReferenceOccurrences: [],
-                DescriptorReferenceOccurrences: []
+                }
             )
         );
 
@@ -613,17 +585,15 @@ public class Given_FlatteningResolvedReferenceLookupSet
             .BeTrue();
         descriptorId.Should().Be(501);
 
-        // Casing tolerance: lookup must match regardless of caller casing because
-        // the resolver pipeline lowercases descriptor URIs before publishing them.
+        // Exact keys: without the stored projection, a case variant misses rather than being folded in C#.
         lookupSet
             .TryGetDescriptorIdByUri(
                 _schoolTypeDescriptorResource,
                 "URI://ED-FI.ORG/SchoolTypeDescriptor#elementary",
-                out var lowercasedId
+                out _
             )
             .Should()
-            .BeTrue();
-        lowercasedId.Should().Be(501);
+            .BeFalse();
 
         // Negative: a different descriptor resource for the same URI string must miss.
         lookupSet
@@ -647,24 +617,18 @@ public class Given_FlatteningResolvedReferenceLookupSet
         );
         var lookup = FlatteningResolvedReferenceLookupSet.Create(
             _writePlan,
-            new ResolvedReferenceSet(
-                new Dictionary<JsonPath, ResolvedDocumentReference>(),
-                new Dictionary<JsonPath, ResolvedDescriptorReference>
+            ResolvedReferenceSets.Create(
+                successfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
                 {
                     [reference.Reference.Path] = reference,
-                },
-                new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-                [],
-                [],
-                [],
-                []
+                }
             )
         );
 
         lookup
             .TryGetDescriptorIdByUri(
                 _schoolTypeDescriptorResource,
-                "URI://EXAMPLE.ORG/TYPE #mixed#value",
+                "uri://Example.org/Type #MiXeD#Value",
                 out var id
             )
             .Should()
@@ -674,6 +638,69 @@ public class Given_FlatteningResolvedReferenceLookupSet
             .TryGetDescriptorIdByUri(
                 _schoolTypeDescriptorResource,
                 "uri://Example.org/Type#MiXeD#Value",
+                out _
+            )
+            .Should()
+            .BeFalse();
+    }
+
+    [Test]
+    public void It_resolves_the_stored_spelling_of_a_request_resolved_descriptor_when_seeded_from_the_stored_projection()
+    {
+        var reference = CreateResolvedDescriptorReferenceWithUri(
+            _schoolTypeDescriptorResourceInfo,
+            "$.sections[0].schoolTypeDescriptor",
+            "uri://ed-fi.org/SchoolTypeDescriptor#Elementary",
+            descriptorId: 501
+        );
+        var lookup = FlatteningResolvedReferenceLookupSet.Create(
+            _writePlan,
+            ResolvedReferenceSets.Create(
+                successfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
+                {
+                    [reference.Reference.Path] = reference,
+                }
+            ),
+            storedDescriptorRows:
+            [
+                new HydratedDescriptorRows([
+                    new DescriptorUriRow(501, "uri://ed-fi.org/schooltypedescriptor#elementary"),
+                    // Stored but not resolved by this request: the projection never adds an id on its own.
+                    new DescriptorUriRow(777, "uri://ed-fi.org/SchoolTypeDescriptor#Middle"),
+                ]),
+            ]
+        );
+
+        lookup
+            .TryGetDescriptorIdByUri(
+                _schoolTypeDescriptorResource,
+                "uri://ed-fi.org/SchoolTypeDescriptor#Elementary",
+                out var requestSpellingId
+            )
+            .Should()
+            .BeTrue();
+        requestSpellingId.Should().Be(501);
+        lookup
+            .TryGetDescriptorIdByUri(
+                _schoolTypeDescriptorResource,
+                "uri://ed-fi.org/schooltypedescriptor#elementary",
+                out var storedSpellingId
+            )
+            .Should()
+            .BeTrue();
+        storedSpellingId.Should().Be(501);
+        lookup
+            .TryGetDescriptorIdByUri(
+                _schoolTypeDescriptorResource,
+                "uri://ed-fi.org/SchoolTypeDescriptor#Middle",
+                out _
+            )
+            .Should()
+            .BeFalse();
+        lookup
+            .TryGetDescriptorIdByUri(
+                _schoolResource,
+                "uri://ed-fi.org/schooltypedescriptor#elementary",
                 out _
             )
             .Should()
@@ -693,7 +720,6 @@ public class Given_FlatteningResolvedReferenceLookupSet
                 new DocumentIdentity([
                     new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri),
                 ]),
-                new ReferentialId(Guid.NewGuid()),
                 new JsonPath(path)
             ),
             descriptorId,
@@ -704,8 +730,8 @@ public class Given_FlatteningResolvedReferenceLookupSet
 
     private static ResolvedReferenceSet CreateResolvedReferenceSet()
     {
-        return new ResolvedReferenceSet(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
+        return ResolvedReferenceSets.Create(
+            successfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
             {
                 [new JsonPath("$.schoolReference")] = CreateResolvedDocumentReference(
                     _schoolResourceInfo,
@@ -737,7 +763,7 @@ public class Given_FlatteningResolvedReferenceLookupSet
                     _schoolResourceInfo,
                     "$.sections[0].sessions[0].schoolReference",
                     301L,
-                    ("$.schoolId", "255901")
+                    ("$.schoolId", "255904")
                 ),
                 [new JsonPath("$.sections[0].sessions[1].schoolReference")] = CreateResolvedDocumentReference(
                     _schoolResourceInfo,
@@ -752,7 +778,7 @@ public class Given_FlatteningResolvedReferenceLookupSet
                     ("$.schoolId", "255903")
                 ),
             },
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
+            successfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
             {
                 [new JsonPath("$.sections[0].schoolTypeDescriptor")] = CreateResolvedDescriptorReference(
                     _schoolTypeDescriptorResourceInfo,
@@ -776,19 +802,14 @@ public class Given_FlatteningResolvedReferenceLookupSet
                         "$.sections[1].schoolReference.schoolTypeDescriptor",
                         502
                     ),
-            },
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
+            }
         );
     }
 
     private static ResolvedReferenceSet CreateResolvedReferenceSetWithDeferredMissingDocumentReferences()
     {
-        return new ResolvedReferenceSet(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
+        return ResolvedReferenceSets.Create(
+            successfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
             {
                 [new JsonPath("$.sections[0].schoolReference")] = CreateResolvedDocumentReference(
                     _schoolResourceInfo,
@@ -807,9 +828,7 @@ public class Given_FlatteningResolvedReferenceLookupSet
                     ("$.schoolId", "255903")
                 ),
             },
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences:
+            invalidDocumentReferences:
             [
                 CreateDocumentReferenceFailure("$.schoolReference", DocumentReferenceFailureReason.Missing),
                 CreateDocumentReferenceFailure(
@@ -824,17 +843,14 @@ public class Given_FlatteningResolvedReferenceLookupSet
                     "$.sections[0].sessions[0].schoolReference",
                     DocumentReferenceFailureReason.IncompatibleTargetType
                 ),
-            ],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
+            ]
         );
     }
 
     private static ResolvedReferenceSet CreateResolvedReferenceSetWithIdentityCountDrift()
     {
-        return new ResolvedReferenceSet(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
+        return ResolvedReferenceSets.Create(
+            successfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
             {
                 [new JsonPath("$.schoolReference")] = CreateResolvedDocumentReference(
                     _schoolResourceInfo,
@@ -846,10 +862,10 @@ public class Given_FlatteningResolvedReferenceLookupSet
                     _schoolResourceInfo,
                     "$.sections[0].schoolReference",
                     201L,
-                    ("$.schoolId", "255901")
+                    ("$.schoolId", "255902")
                 ),
             },
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
+            successfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
             {
                 [new JsonPath("$.sections[0].schoolReference.schoolTypeDescriptor")] =
                     CreateResolvedDescriptorReference(
@@ -857,19 +873,14 @@ public class Given_FlatteningResolvedReferenceLookupSet
                         "$.sections[0].schoolReference.schoolTypeDescriptor",
                         501
                     ),
-            },
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
+            }
         );
     }
 
     private static ResolvedReferenceSet CreateResolvedReferenceSetWithIdentityKindDrift()
     {
-        return new ResolvedReferenceSet(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
+        return ResolvedReferenceSets.Create(
+            successfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
             {
                 [new JsonPath("$.schoolReference")] = CreateResolvedDocumentReference(
                     _schoolResourceInfo,
@@ -888,7 +899,7 @@ public class Given_FlatteningResolvedReferenceLookupSet
                     ("$.schoolId", "255901")
                 ),
             },
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
+            successfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
             {
                 [new JsonPath("$.sections[0].schoolReference.schoolTypeDescriptor")] =
                     CreateResolvedDescriptorReference(
@@ -896,19 +907,14 @@ public class Given_FlatteningResolvedReferenceLookupSet
                         "$.sections[0].schoolReference.schoolTypeDescriptor",
                         501
                     ),
-            },
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
+            }
         );
     }
 
     private static ResolvedReferenceSet CreateResolvedReferenceSetWithTargetDescriptorIdentityPaths()
     {
-        return new ResolvedReferenceSet(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
+        return ResolvedReferenceSets.Create(
+            successfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
             {
                 [new JsonPath("$.schoolReference")] = CreateResolvedDocumentReference(
                     _schoolResourceInfo,
@@ -931,7 +937,7 @@ public class Given_FlatteningResolvedReferenceLookupSet
                     ("$.schoolTypeDescriptor", "502")
                 ),
             },
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
+            successfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
             {
                 [new JsonPath("$.sections[0].schoolReference.schoolTypeDescriptor")] =
                     CreateResolvedDescriptorReference(
@@ -945,12 +951,7 @@ public class Given_FlatteningResolvedReferenceLookupSet
                         "$.sections[1].schoolReference.schoolTypeDescriptor",
                         502
                     ),
-            },
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
+            }
         );
     }
 
@@ -970,7 +971,6 @@ public class Given_FlatteningResolvedReferenceLookupSet
                         identityElement.IdentityValue
                     )),
                 ]),
-                new ReferentialId(Guid.NewGuid()),
                 new JsonPath(path)
             ),
             documentId,
@@ -987,7 +987,6 @@ public class Given_FlatteningResolvedReferenceLookupSet
             new DocumentReference(
                 _schoolResourceInfo,
                 new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255999")]),
-                new ReferentialId(Guid.NewGuid()),
                 new JsonPath(path)
             ),
             reason
@@ -1114,8 +1113,8 @@ public class Given_FlatteningResolvedReferenceLookupSet
 
         var lookupSet = FlatteningResolvedReferenceLookupSet.Create(
             writePlan,
-            new ResolvedReferenceSet(
-                SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
+            ResolvedReferenceSets.Create(
+                successfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
                 {
                     [new JsonPath("$.schoolReference")] = CreateResolvedDocumentReference(
                         _schoolResourceInfo,
@@ -1124,13 +1123,7 @@ public class Given_FlatteningResolvedReferenceLookupSet
                         ("$.schoolId", "255901"),
                         ("$.localEducationAgencyId", "255902")
                     ),
-                },
-                SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-                LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-                InvalidDocumentReferences: [],
-                InvalidDescriptorReferences: [],
-                DocumentReferenceOccurrences: [],
-                DescriptorReferenceOccurrences: []
+                }
             )
         );
 
@@ -1280,8 +1273,8 @@ public class Given_FlatteningResolvedReferenceLookupSet
 
         var lookupSet = FlatteningResolvedReferenceLookupSet.Create(
             writePlan,
-            new ResolvedReferenceSet(
-                SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
+            ResolvedReferenceSets.Create(
+                successfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
                 {
                     [new JsonPath("$.schoolReference")] = CreateResolvedDocumentReference(
                         _schoolResourceInfo,
@@ -1294,19 +1287,14 @@ public class Given_FlatteningResolvedReferenceLookupSet
                         )
                     ),
                 },
-                SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
+                successfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
                 {
                     [new JsonPath("$.schoolReference.schoolCategory")] = CreateResolvedDescriptorReference(
                         _schoolTypeDescriptorResourceInfo,
                         "$.schoolReference.schoolCategory",
                         501
                     ),
-                },
-                LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-                InvalidDocumentReferences: [],
-                InvalidDescriptorReferences: [],
-                DocumentReferenceOccurrences: [],
-                DescriptorReferenceOccurrences: []
+                }
             )
         );
 
@@ -1331,12 +1319,7 @@ public class Given_FlatteningResolvedReferenceLookupSet
     )
     {
         return new ResolvedDescriptorReference(
-            new DescriptorReference(
-                resourceInfo,
-                new DocumentIdentity([]),
-                new ReferentialId(Guid.NewGuid()),
-                new JsonPath(path)
-            ),
+            new DescriptorReference(resourceInfo, new DocumentIdentity([]), new JsonPath(path)),
             descriptorId,
             5000000000L + descriptorId,
             13

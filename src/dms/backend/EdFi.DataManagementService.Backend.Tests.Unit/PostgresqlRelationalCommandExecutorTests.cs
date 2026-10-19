@@ -59,7 +59,26 @@ public class Given_PostgresqlRelationalCommandExecutor
                     new RelationalParameter("@p1", descriptorReferentialId.Value),
                 ]
             ),
-            ReferenceLookupResultReader.ReadAsync
+            static async (reader, cancellationToken) =>
+            {
+                List<(Guid ReferentialId, long DocumentId, int? DescriptorId)> rows = [];
+
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    var descriptorIdOrdinal = reader.GetOrdinal("DescriptorId");
+                    rows.Add(
+                        (
+                            reader.GetFieldValue<Guid>(reader.GetOrdinal("ReferentialId")),
+                            reader.GetFieldValue<long>(reader.GetOrdinal("DocumentId")),
+                            reader.IsDBNull(descriptorIdOrdinal)
+                                ? null
+                                : reader.GetFieldValue<int>(descriptorIdOrdinal)
+                        )
+                    );
+                }
+
+                return rows;
+            }
         );
 
         openConnectionCallCount.Should().Be(1);
@@ -77,17 +96,10 @@ public class Given_PostgresqlRelationalCommandExecutor
         connection.DisposeCallCount.Should().Be(1);
         result
             .Should()
-            .BeEquivalentTo([
-                new ReferenceLookupResult(documentReferentialId, 101L, 11, 11, null, "$.schoolId=255901"),
-                new ReferenceLookupResult(
-                    descriptorReferentialId,
-                    202L,
-                    12,
-                    12,
-                    17,
-                    "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
-                ),
-            ]);
+            .Equal(
+                (documentReferentialId.Value, 101L, (int?)null),
+                (descriptorReferentialId.Value, 202L, (int?)17)
+            );
     }
 
     [Test]
