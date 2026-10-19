@@ -110,7 +110,8 @@ exit $ExitCode
         }
 
         function script:Install-FakeSchemaToolPublisher {
-            $script:oldDotnetFunction = Get-Item Function:\global:dotnet -ErrorAction SilentlyContinue
+            $dotnetFunction = Get-Item Function:\dotnet -ErrorAction SilentlyContinue
+            $script:oldDotnetScriptBlock = if ($null -ne $dotnetFunction) { $dotnetFunction.ScriptBlock } else { $null }
             Set-Item Function:\global:dotnet -Value {
                 $script:publishFixture.Calls.Add(@($args))
                 foreach ($line in $script:publishFixture.OutputLines) { Write-Output $line }
@@ -1297,11 +1298,11 @@ exit $ExitCode
         }
 
         AfterEach {
-            if ($null -ne $script:oldDotnetFunction) {
-                Set-Item Function:\global:dotnet -Value $script:oldDotnetFunction.ScriptBlock
+            if ($null -ne $script:oldDotnetScriptBlock) {
+                Set-Item Function:\global:dotnet -Value $script:oldDotnetScriptBlock
             }
             else {
-                Remove-Item Function:\global:dotnet -ErrorAction SilentlyContinue
+                Remove-Item Function:\dotnet -ErrorAction SilentlyContinue
             }
             $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK = $script:oldPathFallback
             if ($script:hadLastExitCode) { $global:LASTEXITCODE = $script:oldLastExitCode }
@@ -1413,7 +1414,7 @@ catch {
             Set-Content -LiteralPath $sentinelPath -Value 'keep these bytes' -NoNewline
             $failure = $null
             try { $null = Resolve-DmsSchemaTool } catch { $failure = $_.Exception.Message }
-            $binPath = Join-Path $script:repo.RepoRoot 'src/dms/clis/EdFi.DataManagementService.SchemaTools/bin/Release/net10.0' $(if ($IsWindows) { 'api-schema-tools.exe' } else { 'api-schema-tools' })
+            $binPath = Join-Path -Path $script:repo.RepoRoot -ChildPath 'src/dms/clis/EdFi.DataManagementService.SchemaTools/bin/Release/net10.0' -AdditionalChildPath $(if ($IsWindows) { 'api-schema-tools.exe' } else { 'api-schema-tools' })
 
             $failure | Should -Match 'exited with code 17'
             Test-Path -LiteralPath $script:publishFixture.ExecutablePath | Should -BeFalse
@@ -1567,7 +1568,8 @@ catch {
             $script:feedFolder = script:New-FixtureFeed
             $script:oldToolPath = $env:DMS_SCHEMA_TOOL_PATH
             $script:oldFallback = $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK
-            $script:oldDotnetFunction = Get-Item Function:\global:dotnet -ErrorAction SilentlyContinue
+            $dotnetFunction = Get-Item Function:\dotnet -ErrorAction SilentlyContinue
+            $script:oldDotnetScriptBlock = if ($null -ne $dotnetFunction) { $dotnetFunction.ScriptBlock } else { $null }
             $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK = 'false'
             Set-Item Function:\global:dotnet -Value { throw 'Unexpected schema-tool publish during prepare override test' }
             $publishedDirectory = Join-Path $script:repo.BootstrapRoot 'tools/api-schema-tools'
@@ -1578,8 +1580,8 @@ catch {
         AfterEach {
             $env:DMS_SCHEMA_TOOL_PATH = $script:oldToolPath
             $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK = $script:oldFallback
-            if ($null -ne $script:oldDotnetFunction) { Set-Item Function:\global:dotnet -Value $script:oldDotnetFunction.ScriptBlock }
-            else { Remove-Item Function:\global:dotnet -ErrorAction SilentlyContinue }
+            if ($null -ne $script:oldDotnetScriptBlock) { Set-Item Function:\global:dotnet -Value $script:oldDotnetScriptBlock }
+            else { Remove-Item Function:\dotnet -ErrorAction SilentlyContinue }
         }
 
         It 'It_DMS1283_prepare_parameter_beats_environment_and_cache' {

@@ -99,7 +99,7 @@ function Resolve-DmsSchemaTool {
         return $fullPath
     }
 
-    $candidateNames = if ($IsWindows) {
+    [string[]]$candidateNames = if ($IsWindows) {
         @("api-schema-tools.exe", "api-schema-tools")
     } else {
         @("api-schema-tools")

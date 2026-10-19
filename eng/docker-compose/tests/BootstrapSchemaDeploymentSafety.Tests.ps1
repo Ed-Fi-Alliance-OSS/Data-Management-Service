@@ -683,14 +683,15 @@ exit $ExitCode
 
         Context 'DMS-1283 provisioning environment tool forwarding' {
             BeforeEach {
-                $script:oldDotnetFunction = Get-Item Function:\global:dotnet -ErrorAction SilentlyContinue
-                $global:dms1283DotnetCalls = 0
-                Set-Item Function:\global:dotnet -Value { $global:dms1283DotnetCalls++; throw 'Unexpected api-schema-tools publish during provisioning override test' }
+                $dotnetFunction = Get-Item Function:\dotnet -ErrorAction SilentlyContinue
+                $script:oldDotnetScriptBlock = if ($null -ne $dotnetFunction) { $dotnetFunction.ScriptBlock } else { $null }
+                $script:dms1283DotnetCalls = 0
+                Set-Item Function:\global:dotnet -Value { $script:dms1283DotnetCalls++; throw 'Unexpected api-schema-tools publish during provisioning override test' }
             }
 
             AfterEach {
-                if ($null -ne $script:oldDotnetFunction) { Set-Item Function:\global:dotnet -Value $script:oldDotnetFunction.ScriptBlock }
-                else { Remove-Item Function:\global:dotnet -ErrorAction SilentlyContinue }
+                if ($null -ne $script:oldDotnetScriptBlock) { Set-Item Function:\global:dotnet -Value $script:oldDotnetScriptBlock }
+                else { Remove-Item Function:\dotnet -ErrorAction SilentlyContinue }
             }
 
             It 'It_DMS1283_provision_environment_tool_beats_cache' {
@@ -720,7 +721,7 @@ exit $ExitCode
 
                 $captured = @(Get-Content -LiteralPath $capturePath)
                 $captured[1..2] | Should -Be @('ddl', 'provision')
-                $global:dms1283DotnetCalls | Should -Be 0
+                $script:dms1283DotnetCalls | Should -Be 0
             }
 
             It 'It_DMS1283_provision_invalid_environment_tool_fails_closed' {
@@ -745,7 +746,7 @@ exit $ExitCode
                 { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1284) } |
                     Should -Throw -ExpectedMessage '*configured api-schema-tools executable was not found*'
 
-                $global:dms1283DotnetCalls | Should -Be 0
+                $script:dms1283DotnetCalls | Should -Be 0
             }
         }
 
@@ -1337,7 +1338,7 @@ Add-Content -LiteralPath '$sequencePath' -Value `"configure range=`$SchoolYearRa
     SchoolYears = [int[]] @(2024, 2025)
     HasRouteQualifiedDataStores = `$true
 }
-"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "configure-local-data-store.ps1") -Encoding utf8
+"@ | Set-Content -LiteralPath (Join-Path -Path $script:repo.DockerComposeRoot -ChildPath "configure-local-data-store.ps1") -Encoding utf8
 
             @"
 param([string] `$EnvironmentFile, [long[]] `$DataStoreId)
