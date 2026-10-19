@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 
@@ -38,10 +39,7 @@ internal static class NamespaceAuthorizationCommandParameterBuilder
 
         return parameter.Binding.Kind switch
         {
-            QuerySqlParameterBindingKind.Scalar => new RelationalParameter(
-                $"@{parameter.ParameterName}",
-                value
-            ),
+            QuerySqlParameterBindingKind.Scalar => BuildScalarParameter(parameter, value),
             QuerySqlParameterBindingKind.PgsqlArray => new RelationalParameter(
                 $"@{parameter.ParameterName}",
                 RequireStringList(value, parameter.ParameterName).ToArray()
@@ -52,6 +50,24 @@ internal static class NamespaceAuthorizationCommandParameterBuilder
                 "Unsupported namespace authorization parameter binding kind."
             ),
         };
+    }
+
+    private static RelationalParameter BuildScalarParameter(QuerySqlParameter parameter, object? value)
+    {
+        if (parameter.ParameterName != NamespaceAuthorizationSqlSpecDefaults.ProposedNamespaceParameterName)
+        {
+            return new RelationalParameter($"@{parameter.ParameterName}", value);
+        }
+
+        // The compiled check's first use of the parameter is "@p IS NULL OR @p = ''", from which PostgreSQL
+        // cannot infer a null parameter's type (42P08 "could not determine data type of parameter"). Type it
+        // explicitly: a null proposed namespace then reaches the ns1|<index>|r branch (a 403
+        // namespace-required denial) instead of failing the write.
+        return new RelationalParameter(
+            $"@{parameter.ParameterName}",
+            value,
+            dbParameter => dbParameter.DbType = DbType.String
+        );
     }
 
     private static IReadOnlyList<string> RequireStringList(object? value, string parameterName)

@@ -42,6 +42,12 @@ public sealed class Given_ARequestThatIsMalformedBeforeTheProvider
                 Json,
                 "create"
             ),
+            ["duplicate-search-indexed"] = new(
+                "identities/search",
+                """[{"LastSurname":"a"},{"BirthLocation":{"City":"x","City":"y"}}]""",
+                Json,
+                "search"
+            ),
             ["malformed-create"] = new("identities", """{"FirstName":""", Json, "create"),
             ["empty-create"] = new("identities", "", Json, "create"),
             ["whitespace-create"] = new("identities", WhitespaceBody, Json, "create"),
@@ -100,16 +106,31 @@ public sealed class Given_ARequestThatIsMalformedBeforeTheProvider
     private IdentityHttpOutcome? _anonymousMalformedCreate;
     private IdentityHttpOutcome? _unadvertisedMalformedSearch;
 
+    private JsonNode DuplicateSearchBody => _outcomes["duplicate-search-indexed"].Body!;
+
     [OneTimeSetUp]
     public async Task Setup()
     {
-        _run = await IdentityHttpRun.StartAsync();
+        _run = await IdentityHttpRun.StartAsync(
+            settings: new Dictionary<string, string>
+            {
+                ["AppSettings:CorrelationIdHeader"] = "X-Correlation-ID",
+            }
+        );
+        _run.Client.DefaultRequestHeaders.Add("X-Correlation-ID", "dms-1594-http");
         _openApi = await IdentityServedOpenApi.FetchAsync(_run.Client);
 
         foreach ((string name, Case request) in Cases)
         {
             _outcomes[name] = await _run.PostAsync(request.Path, request.Body, request.ContentType);
         }
+
+        using HttpClient unauthorized = _run.Host.CreateClient(IdentityTestClients.UnknownToken);
+        _outcomes["unauthorized-duplicate"] = await _run.PostAsync(
+            "identities/search",
+            Cases["duplicate-search-indexed"].Body,
+            client: unauthorized
+        );
 
         _invocationsAfterRejections = _run.Stub.InvocationCount();
 
@@ -179,6 +200,7 @@ public sealed class Given_ARequestThatIsMalformedBeforeTheProvider
             .Select(pair => pair.Key);
 
     [TestCase("duplicate-property")]
+    [TestCase("duplicate-search-indexed")]
     [TestCase("malformed-create")]
     [TestCase("empty-create")]
     [TestCase("whitespace-create")]
@@ -329,11 +351,8 @@ public sealed class Given_ARequestThatIsMalformedBeforeTheProvider
     }
 
     [TestCase("duplicate-property", "$.FirstName")]
-    // The repeat is in element 0, but the host's duplicate scan advances the array index after the
-    // first property's primitive value, so it reports element 1. That is existing behavior, pinned here.
-    // DMS-1620 owns correcting the scan and these two expectations together.
-    [TestCase("duplicate-find", "$[1].a")]
-    [TestCase("duplicate-search", "$[1].LastSurname")]
+    [TestCase("duplicate-find", "$[0].a")]
+    [TestCase("duplicate-search", "$[0].LastSurname")]
     public void It_reports_the_duplicate_property_under_validation_errors(string name, string path)
     {
         // The host names the repeated property by its JSON path, under one fixed message.
@@ -347,6 +366,86 @@ public sealed class Given_ARequestThatIsMalformedBeforeTheProvider
             .Should()
             .Equal("An item with the same key has already been added.");
         body["errors"]!.AsArray().Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_reports_the_indexed_search_problem_type()
+    {
+        DuplicateSearchBody["type"]!
+            .GetValue<string>()
+            .Should()
+            .Be("urn:ed-fi:api:bad-request:data-validation-failed");
+    }
+
+    [Test]
+    public void It_reports_the_indexed_search_problem_title()
+    {
+        DuplicateSearchBody["title"]!.GetValue<string>().Should().Be("Data Validation Failed");
+    }
+
+    [Test]
+    public void It_reports_the_indexed_search_problem_status()
+    {
+        DuplicateSearchBody["status"]!.GetValue<int>().Should().Be(400);
+    }
+
+    [Test]
+    public void It_reports_the_indexed_search_problem_detail()
+    {
+        DuplicateSearchBody["detail"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Data validation failed. See 'validationErrors' for details.");
+    }
+
+    [Test]
+    public void It_reports_the_indexed_search_problem_correlation_id()
+    {
+        DuplicateSearchBody["correlationId"]!.GetValue<string>().Should().Be("dms-1594-http");
+    }
+
+    [Test]
+    public void It_reports_no_general_errors_for_the_indexed_search_problem()
+    {
+        DuplicateSearchBody["errors"]!.AsArray().Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_reports_the_indexed_search_duplicate_path()
+    {
+        DuplicateSearchBody["validationErrors"]!
+            .AsObject()
+            .Select(error => error.Key)
+            .Should()
+            .Equal("$[1].BirthLocation.City");
+    }
+
+    [Test]
+    public void It_reports_the_duplicate_message_for_the_indexed_search_path()
+    {
+        DuplicateSearchBody["validationErrors"]!["$[1].BirthLocation.City"]!
+            .AsArray()
+            .Select(message => message!.GetValue<string>())
+            .Should()
+            .Equal("An item with the same key has already been added.");
+    }
+
+    [Test]
+    public void It_keeps_the_indexed_search_problem_out_of_caches()
+    {
+        _outcomes["duplicate-search-indexed"].HeaderValues("Cache-Control").Should().Equal("no-store");
+    }
+
+    [Test]
+    public void It_keeps_unauthorized_before_duplicate_reporting()
+    {
+        _outcomes["unauthorized-duplicate"].Status.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Test]
+    public void It_does_not_report_the_duplicate_to_an_unauthorized_client()
+    {
+        _outcomes["unauthorized-duplicate"].Body?["validationErrors"].Should().BeNull();
     }
 
     [Test]
