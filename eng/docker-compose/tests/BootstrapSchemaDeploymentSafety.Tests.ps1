@@ -725,7 +725,6 @@ exit $ExitCode
 
             It 'It_DMS1283_provision_invalid_environment_tool_fails_closed' {
                 New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
-                $capturePath = Join-Path $script:repo.RepoRoot 'should-not-run.txt'
                 $env:DMS_SCHEMA_TOOL_PATH = Join-Path $script:repo.RepoRoot 'missing/environment-tool.exe'
                 $publishedDirectory = Join-Path $script:repo.BootstrapRoot 'tools/api-schema-tools'
                 New-Item -ItemType Directory -Path $publishedDirectory -Force | Out-Null
@@ -746,7 +745,6 @@ exit $ExitCode
                 { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1284) } |
                     Should -Throw -ExpectedMessage '*configured api-schema-tools executable was not found*'
 
-                Test-Path -LiteralPath $capturePath | Should -BeFalse
                 $global:dms1283DotnetCalls | Should -Be 0
             }
         }
