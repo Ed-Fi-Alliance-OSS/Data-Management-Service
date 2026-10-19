@@ -448,6 +448,15 @@ internal sealed class DefaultRelationalWriteExecutor(
         }
         catch (RelationalWriteRequestValidationException ex)
         {
+            if (ex.Diagnostic is not null)
+            {
+                _logger.LogDebug(
+                    ex,
+                    "Relational write request validation failed: {Diagnostic}",
+                    LogSanitizer.SanitizeFreeTextForLog(ex.Diagnostic)
+                );
+            }
+
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
             return RelationalWriteExecutorResults.BuildValidationFailureResult(
                 input.OperationKind,

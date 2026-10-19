@@ -139,6 +139,11 @@ internal class UpdateByIdHandler(ILogger _logger, ResiliencePipeline _resilience
             ),
             // Returns 500 to match ODS/API behavior: after retries are exhausted for a deadlock,
             // the client receives a generic system error rather than a retryable status code.
+            UpdateFailureNonUniqueValues => new FrontendResponse(
+                StatusCode: 409,
+                Body: FailureResponse.ForNonUniqueValues(requestInfo.FrontendRequest.TraceId),
+                Headers: []
+            ),
             UpdateFailureWriteConflict => new FrontendResponse(
                 StatusCode: 500,
                 Body: FailureResponse.ForSystemError(requestInfo.FrontendRequest.TraceId),

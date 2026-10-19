@@ -760,6 +760,47 @@ public class UpdateByIdHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Repository_That_Returns_Failure_Non_Unique_Values : UpdateByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
+            {
+                return Task.FromResult<UpdateResult>(new UpdateFailureNonUniqueValues());
+            }
+        }
+
+        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (handler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            await handler.Execute(requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_returns_the_ods_compatible_non_unique_values_conflict()
+        {
+            requestInfo.FrontendResponse.StatusCode.Should().Be(409);
+            var body = requestInfo.FrontendResponse.Body!;
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:data-conflict:non-unique-values");
+            body["title"]!.GetValue<string>().Should().Be("Non-Unique Values");
+            body["status"]!.GetValue<int>().Should().Be(409);
+            body["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be(
+                    "A value (or a specific set of values) in the item must be unique, but another item with these values already exists."
+                );
+            body["validationErrors"]!.AsObject().Should().BeEmpty();
+            requestInfo.FrontendResponse.Headers.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Failure_Write_Conflict : UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository

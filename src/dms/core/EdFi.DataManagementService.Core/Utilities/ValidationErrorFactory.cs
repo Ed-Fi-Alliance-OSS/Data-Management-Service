@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Core.Utilities;
 /// <summary>
 /// Factory for creating consistent validation error messages and responses
 /// </summary>
-internal static class ValidationErrorFactory
+public static class ValidationErrorFactory
 {
     /// <summary>
     /// Builds a validation error tuple for array duplicate validation
@@ -44,7 +44,7 @@ internal static class ValidationErrorFactory
     /// <param name="validationErrors">Dictionary of validation errors</param>
     /// <param name="traceId">Request trace ID for logging correlation</param>
     /// <returns>A FrontendResponse with status 400 and validation error details</returns>
-    public static FrontendResponse CreateValidationErrorResponse(
+    internal static FrontendResponse CreateValidationErrorResponse(
         Dictionary<string, string[]> validationErrors,
         TraceId traceId
     )

@@ -113,7 +113,13 @@ public class Given_A_Postgresql_NoProfile_Post_With_Storage_Collapsed_Sibling_Id
         result.Should().BeOfType<UpsertResult.UpsertFailureValidation>();
         var failure = (UpsertResult.UpsertFailureValidation)result;
         failure.ValidationFailures.Should().ContainSingle();
-        failure.ValidationFailures[0].Message.Should().Contain("received duplicate semantic identity values");
+        failure.ValidationFailures[0].Path.Value.Should().Be("$.addresses");
+        failure
+            .ValidationFailures[0]
+            .Message.Should()
+            .Be(
+                "The 2nd item of the addresses has the same identifying values as another item earlier in the list."
+            );
     }
 
     [Test]
@@ -141,6 +147,33 @@ public class Given_A_Postgresql_NoProfile_Post_With_Storage_Collapsed_Sibling_Id
             .Select(address => address.City)
             .Should()
             .Equal("Austin", "AUSTIN");
+    }
+
+    [Test]
+    public async Task It_persists_both_sharp_s_and_double_s_identity_siblings()
+    {
+        // The SQL Server twin answers 409 non-unique-values because its identity collation
+        // equates the pair; PostgreSQL stores both items.
+        var body = new JsonObject
+        {
+            ["schoolId"] = checked((int)SchoolId),
+            ["addresses"] = new JsonArray(
+                new JsonObject { ["city"] = "Straße" },
+                new JsonObject { ["city"] = "Strasse" }
+            ),
+        };
+
+        var result = await ExecuteUpsertAsync(body);
+
+        result.Should().BeOfType<UpsertResult.InsertSuccess>();
+        var documentId = await PostgresqlProfileTopLevelCollectionMergeSupport.ReadDocumentIdAsync(
+            _database,
+            SchoolDocumentUuid
+        );
+        (await PostgresqlProfileTopLevelCollectionMergeSupport.ReadAddressesAsync(_database, documentId))
+            .Select(address => address.City)
+            .Should()
+            .Equal("Straße", "Strasse");
     }
 
     private async Task<UpsertResult> ExecuteUpsertAsync(JsonNode body)

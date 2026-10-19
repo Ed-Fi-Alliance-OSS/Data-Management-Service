@@ -254,11 +254,11 @@ public class Given_RelationalWriteFlattener
             .Which.ValidationFailures.Should()
             .ContainSingle()
             .Subject;
-        failure.Path.Value.Should().Be("$.addresses[1]");
+        failure.Path.Value.Should().Be("$.addresses");
         failure
             .Message.Should()
-            .Contain(
-                "Collection table 'edfi.StudentAddress' received duplicate semantic identity values [84] under parent scope '$'."
+            .Be(
+                "The 2nd item of the addresses has the same identifying values as another item earlier in the list."
             );
     }
 
@@ -839,12 +839,12 @@ public class Given_RelationalWriteFlattener
         var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
 
         exception.ValidationFailures.Should().ContainSingle();
-        exception.ValidationFailures[0].Path.Value.Should().Be("$.addresses[1]");
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.addresses");
         exception
             .ValidationFailures[0]
             .Message.Should()
-            .Contain(
-                "Collection table 'edfi.StudentAddress' received duplicate semantic identity values ['Home'] under parent scope '$'."
+            .Be(
+                "The 2nd item of the addresses has the same identifying values as another item earlier in the list."
             );
     }
 
@@ -884,12 +884,12 @@ public class Given_RelationalWriteFlattener
         var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
 
         exception.ValidationFailures.Should().ContainSingle();
-        exception.ValidationFailures[0].Path.Value.Should().Be("$.addresses[1]");
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.addresses");
         exception
             .ValidationFailures[0]
             .Message.Should()
-            .Contain(
-                "Collection table 'edfi.StudentAddress' received duplicate semantic identity values [null] under parent scope '$'."
+            .Be(
+                "The 2nd item of the addresses has the same identifying values as another item earlier in the list."
             );
     }
 
@@ -985,12 +985,12 @@ public class Given_RelationalWriteFlattener
         var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
 
         exception.ValidationFailures.Should().ContainSingle();
-        exception.ValidationFailures[0].Path.Value.Should().Be("$.addresses[1]");
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.addresses");
         exception
             .ValidationFailures[0]
             .Message.Should()
-            .Contain(
-                "Collection table 'edfi.StudentAddress' received duplicate semantic identity values ['Home'] under parent scope '$'."
+            .Be(
+                "The 2nd item of the addresses has the same identifying values as another item earlier in the list."
             );
     }
 
@@ -1013,7 +1013,7 @@ public class Given_RelationalWriteFlattener
         var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
 
         exception.ValidationFailures.Should().ContainSingle();
-        exception.ValidationFailures[0].Path.Value.Should().Be("$.addresses[1]");
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.addresses");
     }
 
     [TestCase(true)]
@@ -5923,6 +5923,61 @@ public class Given_RelationalWriteFlattener_with_an_inlined_parent_collection
 
         var act = () => _sut.Flatten(flatteningInput);
         act.Should().Throw<RelationalWriteRequestValidationException>();
+    }
+
+    [Test]
+    public void It_reports_a_nested_duplicate_with_cores_key_and_message_under_a_non_zero_parent_ordinal()
+    {
+        // The nested scope is `$.parents[*].detail.children[*]`. Core's factory truncates at the
+        // first `[*]`, so the parent wildcard must be materialized before the call; otherwise the
+        // key would name the outer `parents` array.
+        var body = JsonNode.Parse(
+            """
+            {
+              "parents": [
+                {
+                  "identityField0": "A",
+                  "detail": {
+                    "children": [
+                      { "identityField0": "X" }
+                    ]
+                  }
+                },
+                {
+                  "identityField0": "B",
+                  "detail": {
+                    "children": [
+                      { "identityField0": "Y" },
+                      { "identityField0": "Z" },
+                      { "identityField0": "Y" }
+                    ]
+                  }
+                }
+              ]
+            }
+            """
+        )!;
+
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.ExistingDocument(DocumentId, _documentUuid),
+            _writePlan,
+            body,
+            EmptyResolvedReferences()
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.parents[1].detail.children");
+        exception
+            .ValidationFailures[0]
+            .Message.Should()
+            .Be(
+                "The 3rd item of the children has the same identifying values as another item earlier in the list."
+            );
+        exception.Diagnostic.Should().Contain("Duplicate ordinal path: [1, 2]");
     }
 
     [Test]

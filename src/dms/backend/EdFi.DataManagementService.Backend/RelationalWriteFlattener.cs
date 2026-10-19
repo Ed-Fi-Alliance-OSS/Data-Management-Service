@@ -10,7 +10,10 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
+using EdFi.DataManagementService.Core.Utilities;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -452,15 +455,13 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                             childPlan.TableWritePlan,
                             parentScopeCanonical,
                             matchedEntry.OrdinalPath,
-                            ordinalPath,
-                            matchedEntry.Values
+                            ordinalPath
                         );
                     }
                 }
 
                 var trackerEntry = new SemanticIdentityTrackerEntry(
                     ordinalPath,
-                    semanticIdentityValues,
                     hasDeferredMissingSemanticIdentityMember
                 );
 
@@ -1879,26 +1880,41 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         );
     }
 
+    /// <summary>
+    /// Builds the duplicate-item failure in Core's shape: key = the array path with concrete
+    /// ancestor ordinals (<c>$.parents[1].children</c>), message = Core's "The Nth item of the
+    /// {array} ..." wording. <see cref="ValidationErrorFactory.BuildValidationError"/> truncates at
+    /// the first <c>[*]</c>, so only the collection's own wildcard is left in the path it receives.
+    /// Table names and ordinal paths stay out of the client message and travel as the exception's
+    /// diagnostic.
+    /// </summary>
     private static RelationalWriteRequestValidationException CreateDuplicateSemanticIdentityException(
         TableWritePlan tableWritePlan,
         string parentScopeCanonical,
         IReadOnlyList<int> firstOrdinalPath,
-        IReadOnlyList<int> duplicateOrdinalPath,
-        IReadOnlyList<object?> semanticIdentityValues
+        IReadOnlyList<int> duplicateOrdinalPath
     )
     {
-        var duplicatePath = MaterializeConcretePath(
-            tableWritePlan.TableModel.JsonScope.Canonical,
-            [.. duplicateOrdinalPath]
+        var scopeCanonical = tableWritePlan.TableModel.JsonScope.Canonical;
+        var ownWildcardIndex = scopeCanonical.LastIndexOf("[*]", StringComparison.Ordinal);
+        var arrayPath =
+            MaterializeConcretePath(scopeCanonical[..ownWildcardIndex], [.. duplicateOrdinalPath.SkipLast(1)])
+            + scopeCanonical[ownWildcardIndex..];
+        var (errorKey, message) = ValidationErrorFactory.BuildValidationError(
+            arrayPath,
+            duplicateOrdinalPath[^1]
         );
 
-        return CreateRequestShapeValidationException(
-            duplicatePath,
-            $"Collection table '{FormatTable(tableWritePlan)}' received duplicate semantic identity values "
-                + $"{FormatSemanticIdentityValues(semanticIdentityValues)} under parent scope '{parentScopeCanonical}'. "
+        return new RelationalWriteRequestValidationException([
+            new WriteValidationFailure(new JsonPath(errorKey), message),
+        ])
+        {
+            Diagnostic =
+                $"Collection table '{FormatTable(tableWritePlan)}' received duplicate semantic identity values "
+                + $"under parent scope '{parentScopeCanonical}'. "
                 + $"First ordinal path: {FormatOrdinalPath(firstOrdinalPath)}. "
-                + $"Duplicate ordinal path: {FormatOrdinalPath(duplicateOrdinalPath)}."
-        );
+                + $"Duplicate ordinal path: {FormatOrdinalPath(duplicateOrdinalPath)}.",
+        };
     }
 
     private static RequestDerivedScalarConversionContext CreateColumnScalarConversionContext(
@@ -2017,12 +2033,6 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             bool boolValue => boolValue ? "true" : "false",
             _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? value.ToString() ?? "<unknown>",
         };
-    }
-
-    private static string FormatSemanticIdentityValues(IReadOnlyList<object?> values)
-    {
-        ArgumentNullException.ThrowIfNull(values);
-        return $"[{string.Join(", ", values.Select(FormatLiteral))}]";
     }
 
     private static string FormatOrdinalPath(IReadOnlyList<int> ordinalPath)
@@ -2164,7 +2174,6 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
     private sealed record SemanticIdentityTrackerEntry(
         int[] OrdinalPath,
-        object?[] Values,
         bool ContainsDeferredMissingSemanticIdentityMember
     );
 

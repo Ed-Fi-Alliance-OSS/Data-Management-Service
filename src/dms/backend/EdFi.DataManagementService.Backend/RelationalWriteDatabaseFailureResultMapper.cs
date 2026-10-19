@@ -81,13 +81,18 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
         result = classification switch
         {
             RelationalWriteExceptionClassification.ConstraintViolation violation =>
-                BuildConstraintViolationFailureResult(request, violation),
+                BuildConstraintViolationFailureResult(request, violation, exception),
             RelationalWriteExceptionClassification.IndeterminateOutcomeFailure =>
                 BuildIndeterminateOutcomeFailureResult(
                     request.OperationKind,
                     exception,
                     request.WritePlan.Model.Resource
                 ),
+            // A unique violation whose constraint name could not be extracted (e.g. a localized
+            // SQL Server message) is still confirmed unique by the provider error code.
+            RelationalWriteExceptionClassification.UnrecognizedWriteFailure
+                when _writeExceptionClassifier.IsUniqueConstraintViolation(exception) =>
+                BuildNonUniqueValuesFailureResult(request, exception),
             RelationalWriteExceptionClassification.UnrecognizedWriteFailure =>
                 BuildUnrecognizedWriteFailureResult(request, exception),
             _ => throw new InvalidOperationException(
@@ -163,9 +168,31 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
         );
     }
 
+    /// <summary>
+    /// The ODS-compatible fallback for a unique violation the backend cannot attribute to the
+    /// resource identity or a request reference, such as a collection-table unique key or a
+    /// primary key. It is a client conflict, not a transient one, so it is never retried. The
+    /// provider exception is logged because the client-facing body names no constraint.
+    /// </summary>
+    private RelationalWriteExecutorResult BuildNonUniqueValuesFailureResult(
+        RelationalWriteExecutorRequest request,
+        DbException exception
+    )
+    {
+        _logger.LogWarning(
+            exception,
+            "Relational write for resource {Resource} failed with a unique-constraint violation that "
+                + "could not be attributed to a specific failure.",
+            RelationalWriteSupport.FormatResource(request.WritePlan.Model.Resource)
+        );
+
+        return RelationalWriteExecutorResults.BuildNonUniqueValuesFailureResult(request.OperationKind);
+    }
+
     private RelationalWriteExecutorResult BuildConstraintViolationFailureResult(
         RelationalWriteExecutorRequest request,
-        RelationalWriteExceptionClassification.ConstraintViolation violation
+        RelationalWriteExceptionClassification.ConstraintViolation violation,
+        DbException exception
     )
     {
         var resolution = _writeConstraintResolver.Resolve(
@@ -188,6 +215,9 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
                     requestReference,
                     out var referenceFailureResult
                 ) => referenceFailureResult!,
+            RelationalWriteConstraintResolution.Unresolved
+                when violation is RelationalWriteExceptionClassification.UniqueConstraintViolation =>
+                BuildNonUniqueValuesFailureResult(request, exception),
             RelationalWriteConstraintResolution.RequestReference
             or RelationalWriteConstraintResolution.Unresolved =>
                 RelationalWriteExecutorResults.BuildUnknownFailureResult(
