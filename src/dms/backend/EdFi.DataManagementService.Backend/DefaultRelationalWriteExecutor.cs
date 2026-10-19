@@ -295,13 +295,13 @@ internal sealed class DefaultRelationalWriteExecutor(
                 return mergeBoundary.ImmediateResult;
             }
 
-            var mergeResult = mergeBoundary.MergeResult!;
-
             // Identity comparison needs the finalized merged root row, but immutable identity
-            // failures must win before any proposed authorization evaluates rejected values.
-            var identityStabilityFailure = RelationalWriteIdentityStability.TryBuildFailureResult(
+            // failures must win before any proposed authorization evaluates rejected values. The
+            // returned merge result carries stored values for identity columns that differ only
+            // under the identity comparer, so authorization, no-op detection and DML see them.
+            var (mergeResult, identityStabilityFailure) = RelationalWriteIdentityStability.Apply(
                 executionRequest,
-                mergeResult
+                mergeBoundary.MergeResult!
             );
 
             if (identityStabilityFailure is not null)

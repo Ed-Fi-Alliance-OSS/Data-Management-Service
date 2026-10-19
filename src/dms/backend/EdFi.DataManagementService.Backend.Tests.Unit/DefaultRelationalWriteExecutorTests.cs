@@ -3840,6 +3840,114 @@ public class Given_Default_Relational_Write_Executor
 
     [TestCase(RelationalWriteOperationKind.Put)]
     [TestCase(RelationalWriteOperationKind.Post)]
+    public async Task It_short_circuits_a_case_only_identity_change_on_a_collated_column_as_a_guarded_no_op(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        var request = CreateCaseVariantIdentityRequest(operationKind);
+        _noProfileMergeSynthesizer.ResultToReturn =
+            RelationalWriteIdentityStabilityTestSupport.CreateMergeResult(
+                request.WritePlan.TablePlansInDependencyOrder[0],
+                current: (255901, "Lincoln High", "LHS"),
+                merged: (255901, "LINCOLN HIGH", "LHS")
+            );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    [TestCase(RelationalWriteOperationKind.Put)]
+    [TestCase(RelationalWriteOperationKind.Post)]
+    public async Task It_persists_the_stored_identity_casing_with_a_genuine_non_identity_change(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        var request = CreateCaseVariantIdentityRequest(operationKind);
+        _noProfileMergeSynthesizer.ResultToReturn =
+            RelationalWriteIdentityStabilityTestSupport.CreateMergeResult(
+                request.WritePlan.TablePlansInDependencyOrder[0],
+                current: (255901, "Lincoln High", "LHS"),
+                merged: (255901, "LINCOLN HIGH", "Lincoln")
+            );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance);
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        var persistedRootRow = RelationalWriteIdentityStabilityTestSupport.MergedRootRow(
+            _noProfilePersister.CapturedMergeResult!
+        );
+        persistedRootRow.Values[2].Should().Be(new FlattenedWriteValue.Literal("Lincoln High"));
+        persistedRootRow.Values[3].Should().Be(new FlattenedWriteValue.Literal("Lincoln"));
+    }
+
+    /// <summary>
+    /// An existing-document request whose root identity is (SchoolId, Name) with Name flagged for
+    /// the SQL Server identity collation.
+    /// </summary>
+    private RelationalWriteExecutorInput CreateCaseVariantIdentityRequest(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var baseRequest = CreateRequest(
+            operationKind,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L),
+            rootWritePlan: RelationalWriteIdentityStabilityTestSupport.CreateRootPlan(
+                nameUsesSqlServerIdentityCollation: true
+            ),
+            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"LINCOLN HIGH"}""")!
+        );
+        var mappingSet = RelationalWriteIdentityStabilityTestSupport.WithSchoolIdAndNameIdentity(
+            baseRequest.MappingSet
+        );
+        _currentStateLoader.ResultToReturn = new RelationalWriteCurrentState(
+            new DocumentMetadataRow(
+                345L,
+                existingDocumentUuid.Value,
+                44L,
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                1
+            ),
+            [
+                new HydratedTableRows(
+                    baseRequest.WritePlan.Model.Root,
+                    [
+                        [345L, 255901, "Lincoln High", "LHS"],
+                    ]
+                ),
+            ],
+            []
+        );
+        _writeFlattener.ResultToReturn = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                baseRequest.WritePlan.TablePlansInDependencyOrder.Single(),
+                [
+                    new FlattenedWriteValue.Literal(345L),
+                    new FlattenedWriteValue.Literal(255901),
+                    new FlattenedWriteValue.Literal("LINCOLN HIGH"),
+                    new FlattenedWriteValue.Literal("LHS"),
+                ]
+            )
+        );
+
+        return baseRequest with
+        {
+            MappingSet = mappingSet,
+            ReferenceResolutionRequest = baseRequest.ReferenceResolutionRequest with
+            {
+                MappingSet = mappingSet,
+            },
+        };
+    }
+
+    [TestCase(RelationalWriteOperationKind.Put)]
+    [TestCase(RelationalWriteOperationKind.Post)]
     public async Task It_returns_immutable_identity_failure_before_proposed_relationship_authorization_for_existing_updates(
         RelationalWriteOperationKind operationKind
     )

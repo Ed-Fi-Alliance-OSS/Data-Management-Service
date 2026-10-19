@@ -392,7 +392,7 @@ are recorded for completeness. `DescriptorWriteHandler` is not modified by DMS-1
 5. Create artifacts only after proposed authorization. The `dms.Document` insert stays textually after
    the proposed `AUTH1` statements in the same command.
 6. Immutable-identity failure outranks proposed authorization.
-   `RelationalWriteIdentityStability.TryBuildFailureResult` is pure in-process work over the merged
+   `RelationalWriteIdentityStability.Apply` is pure in-process work over the merged
    root row and stays ahead of any authorization statement being sent.
 7. Guarded no-op freshness. The observed `ContentVersion` must still be current before a no-op success
    is returned; see "Lock-based no-op freshness" below.

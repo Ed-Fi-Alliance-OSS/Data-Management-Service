@@ -247,6 +247,17 @@ public static partial class ParityScenarioCatalog
             "It_authorizes_descriptor_history_tombstone_probes_by_qualified_document_membership",
             fixtureSuffix: "DerivativeTrackedChanges_CustomViewIncludingDeletes"
         ),
+        Api(
+            "Api/CaseVariantIdentity/ResolvesCaseVariantPostByIdentityCollation",
+            "A POST whose root identity differs from a stored document's only in case targets the stored document where the identity collation equates them, keeps the stored casing, and is a guarded no-op that records no key change and leaves the referrer's copy unchanged.",
+            "CaseVariantIdentityScenario.It_resolves_a_case_variant_class_period_post_by_the_identity_collation",
+            "It_resolves_a_case_variant_class_period_post_by_the_identity_collation",
+            fixtureSuffix: "CaseVariantIdentity",
+            diff: new DialectDifference(
+                "SQL Server answers 200 against the stored document with its stored casing; PostgreSQL answers 201 with a second document.",
+                "SQL Server identity text columns use the case-insensitive SQL_Latin1_General_CP1_CI_AS collation, so the natural-key capture finds the stored document and the identity-stability guard rebinds the CI-equal value; PostgreSQL identity text compares ordinally, so the case variant is a different identity."
+            )
+        ),
     ];
 
     private static ParityScenario Api(
@@ -255,7 +266,8 @@ public static partial class ParityScenarioCatalog
         string sharedEntryPoint,
         string method,
         bool profiled = false,
-        string fixtureSuffix = ""
+        string fixtureSuffix = "",
+        DialectDifference? diff = null
     )
     {
         string suffix = fixtureSuffix;
@@ -278,6 +290,7 @@ public static partial class ParityScenarioCatalog
             PgsqlCoverage = EngineCoverage.Covered,
             MssqlCoverage = EngineCoverage.Covered,
             Classification = ParityClassification.Both,
+            DialectDifference = diff,
         };
     }
 }

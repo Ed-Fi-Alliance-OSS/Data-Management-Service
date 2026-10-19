@@ -260,7 +260,7 @@ public sealed record ParityScenario
     /// </summary>
     public required ProductionBoundary Boundary { get; init; }
 
-    /// <summary>Optional specific class/method on the mechanic (e.g. RelationalWriteIdentityStability.TryBuildFailureResult).</summary>
+    /// <summary>Optional specific class/method on the mechanic (e.g. RelationalWriteIdentityStability.Apply).</summary>
     public string? BoundaryDetail { get; init; }
 
     /// <summary>PostgreSQL test locations (one per fixture); empty when PostgreSQL has none.</summary>
