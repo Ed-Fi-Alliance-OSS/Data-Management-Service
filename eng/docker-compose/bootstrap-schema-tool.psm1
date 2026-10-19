@@ -7,6 +7,9 @@ Set-StrictMode -Version Latest
 
 Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
 
+$script:SchemaToolRelativeDirectory = "src/dms/clis/EdFi.DataManagementService.SchemaTools"
+$script:PublishedToolRelativeDirectory = "tools/api-schema-tools"
+
 function Get-DotNetFrameworkVersion {
     param(
         [Parameter(Mandatory)]
@@ -28,12 +31,12 @@ function Get-DmsSchemaToolCandidateDirectory {
 
     # Publish destination for automatic acquisition and optional manual refresh. The flat directory contains the
     # apphost executable plus its dependency/runtime assets.
-    $publishedToolDirectory = Join-Path (Get-BootstrapRoot) "tools/api-schema-tools"
+    $publishedToolDirectory = Join-Path (Get-BootstrapRoot) $script:PublishedToolRelativeDirectory
     if (Test-Path -LiteralPath $publishedToolDirectory -PathType Container) {
         $null = $candidateDirectories.Add($publishedToolDirectory)
     }
 
-    $toolBinRoot = Join-Path $repoRoot "src/dms/clis/EdFi.DataManagementService.SchemaTools/bin"
+    $toolBinRoot = Join-Path -Path $repoRoot -ChildPath $script:SchemaToolRelativeDirectory -AdditionalChildPath "bin"
     $frameworkDirectories = [System.Collections.ArrayList]::new()
 
     foreach ($configuration in @("Debug", "Release")) {
@@ -119,8 +122,8 @@ function Resolve-DmsSchemaTool {
 
     $repoRoot = Get-BootstrapRepoRoot
     $bootstrapRoot = Get-BootstrapRoot
-    $projectPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot "src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj"))
-    $outputDirectory = [System.IO.Path]::GetFullPath((Join-Path $bootstrapRoot "tools/api-schema-tools"))
+    $projectPath = [System.IO.Path]::GetFullPath((Join-Path -Path $repoRoot -ChildPath $script:SchemaToolRelativeDirectory -AdditionalChildPath "EdFi.DataManagementService.SchemaTools.csproj"))
+    $outputDirectory = [System.IO.Path]::GetFullPath((Join-Path $bootstrapRoot $script:PublishedToolRelativeDirectory))
     $safeProjectPath = Format-LogSafePath $projectPath
     $safeOutputDirectory = Format-LogSafePath $outputDirectory
 
@@ -152,7 +155,7 @@ function Resolve-DmsSchemaTool {
         $invocationFailure = $_.Exception.Message
     }
 
-    $expectedName = if ($IsWindows) { "api-schema-tools.exe" } else { "api-schema-tools" }
+    $expectedName = $candidateNames[0]
     $expectedPath = [System.IO.Path]::GetFullPath((Join-Path $outputDirectory $expectedName))
     $publishFailure = $null
     if ($null -ne $invocationFailure) {

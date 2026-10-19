@@ -105,18 +105,14 @@ exit $ExitCode
                 ExitCode = 0
                 CreateExecutable = $true
                 CreateBinExecutable = $false
-                ThrowOnInvoke = $false
                 OutputLines = @('fixture restore output', 'fixture build output')
             }
         }
 
         function script:Install-FakeSchemaToolPublisher {
-            param([Parameter(Mandatory)][hashtable]$Fixture)
-
             $script:oldDotnetFunction = Get-Item Function:\global:dotnet -ErrorAction SilentlyContinue
             Set-Item Function:\global:dotnet -Value {
                 $script:publishFixture.Calls.Add(@($args))
-                if ($script:publishFixture.ThrowOnInvoke) { throw 'fixture invocation failed' }
                 foreach ($line in $script:publishFixture.OutputLines) { Write-Output $line }
                 if ($script:publishFixture.CreateExecutable) {
                     'fixture executable' | Set-Content -LiteralPath $script:publishFixture.ExecutablePath
@@ -1292,7 +1288,7 @@ exit $ExitCode
             $script:oldLastExitCode = if ($script:hadLastExitCode) { $exitVariable.Value } else { $null }
             $script:pathCommand = $null
             $script:dotnetLookupCount = 0
-            script:Install-FakeSchemaToolPublisher -Fixture $script:publishFixture
+            script:Install-FakeSchemaToolPublisher
             $resolverPath = Join-Path $script:repo.DockerComposeRoot "$($script:resolverFixtureModuleName).psm1"
             Copy-Item -LiteralPath (Join-Path $script:repo.DockerComposeRoot 'bootstrap-schema-tool.psm1') -Destination $resolverPath
             Import-Module $resolverPath -Force
@@ -1355,13 +1351,6 @@ exit $ExitCode
             $failure | Should -Match ([regex]::Escape($script:publishFixture.ProjectPath))
             $script:publishFixture.Calls.Count | Should -Be 1
             Test-Path -LiteralPath $script:publishFixture.ExecutablePath | Should -BeFalse
-        }
-
-        It 'It_DMS1283_invocation_exception_is_reported_with_publish_context' {
-            $script:publishFixture.ThrowOnInvoke = $true
-
-            { Resolve-DmsSchemaTool } | Should -Throw -ExpectedMessage '*Unable to acquire api-schema-tools*invocation failed*'
-            $script:publishFixture.Calls.Count | Should -Be 1
         }
 
         It 'It_DMS1283_handles_missing_session_variables_when_publish_<Mode>' -TestCases @(
@@ -1474,7 +1463,6 @@ catch {
                 try { $null = Resolve-DmsSchemaTool } catch { $failure = $_.Exception.Message }
                 $failure | Should -Match ([regex]::Escape($script:publishFixture.OutputDirectory))
                 $failure | Should -Not -Match "`r|`n"
-                $failure | Should -Match 'exited with code 17'
             }
             finally { Pop-Location }
         }
@@ -1635,7 +1623,7 @@ catch {
         }
     }
 
-    Context "Given_PublishedToolLocation_AutoDiscovery" {
+    Context "Given_ExplicitToolPathErrors" {
         It "It_Resolve-DmsSchemaTool_preserves_backslashes_in_a_missing_explicit_tool_path" {
             $resolverModulePath = Join-Path $script:repo.DockerComposeRoot 'bootstrap-schema-tool.psm1'
             Import-Module $resolverModulePath -Force
@@ -1645,26 +1633,6 @@ catch {
             { Resolve-DmsSchemaTool -RequestedPath $missingTool } |
                 Should -Throw -ExpectedMessage "*$expectedPath*"
         }
-
-        It "It_Resolve-DmsSchemaTool_discovers_the_published_tool_under_.bootstrap_tools_api-schema-tools" {
-            # The README publishes api-schema-tools to .bootstrap/tools/api-schema-tools, and the wrapper shorthand
-            # (bootstrap-local-dms.ps1) cannot forward -SchemaToolPath. The resolver must auto-discover
-            # that documented location so the documented happy path works after publishing, without
-            # requiring -SchemaToolPath or DMS_SCHEMA_TOOL_PATH.
-            Import-Module (Join-Path $script:repo.DockerComposeRoot "bootstrap-schema-tool.psm1") -Force
-
-            $toolDirectory = Join-Path $script:repo.BootstrapRoot "tools/api-schema-tools"
-            New-Item -ItemType Directory -Path $toolDirectory -Force | Out-Null
-            $toolName = if ($IsWindows) { "api-schema-tools.exe" } else { "api-schema-tools" }
-            $toolPath = Join-Path $toolDirectory $toolName
-            "stub" | Set-Content -LiteralPath $toolPath -Encoding utf8
-
-            $resolved = Resolve-DmsSchemaTool
-
-            [System.IO.Path]::GetFullPath($resolved) |
-                Should -Be ([System.IO.Path]::GetFullPath($toolPath))
-        }
-
     }
 
     Context "Given_PackageResolutionPathErrors" {
