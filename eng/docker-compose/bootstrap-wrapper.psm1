@@ -1015,6 +1015,11 @@ function Invoke-BootstrapWrapper {
                 # tenant-prefixed routes. Resolved as Compose resolves it for the DMS container.
                 if (Get-Command Get-ComposeResolvedEnvValue -ErrorAction SilentlyContinue) {
                     $smokeTestDmsMultiTenancy = (Get-ComposeResolvedEnvValue -EnvironmentValues $smokeTestEnvValues -Name "DMS_MULTI_TENANCY") -eq "true"
+                    # A multi-tenant DMS serves only tenant-prefixed routes, so without a tenant the summary
+                    # has no route to print. Reject it before configure creates the credential.
+                    if ($smokeTestDmsMultiTenancy -and [string]::IsNullOrWhiteSpace((Get-ComposeResolvedEnvValue -EnvironmentValues $smokeTestEnvValues -Name "DMS_CONFIGURATION_SERVICE_TENANT"))) {
+                        throw "-AddSmokeTestCredentials requires DMS_CONFIGURATION_SERVICE_TENANT when DMS_MULTI_TENANCY=true, because DMS then serves only tenant-qualified routes; no smoke test credential was created. Set DMS_CONFIGURATION_SERVICE_TENANT, or set DMS_MULTI_TENANCY=false."
+                    }
                 }
 
                 # The summary formatter rejects a base URL with control characters. Reject it here, before

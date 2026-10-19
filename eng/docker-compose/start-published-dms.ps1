@@ -1048,6 +1048,12 @@ else {
         if ($dmsUrl -match '\p{Cc}') {
             throw "The DMS base URL for the -AddSmokeTestCredentials summary contains control characters; the value is withheld."
         }
+        # A multi-tenant DMS serves only tenant-prefixed routes, so without a tenant the summary has no
+        # route to print. Reject it before the credential exists.
+        $smokeTestDmsMultiTenancy = (Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "DMS_MULTI_TENANCY") -eq "true"
+        if ($smokeTestDmsMultiTenancy -and [string]::IsNullOrWhiteSpace($configServiceTenant)) {
+            throw "-AddSmokeTestCredentials requires DMS_CONFIGURATION_SERVICE_TENANT when DMS_MULTI_TENANCY=true, because DMS then serves only tenant-qualified routes; no smoke test credential was created. Set DMS_CONFIGURATION_SERVICE_TENANT, or set DMS_MULTI_TENANCY=false."
+        }
         Write-Output "Creating smoke test credentials..."
         $smokeTestCredentialArgs = @{ ConfigServiceUrl = $cmsUrl; Tenant = $configServiceTenant }
         if ($smokeTestDataStoreIds.Count -gt 0) {
@@ -1062,7 +1068,7 @@ else {
 
         # DMS prefixes its routes with the tenant only when its own multi-tenancy is enabled; the
         # Configuration Service tenant above still scopes the credential.
-        $smokeTestRouteTenant = if ((Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "DMS_MULTI_TENANCY") -eq "true") { $configServiceTenant } else { "" }
+        $smokeTestRouteTenant = if ($smokeTestDmsMultiTenancy) { $configServiceTenant } else { "" }
 
         Write-Output "Direct start does not provision the DMS schema; the database must already be provisioned (provision-dms-schema.ps1), or use bootstrap-published-dms.ps1."
         Get-SmokeTestCredentialSummary `

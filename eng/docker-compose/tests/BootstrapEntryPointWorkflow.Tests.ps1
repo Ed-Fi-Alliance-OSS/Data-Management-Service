@@ -1888,7 +1888,8 @@ if ($condition) { throw [System.IO.InvalidDataException]::new('$Message') }
             New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
             $ideMultiTenantEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.ide-multitenant"
             Get-Content -LiteralPath $script:repo.EnvFile | Set-Content -LiteralPath $ideMultiTenantEnvFile -Encoding utf8
-            Add-Content -LiteralPath $ideMultiTenantEnvFile -Value "DMS_MULTI_TENANCY=true"
+            # The real configure phase reports the tenant it read from this env file.
+            Add-Content -LiteralPath $ideMultiTenantEnvFile -Value @("DMS_MULTI_TENANCY=true", "DMS_CONFIGURATION_SERVICE_TENANT=tenant-a")
 
             $savedAmbient = [Environment]::GetEnvironmentVariable("DMS_MULTI_TENANCY")
             try {
@@ -1942,7 +1943,8 @@ Write-Output 'seed-phase-output'
             New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
             $dmsMultiTenantEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.dms-multitenant"
             Get-Content -LiteralPath $script:repo.EnvFile | Set-Content -LiteralPath $dmsMultiTenantEnvFile -Encoding utf8
-            Add-Content -LiteralPath $dmsMultiTenantEnvFile -Value $FileLine
+            # The real configure phase reports the tenant it read from this env file.
+            Add-Content -LiteralPath $dmsMultiTenantEnvFile -Value @($FileLine, "DMS_CONFIGURATION_SERVICE_TENANT=tenant-a")
 
             $savedAmbient = [Environment]::GetEnvironmentVariable("DMS_MULTI_TENANCY")
             try {
@@ -2109,6 +2111,44 @@ Write-Output 'seed-phase-output'
             $run.Error.Exception.Message | Should -BeExactly "The DMS base URL for the -AddSmokeTestCredentials summary contains control characters; the value is withheld."
             Test-Path -LiteralPath $callLog | Should -BeFalse -Because "no phase - in particular not configure, which creates the credential - may run"
             @($run.Items | Where-Object { "$_" -like "*Smoke test credentials*" -or "$_" -like "*SmokeTestCredential*" }) | Should -BeNullOrEmpty
+        }
+
+        It "rejects DMS multi-tenancy without a tenant before configure creates any credential, for a <Wrapper> run (<Case>)" -ForEach @(
+            @{ Wrapper = "local"; StartScript = "start-local-dms.ps1"; Entry = "WrapperScript"; Case = "env-file tenant absent"
+                FileLines = @("DMS_MULTI_TENANCY=true"); AmbientTenant = $null }
+            @{ Wrapper = "published"; StartScript = "start-published-dms.ps1"; Entry = "PublishedWrapperScript"; Case = "env-file tenant whitespace"
+                FileLines = @("DMS_MULTI_TENANCY=true", 'DMS_CONFIGURATION_SERVICE_TENANT="   "'); AmbientTenant = $null }
+            # An env-file-only check would accept tenant-a; Compose gives the blank shell value precedence.
+            @{ Wrapper = "local"; StartScript = "start-local-dms.ps1"; Entry = "WrapperScript"; Case = "ambient whitespace over env-file tenant"
+                FileLines = @("DMS_MULTI_TENANCY=true", "DMS_CONFIGURATION_SERVICE_TENANT=tenant-a"); AmbientTenant = "   " }
+        ) {
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-smoke-no-tenant.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog -FileName $StartScript | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            $noTenantEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.dms-multitenant-no-tenant"
+            Get-Content -LiteralPath $script:repo.EnvFile | Set-Content -LiteralPath $noTenantEnvFile -Encoding utf8
+            Add-Content -LiteralPath $noTenantEnvFile -Value $FileLines
+
+            $savedMultiTenancy = [Environment]::GetEnvironmentVariable("DMS_MULTI_TENANCY")
+            $savedTenant = [Environment]::GetEnvironmentVariable("DMS_CONFIGURATION_SERVICE_TENANT")
+            try {
+                Set-AmbientDmsMultiTenancy -Value $null
+                if ($null -eq $AmbientTenant) { Remove-Item -Path Env:DMS_CONFIGURATION_SERVICE_TENANT -ErrorAction SilentlyContinue }
+                else { Set-Item -Path Env:DMS_CONFIGURATION_SERVICE_TENANT -Value $AmbientTenant }
+                $run = Invoke-WrapperCapture -ScriptPath $script:repo.$Entry -Arguments @{ EnvironmentFile = $noTenantEnvFile; AddSmokeTestCredentials = $true }
+            }
+            finally {
+                Set-AmbientDmsMultiTenancy -Value $savedMultiTenancy
+                if ($null -eq $savedTenant) { Remove-Item -Path Env:DMS_CONFIGURATION_SERVICE_TENANT -ErrorAction SilentlyContinue }
+                else { Set-Item -Path Env:DMS_CONFIGURATION_SERVICE_TENANT -Value $savedTenant }
+            }
+
+            $run.Error | Should -Not -BeNullOrEmpty
+            $run.Error.Exception.Message | Should -BeExactly "-AddSmokeTestCredentials requires DMS_CONFIGURATION_SERVICE_TENANT when DMS_MULTI_TENANCY=true, because DMS then serves only tenant-qualified routes; no smoke test credential was created. Set DMS_CONFIGURATION_SERVICE_TENANT, or set DMS_MULTI_TENANCY=false."
+            Test-Path -LiteralPath $callLog | Should -BeFalse -Because "no phase - in particular not configure, which creates the credential - may run"
+            @($run.Items | Where-Object { "$_" -like "*Smoke test credentials*" -or "$_" -like "*SYNTH*" }) | Should -BeNullOrEmpty
         }
 
         It "prints the incomplete summary and rethrows the original error when <Phase> fails later" -ForEach @(
@@ -2420,6 +2460,37 @@ Export-ModuleMember -Function *
             $run.Error | Should -Not -BeNullOrEmpty
             $run.Error.Exception.Message | Should -BeExactly "The DMS base URL for the -AddSmokeTestCredentials summary contains control characters; the value is withheld."
             @($run.CmsCalls | Where-Object { $_ -like "Add-Application*" }) | Should -BeNullOrEmpty
+        }
+
+        It "rejects DMS multi-tenancy without a tenant before creating the credential (<Case>)" -ForEach @(
+            @{ Case = "env-file tenant absent"; FileLines = @("DMS_MULTI_TENANCY=true"); AmbientTenant = $null }
+            # An env-file-only check would accept tenant-a; Compose gives the blank shell value precedence.
+            @{ Case = "ambient whitespace over env-file tenant"; FileLines = @("DMS_MULTI_TENANCY=true", "DMS_CONFIGURATION_SERVICE_TENANT=tenant-a"); AmbientTenant = "   " }
+        ) {
+            $noTenantEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.dms-multitenant-no-tenant"
+            Get-Content -LiteralPath $script:repo.EnvFile | Set-Content -LiteralPath $noTenantEnvFile -Encoding utf8
+            Add-Content -LiteralPath $noTenantEnvFile -Value $FileLines
+
+            $savedMultiTenancy = [Environment]::GetEnvironmentVariable("DMS_MULTI_TENANCY")
+            $savedTenant = [Environment]::GetEnvironmentVariable("DMS_CONFIGURATION_SERVICE_TENANT")
+            try {
+                Remove-Item -Path Env:DMS_MULTI_TENANCY -ErrorAction SilentlyContinue
+                if ($null -eq $AmbientTenant) { Remove-Item -Path Env:DMS_CONFIGURATION_SERVICE_TENANT -ErrorAction SilentlyContinue }
+                else { Set-Item -Path Env:DMS_CONFIGURATION_SERVICE_TENANT -Value $AmbientTenant }
+                $run = Invoke-StartPublishedCapture -Arguments @{ EnvironmentFile = $noTenantEnvFile; AddSmokeTestCredentials = $true }
+            }
+            finally {
+                if ($null -eq $savedMultiTenancy) { Remove-Item -Path Env:DMS_MULTI_TENANCY -ErrorAction SilentlyContinue }
+                else { Set-Item -Path Env:DMS_MULTI_TENANCY -Value $savedMultiTenancy }
+                if ($null -eq $savedTenant) { Remove-Item -Path Env:DMS_CONFIGURATION_SERVICE_TENANT -ErrorAction SilentlyContinue }
+                else { Set-Item -Path Env:DMS_CONFIGURATION_SERVICE_TENANT -Value $savedTenant }
+            }
+
+            $run.Error | Should -Not -BeNullOrEmpty
+            $run.Error.Exception.Message | Should -BeExactly "-AddSmokeTestCredentials requires DMS_CONFIGURATION_SERVICE_TENANT when DMS_MULTI_TENANCY=true, because DMS then serves only tenant-qualified routes; no smoke test credential was created. Set DMS_CONFIGURATION_SERVICE_TENANT, or set DMS_MULTI_TENANCY=false."
+            $run.CmsCalls | Should -Contain "Add-DataStore tenant=" -Because "the run must reach the credential step, or the absence below proves nothing"
+            @($run.CmsCalls | Where-Object { $_ -like "Add-Application*" -or $_ -like "Get-DataStore*" }) | Should -BeNullOrEmpty -Because "no smoke application may be created"
+            @($run.Strings | Where-Object { $_ -like "*Smoke test credentials*" -or $_ -like "*SYNTH*" -or $_ -like "Creating smoke test credentials*" }) | Should -BeNullOrEmpty
         }
 
         It "creates no orphan application when data-store registration fails" {
