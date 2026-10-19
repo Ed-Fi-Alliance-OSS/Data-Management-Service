@@ -92,7 +92,8 @@ vault key of that name like any other.
 
 **On the stock Configuration Service image, `DatabaseSettings__DatabaseConnection` can be removed from the environment and served from a vault.**
 The container entry point, `src/config/run.sh`, reads that variable before .NET starts, to wait for the database.
-When it finds no lowercase `host=` setting in the variable, because the variable is absent or empty or spells its keys in another case such as `Host=`, it prints that it is skipping the readiness wait and starts .NET without waiting.
+When it finds no `host` setting in the variable, because the variable is absent or empty, it prints that it is skipping the readiness wait and starts .NET without waiting.
+It matches keys in any case, as .NET does, so `Host=` and `host=` both count.
 A value in the environment still outranks any plugin source, so a key the vault serves must not also be set there.
 Without the wait, .NET reports a connection error itself if the database is not ready yet, and with the default `AppSettings:DeployDatabaseOnStartup=true` the process exits.
 A restart policy, such as the `restart: unless-stopped` on the shipped Compose files, brings it back once the database is up; without one it stays down.

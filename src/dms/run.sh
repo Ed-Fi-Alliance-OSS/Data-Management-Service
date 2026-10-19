@@ -12,8 +12,8 @@ datastore=$(printf '%s' "${AppSettings__Datastore:-postgresql}" | tr '[:upper:]'
 # Prints the value of one setting in a connection string, following the .NET connection string
 # rules: a single- or double-quoted value may contain semicolons, a doubled quote inside it is a
 # literal quote, spaces around keys and unquoted values are ignored, and the last occurrence of a
-# key wins. Keys match exactly, so Host= is not host=. A whole value wrapped in one pair of quotes,
-# as docker run --env-file passes it, is unwrapped first.
+# key wins. Keys match in any case, so Host= and host= are the same key. A whole value wrapped
+# in one pair of quotes, as docker run --env-file passes it, is unwrapped first.
 connection_string_value() {
     printf '%s' "$1" | awk -v want="$2" -v sq="'" '
         { s = s (NR > 1 ? "\n" : "") $0 }
@@ -69,7 +69,7 @@ connection_string_value() {
                 i++
                 sub(/^[ \t]+/, "", key)
                 sub(/[ \t]+$/, "", key)
-                if (key == want) {
+                if (tolower(key) == want) {
                     result = value
                     found = 1
                 }
