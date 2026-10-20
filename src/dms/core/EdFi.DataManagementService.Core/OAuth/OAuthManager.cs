@@ -191,19 +191,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
     // rejection uses. Neither description echoes anything the caller sent.
     private const string InvalidClientError = "invalid_client";
 
-    private const string NonBasicSchemeDescription = "The Authorization header must use the Basic scheme";
-
     private const string InvalidRequestError = "invalid_request";
-
-    private const string MissingCredentialsDescription =
-        "Client credentials must be supplied in an Authorization: Basic header or as client_id and "
-        + "client_secret in the request body";
-
-    private const string EmptyAuthorizationDetail = "The Authorization header must not be empty";
-
-    private const string MalformedAuthorizationDetail = "Malformed Authorization header";
-
-    private const string MixedMechanismsDetail = "Only one client authentication mechanism may be used";
 
     /// <summary>
     /// Upper bound, in characters, on each of a body <c>client_id</c> and <c>client_secret</c>.
@@ -270,9 +258,11 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             // whitespace-only value reaches here trimmed to empty.
             if (string.IsNullOrWhiteSpace(authHeaderString))
             {
-                return GenerateProblemDetailResponse(
+                return OAuthErrorResponse.Create(
                     HttpStatusCode.BadRequest,
-                    FailureResponse.ForBadRequest(EmptyAuthorizationDetail, traceId, [], [])
+                    InvalidRequestError,
+                    OAuthErrorResponse.EmptyAuthorizationDescription,
+                    traceId
                 );
             }
 
@@ -283,9 +273,11 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             // authentication, and body credentials do not rescue the request.
             if (!authHeaderString.Contains("basic", StringComparison.InvariantCultureIgnoreCase))
             {
-                return GenerateProblemDetailResponse(
+                return OAuthErrorResponse.Create(
                     HttpStatusCode.Unauthorized,
-                    FailureResponse.ForUnauthorized(traceId, InvalidClientError, NonBasicSchemeDescription)
+                    InvalidClientError,
+                    OAuthErrorResponse.NonBasicSchemeDescription,
+                    traceId
                 );
             }
 
@@ -295,9 +287,11 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             // whitespace-only one as blank, as in the ODS/API, so neither makes the request mixed.
             if (bodyCredentials.HasNonBlankField)
             {
-                return GenerateProblemDetailResponse(
+                return OAuthErrorResponse.Create(
                     HttpStatusCode.BadRequest,
-                    FailureResponse.ForBadRequest(MixedMechanismsDetail, traceId, [], [])
+                    InvalidRequestError,
+                    OAuthErrorResponse.MixedMechanismsDescription,
+                    traceId
                 );
             }
 
@@ -309,11 +303,12 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             || string.IsNullOrWhiteSpace(bodyCredentials.ClientSecret)
         )
         {
-            // No credentials at all, or a body pair with a field absent, null, empty or blank.
-            // The ODS/API answers every one of these alike.
-            return GenerateProblemDetailResponse(
-                HttpStatusCode.Unauthorized,
-                FailureResponse.ForUnauthorized(traceId, InvalidRequestError, MissingCredentialsDescription)
+            bool hasAnyCredential = bodyCredentials.HasNonBlankField;
+            return OAuthErrorResponse.Create(
+                hasAnyCredential ? HttpStatusCode.BadRequest : HttpStatusCode.Unauthorized,
+                hasAnyCredential ? InvalidRequestError : InvalidClientError,
+                OAuthErrorResponse.MissingCredentialsDescription,
+                traceId
             );
         }
         else if (
@@ -321,9 +316,11 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             || bodyCredentials.ClientSecret.Length > MaxBodyCredentialLength
         )
         {
-            return GenerateProblemDetailResponse(
+            return OAuthErrorResponse.Create(
                 HttpStatusCode.BadRequest,
-                FailureResponse.ForBadRequest(_oversizedBodyCredentialDetail, traceId, [], [])
+                InvalidRequestError,
+                _oversizedBodyCredentialDetail,
+                traceId
             );
         }
         else
@@ -336,11 +333,23 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
 
         // The static form, because a caller can bind a JSON null into this parameter, and a null
         // grant type is unsupported rather than a fault.
+        if (string.IsNullOrEmpty(grantType))
+        {
+            return OAuthErrorResponse.Create(
+                HttpStatusCode.BadRequest,
+                InvalidRequestError,
+                OAuthErrorResponse.MissingGrantDescription,
+                traceId
+            );
+        }
+
         if (!string.Equals(grantType, "client_credentials", StringComparison.InvariantCultureIgnoreCase))
         {
-            return GenerateProblemDetailResponse(
+            return OAuthErrorResponse.Create(
                 HttpStatusCode.BadRequest,
-                FailureResponse.ForBadRequest("Unsupported grant type", traceId, [], [])
+                "unsupported_grant_type",
+                "Unsupported grant type",
+                traceId
             );
         }
 
@@ -355,9 +364,11 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             // Authorization value, such as "Basicxyz:secret" or two headers joined with a comma.
             // The exception's message quotes the whole header, so it is neither logged nor passed
             // on; the ODS/API answers such a header 400 as well.
-            return GenerateProblemDetailResponse(
+            return OAuthErrorResponse.Create(
                 HttpStatusCode.BadRequest,
-                FailureResponse.ForBadRequest(MalformedAuthorizationDetail, traceId, [], [])
+                InvalidRequestError,
+                OAuthErrorResponse.MalformedAuthorizationDescription,
+                traceId
             );
         }
 
