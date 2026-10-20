@@ -922,15 +922,9 @@ else {
         ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile -SkipLegacyEnvironmentVariableWarning @identityDbParams
     }
 
-    if($AddSmokeTestCredentials)
-    {
-        Import-Module ../smoke_test/modules/SmokeTest.psm1 -Force
-        Write-Output "Creating smoke test credentials..."
-        $null = Get-SmokeTestCredential -ConfigServiceUrl $cmsUrl
-
-        Write-Output "Smoke test credentials created successfully!"
-        Write-Output "Credential values were returned to the caller and were not written to logs."
-    }
+    # Data stores this run registers, so the smoke-test application below is associated with them.
+    $smokeTestDataStoreIds = @()
+    $smokeTestRouteContexts = @()
 
     if(-not $NoDataStore -or $SchoolYearRange)
     {
@@ -1012,6 +1006,8 @@ else {
                         -Tenant $tenant
 
                     Write-Output "Created $($dataStores.Count) school year data stores successfully"
+                    $smokeTestDataStoreIds = @($dataStores | ForEach-Object { [long]$_.DataStoreId })
+                    $smokeTestRouteContexts = @($dataStores | ForEach-Object { [pscustomobject]@{ DataStoreId = [long]$_.DataStoreId; ContextKey = "schoolYear"; ContextValue = [string]$_.Year } })
                 }
                 else {
                     Write-Warning "Invalid SchoolYearRange format. Expected format: StartYear-EndYear (e.g., 2022-2026)"
@@ -1025,11 +1021,62 @@ else {
                 $dataStoreId = Add-DataStore -CmsUrl $cmsUrl -AccessToken $configToken -PostgresCredential $postgresCredential -PostgresDbName $postgresDbName -ConnectionString $dataStoreConnectionString -DatabaseEngine $DatabaseEngine -Name "Local Development Data Store" -DataStoreType "Development" -Tenant $tenant
 
                 Write-Output "Data store created successfully with ID: $dataStoreId"
+                $smokeTestDataStoreIds = @([long]$dataStoreId)
             }
         }
         catch {
             throw "Failed to create data store(s): $($_.Exception.Message)"
         }
+    }
+
+    # Created after the data stores so the application is associated with the ones this run
+    # registered, in the same tenant; with -NoDataStore, Get-SmokeTestCredential keeps its fallback to
+    # the first data store in that tenant. The Configuration Service returns the secret only once,
+    # so the summary is the operator's only copy.
+    if($AddSmokeTestCredentials)
+    {
+        Import-Module ../smoke_test/modules/SmokeTest.psm1 -Force
+        # Under the registration block's own condition this run was asked to register the data stores,
+        # so an empty list means it registered none (an invalid -SchoolYearRange only warns above).
+        # Get-SmokeTestCredential would then fall back to the tenant's first data store, which this run
+        # did not register.
+        if ((-not $NoDataStore -or $SchoolYearRange) -and $smokeTestDataStoreIds.Count -eq 0) {
+            throw "No data store was registered by this run, so -AddSmokeTestCredentials has none to associate the smoke test credential with; no credential was created. Check -SchoolYearRange (format: StartYear-EndYear)."
+        }
+        # The summary formatter rejects a base URL with control characters; reject it before the
+        # credential exists, so it is never created without a way to print it.
+        if ($dmsUrl -match '\p{Cc}') {
+            throw "The DMS base URL for the -AddSmokeTestCredentials summary contains control characters; the value is withheld."
+        }
+        # A multi-tenant DMS serves only tenant-prefixed routes, so without a tenant the summary has no
+        # route to print. Reject it before the credential exists.
+        $smokeTestDmsMultiTenancy = (Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "DMS_MULTI_TENANCY") -eq "true"
+        if ($smokeTestDmsMultiTenancy -and [string]::IsNullOrWhiteSpace($configServiceTenant)) {
+            throw "-AddSmokeTestCredentials requires DMS_CONFIGURATION_SERVICE_TENANT when DMS_MULTI_TENANCY=true, because DMS then serves only tenant-qualified routes; no smoke test credential was created. Set DMS_CONFIGURATION_SERVICE_TENANT, or set DMS_MULTI_TENANCY=false."
+        }
+        Write-Output "Creating smoke test credentials..."
+        $smokeTestCredentialArgs = @{ ConfigServiceUrl = $cmsUrl; Tenant = $configServiceTenant }
+        if ($smokeTestDataStoreIds.Count -gt 0) {
+            $smokeTestCredentialArgs.DataStoreIds = $smokeTestDataStoreIds
+        }
+        $smokeTestCredential = Get-SmokeTestCredential @smokeTestCredentialArgs
+        # With -NoDataStore the helper selected the data store, so its route contexts come back with
+        # the credential.
+        if ($smokeTestDataStoreIds.Count -eq 0) {
+            $smokeTestRouteContexts = @($smokeTestCredential.RouteContexts)
+        }
+
+        # DMS prefixes its routes with the tenant only when its own multi-tenancy is enabled; the
+        # Configuration Service tenant above still scopes the credential.
+        $smokeTestRouteTenant = if ($smokeTestDmsMultiTenancy) { $configServiceTenant } else { "" }
+
+        Write-Output "Direct start does not provision the DMS schema; the database must already be provisioned (provision-dms-schema.ps1), or use bootstrap-published-dms.ps1."
+        Get-SmokeTestCredentialSummary `
+            -Credential $smokeTestCredential `
+            -DmsBaseUrl $dmsUrl `
+            -Tenant $smokeTestRouteTenant `
+            -RouteContexts $smokeTestRouteContexts `
+            -SelfContainedIdentity:($IdentityProvider -eq "self-contained")
     }
 
     Start-Sleep 20

@@ -818,6 +818,8 @@ function Resolve-DockerLocalDmsBaseUrl {
     <#
     .SYNOPSIS
         Returns the Docker-local DMS base URL derived from the supplied env-file values.
+        DMS_HTTP_PORTS is read as Compose interpolates it into the published port mapping, so a
+        value set in the shell wins over the env file.
     .PARAMETER EnvValues
         Hashtable returned by ReadValuesFromEnvFile.
     #>
@@ -825,11 +827,8 @@ function Resolve-DockerLocalDmsBaseUrl {
         [hashtable]$EnvValues
     )
 
-    $port = $EnvValues['DMS_HTTP_PORTS']
-    if (-not [string]::IsNullOrWhiteSpace($port)) {
-        return "http://localhost:$port"
-    }
-    return "http://localhost:8080"
+    $port = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvValues -Name "DMS_HTTP_PORTS" -DefaultValue "8080"
+    return "http://localhost:$port"
 }
 
 function Resolve-DmsRouteUrl {

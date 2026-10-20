@@ -114,6 +114,9 @@ function ConvertTo-ConfigureResult {
     See command-boundaries.md Section 3.4: the result must be JSON-compatible and contain
     SelectedDataStoreIds. CMSReadOnlyAccess fields are included when the configured local flow
     has access to them so IDE next-step guidance can quote them without scraping prose.
+    SmokeTestCredential (Key, Secret, ApplicationName) is included only when
+    -AddSmokeTestCredentials created one: the Configuration Service returns the secret once, and
+    this result is its only delivery, so callers must not log or persist the object.
     #>
     param(
         [long[]]
@@ -129,7 +132,10 @@ function ConvertTo-ConfigureResult {
         $SchoolYears = @(),
 
         [hashtable]
-        $CmsReadOnlyAccess = $null
+        $CmsReadOnlyAccess = $null,
+
+        [hashtable]
+        $SmokeTestCredential = $null
     )
 
     $result = [ordered]@{
@@ -143,6 +149,14 @@ function ConvertTo-ConfigureResult {
 
     if ($null -ne $CmsReadOnlyAccess -and $CmsReadOnlyAccess.Count -gt 0) {
         $result["CMSReadOnlyAccess"] = $CmsReadOnlyAccess
+    }
+
+    if ($null -ne $SmokeTestCredential) {
+        $result["SmokeTestCredential"] = [pscustomobject][ordered]@{
+            Key = $SmokeTestCredential.Key
+            Secret = $SmokeTestCredential.Secret
+            ApplicationName = $SmokeTestCredential.ApplicationName
+        }
     }
 
     return [pscustomobject]$result
@@ -443,6 +457,10 @@ function Invoke-ConfigureLocalDataStore {
         }
     }
 
+    # Assigned only when -AddSmokeTestCredentials creates an application; initialized here so every
+    # branch can pass it under StrictMode and the result omits the block when it stays $null.
+    $smokeTestCredential = $null
+
     if ($NoDataStore) {
         Write-Information "Selecting existing route-unqualified data store from CMS." -InformationAction Continue
         $dataStores = @(Get-DataStore -CmsUrl $cmsUrl -AccessToken $configToken -Tenant $tenant)
@@ -450,14 +468,15 @@ function Invoke-ConfigureLocalDataStore {
         if ($AddSmokeTestCredentials) {
             Import-Module "$PSScriptRoot/../smoke_test/modules/SmokeTest.psm1" -Force
             Write-Information "Creating smoke test credentials." -InformationAction Continue
-            Get-SmokeTestCredential -ConfigServiceUrl $cmsUrl -DataStoreIds @([long]$selectedDataStore.id) -Tenant $tenant | Out-Null
+            $smokeTestCredential = Get-SmokeTestCredential -ConfigServiceUrl $cmsUrl -DataStoreIds @([long]$selectedDataStore.id) -Tenant $tenant
             Write-Information "Smoke test credentials created." -InformationAction Continue
         }
 
         return ConvertTo-ConfigureResult `
             -DataStoreIds @([long]$selectedDataStore.id) `
             -Tenant $tenant `
-            -CmsReadOnlyAccess $cmsReadOnlyAccess
+            -CmsReadOnlyAccess $cmsReadOnlyAccess `
+            -SmokeTestCredential $smokeTestCredential
     }
 
     if ($schoolYears.Count -gt 0) {
@@ -487,7 +506,7 @@ function Invoke-ConfigureLocalDataStore {
         if ($AddSmokeTestCredentials) {
             Import-Module "$PSScriptRoot/../smoke_test/modules/SmokeTest.psm1" -Force
             Write-Information "Creating smoke test credentials." -InformationAction Continue
-            Get-SmokeTestCredential -ConfigServiceUrl $cmsUrl -DataStoreIds $dataStoreIds -Tenant $tenant | Out-Null
+            $smokeTestCredential = Get-SmokeTestCredential -ConfigServiceUrl $cmsUrl -DataStoreIds $dataStoreIds -Tenant $tenant
             Write-Information "Smoke test credentials created." -InformationAction Continue
         }
 
@@ -496,7 +515,8 @@ function Invoke-ConfigureLocalDataStore {
             -RouteContexts $routeContexts `
             -Tenant $tenant `
             -SchoolYears $schoolYears `
-            -CmsReadOnlyAccess $cmsReadOnlyAccess
+            -CmsReadOnlyAccess $cmsReadOnlyAccess `
+            -SmokeTestCredential $smokeTestCredential
     }
 
     Write-Information "Creating default route-unqualified data store." -InformationAction Continue
@@ -514,14 +534,15 @@ function Invoke-ConfigureLocalDataStore {
     if ($AddSmokeTestCredentials) {
         Import-Module "$PSScriptRoot/../smoke_test/modules/SmokeTest.psm1" -Force
         Write-Information "Creating smoke test credentials." -InformationAction Continue
-        Get-SmokeTestCredential -ConfigServiceUrl $cmsUrl -DataStoreIds @([long]$dataStoreId) -Tenant $tenant | Out-Null
+        $smokeTestCredential = Get-SmokeTestCredential -ConfigServiceUrl $cmsUrl -DataStoreIds @([long]$dataStoreId) -Tenant $tenant
         Write-Information "Smoke test credentials created." -InformationAction Continue
     }
 
     return ConvertTo-ConfigureResult `
         -DataStoreIds @([long]$dataStoreId) `
         -Tenant $tenant `
-        -CmsReadOnlyAccess $cmsReadOnlyAccess
+        -CmsReadOnlyAccess $cmsReadOnlyAccess `
+        -SmokeTestCredential $smokeTestCredential
 }
 
 if ($MyInvocation.InvocationName -eq '.') { return }

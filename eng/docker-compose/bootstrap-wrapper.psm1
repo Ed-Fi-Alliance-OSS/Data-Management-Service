@@ -481,6 +481,65 @@ function Resolve-WrapperSelectedDataStoreIds {
     throw "configure-local-data-store.ps1 result is missing SelectedDataStoreIds (and the DataStoreIds alias)."
 }
 
+function Resolve-WrapperSmokeTestSummary {
+    <#
+    .SYNOPSIS
+    Formats the smoke-test credential summary from configure-local-data-store.ps1's structured
+    result, once for a completed run and once for a run that fails after the credential was
+    created. Both are built here, right after configure, so printing them later needs no import,
+    environment read, validation, or formatting. Throws a value-free contract error when the result
+    carries no usable SmokeTestCredential.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        $ConfigureResult,
+
+        [string]$DmsBaseUrl,
+
+        # DMS prefixes its routes with the tenant only when its own multi-tenancy is enabled; the
+        # result's tenant scopes the Configuration Service calls either way.
+        [switch]$DmsMultiTenancy,
+
+        [switch]$SelfContainedIdentity,
+
+        # DMS runs in the IDE with its own AppSettings:MultiTenancy, which this run does not read, so
+        # the completed summary states the value its target assumes.
+        [switch]$IdeHostedDms
+    )
+
+    $readProperty = {
+        param([string]$Name)
+        if ($ConfigureResult -is [System.Collections.IDictionary]) {
+            if ($ConfigureResult.Contains($Name)) { $ConfigureResult[$Name] }
+        }
+        elseif ($null -ne $ConfigureResult -and $null -ne $ConfigureResult.PSObject.Properties[$Name]) {
+            $ConfigureResult.PSObject.Properties[$Name].Value
+        }
+    }
+
+    $summaryArgs = @{
+        Credential = & $readProperty "SmokeTestCredential"
+        DmsBaseUrl = $DmsBaseUrl
+        Tenant = if ($DmsMultiTenancy) { [string](& $readProperty "Tenant") } else { "" }
+        RouteContexts = @(& $readProperty "RouteContexts")
+        SelfContainedIdentity = $SelfContainedIdentity
+    }
+
+    try {
+        $complete = @(Get-SmokeTestCredentialSummary @summaryArgs)
+        if ($IdeHostedDms) {
+            $complete += "IDE-hosted DMS: the target above assumes it runs with AppSettings:MultiTenancy=$(if ($DmsMultiTenancy) { 'true' } else { 'false' }), as DMS_MULTI_TENANCY resolves for this env file. This run does not read the IDE's configuration; set it to match, or the printed routes will not resolve."
+        }
+        return [pscustomobject]@{
+            Complete = $complete
+            Incomplete = @(Get-SmokeTestCredentialSummary @summaryArgs -Incomplete)
+        }
+    }
+    catch {
+        throw "configure-local-data-store.ps1 was run with -AddSmokeTestCredentials but returned no usable SmokeTestCredential; values are withheld."
+    }
+}
+
 function Invoke-BootstrapWrapper {
     <#
     .SYNOPSIS
@@ -711,6 +770,20 @@ function Invoke-BootstrapWrapper {
         $cdcRetry = Get-CdcBootstrapRetryHandoff -Project $cdcProject -StatePath $CdcBindingStatePath -InputSettingsPath $CdcSettingsPath -DatabaseName $DataStoreDatabaseName
     }
 
+    # -AddSmokeTestCredentials delivery state. The CMS returns the application secret only once, so
+    # the summary is formatted right after configure and printed by the finally block below on every
+    # return path, including a later phase failure. The formatter and the env helpers that resolve the
+    # summary target are loaded here, before any phase runs, so a missing module fails while no
+    # credential exists yet.
+    $smokeTestSummary = $null
+    $smokeTestSummaryBaseUrl = ""
+    $smokeTestDmsMultiTenancy = $false
+    $wrapperFailed = $false
+    if ($AddSmokeTestCredentials) {
+        Import-Module (Join-Path $PSScriptRoot "../smoke_test/modules/SmokeTest.psm1") -Force
+        Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
+    }
+
     Push-Location $PSScriptRoot
     try {
         $baseEnvFile = Resolve-WrapperEnvironmentFilePath -BaseEnvironmentFile $EnvironmentFile
@@ -928,6 +1001,33 @@ function Invoke-BootstrapWrapper {
             Assert-BootstrapCdcOfflineOwnership @cdcOwnership -InfrastructureReady
         }
         else {
+            # Where the printed smoke-test command points: the IDE-hosted DMS when one was named, a
+            # placeholder for the IDE shape that has none yet, otherwise the Docker-hosted DMS from the
+            # effective env. Resolved before infrastructure starts, while no credential exists yet.
+            if ($AddSmokeTestCredentials) {
+                $smokeTestEnvValues = ReadValuesFromEnvFile $effectiveEnvFile
+                if ($dmsBaseUrlSupplied) {
+                    $smokeTestSummaryBaseUrl = $DmsBaseUrl
+                }
+                elseif (-not $InfraOnly) {
+                    $smokeTestSummaryBaseUrl = Resolve-DockerLocalDmsBaseUrl -EnvValues $smokeTestEnvValues
+                }
+                # DMS_MULTI_TENANCY, not CONFIGURATION_SERVICE_MULTI_TENANCY, decides whether DMS serves
+                # tenant-prefixed routes. Resolved as Compose resolves it for the DMS container.
+                $smokeTestDmsMultiTenancy = (Get-ComposeResolvedEnvValue -EnvironmentValues $smokeTestEnvValues -Name "DMS_MULTI_TENANCY") -eq "true"
+                # A multi-tenant DMS serves only tenant-prefixed routes, so without a tenant the summary
+                # has no route to print. Reject it before configure creates the credential.
+                if ($smokeTestDmsMultiTenancy -and [string]::IsNullOrWhiteSpace((Get-ComposeResolvedEnvValue -EnvironmentValues $smokeTestEnvValues -Name "DMS_CONFIGURATION_SERVICE_TENANT"))) {
+                    throw "-AddSmokeTestCredentials requires DMS_CONFIGURATION_SERVICE_TENANT when DMS_MULTI_TENANCY=true, because DMS then serves only tenant-qualified routes; no smoke test credential was created. Set DMS_CONFIGURATION_SERVICE_TENANT, or set DMS_MULTI_TENANCY=false."
+                }
+
+                # The summary formatter rejects a base URL with control characters. Reject it here, before
+                # configure creates the credential, so the secret is never created without a way to print it.
+                if ($smokeTestSummaryBaseUrl -match '\p{Cc}') {
+                    throw "The DMS base URL for the -AddSmokeTestCredentials summary contains control characters; the value is withheld."
+                }
+            }
+
             if ($EnableKafkaCdc) {
                 $cdcHandoff = New-BootstrapCdcHandoff -Settings $cdcSettings -InputSettingsPath $CdcSettingsPath -StatePath $CdcBindingStatePath -EnvironmentFile $effectiveEnvFile -Project $cdcProject -DatabaseName $DataStoreDatabaseName -IdentityProvider $resolvedIdentityProvider
                 $cdcHandoff | Add-Member -NotePropertyName OriginalEnvironmentFile -NotePropertyValue $callerEnvFile -Force
@@ -1015,15 +1115,46 @@ function Invoke-BootstrapWrapper {
             # configure-local-data-store.ps1 throws on failure (no exit code); clear any stale native exit code first.
             $global:LASTEXITCODE = 0
             $configurationResult = & "$PSScriptRoot/configure-local-data-store.ps1" @configureArgs
-            if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
-                throw "configure-local-data-store.ps1 failed with exit code $LASTEXITCODE."
+            $configureExitCode = $LASTEXITCODE
+            $configurationResults = @($configurationResult)
+
+            # Once configure has created the credential, its summary is cached before the output
+            # contract below can throw, so the finally block prints it even when that contract fails.
+            # Only one unambiguous credential-bearing result is used, and the checks still run.
+            $smokeTestSummaryArgs = @{
+                DmsBaseUrl = $smokeTestSummaryBaseUrl
+                DmsMultiTenancy = $smokeTestDmsMultiTenancy
+                SelfContainedIdentity = ($resolvedIdentityProvider -eq "self-contained")
+                IdeHostedDms = [bool]$InfraOnly
+            }
+            if ($AddSmokeTestCredentials) {
+                $credentialResults = @($configurationResults | Where-Object {
+                        ($_ -is [System.Collections.IDictionary] -and $_.Contains("SmokeTestCredential")) -or
+                        ($_ -isnot [System.Collections.IDictionary] -and $null -ne $_ -and $null -ne $_.PSObject.Properties["SmokeTestCredential"])
+                    })
+                if ($credentialResults.Count -eq 1) {
+                    try {
+                        $smokeTestSummary = Resolve-WrapperSmokeTestSummary -ConfigureResult $credentialResults[0] @smokeTestSummaryArgs
+                    }
+                    catch {
+                        # An unusable credential is reported by the contract check below, after the
+                        # exit-code and result-count checks, so their errors keep precedence.
+                        $smokeTestSummary = $null
+                    }
+                }
             }
 
-            $configurationResults = @($configurationResult)
+            if ($configureExitCode -is [int] -and $configureExitCode -ne 0) {
+                throw "configure-local-data-store.ps1 failed with exit code $configureExitCode."
+            }
             if ($configurationResults.Count -ne 1) {
                 throw "configure-local-data-store.ps1 must return exactly one structured result object. Returned $($configurationResults.Count)."
             }
             $configured = $configurationResults[0]
+            if ($AddSmokeTestCredentials -and $null -eq $smokeTestSummary) {
+                # Throws the value-free contract error: the one result carries no usable credential.
+                $smokeTestSummary = Resolve-WrapperSmokeTestSummary -ConfigureResult $configured @smokeTestSummaryArgs
+            }
             $configuredDataStoreIds = [long[]]@(Resolve-WrapperSelectedDataStoreIds -ConfigureResult $configured)
             if ($EnableKafkaCdc -and ($configuredDataStoreIds.Count -ne 1 -or
                 [string]$configuredDataStoreIds[0] -cne $cdcSettings.Cdc.DataStoreId)) {
@@ -1229,8 +1360,24 @@ function Invoke-BootstrapWrapper {
             throw "load-dms-seed-data.ps1 failed with exit code $LASTEXITCODE."
         }
     }
+    catch {
+        $wrapperFailed = $true
+        throw
+    }
     finally {
         Pop-Location
+
+        # The explicit operator-facing summary: success-stream output only, never a log statement.
+        # Only the cached lines are written here - no import, environment read, validation, or
+        # formatting - so a supported later failure still propagates unchanged.
+        if ($null -ne $smokeTestSummary) {
+            if ($wrapperFailed) {
+                $smokeTestSummary.Incomplete
+            }
+            else {
+                $smokeTestSummary.Complete
+            }
+        }
     }
 }
 
