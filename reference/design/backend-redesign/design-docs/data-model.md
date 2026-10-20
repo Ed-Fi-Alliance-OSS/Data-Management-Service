@@ -130,9 +130,10 @@ CREATE INDEX IX_Document_CreatedByOwnershipTokenId
 
 Notes:
 
-- `DocumentUuid` remains stable across identity updates. Current POST matching and reference
-  resolution use RI; the generated natural-key probes described in
-  [natural-key-resolution.md](natural-key-resolution.md) belong to later stories.
+- `DocumentUuid` remains stable across identity updates. Resource POST matching uses the
+  own-natural-key capture, and reference resolution uses the natural-key probes described in
+  [natural-key-resolution.md](natural-key-resolution.md); descriptor POSTs still match through RI
+  until DMS-1454.
 - `ResourceKeyId` identifies the document’s concrete resource type; use `dms.ResourceKey` for `(ProjectName, ResourceName)` when needed (diagnostics, CDC metadata).
 - `dms.Document` deliberately carries no `(ResourceKeyId, DocumentId)` resource-type scan index. Descriptor paging roots on `dms.Descriptor` via its denormalized `ResourceKeyId` (see §2), while document UUID probes retain their existing path. `FK_Descriptor_DocumentResourceKey` enforces descriptor document/type agreement through `UX_Document_DocumentId_ResourceKeyId`. `FK_Document_ResourceKey` needs no referencing-side index because resource-key seeds are immutable at runtime.
 - `dms.Document` has no `(ContentVersion, DocumentId)` projector-discovery index. Durable

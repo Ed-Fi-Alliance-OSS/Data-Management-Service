@@ -21,8 +21,8 @@ It also defines the minimal `ApiSchema.json` metadata needed (beyond what alread
 
 References resolve through the natural-key resolver in
 [natural-key-resolution.md](natural-key-resolution.md), and resource POST upsert detection uses the
-compiled own-natural-key capture. On SQL Server, identity values equal under the identity collation
-match and keep their stored casing. Descriptor writes still use RI and their current rules until
+compiled own-natural-key capture. On SQL Server, identity values equal under the identity comparer
+(`OrdinalIgnoreCase`) match and keep their stored casing. Descriptor writes still use RI and their current rules until
 DMS-1454.
 The illustrative C# shapes below describe plan roles rather than replacing the production contracts.
 

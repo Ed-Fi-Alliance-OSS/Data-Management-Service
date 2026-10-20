@@ -1787,48 +1787,6 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     // ── Descriptor-URI canonicalization helpers ────────────────────────────
 
     /// <summary>
-    /// Rewrites each ancestor's <see cref="AncestorCollectionInstance.SemanticIdentityInOrder"/>
-    /// in <paramref name="address"/> so descriptor-URI parts are replaced by their resolved
-    /// Int32 ids and document-reference natural-key parts are replaced by their resolved
-    /// document ids. This makes ancestor-keyed index lookups (built at walker construction
-    /// from raw Core-emitted addresses) symmetric with recursion-side lookup keys (which the
-    /// walker constructs from already-canonicalized current row identities).
-    /// </summary>
-    /// <remarks>
-    /// <para>For each ancestor, this helper looks up the ancestor's scope's
-    /// <see cref="TableWritePlan"/> via <paramref name="tablePlanByJsonScope"/>, then applies
-    /// the same descriptor-URI / document-reference canonicalization logic that the per-row
-    /// helpers (<see cref="CanonicalizeRequestDocumentReferenceIdentityParts"/>,
-    /// <see cref="CanonicalizeIdentityParts"/>) use for the row's own identity.</para>
-    ///
-    /// <para>For descriptor parts, the URI cache (<see cref="FlatteningResolvedReferenceLookupSet.TryGetDescriptorIdByUri"/>)
-    /// is the primary resolution path. URIs absent from the cache fall back to scanning all
-    /// current rows for the ancestor's table (passed in <paramref name="currentRowsByJsonScope"/>)
-    /// for a row whose semantic identity matches all non-descriptor parts; if that match is
-    /// unique, its descriptor id at the same index position is used. Same-shape fallback as
-    /// the per-row helpers, narrowed to scope-wide current rows because ancestor canonicalization
-    /// happens at index-build time without per-(scope, parent-instance) partitioning.</para>
-    ///
-    /// <para>Document-reference ancestor parts are also canonicalized deterministically.
-    /// The per-row request/stored helpers use <c>(bindingIndex, ordinalPath)</c> via
-    /// <see cref="FlatteningResolvedReferenceLookupSet.GetDocumentId"/> for request-side
-    /// resolution; the ancestor pass mirrors that on the request side via the child's
-    /// derived ordinal-path prefix and otherwise scans the current rows for a unique row
-    /// whose natural-key columns match the stored natural-key parts and reads the resolved
-    /// backend document id directly from the matched row's FK column. The current-row scan
-    /// is restricted to the target parent partition (looked up in
-    /// <paramref name="currentRowsByJsonScopeAndParent"/> by <c>(ancestor scope, canonical
-    /// target parent address)</c>) so siblings in different parent instances are not
-    /// treated as ambiguous matches, mirroring the descriptor pass's partitioning. When
-    /// the natural-key parts cannot be uniquely resolved within that partition (and the
-    /// request-side cache also misses), the helper fails closed rather than leaving the
-    /// URI/natural-key in place silently, avoiding the same lookup-miss-via-form-mismatch
-    /// shape the descriptor pass closes.</para>
-    ///
-    /// <para>If <paramref name="address"/> has no ancestor instances, returns the original
-    /// reference unchanged. If no ancestor changes, returns the original reference.</para>
-    /// </remarks>
-    /// <summary>
     /// Rewrites each request-side ancestor collection instance whose semantic identity equals exactly
     /// one visible stored row of the same scope and (already aligned) ancestor chain under the table's
     /// <see cref="CollectionSemanticIdentityEquality.PresenceAware"/> equality, but not byte for byte,
@@ -2103,6 +2061,48 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         return true;
     }
 
+    /// <summary>
+    /// Rewrites each ancestor's <see cref="AncestorCollectionInstance.SemanticIdentityInOrder"/>
+    /// in <paramref name="address"/> so descriptor-URI parts are replaced by their resolved
+    /// Int32 ids and document-reference natural-key parts are replaced by their resolved
+    /// document ids. This makes ancestor-keyed index lookups (built at walker construction
+    /// from raw Core-emitted addresses) symmetric with recursion-side lookup keys (which the
+    /// walker constructs from already-canonicalized current row identities).
+    /// </summary>
+    /// <remarks>
+    /// <para>For each ancestor, this helper looks up the ancestor's scope's
+    /// <see cref="TableWritePlan"/> via <paramref name="tablePlanByJsonScope"/>, then applies
+    /// the same descriptor-URI / document-reference canonicalization logic that the per-row
+    /// helpers (<see cref="CanonicalizeRequestDocumentReferenceIdentityParts"/>,
+    /// <see cref="CanonicalizeIdentityParts"/>) use for the row's own identity.</para>
+    ///
+    /// <para>For descriptor parts, the URI cache (<see cref="FlatteningResolvedReferenceLookupSet.TryGetDescriptorIdByUri"/>)
+    /// is the primary resolution path. URIs absent from the cache fall back to scanning all
+    /// current rows for the ancestor's table (passed in <paramref name="currentRowsByJsonScope"/>)
+    /// for a row whose semantic identity matches all non-descriptor parts; if that match is
+    /// unique, its descriptor id at the same index position is used. Same-shape fallback as
+    /// the per-row helpers, narrowed to scope-wide current rows because ancestor canonicalization
+    /// happens at index-build time without per-(scope, parent-instance) partitioning.</para>
+    ///
+    /// <para>Document-reference ancestor parts are also canonicalized deterministically.
+    /// The per-row request/stored helpers use <c>(bindingIndex, ordinalPath)</c> via
+    /// <see cref="FlatteningResolvedReferenceLookupSet.GetDocumentId"/> for request-side
+    /// resolution; the ancestor pass mirrors that on the request side via the child's
+    /// derived ordinal-path prefix and otherwise scans the current rows for a unique row
+    /// whose natural-key columns match the stored natural-key parts and reads the resolved
+    /// backend document id directly from the matched row's FK column. The current-row scan
+    /// is restricted to the target parent partition (looked up in
+    /// <paramref name="currentRowsByJsonScopeAndParent"/> by <c>(ancestor scope, canonical
+    /// target parent address)</c>) so siblings in different parent instances are not
+    /// treated as ambiguous matches, mirroring the descriptor pass's partitioning. When
+    /// the natural-key parts cannot be uniquely resolved within that partition (and the
+    /// request-side cache also misses), the helper fails closed rather than leaving the
+    /// URI/natural-key in place silently, avoiding the same lookup-miss-via-form-mismatch
+    /// shape the descriptor pass closes.</para>
+    ///
+    /// <para>If <paramref name="address"/> has no ancestor instances, returns the original
+    /// reference unchanged. If no ancestor changes, returns the original reference.</para>
+    /// </remarks>
     internal static ScopeInstanceAddress CanonicalizeAddressAncestors(
         ScopeInstanceAddress address,
         IReadOnlyDictionary<string, TableWritePlan> tablePlanByJsonScope,
