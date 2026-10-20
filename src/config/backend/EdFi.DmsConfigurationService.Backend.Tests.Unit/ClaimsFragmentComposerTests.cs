@@ -571,10 +571,12 @@ public class ClaimsFragmentComposerTests
         [Test]
         public void It_attaches_the_grant_under_the_registered_name()
         {
-            JsonObject? grant = GrantOnAcademicWeek(_result, "Fragment-Defined");
+            JsonObject grant = GrantOnAcademicWeek(_result, "Fragment-Defined")
+                .Should()
+                .BeOfType<JsonObject>()
+                .Which;
 
-            grant.Should().NotBeNull();
-            grant!["actions"]!
+            grant["actions"]!
                 .AsArray()
                 .Select(action => action!["name"]!.GetValue<string>())
                 .Should()
@@ -956,27 +958,27 @@ public class ClaimsFragmentComposerTests
         [Test]
         public void It_grants_the_claim_set_on_studentPathMilestoneStatus()
         {
-            JsonObject? grant = GrantOn(
-                _result,
-                ClaimUriPrefix + "ed-fi/studentPathMilestoneStatus",
-                ClaimSetName
-            );
+            JsonObject grant = GrantOn(
+                    _result,
+                    ClaimUriPrefix + "ed-fi/studentPathMilestoneStatus",
+                    ClaimSetName
+                )
+                .Should()
+                .BeOfType<JsonObject>()
+                .Which;
 
-            grant.Should().NotBeNull();
-            ReadActionNames(grant!).Should().Equal("Read");
+            ReadActionNames(grant).Should().Equal("Read");
         }
 
         [Test]
         public void It_grants_the_claim_set_on_candidateDemographics()
         {
-            JsonObject? grant = GrantOn(
-                _result,
-                ClaimUriPrefix + "ed-fi/candidateDemographics",
-                ClaimSetName
-            );
+            JsonObject grant = GrantOn(_result, ClaimUriPrefix + "ed-fi/candidateDemographics", ClaimSetName)
+                .Should()
+                .BeOfType<JsonObject>()
+                .Which;
 
-            grant.Should().NotBeNull();
-            ReadActionNames(grant!).Should().Equal("Read");
+            ReadActionNames(grant).Should().Equal("Read");
         }
 
         [Test]
@@ -1006,10 +1008,12 @@ public class ClaimsFragmentComposerTests
         [Test]
         public void It_grants_the_claim_set_on_the_systemDescriptors_domain()
         {
-            JsonObject? grant = GrantOn(_result, ClaimUriPrefix + "domains/systemDescriptors", ClaimSetName);
+            JsonObject grant = GrantOn(_result, ClaimUriPrefix + "domains/systemDescriptors", ClaimSetName)
+                .Should()
+                .BeOfType<JsonObject>()
+                .Which;
 
-            grant.Should().NotBeNull();
-            ReadActionNames(grant!).Should().Equal("Read");
+            ReadActionNames(grant).Should().Equal("Read");
         }
 
         [Test]
@@ -1047,28 +1051,34 @@ public class ClaimsFragmentComposerTests
         [Test]
         public void It_grants_the_claim_set_on_school()
         {
-            JsonObject? grant = GrantOn(_result, ClaimUriPrefix + "ed-fi/school", ClaimSetName);
+            JsonObject grant = GrantOn(_result, ClaimUriPrefix + "ed-fi/school", ClaimSetName)
+                .Should()
+                .BeOfType<JsonObject>()
+                .Which;
 
-            grant.Should().NotBeNull();
-            ReadActionNames(grant!).Should().Equal("Read");
+            ReadActionNames(grant).Should().Equal("Read");
         }
 
         [Test]
         public void It_grants_the_claim_set_on_academicWeek()
         {
-            JsonObject? grant = GrantOn(_result, ClaimUriPrefix + "ed-fi/academicWeek", ClaimSetName);
+            JsonObject grant = GrantOn(_result, ClaimUriPrefix + "ed-fi/academicWeek", ClaimSetName)
+                .Should()
+                .BeOfType<JsonObject>()
+                .Which;
 
-            grant.Should().NotBeNull();
-            ReadActionNames(grant!).Should().Equal("Read");
+            ReadActionNames(grant).Should().Equal("Read");
         }
 
         [Test]
         public void It_grants_the_claim_set_on_localEducationAgency()
         {
-            JsonObject? grant = GrantOn(_result, ClaimUriPrefix + "ed-fi/localEducationAgency", ClaimSetName);
+            JsonObject grant = GrantOn(_result, ClaimUriPrefix + "ed-fi/localEducationAgency", ClaimSetName)
+                .Should()
+                .BeOfType<JsonObject>()
+                .Which;
 
-            grant.Should().NotBeNull();
-            ReadActionNames(grant!).Should().Equal("Read");
+            ReadActionNames(grant).Should().Equal("Read");
         }
 
         [Test]
@@ -1113,10 +1123,12 @@ public class ClaimsFragmentComposerTests
         [Test]
         public void It_grants_the_claim_set_on_the_exact_name()
         {
-            JsonObject? grant = GrantOn(_result, StatisticsClaim, ClaimSetName);
+            JsonObject grant = GrantOn(_result, StatisticsClaim, ClaimSetName)
+                .Should()
+                .BeOfType<JsonObject>()
+                .Which;
 
-            grant.Should().NotBeNull();
-            ReadActionNames(grant!).Should().Equal("Read");
+            ReadActionNames(grant).Should().Equal("Read");
         }
 
         [Test]
@@ -1160,10 +1172,12 @@ public class ClaimsFragmentComposerTests
         [Test]
         public void It_still_applies_the_matching_entry()
         {
-            JsonObject? grant = GrantOn(_result, ClaimUriPrefix + "ed-fi/academicWeek", ClaimSetName);
+            JsonObject grant = GrantOn(_result, ClaimUriPrefix + "ed-fi/academicWeek", ClaimSetName)
+                .Should()
+                .BeOfType<JsonObject>()
+                .Which;
 
-            grant.Should().NotBeNull();
-            ReadActionNames(grant!).Should().Equal("Read");
+            ReadActionNames(grant).Should().Equal("Read");
         }
 
         [Test]
