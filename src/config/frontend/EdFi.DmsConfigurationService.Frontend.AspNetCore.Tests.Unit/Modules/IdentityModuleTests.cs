@@ -4676,7 +4676,8 @@ internal sealed class RevocationLogCapture : ILoggerProvider, ISupportExternalSc
 
 /// <summary>
 /// An identity-provider rejection of the request itself (<c>invalid_scope</c>) is answered with a 400 carrying the
-/// provider's <c>error</c> and <c>error_description</c>; any other provider failure keeps the 502. Non-fixture
+/// provider's <c>error</c> and <c>error_description</c>, or a fixed <c>invalid_scope</c> description when the
+/// provider sends none; any other provider failure keeps the 502. Non-fixture
 /// container; the runnable fixtures are the nested <c>Given_…</c> classes.
 /// </summary>
 public class TokenEndpointInvalidScopeTests
@@ -4770,6 +4771,44 @@ public class TokenEndpointInvalidScopeTests
             );
             JsonNode.DeepEquals(actual, expected).Should().BeTrue(Body);
         }
+    }
+
+    [TestFixture]
+    public class Given_the_identity_provider_rejects_the_scope_without_a_description : ProviderFailureRequest
+    {
+        protected override IdentityProviderError ProviderError =>
+            new IdentityProviderError.InvalidScope("""{"error":"invalid_scope"}""");
+
+        [Test]
+        public void It_returns_400() => Response.StatusCode.Should().Be(HttpStatusCode.BadRequest, Body);
+
+        [Test]
+        public void It_names_invalid_scope_with_a_fixed_description() =>
+            JsonNode.Parse(Body)!["errors"]!
+                .AsArray()
+                .Select(error => error!.GetValue<string>())
+                .Should()
+                .Equal(
+                    "invalid_scope. The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client."
+                );
+    }
+
+    [TestFixture]
+    public class Given_the_identity_provider_rejects_the_scope_with_a_blank_description
+        : ProviderFailureRequest
+    {
+        protected override IdentityProviderError ProviderError =>
+            new IdentityProviderError.InvalidScope("""{"error":"invalid_scope","error_description":" "}""");
+
+        [Test]
+        public void It_names_invalid_scope_with_a_fixed_description() =>
+            JsonNode.Parse(Body)!["errors"]!
+                .AsArray()
+                .Select(error => error!.GetValue<string>())
+                .Should()
+                .Equal(
+                    "invalid_scope. The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client."
+                );
     }
 
     [TestFixture]

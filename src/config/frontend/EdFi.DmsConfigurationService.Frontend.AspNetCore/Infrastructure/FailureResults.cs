@@ -161,16 +161,26 @@ internal static class FailureResults
     /// <summary>
     /// Structured 400 <c>urn:ed-fi:api:bad-request</c> response for an identity provider that
     /// rejected the requested scope. Only the provider's <c>error</c> and <c>error_description</c>
-    /// reach the client, in the same convention the 401 and 502 use.
+    /// reach the client, in the same convention the 401 and 502 use. Without a usable
+    /// <c>error_description</c>, a fixed <c>invalid_scope</c> message does.
     /// </summary>
     public static IResult InvalidScope(string detail, string correlationId)
     {
+        string[] errors = TryParseProviderError(detail, out string error, out string errorDescription)
+            ? [$"{error}. {errorDescription}"]
+            : [InvalidScopeFallbackMessage];
+
         return Results.Json(
-            FailureResponse.ForBadRequest(_errorDetail, correlationId, GetIdentityErrorDetails(detail)),
+            FailureResponse.ForBadRequest(_errorDetail, correlationId, errors),
             contentType: _errorContentType,
             statusCode: 400
         );
     }
+
+    // Only bodies whose error is invalid_scope reach InvalidScope, and error_description is optional
+    // under RFC 6749 section 5.2, so a body without one still names the code.
+    private const string InvalidScopeFallbackMessage =
+        "invalid_scope. The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client.";
 
     private const string UnexpectedProviderResponseMessage =
         "The identity provider returned an unexpected response.";
