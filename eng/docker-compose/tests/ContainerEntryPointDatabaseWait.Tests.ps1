@@ -171,12 +171,18 @@ exit 0
             Assert-WaitSkipped (Invoke-Case -Value "")
         }
 
-        It "skips the PostgreSQL wait for capitalized keywords and does not print the password" -Skip:(-not (Get-Command -Name $Shell -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
-            Assert-WaitSkipped (Invoke-Case -Value "Host=db;Port=5432;Username=postgres;Password=$($script:marker)")
+        It "waits with the host, port and username for Npgsql's capitalized keys" -Skip:(-not (Get-Command -Name $Shell -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
+            $result = Invoke-Case -Value "Host=dms-postgresql;Port=5432;Username=postgres;Password=$($script:marker);Database=edfi_config"
+            Assert-WaitedWith $result "[-h][dms-postgresql][-p][5432][-U][postgres]"
+        }
+
+        It "matches keys in any case" -Skip:(-not (Get-Command -Name $Shell -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
+            $result = Invoke-Case -Value "HOST=dms-postgresql;pOrT=5432;USERNAME=postgres;password=$($script:marker)"
+            Assert-WaitedWith $result "[-h][dms-postgresql][-p][5432][-U][postgres]"
         }
 
         It "does not take a host from inside another setting's value" -Skip:(-not (Get-Command -Name $Shell -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
-            Assert-WaitSkipped (Invoke-Case -Value "Host=db;Password=ghost=$($script:marker)")
+            Assert-WaitSkipped (Invoke-Case -Value "port=5432;Password=ghost=$($script:marker)")
         }
 
         It "waits with the parsed host, port and username for the shipped lowercase value" -Skip:(-not (Get-Command -Name $Shell -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
@@ -199,16 +205,17 @@ exit 0
             Assert-WaitedWith $result "[-h][dms-postgresql][-p][5432][-U][]"
         }
 
-        # The cases below follow the .NET connection string rules the services themselves parse
-        # with: a quoted value may contain semicolons, a doubled quote inside it is a literal
-        # quote, and the last occurrence of a key wins.
+        # These cases, and the case-insensitive key cases above, follow the .NET connection string
+        # rules the services themselves parse with: keys match in any case, a quoted value may
+        # contain semicolons, a doubled quote inside it is a literal quote, and the last occurrence
+        # of a key wins.
         It "reads the host setting that follows a quoted value containing ;host=" -Skip:(-not (Get-Command -Name $Shell -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
             $result = Invoke-Case -Value "password=`"a;host=$($script:marker)`";host=dms-postgresql;port=5432;username=postgres"
             Assert-WaitedWith $result "[-h][dms-postgresql][-p][5432][-U][postgres]"
         }
 
         It "skips the PostgreSQL wait when the only host= is inside a quoted value" -Skip:(-not (Get-Command -Name $Shell -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
-            Assert-WaitSkipped (Invoke-Case -Value "Host=db;Password=`"safe;host=$($script:marker);tail`"")
+            Assert-WaitSkipped (Invoke-Case -Value "Port=5432;Password=`"safe;host=$($script:marker);tail`"")
         }
 
         It "treats single-quoted values and doubled quotes as part of the value" -Skip:(-not (Get-Command -Name $Shell -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {

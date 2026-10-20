@@ -834,8 +834,9 @@ unchanged, with these points stated for the Configuration Service itself:
 
 **The Configuration Service's own connection string can come from a plugin source.**
 `src/config/run.sh` also reads `DatabaseSettings__DatabaseConnection` from the environment, to parse the host and port it waits on.
-If the PostgreSQL branch finds no `host=` setting in it, because it is absent, empty, or written with capitalized keywords such as `Host=`, the script prints that it is skipping the readiness wait and starts .NET without waiting.
-The SQL Server branch matches its `Server` keyword and that keyword's aliases in any case, and skips its wait only when it finds none of them.
+If the PostgreSQL branch finds no `host` setting in it, because it is absent or empty, the script prints that it is skipping the readiness wait and starts .NET without waiting.
+Both branches match keys in any case, as .NET does: the PostgreSQL branch reads `host`, `port` and `username`, so `Host=` and `host=` both count, and the SQL Server branch reads its `Server` keyword and that keyword's aliases.
+Each branch skips its wait only when it finds no host.
 A plugin that supplies `DatabaseSettings:DatabaseConnection` is served to .NET only if the environment does not also set it, because the environment value outranks every plugin source.
 Remove the variable from the environment to serve it from a plugin: the script then skips its wait, and .NET reports a connection error itself if the database is not ready, and with the default `AppSettings:DeployDatabaseOnStartup=true` exits, so a restart policy is needed to recover.
 
