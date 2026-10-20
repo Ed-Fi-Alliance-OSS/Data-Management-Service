@@ -1948,7 +1948,7 @@ Describe "Invoke-RestoreScratchValidation" {
         Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $args[0] -eq "cp" }
         @($global:TestContainerFiles.Keys) | Should -HaveCount 1
         @($global:TestContainerFiles.Keys)[0] | Should -BeLike "/tmp/restore-scratch-*.sql"
-        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql psql -U postgres -d edfi_dms_restore_scratch_* -v ON_ERROR_STOP=1 -f $(@($global:TestContainerFiles.Keys)[0])" }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql psql -U postgres -d edfi_dms_restore_scratch_* -v ON_ERROR_STOP=1 --single-transaction -f $(@($global:TestContainerFiles.Keys)[0])" }
 
         # The scratch is dropped in finally (the initial defensive drop plus the cleanup drop)
         # and the transient in-container file is removed.
@@ -2058,7 +2058,7 @@ Describe "Invoke-RestoreScratchValidation" {
             # Nothing outside the administrative and scratch databases was touched: the only
             # replay went into the scratch, and no catalog statement named another database.
             Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql psql * -f *" }
-            Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql psql -U postgres -d edfi_dms_restore_scratch_* -v ON_ERROR_STOP=1 -f *" }
+            Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql psql -U postgres -d edfi_dms_restore_scratch_* -v ON_ERROR_STOP=1 --single-transaction -f *" }
             Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $DatabaseName -cne "postgres" -and $DatabaseName -notlike "edfi_dms_restore_scratch_*" }
         }
         finally {
@@ -2321,7 +2321,7 @@ Describe "Invoke-RestoreScratchValidation" {
             & $run | Out-Null
         }
 
-        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql psql -U dmsadmin -d edfi_dms_restore_scratch_* -v ON_ERROR_STOP=1 -f /tmp/restore-scratch-*.sql" }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql psql -U dmsadmin -d edfi_dms_restore_scratch_* -v ON_ERROR_STOP=1 --single-transaction -f /tmp/restore-scratch-*.sql" }
         Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { ($args -join " ") -like "*psql -U postgres*" }
         # The defensive drop and the cleanup drop in finally.
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 2 -Exactly -ParameterFilter {

@@ -230,6 +230,18 @@ state form one handoff and may still be bind-mounted.
 - General package publication workflow ownership; `DMS-1255` retains that ownership while this story adds only
   the restore-manifest producer/consumer contract required for safe restore.
 
+## Deferred Contract Expansion: Definition Fingerprints
+
+The canonical inventory compares schema and object identities and types. With the required schema metadata
+and the physical, ownership, and privilege checks, it does not prove that definitions are equivalent: a
+same-named column or routine with a changed definition, including changed `SECURITY DEFINER` behavior, can
+pass. Package authentication does not prove schema freshness, and ownership and ACL checks do not prove
+routine-body equivalence. These acceptance criteria do not require per-table column fingerprints,
+routine-body comparison, a general physical-schema equivalence check, or a sandbox against an approved
+producer's executable SQL, so they are deferred as a later contract expansion. Authentication and the
+existing ownership and privilege checks remain required. Reconsider this only if the ticket's wording
+requires it or new evidence shows that an existing requirement fails.
+
 ## Design References
 
 - [`01-local-database-topology-parity.md`](01-local-database-topology-parity.md)

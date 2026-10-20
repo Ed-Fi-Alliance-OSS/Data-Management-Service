@@ -106,7 +106,8 @@
 .PARAMETER Rebuild
     Rebuild local DMS container images before the initial infrastructure startup. The switch is
     forwarded only to the first `start-local-dms.ps1 -InfraOnly` invocation and is not repeated
-    for the later `-DmsOnly` startup.
+    for the later `-DmsOnly` startup. Refused with -RestoreTemplate; a restore that needs an
+    image build runs through `build-dms.ps1 StartEnvironment -RestoreTemplate`.
 
 .PARAMETER EnableKafkaCdc
     Run the deployment controller after schema provisioning and before DMS or seed writes.
@@ -152,8 +153,8 @@
     kind (Minimal or Populated) before services start, instead of provisioning an empty schema.
     Mutually exclusive with -InfraOnly, -NoDataStore, and -SchoolYearRange. Combining
     -LoadSeedData opts into the explicit supplemental seed and requires its own -SeedTemplate
-    or -SeedDataPath. Refused with -EnableKafkaCdc (a restore skips the provision phase that
-    produces the CDC provisioning receipt) and, on PostgreSQL only, while POSTGRES_USE_TMPFS=true
+    or -SeedDataPath. Refused with -Rebuild, with -EnableKafkaCdc (a restore skips the provision
+    phase that produces the CDC provisioning receipt) and, on PostgreSQL only, while POSTGRES_USE_TMPFS=true
     (the restored database would live in container memory and be lost when the database
     container restarts after the restore).
 

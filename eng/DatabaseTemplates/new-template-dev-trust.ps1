@@ -40,6 +40,12 @@
       - a reviewer practice of approving a signing deployment only after verifying that its
         commit is approved.
 
+    Last, the administrator sets the repository variable TEMPLATE_ATTESTATION_SIGNING_ENABLED to
+    'true'. It is a non-secret configuration gate, not a trust boundary: while it is unset, template
+    runs skip the protected signing job, without waiting for environment approval, and build
+    unattested packages that restore consumers refuse. Once it is 'true', an eligible run that
+    cannot sign fails instead of publishing unattested.
+
     Key rotation is deliberately manual: an existing key file or an existing producer entry
     is never overwritten; remove them explicitly first.
 
@@ -163,6 +169,9 @@ if ($Purpose -eq "CI") {
     Write-Host "     Then delete the file. Never commit it."
     Write-Host "  3. Add this producer entry to the tracked eng/docker-compose/template-trust-policy.json 'producers' array in a reviewed commit:"
     Write-Host $trackedPolicyProducerJson
+    Write-Host "  4. After steps 1-3, set the repository variable TEMPLATE_ATTESTATION_SIGNING_ENABLED to 'true'."
+    Write-Host "     It is a configuration gate, not a secret: while it is unset, template runs skip the protected"
+    Write-Host "     signing job and build unattested packages that restore consumers refuse."
 
     return [pscustomobject]@{
         Purpose                   = $Purpose

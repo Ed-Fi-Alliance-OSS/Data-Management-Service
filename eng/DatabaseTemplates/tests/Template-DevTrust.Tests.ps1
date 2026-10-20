@@ -188,8 +188,10 @@ Describe "new-template-dev-trust.ps1 -Purpose CI" {
 
         $protectIndex = $printed.IndexOf("Protect the GitHub environment 'template-attestation-signing' BEFORE installing the key.")
         $installIndex = $printed.IndexOf("Install the PRIVATE key only as the secret TEMPLATE_ATTESTATION_PRIVATE_KEY of that environment.")
+        $enableIndex = $printed.IndexOf("set the repository variable TEMPLATE_ATTESTATION_SIGNING_ENABLED to 'true'.")
         $protectIndex | Should -BeGreaterThan -1
         $installIndex | Should -BeGreaterThan $protectIndex
+        $enableIndex | Should -BeGreaterThan $installIndex -Because "signing is enabled only after the key is protected and installed"
         foreach ($expected in @(
                 "*a ref name does not show that*its commit was reviewed*"
                 "*required reviewers, with self-review prevented*"

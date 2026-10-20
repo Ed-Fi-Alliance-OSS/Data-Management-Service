@@ -2107,6 +2107,32 @@ function Invoke-RestoreDockerInputCommand {
         -InputWriter $InputWriter
 }
 
+function Get-PostgresqlArtifactReplayArgumentList {
+    <#
+    .SYNOPSIS
+        Builds the docker exec arguments for replaying the staged SQL artifact into a database.
+    .DESCRIPTION
+        Shared by the scratch and target replays so their replay options cannot drift: both stop
+        on the first error and run as one transaction, so the scratch validation exercises the
+        same replay semantics that later replace the target.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ContainerName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PostgresUser,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DatabaseName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ContainerArtifactPath
+    )
+
+    return @("exec", $ContainerName, "psql", "-U", $PostgresUser, "-d", $DatabaseName, "-v", "ON_ERROR_STOP=1", "--single-transaction", "-f", $ContainerArtifactPath)
+}
+
 function Copy-RestoreStagedArtifactToContainer {
     <#
     .SYNOPSIS
@@ -2659,7 +2685,7 @@ function Invoke-RestoreScratchValidation {
                 -ExpectedSha256 ([string]$manifest.artifactSha256) `
                 -ConsumerDescription "the scratch replay"
             $null = Invoke-RestoreDockerCommand `
-                -ArgumentList @("exec", $ContainerName, "psql", "-U", $PostgresUser, "-d", $scratchDatabaseName, "-v", "ON_ERROR_STOP=1", "-f", $containerArtifactPath) `
+                -ArgumentList (Get-PostgresqlArtifactReplayArgumentList -ContainerName $ContainerName -PostgresUser $PostgresUser -DatabaseName $scratchDatabaseName -ContainerArtifactPath $containerArtifactPath) `
                 -FailureMessage "Replay of the artifact into scratch database '$scratchDatabaseName' failed."
         }
         else {
@@ -3142,7 +3168,7 @@ function Invoke-RestoreTargetReplacement {
             # so a failed replay cannot leave partial contents that later startup could mistake
             # for a completed restore. The target was already dropped and recreated above.
             $null = Invoke-RestoreDockerCommand `
-                -ArgumentList @("exec", $ContainerName, "psql", "-U", $PostgresUser, "-d", $TargetDatabaseName, "-v", "ON_ERROR_STOP=1", "--single-transaction", "-f", $containerArtifactPath) `
+                -ArgumentList (Get-PostgresqlArtifactReplayArgumentList -ContainerName $ContainerName -PostgresUser $PostgresUser -DatabaseName $TargetDatabaseName -ContainerArtifactPath $containerArtifactPath) `
                 -FailureMessage "Replay of the artifact into target database '$TargetDatabaseName' failed, so target restoration did not complete. The target was already dropped and recreated; rerun the restore before using '$TargetDatabaseName'."
         }
         else {

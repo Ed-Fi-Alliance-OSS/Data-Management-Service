@@ -601,7 +601,7 @@ function Invoke-BootstrapWrapper {
         # physical target), and combining -LoadSeedData turns it into the explicit supplemental
         # seed, which requires its own -SeedTemplate or -SeedDataPath. Refused with
         # -EnableKafkaCdc, with -IncludeE2EClaimSets (the candidate stages claims without them),
-        # and, on PostgreSQL only, while POSTGRES_USE_TMPFS=true.
+        # with -Rebuild, and, on PostgreSQL only, while POSTGRES_USE_TMPFS=true.
         [ValidateSet("Minimal", "Populated")]
         [string]$RestoreTemplate,
 
@@ -712,6 +712,11 @@ function Invoke-BootstrapWrapper {
         }
         if ($IncludeE2EClaimSets) {
             throw "-RestoreTemplate is not valid with -IncludeE2EClaimSets. The restore candidate stages claims without the test-only E2E claim sets, so they would be silently dropped; stage them on a bootstrap that provisions its own schema."
+        }
+        # -Rebuild reaches only the -InfraOnly start, which in restore mode runs after the target
+        # was replaced, so a failed image build would leave a restored target without CMS or DMS.
+        if ($Rebuild) {
+            throw "-RestoreTemplate is not valid with -Rebuild. A restore that needs an image build must run through build-dms.ps1 StartEnvironment with -RestoreTemplate, which builds the image after the package and candidate workspace are validated and before database preflight."
         }
         # The start scripts read POSTGRES_USE_TMPFS from the process environment only. With it,
         # the database lives in container memory, and the -InfraOnly start after the restore

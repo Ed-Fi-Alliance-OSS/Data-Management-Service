@@ -1959,6 +1959,28 @@ $resultStatement
             Join-Path $script:repo.DockerComposeRoot ".bootstrap-restore" | Should -Not -Exist -Because "no restore candidate workspace may be created"
         }
 
+        It "rejects -RestoreTemplate with -Rebuild before package staging, the image build, or any start" {
+            # -Rebuild reaches only the -InfraOnly start, which in restore mode follows the target
+            # replacement; an image build for a restore belongs to build-dms.ps1's RestoreImageBuild.
+            Copy-DockerComposeFile -FileName "bootstrap-local-dms.ps1" -Destination $script:repo.DockerComposeRoot
+            $entryScript = Join-Path $script:repo.DockerComposeRoot "bootstrap-local-dms.ps1"
+            New-RestoreStartScriptStub -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreSurfaceLog
+            Install-RestoreSequencingStub -LogPath $script:restoreSurfaceLog -FixtureRoot $script:repo.RepoRoot
+            $imageBuildMarker = Join-Path $script:repo.RepoRoot "restore-image-build-ran.txt"
+            $imageBuild = [scriptblock]::Create("Set-Content -LiteralPath '$imageBuildMarker' -Value ran")
+            try {
+                { & $entryScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Minimal -PackageDirectory $script:repo.RepoRoot -Rebuild -RestoreImageBuild $imageBuild } |
+                    Should -Throw "*-RestoreTemplate is not valid with -Rebuild*build-dms.ps1 StartEnvironment*"
+            }
+            finally {
+                Remove-RestoreSequencingStub
+            }
+
+            $script:restoreSurfaceLog | Should -Not -Exist -Because "no start script, phase, or restore step may run"
+            $imageBuildMarker | Should -Not -Exist -Because "the restore image build callback must not run"
+            Join-Path $script:repo.DockerComposeRoot ".bootstrap-restore" | Should -Not -Exist -Because "no restore candidate workspace may be created"
+        }
+
         It "rejects a PostgreSQL restore under POSTGRES_USE_TMPFS on <_> before any phase, and does not reject SQL Server" -ForEach @("bootstrap-local-dms.ps1", "bootstrap-published-dms.ps1") {
             # The start scripts mount PostgreSQL's data directory as tmpfs when POSTGRES_USE_TMPFS is
             # true in the process environment, and the -InfraOnly start after the restore recreates

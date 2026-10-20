@@ -501,6 +501,10 @@ These refusals also happen before anything is restored:
 * `-IncludeE2EClaimSets` (an option of the shared `Invoke-BootstrapWrapper` that the Kafka CDC
   E2E setup passes; the wrapper scripts do not expose it): the restore candidate stages claims
   without the test-only E2E claim sets, so they would be silently dropped.
+* `-Rebuild` on `bootstrap-local-dms.ps1`: it reaches only the start that follows the target
+  replacement. A restore that needs an image build runs through `build-dms.ps1 StartEnvironment
+  -RestoreTemplate`, which builds the image after package and candidate validation and before
+  database preflight.
 * `-d` (with or without `-v`) together with `-RestoreTemplate` or `-PackageDirectory`: teardown
   and restore are separate invocations, and nothing is torn down.
 * A retained CDC deployment for the wrapper's compose project (`dms-local` or `dms-published`):

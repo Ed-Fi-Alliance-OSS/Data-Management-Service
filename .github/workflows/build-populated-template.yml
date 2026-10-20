@@ -107,15 +107,10 @@ jobs:
   build-template:
     name: Build Populated Template Package
     if: ${{ github.event_name != 'release' }}
-    # Signing is requested only for main pushes and dispatches and v*.*.* tag refs, never for
-    # pull_request. Elsewhere the job has no environment, so the CI key, an environment secret,
-    # is unreachable and the build is unattested. This expression and the signer step's
-    # identical one only keep ineligible runs from asking for the key; matching a ref name is
-    # not enough to authorize signing. The boundary is the environment's protection rules
-    # (required reviewers without self-review, deployment-ref restrictions, an enforced
-    # release-tag ruleset, and reviewer verification that the commit is approved), which GitHub
-    # checks before releasing the secret and which pull request code cannot edit.
-    environment: ${{ (github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) && 'template-attestation-signing' || '' }}
+    # The template is generated, verified, and packed here, on a runner that never holds the
+    # signing key: this job has no environment, so the CI key (an environment secret of
+    # 'template-attestation-signing') is unreachable. sign-template-package attests the
+    # packed bytes afterwards on a fresh runner.
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -123,6 +118,8 @@ jobs:
     outputs:
       hash-code: ${{ steps.hash-code.outputs.hash-code }}
       dms-version: ${{ steps.versions.outputs.dms-v }}
+      package-version: ${{ steps.package-identity.outputs.package-version }}
+      package-sha256: ${{ steps.package-identity.outputs.package-sha256 }}
     steps:
       - name: Checkout the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -320,93 +317,23 @@ jobs:
                   -SchemaFilePath $schemaFiles
         working-directory: eng/DatabaseTemplates/
 
-      # Attestation runs only after the template is generated and packed, so the private key
-      # is never present while schema resolution, the data load, or packing run dependency
-      # tooling. It is gated on a signing-eligible run (the job's environment expression: main
-      # or a v*.*.* tag, never a pull request) and on the TEMPLATE_ATTESTATION_PRIVATE_KEY
-      # secret: with both, the exact packed template is attested for the tracked-policy producer
-      # 'edfi-alliance-ci'; otherwise the build proceeds UNATTESTED with a loud notice and
-      # restore consumers refuse the package (fail-closed). An ineligible run never puts the
-      # key in this step's environment. The key file lands under RUNNER_TEMP, is created
-      # owner-only (0600) before any key byte is written, and is removed in finally whether
-      # signing succeeds or fails.
-      - name: Attest template package
-        id: attestation-signer
+      # Signing never runs in this job. The job-level gate on sign-template-package decides
+      # whether the packed template is attested; this step only says loudly when it will not
+      # be, because restore consumers refuse an unattested package (fail-closed).
+      - name: Report template signing plan
         env:
           SIGNING_ELIGIBLE: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
-          TEMPLATE_ATTESTATION_PRIVATE_KEY: ${{ (github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) && secrets.TEMPLATE_ATTESTATION_PRIVATE_KEY || '' }}
+          SIGNING_ENABLED: ${{ vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED == 'true' }}
         run: |
           if ($env:SIGNING_ELIGIBLE -ne 'true') {
             Write-Host "::notice title=Unattested template build::Only main and v*.*.* tag runs (never pull requests) sign template packages; this template package will be UNATTESTED and restore consumers will refuse it (fail-closed)."
-            "attested=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           }
-          elseif ([string]::IsNullOrWhiteSpace($env:TEMPLATE_ATTESTATION_PRIVATE_KEY)) {
-            Write-Host "::notice title=Unattested template build::TEMPLATE_ATTESTATION_PRIVATE_KEY is not configured; this template package will be UNATTESTED and restore consumers will refuse it (fail-closed)."
-            "attested=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          elseif ($env:SIGNING_ENABLED -ne 'true') {
+            Write-Host "::notice title=Unattested template build::The TEMPLATE_ATTESTATION_SIGNING_ENABLED repository variable is not 'true', so signing is skipped; this template package will be UNATTESTED and restore consumers will refuse it (fail-closed)."
           }
           else {
-            Import-Module ./Template-Management.psm1 -Force
-            $config = Get-TemplatePackageConfig -ConfigFilePath './PopulatedTemplateSettings.psd1' -StandardVersion '${{ inputs.standard_version }}' -DatabaseEngine '${{ inputs.database_engine }}'
-            $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
-
-            $signerKeyPath = Join-Path $env:RUNNER_TEMP "template-attestation-signer.pem"
-            try {
-              # CreateNew with an owner-only mode: the file is 0600 from creation, before any key
-              # byte is written, and a file already at that path is refused.
-              $keyFileOptions = [System.IO.FileStreamOptions]@{
-                Mode   = [System.IO.FileMode]::CreateNew
-                Access = [System.IO.FileAccess]::Write
-              }
-              $keyFileOptions.UnixCreateMode = [System.IO.UnixFileMode]'UserRead, UserWrite'
-              $keyFile = [System.IO.FileStream]::new($signerKeyPath, $keyFileOptions)
-              try {
-                $keyBytes = [System.Text.UTF8Encoding]::new($false).GetBytes($env:TEMPLATE_ATTESTATION_PRIVATE_KEY)
-                $keyFile.Write($keyBytes, 0, $keyBytes.Length)
-              }
-              finally {
-                $keyFile.Dispose()
-              }
-
-              $attestationPath = Write-TemplatePackageAttestation `
-                      -Config $config `
-                      -PackageVersion $packageVersion `
-                      -BackupDirectory './' `
-                      -AttestationSignerKeyPath $signerKeyPath `
-                      -AttestationProducer 'edfi-alliance-ci'
-            }
-            finally {
-              if (Test-Path -LiteralPath $signerKeyPath) {
-                Remove-Item -LiteralPath $signerKeyPath -Force
-              }
-            }
-            "attested=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            "attestation-path=$attestationPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "sign-template-package attests this template package after the build, on a separate runner."
           }
-        working-directory: eng/DatabaseTemplates/
-
-      # Backstop for a runner that stops the signing step before its finally runs.
-      - name: Remove attestation signing key
-        if: always()
-        run: |
-          $signerKeyPath = Join-Path $env:RUNNER_TEMP "template-attestation-signer.pem"
-          if (Test-Path -LiteralPath $signerKeyPath) {
-            Remove-Item -LiteralPath $signerKeyPath -Force
-          }
-
-      # The companion attestation package runs dotnet restore and dotnet pack, so it is built
-      # only after the key file is removed, in a step without the signing secret.
-      - name: Build attestation companion package
-        if: ${{ steps.attestation-signer.outputs.attested == 'true' }}
-        run: |
-          Import-Module ./Template-Management.psm1 -Force
-          $config = Get-TemplatePackageConfig -ConfigFilePath './PopulatedTemplateSettings.psd1' -StandardVersion '${{ inputs.standard_version }}' -DatabaseEngine '${{ inputs.database_engine }}'
-          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
-          Build-TemplateAttestationCompanionPackage `
-                  -Config $config `
-                  -PackageVersion $packageVersion `
-                  -BackupDirectory './' `
-                  -AttestationPath '${{ steps.attestation-signer.outputs.attestation-path }}' | Out-Null
-        working-directory: eng/DatabaseTemplates/
 
       # A loader that exits 0 does not guarantee it wrote anything: gate on populated content
       # here, before the package is uploaded or published, so an empty bulk load cannot slip
@@ -552,6 +479,19 @@ jobs:
           "hash-code=$(sha256sum *.nupkg | base64 -w0)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
         working-directory: eng/DatabaseTemplates/
 
+      # The signing job attests only these bytes: it compares the downloaded package with this
+      # hash before and after signing.
+      - name: Record template package identity
+        id: package-identity
+        run: |
+          $packages = @(Get-ChildItem -LiteralPath . -Filter '*.nupkg')
+          if ($packages.Count -ne 1) {
+            throw "Expected exactly one template package to hand to signing; found $($packages.Count)."
+          }
+          "package-version=$('${{ steps.versions.outputs.dms-semver }}' -replace 'dms-v', '')" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "package-sha256=$((Get-FileHash -LiteralPath $packages[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+        working-directory: eng/DatabaseTemplates/
+
       - name: Upload Populated Template Package as Artifact
         if: success()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -559,7 +499,6 @@ jobs:
           name: "${{ inputs.package_name }}-NuGet"
           path: |
             ${{ github.workspace }}/eng/DatabaseTemplates/*.nupkg
-            ${{ github.workspace }}/eng/DatabaseTemplates/*.nupkg.attestation.json
           if-no-files-found: error
           retention-days: 30
 
@@ -634,13 +573,193 @@ jobs:
       # TODO: remove this after this issue is resolved: https://github.com/slsa-framework/slsa-github-generator/issues/876
       compile-generator: true
 
+  # Signing is requested only for main pushes and dispatches and v*.*.* tag refs, never for
+  # pull_request, and only while the non-secret repository variable
+  # TEMPLATE_ATTESTATION_SIGNING_ENABLED is 'true'. The variable is a configuration gate, not a
+  # trust decision: an intentionally unsigned run skips this job entirely instead of waiting for
+  # an environment approval, and a run that cannot sign fails here rather than publishing
+  # unattested. Matching a ref name is not enough to authorize signing either. The boundary is
+  # the environment's protection rules (required reviewers without self-review,
+  # deployment-ref restrictions, an enforced release-tag ruleset, and reviewer verification that
+  # the commit is approved), which GitHub checks before releasing the secret and which pull
+  # request code cannot edit. Approval applies to this whole job, so it runs on a fresh runner
+  # that only downloads the packed template and attests those exact bytes: it runs no template
+  # build, database artifact, dependency restore, or package packing.
+  sign-template-package:
+    name: Sign Populated Template Package
+    needs: build-template
+    if: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED == 'true' }}
+    environment: template-attestation-signing
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Get Populated Template Package Artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.package_name }}-NuGet
+          path: eng/DatabaseTemplates/
+
+      # The key file lands under RUNNER_TEMP, is created owner-only (0600) before any key byte
+      # is written, and is removed in finally whether signing succeeds or fails. The package is
+      # hashed against build-template's record before signing and again after it, and the
+      # attestation must bind that same hash, so the signed bytes are the built bytes.
+      - name: Attest template package
+        id: attestation-signer
+        env:
+          TEMPLATE_ATTESTATION_PRIVATE_KEY: ${{ secrets.TEMPLATE_ATTESTATION_PRIVATE_KEY }}
+          EXPECTED_PACKAGE_SHA256: ${{ needs.build-template.outputs.package-sha256 }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TEMPLATE_ATTESTATION_PRIVATE_KEY)) {
+            throw "TEMPLATE_ATTESTATION_SIGNING_ENABLED is 'true' but TEMPLATE_ATTESTATION_PRIVATE_KEY is not configured in the 'template-attestation-signing' environment; refusing to continue without signing. Install the key, or clear the variable for unattested builds."
+          }
+
+          Import-Module ./Template-Management.psm1 -Force
+          $config = Get-TemplatePackageConfig -ConfigFilePath './PopulatedTemplateSettings.psd1' -StandardVersion '${{ inputs.standard_version }}' -DatabaseEngine '${{ inputs.database_engine }}'
+          $packageVersion = '${{ needs.build-template.outputs.package-version }}'
+          $packageFileName = "$($config.Id).$packageVersion.nupkg"
+
+          $packages = @(Get-ChildItem -LiteralPath . -Filter '*.nupkg')
+          if ($packages.Count -ne 1 -or $packages[0].Name -cne $packageFileName) {
+            throw "Expected exactly the template package '$packageFileName' from build-template; found: $(@($packages.Name) -join ', ')."
+          }
+          $packageSha256 = (Get-FileHash -LiteralPath $packages[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($packageSha256 -cne $env:EXPECTED_PACKAGE_SHA256) {
+            throw "The downloaded template package does not match the bytes build-template packed; refusing to sign it."
+          }
+
+          $signerKeyPath = Join-Path $env:RUNNER_TEMP "template-attestation-signer.pem"
+          try {
+            # CreateNew with an owner-only mode: the file is 0600 from creation, before any key
+            # byte is written, and a file already at that path is refused.
+            $keyFileOptions = [System.IO.FileStreamOptions]@{
+              Mode   = [System.IO.FileMode]::CreateNew
+              Access = [System.IO.FileAccess]::Write
+            }
+            $keyFileOptions.UnixCreateMode = [System.IO.UnixFileMode]'UserRead, UserWrite'
+            $keyFile = [System.IO.FileStream]::new($signerKeyPath, $keyFileOptions)
+            try {
+              $keyBytes = [System.Text.UTF8Encoding]::new($false).GetBytes($env:TEMPLATE_ATTESTATION_PRIVATE_KEY)
+              $keyFile.Write($keyBytes, 0, $keyBytes.Length)
+            }
+            finally {
+              $keyFile.Dispose()
+            }
+
+            $attestationPath = Write-TemplatePackageAttestation `
+                    -Config $config `
+                    -PackageVersion $packageVersion `
+                    -BackupDirectory './' `
+                    -AttestationSignerKeyPath $signerKeyPath `
+                    -AttestationProducer 'edfi-alliance-ci'
+          }
+          finally {
+            if (Test-Path -LiteralPath $signerKeyPath) {
+              Remove-Item -LiteralPath $signerKeyPath -Force
+            }
+          }
+
+          if ((Get-FileHash -LiteralPath $packages[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant() -cne $packageSha256) {
+            throw "The template package changed while it was attested; refusing to hand on the attestation."
+          }
+          $attestation = Get-Content -LiteralPath $attestationPath -Raw | ConvertFrom-Json
+          $payload = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String([string]$attestation.payloadB64)) | ConvertFrom-Json
+          if ([string]$payload.packageSha256 -cne $packageSha256) {
+            throw "The attestation does not bind the template package bytes build-template packed."
+          }
+        working-directory: eng/DatabaseTemplates/
+
+      # Backstop for a runner that stops the signing step before its finally runs.
+      - name: Remove attestation signing key
+        if: always()
+        run: |
+          $signerKeyPath = Join-Path $env:RUNNER_TEMP "template-attestation-signer.pem"
+          if (Test-Path -LiteralPath $signerKeyPath) {
+            Remove-Item -LiteralPath $signerKeyPath -Force
+          }
+
+      - name: Upload template attestation document
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: "${{ inputs.package_name }}-AttestationDocument"
+          path: ${{ github.workspace }}/eng/DatabaseTemplates/*.nupkg.attestation.json
+          if-no-files-found: error
+          retention-days: 30
+
+  # The companion attestation package runs dotnet restore and dotnet pack, so it is built on its
+  # own runner, which never receives the signing key, from the signed attestation document.
+  build-attestation-companion:
+    name: Build Populated Template Attestation Companion
+    needs:
+      - build-template
+      - sign-template-package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Get template attestation document
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.package_name }}-AttestationDocument
+          path: eng/DatabaseTemplates/
+
+      - name: Build attestation companion package
+        run: |
+          Import-Module ./Template-Management.psm1 -Force
+          $config = Get-TemplatePackageConfig -ConfigFilePath './PopulatedTemplateSettings.psd1' -StandardVersion '${{ inputs.standard_version }}' -DatabaseEngine '${{ inputs.database_engine }}'
+          $packageVersion = '${{ needs.build-template.outputs.package-version }}'
+          $attestationPath = Join-Path (Resolve-Path -LiteralPath .).ProviderPath "$($config.Id).$packageVersion.nupkg.attestation.json"
+          Build-TemplateAttestationCompanionPackage `
+                  -Config $config `
+                  -PackageVersion $packageVersion `
+                  -BackupDirectory './' `
+                  -AttestationPath $attestationPath | Out-Null
+        working-directory: eng/DatabaseTemplates/
+
+      - name: Upload attestation companion package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: "${{ inputs.package_name }}-Attestation"
+          path: |
+            ${{ github.workspace }}/eng/DatabaseTemplates/*.nupkg
+            ${{ github.workspace }}/eng/DatabaseTemplates/*.nupkg.attestation.json
+          if-no-files-found: error
+          retention-days: 30
+
   publish-template-package:
     name: Publish Populated Template Package
-    if: ${{ inputs.publish_package }}
+    # A signed run publishes only after signing and its companion succeed, so the template
+    # never reaches the feed without the matching companion. An intentionally unsigned run
+    # (sign-template-package skipped by its gate) publishes unattested as before. A failed or
+    # cancelled signing or companion job publishes nothing.
+    if: ${{ !cancelled() && inputs.publish_package && needs.build-template.result == 'success' && needs.generate-package-sbom.result == 'success' && needs.generate-package-provenance.result == 'success' && ((needs.sign-template-package.result == 'skipped' && needs.build-attestation-companion.result == 'skipped') || (needs.sign-template-package.result == 'success' && needs.build-attestation-companion.result == 'success')) }}
     needs:
       - build-template
       - generate-package-sbom
       - generate-package-provenance
+      - sign-template-package
+      - build-attestation-companion
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -653,6 +772,12 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ inputs.package_name }}-NuGet
+
+      - name: Get Populated Template Attestation Artifact
+        if: ${{ needs.build-attestation-companion.result == 'success' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.package_name }}-Attestation
 
       - name: Install-credential-handler
         run: |
@@ -849,7 +974,7 @@ jobs:
   notify-results:
     name: Notify Build Results
     runs-on: ubuntu-latest
-    needs: [build-template, generate-package-sbom, generate-package-provenance, publish-template-package]
+    needs: [build-template, generate-package-sbom, generate-package-provenance, sign-template-package, build-attestation-companion, publish-template-package]
     if: always() && github.event_name == 'schedule'
     steps:
       - name: Notify Slack on failure

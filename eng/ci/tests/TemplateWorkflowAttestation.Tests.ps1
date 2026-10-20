@@ -6,7 +6,7 @@
 #Requires -Version 7
 
 # Attestation guardrails for the database-template build workflows. These invariants live
-# purely in declarative CI wiring - secret gating, step ordering, artifact contents, and the
+# purely in declarative CI wiring - secret gating, job isolation, artifact handoffs, and the
 # publication coupling - so no invoked-script test can reach them; a regression here would
 # publish a signed template without its companion attestation package, or sign with a key
 # that leaked outside RUNNER_TEMP. Following DmsPullRequestMssqlWorkflow.Tests.ps1, no YAML
@@ -18,18 +18,21 @@ param()
 
 BeforeAll {
     # The one signing-eligibility rule: never a pull request, and only main or a v*.*.* tag.
-    # Each reusable workflow states it three times (the job's environment, the signer step's
-    # SIGNING_ELIGIBLE, and the gate on the key itself), and the tests require each verbatim.
+    # Each reusable workflow states it twice (the signing job's gate and the build job's
+    # unattested-build notice), and the tests require each verbatim.
     $script:signingEligibleExpression = "github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))"
+    # The non-secret configuration gate the signing job also requires.
+    $script:signingEnabledExpression = "vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED == 'true'"
 
     function script:Test-SigningEligibleExpression {
-        # Evaluates the workflow expression for one event and ref by translating its few
-        # operators into PowerShell, with GitHub's case-insensitive string comparison. Any token
-        # outside that vocabulary survives the translation and fails to parse, so a changed rule
-        # cannot pass by being ignored.
-        param([string]$Expression, [string]$EventName, [string]$Ref)
+        # Evaluates the workflow expression for one event, ref, and signing-enabled variable by
+        # translating its few operators into PowerShell, with GitHub's case-insensitive string
+        # comparison. Any token outside that vocabulary survives the translation and fails to
+        # parse, so a changed rule cannot pass by being ignored.
+        param([string]$Expression, [string]$EventName, [string]$Ref, [string]$SigningEnabled = "")
 
         $translated = $Expression.
+            Replace("vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED", '$SigningEnabled').
             Replace("github.event_name", '$EventName').
             Replace("github.ref", '$Ref').
             Replace("!=", "-ine").
@@ -37,7 +40,30 @@ BeforeAll {
             Replace("&&", "-and").
             Replace("||", "-or")
         $translated = [regex]::Replace($translated, "startsWith\(\`$Ref, '([^']*)'\)", '$Ref.StartsWith(''$1'', [StringComparison]::OrdinalIgnoreCase)')
-        return [bool](& ([scriptblock]::Create("param(`$EventName, `$Ref) $translated")) $EventName $Ref)
+        return [bool](& ([scriptblock]::Create("param(`$EventName, `$Ref, `$SigningEnabled) $translated")) $EventName $Ref $SigningEnabled)
+    }
+
+    function script:Test-PublishCondition {
+        # Evaluates the publish job's condition for one set of upstream job results, the same
+        # way: needs.<job>.result becomes that job's result string, and anything unrecognized
+        # fails to parse.
+        param([string]$Expression, [bool]$PublishPackage, [hashtable]$Results)
+
+        $translated = $Expression.Replace("!cancelled()", '$true').Replace("inputs.publish_package", '$PublishPackage')
+        $translated = [regex]::Replace($translated, "needs\.([a-z-]+)\.result", { param($match) "'" + $Results[$match.Groups[1].Value] + "'" })
+        $translated = $translated.Replace("==", "-ieq").Replace("&&", "-and").Replace("||", "-or")
+        return [bool](& ([scriptblock]::Create("param(`$PublishPackage) $translated")) $PublishPackage)
+    }
+
+    function script:Get-WorkflowJobBlock {
+        # One whole job, up to the next job, without the comment block that introduces the next job.
+        param([string]$Content, [string]$JobName)
+
+        $start = $Content.IndexOf("`n  ${JobName}:`n")
+        $start | Should -BeGreaterThan 0
+        $next = [regex]::Match($Content.Substring($start + 1), "\n  [a-z-]+:\n")
+        $block = if ($next.Success) { $Content.Substring($start + 1, $next.Index) } else { $Content.Substring($start + 1) }
+        return ($block -replace '(\n(  #[^\n]*)?)+$', '')
     }
 
     function script:Get-WorkflowStepRunScript {
@@ -66,35 +92,26 @@ BeforeAll {
 
         $start = $Content.IndexOf("      - name: $StepName`n")
         $start | Should -BeGreaterThan 0
-        $next = [regex]::Match($Content.Substring($start + 1), "\n      - name: |\n\n  [a-z-]+:\n")
+        $next = [regex]::Match($Content.Substring($start + 1), "\n      - name: |\n\n  [a-z-]+:\n|\n\n  #")
         $block = if ($next.Success) { $Content.Substring($start, $next.Index + 1) } else { $Content.Substring($start) }
         return ($block -replace '(\n(      #[^\n]*)?)+$', '')
     }
 
-    function script:Invoke-AttestStep {
-        # Runs the attest step's own script in a child pwsh (as the runner does), from a working
-        # directory whose Template-Management.psm1 is a recording stub. The stub logs what the
-        # signing call saw of the key file while the step held it.
-        param([string]$Content, [string]$WorkDir, [hashtable]$Environment)
+    function script:Invoke-WorkflowStep {
+        # Runs one step's own script in a child pwsh (as the runner does) from -WorkDir, with
+        # its workflow expressions bound to test values.
+        param([string]$Content, [string]$StepName, [string]$WorkDir, [hashtable]$Environment)
 
-        $stepScript = (Get-WorkflowStepRunScript -Content $Content -StepName "Attest template package").
+        $stepScript = (Get-WorkflowStepRunScript -Content $Content -StepName $StepName).
             Replace('${{ inputs.standard_version }}', "5.2.0").
             Replace('${{ inputs.database_engine }}', "postgresql").
-            Replace('${{ steps.versions.outputs.dms-semver }}', "dms-v1.2.3")
+            Replace('${{ needs.build-template.outputs.package-version }}', "1.2.3")
         $stepScript | Should -Not -Match '\$\{\{'
-        $stepPath = Join-Path $WorkDir "attest-step.ps1"
-        Set-Content -LiteralPath $stepPath -Value ("`$ErrorActionPreference = 'stop'`n" + $stepScript)
-        @(
-            'function Get-TemplatePackageConfig { param($ConfigFilePath, $StandardVersion, $DatabaseEngine) Add-Content -LiteralPath (Join-Path $PSScriptRoot "stub.log") -Value "config $ConfigFilePath $StandardVersion $DatabaseEngine"; @{ Id = "EdFi.Api.Test.Template" } }'
-            'function Write-TemplatePackageAttestation {'
-            '    param($Config, $PackageVersion, $BackupDirectory, $AttestationSignerKeyPath, $AttestationProducer)'
-            '    $mode = [Convert]::ToString([int](Get-Item -LiteralPath $AttestationSignerKeyPath).UnixFileMode, 8)'
-            '    $key = [System.IO.File]::ReadAllText($AttestationSignerKeyPath)'
-            '    Add-Content -LiteralPath (Join-Path $PSScriptRoot "stub.log") -Value "sign id=$($Config.Id) version=$PackageVersion dir=$BackupDirectory producer=$AttestationProducer mode=$mode key=$key"'
-            '    if ($env:STUB_SIGN_FAILS -eq "true") { throw "stub signing failure" }'
-            '    return "/work/pkg.nupkg.attestation.json"'
-            '}'
-        ) | Set-Content -LiteralPath (Join-Path $WorkDir "Template-Management.psm1")
+        $stepPath = Join-Path $WorkDir "step-$([Guid]::NewGuid().ToString('n')).ps1"
+        # A failure prints its raw message: the error view wraps long messages at the console
+        # width, with ANSI codes between the pieces, so a wildcard match on it is unreliable.
+        Set-Content -LiteralPath $stepPath -Value (
+            "`$ErrorActionPreference = 'stop'`ntry {`n$stepScript`n}`ncatch {`n[Console]::Out.WriteLine(`"STEP FAILED: `$(`$_.Exception.Message)`")`nexit 1`n}")
 
         $saved = @{}
         foreach ($name in $Environment.Keys) {
@@ -116,16 +133,65 @@ BeforeAll {
             }
         }
     }
+
+    function script:New-AttestStepWorkDir {
+        # A working directory for the attest step: the downloaded template package (as the
+        # artifact download leaves it) and a Template-Management.psm1 recording stub. The stub
+        # logs what the signing call saw of the key file while the step held it, and writes a
+        # real attestation document whose payload binds the package hash it read; STUB_* knobs
+        # make it fail, bind other bytes, or change the package while attesting.
+        $workDir = (New-Item -ItemType Directory -Path (Join-Path $TestDrive "attest-$([Guid]::NewGuid().ToString('n'))")).FullName
+        [System.IO.File]::WriteAllBytes((Join-Path $workDir "EdFi.Api.Test.Template.1.2.3.nupkg"), [byte[]](7, 7, 7, 7))
+        @(
+            'function Get-TemplatePackageConfig { param($ConfigFilePath, $StandardVersion, $DatabaseEngine) Add-Content -LiteralPath (Join-Path $PSScriptRoot "stub.log") -Value "config $ConfigFilePath $StandardVersion $DatabaseEngine"; @{ Id = "EdFi.Api.Test.Template" } }'
+            'function Write-TemplatePackageAttestation {'
+            '    param($Config, $PackageVersion, $BackupDirectory, $AttestationSignerKeyPath, $AttestationProducer)'
+            '    $mode = [Convert]::ToString([int](Get-Item -LiteralPath $AttestationSignerKeyPath).UnixFileMode, 8)'
+            '    $key = [System.IO.File]::ReadAllText($AttestationSignerKeyPath)'
+            '    Add-Content -LiteralPath (Join-Path $PSScriptRoot "stub.log") -Value "sign id=$($Config.Id) version=$PackageVersion dir=$BackupDirectory producer=$AttestationProducer mode=$mode key=$key"'
+            '    if ($env:STUB_SIGN_FAILS -eq "true") { throw "stub signing failure" }'
+            '    $packagePath = Join-Path $BackupDirectory "$($Config.Id).$PackageVersion.nupkg"'
+            '    $boundSha256 = (Get-FileHash -LiteralPath $packagePath -Algorithm SHA256).Hash.ToLowerInvariant()'
+            '    if ($env:STUB_BIND_OTHER_BYTES -eq "true") { $boundSha256 = "0" * 64 }'
+            '    if ($env:STUB_CHANGE_PACKAGE -eq "true") { [System.IO.File]::AppendAllText($packagePath, "x") }'
+            '    $payload = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes((@{ packageSha256 = $boundSha256 } | ConvertTo-Json -Compress)))'
+            '    $attestationPath = Join-Path (Resolve-Path -LiteralPath $BackupDirectory).ProviderPath "$($Config.Id).$PackageVersion.nupkg.attestation.json"'
+            '    Set-Content -LiteralPath $attestationPath -Value (@{ payloadB64 = $payload } | ConvertTo-Json)'
+            '    return $attestationPath'
+            '}'
+        ) | Set-Content -LiteralPath (Join-Path $workDir "Template-Management.psm1")
+        return $workDir
+    }
+
+    function script:Get-AttestStepEnvironment {
+        param([string]$WorkDir, [string]$Key, [hashtable]$Overrides = @{})
+
+        $package = Join-Path $WorkDir "EdFi.Api.Test.Template.1.2.3.nupkg"
+        $environment = @{
+            TEMPLATE_ATTESTATION_PRIVATE_KEY = $Key
+            EXPECTED_PACKAGE_SHA256          = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
+            RUNNER_TEMP                      = $WorkDir
+            STUB_SIGN_FAILS                  = $null
+            STUB_BIND_OTHER_BYTES            = $null
+            STUB_CHANGE_PACKAGE              = $null
+        }
+        foreach ($name in $Overrides.Keys) { $environment[$name] = $Overrides[$name] }
+        return $environment
+    }
 }
 
 Describe "template build workflow attestation wiring (<WorkflowFile>)" -ForEach @(
-    @{ WorkflowFile = "build-minimal-template.yml"; GenerateStepName = "Generate Minimal Template package"; PushStepName = "Push Minimal Template Package to Azure"; SettingsFile = "MinimalTemplateSettings.psd1" }
-    @{ WorkflowFile = "build-populated-template.yml"; GenerateStepName = "Generate Populated Template package"; PushStepName = "Push Populated Template Package to Azure"; SettingsFile = "PopulatedTemplateSettings.psd1" }
+    @{ WorkflowFile = "build-minimal-template.yml"; Kind = "Minimal"; GenerateStepName = "Generate Minimal Template package"; PushStepName = "Push Minimal Template Package to Azure"; SettingsFile = "MinimalTemplateSettings.psd1" }
+    @{ WorkflowFile = "build-populated-template.yml"; Kind = "Populated"; GenerateStepName = "Generate Populated Template package"; PushStepName = "Push Populated Template Package to Azure"; SettingsFile = "PopulatedTemplateSettings.psd1" }
 ) {
     BeforeAll {
         $script:workflowPath = [System.IO.Path]::GetFullPath(
             (Join-Path $PSScriptRoot "../../../.github/workflows/$WorkflowFile"))
         $script:content = Get-Content -LiteralPath $script:workflowPath -Raw
+        $script:buildJob = Get-WorkflowJobBlock -Content $script:content -JobName "build-template"
+        $script:signJob = Get-WorkflowJobBlock -Content $script:content -JobName "sign-template-package"
+        $script:companionJob = Get-WorkflowJobBlock -Content $script:content -JobName "build-attestation-companion"
+        $script:publishJob = Get-WorkflowJobBlock -Content $script:content -JobName "publish-template-package"
     }
 
     It "declares TEMPLATE_ATTESTATION_PRIVATE_KEY as an optional workflow_call secret" {
@@ -137,18 +203,19 @@ Describe "template build workflow attestation wiring (<WorkflowFile>)" -ForEach 
         $script:content.IndexOf("outputs:", $secretIndex) | Should -BeGreaterThan $requiredIndex
     }
 
-    It "gives the signing secret to the attest step alone, gated on the eligibility rule" {
-        $jobStart = $script:content.IndexOf("`n  build-template:`n")
-        $jobEnd = $script:content.IndexOf("`n  generate-package-sbom:`n")
-        $job = $script:content.Substring($jobStart, $jobEnd - $jobStart)
-        ([regex]::Matches($job, [regex]::Escape("secrets.TEMPLATE_ATTESTATION_PRIVATE_KEY"))).Count | Should -Be 1
+    It "gives the signing secret to the attest step of sign-template-package alone" {
+        ([regex]::Matches($script:content, [regex]::Escape("secrets.TEMPLATE_ATTESTATION_PRIVATE_KEY"))).Count | Should -Be 1
 
         $attestStep = Get-WorkflowStepBlock -Content $script:content -StepName "Attest template package"
-        $attestStep.Contains("id: attestation-signer") | Should -BeTrue
-        $attestStep.Contains("TEMPLATE_ATTESTATION_PRIVATE_KEY: `${{ ($script:signingEligibleExpression) && secrets.TEMPLATE_ATTESTATION_PRIVATE_KEY || '' }}") | Should -BeTrue
+        $script:signJob.Contains($attestStep) | Should -BeTrue -Because "the attest step belongs to the signing job"
+        $attestStep.Contains('TEMPLATE_ATTESTATION_PRIVATE_KEY: ${{ secrets.TEMPLATE_ATTESTATION_PRIVATE_KEY }}') | Should -BeTrue
         $attestStep.Contains('$env:RUNNER_TEMP "template-attestation-signer.pem"') | Should -BeTrue
         $attestStep.Contains("-AttestationProducer 'edfi-alliance-ci'") | Should -BeTrue
-        $attestStep.Contains("will be UNATTESTED and restore consumers will refuse it (fail-closed)") | Should -BeTrue
+
+        foreach ($job in @($script:buildJob, $script:companionJob, $script:publishJob)) {
+            $job | Should -Not -BeLike "*TEMPLATE_ATTESTATION_PRIVATE_KEY*"
+            $job | Should -Not -BeLike "*template-attestation-signer.pem*"
+        }
     }
 
     It "states that a ref-name match is not the signing boundary and names the required environment protections" {
@@ -166,21 +233,22 @@ Describe "template build workflow attestation wiring (<WorkflowFile>)" -ForEach 
             )) {
             ($secretComment -replace "\n\s+#", "") | Should -BeLike "*$($required -replace '\s+', ' ')*"
         }
-        $jobComment = $script:content.Substring($script:content.IndexOf("    # Signing is requested only"), 700)
-        ($jobComment -replace "\n\s+#", "") | Should -BeLike "*matching a ref name is not enough to authorize signing*"
+        $jobCommentStart = $script:content.IndexOf("  # Signing is requested only")
+        $jobComment = $script:content.Substring($jobCommentStart, $script:content.IndexOf("`n  sign-template-package:`n") - $jobCommentStart)
+        ($jobComment -replace "\n\s+#", "") | Should -BeLike "*Matching a ref name is not enough to authorize signing*"
+        ($jobComment -replace "\n\s+#", "") | Should -BeLike "*Approval applies to this whole job, so it runs on a fresh runner*"
     }
 
-    It "binds only build-template, and only on a signing-eligible run, to the protected signing environment" {
+    It "binds only sign-template-package, gated on eligibility and the signing-enabled variable, to the protected environment" {
         $environmentLines = @($script:content -split "`n" | Where-Object { $_ -match '^\s*environment:' })
-        $environmentLines | Should -Be @("    environment: `${{ ($script:signingEligibleExpression) && 'template-attestation-signing' || '' }}")
+        $environmentLines | Should -Be @("    environment: template-attestation-signing")
+        $script:signJob.Contains($environmentLines[0]) | Should -BeTrue
 
-        $jobStart = $script:content.IndexOf("`n  build-template:`n")
-        $jobEnd = $script:content.IndexOf("`n  generate-package-sbom:`n")
-        $environmentIndex = $script:content.IndexOf($environmentLines[0])
-        $environmentIndex | Should -BeGreaterThan $jobStart
-        $environmentIndex | Should -BeLessThan $jobEnd
-        # The key reaches the job only through that environment: the step gates on the same rule.
-        $script:content.Contains("SIGNING_ELIGIBLE: `${{ $script:signingEligibleExpression }}") | Should -BeTrue
+        $script:signJob.Contains("`n    needs: build-template`n") | Should -BeTrue
+        $script:signJob.Contains("`n    if: `${{ $script:signingEligibleExpression && $script:signingEnabledExpression }}`n") | Should -BeTrue
+        # A job without an environment has no path to the environment secret.
+        $script:buildJob | Should -Not -Match '(?m)^\s*environment:'
+        $script:companionJob | Should -Not -Match '(?m)^\s*environment:'
     }
 
     It "decides signing eligibility for <Case>" -ForEach @(
@@ -195,84 +263,172 @@ Describe "template build workflow attestation wiring (<WorkflowFile>)" -ForEach 
         Test-SigningEligibleExpression -Expression $script:signingEligibleExpression -EventName $EventName -Ref $Ref | Should -Be $Eligible
     }
 
-    It "the attest step neither writes a key nor signs on a skip path, and says so loudly (<Case>)" -ForEach @(
-        @{ Case = "ineligible run, key present"; Eligible = "false"; Key = "-----BEGIN PRIVATE KEY-----"; Notice = "*Only main and v*.*.* tag runs (never pull requests) sign template packages*" }
-        @{ Case = "eligible run, key missing"; Eligible = "true"; Key = ""; Notice = "*TEMPLATE_ATTESTATION_PRIVATE_KEY is not configured*" }
+    It "runs the protected signing job only for <Case>" -ForEach @(
+        @{ Case = "an eligible run with signing enabled"; EventName = "push"; Ref = "refs/heads/main"; SigningEnabled = "true"; Runs = $true }
+        @{ Case = "an eligible tag run with signing enabled"; EventName = "push"; Ref = "refs/tags/v8.1.0"; SigningEnabled = "true"; Runs = $true }
+        @{ Case = "an eligible run with the variable unset, never"; EventName = "push"; Ref = "refs/heads/main"; SigningEnabled = ""; Runs = $false }
+        @{ Case = "an eligible run with the variable not 'true', never"; EventName = "push"; Ref = "refs/heads/main"; SigningEnabled = "false"; Runs = $false }
+        @{ Case = "a pull request with signing enabled, never"; EventName = "pull_request"; Ref = "refs/heads/main"; SigningEnabled = "true"; Runs = $false }
+        @{ Case = "a feature-branch dispatch with signing enabled, never"; EventName = "workflow_dispatch"; Ref = "refs/heads/DMS-1271"; SigningEnabled = "true"; Runs = $false }
     ) {
-        $workDir = (New-Item -ItemType Directory -Path (Join-Path $TestDrive "attest-$([Guid]::NewGuid().ToString('n'))")).FullName
-        $outputFile = Join-Path $workDir "github-output"
+        $jobCondition = [regex]::Match($script:signJob, '(?m)^    if: \$\{\{ (?<expression>.+) \}\}$').Groups["expression"].Value
+        $jobCondition | Should -Not -BeNullOrEmpty
+        Test-SigningEligibleExpression -Expression $jobCondition -EventName $EventName -Ref $Ref -SigningEnabled $SigningEnabled | Should -Be $Runs
+    }
 
-        $result = Invoke-AttestStep -Content $script:content -WorkDir $workDir -Environment @{
-            SIGNING_ELIGIBLE = $Eligible; TEMPLATE_ATTESTATION_PRIVATE_KEY = $Key; RUNNER_TEMP = $workDir; GITHUB_OUTPUT = $outputFile; STUB_SIGN_FAILS = $null
-        }
+    It "says loudly when a build will not be signed (<Case>)" -ForEach @(
+        @{ Case = "ineligible run"; Eligible = "false"; Enabled = "true"; Notice = "*::notice title=Unattested template build::Only main and v*.*.* tag runs (never pull requests) sign template packages*UNATTESTED*" }
+        @{ Case = "signing not enabled"; Eligible = "true"; Enabled = "false"; Notice = "*::notice title=Unattested template build::The TEMPLATE_ATTESTATION_SIGNING_ENABLED repository variable is not 'true'*UNATTESTED*" }
+        @{ Case = "signing requested"; Eligible = "true"; Enabled = "true"; Notice = "sign-template-package attests this template package after the build, on a separate runner." }
+    ) {
+        $planStep = Get-WorkflowStepBlock -Content $script:content -StepName "Report template signing plan"
+        $script:buildJob.Contains($planStep) | Should -BeTrue
+        $planStep.Contains("SIGNING_ELIGIBLE: `${{ $script:signingEligibleExpression }}") | Should -BeTrue
+        $planStep.Contains("SIGNING_ENABLED: `${{ $script:signingEnabledExpression }}") | Should -BeTrue
+
+        $workDir = (New-Item -ItemType Directory -Path (Join-Path $TestDrive "plan-$([Guid]::NewGuid().ToString('n'))")).FullName
+        $result = Invoke-WorkflowStep -Content $script:content -StepName "Report template signing plan" -WorkDir $workDir -Environment @{ SIGNING_ELIGIBLE = $Eligible; SIGNING_ENABLED = $Enabled }
 
         $result.ExitCode | Should -Be 0
         $result.Printed | Should -BeLike $Notice
-        @(Get-Content -LiteralPath $outputFile) | Should -Be @("attested=false")
-        Test-Path -LiteralPath (Join-Path $workDir "stub.log") | Should -BeFalse -Because "a skip path loads no signing helper"
+    }
+
+    It "fails an enabled signing run that has no key, before loading the signer or writing a key" {
+        $workDir = New-AttestStepWorkDir
+
+        $result = Invoke-WorkflowStep -Content $script:content -StepName "Attest template package" -WorkDir $workDir -Environment (Get-AttestStepEnvironment -WorkDir $workDir -Key "")
+
+        $result.ExitCode | Should -Not -Be 0
+        $result.Printed | Should -BeLike "*TEMPLATE_ATTESTATION_PRIVATE_KEY is not configured*refusing to continue without signing*"
+        Test-Path -LiteralPath (Join-Path $workDir "stub.log") | Should -BeFalse -Because "a run that cannot sign loads no signing helper"
         Test-Path -LiteralPath (Join-Path $workDir "template-attestation-signer.pem") | Should -BeFalse
+    }
+
+    It "refuses to sign a downloaded package whose bytes differ from build-template's, before writing a key" {
+        $workDir = New-AttestStepWorkDir
+
+        $result = Invoke-WorkflowStep -Content $script:content -StepName "Attest template package" -WorkDir $workDir `
+            -Environment (Get-AttestStepEnvironment -WorkDir $workDir -Key "-----BEGIN PRIVATE KEY-----" -Overrides @{ EXPECTED_PACKAGE_SHA256 = ("ab" * 32) })
+
+        $result.ExitCode | Should -Not -Be 0
+        $result.Printed | Should -BeLike "*does not match the bytes build-template packed; refusing to sign it*"
+        @(Get-Content -LiteralPath (Join-Path $workDir "stub.log")) | Should -Be @("config ./$SettingsFile 5.2.0 postgresql") -Because "nothing is signed"
+        Test-Path -LiteralPath (Join-Path $workDir "template-attestation-signer.pem") | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $workDir "EdFi.Api.Test.Template.1.2.3.nupkg.attestation.json") | Should -BeFalse
     }
 
     # The owner-only creation mode is a Unix file mode, so these cases run where the job does:
     # on Linux (the CI Pester lane is ubuntu-latest).
-    It "the attest step creates the key 0600, signs the packed package, and removes the key (<Case>)" -Skip:$IsWindows -ForEach @(
-        @{ Case = "signing succeeds"; SignFails = "false" }
-        @{ Case = "signing fails"; SignFails = "true" }
+    It "the attest step creates the key 0600, attests the unchanged package bytes, and removes the key (<Case>)" -Skip:$IsWindows -ForEach @(
+        @{ Case = "signing succeeds"; Overrides = @{}; Failure = $null }
+        @{ Case = "signing fails"; Overrides = @{ STUB_SIGN_FAILS = "true" }; Failure = "*stub signing failure*" }
+        @{ Case = "the package changes while it is attested"; Overrides = @{ STUB_CHANGE_PACKAGE = "true" }; Failure = "*The template package changed while it was attested*" }
+        @{ Case = "the attestation binds other bytes"; Overrides = @{ STUB_BIND_OTHER_BYTES = "true" }; Failure = "*The attestation does not bind the template package bytes build-template packed*" }
     ) {
-        $workDir = (New-Item -ItemType Directory -Path (Join-Path $TestDrive "attest-$([Guid]::NewGuid().ToString('n'))")).FullName
-        $outputFile = Join-Path $workDir "github-output"
+        $workDir = New-AttestStepWorkDir
+        $package = Join-Path $workDir "EdFi.Api.Test.Template.1.2.3.nupkg"
+        $packageSha256Before = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
         $key = "-----BEGIN PRIVATE KEY-----test-material-----END PRIVATE KEY-----"
 
-        $result = Invoke-AttestStep -Content $script:content -WorkDir $workDir -Environment @{
-            SIGNING_ELIGIBLE = "true"; TEMPLATE_ATTESTATION_PRIVATE_KEY = $key; RUNNER_TEMP = $workDir; GITHUB_OUTPUT = $outputFile; STUB_SIGN_FAILS = $SignFails
-        }
+        $result = Invoke-WorkflowStep -Content $script:content -StepName "Attest template package" -WorkDir $workDir `
+            -Environment (Get-AttestStepEnvironment -WorkDir $workDir -Key $key -Overrides $Overrides)
 
         @(Get-Content -LiteralPath (Join-Path $workDir "stub.log")) | Should -Be @(
             "config ./$SettingsFile 5.2.0 postgresql"
             "sign id=EdFi.Api.Test.Template version=1.2.3 dir=./ producer=edfi-alliance-ci mode=600 key=$key"
         )
         Test-Path -LiteralPath (Join-Path $workDir "template-attestation-signer.pem") | Should -BeFalse -Because "the key is removed in finally"
-        if ($SignFails -eq "true") {
+        if ($null -ne $Failure) {
             $result.ExitCode | Should -Not -Be 0
-            $result.Printed | Should -BeLike "*stub signing failure*"
-            Test-Path -LiteralPath $outputFile | Should -BeFalse -Because "a failed signature reports no attestation"
+            $result.Printed | Should -BeLike $Failure
         }
         else {
             $result.ExitCode | Should -Be 0
-            @(Get-Content -LiteralPath $outputFile) | Should -Be @("attested=true", "attestation-path=/work/pkg.nupkg.attestation.json")
+            (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant() | Should -Be $packageSha256Before -Because "attestation never alters the built package"
+            $attestation = Get-Content -LiteralPath "$package.attestation.json" -Raw | ConvertFrom-Json
+            ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($attestation.payloadB64)) | ConvertFrom-Json).packageSha256 |
+                Should -Be $packageSha256Before -Because "the attestation binds the exact bytes build-template packed"
         }
     }
 
-    It "generates the template without signing credentials and builds the companion without them" {
+    It "builds and verifies the template without signing, and records the exact package for the signer" {
         $generateStep = Get-WorkflowStepBlock -Content $script:content -StepName $GenerateStepName
         $generateStep | Should -Not -BeLike "*TEMPLATE_ATTESTATION*"
         $generateStep | Should -Not -BeLike "*Attestation*"
+        $script:buildJob | Should -Not -BeLike "*Write-TemplatePackageAttestation*"
+        $script:buildJob | Should -Not -BeLike "*Build-TemplateAttestationCompanionPackage*"
 
-        $companionStep = Get-WorkflowStepBlock -Content $script:content -StepName "Build attestation companion package"
-        $companionStep.Contains("if: `${{ steps.attestation-signer.outputs.attested == 'true' }}") | Should -BeTrue
-        $companionStep.Contains("-AttestationPath '`${{ steps.attestation-signer.outputs.attestation-path }}'") | Should -BeTrue
-        $companionStep.Contains("Build-TemplateAttestationCompanionPackage") | Should -BeTrue
-        $companionStep | Should -Not -BeLike "*TEMPLATE_ATTESTATION_PRIVATE_KEY*"
-        $companionStep | Should -Not -BeLike "*secrets.*"
-        $companionStep | Should -Not -BeLike "*template-attestation-signer.pem*"
+        $script:buildJob.Contains('package-sha256: ${{ steps.package-identity.outputs.package-sha256 }}') | Should -BeTrue
+        $script:buildJob.Contains('package-version: ${{ steps.package-identity.outputs.package-version }}') | Should -BeTrue
+        $identityStep = Get-WorkflowStepBlock -Content $script:content -StepName "Record template package identity"
+        $identityStep.Contains("(Get-FileHash -LiteralPath `$packages[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()") | Should -BeTrue
+        $script:buildJob.IndexOf("- name: Record template package identity") |
+            Should -BeLessThan $script:buildJob.IndexOf("- name: Upload $Kind Template Package as Artifact") -Because "the recorded hash is of the uploaded bytes"
     }
 
-    It "orders the steps: generation, then attestation, then key cleanup (always), then the companion" {
-        $generateIndex = $script:content.IndexOf("- name: $GenerateStepName")
-        $attestIndex = $script:content.IndexOf("- name: Attest template package")
-        $cleanupIndex = $script:content.IndexOf("- name: Remove attestation signing key")
-        $companionIndex = $script:content.IndexOf("- name: Build attestation companion package")
-
-        $generateIndex | Should -BeGreaterThan 0
-        $attestIndex | Should -BeGreaterThan $generateIndex
-        $cleanupIndex | Should -BeGreaterThan $attestIndex
-        $companionIndex | Should -BeGreaterThan $cleanupIndex
-
+    It "runs nothing on the key-bearing runner but checkout, the package download, attestation, key cleanup, and the document upload" {
+        @([regex]::Matches($script:signJob, '(?m)^      - name: (?<name>.+)$') | ForEach-Object { $_.Groups["name"].Value }) | Should -Be @(
+            "Checkout the repo"
+            "Get $Kind Template Package Artifact"
+            "Attest template package"
+            "Remove attestation signing key"
+            "Upload template attestation document"
+        )
+        foreach ($forbidden in @("dotnet", "setup-dotnet", "Build-Template ", "Build-TemplateAttestationCompanionPackage", "docker", "psql", "sqlcmd", "start-local-dms", "provision-")) {
+            $script:signJob.Contains($forbidden) | Should -BeFalse -Because "the signing runner must not execute '$forbidden'"
+        }
+        $script:signJob.Contains("`n    permissions:`n      contents: read`n") | Should -BeTrue
+        $script:signJob.Contains("name: `${{ inputs.package_name }}-NuGet") | Should -BeTrue -Because "it attests the package artifact build-template uploaded"
         (Get-WorkflowStepBlock -Content $script:content -StepName "Remove attestation signing key").Contains("if: always()") | Should -BeTrue
     }
 
-    It "ships the sibling attestation document in the package artifact" {
-        $script:content.Contains("/eng/DatabaseTemplates/*.nupkg.attestation.json") | Should -BeTrue
+    It "builds the companion on its own unprivileged runner from the attestation document" {
+        $script:companionJob.Contains("`n    needs:`n      - build-template`n      - sign-template-package`n") | Should -BeTrue
+        $script:companionJob | Should -Not -BeLike "*secrets.*"
+        $script:companionJob.Contains("name: `${{ inputs.package_name }}-AttestationDocument") | Should -BeTrue
+        $companionStep = Get-WorkflowStepBlock -Content $script:content -StepName "Build attestation companion package"
+        $script:companionJob.Contains($companionStep) | Should -BeTrue
+        $companionStep.Contains("Build-TemplateAttestationCompanionPackage") | Should -BeTrue
+    }
+
+    It "hands the attestation document, never a repacked template, from signing to the companion and to publication" {
+        $script:buildJob.Contains("/eng/DatabaseTemplates/*.nupkg.attestation.json") | Should -BeFalse -Because "build-template never holds an attestation"
+        $signUpload = Get-WorkflowStepBlock -Content $script:content -StepName "Upload template attestation document"
+        $signUpload.Contains('name: "${{ inputs.package_name }}-AttestationDocument"') | Should -BeTrue
+        $signUpload.Contains("path: `${{ github.workspace }}/eng/DatabaseTemplates/*.nupkg.attestation.json`n") | Should -BeTrue
+        $companionUpload = Get-WorkflowStepBlock -Content $script:content -StepName "Upload attestation companion package"
+        $companionUpload.Contains('name: "${{ inputs.package_name }}-Attestation"') | Should -BeTrue
+        $companionUpload.Contains("/eng/DatabaseTemplates/*.nupkg.attestation.json") | Should -BeTrue
+
+        $script:publishJob.Contains("name: `${{ inputs.package_name }}-NuGet") | Should -BeTrue
+        $attestationDownload = Get-WorkflowStepBlock -Content $script:content -StepName "Get $Kind Template Attestation Artifact"
+        $attestationDownload.Contains("if: `${{ needs.build-attestation-companion.result == 'success' }}") | Should -BeTrue
+        $attestationDownload.EndsWith("name: `${{ inputs.package_name }}-Attestation") | Should -BeTrue
+    }
+
+    It "publishes for <Case>: <Publishes>" -ForEach @(
+        @{ Case = "an unsigned run (signing skipped by its gate)"; PublishPackage = $true; Sign = "skipped"; Companion = "skipped"; Build = "success"; Publishes = $true }
+        @{ Case = "a signed run with its companion"; PublishPackage = $true; Sign = "success"; Companion = "success"; Build = "success"; Publishes = $true }
+        @{ Case = "a failed signing run"; PublishPackage = $true; Sign = "failure"; Companion = "skipped"; Build = "success"; Publishes = $false }
+        @{ Case = "a cancelled signing run"; PublishPackage = $true; Sign = "cancelled"; Companion = "skipped"; Build = "success"; Publishes = $false }
+        @{ Case = "a signed run whose companion failed"; PublishPackage = $true; Sign = "success"; Companion = "failure"; Build = "success"; Publishes = $false }
+        @{ Case = "a signed run without a companion result"; PublishPackage = $true; Sign = "success"; Companion = "skipped"; Build = "success"; Publishes = $false }
+        @{ Case = "a failed build"; PublishPackage = $true; Sign = "skipped"; Companion = "skipped"; Build = "failure"; Publishes = $false }
+        @{ Case = "a run that does not publish"; PublishPackage = $false; Sign = "success"; Companion = "success"; Build = "success"; Publishes = $false }
+    ) {
+        foreach ($need in @("build-template", "generate-package-sbom", "generate-package-provenance", "sign-template-package", "build-attestation-companion")) {
+            $script:publishJob.Contains("`n      - $need`n") | Should -BeTrue -Because "publication waits for $need"
+        }
+        $publishCondition = [regex]::Match($script:publishJob, '(?m)^    if: \$\{\{ (?<expression>.+) \}\}$').Groups["expression"].Value
+        $publishCondition | Should -Not -BeNullOrEmpty
+
+        Test-PublishCondition -Expression $publishCondition -PublishPackage $PublishPackage -Results @{
+            "build-template"              = $Build
+            "generate-package-sbom"       = $(if ($Build -eq "success") { "success" } else { "skipped" })
+            "generate-package-provenance" = $(if ($Build -eq "success") { "success" } else { "skipped" })
+            "sign-template-package"       = $Sign
+            "build-attestation-companion" = $Companion
+        } | Should -Be $Publishes
     }
 
     It "couples publication: refuses inconsistent artifacts and publishes companions before templates with failure-visible pushes" {
@@ -524,7 +680,7 @@ Describe "template caller workflows pass the attestation secret through (<Caller
 
     It "leaves the environment to the reusable workflow and still builds pull requests, unsigned" {
         # A job that calls a reusable workflow cannot set an environment; the called
-        # build-template job does, and only on an eligible run.
+        # sign-template-package job does, and only on an eligible run with signing enabled.
         @($script:callerContent -split "`n" | Where-Object { $_ -match '^\s*environment:' }) | Should -BeNullOrEmpty
         $script:callerContent | Should -Match '(?m)^  pull_request:$'
         $script:callerContent.Contains("uses: ./.github/workflows/build-") | Should -BeTrue
