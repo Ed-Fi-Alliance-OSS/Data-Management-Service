@@ -33,6 +33,23 @@ public static class OAuthErrorResponse
 
     public const string MissingGrantDescription = "The grant_type request parameter must be supplied";
 
+    public const string ProviderRejectedDescription =
+        "The upstream identity service rejected the token request.";
+
+    public const string UnauthorizedFallbackDescription =
+        "The upstream identity service rejected the request credentials.";
+
+    public const string RateLimitDescription =
+        "The number of allowed requests has been exceeded. Retry the request later.";
+
+    public const string TemporarilyUnavailableDescription =
+        "The service is temporarily unable to handle the request. Retry the request later.";
+
+    public const string GatewayDescription =
+        "The upstream identity service did not return a usable response. Contact your system "
+        + "administrator with the X-Correlation-ID response header, decoded once using UTF-8 "
+        + "percent decoding, which identifies the corresponding server log entry.";
+
     /// <summary>
     /// Serializes exactly the two OAuth members owned by DMS and attaches its token error headers.
     /// </summary>

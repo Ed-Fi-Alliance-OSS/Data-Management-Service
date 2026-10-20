@@ -39,7 +39,7 @@ public class OAuthManagerTests
 
         private readonly TraceId TraceId = new("trace-id");
 
-        private const string GrantType = "client_credentials";
+        protected const string GrantType = "client_credentials";
 
         public async Task Act(string? authHeader, string grantType = GrantType)
         {
@@ -94,20 +94,16 @@ public class OAuthManagerTests
         /// The <c>detail</c> of the problem response OAuthManager returned.
         /// </summary>
         protected async Task<string> ResponseDetail() =>
-            (
-                JsonNode.Parse(await _response.Content.ReadAsStringAsync())!["error_description"]
-                ?? JsonNode.Parse(await _response.Content.ReadAsStringAsync())!["detail"]
-            )!.GetValue<string>();
+            JsonNode.Parse(await _response.Content.ReadAsStringAsync())![
+                "error_description"
+            ]!.GetValue<string>();
 
         /// <summary>
         /// The <c>title</c> of the problem response OAuthManager returned, which carries the
         /// OAuth error code on a 401.
         /// </summary>
         protected async Task<string> ResponseTitle() =>
-            (
-                JsonNode.Parse(await _response.Content.ReadAsStringAsync())!["error"]
-                ?? JsonNode.Parse(await _response.Content.ReadAsStringAsync())!["title"]
-            )!.GetValue<string>();
+            JsonNode.Parse(await _response.Content.ReadAsStringAsync())!["error"]!.GetValue<string>();
 
         protected async Task AssertOAuthErrorResponse(
             HttpStatusCode expectedStatus,
@@ -349,14 +345,14 @@ public class OAuthManagerTests
                 _response
                     .Content.Headers.ContentType!.MediaType.Should()
                     .NotBeNull()
-                    .And.Be("application/problem+json");
+                    .And.Be("application/json");
             }
 
             [Test]
             public async Task Then_The_Response_Content_Contains_Error_As_Title()
             {
                 var content = await _response.Content.ReadAsStringAsync();
-                content.Should().NotBeNull().And.Contain("\"title\": \"invalid_client\"");
+                content.Should().NotBeNull().And.Contain("\"error\":\"invalid_client\"");
             }
 
             [Test]
@@ -366,14 +362,18 @@ public class OAuthManagerTests
                 content
                     .Should()
                     .NotBeNull()
-                    .And.Contain("\"detail\": \"Invalid client or Invalid client credentials\"");
+                    .And.Contain("\"error_description\":\"Invalid client or Invalid client credentials\"");
             }
 
             [Test]
             public async Task Then_The_Response_Content_Contains_TraceId()
             {
-                var content = await _response.Content.ReadAsStringAsync();
-                content.Should().NotBeNull().And.Contain($"\"correlationId\": \"{TraceId.Value}\"");
+                _response
+                    .Headers.GetValues(OAuthErrorResponse.CorrelationHeaderName)
+                    .Should()
+                    .ContainSingle()
+                    .Which.Should()
+                    .Be(Uri.EscapeDataString(TraceId.Value));
             }
         }
 
@@ -401,21 +401,26 @@ public class OAuthManagerTests
                 _response
                     .Content.Headers.ContentType!.MediaType.Should()
                     .NotBeNull()
-                    .And.Be("application/problem+json");
+                    .And.Be("application/json");
             }
 
             [Test]
             public async Task Then_The_Response_Content_Contains_A_Title()
             {
                 var content = await _response.Content.ReadAsStringAsync();
-                content.Should().NotBeNull().And.Contain("\"title\": \"Upstream service unavailable\"");
+                content.Should().NotBeNull().And.Contain("\"error\":\"server_error\"");
+                content.Should().Contain(OAuthErrorResponse.GatewayDescription);
             }
 
             [Test]
             public async Task Then_The_Response_Content_Contains_TraceId()
             {
-                var content = await _response.Content.ReadAsStringAsync();
-                content.Should().NotBeNull().And.Contain($"\"correlationId\": \"{TraceId.Value}\"");
+                _response
+                    .Headers.GetValues(OAuthErrorResponse.CorrelationHeaderName)
+                    .Should()
+                    .ContainSingle()
+                    .Which.Should()
+                    .Be(Uri.EscapeDataString(TraceId.Value));
             }
         }
 
@@ -443,21 +448,26 @@ public class OAuthManagerTests
                 _response
                     .Content.Headers.ContentType!.MediaType.Should()
                     .NotBeNull()
-                    .And.Be("application/problem+json");
+                    .And.Be("application/json");
             }
 
             [Test]
             public async Task Then_The_Response_Content_Contains_A_Title()
             {
                 var content = await _response.Content.ReadAsStringAsync();
-                content.Should().NotBeNull().And.Contain("\"title\": \"Upstream service unavailable\"");
+                content.Should().NotBeNull().And.Contain("\"error\":\"server_error\"");
+                content.Should().Contain(OAuthErrorResponse.GatewayDescription);
             }
 
             [Test]
             public async Task Then_The_Response_Content_Contains_TraceId()
             {
-                var content = await _response.Content.ReadAsStringAsync();
-                content.Should().NotBeNull().And.Contain($"\"correlationId\": \"{TraceId.Value}\"");
+                _response
+                    .Headers.GetValues(OAuthErrorResponse.CorrelationHeaderName)
+                    .Should()
+                    .ContainSingle()
+                    .Which.Should()
+                    .Be(Uri.EscapeDataString(TraceId.Value));
             }
 
             // This is a rare case where it would be nice to check that the log
@@ -975,6 +985,193 @@ public class OAuthManagerTests
     }
 
     /// <summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Upstream_Token_Error_OAuth_Contract : When_Getting_An_Access_Token
+    {
+        private const string UpstreamDescription = "Provider rejected the request.";
+        private const string CredentialFallback =
+            "The upstream identity service rejected the request credentials.";
+        private const string ProviderFallback = "The upstream identity service rejected the token request.";
+        private const string GenericRateLimit =
+            "The number of allowed requests has been exceeded. Retry the request later.";
+        private const string RetryDescription =
+            "The service is temporarily unable to handle the request. Retry the request later.";
+
+        [TestCase("")]
+        [TestCase("<html>provider failure</html>")]
+        [TestCase("[]")]
+        [TestCase("\"text\"")]
+        [TestCase("7")]
+        [TestCase("true")]
+        [TestCase("null")]
+        [TestCase("{}")]
+        public async Task It_keeps_any_upstream_401_as_invalid_client(string upstreamBody)
+        {
+            await Act("Basic abc:123", HttpStatusCode.Unauthorized, upstreamBody, GrantType);
+
+            await AssertOAuthErrorResponse(HttpStatusCode.Unauthorized, "invalid_client", CredentialFallback);
+        }
+
+        [Test]
+        public async Task It_preserves_a_usable_401_description_but_uses_invalid_client()
+        {
+            await Act(
+                "Basic abc:123",
+                HttpStatusCode.Unauthorized,
+                JsonSerializer.Serialize(
+                    new { error = "server_error", error_description = UpstreamDescription }
+                ),
+                GrantType
+            );
+
+            await AssertOAuthErrorResponse(
+                HttpStatusCode.Unauthorized,
+                "invalid_client",
+                UpstreamDescription
+            );
+        }
+
+        [TestCase("invalid_request")]
+        [TestCase("invalid_client")]
+        [TestCase("invalid_grant")]
+        [TestCase("unauthorized_client")]
+        [TestCase("unsupported_grant_type")]
+        [TestCase("invalid_scope")]
+        public async Task It_preserves_each_recognized_provider_400_code(string error)
+        {
+            await Act(
+                null,
+                HttpStatusCode.BadRequest,
+                JsonSerializer.Serialize(new { error, error_description = UpstreamDescription }),
+                GrantType,
+                new TokenRequestCredentials("client", "secret")
+            );
+
+            await AssertOAuthErrorResponse(HttpStatusCode.BadRequest, error, UpstreamDescription);
+        }
+
+        [TestCase("unknown")]
+        [TestCase("INVALID_CLIENT")]
+        [TestCase(" invalid_client ")]
+        [TestCase("temporarily_unavailable")]
+        public async Task It_replaces_unrecognized_provider_400_with_a_safe_gateway_error(string error)
+        {
+            await Act(
+                null,
+                HttpStatusCode.BadRequest,
+                JsonSerializer.Serialize(new { error, error_description = UpstreamDescription }),
+                GrantType,
+                new TokenRequestCredentials("client", "secret")
+            );
+
+            await AssertOAuthErrorResponse(
+                HttpStatusCode.BadGateway,
+                "server_error",
+                "The upstream identity service did not return a usable response. Contact your system administrator with the X-Correlation-ID response header, decoded once using UTF-8 percent decoding, which identifies the corresponding server log entry."
+            );
+        }
+
+        [TestCase(true, HttpStatusCode.Unauthorized)]
+        [TestCase(false, HttpStatusCode.BadRequest)]
+        public async Task It_classifies_provider_invalid_client_from_the_original_caller_mechanism(
+            bool callerUsedAuthorization,
+            HttpStatusCode expectedStatus
+        )
+        {
+            await Act(
+                callerUsedAuthorization ? "Basic abc:123" : null,
+                HttpStatusCode.BadRequest,
+                JsonSerializer.Serialize(
+                    new { error = "invalid_client", error_description = UpstreamDescription }
+                ),
+                GrantType,
+                callerUsedAuthorization
+                    ? TokenRequestCredentials.None
+                    : new TokenRequestCredentials("client", "secret")
+            );
+
+            await AssertOAuthErrorResponse(expectedStatus, "invalid_client", UpstreamDescription);
+        }
+
+        [TestCase(" ", true)]
+        [TestCase("!", true)]
+        [TestCase("#", true)]
+        [TestCase("[", true)]
+        [TestCase("]", true)]
+        [TestCase("~", true)]
+        [TestCase("\u001f", false)]
+        [TestCase("\"", false)]
+        [TestCase("\\", false)]
+        [TestCase("\u007f", false)]
+        [TestCase("ñ", false)]
+        public async Task It_validates_the_decoded_provider_description_characters(
+            string description,
+            bool isUsable
+        )
+        {
+            await Act(
+                null,
+                HttpStatusCode.BadRequest,
+                JsonSerializer.Serialize(new { error = "invalid_request", error_description = description }),
+                GrantType,
+                new TokenRequestCredentials("client", "secret")
+            );
+
+            await AssertOAuthErrorResponse(
+                HttpStatusCode.BadRequest,
+                "invalid_request",
+                isUsable ? description : ProviderFallback
+            );
+        }
+
+        [Test]
+        public async Task It_accepts_the_management_api_token_limit_urn_and_rebuilds_guidance()
+        {
+            string upstreamBody = CmsFailureResponse
+                .ForTooManyTokens(7, "upstream-correlation-id")
+                .ToJsonString()
+                .Replace(
+                    "urn:ed-fi:api:security:authentication:too-many-tokens",
+                    "urn:ed-fi:management-api:security:authentication:too-many-tokens",
+                    StringComparison.Ordinal
+                );
+            await Act("Basic abc:123", HttpStatusCode.TooManyRequests, upstreamBody, GrantType);
+
+            await AssertOAuthErrorResponse(
+                HttpStatusCode.TooManyRequests,
+                "temporarily_unavailable",
+                "Too many access tokens have been requested (limit is 7). Access tokens should be reused until they expire."
+            );
+        }
+
+        [Test]
+        public async Task It_maps_unrecognized_429_to_the_documented_extension()
+        {
+            await Act("Basic abc:123", HttpStatusCode.TooManyRequests, "<provider body>", GrantType);
+
+            await AssertOAuthErrorResponse(
+                HttpStatusCode.TooManyRequests,
+                "temporarily_unavailable",
+                GenericRateLimit
+            );
+        }
+
+        [Test]
+        public async Task It_maps_contention_to_temporary_unavailability_without_upstream_text()
+        {
+            await Act("Basic abc:123", HttpStatusCode.Conflict, "private contention detail", GrantType);
+
+            await AssertOAuthErrorResponse(
+                HttpStatusCode.ServiceUnavailable,
+                "temporarily_unavailable",
+                RetryDescription
+            );
+            (await _response.Content.ReadAsStringAsync()).Should().NotContain("private contention detail");
+        }
+    }
+
+    /// <summary>
     /// Client authentication is checked before the grant type, as in the ODS/API, whose controller
     /// rejects missing credentials before its token provider looks at <c>grant_type</c>.
     /// </summary>
@@ -1480,7 +1677,7 @@ public class OAuthManagerTests
         private const string UpstreamCorrelationId = "3f2b+aQ==/{svc}";
 
         private RecordingLogger<OAuthManager> _logger = default!;
-        private JsonNode _body = default!;
+        private HttpResponseMessage _response = default!;
 
         [SetUp]
         public async Task Setup()
@@ -1499,7 +1696,7 @@ public class OAuthManagerTests
             A.CallTo(() => httpClient.SendAsync(A<HttpRequestMessage>._))
                 .ReturnsLazily(() => upstreamResponse);
 
-            HttpResponseMessage response = await new OAuthManager(_logger).GetAccessTokenAsync(
+            _response = await new OAuthManager(_logger).GetAccessTokenAsync(
                 httpClient,
                 "client_credentials",
                 "basic abc:123",
@@ -1507,8 +1704,6 @@ public class OAuthManagerTests
                 "http://example.com/oauth/token",
                 new TraceId(UpstreamCorrelationId)
             );
-
-            _body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
         }
 
         [Test]
@@ -1521,7 +1716,12 @@ public class OAuthManagerTests
         [Test]
         public void It_puts_the_identical_correlation_id_in_the_gateway_error_body()
         {
-            _body["correlationId"]!.GetValue<string>().Should().Be(UpstreamCorrelationId);
+            _response
+                .Headers.GetValues(OAuthErrorResponse.CorrelationHeaderName)
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(Uri.EscapeDataString(UpstreamCorrelationId));
         }
     }
 
@@ -1543,8 +1743,8 @@ public class OAuthManagerTests
     /// </summary>
     private const string ExpectedGatewayDetail =
         "The upstream identity service did not return a usable response. Contact your system "
-        + "administrator with the correlationId from this response, which identifies the "
-        + "corresponding server log entry.";
+        + "administrator with the X-Correlation-ID response header, decoded once using UTF-8 "
+        + "percent decoding, which identifies the corresponding server log entry.";
 
     /// <summary>
     /// The exact client-facing <c>detail</c> of a 401 whose upstream body carried no
@@ -1679,9 +1879,9 @@ public class OAuthManagerTests
         }
 
         [Test]
-        public void It_keeps_the_problem_json_content_type()
+        public void It_keeps_the_json_content_type()
         {
-            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
         }
 
         [Test]
@@ -1699,19 +1899,24 @@ public class OAuthManagerTests
         [Test]
         public void It_returns_the_fixed_non_revealing_detail()
         {
-            _body["detail"]!.GetValue<string>().Should().Be(ExpectedGatewayDetail);
+            _body["error_description"]!.GetValue<string>().Should().Be(ExpectedGatewayDetail);
         }
 
         [Test]
         public void It_keeps_the_title()
         {
-            _body["title"]!.GetValue<string>().Should().Be("Upstream service unavailable");
+            _body["error"]!.GetValue<string>().Should().Be("server_error");
         }
 
         [Test]
         public void It_keeps_the_correlation_id()
         {
-            _body["correlationId"]!.GetValue<string>().Should().Be(CorrelationId);
+            _response
+                .Headers.GetValues(OAuthErrorResponse.CorrelationHeaderName)
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(Uri.EscapeDataString(CorrelationId));
         }
 
         [Test]
@@ -2067,13 +2272,13 @@ public class OAuthManagerTests
         [Test]
         public void It_uses_the_fixed_detail_on_the_response_path()
         {
-            _fromUpstreamResponse["detail"]!.GetValue<string>().Should().Be(ExpectedGatewayDetail);
+            _fromUpstreamResponse["error_description"]!.GetValue<string>().Should().Be(ExpectedGatewayDetail);
         }
 
         [Test]
         public void It_uses_the_fixed_detail_on_the_exception_path()
         {
-            _fromThrownException["detail"]!.GetValue<string>().Should().Be(ExpectedGatewayDetail);
+            _fromThrownException["error_description"]!.GetValue<string>().Should().Be(ExpectedGatewayDetail);
         }
 
         [Test]
@@ -2142,13 +2347,13 @@ public class OAuthManagerTests
         [Test]
         public void It_returns_the_fixed_fallback_detail()
         {
-            _body["detail"]!.GetValue<string>().Should().Be(ExpectedUnauthorizedFallbackDetail);
+            _body["error_description"]!.GetValue<string>().Should().Be(ExpectedUnauthorizedFallbackDetail);
         }
 
         [Test]
         public void It_still_surfaces_the_parsed_oauth_error_as_the_title()
         {
-            _body["title"]!.GetValue<string>().Should().Be("invalid_client");
+            _body["error"]!.GetValue<string>().Should().Be("invalid_client");
         }
 
         [Test]
@@ -2463,7 +2668,7 @@ public class OAuthManagerTests
         [Test]
         public void It_forwards_the_upstream_description_to_the_client()
         {
-            _body["detail"]!.GetValue<string>().Should().Be(UpstreamDescription);
+            _body["error_description"]!.GetValue<string>().Should().Be(UpstreamDescription);
         }
 
         [Test]
@@ -2533,7 +2738,7 @@ public class OAuthManagerTests
         {
             // The malformed member is contained: a sibling that did arrive as a string is still
             // forwarded, so the fix costs nothing on the fields that are well formed.
-            JsonNode.Parse(_rawResponseBody)!["title"]!
+            JsonNode.Parse(_rawResponseBody)!["error"]!
                 .GetValue<string>()
                 .Should()
                 .Be("invalid_client");
@@ -2673,13 +2878,13 @@ public class OAuthManagerTests
         [Test]
         public void It_falls_back_to_the_fixed_title_rather_than_the_container()
         {
-            _body["title"]!.GetValue<string>().Should().Be("Unauthorized");
+            _body["error"]!.GetValue<string>().Should().Be("invalid_client");
         }
 
         [Test]
         public void It_falls_back_to_the_fixed_detail_rather_than_the_container()
         {
-            _body["detail"]!.GetValue<string>().Should().Be(ExpectedUnauthorizedFallbackDetail);
+            _body["error_description"]!.GetValue<string>().Should().Be(ExpectedUnauthorizedFallbackDetail);
         }
 
         [Test]
@@ -2773,7 +2978,7 @@ public class OAuthManagerTests
         [Test]
         public void It_treats_the_null_as_no_description_at_all()
         {
-            _body["detail"]!.GetValue<string>().Should().Be(ExpectedUnauthorizedFallbackDetail);
+            _body["error_description"]!.GetValue<string>().Should().Be(ExpectedUnauthorizedFallbackDetail);
         }
 
         [Test]
@@ -2860,11 +3065,12 @@ public class OAuthManagerTests
     /// </summary>
     private static void ShouldBeTheGenericRateLimitContract(JsonNode body)
     {
-        body["type"]!.ToString().Should().Be("urn:ed-fi:api:too-many-requests");
-        body["title"]!.ToString().Should().Be("Too Many Requests");
-        body["status"]!.GetValue<int>().Should().Be(429);
-        body["errors"]!.AsArray().Count.Should().Be(0);
-        body["correlationId"]!.ToString().Should().Be(CorrelationId);
+        body.AsObject()
+            .Select(property => property.Key)
+            .Should()
+            .BeEquivalentTo("error", "error_description");
+        body["error"]!.GetValue<string>().Should().Be("temporarily_unavailable");
+        body["error_description"]!.GetValue<string>().Should().Be(OAuthErrorResponse.RateLimitDescription);
     }
 
     [TestFixture(TooManyTokensUpstream.LegacyType)]
@@ -2890,39 +3096,28 @@ public class OAuthManagerTests
         }
 
         [Test]
-        public void It_has_the_too_many_tokens_type()
+        public void It_uses_the_documented_rate_limit_extension_code()
         {
-            _body["type"]!.ToString().Should().Be(DmsTooManyTokensType);
+            _body["error"]!.GetValue<string>().Should().Be("temporarily_unavailable");
         }
 
         [Test]
-        public void It_has_the_too_many_tokens_title()
+        public void It_carries_the_rebuilt_guidance_in_the_description()
         {
-            _body["title"]!.ToString().Should().Be("Too Many Tokens");
-        }
-
-        [Test]
-        public void It_has_the_tickets_detail()
-        {
-            _body["detail"]!
-                .ToString()
+            _body["error_description"]!
+                .GetValue<string>()
                 .Should()
-                .Be("The caller has authenticated too many times in too short of a time period.");
+                .Be(TooManyTokensUpstream.MessageWithLimit("5"));
         }
 
         [Test]
-        public void It_reconstructs_an_errors_entry_carrying_the_upstream_limit()
+        public void It_emits_only_the_oauth_error_members()
         {
-            _body["errors"]!.AsArray().Count.Should().Be(1);
-            _body["errors"]![0]!.ToString().Should().Be(TooManyTokensUpstream.MessageWithLimit("5"));
-        }
-
-        // The upstream body carries its own correlationId. Echoing it would point the caller at a
-        // log entry in a service they cannot reach.
-        [Test]
-        public void It_carries_the_dms_trace_id_not_the_upstream_one()
-        {
-            _body["correlationId"]!.ToString().Should().Be(CorrelationId);
+            _body
+                .AsObject()
+                .Select(property => property.Key)
+                .Should()
+                .BeEquivalentTo("error", "error_description");
         }
     }
 
@@ -2948,7 +3143,10 @@ public class OAuthManagerTests
         [Test]
         public void It_reconstructs_the_message_with_that_limit()
         {
-            _body["errors"]![0]!.ToString().Should().Be(TooManyTokensUpstream.MessageWithLimit("37"));
+            _body["error_description"]!
+                .GetValue<string>()
+                .Should()
+                .Be(TooManyTokensUpstream.MessageWithLimit("37"));
         }
     }
 
@@ -2992,16 +3190,18 @@ public class OAuthManagerTests
         }
 
         [Test]
-        public void It_recognizes_the_token_limit_rejection()
+        public void It_uses_the_documented_rate_limit_extension_code()
         {
-            _body["type"]!.ToString().Should().Be(DmsTooManyTokensType);
+            _body["error"]!.GetValue<string>().Should().Be("temporarily_unavailable");
         }
 
         [Test]
         public void It_reconstructs_the_message_with_the_configured_limit()
         {
-            _body["errors"]!.AsArray().Count.Should().Be(1);
-            _body["errors"]![0]!.ToString().Should().Be(TooManyTokensUpstream.MessageWithLimit("7"));
+            _body["error_description"]!
+                .GetValue<string>()
+                .Should()
+                .Be(TooManyTokensUpstream.MessageWithLimit("7"));
         }
 
         [Test]
@@ -3113,15 +3313,20 @@ public class OAuthManagerTests
         }
 
         [Test]
-        public void It_has_the_service_unavailable_type()
+        public void It_uses_the_documented_temporary_unavailability_code()
         {
-            _body["type"]!.ToString().Should().Be("urn:ed-fi:api:service-unavailable");
+            _body["error"]!.GetValue<string>().Should().Be("temporarily_unavailable");
         }
 
         [Test]
         public void It_carries_the_dms_trace_id_not_the_upstream_one()
         {
-            _body["correlationId"]!.ToString().Should().Be(CorrelationId);
+            _response
+                .Headers.GetValues(OAuthErrorResponse.CorrelationHeaderName)
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(Uri.EscapeDataString(CorrelationId));
         }
 
         [Test]
@@ -3436,7 +3641,7 @@ public class OAuthManagerTests
             JsonNode body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
 
             response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
-            body["type"]!.ToString().Should().Be("urn:ed-fi:api:bad-gateway");
+            body["error"]!.GetValue<string>().Should().Be("server_error");
         }
     }
 }
