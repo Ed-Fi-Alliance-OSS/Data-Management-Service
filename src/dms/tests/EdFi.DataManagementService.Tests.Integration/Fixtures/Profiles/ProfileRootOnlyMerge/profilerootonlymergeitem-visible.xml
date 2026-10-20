@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     Profile XML for ProfileRootOnlyMergeProfileScenario. Root content type is
-    IncludeAll so the strict request shaper does not reject server-supplied
-    metadata (notably the `id` field populated from the URL for PUT). The nested profileScope object is IncludeOnly so
+    IncludeAll to keep root fields visible while isolating hidden-field
+    preservation within profileScope. The nested object is IncludeOnly so
     clearableText remains visible while preservedText is hidden from both the
     readable projection and the writable shape — scenarios use that to prove
     the relational "hidden" column survives a profiled write that never names

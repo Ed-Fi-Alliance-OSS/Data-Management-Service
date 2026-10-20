@@ -1917,6 +1917,7 @@ public class PipelineOrderingTests
             var types = GetRoutedResourcePipelineStepTypes("CreateUpdatePipeline");
             int normalization = types.IndexOf(typeof(NormalizePutIdMiddleware));
             normalization.Should().BeGreaterThan(types.IndexOf(typeof(DuplicatePropertiesMiddleware)));
+            normalization.Should().Be(types.IndexOf(typeof(ProfileResolutionMiddleware)) + 1);
             normalization.Should().BeLessThan(types.IndexOf(typeof(CoerceDateFormatMiddleware)));
             normalization.Should().BeLessThan(types.IndexOf(typeof(CoerceDateTimesMiddleware)));
             normalization.Should().BeLessThan(types.IndexOf(typeof(CoerceRequestValuesMiddleware)));
@@ -1944,6 +1945,39 @@ public class PipelineOrderingTests
             await BodyPipeline(validator).Run(request);
             observedId.Should().Be(NormalizePutIdMiddlewareTests.UrlId);
             request.FrontendResponse.StatusCode.Should().NotBe(400);
+        }
+
+        [Test]
+        public async Task It_rejects_an_invalid_profile_before_a_malformed_body_id()
+        {
+            RequestInfo request = Context("\"id\":\"bad\",");
+            request.FrontendRequest.Headers["Content-Type"] = "application/vnd.ed-fi.school.invalid+json";
+            var validator = A.Fake<IDocumentValidator>();
+            var pipeline = new PipelineProvider(
+                GetSteps(BuildRoutedResourceApiService(documentValidator: validator), "CreateUpdatePipeline")
+                    .Where(step =>
+                        step
+                            is ValidateContentTypeMiddleware
+                                or ParseBodyMiddleware
+                                or DuplicatePropertiesMiddleware
+                                or ProfileResolutionMiddleware
+                                or NormalizePutIdMiddleware
+                                or ValidateDocumentMiddleware
+                    )
+                    .ToList()
+            );
+
+            await pipeline.Run(request);
+
+            request.FrontendResponse.StatusCode.Should().Be(400);
+            JsonNode response = request.FrontendResponse.Body!;
+            response["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:profile:invalid-profile-usage");
+            response["errors"]!
+                .AsArray()
+                .Select(message => message!.GetValue<string>())
+                .Should()
+                .Equal("The format of the profile-based content type header was invalid.");
+            A.CallTo(() => validator.Validate(A<RequestInfo>._)).MustNotHaveHappened();
         }
 
         [Test]

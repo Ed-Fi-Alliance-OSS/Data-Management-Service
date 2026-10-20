@@ -52,12 +52,16 @@ internal static class PutBodyIdScenario
         string otherPath = await CreateAsync(harness, endpoint, other);
         string targetId = targetPath.Split('/')[^1];
         string otherId = otherPath.Split('/')[^1];
-        string[] accepted = ["omitted", "null", "matching", "different", "empty-guid"];
+        string[] accepted = ["omitted", "miscased", "null", "matching", "different", "empty-guid"];
         foreach (string mode in accepted)
         {
             JsonObject body = (JsonObject)target.DeepClone();
             body[changedField] = mode;
-            if (mode != "omitted")
+            if (mode == "miscased")
+            {
+                body["Id"] = "bad";
+            }
+            else if (mode != "omitted")
             {
                 body["id"] = mode switch
                 {
@@ -74,6 +78,7 @@ internal static class PutBodyIdScenario
                 .Be(HttpStatusCode.NoContent, await response.Content.ReadAsStringAsync());
             JsonObject updated = await ReadAsync(harness, targetPath);
             updated["id"]!.GetValue<string>().Should().Be(targetId);
+            updated.ContainsKey("Id").Should().BeFalse();
             updated[changedField]!.GetValue<string>().Should().Be(mode);
             JsonObject untouched = await ReadAsync(harness, otherPath);
             untouched["id"]!.GetValue<string>().Should().Be(otherId);

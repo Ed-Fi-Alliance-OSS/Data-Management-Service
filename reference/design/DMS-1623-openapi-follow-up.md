@@ -1,6 +1,6 @@
 # MetaEd follow-up: clarify PUT body ID validation
 
-Status: prepared for MetaEd; not yet filed in Jira.
+Tracking issue: [METAED-1682](https://edfi.atlassian.net/browse/METAED-1682).
 Related DMS change: [DMS-1623](https://edfi.atlassian.net/browse/DMS-1623).
 
 ## Problem and proposed change
