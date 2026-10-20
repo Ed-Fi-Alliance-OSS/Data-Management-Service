@@ -8,7 +8,7 @@
     Infrastructure-lifecycle phase for the local DMS Docker stack.
 .DESCRIPTION
     This script is the infrastructure-lifecycle phase. It starts or stops the Docker
-    services that underpin local DMS development (PostgreSQL or SQL Server, Config Service,
+    services that underpin local DMS development (PostgreSQL or SQL Server, Configuration Service,
     optional Keycloak/SwaggerUI/Kafka/KafkaUI). The wrapper bootstrap-local-dms.ps1
     orchestrates prepare -> infra -> configure -> provision -> DMS-only, so by the
     time the wrapper calls into here a .bootstrap/ workspace and a provisioned database
@@ -26,7 +26,7 @@
     and relocated to phase-specific commands:
       -NoDataStore         -> configure-local-data-store.ps1 (instance selection)
       -SchoolYearRange     -> configure-local-data-store.ps1 (school-year data stores)
-      -AddSmokeTestCredentials -> configure-local-data-store.ps1 (CMS-only smoke credentials)
+      -AddSmokeTestCredentials -> configure-local-data-store.ps1 (smoke credentials for the Configuration Service only)
       -LoadSeedData        -> load-dms-seed-data.ps1 (API-based seed delivery)
 
     Migration guidance:
@@ -44,7 +44,7 @@
 
     IDE workflow shapes (requires -InfraOnly):
       -InfraOnly (terminal):
-          Starts infrastructure and Config Service, runs the claims-ready gate, then
+          Starts infrastructure and Configuration Service, runs the claims-ready gate, then
           stops. Use this as the pre-DMS preparation phase. After this returns, run
           configure-local-data-store.ps1 and provision-dms-schema.ps1, then launch
           DMS in your IDE. This shape does not perform data-store, provisioning,
@@ -52,7 +52,7 @@
 
       -InfraOnly -DmsBaseUrl <url> (health-wait continuation):
           Starts or verifies infrastructure (docker compose up is idempotent), runs
-          the Config Service readiness check and the claims-ready gate, then polls
+          the Configuration Service readiness check and the claims-ready gate, then polls
           <url>/health until HTTP 200 is returned. Use this after configure and
           provision phases have already been run and the IDE-hosted DMS process is
           launching. Times out after 300 seconds with a clear error if the DMS

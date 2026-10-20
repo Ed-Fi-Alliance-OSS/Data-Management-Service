@@ -797,7 +797,7 @@ exit $ExitCode
 
             $envValues = @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = "TestEncryptionKey123456789012345678901234567890" }
             { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString "@@@@" -EnvValues $envValues } |
-                Should -Throw -ExpectedMessage "*not valid CMS encrypted base64*"
+                Should -Throw -ExpectedMessage "*not valid Configuration Service encrypted base64*"
         }
 
         It "rejects an encrypted connection string payload too short to contain an IV" {
@@ -1066,7 +1066,7 @@ exit $ExitCode
             }
 
             { Invoke-ProvisionDmsSchema -EnvironmentFile $envFile -DataStoreId @(9) } |
-                Should -Throw -ExpectedMessage "*CMS data store 9*name=StalePostgres*database=stale_pg*resolved to dialect 'pgsql'*DMS_DATASTORE is 'mssql'*expected dialect 'mssql'*-NoDataStore*"
+                Should -Throw -ExpectedMessage "*Configuration Service data store 9*name=StalePostgres*database=stale_pg*resolved to dialect 'pgsql'*DMS_DATASTORE is 'mssql'*expected dialect 'mssql'*-NoDataStore*"
             Test-Path -LiteralPath $capturePath | Should -BeFalse
         }
 

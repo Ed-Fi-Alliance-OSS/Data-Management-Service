@@ -669,7 +669,7 @@ Describe 'CDC local ownership inspection' {
                 ports = @{ '8081/tcp' = @(@{ HostIp = '0.0.0.0'; HostPort = '8081' }) }; networks = @{ dms = @{} }; command = @(); entrypoint = @()
             } | ConvertTo-Json -Depth 10 -Compress
         }
-        { Assert-BootstrapCdcOfflineOwnership -Project 'dms-local' } | Should -Throw '*loopback CMS/database ports*'
+        { Assert-BootstrapCdcOfflineOwnership -Project 'dms-local' } | Should -Throw '*loopback Configuration Service/database ports*'
     }
 }
 

@@ -679,10 +679,10 @@ function Initialize-E2EClaimsWorkspace {
     <#
     .SYNOPSIS
     Stages the default claims fragments plus the test-owned E2E claims fragments into
-    eng/docker-compose/.e2e-claims and returns its absolute path, for use as the CMS claims mount.
+    eng/docker-compose/.e2e-claims and returns its absolute path, for use as the Configuration Service claims mount.
     .DESCRIPTION
     The directory is created only when missing and is never deleted or replaced: a later startup
-    phase calls this again while CMS is bind-mounted to it, and replacing it would leave CMS mounted
+    phase calls this again while the Configuration Service is bind-mounted to it, and replacing it would leave the Configuration Service mounted
     to the orphaned original. Content is synced in place instead: every intended file is copied over
     its staged copy and stale *-claims.json files, and any *-claimset.json copies left from
     before the 8.1 rename, are removed.
@@ -775,7 +775,7 @@ function Invoke-BootstrapStartupConfiguration {
     }
 
     if ($bootstrapMode) {
-        Write-Information "Bootstrap manifest detected and validated. Staged schema and claims workspaces are now runtime-authoritative; DMS reads ApiSchema from the staged workspace and CMS claims are governed by the manifest claims.mode." -InformationAction Continue
+        Write-Information "Bootstrap manifest detected and validated. Staged schema and claims workspaces are now runtime-authoritative; DMS reads ApiSchema from the staged workspace and Configuration Service claims are governed by the manifest claims.mode." -InformationAction Continue
         if ($AddExtensionSecurityMetadata) {
             # In bootstrap mode the manifest's claims.mode governs; -AddExtensionSecurityMetadata
             # is ignored. Set-BootstrapStartupEnvironment already activated staged claims above.

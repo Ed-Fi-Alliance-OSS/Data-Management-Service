@@ -302,7 +302,7 @@ function Assert-FragmentValidAndExtractCheck {
         }
         $claimSetsCount = if ($null -eq $claimSets) { 0 } else { @($claimSets).Count }
         if (-not $isParent -and $claimSetsCount -gt 0) {
-            throw "Claims fragment '$(Format-LogSafePath $Path)' has a non-parent resourceClaims entry with claimSets. CMS composes non-parent claims from the fragment top-level name and authorizationStrategyOverridesForCRUD; move the actions there or make the resource claim a parent."
+            throw "Claims fragment '$(Format-LogSafePath $Path)' has a non-parent resourceClaims entry with claimSets. The Configuration Service composes non-parent claims from the fragment top-level name and authorizationStrategyOverridesForCRUD; move the actions there or make the resource claim a parent."
         }
 
         $usesImplicitClaimSetName = -not $isParent -and $claimSetsCount -eq 0

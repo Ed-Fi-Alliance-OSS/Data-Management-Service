@@ -129,7 +129,7 @@ function Write-E2ECdcApiHandoff {
     No provider, binding, generation, schema, credential, or worker inventory is copied.
     The fixture loads runtime/controller configuration through CdcCommandConfiguration.Load
     and resolves the retained binding through the production state store. That settings file
-    owns admitted targets, host CMS URL, provider setup connection, Kafka advertised endpoint,
+    owns admitted targets, host Configuration Service URL, provider setup connection, Kafka advertised endpoint,
     Connect/metrics endpoints, Compose/worker identity and schema assets. Preserve connector
     ProviderConnectionProperties (container endpoints); any fixture host adaptations belong
     only in memory, using Cdc:Compose:DatabaseHostPort. Never fall back to static E2E settings.

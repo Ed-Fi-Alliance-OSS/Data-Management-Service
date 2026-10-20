@@ -30,7 +30,7 @@ function Read-BootstrapCdcSettings {
         # Limit the first local adapter to the route-unqualified default tenant. Provider token
         # conversion and the complete policy contract remain with the CLI.
         $cms = [uri]$settings.ConfigurationServiceSettings.BaseUrl
-        if (-not $cms.IsLoopback -or $cms.Scheme -ne 'http' -or $cms.AbsolutePath -ne '/') { throw 'CMS' }
+        if (-not $cms.IsLoopback -or $cms.Scheme -ne 'http' -or $cms.AbsolutePath -ne '/') { throw 'Configuration Service base URL must be a loopback http root URL.' }
         # The qualified worker inspector proves an exact published IPv4 loopback endpoint.
         # Reject unsupported aliases before creating a database or retaining an initial workflow.
         foreach ($endpoint in @(@('ConnectEndpoint', '/'), @('WorkerMetricsEndpoint', '/metrics'))) {
@@ -40,7 +40,7 @@ function Read-BootstrapCdcSettings {
         }
         return $settings
     }
-    catch { throw 'CDC requires valid explicit DMS settings with one default-tenant target, local CMS, and explicit http://127.0.0.1 worker/metrics endpoints; environment overrides are not accepted by bootstrap.' }
+    catch { throw 'CDC requires valid explicit DMS settings with one default-tenant target, local Configuration Service, and explicit http://127.0.0.1 worker/metrics endpoints; environment overrides are not accepted by bootstrap.' }
 }
 
 function Invoke-BootstrapCdcDockerInspection {
@@ -104,7 +104,7 @@ function Assert-BootstrapCdcOfflineOwnership {
                 $db[0].name -cne $(if ($DatabaseEngine -eq 'mssql') { '/dms-mssql' } else { '/dms-postgresql' })) { throw 'Ownership' }
         }
     }
-    catch { throw 'CDC requires an exclusively owned local deployment, loopback CMS/database ports, and no running DMS or IDE writers. Stop other applications before retrying.' }
+    catch { throw 'CDC requires an exclusively owned local deployment, loopback Configuration Service/database ports, and no running DMS or IDE writers. Stop other applications before retrying.' }
 }
 
 function Write-BootstrapCdcPrivateJson {
@@ -174,7 +174,7 @@ function New-BootstrapCdcHandoff {
     }
     $cmsPort = [int](Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name 'CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS' -DefaultValue '8081')
     if (([uri]$Settings.ConfigurationServiceSettings.BaseUrl).Port -ne $cmsPort) {
-        throw 'CDC settings must address the CMS port of the selected local environment.'
+        throw 'CDC settings must address the Configuration Service port of the selected local environment.'
     }
     foreach ($name in @('CONFIGURATION_SERVICE_MULTI_TENANCY', 'DMS_MULTI_TENANCY')) {
         if ((Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name $name -DefaultValue 'false') -ne 'false') {

@@ -430,7 +430,7 @@ with the key entirely absent fails clearly rather than starting the Configuratio
 Invocations that start the Configuration Service validate the result before any container starts: the resolved connection
 string's database, host, and port must agree with the selected topology, and a hand-edited
 `CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING` that disagrees fails fast with a
-`CMS database topology mismatch` error rather than silently starting the Configuration Service against the wrong
+`Configuration Service database topology mismatch` error rather than silently starting the Configuration Service against the wrong
 database. In separate mode the datastore database must also be genuinely distinct from
 `edfi_configurationservice`, so a datastore name (or `-DataStoreDatabaseName`) that would land in it
 is rejected rather than quietly re-sharing the database the switch exists to split.
