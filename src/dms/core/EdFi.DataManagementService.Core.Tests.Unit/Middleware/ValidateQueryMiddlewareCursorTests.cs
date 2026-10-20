@@ -715,6 +715,86 @@ public class ValidateQueryMiddlewareCursorTests
     }
 
     /// <summary>
+    /// pageSize beside limit without a page token is ignored, as ODS/API 7.3.2 ignores it, so the
+    /// request is served exactly as the same request without pageSize would be, and a fault in its
+    /// traditional parameters is reported exactly as it would be without pageSize. A paging control
+    /// is never listed as an ignored parameter.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Page_Size_Beside_Limit_Without_A_Token : ValidateQueryMiddlewareCursorTests
+    {
+        private static readonly TestCaseData[] _traditionalRequests =
+        [
+            new TestCaseData(new[] { ("limit", "500") }, "500").SetName("{m}(both at the maximum page size)"),
+            new TestCaseData(new[] { ("limit", "10") }, "5").SetName("{m}(limit larger than pageSize)"),
+            new TestCaseData(new[] { ("limit", "5") }, "10").SetName("{m}(limit smaller than pageSize)"),
+            new TestCaseData(new[] { ("limit", "10") }, "99999").SetName("{m}(pageSize out of range)"),
+            new TestCaseData(new[] { ("limit", "5"), ("offset", "3"), ("totalCount", "true") }, "10").SetName(
+                "{m}(offset and totalCount)"
+            ),
+        ];
+
+        [TestCaseSource(nameof(_traditionalRequests))]
+        public async Task It_applies_the_paging_of_the_same_request_without_page_size(
+            (string Key, string Value)[] traditionalParameters,
+            string pageSize
+        )
+        {
+            RequestInfo withoutPageSize = await Execute(true, traditionalParameters);
+            RequestInfo withPageSize = await Execute(
+                true,
+                [.. traditionalParameters, ("pageSize", pageSize)]
+            );
+
+            withoutPageSize.FrontendResponse.Should().Be(No.FrontendResponse);
+            withPageSize.FrontendResponse.Should().Be(No.FrontendResponse);
+            withPageSize
+                .CollectionPaging.Should()
+                .BeOfType<CollectionPaging.Traditional>()
+                .And.Be(withoutPageSize.CollectionPaging);
+        }
+
+        [Test]
+        public async Task It_selects_the_page_by_limit_rather_than_page_size()
+        {
+            RequestInfo requestInfo = await Execute(true, ("limit", "5"), ("pageSize", "10"));
+
+            requestInfo.PaginationParameters.Limit.Should().Be(5);
+        }
+
+        [Test]
+        public async Task It_does_not_list_page_size_as_ignored()
+        {
+            RequestInfo requestInfo = await Execute(true, ("limit", "10"), ("pageSize", "5"));
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo
+                .FrontendResponse.Headers.Should()
+                .NotContainKey(IgnoredQueryParameterWarning.HeaderName);
+        }
+
+        [TestCase("limit", "", "Limit must be omitted or set to a numeric value between 0 and 500.")]
+        [TestCase("limit", "abc", "Limit must be omitted or set to a numeric value between 0 and 500.")]
+        [TestCase("limit", "501", "Limit must be omitted or set to a numeric value between 0 and 500.")]
+        [TestCase("offset", "-1", "Offset must be a numeric value greater than or equal to 0.")]
+        [TestCase("totalCount", "x", "TotalCount must be a boolean value.")]
+        public async Task It_reports_a_traditional_fault_with_the_existing_message(
+            string parameter,
+            string value,
+            string expectedError
+        )
+        {
+            (string Key, string Value)[] queryParameters =
+                parameter == "limit"
+                    ? [("limit", value), ("pageSize", "5")]
+                    : [("limit", "10"), (parameter, value), ("pageSize", "5")];
+
+            AssertParameterValidationShell(await Execute(true, queryParameters), expectedError);
+        }
+    }
+
+    /// <summary>
     /// The Change Query composition, which does not page by cursor. A cursor parameter is rejected by
     /// name whatever its value, so a client cannot believe it is walking a cursor, and a rejected name
     /// is not reported as ignored.
@@ -858,6 +938,9 @@ public class ValidateQueryMiddlewareCursorTests
         private static readonly TestCaseData[] _traditionalRejections =
         [
             new TestCaseData(new[] { ("limit", "-1") }).SetName("{m}(paging fault)"),
+            new TestCaseData(new[] { ("limit", "-1"), ("pageSize", "5") }).SetName(
+                "{m}(paging fault beside an ignored page size)"
+            ),
             new TestCaseData(new[] { ("minChangeVersion", "abc") }).SetName("{m}(change-version fault)"),
             new TestCaseData(new[] { ("schoolId", "not-a-number") }).SetName("{m}(invalid filter value)"),
         ];

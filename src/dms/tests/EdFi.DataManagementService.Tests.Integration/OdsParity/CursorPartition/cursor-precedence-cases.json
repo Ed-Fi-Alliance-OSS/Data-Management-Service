@@ -116,21 +116,17 @@
     },
     {
       "id": "cursor-precedence-07",
-      "group": "validation",
+      "group": "page-size-beside-limit",
       "executor": "collection-get",
       "query": "?pageSize=5&limit=10",
       "dms": {
-        "status": 400,
-        "errors": [
-          "PageToken is required when pageSize is specified."
-        ]
+        "status": 200
       },
       "ods": {
         "status": 200
       },
-      "outcome": "difference",
-      "approvedDifference": "reject-limit-with-cursor-parameters",
-      "note": "ODS returns 200; this is an approved stricter DMS rejection."
+      "outcome": "parity",
+      "note": "Without pageToken, both runtimes page by limit and ignore pageSize. Its own group, run on a host at the deployed maximum page size, because the validation group's lowered maximum would reject limit=10 on its range before path selection is observable."
     },
     {
       "id": "cursor-precedence-08",

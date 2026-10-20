@@ -4,7 +4,7 @@
     {
       "id": "reject-limit-with-cursor-parameters",
       "bullet": 1,
-      "summary": "Reject limit whenever cursor parameters are present, including when pageSize is also present.",
+      "summary": "Reject limit whenever pageToken is present, including when pageSize is also present. Without pageToken, limit pages traditionally and pageSize is ignored, as in ODS.",
       "executable": true
     },
     {

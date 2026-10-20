@@ -1120,20 +1120,6 @@ Describe "Azure VM Swagger UI" {
         $results[1].body | Should -Be "grant_type=client_credentials"
         $results[2].headers.Authorization | Should -Be "Bearer token"
     }
-
-    It "drops the DMS pageSize default so Try it out does not send pageSize without a pageToken" {
-        # The DMS rejects pageSize without pageToken (400), and Swagger UI sends every parameter default.
-        $spec = "{ paths: { '/ed-fi/schools': { get: { parameters: [{ `$ref: '#/components/parameters/pageSize' }, { name: 'pageSize', in: 'query', schema: { type: 'integer', default: 500 } }] } } }, " +
-            "components: { parameters: { pageSize: { name: 'pageSize', in: 'query', schema: { type: 'integer', default: 500, maximum: 500 } }, limit: { name: 'limit', in: 'query', schema: { type: 'integer', default: 500 } } } } }"
-        $results = & $script:runHelper "[h.withoutPageSizeDefault($spec, '/mt-dms/t1/2025/metadata/specifications/resources-spec.json'), h.withoutPageSizeDefault($spec, '/st-config/openapi/v1.json')]"
-
-        $dms = $results[0]
-        $dms.components.parameters.pageSize.schema.PSObject.Properties.Name | Should -Not -Contain "default"
-        $dms.components.parameters.pageSize.schema.maximum | Should -Be 500
-        $dms.paths.'/ed-fi/schools'.get.parameters[1].schema.PSObject.Properties.Name | Should -Not -Contain "default"
-        $dms.components.parameters.limit.schema.default | Should -Be 500 -Because "only pageSize conflicts"
-        $results[1].components.parameters.pageSize.schema.default | Should -Be 500 -Because "only DMS specs are changed"
-    }
 }
 
 Describe "Azure VM ODS parity check" {
