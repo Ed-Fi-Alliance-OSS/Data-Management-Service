@@ -226,10 +226,10 @@ function Get-SmokeTestCredentialSummary {
     decides where the summary goes.
 
     Every value in the copyable command is a single-quoted literal (generated secrets can contain
-    '$'), escaped for every quote character PowerShell accepts. Tenant- or route-qualified targets
-    get base and token URLs instead of a command, because those smoke runs are not validated; route
-    contexts other than one school year per data store, and school-year values that are not plain URL
-    path segments, are listed without URLs.
+    '$'), escaped for every quote character PowerShell accepts. A tenant-only target gets base and
+    token URLs instead of a command, because that smoke run is not validated; data-store route
+    contexts, school year included, are listed without URLs, because the route they select depends
+    on the target DMS's route qualifier configuration.
     #>
     [CmdletBinding()]
     [OutputType([string[]])]
@@ -314,19 +314,6 @@ function Get-SmokeTestCredentialSummary {
             $tenantBaseUrl = "$baseUrl/$Tenant"
         }
 
-        # A URL is composed only when every data store has exactly one schoolYear context. Any other
-        # key, or several contexts on one store, is routed in ROUTE_QUALIFIER_SEGMENTS order, which
-        # this formatter does not know, so those contexts are listed instead.
-        $schoolYearOnly = @($contexts | Where-Object { $_.ContextKey -cne "schoolYear" }).Count -eq 0 -and
-            @($contexts | Group-Object -Property DataStoreId | Where-Object { $_.Count -gt 1 }).Count -eq 0
-
-        # A school-year value goes into a URL only as RFC 3986 unreserved characters, and never as a
-        # dot segment. A reserved character ('/', '?', '#', '%', a space) would change what the URL
-        # addresses, and percent-encoding it is not known to agree with DMS routing (ASP.NET Core keeps
-        # %2F encoded in route values), so such a store is listed without a URL.
-        $schoolYearUrls = $schoolYearOnly -and
-            @($contexts | Where-Object { [string]$_.ContextValue -cnotmatch '^(?!\.\.?$)[A-Za-z0-9._~-]+$' }).Count -eq 0
-
         if ($unsafeRouting) {
             foreach ($store in @($contexts | Group-Object -Property DataStoreId)) {
                 $pairs = @($store.Group | ForEach-Object { "$(& $display $_.ContextKey)=$(& $display $_.ContextValue)" }) -join ", "
@@ -338,24 +325,15 @@ function Get-SmokeTestCredentialSummary {
             $lines.Add("DMS base:    $tenantBaseUrl")
             $lines.Add("Token URL:   $tenantBaseUrl/oauth/token")
         }
-        elseif ($schoolYearUrls) {
-            foreach ($context in $contexts) {
-                $contextBaseUrl = "$tenantBaseUrl/$($context.ContextValue)"
-                $lines.Add("Data store $($context.DataStoreId) (school year $($context.ContextValue)): DMS base $contextBaseUrl  token $contextBaseUrl/oauth/token")
-            }
-        }
-        elseif ($schoolYearOnly) {
-            foreach ($context in $contexts) {
-                $lines.Add("Data store $($context.DataStoreId) route contexts: schoolYear=$($context.ContextValue)")
-            }
-            $lines.Add("No DMS base or token URL is printed: a school-year value contains characters that are reserved in a URL path segment, and DMS routing is not known to accept them escaped. Correct the Configuration Service data-store contexts.")
-        }
         else {
+            # Route contexts, school year included, are listed and never composed into a URL: whether
+            # and in what order they qualify the route is the target DMS's
+            # AppSettings:RouteQualifierSegments, which the Configuration Service records do not establish.
             foreach ($store in @($contexts | Group-Object -Property DataStoreId)) {
                 $pairs = @($store.Group | ForEach-Object { "$($_.ContextKey)=$($_.ContextValue)" }) -join ", "
                 $lines.Add("Data store $($store.Name) route contexts: $pairs")
             }
-            $lines.Add("No DMS base or token URL is printed for these contexts: the DMS base is $tenantBaseUrl followed by the context values in the order ROUTE_QUALIFIER_SEGMENTS lists their keys, and the token URL is that base plus /oauth/token.")
+            $lines.Add("No DMS base or token URL is printed for these contexts: the route depends on the target DMS configuration (AppSettings:RouteQualifierSegments, ROUTE_QUALIFIER_SEGMENTS in Compose). When it lists these keys, the DMS base is $tenantBaseUrl followed by the context values in that order, and the token URL is that base plus /oauth/token.")
         }
         $lines.Add("Tenant- or route-qualified smoke runs have not been validated with the smoke console; pass the matching DMS base as -BaseUrl and the token URL as -OAuthUrl.")
     }

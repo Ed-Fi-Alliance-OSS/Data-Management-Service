@@ -2022,20 +2022,26 @@ Write-Output 'seed-phase-output'
             $command["OAuthUrl"] | Should -BeExactly "http://localhost:19090/oauth/token"
         }
 
-        It "prints one target line per school-year data store and no command" {
+        It "lists each school-year data store's route context, with no command or school-year URL, for a <Wrapper> run" -ForEach @(
+            @{ Wrapper = "local"; StartScript = "start-local-dms.ps1"; Entry = "WrapperScript" }
+            @{ Wrapper = "published"; StartScript = "start-published-dms.ps1"; Entry = "PublishedWrapperScript" }
+        ) {
             New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
-            $callLog = Join-Path $script:repo.RepoRoot "call-log-smoke-schoolyear.txt"
-            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-smoke-schoolyear-$Wrapper.txt"
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog -FileName $StartScript | Out-Null
             New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog -DataStoreIds @(101, 102) -SchoolYearContexts | Out-Null
             New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
 
-            $run = Invoke-WrapperCapture -ScriptPath $script:repo.WrapperScript -Arguments @{ EnvironmentFile = $script:repo.EnvFile; AddSmokeTestCredentials = $true }
+            $run = Invoke-WrapperCapture -ScriptPath $script:repo.$Entry -Arguments @{ EnvironmentFile = $script:repo.EnvFile; AddSmokeTestCredentials = $true }
 
             $run.Error | Should -BeNullOrEmpty
             $summary = Get-SummaryBlock -Strings $run.Strings -Header $script:smokeSummaryHeader
-            $summary | Should -Contain "Data store 101 (school year 2024): DMS base http://localhost:18080/2024  token http://localhost:18080/2024/oauth/token"
-            $summary | Should -Contain "Data store 102 (school year 2025): DMS base http://localhost:18080/2025  token http://localhost:18080/2025/oauth/token"
-            @($summary | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" }) | Should -BeNullOrEmpty
+            $summary | Should -Contain "Key:         SYNTH-KEY-1292"
+            $summary | Should -Contain 'Secret:      SYNTH$SECRET-1292'
+            $summary | Should -Contain "Data store 101 route contexts: schoolYear=2024"
+            $summary | Should -Contain "Data store 102 route contexts: schoolYear=2025"
+            $summary | Should -Contain "No DMS base or token URL is printed for these contexts: the route depends on the target DMS configuration (AppSettings:RouteQualifierSegments, ROUTE_QUALIFIER_SEGMENTS in Compose). When it lists these keys, the DMS base is http://localhost:18080 followed by the context values in that order, and the token URL is that base plus /oauth/token."
+            @($summary | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" -or $_ -like "*/2024*" -or $_ -like "*/2025*" }) | Should -BeNullOrEmpty
         }
 
         It "prints no summary without the flag, including after a flagged run in the same session" {
@@ -2392,9 +2398,9 @@ Export-ModuleMember -Function *
             $run.CmsCalls | Should -Contain "Add-DmsSchoolYearInstances 2024-2025 tenant="
             $run.CmsCalls | Should -Contain "Add-Application ids=101,102 tenant="
             $summary = Get-StartPublishedSummary -Strings $run.Strings
-            $summary | Should -Contain "Data store 101 (school year 2024): DMS base http://localhost:18080/2024  token http://localhost:18080/2024/oauth/token"
-            $summary | Should -Contain "Data store 102 (school year 2025): DMS base http://localhost:18080/2025  token http://localhost:18080/2025/oauth/token"
-            @($summary | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" }) | Should -BeNullOrEmpty
+            $summary | Should -Contain "Data store 101 route contexts: schoolYear=2024"
+            $summary | Should -Contain "Data store 102 route contexts: schoolYear=2025"
+            @($summary | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" -or $_ -like "*/2024*" -or $_ -like "*/2025*" }) | Should -BeNullOrEmpty
         }
 
         It "keeps the tenant-scoped first-data-store fallback with -NoDataStore" {
@@ -2409,7 +2415,7 @@ Export-ModuleMember -Function *
             @($summary | Where-Object { $_ -like "Data store *" }) | Should -BeNullOrEmpty
         }
 
-        It "prints the selected existing school-year data store's qualified guidance with -NoDataStore" {
+        It "lists the selected existing school-year data store's route context, with no command or URL, with -NoDataStore" {
             "" | Set-Content -LiteralPath (Join-Path $script:repo.RepoRoot "schoolyear-datastore")
             $schoolYearEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.schoolyear"
             Get-Content -LiteralPath $script:repo.EnvFile | Set-Content -LiteralPath $schoolYearEnvFile -Encoding utf8
@@ -2421,9 +2427,9 @@ Export-ModuleMember -Function *
             @($run.CmsCalls | Where-Object { $_ -like "Add-DataStore*" -or $_ -like "Add-DmsSchoolYearInstances*" }) | Should -BeNullOrEmpty
             $run.CmsCalls | Should -Contain "Add-Application ids=88 tenant="
             $summary = Get-StartPublishedSummary -Strings $run.Strings
-            $summary | Should -Contain "Data store 88 (school year 2024): DMS base http://localhost:18080/2024  token http://localhost:18080/2024/oauth/token"
+            $summary | Should -Contain "Data store 88 route contexts: schoolYear=2024"
             $summary | Should -Contain "Tenant- or route-qualified smoke runs have not been validated with the smoke console; pass the matching DMS base as -BaseUrl and the token URL as -OAuthUrl."
-            @($summary | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" -or $_ -like "*school year 2025*" }) | Should -BeNullOrEmpty
+            @($summary | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" -or $_ -like "*schoolYear=2025*" -or $_ -like "*/2024*" -or $_ -like "DMS base:*" }) | Should -BeNullOrEmpty
         }
 
         It "lists a selected districtId-qualified data store's context, with no command or URL, with -NoDataStore" {

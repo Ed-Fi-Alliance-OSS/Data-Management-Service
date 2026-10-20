@@ -162,6 +162,7 @@ Describe "Get-SmokeTestCredentialSummary" {
             "The Configuration Service returns this secret only once. These bootstrap scripts do not write it to logs or files; your terminal, transcripts, or host logging may still retain it. Store it now."
         )
         $script:routeNote = "Tenant- or route-qualified smoke runs have not been validated with the smoke console; pass the matching DMS base as -BaseUrl and the token URL as -OAuthUrl."
+        $script:contextNote = { param([string]$Base) "No DMS base or token URL is printed for these contexts: the route depends on the target DMS configuration (AppSettings:RouteQualifierSegments, ROUTE_QUALIFIER_SEGMENTS in Compose). When it lists these keys, the DMS base is $Base followed by the context values in that order, and the token URL is that base plus /oauth/token." }
         $script:schoolYearContexts = @(
             [pscustomobject]@{ DataStoreId = [long]101; ContextKey = 'schoolYear'; ContextValue = '2024' },
             [pscustomobject]@{ DataStoreId = [long]102; ContextKey = 'schoolYear'; ContextValue = '2025' }
@@ -256,32 +257,34 @@ Describe "Get-SmokeTestCredentialSummary" {
             ))
     }
 
-    It "keeps the placeholder inside per-store school-year lines, with exactly one replacement instruction, when the DMS URL is not known yet" {
+    It "keeps the placeholder in the school-year context guidance, with exactly one replacement instruction, when the DMS URL is not known yet" {
         $lines = @(Get-SmokeTestCredentialSummary -Credential $script:credential -RouteContexts $script:schoolYearContexts)
 
         $lines | Should -Be (@("--- Smoke test credentials ---") + $script:credentialLines + @(
-                "Data store 101 (school year 2024): DMS base <dms-base-url>/2024  token <dms-base-url>/2024/oauth/token",
-                "Data store 102 (school year 2025): DMS base <dms-base-url>/2025  token <dms-base-url>/2025/oauth/token",
+                "Data store 101 route contexts: schoolYear=2024",
+                "Data store 102 route contexts: schoolYear=2025",
+                (& $script:contextNote '<dms-base-url>'),
                 $script:routeNote,
                 "Replace <dms-base-url> with the IDE-hosted DMS URL once it is healthy."
             ))
-        @($lines | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" }) | Should -BeNullOrEmpty
+        @($lines | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" -or $_ -like "*/2024*" -or $_ -like "*/2025*" }) | Should -BeNullOrEmpty
     }
 
-    It "prints one line per school-year data store, without a command, <Case>" -ForEach @(
-        @{ Case = "without a tenant"; Tenant = ""; Expected = @(
-                "Data store 101 (school year 2024): DMS base http://localhost:8080/2024  token http://localhost:8080/2024/oauth/token",
-                "Data store 102 (school year 2025): DMS base http://localhost:8080/2025  token http://localhost:8080/2025/oauth/token"
+    It "lists school-year contexts per data store, without a command or a guessed school-year URL, <Case>" -ForEach @(
+        @{ Case = "without a tenant"; Tenant = ""; ContextBase = 'http://localhost:8080'; Expected = @(
+                "Data store 101 route contexts: schoolYear=2024",
+                "Data store 102 route contexts: schoolYear=2025"
             ) }
-        @{ Case = "with a tenant"; Tenant = "tenant-a"; Expected = @(
+        @{ Case = "with a tenant"; Tenant = "tenant-a"; ContextBase = 'http://localhost:8080/tenant-a'; Expected = @(
                 "Tenant:      tenant-a",
-                "Data store 101 (school year 2024): DMS base http://localhost:8080/tenant-a/2024  token http://localhost:8080/tenant-a/2024/oauth/token",
-                "Data store 102 (school year 2025): DMS base http://localhost:8080/tenant-a/2025  token http://localhost:8080/tenant-a/2025/oauth/token"
+                "Data store 101 route contexts: schoolYear=2024",
+                "Data store 102 route contexts: schoolYear=2025"
             ) }
     ) {
         $lines = @(Get-SmokeTestCredentialSummary -Credential $script:credential -DmsBaseUrl 'http://localhost:8080' -Tenant $Tenant -RouteContexts $script:schoolYearContexts)
 
-        $lines | Should -Be (@("--- Smoke test credentials ---") + $script:credentialLines + $Expected + @($script:routeNote))
+        $lines | Should -Be (@("--- Smoke test credentials ---") + $script:credentialLines + $Expected + @((& $script:contextNote $ContextBase), $script:routeNote))
+        @($lines | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" -or $_ -like "*/2024*" -or $_ -like "*/2025*" }) | Should -BeNullOrEmpty
     }
 
     It "lists a school-year value '<Value>' that is not a plain URL path segment, without composing any URL" -ForEach @(
@@ -303,30 +306,29 @@ Describe "Get-SmokeTestCredentialSummary" {
                 "Tenant:      tenant-a",
                 "Data store 88 route contexts: schoolYear=$Value",
                 "Data store 89 route contexts: schoolYear=2026",
-                "No DMS base or token URL is printed: a school-year value contains characters that are reserved in a URL path segment, and DMS routing is not known to accept them escaped. Correct the Configuration Service data-store contexts.",
+                (& $script:contextNote 'http://localhost:8080/tenant-a'),
                 $script:routeNote
             ))
+        @($lines | Where-Object { $_ -like "*/2026*" }) | Should -BeNullOrEmpty
     }
 
     It "lists other route contexts without any command or composed URL, <Case>" -ForEach @(
-        @{ Case = "districtId only"; Tenant = ""; Contexts = @(
+        @{ Case = "districtId only"; Tenant = ""; ContextBase = 'http://localhost:8080'; Contexts = @(
                 [pscustomobject]@{ DataStoreId = [long]77; ContextKey = 'districtId'; ContextValue = '255901' }
             ); Expected = @(
-                "Data store 77 route contexts: districtId=255901",
-                "No DMS base or token URL is printed for these contexts: the DMS base is http://localhost:8080 followed by the context values in the order ROUTE_QUALIFIER_SEGMENTS lists their keys, and the token URL is that base plus /oauth/token."
+                "Data store 77 route contexts: districtId=255901"
             ) }
-        @{ Case = "districtId and schoolYear on one store, with a tenant"; Tenant = "tenant-a"; Contexts = @(
+        @{ Case = "districtId and schoolYear on one store, with a tenant"; Tenant = "tenant-a"; ContextBase = 'http://localhost:8080/tenant-a'; Contexts = @(
                 [pscustomobject]@{ DataStoreId = [long]77; ContextKey = 'districtId'; ContextValue = '255901' },
                 [pscustomobject]@{ DataStoreId = [long]77; ContextKey = 'schoolYear'; ContextValue = '2024' }
             ); Expected = @(
                 "Tenant:      tenant-a",
-                "Data store 77 route contexts: districtId=255901, schoolYear=2024",
-                "No DMS base or token URL is printed for these contexts: the DMS base is http://localhost:8080/tenant-a followed by the context values in the order ROUTE_QUALIFIER_SEGMENTS lists their keys, and the token URL is that base plus /oauth/token."
+                "Data store 77 route contexts: districtId=255901, schoolYear=2024"
             ) }
     ) {
         $lines = @(Get-SmokeTestCredentialSummary -Credential $script:credential -DmsBaseUrl 'http://localhost:8080' -Tenant $Tenant -RouteContexts $Contexts)
 
-        $lines | Should -Be (@("--- Smoke test credentials ---") + $script:credentialLines + $Expected + @($script:routeNote))
+        $lines | Should -Be (@("--- Smoke test credentials ---") + $script:credentialLines + $Expected + @((& $script:contextNote $ContextBase), $script:routeNote))
         @($lines | Where-Object { $_ -like "*Invoke-NonDestructiveApiTests.ps1*" -or $_ -like "*school year*" -or $_ -like "*/255901*" -or $_ -like "*/2024*" }) | Should -BeNullOrEmpty
     }
 

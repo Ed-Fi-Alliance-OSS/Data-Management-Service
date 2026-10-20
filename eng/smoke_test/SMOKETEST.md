@@ -91,8 +91,8 @@ delivers the key and secret to you:
 - `configure-local-data-store.ps1` returns them in the `SmokeTestCredential` property of its result.
 - `bootstrap-local-dms.ps1`, `bootstrap-published-dms.ps1` and `start-published-dms.ps1` print a credential summary built by `Get-SmokeTestCredentialSummary`. What follows the key and secret depends on the run:
   - **Completed run, no tenant route, single route-unqualified data store:** a copyable `Invoke-NonDestructiveApiTests.ps1` command. If the DMS URL is not known yet, the command uses a `<dms-base-url>` placeholder and the summary says to replace it.
-  - **Tenant routes (`DMS_MULTI_TENANCY=true`) or school-year data stores:** the qualified DMS base and token URLs instead of a command. Smoke runs against those routes have not been validated.
-  - **Data store with other route contexts** (a key other than `schoolYear`, several contexts, or a school-year value that is not a plain URL path segment, such as one containing `/`): each context as `key=value`, with no URL.
+  - **Tenant routes (`DMS_MULTI_TENANCY=true`):** the tenant-qualified DMS base and token URLs instead of a command. Smoke runs against those routes have not been validated.
+  - **Data stores with route contexts, school year included:** each context as `key=value`, with no command or URL; the route they select depends on the target DMS's `ROUTE_QUALIFIER_SEGMENTS` configuration.
   - **Run that failed after the credential was created:** no run instructions.
   - **`start-published-dms.ps1` rerun against an already-running self-contained stack:** the existing signing key is kept, so DMS needs no restart. A rerun without `-AddSmokeTestCredentials` leaves credentials delivered earlier working. A rerun with the flag prints a working command when it creates the stack's first smoke-test application; if one already exists for the vendor, the Configuration Service rejects the duplicate and no summary is printed (see the `start-published-dms.ps1` note in [Smoke-test credentials](../docker-compose/README.md#smoke-test-credentials--addsmoketestcredentials)).
 

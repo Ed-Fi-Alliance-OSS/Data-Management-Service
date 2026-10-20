@@ -47,6 +47,11 @@ function ReadValuesFromEnvFile { param($EnvironmentFile)
     }
     return $values
 }
+function Get-ComposeResolvedEnvValue { param($EnvironmentValues, $Name, $DefaultValue = '')
+    if ($EnvironmentValues.ContainsKey($Name)) { return $EnvironmentValues[$Name] }
+    return $DefaultValue
+}
+function Resolve-DockerLocalDmsBaseUrl { param($EnvValues) return 'http://localhost:8080' }
 Export-ModuleMember -Function *
 '@ | Set-Content (Join-Path $script:sandbox 'env-utility.psm1')
 

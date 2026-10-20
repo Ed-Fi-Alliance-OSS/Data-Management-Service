@@ -772,14 +772,16 @@ function Invoke-BootstrapWrapper {
 
     # -AddSmokeTestCredentials delivery state. The CMS returns the application secret only once, so
     # the summary is formatted right after configure and printed by the finally block below on every
-    # return path, including a later phase failure. The formatter module is loaded here, before any
-    # phase runs, so a missing module fails while no credential exists yet.
+    # return path, including a later phase failure. The formatter and the env helpers that resolve the
+    # summary target are loaded here, before any phase runs, so a missing module fails while no
+    # credential exists yet.
     $smokeTestSummary = $null
     $smokeTestSummaryBaseUrl = ""
     $smokeTestDmsMultiTenancy = $false
     $wrapperFailed = $false
     if ($AddSmokeTestCredentials) {
         Import-Module (Join-Path $PSScriptRoot "../smoke_test/modules/SmokeTest.psm1") -Force
+        Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
     }
 
     Push-Location $PSScriptRoot
@@ -1001,25 +1003,22 @@ function Invoke-BootstrapWrapper {
         else {
             # Where the printed smoke-test command points: the IDE-hosted DMS when one was named, a
             # placeholder for the IDE shape that has none yet, otherwise the Docker-hosted DMS from the
-            # effective env. Resolved before infrastructure starts, while no credential exists yet. The
-            # isolated wrapper Pester fixtures without env-utility fall back to the placeholder.
+            # effective env. Resolved before infrastructure starts, while no credential exists yet.
             if ($AddSmokeTestCredentials) {
-                $smokeTestEnvValues = if (Get-Command ReadValuesFromEnvFile -ErrorAction SilentlyContinue) { ReadValuesFromEnvFile $effectiveEnvFile }
+                $smokeTestEnvValues = ReadValuesFromEnvFile $effectiveEnvFile
                 if ($dmsBaseUrlSupplied) {
                     $smokeTestSummaryBaseUrl = $DmsBaseUrl
                 }
-                elseif (-not $InfraOnly -and (Get-Command Resolve-DockerLocalDmsBaseUrl -ErrorAction SilentlyContinue)) {
+                elseif (-not $InfraOnly) {
                     $smokeTestSummaryBaseUrl = Resolve-DockerLocalDmsBaseUrl -EnvValues $smokeTestEnvValues
                 }
                 # DMS_MULTI_TENANCY, not CONFIGURATION_SERVICE_MULTI_TENANCY, decides whether DMS serves
                 # tenant-prefixed routes. Resolved as Compose resolves it for the DMS container.
-                if (Get-Command Get-ComposeResolvedEnvValue -ErrorAction SilentlyContinue) {
-                    $smokeTestDmsMultiTenancy = (Get-ComposeResolvedEnvValue -EnvironmentValues $smokeTestEnvValues -Name "DMS_MULTI_TENANCY") -eq "true"
-                    # A multi-tenant DMS serves only tenant-prefixed routes, so without a tenant the summary
-                    # has no route to print. Reject it before configure creates the credential.
-                    if ($smokeTestDmsMultiTenancy -and [string]::IsNullOrWhiteSpace((Get-ComposeResolvedEnvValue -EnvironmentValues $smokeTestEnvValues -Name "DMS_CONFIGURATION_SERVICE_TENANT"))) {
-                        throw "-AddSmokeTestCredentials requires DMS_CONFIGURATION_SERVICE_TENANT when DMS_MULTI_TENANCY=true, because DMS then serves only tenant-qualified routes; no smoke test credential was created. Set DMS_CONFIGURATION_SERVICE_TENANT, or set DMS_MULTI_TENANCY=false."
-                    }
+                $smokeTestDmsMultiTenancy = (Get-ComposeResolvedEnvValue -EnvironmentValues $smokeTestEnvValues -Name "DMS_MULTI_TENANCY") -eq "true"
+                # A multi-tenant DMS serves only tenant-prefixed routes, so without a tenant the summary
+                # has no route to print. Reject it before configure creates the credential.
+                if ($smokeTestDmsMultiTenancy -and [string]::IsNullOrWhiteSpace((Get-ComposeResolvedEnvValue -EnvironmentValues $smokeTestEnvValues -Name "DMS_CONFIGURATION_SERVICE_TENANT"))) {
+                    throw "-AddSmokeTestCredentials requires DMS_CONFIGURATION_SERVICE_TENANT when DMS_MULTI_TENANCY=true, because DMS then serves only tenant-qualified routes; no smoke test credential was created. Set DMS_CONFIGURATION_SERVICE_TENANT, or set DMS_MULTI_TENANCY=false."
                 }
 
                 # The summary formatter rejects a base URL with control characters. Reject it here, before
