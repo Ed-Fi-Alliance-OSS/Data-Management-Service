@@ -74,6 +74,20 @@ public class Given_A_Reverse_Proxy_Configuration
         );
     }
 
+    private static async Task<string> GetOpenApiTokenUrl(HttpClient client, string remoteIp)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, "/openapi/v1.json");
+        request.Headers.Add("X-Forwarded-Host", ForwardedHost);
+        request.Headers.Add("X-Forwarded-Proto", "https");
+        request.Headers.Add("X-Test-Remote-Ip", remoteIp);
+
+        var response = await client.SendAsync(request);
+        var document = JsonNode.Parse(await response.Content.ReadAsStringAsync());
+        return document?["components"]?["securitySchemes"]?["oauth2_client_credentials"]?["flows"]?[
+                "clientCredentials"
+            ]?["tokenUrl"]?.GetValue<string>() ?? string.Empty;
+    }
+
     [Test]
     public async Task It_ignores_forwarded_headers_when_reverse_proxy_is_disabled()
     {
@@ -131,6 +145,34 @@ public class Given_A_Reverse_Proxy_Configuration
 
         urls.OpenApiMetadata.Should().Be($"https://{ForwardedHost}/metadata/specifications");
         urls.Tenancy.Should().Be($"https://{ForwardedHost}/tenancy");
+    }
+
+    [Test]
+    public async Task It_advertises_the_forwarded_address_as_the_openapi_token_url_for_a_trusted_proxy()
+    {
+        Environment.SetEnvironmentVariable(UseForwardedHeadersEnv, "true");
+        Environment.SetEnvironmentVariable(KnownProxiesEnv, "10.0.0.5");
+
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var tokenUrl = await GetOpenApiTokenUrl(client, remoteIp: "10.0.0.5");
+
+        tokenUrl.Should().Be($"https://{ForwardedHost}/connect/token");
+    }
+
+    [Test]
+    public async Task It_ignores_forwarded_headers_from_an_untrusted_source_in_the_openapi_token_url()
+    {
+        Environment.SetEnvironmentVariable(UseForwardedHeadersEnv, "true");
+        Environment.SetEnvironmentVariable(KnownProxiesEnv, "10.0.0.5");
+
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var tokenUrl = await GetOpenApiTokenUrl(client, remoteIp: "203.0.113.99");
+
+        tokenUrl.Should().Be("http://localhost/connect/token");
     }
 
     [Test]

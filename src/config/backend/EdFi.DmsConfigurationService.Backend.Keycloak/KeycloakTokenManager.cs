@@ -5,6 +5,7 @@
 
 using System.Net;
 using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DmsConfigurationService.Backend.Keycloak;
@@ -41,6 +42,10 @@ public class KeycloakTokenManager(
                 HttpStatusCode.NotFound => new TokenResult.FailureIdentityProvider(
                     new IdentityProviderError.NotFound(responseString)
                 ),
+                HttpStatusCode.BadRequest when IsInvalidScope(responseString) =>
+                    new TokenResult.FailureIdentityProvider(
+                        new IdentityProviderError.InvalidScope(responseString)
+                    ),
                 _ => new TokenResult.FailureIdentityProvider(new IdentityProviderError(responseString)),
             };
         }
@@ -55,6 +60,26 @@ public class KeycloakTokenManager(
         {
             logger.LogError(ex, "Get access token error");
             return new TokenResult.FailureUnknown(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// True when the body is a JSON object whose top-level "error" is the string "invalid_scope".
+    /// Any other body shape is not an invalid scope answer.
+    /// </summary>
+    private static bool IsInvalidScope(string responseBody)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(responseBody);
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("error", out var error)
+                && error.ValueKind == JsonValueKind.String
+                && string.Equals(error.GetString(), "invalid_scope", StringComparison.Ordinal);
+        }
+        catch (JsonException)
+        {
+            return false;
         }
     }
 

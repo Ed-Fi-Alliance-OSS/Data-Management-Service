@@ -25,6 +25,8 @@ public partial class StepDefinitions(
     /// <summary>The Configuration Service's own client, whose credentials "valid credentials" uses.</summary>
     public const string SystemClientId = "DmsConfigurationService";
 
+    private const string SystemClientSecret = "ValidClientSecret1234567890!Abcd";
+
     private IAPIResponse _apiResponse = null!;
     private string _token = string.Empty;
 
@@ -66,11 +68,7 @@ public partial class StepDefinitions(
     [Given("valid credentials")]
     public async Task GivenValidCredentials()
     {
-        await GetClientAccessToken(
-            SystemClientId,
-            "ValidClientSecret1234567890!Abcd",
-            "edfi_admin_api/full_access"
-        );
+        await GetClientAccessToken(SystemClientId, SystemClientSecret, "edfi_admin_api/full_access");
     }
 
     [Given("client {string} credentials with {string} scope")]
@@ -808,10 +806,8 @@ public partial class StepDefinitions(
         _ids[$"{slot}Key"] = key;
     }
 
-    // The scope must be the client's own claim set name, which is the scope both identity
-    // providers register for an application's client. Omitting it is not portable: the token
-    // endpoint forwards an empty scope parameter, which Keycloak rejects as invalid_scope while
-    // the self-contained provider falls back to the client's default permissions.
+    // This step passes the client's own claim set name as the scope because the scope scenarios
+    // assert on it: the token's scope claim and role are what they verify.
     [When("a token is requested with the credentials captured as {string} and scope {string}")]
     public async Task WhenATokenIsRequestedWithTheCredentialsCapturedAs(string slot, string scope)
     {
@@ -889,12 +885,51 @@ public partial class StepDefinitions(
     [When("a token is requested using raw HTTP Basic auth with the captured credentials")]
     public async Task WhenATokenIsRequestedUsingRawHttpBasicAuthWithTheCapturedCredentials()
     {
-        var credentials = Convert.ToBase64String(
-            System.Text.Encoding.UTF8.GetBytes($"{_applicationKey}:{_applicationSecret}")
-        );
-        var content = new FormUrlEncodedContent(
+        await PostBasicTokenRequest(
+            _applicationKey,
+            _applicationSecret,
             new Dictionary<string, string> { { "grant_type", "client_credentials" } }
         );
+    }
+
+    // Exactly what Swagger UI sends for a client_credentials flow: the credentials only in the Basic
+    // header, with grant_type and scope in the form.
+    [When("a token is requested using HTTP Basic auth with the system credentials and scope {string}")]
+    public async Task WhenATokenIsRequestedUsingHttpBasicAuthWithTheSystemCredentialsAndScope(string scope)
+    {
+        await PostBasicTokenRequest(
+            SystemClientId,
+            SystemClientSecret,
+            new Dictionary<string, string> { { "grant_type", "client_credentials" }, { "scope", scope } }
+        );
+    }
+
+    [When("a token is requested without a scope using the system credentials")]
+    public async Task WhenATokenIsRequestedWithoutAScopeUsingTheSystemCredentials()
+    {
+        var content = new FormUrlEncodedContent(
+            new Dictionary<string, string>
+            {
+                { "client_id", SystemClientId },
+                { "client_secret", SystemClientSecret },
+                { "grant_type", "client_credentials" },
+            }
+        );
+        APIRequestContextOptions options = new()
+        {
+            Headers = new Dictionary<string, string>
+            {
+                { "Content-Type", "application/x-www-form-urlencoded" },
+            },
+            Data = await content.ReadAsStringAsync(),
+        };
+        _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync("/connect/token", options);
+    }
+
+    private async Task PostBasicTokenRequest(string key, string secret, Dictionary<string, string> form)
+    {
+        var credentials = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{key}:{secret}"));
+        var content = new FormUrlEncodedContent(form);
         APIRequestContextOptions? options = new()
         {
             Headers = new Dictionary<string, string>

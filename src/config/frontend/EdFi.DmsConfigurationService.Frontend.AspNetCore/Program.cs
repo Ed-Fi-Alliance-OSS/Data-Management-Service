@@ -31,6 +31,7 @@ builder.AddServices(loadedPlugins);
 builder.Services.AddHttpClient();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi(options =>
+{
     // An application's enabled flag is computed across its API clients; no application-level
     // write sets it.
     options.AddSchemaTransformer(
@@ -46,8 +47,10 @@ builder.Services.AddOpenApi(options =>
 
             return Task.CompletedTask;
         }
-    )
-);
+    );
+    options.AddDocumentTransformer(ConfigurationServiceOpenApiTransformers.TransformDocument);
+    options.AddOperationTransformer(ConfigurationServiceOpenApiTransformers.TransformOperation);
+});
 
 // Add CORS policy to allow Swagger UI to access the Configuration Service
 string swaggerUiOrigin =

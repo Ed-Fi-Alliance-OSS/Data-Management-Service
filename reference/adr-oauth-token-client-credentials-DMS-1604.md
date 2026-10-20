@@ -80,13 +80,14 @@ DMS doesn't issue tokens. It forwards each token request to the identity service
 `AppSettings:AuthenticationService`, either the Configuration Service's `/connect/token` or Keycloak.
 Both accept a Basic header:
 
-- The Configuration Service (self-contained mode) splits the decoded Basic value at the first colon
+- The Configuration Service (self-contained mode; both modes since DMS-1598) splits the decoded Basic value at the first colon
   and applies `Uri.UnescapeDataString` to each half.
 - Keycloak 26.1 form-decodes each half with `URLDecoder`
   ([`BasicAuthHelper.RFC6749.parseHeader`](https://github.com/keycloak/keycloak/blob/26.1.0/core/src/main/java/org/keycloak/util/BasicAuthHelper.java)).
 
 The Configuration Service reads a Basic header only in self-contained mode; it reads form
-credentials in every mode. In Keycloak mode, DMS calls Keycloak directly rather than the
+credentials in every mode. (Since DMS-1598, in 8.1, it reads a Basic header in Keycloak mode as
+well.) In Keycloak mode, DMS calls Keycloak directly rather than the
 Configuration Service, and Keycloak accepts Basic. So Basic works with every upstream DMS forwards to.
 
 ## Decision
