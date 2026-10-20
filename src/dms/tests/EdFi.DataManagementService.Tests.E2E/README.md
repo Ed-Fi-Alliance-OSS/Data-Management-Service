@@ -72,6 +72,35 @@ Any run can be narrowed with `-TestFilter 'Category=@<tag>'`. Common tags:
 | `Category!=@PostgresqlOnly`         | Excludes the PostgreSQL-only variant of an engine-paired scenario. Every SQL Server run adds it. |
 | `Category=@StandardVersion-6_1`     | The DS 6.1 version-coupled scenarios (XSD metadata, Discovery, and a datastore round-trip smoke that proves a public data-plane request reaches the DS 6.1 datastore); run only against a DS 6.1 stack (`-DataStandardVersion 6.1`). |
 | `Category=@DocumentCacheHostedHappyPath` | The hosted DocumentCache fixture; run only with `-EnvironmentOverlayFile './.env.document-cache.e2e'`. |
+| `Category=@TokenContractProxy` | DMS-1606 provider-response fixtures; run only through the dedicated proxy launcher below. |
+| `Category=@TokenContractQualified` | DMS-1606 root and qualified token-route controls; run only through the dedicated proxy launcher below. |
+
+Ordinary unfiltered `E2ETest` runs exclude `@TokenContractProxy` and
+`@TokenContractQualified`. These scenarios intentionally fail with launcher guidance if selected
+without their test-only proxy, and they are excluded from the ordinary CI shards.
+
+### DMS-1606 OAuth token error contract
+
+The provider-failure fixtures use a closed test-only proxy. It forwards ordinary client IDs to the
+selected real identity provider and returns fixed responses only for the reserved `dms1606-*`
+fixture IDs. The launcher builds and starts that proxy on the existing `dms` Docker network, derives
+an endpoint-only overlay, runs the token contract scenarios, retains a separate TRX file for the
+root and qualified route passes, then removes only its Compose project resources and restarts DMS
+with the original environment. It never removes the shared `dms` network.
+
+```pwsh
+pwsh ./eng/docker-compose/tests/oauth-token-contract/Invoke-TokenContractE2E.ps1 `
+  -IdentityProvider self-contained `
+  -DatabaseEngine postgresql `
+  -EnvironmentFile './.env.e2e' `
+  -Configuration Release
+```
+
+Use `-IdentityProvider keycloak` to exercise the Keycloak endpoint, or `-DatabaseEngine mssql` for
+the SQL Server lane. The launcher accepts `-SkipDockerBuild` and `-UsePrebuiltOutput` when the local
+DMS and configuration service artifacts/images are already prepared. Docker, Compose, PowerShell 7,
+and the .NET 10 SDK are required. Results are retained as
+`TestResults/token-contract-root.trx` and `TestResults/token-contract-qualified.trx`.
 
 ```pwsh
 # Data Standard 6.1 focused run (add -DataStandardVersion 6.1). The DS 6.1 PostgreSQL lane

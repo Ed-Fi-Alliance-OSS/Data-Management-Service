@@ -323,7 +323,13 @@ function SetAuthenticationServiceURL {
     )
     $appSettingsPath = Join-Path -Path $E2EDirectory -ChildPath "appsettings.json"
     $json = Get-Content $appSettingsPath -Raw | ConvertFrom-Json
-    if ($IdentityProvider -eq  "self-contained") {
+    if ($env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE -eq "1") {
+        # The host-run E2E process cannot resolve DMS's Docker-network alias. Route its normal
+        # setup/authentication token requests through the proxy's loopback-published port; DMS
+        # itself uses the container-side dms-token-proxy alias from the endpoint overlay.
+        $json.AuthenticationService = "http://127.0.0.1:18987/token"
+    }
+    elseif ($IdentityProvider -eq  "self-contained") {
         $json.AuthenticationService ="http://ed-fi-api-config:8081/connect/token"
     }
     else {
@@ -967,12 +973,19 @@ function RunE2E {
     # Run only the standard E2E tests, excluding instance management tests
     # Instance management tests require special setup (route qualifiers, additional databases)
     # and should be run separately using the instance management test scripts
+    # DMS-1606 provider fixtures need a dedicated proxy + endpoint overlay. Keep them out of ordinary
+    # unfiltered local runs; the token-contract launcher selects them explicitly after starting it.
+    $effectiveTestFilter = $TestFilter
+    if ([string]::IsNullOrWhiteSpace($effectiveTestFilter)) {
+        $effectiveTestFilter = '(Category!=@TokenContractProxy)&(Category!=@TokenContractQualified)'
+    }
+
     Invoke-WithE2EIdentityEnvironment -EnvironmentFile $E2ETestSettings.EnvironmentFile -IdentityProvider $IdentityProvider -Action {
         Invoke-WithE2ETestProcessContext -E2ETestSettings $E2ETestSettings -Action {
             Invoke-Execute {
                 RunTests `
                     -Filter "EdFi.DataManagementService.Tests.E2E" `
-                    -TestFilter $TestFilter `
+                    -TestFilter $effectiveTestFilter `
                     -ResultNameSuffix $E2ETestSettings.TestResultSuffix
             }
         }

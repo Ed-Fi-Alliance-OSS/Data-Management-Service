@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+services:
+  token-proxy:
+    image: dms-token-contract-proxy:local
+    container_name: dms-token-contract-proxy
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      TOKEN_PROXY_UPSTREAM_URI: ${TOKEN_PROXY_UPSTREAM_URI:?A selected real upstream is required}
+      ASPNETCORE_ENVIRONMENT: Production
+      Logging__LogLevel__Default: None
+    ports:
+      - "127.0.0.1:18987:18987"
+    networks:
+      dms:
+        aliases:
+          - dms-token-proxy
+    restart: "no"
+
+networks:
+  dms:
+    external: true
