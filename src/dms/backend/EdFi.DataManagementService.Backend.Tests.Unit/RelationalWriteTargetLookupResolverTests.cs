@@ -522,3 +522,109 @@ public class Given_RelationalWrite_Target_Lookup_Surfaces
         public override void ResetDbType() => DbType = DbType.Object;
     }
 }
+
+[TestFixture(SqlDialect.Pgsql)]
+[TestFixture(SqlDialect.Mssql)]
+public class Given_The_Descriptor_Target_Probe_Command(SqlDialect dialect)
+{
+    private const string DescriptorUri = "URI://ed-fi.org/ProgramTypeDescriptor#Career";
+    private const int DescriptorId = 7;
+    private const long OwningDocumentId = 900_001L;
+    private const long ContentVersion = 41L;
+
+    private readonly DocumentUuid _documentUuid = new(Guid.NewGuid());
+    private short _resourceKeyId;
+    private RelationalCommand _command = null!;
+    private RelationalWriteTargetLookupResult _result = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        var mappingSet = NaturalKeyLookupTestMappingSets.Ds52(dialect);
+        _resourceKeyId = mappingSet.ResourceKeyIdByResource[
+            NaturalKeyLookupTestMappingSets.ProgramTypeDescriptor
+        ];
+        var commandExecutor = new InMemoryRelationalCommandExecutor(
+            [
+                new InMemoryRelationalCommandExecution([
+                    InMemoryRelationalResultSet.Create(
+                        RelationalAccessTestData.CreateRow(
+                            ("DescriptorId", DescriptorId),
+                            ("DocumentId", OwningDocumentId),
+                            ("DocumentUuid", _documentUuid.Value),
+                            ("ContentVersion", ContentVersion)
+                        )
+                    ),
+                ]),
+            ],
+            dialect
+        );
+
+        _result = await RelationalWriteTargetLookupSupport.ResolveDescriptorForPostAsync(
+            commandExecutor,
+            mappingSet,
+            NaturalKeyLookupTestMappingSets.ProgramTypeDescriptor,
+            DescriptorUri,
+            new DocumentUuid(Guid.NewGuid())
+        );
+        _command = commandExecutor.Commands.Single();
+    }
+
+    [Test]
+    public void It_probes_the_descriptor_index_fold_and_the_descriptor_type_literal()
+    {
+        // PostgreSQL folds both sides exactly as the descriptor URI index expression does, and SQL Server
+        // collates the parameter inside LOWER before comparing the indexed lowered column.
+        var expected =
+            dialect == SqlDialect.Pgsql
+                ? $"""
+                    SELECT
+                        descriptor."DescriptorId" AS "DescriptorId",
+                        descriptor."DocumentId" AS "DocumentId",
+                        document."DocumentUuid" AS "DocumentUuid",
+                        document."ContentVersion" AS "ContentVersion"
+                    FROM "dms"."Descriptor" descriptor
+                    INNER JOIN "dms"."Document" document
+                        ON document."DocumentId" = descriptor."DocumentId"
+                    WHERE lower((descriptor."Namespace" || '#' || descriptor."CodeValue") COLLATE "pg_c_utf8") = lower(@descriptorUri COLLATE "pg_c_utf8")
+                        AND descriptor."ResourceKeyId" = CAST({_resourceKeyId} AS smallint)
+                    """
+                : $"""
+                    SELECT
+                        descriptor.[DescriptorId] AS [DescriptorId],
+                        descriptor.[DocumentId] AS [DocumentId],
+                        document.[DocumentUuid] AS [DocumentUuid],
+                        document.[ContentVersion] AS [ContentVersion]
+                    FROM [dms].[Descriptor] descriptor
+                    INNER JOIN [dms].[Document] document
+                        ON document.[DocumentId] = descriptor.[DocumentId]
+                    WHERE descriptor.[UriLowered] = LOWER(@descriptorUri COLLATE SQL_Latin1_General_CP1_CI_AS)
+                        AND descriptor.[ResourceKeyId] = CAST({_resourceKeyId} AS smallint)
+                    """;
+
+        _command.CommandText.Should().Be(expected);
+    }
+
+    [Test]
+    public void It_binds_only_the_unmodified_request_uri()
+    {
+        _command
+            .Parameters.Select(parameter => (parameter.Name, parameter.Value))
+            .Should()
+            .Equal(("@descriptorUri", (object?)DescriptorUri));
+    }
+
+    [Test]
+    public void It_returns_the_owning_document_rather_than_the_descriptor_key()
+    {
+        _result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteTargetLookupResult.ExistingDocument(
+                    OwningDocumentId,
+                    _documentUuid,
+                    ContentVersion
+                )
+            );
+    }
+}

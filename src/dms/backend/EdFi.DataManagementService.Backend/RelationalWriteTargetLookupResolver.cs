@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Model;
@@ -145,6 +146,11 @@ internal static class RelationalWriteTargetLookupSupport
     private const string ReferentialIdParameterName = "@referentialId";
     private const string ResourceKeyIdParameterName = "@resourceKeyId";
     private const string DocumentUuidParameterName = "@documentUuid";
+    private const string DescriptorUriParameterName = "@descriptorUri";
+
+    private static readonly string MssqlIdentityCollation =
+        IdentityEqualityContract.SqlServer.IdentityTextCollation
+        ?? throw new InvalidOperationException("The SQL Server identity text collation is not defined.");
 
     /// <summary>
     /// Builds the POST target predicate over the aliased <c>dms.Document</c> row <c>d</c> from the
@@ -240,6 +246,43 @@ internal static class RelationalWriteTargetLookupSupport
             mappingSet,
             resource,
             referentialId,
+            cancellationToken
+        );
+
+        return existingDocument is null
+            ? new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid)
+            : new RelationalWriteTargetLookupResult.ExistingDocument(
+                existingDocument.DocumentId,
+                existingDocument.DocumentUuid,
+                existingDocument.ObservedContentVersion
+            );
+    }
+
+    /// <summary>
+    /// Resolves a descriptor POST target by descriptor identity: the lowered whole URI and the descriptor's
+    /// own resource key, folded exactly as <c>UX_Descriptor_UriLowered_ResourceKeyId</c> folds them, so the
+    /// engine decides which casings (and, on SQL Server, which collation aliases) name the existing
+    /// descriptor. The probe projects both <c>DescriptorId</c> and the owning <c>DocumentId</c>; the result
+    /// carries only <c>DocumentId</c>, because every lock, update, cache and restamp is document-keyed. More
+    /// than one matching row fails the lookup instead of picking one.
+    /// </summary>
+    public static async Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPostAsync(
+        IRelationalCommandExecutor commandExecutor,
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        string descriptorUri,
+        DocumentUuid candidateDocumentUuid,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(commandExecutor);
+        ArgumentNullException.ThrowIfNull(mappingSet);
+        ArgumentNullException.ThrowIfNull(descriptorUri);
+
+        var existingDocument = await ExecuteLookupAsync(
+            commandExecutor,
+            BuildDescriptorTargetProbeCommand(mappingSet, resource, descriptorUri),
+            $"descriptor resource '{RelationalWriteSupport.FormatResource(resource)}' and the request's descriptor URI",
             cancellationToken
         );
 
@@ -432,6 +475,63 @@ internal static class RelationalWriteTargetLookupSupport
                 new RelationalParameter(ReferentialIdParameterName, referentialId.Value),
                 new RelationalParameter(ResourceKeyIdParameterName, resourceKeyId),
             ]
+        );
+    }
+
+    /// <summary>
+    /// Builds the descriptor identity probe over <c>dms.Descriptor</c> joined to its owning
+    /// <c>dms.Document</c>. PostgreSQL folds both sides under <see cref="DescriptorProbeTarget.PostgresqlUriFoldCollation"/>,
+    /// matching the expression index; SQL Server compares the indexed
+    /// <see cref="DescriptorProbeTarget.MssqlUriLoweredColumn"/> to the parameter collated under the identity
+    /// collation inside <c>LOWER</c>. The resource key is a compile-time literal, as in the capture predicate.
+    /// </summary>
+    private static RelationalCommand BuildDescriptorTargetProbeCommand(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        string descriptorUri
+    )
+    {
+        var dialect = mappingSet.Key.Dialect;
+        var probe = mappingSet.DescriptorProbeTarget;
+        var resourceKeyId = RelationalWriteSupport
+            .GetResourceKeyIdOrThrow(mappingSet, resource)
+            .ToString(CultureInfo.InvariantCulture);
+
+        string Quote(string identifier) =>
+            dialect switch
+            {
+                SqlDialect.Pgsql => "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"",
+                SqlDialect.Mssql => "[" + identifier.Replace("]", "]]", StringComparison.Ordinal) + "]",
+                _ => throw new NotSupportedException(
+                    $"Relational descriptor POST target probe does not support SQL dialect '{dialect}'."
+                ),
+            };
+        string Column(string alias, DbColumnName column) => $"{alias}.{Quote(column.Value)}";
+
+        var uriPredicate = dialect switch
+        {
+            SqlDialect.Pgsql =>
+                $"lower(({Column("descriptor", probe.NamespaceColumn)} || '#' || {Column("descriptor", probe.CodeValueColumn)}) "
+                    + $"COLLATE {Quote(DescriptorProbeTarget.PostgresqlUriFoldCollation)}) "
+                    + $"= lower({DescriptorUriParameterName} COLLATE {Quote(DescriptorProbeTarget.PostgresqlUriFoldCollation)})",
+            _ => $"descriptor.{Quote(DescriptorProbeTarget.MssqlUriLoweredColumn)} "
+                + $"= LOWER({DescriptorUriParameterName} COLLATE {MssqlIdentityCollation})",
+        };
+
+        return new RelationalCommand(
+            $"""
+            SELECT
+                {Column("descriptor", probe.DescriptorIdColumn)} AS {Quote("DescriptorId")},
+                {Column("descriptor", probe.DocumentIdColumn)} AS {Quote("DocumentId")},
+                document.{Quote("DocumentUuid")} AS {Quote("DocumentUuid")},
+                document.{Quote("ContentVersion")} AS {Quote("ContentVersion")}
+            FROM {Quote(probe.DescriptorTable.Schema.Value)}.{Quote(probe.DescriptorTable.Name)} descriptor
+            INNER JOIN {Quote("dms")}.{Quote("Document")} document
+                ON document.{Quote("DocumentId")} = {Column("descriptor", probe.DocumentIdColumn)}
+            WHERE {uriPredicate}
+                AND {Column("descriptor", probe.ResourceKeyIdColumn)} = CAST({resourceKeyId} AS smallint)
+            """,
+            [new RelationalParameter(DescriptorUriParameterName, descriptorUri)]
         );
     }
 

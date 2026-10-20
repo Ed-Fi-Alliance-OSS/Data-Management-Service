@@ -617,6 +617,81 @@ public abstract class NaturalKeyLookupDatabaseTests
     }
 
     [Test]
+    public async Task It_probes_a_descriptor_post_target_to_its_owning_document_with_the_stored_content_version()
+    {
+        // The seeded DescriptorId differs from the owning DocumentId, so returning DescriptorId would fail here.
+        (await ProbeDescriptorTargetAsync(_programTypeDescriptor, CareerUri))
+            .Should()
+            .BeEquivalentTo(await CareerDescriptorTargetAsync());
+    }
+
+    [Test]
+    public async Task It_probes_a_case_variant_descriptor_uri_to_the_same_document_on_both_engines()
+    {
+        (await ProbeDescriptorTargetAsync(_programTypeDescriptor, CareerUri.ToUpperInvariant()))
+            .Should()
+            .BeEquivalentTo(await CareerDescriptorTargetAsync());
+    }
+
+    [Test]
+    public async Task It_creates_new_when_the_descriptor_uri_is_stored_only_under_another_descriptor_type()
+    {
+        var candidate = new DocumentUuid(Guid.NewGuid());
+
+        (await ProbeDescriptorTargetAsync(_academicSubjectDescriptor, DecoyUri, candidate))
+            .Should()
+            .BeEquivalentTo(new RelationalWriteTargetLookupResult.CreateNew(candidate));
+    }
+
+    [Test]
+    public async Task It_creates_new_with_the_candidate_uuid_when_no_descriptor_matches()
+    {
+        var candidate = new DocumentUuid(Guid.NewGuid());
+
+        (
+            await ProbeDescriptorTargetAsync(
+                _programTypeDescriptor,
+                $"{ProgramTypeNamespace}#Missing",
+                candidate
+            )
+        )
+            .Should()
+            .BeEquivalentTo(new RelationalWriteTargetLookupResult.CreateNew(candidate));
+    }
+
+    [Test]
+    public async Task It_rejects_a_descriptor_post_target_that_matches_more_than_one_row()
+    {
+        var descriptor = Table("dms", "Descriptor");
+        await ExecuteAsync(
+            _connection,
+            _transaction,
+            IsPgsql
+                ? """
+                DROP INDEX "dms"."UX_Descriptor_UriLowered_ResourceKeyId";
+                DROP INDEX "dms"."UX_Descriptor_ResourceKeyId_Uri";
+                """
+                : $"""
+                DROP INDEX [UX_Descriptor_UriLowered_ResourceKeyId] ON {descriptor};
+                DROP INDEX [UX_Descriptor_ResourceKeyId_Uri] ON {descriptor};
+                """
+        );
+        await InsertDescriptorAsync(
+            _connection,
+            DuplicateDescriptorDocumentId,
+            DuplicateDescriptorId,
+            _programTypeDescriptor,
+            ProgramTypeNamespace.ToUpperInvariant(),
+            CareerCodeValue,
+            _transaction
+        );
+
+        var act = () => ProbeDescriptorTargetAsync(_programTypeDescriptor, CareerUri);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*multiple rows*");
+    }
+
+    [Test]
     public async Task It_captures_the_stored_document_for_a_scalar_own_natural_key()
     {
         (
@@ -896,6 +971,40 @@ public abstract class NaturalKeyLookupDatabaseTests
                 return documentIds;
             }
         );
+    }
+
+    private Task<RelationalWriteTargetLookupResult> ProbeDescriptorTargetAsync(
+        QualifiedResourceName descriptorResource,
+        string descriptorUri,
+        DocumentUuid? candidate = null
+    )
+    {
+        IRelationalWriteSession session = new RelationalWriteSession(_connection, _transaction);
+
+        return RelationalWriteTargetLookupSupport.ResolveDescriptorForPostAsync(
+            session.CreateCommandExecutor(),
+            _mappingSet,
+            descriptorResource,
+            descriptorUri,
+            candidate ?? new DocumentUuid(Guid.NewGuid())
+        );
+    }
+
+    /// <summary>
+    /// The career descriptor's owning document as the probe must report it, read by its seeded DocumentId.
+    /// </summary>
+    private async Task<RelationalWriteTargetLookupResult.ExistingDocument> CareerDescriptorTargetAsync()
+    {
+        var row = (
+            await RowsAsync(
+                _connection,
+                _transaction,
+                $"SELECT {Q("DocumentUuid")}, {Q("ContentVersion")} FROM {Table("dms", "Document")} WHERE {Q("DocumentId")} = @documentId;",
+                ("documentId", CareerDescriptorDocumentId)
+            )
+        ).Single();
+
+        return new(CareerDescriptorDocumentId, new DocumentUuid((Guid)row[0]), Convert.ToInt64(row[1]));
     }
 
     private static DocumentIdentity CaptureProgramIdentity(string programName, string programTypeUri) =>
