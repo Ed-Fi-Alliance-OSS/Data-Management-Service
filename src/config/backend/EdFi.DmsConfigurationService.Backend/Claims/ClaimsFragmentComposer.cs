@@ -401,30 +401,22 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
                             ? new TransformationDefaultAuthorization
                             {
                                 Actions = resourceClaim
-                                    .DefaultAuthorizationStrategiesForCRUD.Where(x => x is not null)
-                                    .Select(x =>
+                                    .DefaultAuthorizationStrategiesForCRUD.OfType<ClaimSetResourceClaimActionAuthStrategies>()
+                                    .Select(x => new TransformationAction
                                     {
-                                        List<TransformationAuthorizationStrategy>? authStrategies = null;
-                                        if (
-                                            x!.AuthorizationStrategies is not null
+                                        Name = x.ActionName,
+                                        AuthorizationStrategies =
+                                            x.AuthorizationStrategies is not null
                                             && x.AuthorizationStrategies.Any()
-                                        )
-                                        {
-                                            authStrategies = x
-                                                .AuthorizationStrategies.Select(
-                                                    auth => new TransformationAuthorizationStrategy
-                                                    {
-                                                        Name = auth.Name,
-                                                    }
-                                                )
-                                                .ToList();
-                                        }
-
-                                        return new TransformationAction
-                                        {
-                                            Name = x.ActionName,
-                                            AuthorizationStrategies = authStrategies,
-                                        };
+                                                ? x
+                                                    .AuthorizationStrategies.Select(
+                                                        auth => new TransformationAuthorizationStrategy
+                                                        {
+                                                            Name = auth.Name,
+                                                        }
+                                                    )
+                                                    .ToList()
+                                                : null,
                                     })
                                     .ToList(),
                             }
@@ -472,30 +464,25 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
             if (actionsAndAuthStrategies is not null)
             {
                 foreach (
-                    ClaimSetResourceClaimActionAuthStrategies? actionAuthStrategy in actionsAndAuthStrategies.Where(
-                        x => x is not null
-                    )
+                    ClaimSetResourceClaimActionAuthStrategies actionAuthStrategy in actionsAndAuthStrategies.OfType<ClaimSetResourceClaimActionAuthStrategies>()
                 )
                 {
-                    List<TransformationAuthorizationStrategy>? authOverrides = null;
-                    if (
-                        actionAuthStrategy!.AuthorizationStrategies is not null
-                        && actionAuthStrategy.AuthorizationStrategies.Any()
-                    )
-                    {
-                        authOverrides = actionAuthStrategy
-                            .AuthorizationStrategies.Select(auth => new TransformationAuthorizationStrategy
-                            {
-                                Name = auth.Name,
-                            })
-                            .ToList();
-                    }
-
                     actions.Add(
                         new TransformationClaimSetAction
                         {
                             Name = actionAuthStrategy.ActionName!,
-                            AuthorizationStrategyOverrides = authOverrides,
+                            AuthorizationStrategyOverrides =
+                                actionAuthStrategy.AuthorizationStrategies is not null
+                                && actionAuthStrategy.AuthorizationStrategies.Any()
+                                    ? actionAuthStrategy
+                                        .AuthorizationStrategies.Select(
+                                            auth => new TransformationAuthorizationStrategy
+                                            {
+                                                Name = auth.Name,
+                                            }
+                                        )
+                                        .ToList()
+                                    : null,
                         }
                     );
                 }

@@ -1205,4 +1205,120 @@ public class ClaimsFragmentComposerTests
             warnings[0].Should().Contain(UnmatchedEntry);
         }
     }
+
+    [TestFixture]
+    public class Given_actions_with_and_without_authorization_strategies : ClaimsFragmentComposerTests
+    {
+        private const string ClaimSetName = "Strategy-Listing";
+        private const string NewDomainClaim = ClaimUriPrefix + "domains/strategyListing";
+        private ClaimsLoadResult _result = null!;
+
+        [SetUp]
+        public void Arrange_and_act()
+        {
+            const string Actions = """
+                [
+                  { "actionName": "Read" },
+                  { "actionName": "Update", "authorizationStrategies": [] },
+                  {
+                    "actionName": "Create",
+                    "authorizationStrategies": [{ "name": "NoFurtherAuthorizationRequired" }]
+                  }
+                ]
+                """;
+            string fragment = $$"""
+                {
+                  "name": "{{ClaimSetName}}",
+                  "resourceClaims": [
+                    {
+                      "isParent": true,
+                      "name": "{{NewDomainClaim}}",
+                      "_defaultAuthorizationStrategiesForCrud": {{Actions}}
+                    },
+                    {
+                      "name": "ed-fi/academicWeeks",
+                      "authorizationStrategyOverridesForCRUD": {{Actions}}
+                    }
+                  ]
+                }
+                """;
+            _result = ComposeWithFragments(BaseDocument(), ("strategy-listing-claimset.json", fragment));
+        }
+
+        private static JsonObject ActionNamed(JsonNode? actions, string actionName) =>
+            actions
+                .Should()
+                .BeOfType<JsonArray>()
+                .Which.OfType<JsonObject>()
+                .Single(action => action["name"]?.GetValue<string>() == actionName);
+
+        private static string[] StrategyNames(JsonObject action, string propertyName) =>
+            [.. action[propertyName]!.AsArray().Select(strategy => strategy!["name"]!.GetValue<string>())];
+
+        private JsonObject GrantAction(string actionName) =>
+            ActionNamed(
+                GrantOn(_result, AcademicWeekClaim, ClaimSetName).Should().BeOfType<JsonObject>().Which[
+                    "actions"
+                ],
+                actionName
+            );
+
+        private JsonObject DefaultAction(string actionName) =>
+            ActionNamed(
+                _result
+                    .Nodes!.ClaimsHierarchyNode.AsArray()
+                    .OfType<JsonObject>()
+                    .Single(claim => claim["name"]?.GetValue<string>() == NewDomainClaim)[
+                        "defaultAuthorization"
+                    ]
+                    ?["actions"],
+                actionName
+            );
+
+        [Test]
+        public void It_returns_no_failures()
+        {
+            _result.Failures.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_omits_the_overrides_of_a_grant_action_that_lists_no_strategies()
+        {
+            GrantAction("Read").ContainsKey("authorizationStrategyOverrides").Should().BeFalse();
+        }
+
+        [Test]
+        public void It_omits_the_overrides_of_a_grant_action_that_lists_an_empty_strategy_array()
+        {
+            GrantAction("Update").ContainsKey("authorizationStrategyOverrides").Should().BeFalse();
+        }
+
+        [Test]
+        public void It_keeps_the_overrides_of_a_grant_action_that_lists_strategies()
+        {
+            StrategyNames(GrantAction("Create"), "authorizationStrategyOverrides")
+                .Should()
+                .Equal("NoFurtherAuthorizationRequired");
+        }
+
+        [Test]
+        public void It_omits_the_strategies_of_a_default_action_that_lists_none()
+        {
+            DefaultAction("Read").ContainsKey("authorizationStrategies").Should().BeFalse();
+        }
+
+        [Test]
+        public void It_omits_the_strategies_of_a_default_action_that_lists_an_empty_array()
+        {
+            DefaultAction("Update").ContainsKey("authorizationStrategies").Should().BeFalse();
+        }
+
+        [Test]
+        public void It_keeps_the_strategies_of_a_default_action_that_lists_some()
+        {
+            StrategyNames(DefaultAction("Create"), "authorizationStrategies")
+                .Should()
+                .Equal("NoFurtherAuthorizationRequired");
+        }
+    }
 }
