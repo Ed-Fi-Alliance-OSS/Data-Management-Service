@@ -52,9 +52,10 @@ window.EdFiReviewSwagger = (function () {
         return match ? `/${match[1]}-config` : null;
     }
 
-    // The Configuration Service spec declares no security scheme, so Swagger UI would offer no
-    // Authorize button and every call would get 401. Add its real flow: client credentials (in the
-    // request body) posted to <prefix>/connect/token with one of the two Management API scopes.
+    // Configuration Service images up to 8.1.0-beta.0.1 declare no security scheme, so Swagger UI would
+    // offer no Authorize button and every call would get 401. Add their real flow: client credentials
+    // (in the request body) posted to <prefix>/connect/token with one of the two Management API scopes.
+    // Newer images declare the scheme themselves, and a declared scheme is kept as it is.
     function withConfigurationServiceSecurity(spec, specUrl, origin) {
         const prefix = configurationServicePrefix(specUrl);
         if (!prefix || !spec || typeof spec !== "object") {
@@ -92,8 +93,9 @@ window.EdFiReviewSwagger = (function () {
     }
 
     // Swagger UI's client-credentials flow sends the client id and secret only as an HTTP Basic
-    // header, but the Configuration Service token endpoint reads them from the form body (400
-    // without them). Move them into the form for that endpoint; the DMS token endpoint takes Basic.
+    // header, but Configuration Service images up to 8.1.0-beta.0.1 read them only from the form body
+    // under Keycloak (400 without them). Move them into the form for that endpoint, which newer images
+    // also accept; the DMS token endpoint takes Basic.
     function withClientCredentialsInBody(request) {
         const headers = request.headers || {};
         const headerName = Object.keys(headers).find(name => name.toLowerCase() === "authorization");
@@ -116,24 +118,7 @@ window.EdFiReviewSwagger = (function () {
         return request;
     }
 
-    // The DMS specs give pageSize a default, and Swagger UI sends every default, but the DMS
-    // rejects pageSize without a pageToken (400). Drop the default so "Try it out" works as
-    // offered; pageSize stays available for cursor paging.
-    function withoutPageSizeDefault(spec, specUrl) {
-        if (!/^\/(st|mt)-dms\//.test(toPath(specUrl || "")) || !spec || typeof spec !== "object") {
-            return spec;
-        }
-        const operationParameters = Object.values(spec.paths || {}).flatMap(item =>
-            Object.values(item || {}).flatMap(operation => Array.isArray(operation) ? operation : (operation && operation.parameters) || []));
-        for (const parameter of [...Object.values((spec.components || {}).parameters || {}), ...operationParameters]) {
-            if (parameter && parameter.name === "pageSize" && parameter.in === "query" && parameter.schema) {
-                delete parameter.schema.default;
-            }
-        }
-        return spec;
-    }
-
-    return { buildDefinitions, withConfigurationServiceSecurity, tenantForRequest, withClientCredentialsInBody, withoutPageSizeDefault };
+    return { buildDefinitions, withConfigurationServiceSecurity, tenantForRequest, withClientCredentialsInBody };
 })();
 
 window.onload = function () {
@@ -152,7 +137,7 @@ window.onload = function () {
         }
     }
 
-    // Applies withConfigurationServiceSecurity and withoutPageSizeDefault to every spec as it loads.
+    // Applies withConfigurationServiceSecurity to every spec as it loads.
     function specPatchPlugin() {
         return {
             statePlugins: {
@@ -168,8 +153,7 @@ window.onload = function () {
                                 return originalAction(spec, ...rest);
                             }
                             const url = system.specSelectors.url();
-                            const patched = helpers.withoutPageSizeDefault(
-                                helpers.withConfigurationServiceSecurity(parsed, url, window.location.origin), url);
+                            const patched = helpers.withConfigurationServiceSecurity(parsed, url, window.location.origin);
                             return originalAction(isString ? JSON.stringify(patched) : patched, ...rest);
                         }
                     }

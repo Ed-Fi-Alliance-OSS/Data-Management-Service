@@ -73,7 +73,7 @@ public abstract class ClaimsManagementModuleTests
         string content = await response.Content.ReadAsStringAsync();
         JsonNode body = JsonNode.Parse(content)!;
         body["detail"]!.GetValue<string>().Should().Be(expectedDetail);
-        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:not-found");
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:not-found");
         body["title"]!.GetValue<string>().Should().Be("Not Found");
         body["status"]!.GetValue<int>().Should().Be(404);
         body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
@@ -118,7 +118,7 @@ public abstract class ClaimsManagementModuleTests
 
         JsonNode body = JsonNode.Parse(content)!;
         body["detail"]!.GetValue<string>().Should().BeEmpty();
-        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:internal-server-error");
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:internal-server-error");
         body["title"]!.GetValue<string>().Should().Be("Internal Server Error");
         body["status"]!.GetValue<int>().Should().Be(500);
         body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
@@ -209,7 +209,7 @@ public abstract class ClaimsManagementModuleTests
         }
 
         JsonNode body = JsonNode.Parse(content)!;
-        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request");
         body["title"]!.GetValue<string>().Should().Be("Bad Request");
         body["detail"]!.GetValue<string>().Should().Be("The request could not be processed.");
         body["status"]!.GetValue<int>().Should().Be(400);
@@ -233,7 +233,7 @@ public abstract class ClaimsManagementModuleTests
 
         string content = await response.Content.ReadAsStringAsync();
         JsonNode body = JsonNode.Parse(content)!;
-        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request:data");
         body["title"]!.GetValue<string>().Should().Be("Data Validation Failed");
         body["detail"]!
             .GetValue<string>()
@@ -1214,7 +1214,7 @@ public abstract class ClaimsManagementModuleTests
             response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
 
             JsonNode body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request");
             body["title"]!.GetValue<string>().Should().Be("Bad Request");
             body["validationErrors"]!.AsObject().Count.Should().Be(0);
             body["errors"]!
@@ -1247,7 +1247,7 @@ public abstract class ClaimsManagementModuleTests
             response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
 
             JsonNode body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request");
             body["errors"]!
                 .AsArray()
                 .Select(node => node!.GetValue<string>())

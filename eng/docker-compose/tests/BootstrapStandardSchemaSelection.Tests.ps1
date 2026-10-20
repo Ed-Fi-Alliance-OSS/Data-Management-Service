@@ -88,6 +88,46 @@ exit $ExitCode
             return $path
         }
 
+        function script:New-SchemaToolPublishFixture {
+            param([Parameter(Mandatory)][string]$RepoRoot)
+
+            $projectPath = Join-Path $RepoRoot 'src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj'
+            $outputDirectory = Join-Path $RepoRoot 'eng/docker-compose/.bootstrap/tools/api-schema-tools'
+            New-Item -ItemType Directory -Path (Split-Path $projectPath -Parent) -Force | Out-Null
+            New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
+            '<Project />' | Set-Content -LiteralPath $projectPath
+
+            return @{
+                ProjectPath = [System.IO.Path]::GetFullPath($projectPath)
+                OutputDirectory = [System.IO.Path]::GetFullPath($outputDirectory)
+                ExecutablePath = [System.IO.Path]::GetFullPath((Join-Path $outputDirectory $(if ($IsWindows) { 'api-schema-tools.exe' } else { 'api-schema-tools' })))
+                Calls = [System.Collections.Generic.List[object]]::new()
+                ExitCode = 0
+                CreateExecutable = $true
+                CreateBinExecutable = $false
+                OutputLines = @('fixture restore output', 'fixture build output')
+            }
+        }
+
+        function script:Install-FakeSchemaToolPublisher {
+            $dotnetFunction = Get-Item Function:\dotnet -ErrorAction SilentlyContinue
+            $script:oldDotnetScriptBlock = if ($null -ne $dotnetFunction) { $dotnetFunction.ScriptBlock } else { $null }
+            Set-Item Function:\global:dotnet -Value {
+                $script:publishFixture.Calls.Add(@($args))
+                foreach ($line in $script:publishFixture.OutputLines) { Write-Output $line }
+                if ($script:publishFixture.CreateExecutable) {
+                    'fixture executable' | Set-Content -LiteralPath $script:publishFixture.ExecutablePath
+                    'dependency bytes' | Set-Content -LiteralPath (Join-Path $script:publishFixture.OutputDirectory 'dependency.dll')
+                }
+                if ($script:publishFixture.CreateBinExecutable) {
+                    $bin = Join-Path $script:repo.RepoRoot 'src/dms/clis/EdFi.DataManagementService.SchemaTools/bin/Release/net10.0'
+                    New-Item -ItemType Directory -Path $bin -Force | Out-Null
+                    'fixture bin executable' | Set-Content -LiteralPath (Join-Path $bin $(if ($IsWindows) { 'api-schema-tools.exe' } else { 'api-schema-tools' }))
+                }
+                $global:LASTEXITCODE = $script:publishFixture.ExitCode
+            }
+        }
+
         function script:New-FixtureNupkg {
             <#
             .SYNOPSIS
@@ -1236,53 +1276,364 @@ exit $ExitCode
         }
     }
 
-    Context "Given_PublishedToolLocation_AutoDiscovery" {
+    Context "DMS-1283 automatic schema-tool acquisition" {
+        BeforeAll {
+            $script:resolverFixtureModuleName = 'bootstrap-schema-tool-DMS1283'
+        }
+        BeforeEach {
+            $script:publishFixture = script:New-SchemaToolPublishFixture -RepoRoot $script:repo.RepoRoot
+            $script:oldPathFallback = $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK
+            $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK = 'false'
+            $exitVariable = Get-Variable LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+            $script:hadLastExitCode = $null -ne $exitVariable
+            $script:oldLastExitCode = if ($script:hadLastExitCode) { $exitVariable.Value } else { $null }
+            $script:pathCommand = $null
+            $script:dotnetLookupCount = 0
+            script:Install-FakeSchemaToolPublisher
+            $resolverPath = Join-Path $script:repo.DockerComposeRoot "$($script:resolverFixtureModuleName).psm1"
+            Copy-Item -LiteralPath (Join-Path $script:repo.DockerComposeRoot 'bootstrap-schema-tool.psm1') -Destination $resolverPath
+            Import-Module $resolverPath -Force
+            Mock Get-Command { return $script:pathCommand } -ParameterFilter { $Name -eq 'api-schema-tools' } -ModuleName $script:resolverFixtureModuleName
+            Mock Get-Command { $script:dotnetLookupCount++; return [pscustomobject]@{ Name = 'dotnet' } } -ParameterFilter { $Name -eq 'dotnet' } -ModuleName $script:resolverFixtureModuleName
+        }
+
+        AfterEach {
+            if ($null -ne $script:oldDotnetScriptBlock) {
+                Set-Item Function:\global:dotnet -Value $script:oldDotnetScriptBlock
+            }
+            else {
+                Remove-Item Function:\dotnet -ErrorAction SilentlyContinue
+            }
+            $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK = $script:oldPathFallback
+            if ($script:hadLastExitCode) { $global:LASTEXITCODE = $script:oldLastExitCode }
+            else { Remove-Variable LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue }
+            Get-Module | Where-Object { $_.Path -and $_.Path.StartsWith($script:repo.RepoRoot, [System.StringComparison]::OrdinalIgnoreCase) } | Remove-Module -Force
+        }
+
+        It 'It_DMS1283_publishes_once_and_reuses_the_exact_published_path' {
+            $first = @(Resolve-DmsSchemaTool)
+            $second = @(Resolve-DmsSchemaTool)
+            $first.Count | Should -Be 1
+            $first[0] | Should -Be $script:publishFixture.ExecutablePath
+            $second | Should -Be $first
+            $script:publishFixture.Calls.Count | Should -Be 1
+            $script:publishFixture.Calls[0] | Should -Be @(
+                'publish', $script:publishFixture.ProjectPath,
+                '-c', 'Release', '-p:UseAppHost=true',
+                '-o', $script:publishFixture.OutputDirectory
+            )
+        }
+
+        It 'It_DMS1283_missing_source_fails_with_repair_guidance_without_publishing' {
+            Remove-Item -LiteralPath $script:publishFixture.ProjectPath
+
+            { Resolve-DmsSchemaTool } | Should -Throw -ExpectedMessage '*source project is missing*Restore the repository checkout*'
+            $script:publishFixture.Calls.Count | Should -Be 0
+        }
+
+        It 'It_DMS1283_missing_dotnet_fails_with_sdk_guidance_without_publishing' {
+            Mock Get-Command { return $null } -ParameterFilter { $Name -eq 'dotnet' } -ModuleName $script:resolverFixtureModuleName
+
+            { Resolve-DmsSchemaTool } | Should -Throw -ExpectedMessage '*.NET SDK command*Install the .NET 10 SDK*'
+            $script:publishFixture.Calls.Count | Should -Be 0
+        }
+
+        It 'It_DMS1283_nonzero_publish_streams_diagnostics_verbatim_and_reports_exit' {
+            $script:publishFixture.ExitCode = 17
+            $diagnostic = 'C:\repo\src\Foo.cs(12,5): error CS1002: ; expected [C:\repo\x.csproj]'
+            $script:publishFixture.OutputLines = @('fixture restore output', $diagnostic)
+            $script:hostOutput = [System.Collections.Generic.List[string]]::new()
+            Mock Out-Host { $script:hostOutput.Add([string]$InputObject) } -ModuleName $script:resolverFixtureModuleName
+            $failure = $null
+            try { $null = Resolve-DmsSchemaTool } catch { $failure = $_.Exception.Message }
+
+            $failure | Should -Match 'exited with code 17'
+            $script:hostOutput | Should -Be @('fixture restore output', $diagnostic)
+            $failure | Should -Match ([regex]::Escape($script:publishFixture.ProjectPath))
+            $script:publishFixture.Calls.Count | Should -Be 1
+            Test-Path -LiteralPath $script:publishFixture.ExecutablePath | Should -BeFalse
+        }
+
+        It 'It_DMS1283_handles_missing_session_variables_when_publish_<Mode>' -TestCases @(
+            @{ Mode = 'succeeds'; FailInvocation = $false }
+            @{ Mode = 'cannot_start'; FailInvocation = $true }
+        ) {
+            param($Mode, $FailInvocation)
+
+            $childScript = Join-Path $script:repo.RepoRoot 'fresh-session.ps1'
+            @'
+param($ModulePath, $ExpectedPath, [int]$FailInvocation)
+$ErrorActionPreference = 'Stop'
+$env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK = 'false'
+Import-Module $ModulePath -Force
+& (Get-Module ([System.IO.Path]::GetFileNameWithoutExtension($ModulePath))) {
+    param($ExpectedPath, $FailInvocation)
+    $script:expectedPath = $ExpectedPath
+    $script:failInvocation = $FailInvocation
+    function script:dotnet {
+        if ($script:failInvocation) { throw 'fixture invocation failed before native completion' }
+        Set-Content -LiteralPath $script:expectedPath -Value 'fixture executable'
+        $global:LASTEXITCODE = 0
+    }
+} $ExpectedPath $FailInvocation
+Remove-Variable PSNativeCommandUseErrorActionPreference, LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+try {
+    $resolved = @(Resolve-DmsSchemaTool)
+    [pscustomobject]@{ Resolved = $resolved; Failure = '' } | ConvertTo-Json -Compress
+}
+catch {
+    [pscustomobject]@{ Resolved = @(); Failure = $_.Exception.Message } | ConvertTo-Json -Compress
+}
+'@ | Set-Content -LiteralPath $childScript
+
+            $result = (& pwsh -NoLogo -NoProfile -File $childScript `
+                (Join-Path $script:repo.DockerComposeRoot "$($script:resolverFixtureModuleName).psm1") `
+                $script:publishFixture.ExecutablePath ([int]$FailInvocation) | Select-Object -Last 1) | ConvertFrom-Json
+
+            if ($FailInvocation) {
+                $result.Failure | Should -BeLike '*Unable to acquire api-schema-tools*invocation failed before native completion*Check the .NET 10 SDK*'
+                $result.Resolved.Count | Should -Be 0
+            }
+            else {
+                $result.Failure | Should -Be ''
+                $result.Resolved | Should -Be @($script:publishFixture.ExecutablePath)
+            }
+        }
+
+        It 'It_DMS1283_zero_exit_without_executable_fails_explicitly' {
+            $script:publishFixture.CreateExecutable = $false
+
+            { Resolve-DmsSchemaTool } | Should -Throw -ExpectedMessage '*without producing the expected executable*'
+            $script:publishFixture.Calls.Count | Should -Be 1
+        }
+
+        It 'It_DMS1283_failure_after_executable_and_bin_creation_cleans_only_published_executable' {
+            $script:publishFixture.ExitCode = 17
+            $script:publishFixture.CreateBinExecutable = $true
+            $sentinelPath = Join-Path $script:publishFixture.OutputDirectory 'existing-dependency.dll'
+            Set-Content -LiteralPath $sentinelPath -Value 'keep these bytes' -NoNewline
+            $failure = $null
+            try { $null = Resolve-DmsSchemaTool } catch { $failure = $_.Exception.Message }
+            $binPath = Join-Path -Path $script:repo.RepoRoot -ChildPath 'src/dms/clis/EdFi.DataManagementService.SchemaTools/bin/Release/net10.0' -AdditionalChildPath $(if ($IsWindows) { 'api-schema-tools.exe' } else { 'api-schema-tools' })
+
+            $failure | Should -Match 'exited with code 17'
+            Test-Path -LiteralPath $script:publishFixture.ExecutablePath | Should -BeFalse
+            Test-Path -LiteralPath $binPath | Should -BeTrue
+            Get-Content -LiteralPath $sentinelPath -Raw | Should -Be 'keep these bytes'
+            $script:publishFixture.Calls.Count | Should -Be 1
+        }
+
+        It 'It_DMS1283_cleanup_failure_retains_publish_error' {
+            $script:publishFixture.ExitCode = 17
+            Mock Remove-Item { throw 'fixture cleanup failure' } -ParameterFilter { $LiteralPath -eq $script:publishFixture.ExecutablePath } -ModuleName $script:resolverFixtureModuleName
+
+            { Resolve-DmsSchemaTool } | Should -Throw -ExpectedMessage '*exited with code 17*Cleanup also failed*fixture cleanup failure*'
+            Test-Path -LiteralPath $script:publishFixture.ExecutablePath | Should -BeTrue
+        }
+
+        It 'It_DMS1283_paths_and_noisy_diagnostics_preserve_paths_without_leaking_output' {
+            $specialRoot = Join-Path $script:repo.RepoRoot 'special (DMS)#1283'
+            Get-Module | Where-Object { $_.Path -and $_.Path.StartsWith($script:repo.RepoRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase) } | Remove-Module -Force
+            New-Item -ItemType Directory -Path $specialRoot -Force | Out-Null
+            Move-Item -LiteralPath (Join-Path $script:repo.RepoRoot 'eng'), (Join-Path $script:repo.RepoRoot 'src') -Destination $specialRoot
+            $script:repo.DockerComposeRoot = Join-Path $specialRoot 'eng/docker-compose'
+            $script:repo.BootstrapRoot = Join-Path $script:repo.DockerComposeRoot '.bootstrap'
+            $script:publishFixture = script:New-SchemaToolPublishFixture -RepoRoot $specialRoot
+            $resolverPath = Join-Path $script:repo.DockerComposeRoot "$($script:resolverFixtureModuleName).psm1"
+            Copy-Item -LiteralPath (Join-Path $script:repo.DockerComposeRoot 'bootstrap-schema-tool.psm1') -Destination $resolverPath
+            Import-Module $resolverPath -Force
+            Mock Get-Command { return $script:pathCommand } -ParameterFilter { $Name -eq 'api-schema-tools' } -ModuleName $script:resolverFixtureModuleName
+            Mock Get-Command { $script:dotnetLookupCount++; return [pscustomobject]@{ Name = 'dotnet' } } -ParameterFilter { $Name -eq 'dotnet' } -ModuleName $script:resolverFixtureModuleName
+            $script:publishFixture.OutputLines = @('fixture restore output', 'fixture build output')
+            $elsewhere = Join-Path $script:repo.RepoRoot 'elsewhere'
+            New-Item -ItemType Directory -Path $elsewhere -Force | Out-Null
+            Push-Location $elsewhere
+            try {
+                $allOutput = @(Resolve-DmsSchemaTool 6>&1)
+                $resolved = @($allOutput | Where-Object { $_ -is [string] })
+                $information = @($allOutput | Where-Object { $_ -is [System.Management.Automation.InformationRecord] })
+                $resolved.Count | Should -Be 1
+                $resolved[0] | Should -Be $script:publishFixture.ExecutablePath
+                $script:publishFixture.Calls[0] | Should -Be @('publish', $script:publishFixture.ProjectPath, '-c', 'Release', '-p:UseAppHost=true', '-o', $script:publishFixture.OutputDirectory)
+                $resolved -join '' | Should -Not -Match 'fixture restore output|fixture build output'
+                ($information -join ' ') | Should -Match 'No eligible api-schema-tools executable was found'
+
+                $script:publishFixture.ExitCode = 17
+                Remove-Item -LiteralPath $script:publishFixture.ExecutablePath
+                $failure = $null
+                try { $null = Resolve-DmsSchemaTool } catch { $failure = $_.Exception.Message }
+                $failure | Should -Match ([regex]::Escape($script:publishFixture.OutputDirectory))
+                $failure | Should -Not -Match "`r|`n"
+            }
+            finally { Pop-Location }
+        }
+
+        It 'It_DMS1283_native_error_preferences_preserve_actionable_publish_failure' {
+            & (Get-Module $script:resolverFixtureModuleName) {
+                $script:ErrorActionPreference = 'Stop'
+                $script:PSNativeCommandUseErrorActionPreference = $true
+                function script:dotnet {
+                    & pwsh -NoLogo -NoProfile -Command "[Console]::Error.WriteLine('native fixture diagnostics'); exit 17" 2>&1
+                    $global:LASTEXITCODE = $LASTEXITCODE
+                }
+            }
+
+            { Resolve-DmsSchemaTool } | Should -Throw -ExpectedMessage '*api-schema-tools*exited with code 17*Check the .NET 10 SDK*'
+        }
+
+        It 'It_DMS1283_disabled_ambient_path_tool_publishes_without_selecting_path' {
+            $script:pathCommand = [pscustomobject]@{ Source = 'C:\ambient\api-schema-tools.exe' }
+
+            $resolved = Resolve-DmsSchemaTool
+
+            $resolved | Should -Be $script:publishFixture.ExecutablePath
+            $script:publishFixture.Calls.Count | Should -Be 1
+            $script:dotnetLookupCount | Should -Be 1
+        }
+
+        It 'It_DMS1283_explicit_path_beats_cache_and_invalid_explicit_path_fails_closed' {
+            $explicit = Join-Path $script:repo.RepoRoot 'explicit/api-schema-tools.exe'
+            New-Item -ItemType Directory -Path (Split-Path $explicit -Parent) -Force | Out-Null
+            Set-Content -LiteralPath $explicit -Value 'explicit'
+            Set-Content -LiteralPath $script:publishFixture.ExecutablePath -Value 'published'
+
+            Resolve-DmsSchemaTool -RequestedPath $explicit | Should -Be ([System.IO.Path]::GetFullPath($explicit))
+            { Resolve-DmsSchemaTool -RequestedPath (Join-Path $script:repo.RepoRoot 'missing/tool.exe') } | Should -Throw -ExpectedMessage '*configured api-schema-tools executable was not found*'
+            $script:publishFixture.Calls.Count | Should -Be 0
+            $script:dotnetLookupCount | Should -Be 0
+        }
+
+        It 'It_DMS1283_published_tool_beats_bin_and_skips_dotnet_lookup' {
+            $bin = Join-Path $script:repo.RepoRoot 'src/dms/clis/EdFi.DataManagementService.SchemaTools/bin/Release/net12.0'
+            New-Item -ItemType Directory -Path $bin -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $bin $(if ($IsWindows) { 'api-schema-tools.exe' } else { 'api-schema-tools' })) -Value 'bin'
+            Set-Content -LiteralPath $script:publishFixture.ExecutablePath -Value 'published'
+
+            Resolve-DmsSchemaTool | Should -Be $script:publishFixture.ExecutablePath
+            $script:publishFixture.Calls.Count | Should -Be 0
+            $script:dotnetLookupCount | Should -Be 0
+        }
+
+        It 'It_DMS1283_framework_and_configuration_priority_is_preserved' {
+            $releaseHigh = Join-Path $script:repo.RepoRoot 'src/dms/clis/EdFi.DataManagementService.SchemaTools/bin/Release/net11.0'
+            $debugLow = Join-Path $script:repo.RepoRoot 'src/dms/clis/EdFi.DataManagementService.SchemaTools/bin/Debug/net10.0'
+            $releaseSame = Join-Path $script:repo.RepoRoot 'src/dms/clis/EdFi.DataManagementService.SchemaTools/bin/Release/net10.0'
+            foreach ($directory in @($releaseHigh, $debugLow, $releaseSame)) { New-Item -ItemType Directory -Path $directory -Force | Out-Null }
+            $toolName = if ($IsWindows) { 'api-schema-tools.exe' } else { 'api-schema-tools' }
+            foreach ($directory in @($releaseHigh, $debugLow, $releaseSame)) { Set-Content -LiteralPath (Join-Path $directory $toolName) -Value $directory }
+
+            Resolve-DmsSchemaTool | Should -Be (Join-Path $releaseHigh $toolName)
+            Remove-Item -LiteralPath (Join-Path $releaseHigh $toolName)
+            Resolve-DmsSchemaTool | Should -Be (Join-Path $debugLow $toolName)
+            $script:publishFixture.Calls.Count | Should -Be 0
+            $script:dotnetLookupCount | Should -Be 0
+        }
+
+        It 'It_DMS1283_cdc_debug_bin_is_selected_without_sdk_lookup' {
+            Mock Get-Command { throw 'Unexpected dotnet lookup' } -ParameterFilter { $Name -eq 'dotnet' } -ModuleName $script:resolverFixtureModuleName
+            $debug = Join-Path $script:repo.RepoRoot 'src/dms/clis/EdFi.DataManagementService.SchemaTools/bin/Debug/net10.0'
+            $release = Join-Path $script:repo.RepoRoot 'src/dms/clis/EdFi.DataManagementService.SchemaTools/bin/Release/net10.0'
+            New-Item -ItemType Directory -Path $debug -Force | Out-Null
+            New-Item -ItemType Directory -Path $release -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $debug 'api-schema-tools') -Value 'debug extensionless'
+            Set-Content -LiteralPath (Join-Path $release 'api-schema-tools') -Value 'release extensionless'
+
+            Resolve-DmsSchemaTool | Should -Be (Join-Path $debug 'api-schema-tools')
+            $script:publishFixture.Calls.Count | Should -Be 0
+            Should -Invoke Get-Command -ModuleName $script:resolverFixtureModuleName -Times 0 -ParameterFilter { $Name -eq 'dotnet' }
+        }
+
+        It 'It_DMS1283_opted_in_path_is_used_only_after_local_misses' {
+            $script:pathCommand = [pscustomobject]@{ Source = 'C:\ambient\api-schema-tools.exe' }
+            $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK = 'true'
+
+            Resolve-DmsSchemaTool | Should -Be 'C:\ambient\api-schema-tools.exe'
+            $script:publishFixture.Calls.Count | Should -Be 0
+            $script:dotnetLookupCount | Should -Be 0
+        }
+
+        It 'It_DMS1283_stale_dms_schema_location_is_ignored_and_publishing_is_selected' {
+            $stale = Join-Path $script:repo.BootstrapRoot 'tools/dms-schema'
+            New-Item -ItemType Directory -Path $stale -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $stale $(if ($IsWindows) { 'dms-schema.exe' } else { 'dms-schema' })) -Value 'stale'
+
+            Resolve-DmsSchemaTool | Should -Be $script:publishFixture.ExecutablePath
+            $script:publishFixture.Calls.Count | Should -Be 1
+            $script:dotnetLookupCount | Should -Be 1
+        }
+    }
+
+    Context "DMS-1283 prepare override forwarding" {
+        BeforeEach {
+            $script:feedFolder = script:New-FixtureFeed
+            $script:oldToolPath = $env:DMS_SCHEMA_TOOL_PATH
+            $script:oldFallback = $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK
+            $dotnetFunction = Get-Item Function:\dotnet -ErrorAction SilentlyContinue
+            $script:oldDotnetScriptBlock = if ($null -ne $dotnetFunction) { $dotnetFunction.ScriptBlock } else { $null }
+            $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK = 'false'
+            Set-Item Function:\global:dotnet -Value { throw 'Unexpected schema-tool publish during prepare override test' }
+            $publishedDirectory = Join-Path $script:repo.BootstrapRoot 'tools/api-schema-tools'
+            New-Item -ItemType Directory -Path $publishedDirectory -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $publishedDirectory $(if ($IsWindows) { 'api-schema-tools.exe' } else { 'api-schema-tools' })) -Value 'published cache sentinel'
+        }
+
+        AfterEach {
+            $env:DMS_SCHEMA_TOOL_PATH = $script:oldToolPath
+            $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK = $script:oldFallback
+            if ($null -ne $script:oldDotnetScriptBlock) { Set-Item Function:\global:dotnet -Value $script:oldDotnetScriptBlock }
+            else { Remove-Item Function:\dotnet -ErrorAction SilentlyContinue }
+        }
+
+        It 'It_DMS1283_prepare_parameter_beats_environment_and_cache' {
+            $parameterDirectory = Join-Path $script:repo.RepoRoot 'parameter-tool'
+            $environmentDirectory = Join-Path $script:repo.RepoRoot 'environment-tool'
+            New-Item -ItemType Directory -Path $parameterDirectory, $environmentDirectory -Force | Out-Null
+            $parameterTool = script:New-FakeSchemaTool -Directory $parameterDirectory -Hash $script:hashA
+            $environmentHash = '0000000000000000000000000000000000000000000000000000000000000002'
+            $environmentTool = script:New-FakeSchemaTool -Directory $environmentDirectory -Hash $environmentHash
+            $env:DMS_SCHEMA_TOOL_PATH = $environmentTool
+
+            & $script:repo.PrepareSchemaScript -PackageFeedUrl $script:feedFolder -SchemaToolPath $parameterTool | Out-Null
+
+            (script:Get-RootManifest).schema.effectiveSchemaHash | Should -Be $script:hashA
+        }
+
+        It 'It_DMS1283_prepare_environment_override_is_used_when_parameter_is_omitted' {
+            $environmentHash = '0000000000000000000000000000000000000000000000000000000000000003'
+            $environmentDirectory = Join-Path $script:repo.RepoRoot 'environment-tool'
+            New-Item -ItemType Directory -Path $environmentDirectory -Force | Out-Null
+            $env:DMS_SCHEMA_TOOL_PATH = script:New-FakeSchemaTool -Directory $environmentDirectory -Hash $environmentHash
+
+            & $script:repo.PrepareSchemaScript -PackageFeedUrl $script:feedFolder | Out-Null
+
+            (script:Get-RootManifest).schema.effectiveSchemaHash | Should -Be $environmentHash
+        }
+
+        It 'It_DMS1283_prepare_invalid_parameter_fails_closed_despite_valid_cache' {
+            $env:DMS_SCHEMA_TOOL_PATH = script:New-FakeSchemaTool -Directory $script:repo.RepoRoot -Hash $script:hashA
+            $missingParameter = Join-Path $script:repo.RepoRoot 'missing/parameter-api-schema-tools.exe'
+
+            { & $script:repo.PrepareSchemaScript -PackageFeedUrl $script:feedFolder -SchemaToolPath $missingParameter } |
+                Should -Throw -ExpectedMessage '*configured api-schema-tools executable was not found*'
+        }
+
+        It 'It_DMS1283_prepare_invalid_environment_fails_closed_despite_valid_cache' {
+            $env:DMS_SCHEMA_TOOL_PATH = Join-Path $script:repo.RepoRoot 'missing/environment-api-schema-tools.exe'
+
+            { & $script:repo.PrepareSchemaScript -PackageFeedUrl $script:feedFolder } |
+                Should -Throw -ExpectedMessage '*configured api-schema-tools executable was not found*'
+        }
+    }
+
+    Context "Given_ExplicitToolPathErrors" {
         It "It_Resolve-DmsSchemaTool_preserves_backslashes_in_a_missing_explicit_tool_path" {
-            Import-Module (Join-Path $script:repo.DockerComposeRoot "bootstrap-schema-tool.psm1") -Force
+            $resolverModulePath = Join-Path $script:repo.DockerComposeRoot 'bootstrap-schema-tool.psm1'
+            Import-Module $resolverModulePath -Force
             $missingTool = Join-Path $script:repo.RepoRoot "tools\missing\api-schema-tools.exe"
             $expectedPath = [System.IO.Path]::GetFullPath($missingTool)
 
             { Resolve-DmsSchemaTool -RequestedPath $missingTool } |
                 Should -Throw -ExpectedMessage "*$expectedPath*"
-        }
-
-        It "It_Resolve-DmsSchemaTool_discovers_the_published_tool_under_.bootstrap_tools_api-schema-tools" {
-            # The README publishes api-schema-tools to .bootstrap/tools/api-schema-tools, and the wrapper shorthand
-            # (bootstrap-local-dms.ps1) cannot forward -SchemaToolPath. The resolver must auto-discover
-            # that documented location so the documented happy path works after publishing, without
-            # requiring -SchemaToolPath or DMS_SCHEMA_TOOL_PATH.
-            Import-Module (Join-Path $script:repo.DockerComposeRoot "bootstrap-schema-tool.psm1") -Force
-
-            $toolDirectory = Join-Path $script:repo.BootstrapRoot "tools/api-schema-tools"
-            New-Item -ItemType Directory -Path $toolDirectory -Force | Out-Null
-            $toolName = if ($IsWindows) { "api-schema-tools.exe" } else { "api-schema-tools" }
-            $toolPath = Join-Path $toolDirectory $toolName
-            "stub" | Set-Content -LiteralPath $toolPath -Encoding utf8
-
-            $resolved = Resolve-DmsSchemaTool
-
-            [System.IO.Path]::GetFullPath($resolved) |
-                Should -Be ([System.IO.Path]::GetFullPath($toolPath))
-        }
-
-        It "It_Resolve-DmsSchemaTool_does_not_discover_the_stale_dms-schema_tool_location" {
-            Import-Module (Join-Path $script:repo.DockerComposeRoot "bootstrap-schema-tool.psm1") -Force
-
-            $toolDirectory = Join-Path $script:repo.BootstrapRoot "tools/dms-schema"
-            New-Item -ItemType Directory -Path $toolDirectory -Force | Out-Null
-            $toolName = if ($IsWindows) { "dms-schema.exe" } else { "dms-schema" }
-            $toolPath = Join-Path $toolDirectory $toolName
-            "stub" | Set-Content -LiteralPath $toolPath -Encoding utf8
-
-            $oldFallback = $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK
-            $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK = "false"
-
-            try {
-                { Resolve-DmsSchemaTool } | Should -Throw -ExpectedMessage "*api-schema-tools*"
-            }
-            finally {
-                $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK = $oldFallback
-            }
         }
     }
 

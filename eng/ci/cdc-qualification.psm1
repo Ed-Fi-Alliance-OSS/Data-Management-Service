@@ -277,6 +277,9 @@ function Export-CdcQualificationEvidence {
                     $_ -is [string] -and $_ -cmatch '^(Request|WorkflowState|Projection|ProviderSetup|Kafka|Connect|Worker|Metrics|WriterPublication)/(InvalidInput|Unavailable|Timeout|AuthenticationFailed|Conflict|ValidationFailed)\z'
                 })
             }
+            if ($value['worker'] -is [Collections.IDictionary]) {
+                $safeValue.worker = ConvertTo-CdcRunbookWorkerDiagnostic $value['worker']
+            }
         }
         elseif ($file.Name -like 'cdc-runbook-*') {
             # Narrow procedure attachment schema. Never retain settings, command output or prose,

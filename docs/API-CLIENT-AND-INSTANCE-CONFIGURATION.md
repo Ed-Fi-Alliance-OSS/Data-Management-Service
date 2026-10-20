@@ -145,9 +145,11 @@ initial client's. To act on that client, read it with
    grant_type=client_credentials&client_id=<key>&client_secret=<secret>&scope=<claim set name>
    ```
 
-   Supply the scope explicitly: the token endpoint always forwards a `scope`
-   parameter, so omitting it sends an empty scope, which the self-contained
-   provider ignores but Keycloak rejects with `invalid_scope`.
+   The scope may be omitted: the token endpoint then forwards no `scope`, and
+   the client receives its default scopes (its default client scopes under
+   Keycloak, its registered scopes under the self-contained provider). Under
+   Keycloak, a scope the client is not granted answers `400` with
+   `invalid_scope`.
 8. **Delete a client** — `DELETE /v3/apiClients/{numeric id}`, after which
    both `GET /v3/apiClients/{numeric id}` and `GET /v3/apiClients/{key}` report
    `404`.

@@ -1197,7 +1197,7 @@ function Invoke-BootstrapWrapper {
                 & $BeforeCdcAdmission $effectiveEnvFile
             }
             Assert-BootstrapCdcOfflineOwnership @cdcOwnership -InfrastructureReady
-            Invoke-BootstrapCdcEnable -Handoff $cdcHandoff -Receipt $provisionReceipts[0] -SelectedDataStoreIds $configuredDataStoreIds -StatePath $CdcBindingStatePath
+            Invoke-BootstrapCdcEnable -Handoff $cdcHandoff -Receipt $provisionReceipts[0] -SelectedDataStoreIds $configuredDataStoreIds -StatePath $CdcBindingStatePath -ToolPath $env:DMS_SCHEMA_TOOL_PATH
             if ($EnableKafkaUI) { Invoke-BootstrapCdcKafkaUI -Handoff $cdcHandoff }
             Assert-BootstrapCdcOfflineOwnership @cdcOwnership -InfrastructureReady
             Write-Information 'CDC controller durably authorized writer publication. Local authorization is disabled; this is not ACL isolation evidence.' -InformationAction Continue

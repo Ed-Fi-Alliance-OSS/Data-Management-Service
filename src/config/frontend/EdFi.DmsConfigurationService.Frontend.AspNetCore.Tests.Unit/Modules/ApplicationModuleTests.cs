@@ -435,7 +435,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -466,7 +466,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -519,7 +519,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -1056,7 +1056,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Reference 'VendorId' does not exist.",
-                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                   "title": "Unresolved Reference",
                   "status": 409,
                   "correlationId": "{correlationId}",
@@ -1170,7 +1170,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Reference 'VendorId' does not exist.",
-                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                   "title": "Unresolved Reference",
                   "status": 409,
                   "correlationId": "{correlationId}",
@@ -1273,7 +1273,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "",
-                  "type": "urn:ed-fi:api:internal-server-error",
+                  "type": "urn:ed-fi:management-api:internal-server-error",
                   "title": "Internal Server Error",
                   "status": 500,
                   "correlationId": "{correlationId}",
@@ -1321,7 +1321,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "",
-                  "type": "urn:ed-fi:api:internal-server-error",
+                  "type": "urn:ed-fi:management-api:internal-server-error",
                   "title": "Internal Server Error",
                   "status": 500,
                   "correlationId": "{correlationId}",
@@ -1435,7 +1435,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -1582,7 +1582,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -1707,7 +1707,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Data store does not exist.",
-                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                   "title": "Unresolved Reference",
                   "status": 409,
                   "correlationId": "{correlationId}",
@@ -1886,7 +1886,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Profile does not exist.",
-                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                   "title": "Unresolved Reference",
                   "status": 409,
                   "correlationId": "{correlationId}",
@@ -1937,7 +1937,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Profile does not exist.",
-                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                   "title": "Unresolved Reference",
                   "status": 409,
                   "correlationId": "{correlationId}",
@@ -2060,7 +2060,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Profile does not exist.",
-                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                   "title": "Unresolved Reference",
                   "status": 409,
                   "correlationId": "{correlationId}",
@@ -2256,7 +2256,7 @@ public class ApplicationModuleTests
             """
             {
               "detail": "",
-              "type": "urn:ed-fi:api:internal-server-error",
+              "type": "urn:ed-fi:management-api:internal-server-error",
               "title": "Internal Server Error",
               "status": 500,
               "correlationId": "{correlationId}",
@@ -2849,7 +2849,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -3101,7 +3101,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "The request could not be processed. See 'errors' for details.",
-                  "type": "urn:ed-fi:api:bad-gateway",
+                  "type": "urn:ed-fi:management-api:bad-gateway",
                   "title": "Bad Gateway",
                   "status": 502,
                   "correlationId": "{correlationId}",
@@ -3390,7 +3390,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Reference 'VendorId' does not exist.",
-                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                   "title": "Unresolved Reference",
                   "status": 409,
                   "correlationId": "{correlationId}",
@@ -3658,7 +3658,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "The request could not be processed. See 'errors' for details.",
-                  "type": "urn:ed-fi:api:bad-gateway",
+                  "type": "urn:ed-fi:management-api:bad-gateway",
                   "title": "Bad Gateway",
                   "status": 502,
                   "correlationId": "{correlationId}",
@@ -3820,7 +3820,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Reference 'VendorId' does not exist.",
-                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                   "title": "Unresolved Reference",
                   "status": 409,
                   "correlationId": "{correlationId}",
@@ -3943,7 +3943,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -4006,7 +4006,7 @@ public class ApplicationModuleTests
                 $$"""
                 {
                   "detail": "{{detail}}",
-                  "type": "urn:ed-fi:api:conflict",
+                  "type": "urn:ed-fi:management-api:conflict",
                   "title": "Conflict",
                   "status": 409,
                   "correlationId": "{{correlationId}}",
@@ -4300,7 +4300,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -4622,7 +4622,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "",
-                  "type": "urn:ed-fi:api:internal-server-error",
+                  "type": "urn:ed-fi:management-api:internal-server-error",
                   "title": "Internal Server Error",
                   "status": 500,
                   "correlationId": "{correlationId}",
@@ -4662,7 +4662,7 @@ public class ApplicationModuleTests
         }
 
         /// <summary>
-        /// Asserts the full urn:ed-fi:api:bad-request:parameter contract (real pipeline, not a
+        /// Asserts the full urn:ed-fi:management-api:bad-request:parameter contract (real pipeline, not a
         /// unit-level construction) for both binding-level (offset/limit non-numeric) and
         /// validation-rule-level (limit=0, negative offset, invalid orderBy) query-parameter failures,
         /// including a fixed <c>detail</c> and exactly one <c>errors</c> entry. <paramref name="exactMatch"/>
@@ -4680,7 +4680,7 @@ public class ApplicationModuleTests
 
             string content = await response.Content.ReadAsStringAsync();
             JsonNode body = JsonNode.Parse(content)!;
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:parameter");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request:parameter");
             body["title"]!.GetValue<string>().Should().Be("Parameter Validation Failed");
             body["detail"]!
                 .GetValue<string>()
@@ -4996,7 +4996,7 @@ public class ApplicationModuleTests
             """
             {
               "detail": "Unable to process the request due to a concurrent modification. Retry the request.",
-              "type": "urn:ed-fi:api:conflict",
+              "type": "urn:ed-fi:management-api:conflict",
               "title": "Conflict",
               "status": 409,
               "correlationId": "{correlationId}",
@@ -6063,7 +6063,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "The application has more than one API client. Reset a specific client's credentials with PUT /v3/apiClients/{id}/reset-credential.",
-                  "type": "urn:ed-fi:api:conflict",
+                  "type": "urn:ed-fi:management-api:conflict",
                   "title": "Conflict",
                   "status": 409,
                   "correlationId": "{correlationId}",

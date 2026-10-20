@@ -42,7 +42,6 @@ public class Given_ClaimsetManagement_When_ClaimsetOperationsAreCalled
         var fakeApiSchemaProvider = A.Fake<IApiSchemaProvider>();
         var fakeEffectiveApiSchemaProvider = A.Fake<IEffectiveApiSchemaProvider>();
         var fakeDocumentValidator = A.Fake<IDocumentValidator>();
-        var fakeMatchingDocumentUuidsValidator = A.Fake<IMatchingDocumentUuidsValidator>();
         var fakeEqualityConstraintValidator = A.Fake<IEqualityConstraintValidator>();
         var fakeDecimalValidator = A.Fake<IDecimalValidator>();
         var fakeResourceDependencyGraphMLFactory = A.Fake<IResourceDependencyGraphMLFactory>();
@@ -71,7 +70,6 @@ public class Given_ClaimsetManagement_When_ClaimsetOperationsAreCalled
             fakeEffectiveApiSchemaProvider,
             cachedClaimSetProvider, // Use as IClaimSetProvider
             fakeDocumentValidator,
-            fakeMatchingDocumentUuidsValidator,
             fakeEqualityConstraintValidator,
             fakeDecimalValidator,
             NullLogger<ApiService>.Instance,

@@ -205,9 +205,13 @@ Classifications: **True contradiction**, **Ambiguity**, **Stale baseline**, **In
 
 `validationErrors` = `{}` unless field-level validation data exists (then keyed by field/JSON-path). `errors` = `[]` unless safe developer/operator messages apply (never raw exception/DB/config/token/secret text; unstructured provider/transport text uses the fixed fallback, while the `error` and `error_description` fields of a valid structured provider payload are intentionally composed into a single entry). Body `status` == HTTP status. Content type: **`application/problem+json`** for `FailureResults` and newly-changed writers (D-05). This shape is exactly what `FailureResponse.CreateBaseJsonObject` already produces.
 
+> **Superseded by [DMS-1586](https://edfi.atlassian.net/browse/DMS-1586):** the Configuration Service now uses the `urn:ed-fi:management-api:` prefix for these types; suffixes are unchanged and `about:blank` is unchanged. See `reference/design/configuration-service/DMS-1586-management-api-problem-type-prefix.md`.
+
 ---
 
 ## 11. Taxonomy matrix
+
+> **Superseded by [DMS-1586](https://edfi.atlassian.net/browse/DMS-1586):** the Configuration Service now uses the `urn:ed-fi:management-api:` prefix for these types; suffixes are unchanged and `about:blank` is unchanged. See `reference/design/configuration-service/DMS-1586-management-api-problem-type-prefix.md`.
 
 | Condition | Status | `type` | `title` | CMS factory | KB-documented |
 |---|---|---|---|---|---|

@@ -1102,8 +1102,9 @@ Describe "Azure VM Swagger UI" {
     }
 
     It "moves the client credentials Swagger UI sends as HTTP Basic into the Configuration Service token form" {
-        # Swagger UI's client-credentials flow only sends an Authorization: Basic header; the Configuration
-        # Service token endpoint reads client_id and client_secret from the form body and answers 400 without them.
+        # Swagger UI's client-credentials flow only sends an Authorization: Basic header; Configuration Service
+        # images up to 8.1.0-beta.0.1 read client_id and client_secret only from the form body under Keycloak
+        # and answer 400 without them.
         $results = & $script:runHelper ("[" +
             "h.withClientCredentialsInBody({ url: 'https://host.example/mt-config/connect/token', headers: { Authorization: 'Basic ' + btoa('cid:se:cret'), Tenant: 't1' }, body: 'grant_type=client_credentials&scope=edfi_admin_api%2Ffull_access' }), " +
             "h.withClientCredentialsInBody({ url: 'https://host.example/st-dms/oauth/token', headers: { Authorization: 'Basic ' + btoa('key:secret') }, body: 'grant_type=client_credentials' }), " +
@@ -1118,20 +1119,6 @@ Describe "Azure VM Swagger UI" {
         $results[1].headers.Authorization | Should -BeLike "Basic *" -Because "the DMS token endpoint takes HTTP Basic"
         $results[1].body | Should -Be "grant_type=client_credentials"
         $results[2].headers.Authorization | Should -Be "Bearer token"
-    }
-
-    It "drops the DMS pageSize default so Try it out does not send pageSize without a pageToken" {
-        # The DMS rejects pageSize without pageToken (400), and Swagger UI sends every parameter default.
-        $spec = "{ paths: { '/ed-fi/schools': { get: { parameters: [{ `$ref: '#/components/parameters/pageSize' }, { name: 'pageSize', in: 'query', schema: { type: 'integer', default: 500 } }] } } }, " +
-            "components: { parameters: { pageSize: { name: 'pageSize', in: 'query', schema: { type: 'integer', default: 500, maximum: 500 } }, limit: { name: 'limit', in: 'query', schema: { type: 'integer', default: 500 } } } } }"
-        $results = & $script:runHelper "[h.withoutPageSizeDefault($spec, '/mt-dms/t1/2025/metadata/specifications/resources-spec.json'), h.withoutPageSizeDefault($spec, '/st-config/openapi/v1.json')]"
-
-        $dms = $results[0]
-        $dms.components.parameters.pageSize.schema.PSObject.Properties.Name | Should -Not -Contain "default"
-        $dms.components.parameters.pageSize.schema.maximum | Should -Be 500
-        $dms.paths.'/ed-fi/schools'.get.parameters[1].schema.PSObject.Properties.Name | Should -Not -Contain "default"
-        $dms.components.parameters.limit.schema.default | Should -Be 500 -Because "only pageSize conflicts"
-        $results[1].components.parameters.pageSize.schema.default | Should -Be 500 -Because "only DMS specs are changed"
     }
 }
 

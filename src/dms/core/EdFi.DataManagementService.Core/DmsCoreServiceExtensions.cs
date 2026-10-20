@@ -105,7 +105,6 @@ public static class DmsCoreServiceExtensions
             .AddSingleton<IDataModelInfoProvider, DataModelInfoProvider>()
             .AddSingleton<IDocumentLinkSlugResolver, DocumentLinkSlugResolver>()
             .AddTransient<IDocumentValidator, DocumentValidator>()
-            .AddTransient<IMatchingDocumentUuidsValidator, MatchingDocumentUuidsValidator>()
             .AddTransient<IEqualityConstraintValidator, EqualityConstraintValidator>()
             .AddTransient<IDecimalValidator, DecimalValidator>()
             .AddSingleton<

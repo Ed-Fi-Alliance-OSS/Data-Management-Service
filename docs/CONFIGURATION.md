@@ -195,7 +195,7 @@ that role. To keep them unavailable, set `AppSettings:ManagementEndpoints:Enable
 | MultiTenancy                     | When `true`, enables multi-tenancy mode where the tenant identifier is extracted from the URL route. Default: `false` |
 | ManagementEndpoints:Enabled      | When `true`, allows the DMS claimset management endpoints, `reload-claimsets` and `view-claimsets`, to be mapped. This one switch controls both operations. When `false`, `/management/reload-claimsets` and `/management/view-claimsets` are not mapped. Environment override: `AppSettings__ManagementEndpoints__Enabled`; the shipped Docker Compose files map it from `DMS_ENABLE_MANAGEMENT_ENDPOINTS`. Default: `false` |
 | ManagementEndpoints:RequiredRole | Single literal role token a bearer must carry, under `JwtAuthentication:RoleClaimType`, to reach `reload-claimsets` and `view-claimsets`. Empty by default, which leaves those endpoints unmapped. Environment override: `AppSettings__ManagementEndpoints__RequiredRole`. Recommended: `cms-client` |
-| MaximumPageSize                  | Upper bound for the `limit` and `pageSize` query parameters on GET-many requests, and the page size applied when neither is supplied. Also published in the OpenAPI specification as the `maximum` of `limit` and `pageSize`; neither publishes a `default`, because `pageSize` is valid only with `pageToken` and `limit` only without it. Must be greater than `0`; the service refuses to start otherwise. Environment override: `AppSettings__MaximumPageSize`. Default: `500` |
+| MaximumPageSize                  | Upper bound for the `limit` and `pageSize` query parameters on GET-many requests, and the page size applied when neither is supplied. Also published in the OpenAPI specification as the `maximum` of `limit` and `pageSize`; neither publishes a `default`, because `pageSize` is used only with `pageToken` (ignored beside `limit`, rejected without either) and `limit` is rejected with `pageToken`. Must be greater than `0`; the service refuses to start otherwise. Environment override: `AppSettings__MaximumPageSize`. Default: `500` |
 | DefaultPartitionCount            | Number of partitions returned by a resource or descriptor `/partitions` request that omits the `number` query parameter. Also the `default` published for `numberOfPartitions` in the OpenAPI specification. Must be between `1` and `200`, the same range accepted for `number`; the service refuses to start otherwise. Environment override: `AppSettings__DefaultPartitionCount`. See [Cursor Paging](./CURSOR-PAGING.md). Default: `10` |
 | UseLegacyDocumentIdOrderingForChangeQueries | When `true`, restores unconditional `DocumentId` ordering and anchoring for change-version-filtered collection reads, disabling the conditional `ContentVersion` ordering and anchoring used for bounded and max-only change-version windows, and for any change-version-filtered read served from a snapshot. Governs all three paging shapes of a GET-many collection: `limit`/`offset` page selection, `pageToken` cursor pages, and `/partitions` boundary calculation. **Changing this setting invalidates the cursor and partition tokens already issued for the shapes whose anchor it governs**: those issued for a max-bearing window, and those issued for any change-version-filtered read served from a snapshot. Those tokens are `ContentVersion`-anchored while the setting is `false` and `DocumentId`-anchored while it is `true`, which is why a flip in either direction invalidates them. A client replaying one is answered with the invalid-page-token response and must restart its walk, so expect in-flight walks and distributed partition tokens of those shapes to fail after a flip in either direction. Tokens anchored on `DocumentId` — every unfiltered walk, and every min-only walk against current data — resolve that same anchor under either setting and keep working across a flip. Deployment-wide rollback switch for incident response; not per-client. See [Cursor Paging](./CURSOR-PAGING.md). Default: `false` |
 | ReverseProxy:UseForwardedHeaders | When `true`, the application respects reverse proxy `X-Forwarded-*` headers for URL generation, but only from trusted sources configured in `ReverseProxy`. Default: `false`. See [Reverse Proxy and Forwarded Headers](#reverse-proxy-and-forwarded-headers). |
@@ -777,9 +777,16 @@ qualifier above.
 >   environment before the .NET process starts:
 >   - `AppSettings__Datastore`, which decides whether it waits for PostgreSQL. It
 >     defaults to `postgresql` when unset, so a plugin that supplies `mssql` while
->     the environment leaves it unset still gets the PostgreSQL wait, which does not
->     end.
->   - `DATABASE_CONNECTION_STRING_ADMIN`, which that wait connects with.
+>     the environment leaves it unset still gets the PostgreSQL wait whenever
+>     `DATABASE_CONNECTION_STRING_ADMIN` names a PostgreSQL host, and that wait does
+>     not end if no PostgreSQL is there. If the admin string is absent or yields no
+>     host, for example a SQL Server `Server=` string, the script prints that it is
+>     skipping the readiness wait and starts .NET without waiting.
+>   - `DATABASE_CONNECTION_STRING_ADMIN`, which that wait connects with. It is
+>     optional: without a host the script skips the wait.
+>     The shipped Compose files give it a default, so leaving it out there takes a
+>     `!reset null` override; see
+>     [Secrets on the shipped Compose files](./OPERATIONS.md#secrets-on-the-shipped-compose-files).
 >   - `AppSettings__ApiSchema__UseCustomPath` and `AppSettings__ApiSchema__Path`, which decide
 >     whether and where it downloads the schema packages. A plugin that supplies
 >     either sends .NET to read a directory the script did not fill.
@@ -789,7 +796,8 @@ qualifier above.
 > environment source and the command-line source both exist when they are read, so for them the command line wins when a deployment
 > supplies one. The `run.sh` values are not read as .NET configuration there at all,
 > only from the container's environment, so a deployment on the stock image sets
-> them in the environment even when a plugin also supplies them.
+> the ones it uses in the environment even when a plugin also supplies them.
+> `DATABASE_CONNECTION_STRING_ADMIN` is the one it can leave out.
 
 ### Configuration Service plugins
 
@@ -820,17 +828,17 @@ unchanged, with these points stated for the Configuration Service itself:
 **Values a plugin source cannot usefully supply in the Configuration Service:**
 
 - The `Plugins` section, for the reason above.
-- The values `src/config/run.sh`, the container entry point, reads from the
-  environment before the .NET process starts, to wait for the database:
-  - `AppSettings__Datastore`, which decides whether the script waits for PostgreSQL
-    or for a SQL Server TCP endpoint. It defaults to `postgresql` when unset.
-  - `DatabaseSettings__DatabaseConnection`, from which it parses the host and port
-    it waits on.
+- `AppSettings__Datastore`, which `src/config/run.sh`, the container entry point, reads from the environment before the .NET process starts, to decide whether to wait for PostgreSQL or for a SQL Server TCP endpoint.
+  It defaults to `postgresql` when unset.
+  A plugin that supplies `AppSettings:Datastore` changes what .NET then uses, but not what the script already waited for, so on the stock image set it in the environment.
 
-  A plugin that supplies either changes what .NET then uses, but not what the script
-  already waited for: the wait still targets the engine and host the environment
-  named, and may never end if that is not the database the deployment runs. On the
-  stock image, set both in the environment.
+**The Configuration Service's own connection string can come from a plugin source.**
+`src/config/run.sh` also reads `DatabaseSettings__DatabaseConnection` from the environment, to parse the host and port it waits on.
+If the PostgreSQL branch finds no `host` setting in it, because it is absent or empty, the script prints that it is skipping the readiness wait and starts .NET without waiting.
+Both branches match keys in any case, as .NET does: the PostgreSQL branch reads `host`, `port` and `username`, so `Host=` and `host=` both count, and the SQL Server branch reads its `Server` keyword and that keyword's aliases.
+Each branch skips its wait only when it finds no host.
+A plugin that supplies `DatabaseSettings:DatabaseConnection` is served to .NET only if the environment does not also set it, because the environment value outranks every plugin source.
+Remove the variable from the environment to serve it from a plugin: the script then skips its wait, and .NET reports a connection error itself if the database is not ready, and with the default `AppSettings:DeployDatabaseOnStartup=true` exits, so a restart policy is needed to recover.
 
 There is no `AppSettings:StartupStatusFilePath` equivalent in the Configuration
 Service. A plugin loading or composition failure is written to standard error and
@@ -1079,7 +1087,7 @@ relevant environment variables or appsettings to set `IdentityProvider` to
 | `IdentitySettings.EncryptionKey`    | Key used for token encryption (self-contained only)              | _(not used)_                                         | `QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz` |
 | `IdentitySettings.TokenCleanup.Enabled` | Enables the background sweep that deletes expired OpenIddict access tokens (self-contained only) | _(not used)_                                         | `true`              |
 | `IdentitySettings.TokenCleanup.IntervalMinutes` | Interval, in minutes, between expired-token cleanup sweeps (self-contained only)           | _(not used)_                                         | `30`              |
-| `IdentitySettings.BearerTokenPerClientLimit` | Maximum number of active (unexpired, unrevoked) access tokens a limited client may hold (self-contained only; default `15`). Exemption requires no live `dmscs.ApiClient` row and a nonempty set of registered scopes consisting only of recognized Configuration Service admin scopes. Ed-Fi API clients remain limited. A grant beyond the limit is rejected with HTTP 429 and a `Too Many Tokens` problem response of type `urn:ed-fi:api:security:authentication:too-many-tokens`; the client should reuse its existing token until it expires. Any value below 1, conventionally `-1`, disables enforcement globally. | _(not used)_ | `15` |
+| `IdentitySettings.BearerTokenPerClientLimit` | Maximum number of active (unexpired, unrevoked) access tokens a limited client may hold (self-contained only; default `15`). Exemption requires no live `dmscs.ApiClient` row and a nonempty set of registered scopes consisting only of recognized Configuration Service admin scopes. Ed-Fi API clients remain limited. A grant beyond the limit is rejected with HTTP 429 and a `Too Many Tokens` problem response of type `urn:ed-fi:management-api:security:authentication:too-many-tokens`; the client should reuse its existing token until it expires. Any value below 1, conventionally `-1`, disables enforcement globally. | _(not used)_ | `15` |
 | `IdentitySettings.ClientSecretHashingIterations` | Number of PBKDF2-SHA256 iterations used to hash and verify client secrets (self-contained only). Must be greater than zero; startup fails otherwise. Default: `210000`. Set in Docker Compose through `CONFIGURATION_SERVICE_IDENTITY_HASHING_ITERATIONS`, which also sets the count `setup-openiddict.ps1` hashes bootstrap client secrets with. | _(not used)_ | `210000` |
 
 > **Before upgrading an existing deployment:** a positive limit takes effect immediately, so an Ed-Fi API client
@@ -1114,10 +1122,18 @@ tokens should revoke each one as it finishes with it rather than letting it sit 
 This only helps a caller that still has the token string — one that has lost track of its tokens,
 after a crash loop for instance, has to wait for them to expire.
 
-DMS `/oauth/token` retains the canonical HTTP 429 contract for limited clients: type
+The Configuration Service's `/connect/token` rejects a grant beyond the limit with type
+`urn:ed-fi:management-api:security:authentication:too-many-tokens`; every Configuration Service
+problem type uses the Management API prefix.
+
+DMS `/oauth/token` retains its canonical HTTP 429 contract for limited clients: DMS's own type
 `urn:ed-fi:api:security:authentication:too-many-tokens`, title `Too Many Tokens`, and message
 `Too many access tokens have been requested (limit is {n}). Access tokens should be reused until they expire.`
-DMS parses the Configuration Service response and rebuilds its external response as before.
+DMS parses the Configuration Service response, under either the `urn:ed-fi:management-api:` type
+or the `urn:ed-fi:api:` type an earlier Configuration Service returns, and rebuilds its external
+response as before. Upgrade DMS before, or together with, the Configuration Service: an earlier
+DMS does not recognize the new type and answers a generic 429 of type
+`urn:ed-fi:api:too-many-requests` without the limit message.
 
 > **Changing `ClientSecretHashingIterations` invalidates existing client secrets.** The iteration
 > count is not stored with a hashed secret, so verification always derives at the currently

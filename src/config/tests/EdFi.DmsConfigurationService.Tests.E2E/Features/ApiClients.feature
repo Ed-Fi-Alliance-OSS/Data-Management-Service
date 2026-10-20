@@ -142,7 +142,7 @@ Feature: ApiClients endpoints
                   """
                   {
                     "detail": "Application with ID 99999 not found.",
-                    "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                    "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                     "title": "Unresolved Reference",
                     "status": 409,
                     "validationErrors": {},
@@ -174,7 +174,7 @@ Feature: ApiClients endpoints
                   """
                   {
                     "detail": "The following DataStoreIds were not found in database: 99999, 88888",
-                    "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                    "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                     "title": "Unresolved Reference",
                     "status": 409,
                     "validationErrors": {},
@@ -369,7 +369,7 @@ Feature: ApiClients endpoints
                   """
                   {
                     "detail": "Application with ID 99999 not found.",
-                    "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                    "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                     "title": "Unresolved Reference",
                     "status": 409,
                     "validationErrors": {},
@@ -411,7 +411,7 @@ Feature: ApiClients endpoints
                   """
                   {
                     "detail": "The following DataStoreIds were not found in database: 99999, 88888",
-                    "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                    "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                     "title": "Unresolved Reference",
                     "status": 409,
                     "validationErrors": {},
@@ -610,7 +610,7 @@ Feature: ApiClients endpoints
                   """
                     {
                         "detail": "Data validation failed. See 'validationErrors' for details.",
-                        "type": "urn:ed-fi:api:bad-request:data",
+                        "type": "urn:ed-fi:management-api:bad-request:data",
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
@@ -870,7 +870,7 @@ Feature: ApiClients endpoints
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
@@ -907,7 +907,7 @@ Feature: ApiClients endpoints
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
@@ -1173,7 +1173,7 @@ Feature: ApiClients endpoints
                   """
                   {
                       "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data",
+                      "type": "urn:ed-fi:management-api:bad-request:data",
                       "title": "Data Validation Failed",
                       "status": 400,
                       "validationErrors": {
@@ -1211,7 +1211,7 @@ Feature: ApiClients endpoints
                   """
                   {
                       "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data",
+                      "type": "urn:ed-fi:management-api:bad-request:data",
                       "title": "Data Validation Failed",
                       "status": 400,
                       "validationErrors": {

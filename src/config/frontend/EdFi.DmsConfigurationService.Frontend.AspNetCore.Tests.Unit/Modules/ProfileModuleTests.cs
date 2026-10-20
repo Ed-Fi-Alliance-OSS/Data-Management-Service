@@ -151,7 +151,7 @@ public class ProfileModuleTests
             """
             {
               "detail": "Data validation failed. See 'validationErrors' for details.",
-              "type": "urn:ed-fi:api:bad-request:data",
+              "type": "urn:ed-fi:management-api:bad-request:data",
               "title": "Data Validation Failed",
               "status": 400,
               "correlationId": "{correlationId}",
@@ -409,7 +409,7 @@ public class ProfileModuleTests
         actualResponse["type"]!
             .GetValue<string>()
             .Should()
-            .Be("urn:ed-fi:api:conflict:dependent-item-exists");
+            .Be("urn:ed-fi:management-api:conflict:dependent-item-exists");
         actualResponse["title"]!.GetValue<string>().Should().Be("Dependent Item Exists");
         actualResponse["status"]!.GetValue<int>().Should().Be(409);
         actualResponse["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
@@ -495,7 +495,7 @@ public class ProfileModuleTests
             """
             {
               "detail": "Data validation failed. See 'validationErrors' for details.",
-              "type": "urn:ed-fi:api:bad-request:data",
+              "type": "urn:ed-fi:management-api:bad-request:data",
               "title": "Data Validation Failed",
               "status": 400,
               "correlationId": "{correlationId}",
@@ -858,7 +858,7 @@ public class ProfileMissingBodyTests
     {
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request");
         body["title"]!.GetValue<string>().Should().Be("Bad Request");
         body["detail"]!
             .GetValue<string>()
@@ -1074,7 +1074,7 @@ public class ProfileMissingBodyTests
         {
             _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             _response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:parameter");
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request:parameter");
             _body["title"]!.GetValue<string>().Should().Be("Parameter Validation Failed");
             _body["detail"]!
                 .GetValue<string>()

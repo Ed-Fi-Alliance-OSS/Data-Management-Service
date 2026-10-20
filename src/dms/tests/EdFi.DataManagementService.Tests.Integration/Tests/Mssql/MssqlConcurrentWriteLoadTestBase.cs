@@ -462,7 +462,7 @@ public abstract class MssqlConcurrentWriteLoadTestBase : MssqlApiIntegrationTest
         return chartOfAccount;
     }
 
-    /// <summary>PUT requires the document id in the body; it is the last path segment.</summary>
+    /// <summary>Include the document ID from the final URL path segment in this test's PUT body.</summary>
     private static void AddIdFromPath(JsonObject document, string? documentPath)
     {
         if (documentPath is not null)

@@ -39,7 +39,7 @@ internal static class FailureResults
     /// array. Unlike <see cref="Forbidden"/>, this does NOT parse the input as an identity-provider
     /// payload; it is intended for endpoint-owned authorization messages (for example, a disabled
     /// feature such as client registration). Emits the documented
-    /// <c>urn:ed-fi:api:security:authorization</c> contract.
+    /// <c>urn:ed-fi:management-api:security:authorization</c> contract.
     /// </summary>
     public static IResult Authorization(string correlationId, string[] errors)
     {
@@ -51,7 +51,7 @@ internal static class FailureResults
     }
 
     /// <summary>
-    /// Structured 400 <c>urn:ed-fi:api:bad-request</c> response for a generic, non-field-specific
+    /// Structured 400 <c>urn:ed-fi:management-api:bad-request</c> response for a generic, non-field-specific
     /// client error. The <paramref name="detail"/> must contain no sensitive or internal text.
     /// </summary>
     public static IResult BadRequest(string detail, string correlationId)
@@ -64,7 +64,7 @@ internal static class FailureResults
     }
 
     /// <summary>
-    /// Structured 400 <c>urn:ed-fi:api:bad-request:data</c> data-validation response whose
+    /// Structured 400 <c>urn:ed-fi:management-api:bad-request:data</c> data-validation response whose
     /// <c>validationErrors</c> are grouped from the supplied field-level failures.
     /// </summary>
     public static IResult DataValidation(
@@ -104,7 +104,7 @@ internal static class FailureResults
     }
 
     /// <summary>
-    /// Structured 429 <c>urn:ed-fi:api:security:authentication:too-many-tokens</c> response for a
+    /// Structured 429 <c>urn:ed-fi:management-api:security:authentication:too-many-tokens</c> response for a
     /// client that already holds <paramref name="limit"/> active access tokens.
     /// </summary>
     public static IResult TooManyTokens(int limit, string correlationId)
@@ -157,6 +157,30 @@ internal static class FailureResults
             statusCode: 403
         );
     }
+
+    /// <summary>
+    /// Structured 400 <c>urn:ed-fi:management-api:bad-request</c> response for an identity provider that
+    /// rejected the requested scope. Only the provider's <c>error</c> and <c>error_description</c>
+    /// reach the client, in the same convention the 401 and 502 use. Without a usable
+    /// <c>error_description</c>, a fixed <c>invalid_scope</c> message does.
+    /// </summary>
+    public static IResult InvalidScope(string detail, string correlationId)
+    {
+        string[] errors = TryParseProviderError(detail, out string error, out string errorDescription)
+            ? [$"{error}. {errorDescription}"]
+            : [InvalidScopeFallbackMessage];
+
+        return Results.Json(
+            FailureResponse.ForBadRequest(_errorDetail, correlationId, errors),
+            contentType: _errorContentType,
+            statusCode: 400
+        );
+    }
+
+    // Only bodies whose error is invalid_scope reach InvalidScope, and error_description is optional
+    // under RFC 6749 section 5.2, so a body without one still names the code.
+    private const string InvalidScopeFallbackMessage =
+        "invalid_scope. The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client.";
 
     private const string UnexpectedProviderResponseMessage =
         "The identity provider returned an unexpected response.";

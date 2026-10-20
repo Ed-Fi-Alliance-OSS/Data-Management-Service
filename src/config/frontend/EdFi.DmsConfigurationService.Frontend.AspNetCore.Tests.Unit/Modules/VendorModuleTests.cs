@@ -113,7 +113,7 @@ public class VendorModuleTests
             """
             {
               "detail": "Unable to process the request due to a concurrent modification. Retry the request.",
-              "type": "urn:ed-fi:api:conflict",
+              "type": "urn:ed-fi:management-api:conflict",
               "title": "Conflict",
               "status": 409,
               "correlationId": "{correlationId}",
@@ -390,7 +390,7 @@ public class VendorModuleTests
             """
             {
               "detail": "Data validation failed. See 'validationErrors' for details.",
-              "type": "urn:ed-fi:api:bad-request:data",
+              "type": "urn:ed-fi:management-api:bad-request:data",
               "title": "Data Validation Failed",
               "status": 400,
               "correlationId": "{correlationId}",
@@ -494,7 +494,7 @@ public class VendorModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -522,7 +522,7 @@ public class VendorModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -1130,7 +1130,7 @@ public class VendorModuleTests
             // Asserting the type keeps an out-of-range id from regressing to a bodiless framework 400
             // or to the generic bad-request classification.
             var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:parameter");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request:parameter");
             body["status"]!.GetValue<int>().Should().Be(400);
         }
     }

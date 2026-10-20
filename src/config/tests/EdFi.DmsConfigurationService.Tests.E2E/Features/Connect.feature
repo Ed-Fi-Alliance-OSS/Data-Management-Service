@@ -39,7 +39,7 @@ Feature: Connect endpoints
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
@@ -62,7 +62,7 @@ Feature: Connect endpoints
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
@@ -85,7 +85,7 @@ Feature: Connect endpoints
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
@@ -108,7 +108,7 @@ Feature: Connect endpoints
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
@@ -143,7 +143,7 @@ Feature: Connect endpoints
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
@@ -210,7 +210,7 @@ Feature: Connect endpoints
                   """
                   {
                     "detail": "The request could not be processed. See 'errors' for details.",
-                    "type":"urn:ed-fi:api:security:authentication",
+                    "type":"urn:ed-fi:management-api:security:authentication",
                     "title":"Authentication Failed",
                     "status":401,
                     "validationErrors":{},
@@ -245,7 +245,7 @@ Feature: Connect endpoints
                   """
                   {
                     "detail": "The request could not be processed. See 'errors' for details.",
-                    "type":"urn:ed-fi:api:security:authentication",
+                    "type":"urn:ed-fi:management-api:security:authentication",
                     "title":"Authentication Failed",
                     "status":401,
                     "validationErrors":{},

@@ -186,9 +186,13 @@ public class IdentityHandlerRequestValidationTests
             NullLogger<ValidateContentTypeMiddleware>.Instance,
             ContentTypePolicy.BaselineJsonOnly
         );
-        var parseBody = new ParseBodyMiddleware(NullLogger<ParseBodyMiddleware>.Instance);
+        var parseBody = new ParseBodyMiddleware(
+            NullLogger<ParseBodyMiddleware>.Instance,
+            _errorContentType: "application/problem+json"
+        );
         var duplicateProperties = new DuplicatePropertiesMiddleware(
-            NullLogger<DuplicatePropertiesMiddleware>.Instance
+            NullLogger<DuplicatePropertiesMiddleware>.Instance,
+            errorContentType: "application/problem+json"
         );
         var handler = CreateHandler();
 

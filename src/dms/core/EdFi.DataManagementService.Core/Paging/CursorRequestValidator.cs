@@ -16,8 +16,8 @@ internal abstract record CursorValidationResult
     private CursorValidationResult() { }
 
     /// <summary>
-    /// Neither cursor parameter was supplied, so the request pages traditionally and this validator
-    /// has nothing to say about it.
+    /// The request pages traditionally and this validator has nothing to say about it: neither cursor
+    /// parameter was supplied, or pageSize was supplied beside limit without a pageToken.
     /// </summary>
     public sealed record NotCursorRequest : CursorValidationResult
     {
@@ -64,6 +64,21 @@ internal static class CursorRequestValidator
     /// One definition, so the names an operation recognizes and the names it rejects cannot diverge.
     /// </remarks>
     internal static readonly string[] CursorParameters = [PageTokenParameter, PageSizeParameter];
+
+    /// <summary>
+    /// Whether a request is answered by cursor validation rather than traditional paging: it supplied
+    /// pageToken, or it supplied pageSize without limit.
+    /// </summary>
+    /// <remarks>
+    /// A request that supplies limit without pageToken pages traditionally and ignores any pageSize,
+    /// matching ODS/API 7.3.2, so clients that send both parameters, as ODS clients may, are served.
+    /// Its limit is then validated and applied by the traditional path, so a
+    /// blank or invalid limit is still rejected there. One definition, so the path this validator
+    /// selects and the paging mode a rejected request is counted under cannot disagree.
+    /// </remarks>
+    internal static bool SelectsCursorPaging(IReadOnlyDictionary<string, string> queryParameters) =>
+        queryParameters.ContainsKey(PageTokenParameter)
+        || (queryParameters.ContainsKey(PageSizeParameter) && !queryParameters.ContainsKey(LimitParameter));
 
     internal const string InvalidPageToken = "The page token provided was invalid.";
 
@@ -114,24 +129,25 @@ internal static class CursorRequestValidator
 
         // Presence of the query key selects the cursor path, whatever its value. A client that sent
         // "pageSize=" meant to send a page size and should be told what is actually wrong with the
-        // request, not have the parameter it typed silently ignored.
-        bool hasPageToken = queryParameters.ContainsKey(PageTokenParameter);
-        bool hasPageSize = queryParameters.ContainsKey(PageSizeParameter);
-
-        if (!hasPageToken && !hasPageSize)
+        // request, not have the parameter it typed silently ignored. The one exception is pageSize
+        // beside limit without a token, which pages traditionally whatever either value is.
+        if (!SelectsCursorPaging(queryParameters))
         {
             return CursorValidationResult.NotCursorRequest.Instance;
         }
 
+        bool hasPageToken = queryParameters.ContainsKey(PageTokenParameter);
+        bool hasPageSize = queryParameters.ContainsKey(PageSizeParameter);
         bool hasOffset = queryParameters.ContainsKey(OffsetParameter);
         bool hasLimit = queryParameters.ContainsKey(LimitParameter);
         bool hasTotalCount = queryParameters.TryGetValue(TotalCountParameter, out string? totalCountValue);
 
         if (!hasPageToken)
         {
-            // Phase 2, required relationships. Reached only when pageSize is present, because that is
-            // the only other parameter that selects this path, so one of these two rules always fires.
-            return hasOffset && !hasLimit
+            // Phase 2, required relationships. Reached only when pageSize is present and limit is
+            // absent, because that is the only other shape that selects this path, so one of these two
+            // rules always fires.
+            return hasOffset
                 ? new CursorValidationResult.Invalid(PageSizeWithOffset)
                 : new CursorValidationResult.Invalid(PageTokenRequired);
         }
