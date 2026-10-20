@@ -3861,6 +3861,41 @@ public class Given_Default_Relational_Write_Executor
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
     }
 
+    /// <summary>
+    /// A casing-only write needs no DML, so the second command runs authorization only and nothing is
+    /// persisted: the captured merge result is the one proposed authorization received.
+    /// </summary>
+    [TestCase(RelationalWriteOperationKind.Put)]
+    [TestCase(RelationalWriteOperationKind.Post)]
+    public async Task It_hands_proposed_relationship_authorization_the_stored_identity_casing(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        var request = CreateCaseVariantIdentityRequest(operationKind);
+        _noProfileMergeSynthesizer.ResultToReturn =
+            RelationalWriteIdentityStabilityTestSupport.CreateMergeResult(
+                request.WritePlan.TablePlansInDependencyOrder[0],
+                current: (255901, "Lincoln High", "LHS"),
+                merged: (255901, "LINCOLN HIGH", "LHS")
+            );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        RelationalWriteIdentityStabilityTestSupport
+            .MergedRootRow(_noProfilePersister.CapturedMergeResult!)
+            .Values[2]
+            .Should()
+            .Be(new FlattenedWriteValue.Literal("Lincoln High"));
+    }
+
     [TestCase(RelationalWriteOperationKind.Put)]
     [TestCase(RelationalWriteOperationKind.Post)]
     public async Task It_persists_the_stored_identity_casing_with_a_genuine_non_identity_change(

@@ -442,6 +442,9 @@ internal static class CaseVariantIdentityScenario
     /// item as new and not creatable. SQL Server: the backend matches it to the stored row under the identity
     /// collation, so the PUT succeeds, the row keeps its <c>CollectionItemId</c>, and the stored casing and hidden
     /// <c>indicator</c> are preserved. PostgreSQL: the item is new, so the profile's creatability rule rejects it.
+    /// A recased item that also adds a new <c>periods</c> child is rejected on both engines. That is a known
+    /// limitation on SQL Server: Core's creatability treats the recased parent as new and not creatable, and the
+    /// backend receives only that combined decision. The same new child under the stored casing is accepted.
     /// </summary>
     public static async Task It_merges_a_recased_profiled_item_whose_profile_hides_a_required_member(
         ApiIntegrationHarness harness
@@ -519,19 +522,76 @@ internal static class CaseVariantIdentityScenario
             response.StatusCode.Should().Be(HttpStatusCode.NoContent, responseBody);
         }
 
-        var (body, _) = await GetAsync(harness, location);
-        JsonNode storedItem = body["studentIndicators"]!.AsArray().Should().ContainSingle().Subject!;
-        storedItem["indicatorName"]!.GetValue<string>().Should().Be(storedIndicatorName);
-        storedItem["indicator"]!.GetValue<string>().Should().Be(hiddenIndicator);
-        (
-            await ScalarAsync<long>(
+        await AssertStoredIndicatorAsync(expectedPeriodCount: 1);
+
+        // Core gates a new child on its parent by exact text, so a new period under the recased parent is
+        // rejected on both engines.
+        using (
+            HttpResponseMessage recasedWithNewChild = await SendAsync(
                 harness,
-                $"SELECT {Q(harness, "CollectionItemId")} {indicatorRowFilter}",
-                ("documentId", documentId)
+                HttpMethod.Put,
+                location,
+                PutBodyWithNewPeriod(storedIndicatorName.ToUpperInvariant()),
+                HiddenIndicatorWritableContentType
             )
         )
-            .Should()
-            .Be(originalCollectionItemId);
+        {
+            string recasedWithNewChildBody = await recasedWithNewChild.Content.ReadAsStringAsync();
+            recasedWithNewChild.StatusCode.Should().Be(HttpStatusCode.BadRequest, recasedWithNewChildBody);
+            JsonNode.Parse(recasedWithNewChildBody)!["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be(DataPolicyEnforcedType);
+        }
+
+        await AssertStoredIndicatorAsync(expectedPeriodCount: 1);
+
+        // Control: under the stored casing the same new period is creatable, so the rejection above comes
+        // from the recase, not from the profile.
+        using (
+            HttpResponseMessage storedWithNewChild = await SendAsync(
+                harness,
+                HttpMethod.Put,
+                location,
+                PutBodyWithNewPeriod(storedIndicatorName),
+                HiddenIndicatorWritableContentType
+            )
+        )
+        {
+            storedWithNewChild
+                .StatusCode.Should()
+                .Be(HttpStatusCode.NoContent, await storedWithNewChild.Content.ReadAsStringAsync());
+        }
+
+        await AssertStoredIndicatorAsync(expectedPeriodCount: 2);
+
+        JsonObject PutBodyWithNewPeriod(string indicatorName)
+        {
+            JsonObject newPeriodBody = AssociationBody(indicatorName, "Advanced");
+            newPeriodBody["id"] = IdOf(location);
+            newPeriodBody["studentIndicators"]![0]!["periods"]!
+                .AsArray()
+                .Add(new JsonObject { ["beginDate"] = "2025-01-15" });
+            return newPeriodBody;
+        }
+
+        async Task AssertStoredIndicatorAsync(int expectedPeriodCount)
+        {
+            var (body, _) = await GetAsync(harness, location);
+            JsonNode storedItem = body["studentIndicators"]!.AsArray().Should().ContainSingle().Subject!;
+            storedItem["indicatorName"]!.GetValue<string>().Should().Be(storedIndicatorName);
+            storedItem["indicator"]!.GetValue<string>().Should().Be(hiddenIndicator);
+            storedItem["periods"]!.AsArray().Should().HaveCount(expectedPeriodCount);
+            (
+                await ScalarAsync<long>(
+                    harness,
+                    $"SELECT {Q(harness, "CollectionItemId")} {indicatorRowFilter}",
+                    ("documentId", documentId)
+                )
+            )
+                .Should()
+                .Be(originalCollectionItemId);
+        }
     }
 
     /// <summary>

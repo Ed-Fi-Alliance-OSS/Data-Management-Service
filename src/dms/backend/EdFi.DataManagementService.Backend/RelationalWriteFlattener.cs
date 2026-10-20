@@ -13,7 +13,6 @@ using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
-using EdFi.DataManagementService.Core.Utilities;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -1885,7 +1884,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
     /// <summary>
     /// Builds the duplicate-item failure in Core's shape: key = the array path with concrete
     /// ancestor ordinals (<c>$.parents[1].children</c>), message = Core's "The Nth item of the
-    /// {array} ..." wording. <see cref="ValidationErrorFactory.BuildValidationError"/> truncates at
+    /// {array} ..." wording. <see cref="DuplicateItemValidationError.Build"/> truncates at
     /// the first <c>[*]</c>, so only the collection's own wildcard is left in the path it receives.
     /// Table names and ordinal paths stay out of the client message and travel as the exception's
     /// diagnostic.
@@ -1902,10 +1901,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         var arrayPath =
             MaterializeConcretePath(scopeCanonical[..ownWildcardIndex], [.. duplicateOrdinalPath.SkipLast(1)])
             + scopeCanonical[ownWildcardIndex..];
-        var (errorKey, message) = ValidationErrorFactory.BuildValidationError(
-            arrayPath,
-            duplicateOrdinalPath[^1]
-        );
+        var (errorKey, message) = DuplicateItemValidationError.Build(arrayPath, duplicateOrdinalPath[^1]);
 
         return new RelationalWriteRequestValidationException([
             new WriteValidationFailure(new JsonPath(errorKey), message),

@@ -64,7 +64,9 @@ precondition. **Both providers produced identical counts for every row.**
 | PUT missing target | 1 | 1 | 0 | 1 | 0 | 1 | 1 |
 
 These are the counts after second-command DML adoption; the pre-adoption values were 6, 4, 4, and 1. See
-"Production Second-Command Adoption" below.
+"Production Second-Command Adoption" below. Since DMS-1452, the POST capture is a natural-key predicate in
+the same first command, so the two POST rows no longer read `dms.ReferentialIdentity`; the command counts
+are unchanged.
 
 Reading these numbers:
 
@@ -253,7 +255,7 @@ here as a technically justified deviation.
 
 | Operation | Draft | Current (estimate) | Target, carrier proven | Target, carrier fallback | Deviation from draft and why |
 | --- | --- | --- | --- | --- | --- |
-| POST create, no collections | 4 | 4 | 2 | 2 | Stricter than the draft. The draft's four trips assumed separate reference-resolution, existence, authorization, and insert trips; reference resolution and target resolution are both `dms.ReferentialIdentity` lookups and merge, and the authorization/insert/child/`ContentVersion` statements all merge behind the abort device. |
+| POST create, no collections | 4 | 4 | 2 | 2 | Stricter than the draft. The draft's four trips assumed separate reference-resolution, existence, authorization, and insert trips; reference resolution and target resolution are both natural-key lookups and merge, and the authorization/insert/child/`ContentVersion` statements all merge behind the abort device. |
 | POST create, 5 collections | 4 | ~14 | 2 | 2 | Stricter. Child rows carry `CollectionItemId` from an inline sequence expression, so no table pays a reservation trip. |
 | POST-as-update | 4 | 3 to 5 | 2 | 3 | Carrier-dependent. One command must serve both the create and the update branch, which requires carrying the initial target-or-missing decision across statements. |
 | PUT changed | 3 | 3 to 5 | 2 | 2 | Equal to or better than the draft. PUT's target must exist, so it never needs the create/update fork. |
