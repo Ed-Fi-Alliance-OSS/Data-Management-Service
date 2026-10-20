@@ -15,6 +15,9 @@ Describe 'Managed CDC deployment lifecycle ordering' {
         New-Item -ItemType Directory $script:root | Out-Null
         Copy-Item (Join-Path $PSScriptRoot '../cdc-lifecycle.psm1') $script:root
         Copy-Item (Join-Path $PSScriptRoot '../*.psm1') $script:root
+        Copy-Item (Join-Path $PSScriptRoot '../cdc-worker-diagnostics.ps1') $script:root
+        New-Item -ItemType Directory -Force (Join-Path $TestDrive 'ci') | Out-Null
+        Copy-Item (Join-Path $PSScriptRoot '../../ci/cdc-runbook-diagnostics.ps1') (Join-Path $TestDrive 'ci')
         Copy-Item (Join-Path $PSScriptRoot '../*.yml') $script:root
         Copy-Item (Join-Path $PSScriptRoot '../../schema-package-utility.psm1') $TestDrive
         @'

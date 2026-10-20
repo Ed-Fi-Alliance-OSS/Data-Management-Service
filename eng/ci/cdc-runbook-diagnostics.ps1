@@ -5,6 +5,28 @@
 
 # Only fixed metadata crosses the private Pester/process boundary. Never serialize
 # ErrorRecord messages, assertion values, command text, arguments or host paths.
+function ConvertTo-CdcRunbookWorkerDiagnostic {
+    param([Collections.IDictionary] $Value)
+    $safe = [ordered]@{}
+    foreach ($field in @('Status', 'Stage', 'Health')) {
+        $allowed = switch ($field) {
+            Status { @('Completed', 'NotFound', 'Ambiguous', 'CommandFailed', 'TimedOut', 'OutputLimit', 'CollectionFailed') }
+            Stage { @('Discovery', 'Inspect', 'Logs') }
+            Health { @('none', 'starting', 'healthy', 'unhealthy') }
+        }
+        if ($Value[$field] -is [string] -and $Value[$field] -cin $allowed) { $safe[$field] = $Value[$field] }
+    }
+    foreach ($field in @('Exists', 'Running', 'Restarting', 'Paused', 'OomKilled', 'JavaOutOfMemory', 'BrokerConnectionFailure', 'UnknownLogSignature')) {
+        if ($Value[$field] -is [bool]) { $safe[$field] = $Value[$field] }
+    }
+    foreach ($field in @('ExitCode', 'CommandExitCode', 'RestartCount')) {
+        if ($Value[$field] -is [int] -or $Value[$field] -is [long]) {
+            if ($field -ne 'RestartCount' -or $Value[$field] -ge 0) { $safe[$field] = $Value[$field] }
+        }
+    }
+    return $safe
+}
+
 function ConvertTo-CdcRunbookDiagnostic {
     param([Collections.IDictionary] $Value, [switch] $Child)
     $safe = [ordered]@{}
