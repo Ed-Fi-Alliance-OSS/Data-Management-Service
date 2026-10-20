@@ -343,9 +343,6 @@ Feature: Update a Descriptor
                         ],
                         "$.shortDescription": [
                         "shortDescription is required."
-                        ],
-                        "$.id": [
-                        "id is required."
                         ]
                     },
                     "errors": []
@@ -354,7 +351,7 @@ Feature: Update a Descriptor
 
         @API-045
         @e2e-ci-shard-2
-        Scenario: 13 Update a descriptor with mismatch between URL and id
+        Scenario: 13 Update a descriptor using the URL id when the body id differs
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -366,19 +363,15 @@ Feature: Update a Descriptor
                     "shortDescription": "Sick Leave"
                   }
                   """
-             Then it should respond with 400
-              And the response body is
+             Then it should respond with 204
+              And the record can be retrieved with a GET request
                   """
                   {
-                    "detail": "The request could not be processed. See 'errors' for details.",
-                    "type": "urn:ed-fi:api:bad-request",
-                    "title": "Bad Request",
-                    "status": 400,
-                    "correlationId": null,
-                    "validationErrors": {},
-                    "errors": [
-                        "Request body id must match the id in the url."
-                    ]
+                    "id": "{id}",
+                    "codeValue": "Sick Leave",
+                    "description": "Sick Leave Edited",
+                    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                    "shortDescription": "Sick Leave"
                   }
                   """
 
@@ -399,17 +392,19 @@ Feature: Update a Descriptor
              Then it should respond with 400
               And the response body is
                   """
-                   {
-                     "detail": "The request could not be processed. See 'errors' for details.",
-                     "type": "urn:ed-fi:api:bad-request",
-                     "title": "Bad Request",
-                     "status": 400,
-                     "correlationId": null,
-                     "validationErrors": {},
-                     "errors": [
-                         "Request body id must match the id in the url."
-                     ]
-                   }
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null,
+                    "validationErrors": {
+                        "$.id": [
+                            "id must be a valid GUID string."
+                        ]
+                    },
+                    "errors": []
+                  }
                   """
 
         @API-047
@@ -430,15 +425,17 @@ Feature: Update a Descriptor
               And the response body is
                   """
                   {
-                    "detail": "The request could not be processed. See 'errors' for details.",
-                    "type": "urn:ed-fi:api:bad-request",
-                    "title": "Bad Request",
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null,
-                    "validationErrors": {},
-                    "errors": [
-                        "Request body id must match the id in the url."
-                    ]
+                    "validationErrors": {
+                        "$.id": [
+                            "id must be a valid GUID string."
+                        ]
+                    },
+                    "errors": []
                   }
                   """
 

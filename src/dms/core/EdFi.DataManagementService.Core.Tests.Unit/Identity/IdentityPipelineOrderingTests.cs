@@ -99,7 +99,6 @@ public class IdentityPipelineOrderingTests
             A.Fake<IEffectiveApiSchemaProvider>(),
             claimSetProvider,
             A.Fake<IDocumentValidator>(),
-            A.Fake<IMatchingDocumentUuidsValidator>(),
             A.Fake<IEqualityConstraintValidator>(),
             A.Fake<IDecimalValidator>(),
             NullLogger<ApiService>.Instance,

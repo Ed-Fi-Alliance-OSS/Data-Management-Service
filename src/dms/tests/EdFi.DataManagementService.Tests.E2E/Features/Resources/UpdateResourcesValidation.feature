@@ -197,9 +197,6 @@ Feature: Resources "Update" Operation validations
                         ],
                         "$.namespace": [
                             "namespace is required."
-                        ],
-                        "$.id": [
-                            "id is required."
                         ]
                     },
                     "errors": []
@@ -208,29 +205,25 @@ Feature: Resources "Update" Operation validations
 
         @API-191 @PUT
         @e2e-ci-shard-1
-        Scenario: 08 Update a document with mismatch between URL and id (Resource)
+        Scenario: 08 Update a document using the URL id when the body id differs (Resource)
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
                   """
                   {
                     "id": "00000000-0000-4000-a000-000000000000",
-                    "contentIdentifier": "Testing should not be modified",
+                    "contentIdentifier": "Testing",
+                    "shortDescription": "Updated using URL id",
                     "namespace": "Testing"
                   }
                   """
-             Then it should respond with 400
-              And the response body is
+             Then it should respond with 204
+              And the record can be retrieved with a GET request
                   """
                   {
-                    "detail": "The request could not be processed. See 'errors' for details.",
-                    "type": "urn:ed-fi:api:bad-request",
-                    "title": "Bad Request",
-                    "status": 400,
-                    "correlationId": null,
-                    "validationErrors": {},
-                    "errors": [
-                        "Request body id must match the id in the url."
-                    ]
+                    "id": "{id}",
+                    "contentIdentifier": "Testing",
+                    "shortDescription": "Updated using URL id",
+                    "namespace": "Testing"
                   }
                   """
 
@@ -249,17 +242,19 @@ Feature: Resources "Update" Operation validations
              Then it should respond with 400
               And the response body is
                   """
-                   {
-                     "detail": "The request could not be processed. See 'errors' for details.",
-                     "type": "urn:ed-fi:api:bad-request",
-                     "title": "Bad Request",
-                     "status": 400,
-                     "correlationId": null,
-                     "validationErrors": {},
-                     "errors": [
-                         "Request body id must match the id in the url."
-                     ]
-                   }
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null,
+                    "validationErrors": {
+                        "$.id": [
+                            "id must be a valid GUID string."
+                        ]
+                    },
+                    "errors": []
+                  }
                   """
 
         @API-193 @PUT
@@ -278,15 +273,17 @@ Feature: Resources "Update" Operation validations
               And the response body is
                   """
                   {
-                    "detail": "The request could not be processed. See 'errors' for details.",
-                    "type": "urn:ed-fi:api:bad-request",
-                    "title": "Bad Request",
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null,
-                    "validationErrors": {},
-                    "errors": [
-                        "Request body id must match the id in the url."
-                    ]
+                    "validationErrors": {
+                        "$.id": [
+                            "id must be a valid GUID string."
+                        ]
+                    },
+                    "errors": []
                   }
                   """
 

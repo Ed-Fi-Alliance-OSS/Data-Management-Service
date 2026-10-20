@@ -37,4 +37,8 @@ public sealed class Given_Mssql_CrudRoundTrip : MssqlApiIntegrationTestBase
     [Test]
     public Task It_rejects_delete_when_referenced() =>
         CrudRoundTripScenario.It_rejects_delete_when_referenced(Harness);
+
+    [Test]
+    public Task It_uses_the_url_id_for_student_puts() =>
+        PutBodyIdScenario.It_uses_the_url_id_for_student_puts(Harness);
 }

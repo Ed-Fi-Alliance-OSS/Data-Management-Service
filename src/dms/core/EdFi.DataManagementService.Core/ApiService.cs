@@ -38,7 +38,6 @@ internal class ApiService : IApiService
     private readonly IEffectiveApiSchemaProvider _effectiveApiSchemaProvider;
     private readonly IClaimSetProvider _claimSetProvider;
     private readonly IDocumentValidator _documentValidator;
-    private readonly IMatchingDocumentUuidsValidator _matchingDocumentUuidsValidator;
     private readonly IEqualityConstraintValidator _equalityConstraintValidator;
     private readonly IDecimalValidator _decimalValidator;
     private readonly ILogger<ApiService> _logger;
@@ -154,7 +153,6 @@ internal class ApiService : IApiService
         IEffectiveApiSchemaProvider effectiveApiSchemaProvider,
         IClaimSetProvider claimSetProvider,
         IDocumentValidator documentValidator,
-        IMatchingDocumentUuidsValidator matchingDocumentUuidsValidator,
         IEqualityConstraintValidator equalityConstraintValidator,
         IDecimalValidator decimalValidator,
         ILogger<ApiService> logger,
@@ -183,7 +181,6 @@ internal class ApiService : IApiService
         _effectiveApiSchemaProvider = effectiveApiSchemaProvider;
         _claimSetProvider = claimSetProvider;
         _documentValidator = documentValidator;
-        _matchingDocumentUuidsValidator = matchingDocumentUuidsValidator;
         _equalityConstraintValidator = equalityConstraintValidator;
         _decimalValidator = decimalValidator;
         _logger = logger;
@@ -504,6 +501,7 @@ internal class ApiService : IApiService
             new ParseBodyMiddleware(_logger),
             new RequestInfoBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
             new DuplicatePropertiesMiddleware(_logger),
+            new NormalizePutIdMiddleware(_logger),
             _serviceProvider.GetRequiredService<ProfileResolutionMiddleware>(),
             new CoerceDateFormatMiddleware(_logger),
             new CoerceDateTimesMiddleware(_logger),
@@ -523,7 +521,6 @@ internal class ApiService : IApiService
             new ValidateDocumentMiddleware(_logger, _documentValidator),
             new ValidateDecimalMiddleware(_logger, _decimalValidator),
             _serviceProvider.GetRequiredService<ProfileWritePipelineMiddleware>(),
-            new ValidateMatchingDocumentUuidsMiddleware(_logger, _matchingDocumentUuidsValidator),
             new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
             new BuildResourceInfoMiddleware(
                 _logger,

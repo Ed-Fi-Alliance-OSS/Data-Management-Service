@@ -85,7 +85,6 @@ public class Given_Scope_Validation_Is_Enabled_For_Profile_Resolution_Middleware
             A.Fake<IEffectiveApiSchemaProvider>(),
             A.Fake<IClaimSetProvider>(),
             A.Fake<IDocumentValidator>(),
-            A.Fake<IMatchingDocumentUuidsValidator>(),
             A.Fake<IEqualityConstraintValidator>(),
             A.Fake<IDecimalValidator>(),
             NullLogger<ApiService>.Instance,
