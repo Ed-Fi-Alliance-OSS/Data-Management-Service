@@ -1591,7 +1591,7 @@ Describe "Assert-RestoreTargetSafety" {
     }
 
     It "<Engine>: checks all target sessions from the admin database, including idle clients" -ForEach @(
-        @{ Engine = "postgresql"; AdminDatabase = "postgres"; SessionQuery = "SELECT pid FROM pg_stat_activity WHERE datname = 'edfi_datamanagementservice' AND pid <> pg_backend_pid();" }
+        @{ Engine = "postgresql"; AdminDatabase = "postgres"; SessionQuery = "SELECT pid FROM pg_stat_activity WHERE datname = 'edfi_datamanagementservice' AND backend_type = 'client backend' AND pid <> pg_backend_pid();" }
         @{ Engine = "mssql"; AdminDatabase = "master"; SessionQuery = "SET NOCOUNT ON; SELECT session_id FROM sys.dm_exec_sessions WHERE database_id = DB_ID(N'edfi_datamanagementservice') AND session_id <> @@SPID;" }
     ) {
         $manifest = if ($Engine -eq "mssql") { $script:mssqlManifest } else { $script:pgManifest }

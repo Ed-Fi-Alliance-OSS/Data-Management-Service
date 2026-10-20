@@ -1728,7 +1728,7 @@ function Assert-RestoreTargetSafety {
         "SET NOCOUNT ON; SELECT session_id FROM sys.dm_exec_sessions WHERE database_id = DB_ID(N'$TargetDatabaseName') AND session_id <> @@SPID;"
     }
     else {
-        "SELECT pid FROM pg_stat_activity WHERE datname = '$TargetDatabaseName' AND pid <> pg_backend_pid();"
+        "SELECT pid FROM pg_stat_activity WHERE datname = '$TargetDatabaseName' AND backend_type = 'client backend' AND pid <> pg_backend_pid();"
     }
     $sessionRows = @(Invoke-RestoreCatalogQuery @catalogQueryArguments `
             -Query $sessionQuery `
