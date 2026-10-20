@@ -535,7 +535,7 @@ public class TokenEndpointModuleTests
 
     /// <summary>
     /// Sends a token request through the real endpoint with <see cref="IOAuthManager"/> faked to
-    /// return a problem response exactly as <c>OAuthManager.GenerateProblemDetailResponse</c> builds it.
+    /// return a canned response for delivery through the token endpoint.
     /// </summary>
     private static HttpResponseMessage SendThroughProxy(HttpStatusCode statusCode, JsonNode problemDetails)
     {
@@ -841,15 +841,20 @@ public class TokenEndpointModuleTests
         }
 
         [Test]
-        public void It_responds_with_an_empty_body()
+        public void It_returns_the_oauth_invalid_request_contract()
         {
-            _responseBody.Should().BeEmpty();
-        }
-
-        [Test]
-        public void It_declares_no_content_type()
-        {
-            _response.Content.Headers.ContentType.Should().BeNull();
+            JsonNode body = JsonNode.Parse(_responseBody)!;
+            body.AsObject()
+                .Select(property => property.Key)
+                .Should()
+                .BeEquivalentTo("error", "error_description");
+            body["error"]!.GetValue<string>().Should().Be("invalid_request");
+            body["error_description"]!
+                .GetValue<string>()
+                .Should()
+                .Be("The token request body must be a valid JSON object with string-valued fields");
+            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+            _response.Headers.Contains(OAuthErrorResponse.CorrelationHeaderName).Should().BeTrue();
         }
 
         [Test]
@@ -1075,6 +1080,51 @@ public class TokenEndpointModuleTests
         return (client.SendAsync(request).GetAwaiter().GetResult(), handler.Calls);
     }
 
+    [Test]
+    public async Task It_relays_manager_owned_token_error_headers()
+    {
+        var oAuthManager = A.Fake<IOAuthManager>();
+        var tokenError = OAuthErrorResponse.Create(
+            HttpStatusCode.Unauthorized,
+            "invalid_client",
+            "Credentials rejected",
+            new TraceId("a/b+c")
+        );
+        A.CallTo(() =>
+                oAuthManager.GetAccessTokenAsync(
+                    A<IHttpClientWrapper>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<TokenRequestCredentials>.Ignored,
+                    A<string>.Ignored,
+                    A<TraceId>.Ignored
+                )
+            )
+            .Returns(tokenError);
+
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(services =>
+            {
+                TestMockHelper.AddEssentialMocks(services);
+                services.AddTransient(_ => oAuthManager);
+            });
+        });
+        using var client = factory.CreateClient();
+        using var request = ProxyRequest(
+            "grant_type=client_credentials",
+            "application/x-www-form-urlencoded"
+        );
+
+        using var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.Headers.WwwAuthenticate.ToString().Should().Be(OAuthErrorResponse.BasicChallenge);
+        response.Headers.GetValues(OAuthErrorResponse.CorrelationHeaderName).Should().Equal("a%2Fb%2Bc");
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+    }
+
     /// <summary>
     /// A JSON <c>null</c> credential field counts as absent, as the ODS/API treats it as blank, so
     /// it is not a second mechanism beside a Basic header.
@@ -1154,19 +1204,20 @@ public class TokenEndpointModuleTests
         [Test]
         public void It_carries_the_invalid_request_error()
         {
-            _body["title"]!.GetValue<string>().Should().Be("invalid_request");
+            _body["error"]!.GetValue<string>().Should().Be("invalid_client");
+            _body["error_description"]!
+                .GetValue<string>()
+                .Should()
+                .Be(OAuthErrorResponse.MissingCredentialsDescription);
         }
 
         [Test]
         public void It_says_credentials_are_missing()
         {
-            _body["detail"]!
+            _body["error_description"]!
                 .GetValue<string>()
                 .Should()
-                .Be(
-                    "Client credentials must be supplied in an Authorization: Basic header or as "
-                        + "client_id and client_secret in the request body"
-                );
+                .Be(OAuthErrorResponse.MissingCredentialsDescription);
         }
 
         [Test]
@@ -1254,6 +1305,10 @@ public class TokenEndpointModuleTests
         string contentType
     ) : TokenEndpointModuleTests
     {
+        private readonly bool _hasPartialCredentials = requestContent.Contains(
+            "my-client",
+            StringComparison.Ordinal
+        );
         private HttpResponseMessage _response = null!;
         private List<UpstreamCall> _upstreamCalls = null!;
         private JsonNode _body = null!;
@@ -1274,15 +1329,24 @@ public class TokenEndpointModuleTests
         }
 
         [Test]
-        public void It_responds_with_unauthorized()
+        public void It_uses_the_status_for_missing_or_partial_credentials()
         {
-            _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            _response
+                .StatusCode.Should()
+                .Be(_hasPartialCredentials ? HttpStatusCode.BadRequest : HttpStatusCode.Unauthorized);
         }
 
         [Test]
-        public void It_carries_the_invalid_request_error()
+        public void It_carries_the_matching_oauth_error()
         {
-            _body["title"]!.GetValue<string>().Should().Be("invalid_request");
+            _body["error"]!
+                .GetValue<string>()
+                .Should()
+                .Be(_hasPartialCredentials ? "invalid_request" : "invalid_client");
+            _body["error_description"]!
+                .GetValue<string>()
+                .Should()
+                .Be(OAuthErrorResponse.MissingCredentialsDescription);
         }
 
         [Test]
@@ -1361,7 +1425,11 @@ public class TokenEndpointModuleTests
         [Test]
         public void It_says_the_grant_type_is_unsupported()
         {
-            _body["detail"]!.GetValue<string>().Should().Be("Unsupported grant type");
+            _body["error_description"]!
+                .GetValue<string>()
+                .Should()
+                .Be(OAuthErrorResponse.MissingGrantDescription);
+            _body["error"]!.GetValue<string>().Should().Be("invalid_request");
         }
 
         [Test]
@@ -1506,20 +1574,17 @@ public class TokenEndpointModuleTests
         [Test]
         public void It_answers_with_the_same_content_type_as_the_other_token_problem_responses()
         {
-            // OAuthManager's problem responses are UTF-8 StringContent, which declares the charset.
-            _response
-                .Content.Headers.ContentType!.ToString()
-                .Should()
-                .Be("application/problem+json; charset=utf-8");
+            _response.Content.Headers.ContentType!.ToString().Should().Be("application/json; charset=utf-8");
         }
 
         [Test]
         public void It_says_a_parameter_was_repeated()
         {
-            _body["detail"]!
+            _body["error_description"]!
                 .GetValue<string>()
                 .Should()
                 .Be("A request parameter was included more than once");
+            _body["error"]!.GetValue<string>().Should().Be("invalid_request");
         }
 
         [Test]

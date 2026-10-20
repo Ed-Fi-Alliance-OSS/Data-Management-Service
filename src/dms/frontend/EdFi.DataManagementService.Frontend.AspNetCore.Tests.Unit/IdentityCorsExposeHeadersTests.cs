@@ -135,6 +135,13 @@ public class IdentityCorsExposeHeadersTests
                 .Should()
                 .Contain(value => value.Contains(WarningHeaderName));
         }
+
+        [Test]
+        public void It_exposes_token_diagnostic_headers()
+        {
+            string exposed = string.Join(",", _response.Headers.GetValues("Access-Control-Expose-Headers"));
+            exposed.Should().Contain("X-Correlation-ID").And.Contain("WWW-Authenticate");
+        }
     }
 
     [TestFixture]
@@ -182,6 +189,13 @@ public class IdentityCorsExposeHeadersTests
                 .Headers.GetValues("Access-Control-Expose-Headers")
                 .Should()
                 .Contain(value => value.Contains("Location"));
+        }
+
+        [Test]
+        public void It_exposes_token_diagnostic_headers()
+        {
+            string exposed = string.Join(",", _response.Headers.GetValues("Access-Control-Expose-Headers"));
+            exposed.Should().Contain("X-Correlation-ID").And.Contain("WWW-Authenticate");
         }
     }
 
@@ -288,9 +302,14 @@ public class IdentityCorsExposeHeadersTests
         }
 
         [Test]
-        public void It_exposes_only_the_warning_header()
+        public void It_exposes_warning_and_token_diagnostic_headers()
         {
-            _response.Headers.GetValues("Access-Control-Expose-Headers").Should().Equal(WarningHeaderName);
+            string exposed = string.Join(",", _response.Headers.GetValues("Access-Control-Expose-Headers"));
+            exposed
+                .Should()
+                .Contain(WarningHeaderName)
+                .And.Contain("X-Correlation-ID")
+                .And.Contain("WWW-Authenticate");
         }
 
         [Test]
