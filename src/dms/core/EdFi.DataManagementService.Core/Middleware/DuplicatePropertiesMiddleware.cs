@@ -16,7 +16,14 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// Middleware that detects duplicate property names in JSON request bodies.
 /// Scans original JSON tokens so duplicate detection does not depend on JsonNode materialization.
 /// </summary>
-internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
+/// <param name="logger">The logger.</param>
+/// <param name="errorContentType">
+/// The media type of the 400 response for a duplicate property. The identity JSON-body pipeline
+/// passes application/problem+json, which its published OpenAPI document declares; every other
+/// pipeline keeps the application/json default.
+/// </param>
+internal class DuplicatePropertiesMiddleware(ILogger logger, string errorContentType = "application/json")
+    : IPipelineStep
 {
     private const int MaxLoggedDuplicatePathLength = 1024;
 
@@ -59,7 +66,8 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
                     validationErrors,
                     []
                 ),
-                Headers: []
+                Headers: [],
+                ContentType: errorContentType
             );
             return;
         }

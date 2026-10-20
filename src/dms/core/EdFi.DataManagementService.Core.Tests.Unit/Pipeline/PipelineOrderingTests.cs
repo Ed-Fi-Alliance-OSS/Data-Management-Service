@@ -67,6 +67,21 @@ public class PipelineOrderingTests
     }
 
     /// <summary>
+    /// Every zero-argument pipeline factory on <see cref="ApiService" />, found by reflection so
+    /// that a gate over "every pipeline that does X" cannot miss one composed later.
+    /// </summary>
+    private static IEnumerable<string> PipelineFactoryMethodNames() =>
+        typeof(ApiService)
+            .GetMethods(BindingFlags.NonPublic | BindingFlags.Instance)
+            .Where(method =>
+                method.Name.StartsWith("Create", StringComparison.Ordinal)
+                && method.Name.EndsWith("Pipeline", StringComparison.Ordinal)
+                && method.GetParameters().Length == 0
+                && method.ReturnType == typeof(PipelineProvider)
+            )
+            .Select(method => method.Name);
+
+    /// <summary>
     /// The steps that decide whether the request names a real project namespace and resource. None of
     /// them opens a database connection.
     /// </summary>
@@ -813,21 +828,6 @@ public class PipelineOrderingTests
             "CreateUpdatePipeline",
             "CreateDeleteByIdPipeline",
         ];
-
-        /// <summary>
-        /// Every zero-argument pipeline factory on <see cref="ApiService" />, found by reflection so
-        /// that a gate over "every pipeline that does X" cannot miss one composed later.
-        /// </summary>
-        private static IEnumerable<string> PipelineFactoryMethodNames() =>
-            typeof(ApiService)
-                .GetMethods(BindingFlags.NonPublic | BindingFlags.Instance)
-                .Where(method =>
-                    method.Name.StartsWith("Create", StringComparison.Ordinal)
-                    && method.Name.EndsWith("Pipeline", StringComparison.Ordinal)
-                    && method.GetParameters().Length == 0
-                    && method.ReturnType == typeof(PipelineProvider)
-                )
-                .Select(method => method.Name);
 
         private static DerivativeRoutingPolicy PolicyOf(string factoryMethodName)
         {
@@ -1797,6 +1797,118 @@ public class PipelineOrderingTests
             var stepTypes = GetStepTypes(BuildApiService(), factoryMethodName);
 
             stepTypes.Should().NotContain(type => type.Name.Contains("ApiSchema", StringComparison.Ordinal));
+        }
+    }
+
+    /// <summary>
+    /// The body-validation steps answer a malformed body, an empty body or a duplicate property with
+    /// 400 in a media type set by a constructor argument. Only the identity JSON-body pipeline opts in
+    /// to application/problem+json, the media type its OpenAPI document declares; the resource write
+    /// pipelines keep application/json. The difference lives entirely in a constructor argument, so
+    /// these tests execute the instance the real factory built. They run it directly, so the
+    /// assertion depends on nothing before it in the pipeline.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Body_Validation_Steps : PipelineOrderingTests
+    {
+        private const string IdentityJsonBodyPipeline = "CreateIdentityJsonBodyPipeline";
+        private const string ProblemJson = "application/problem+json";
+        private const string Json = "application/json";
+
+        /// <summary>
+        /// The request the frontend hands Core for each rejection: a body it could not parse, an empty
+        /// body, or a parsed body in which it found a repeated property.
+        /// </summary>
+        private static RequestInfo RejectedRequest(string rejection)
+        {
+            RequestInfo requestInfo = No.RequestInfo("body-validation-wiring-trace-id");
+            requestInfo.FrontendRequest = rejection switch
+            {
+                "malformed" => requestInfo.FrontendRequest with
+                {
+                    Body = null,
+                    ParsedBody = null,
+                    BodyParseErrorMessage = "'n' is invalid after a value.",
+                },
+                "empty" => requestInfo.FrontendRequest with { Body = null, ParsedBody = null },
+                "duplicate" => requestInfo.FrontendRequest with
+                {
+                    Body = null,
+                    DuplicatePropertyPath = "$.FirstName",
+                },
+                _ => throw new ArgumentOutOfRangeException(nameof(rejection), rejection, null),
+            };
+            return requestInfo;
+        }
+
+        private static async Task<string?> MediaTypeOfRejection<TStep>(
+            string factoryMethodName,
+            string rejection
+        )
+            where TStep : IPipelineStep
+        {
+            IPipelineStep step = GetSteps(BuildRoutedResourceApiService(), factoryMethodName)
+                .OfType<TStep>()
+                .Single();
+            RequestInfo requestInfo = RejectedRequest(rejection);
+
+            await step.Execute(requestInfo, TestHelper.NullNext);
+
+            // Proves the step really rejected the request, so the media type read below is the
+            // rejection's own and not the placeholder of a request that was never answered.
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+
+            return requestInfo.FrontendResponse.ContentType;
+        }
+
+        [TestCase(IdentityJsonBodyPipeline, "malformed", ProblemJson)]
+        [TestCase(IdentityJsonBodyPipeline, "empty", ProblemJson)]
+        [TestCase("CreateUpsertPipeline", "malformed", Json)]
+        [TestCase("CreateUpsertPipeline", "empty", Json)]
+        [TestCase("CreateUpdatePipeline", "malformed", Json)]
+        [TestCase("CreateUpdatePipeline", "empty", Json)]
+        public async Task It_answers_a_body_parse_rejection_in_the_media_type_of_its_pipeline(
+            string factoryMethodName,
+            string rejection,
+            string expectedMediaType
+        )
+        {
+            (await MediaTypeOfRejection<ParseBodyMiddleware>(factoryMethodName, rejection))
+                .Should()
+                .Be(expectedMediaType);
+        }
+
+        [TestCase(IdentityJsonBodyPipeline, ProblemJson)]
+        [TestCase("CreateUpsertPipeline", Json)]
+        [TestCase("CreateUpdatePipeline", Json)]
+        public async Task It_answers_a_duplicate_property_in_the_media_type_of_its_pipeline(
+            string factoryMethodName,
+            string expectedMediaType
+        )
+        {
+            (await MediaTypeOfRejection<DuplicatePropertiesMiddleware>(factoryMethodName, "duplicate"))
+                .Should()
+                .Be(expectedMediaType);
+        }
+
+        /// <summary>
+        /// The cases above must name every pipeline that validates a body, so a pipeline composed
+        /// later cannot take either step without its media type being decided here.
+        /// </summary>
+        [Test]
+        public void It_covers_every_pipeline_that_validates_a_body()
+        {
+            PipelineFactoryMethodNames()
+                .Where(name =>
+                    GetStepTypes(BuildRoutedResourceApiService(), name)
+                        .Exists(type =>
+                            type == typeof(ParseBodyMiddleware)
+                            || type == typeof(DuplicatePropertiesMiddleware)
+                        )
+                )
+                .Should()
+                .BeEquivalentTo(IdentityJsonBodyPipeline, "CreateUpsertPipeline", "CreateUpdatePipeline");
         }
     }
 }

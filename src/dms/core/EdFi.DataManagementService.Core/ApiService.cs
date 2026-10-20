@@ -729,14 +729,17 @@ internal class ApiService : IApiService
     /// eight steps from GetIdentityCommonSteps(), then content-type, body parsing, and duplicate-property
     /// checks - all gated behind the capability check, so a request for an unsupported operation never
     /// reaches content-type or body validation - and finally IdentityHandler.
+    /// Body parsing and duplicate-property checks answer their 400s as application/problem+json, the
+    /// only media type the identity OpenAPI document declares for them; the resource write pipelines
+    /// keep those steps' application/json default.
     /// </summary>
     private PipelineProvider CreateIdentityJsonBodyPipeline()
     {
         var steps = GetIdentityCommonSteps();
         steps.AddRange([
             new ValidateContentTypeMiddleware(_logger, ContentTypePolicy.BaselineJsonOnly),
-            new ParseBodyMiddleware(_logger),
-            new DuplicatePropertiesMiddleware(_logger),
+            new ParseBodyMiddleware(_logger, _errorContentType: "application/problem+json"),
+            new DuplicatePropertiesMiddleware(_logger, errorContentType: "application/problem+json"),
             new IdentityHandler(
                 _identityProviderBoundary,
                 IdentityHandler.DefaultMaxRequestLineSize,
