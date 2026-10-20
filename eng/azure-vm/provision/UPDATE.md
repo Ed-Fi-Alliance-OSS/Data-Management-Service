@@ -151,7 +151,7 @@ Comments are left unchanged.
 `cp -p` keeps the owner-only mode, because `.env.before-rename` holds the secrets too; delete it once the stack is healthy.
 If the update below fails, copy it back over `.env` before running the previous build again.
 
-Claims fragment files under `compose/claims` must now end in `-claims.json`; the Configuration Service no longer reads `*-claimset.json` files and only logs a warning for each.
+Claims fragment files under `compose/claims` must now end in `-claims.json`; the Configuration Service no longer reads `*-claimset.json` files and only logs a warning for each, and only when it reads fragments (an empty database at startup, a claims reload, or the first `GET /management/current-claims`), so an in-place upgrade does not log it at startup.
 A fragment without a top-level `name` takes its claim set name from the file name, so renaming it also renames the claim set: first add `"name": "<old file name without .json>"` to any such file.
 Then rename the files, including any in subdirectories; `find` lists nothing once they are all renamed:
 
@@ -355,6 +355,7 @@ Copy the pairs into the private credentials doc, then delete `~/review-variants.
 - **Part B:** pin the previous images (the versions recorded in Part A) by setting `DMS_IMAGE_TAG`, or by re-tagging the recorded image ids as `pre`, then `./up.sh`.
   First run `git -C ~/dms-src switch --detach <commit recorded in Part A>`, so the Compose files match those images: an image built before a configuration key rename ignores the new key, and an older DMS image then loads its bundled ApiSchema instead of `/app/ApiSchema` and answers `503` on the `EffectiveSchemaHash` mismatch.
   A Configuration Service migration does not roll back, so a downgrade across one needs the Part A config database backup.
+  A build from before the fragment rename reads only `*-claimset.json`, and ignores `*-claims.json` without a warning, so rename the files under `compose/claims` back first.
 - **Part C:** the keys were never touched; repeat from the failed step.
   Going back to DS 5.2 is the same procedure with `.env.template`, `CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=5.2` and the `5.2.0` template.
 - **Lost keys:** stop the stack, restore `keycloak-volume.tgz` into the volume and `pg_restore` the config dumps, then start it again.

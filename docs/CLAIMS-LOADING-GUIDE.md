@@ -209,7 +209,7 @@ CONFIGURATION_SERVICE_CLAIMS_DIRECTORY=/app/claims-fragments  # if using Hybrid 
 
 ### Fragment File Structure
 
-Fragment files extend the claims hierarchy. Each fragment must follow the naming pattern `*-claims.json` and contains only the resource claims to be added.
+Fragment files extend the claims hierarchy. Each fragment must follow the naming pattern `*-claims.json`. A fragment can add resource claims to the hierarchy and grant actions on resource claims that already exist.
 
 A fragment can define one claim set. Its non-parent resource claims (those without `"isParent": true`) grant actions under the fragment's top-level `name`, or under the file name when `name` is absent. When the base claims do not already declare that name, it is registered as a new system-reserved claim set. Because it is system-reserved, the Management API cannot change or delete it, and removing the fragment later does not remove the claim set. A name must follow the Management API claim set name rules (non-empty, at most 256 characters, no white space). A fragment whose name contains white space or is longer than 256 characters is still applied, but its claim set is not registered and an error is logged. A fragment with an empty `name` fails claims validation, and the whole claims load is rejected. Parent resource claims (`"isParent": true`) only add hierarchy nodes and attach actions to claim sets that already exist; a fragment containing only parent entries defines no claim set.
 
@@ -549,6 +549,10 @@ The `Authorization: Bearer $TOKEN` header shown in the examples above is enforce
    - Confirm files are in the directory specified by `CONFIGURATION_SERVICE_CLAIMS_DIRECTORY`
    - Verify file permissions allow the service to read the files
    - Check service logs for fragment discovery messages
+   - A warning that a fragment file "is not read" names a file still using the pre-8.1
+     `*-claimset.json` suffix; rename it to end in `-claims.json`. Fragments are read only when
+     an empty database is seeded, on a claims reload, and on the first
+     `GET /management/current-claims`, so the warning does not appear at every startup
 
 4. **A fragment grant has no effect**
    - Check the service log for a warning containing "matches no resource claim"; it names the fragment file, the claim set and the entry that was skipped
