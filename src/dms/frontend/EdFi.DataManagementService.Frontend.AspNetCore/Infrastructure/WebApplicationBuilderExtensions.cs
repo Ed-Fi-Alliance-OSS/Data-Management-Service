@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
+using System.Net;
 using System.Text.Json;
 using System.Threading.RateLimiting;
 using EdFi.Api.Plugins.Hosting;
@@ -259,6 +260,18 @@ public static class WebApplicationBuilderExtensions
             IOptions<Frontend.AspNetCore.Configuration.AppSettings>
         >();
         var traceId = AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, appSettings);
+
+        if (httpContext.GetEndpoint()?.Metadata.GetMetadata<TokenEndpointMetadata>() is not null)
+        {
+            using var tokenError = OAuthErrorResponse.Create(
+                HttpStatusCode.TooManyRequests,
+                "temporarily_unavailable",
+                OAuthErrorResponse.RateLimitDescription,
+                traceId
+            );
+            await TokenErrorResponseWriter.WriteAsync(httpContext, tokenError, cancellationToken);
+            return;
+        }
 
         httpContext.Response.ContentType = "application/problem+json; charset=utf-8";
         await httpContext.Response.WriteAsync(
