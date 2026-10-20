@@ -1562,6 +1562,38 @@ $failure
         }
     }
 
+    Context 'wrapper schema staging failure' {
+        It 'stops staging before downstream phases when acquisition fails for <Entry> (InfraOnly=<InfraOnly>)' -ForEach @(
+            @{ Entry = 'local'; InfraOnly = $true }
+            @{ Entry = 'local'; InfraOnly = $false }
+            @{ Entry = 'published'; InfraOnly = $false }
+        ) {
+            $callLog = Join-Path $script:repo.RepoRoot 'call-log-schema-tool-publish-failure.txt'
+            New-RecordingPrepareScripts -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+            New-RecordingSeedScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            @"
+param([Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
+Add-Content -LiteralPath '$callLog' -Value 'prepare-schema'
+throw 'Schema tool acquisition failed'
+"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot 'prepare-dms-schema.ps1') -Encoding utf8
+
+            $entryScript = if ($Entry -eq 'published') { $script:repo.PublishedWrapperScript } else { $script:repo.WrapperScript }
+            $failure = $null
+            try {
+                if ($Entry -eq 'local' -and $InfraOnly) { & $entryScript -EnvironmentFile $script:repo.EnvFile -InfraOnly }
+                else { & $entryScript -EnvironmentFile $script:repo.EnvFile }
+            }
+            catch { $failure = $_.Exception.Message }
+
+            $failure | Should -Be 'Schema tool acquisition failed'
+            @(Get-Content -LiteralPath $callLog) | Should -Be @('prepare-schema')
+        }
+    }
+
     # =========================================================================
     # R5 - Wrapper -InfraOnly -DmsBaseUrl: call-graph proof
     #   Story Req 2: first start invocation has -InfraOnly but NOT -DmsBaseUrl;

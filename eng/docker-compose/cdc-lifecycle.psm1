@@ -507,7 +507,7 @@ function Get-CdcBootstrapRetryHandoff {
 function Invoke-CdcLifecycleCommand {
     param([hashtable]$Entry, [string]$Operation)
     Import-Module (Join-Path $PSScriptRoot 'bootstrap-schema-tool.psm1')
-    $tool = Resolve-DmsSchemaTool
+    $tool = Resolve-DmsSchemaTool -RequestedPath $env:DMS_SCHEMA_TOOL_PATH
     $arguments = @('cdc', $Operation, '--settings', $Entry.SettingsPath, '--state-path', $Entry.StatePath, '--json')
     if ($Operation -eq 'retire') { $arguments += @('--generation', [string]$Entry.Generation, '--destructive-cleanup') }
     if ($tool.EndsWith('.ps1', [StringComparison]::OrdinalIgnoreCase)) { $output = @(& pwsh -NoProfile -File $tool @arguments 2>$null) }

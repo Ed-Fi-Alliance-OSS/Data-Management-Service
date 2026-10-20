@@ -76,7 +76,8 @@ function New-BootstrapCdcHandoff { param($Settings, $StatePath, $EnvironmentFile
     foreach ($path in @($settingsPath, $dmsPath)) { [IO.File]::SetUnixFileMode($path, [IO.UnixFileMode]384) }
     return [pscustomobject]@{ IdentityProvider = $IdentityProvider; Settings = $Settings; DmsComposePath = $dmsPath; SettingsPath = $settingsPath; EnvironmentFile = $EnvironmentFile; InputSettingsHash = 'fixture-input'; DatabaseNameHash = 'fixture-database' }
 }
-function Invoke-BootstrapCdcEnable { param($Handoff, $Receipt, $SelectedDataStoreIds, $StatePath)
+function Invoke-BootstrapCdcEnable { param($Handoff, $Receipt, $SelectedDataStoreIds, $StatePath, $ToolPath)
+    Set-Content (Join-Path $PSScriptRoot 'selected-tool') $ToolPath
     Add-Content (Join-Path $PSScriptRoot 'calls') "cdc:$($SelectedDataStoreIds -join ','):$($Receipt.CreationReceipt.Outcome):$StatePath"
     if (Test-Path (Join-Path $PSScriptRoot 'model-kafka')) {
         bootstrap-cdc-controller\Invoke-BootstrapCdcEnable -Handoff $Handoff -Receipt $Receipt -SelectedDataStoreIds $SelectedDataStoreIds -StatePath $StatePath
@@ -223,7 +224,7 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
 '@ | Set-Content (Join-Path $script:sandbox 'load-dms-seed-data.ps1')
     }
     BeforeEach {
-        foreach ($name in @('calls', 'identities', 'model-kafka', 'resources', 'effects', 'ui', 'selected-files', 'configure-failure', 'provision-failure', 'real-lifecycle', 'fail', 'cancel', 'writer', 'reuse', 'mismatch', 'retained.json', '.cdc-deployments')) {
+        foreach ($name in @('calls', 'identities', 'selected-tool', 'model-kafka', 'resources', 'effects', 'ui', 'selected-files', 'configure-failure', 'provision-failure', 'real-lifecycle', 'fail', 'cancel', 'writer', 'reuse', 'mismatch', 'retained.json', '.cdc-deployments')) {
             Remove-Item (Join-Path $script:sandbox $name) -Recurse -Force -ErrorAction SilentlyContinue
         }
         Get-Module -All | Where-Object { $_.Path -and $_.Path.StartsWith($script:sandbox + [IO.Path]::DirectorySeparatorChar) } | Remove-Module -Force
@@ -334,7 +335,13 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
         @{ wrapper = 'local'; provider = 'postgresql' }, @{ wrapper = 'local'; provider = 'mssql' },
         @{ wrapper = 'published'; provider = 'postgresql' }, @{ wrapper = 'published'; provider = 'mssql' }
     ) {
-        & (Join-Path $script:sandbox "bootstrap-$wrapper-dms.ps1") @script:arguments -DatabaseEngine $provider
+        $oldToolPath = $env:DMS_SCHEMA_TOOL_PATH
+        try {
+            $env:DMS_SCHEMA_TOOL_PATH = Join-Path $TestDrive 'external api-schema-tools.ps1'
+            & (Join-Path $script:sandbox "bootstrap-$wrapper-dms.ps1") @script:arguments -DatabaseEngine $provider
+            Get-Content (Join-Path $script:sandbox 'selected-tool') | Should -Be $env:DMS_SCHEMA_TOOL_PATH
+        }
+        finally { $env:DMS_SCHEMA_TOOL_PATH = $oldToolPath }
         $calls = @(Get-Content (Join-Path $script:sandbox 'calls'))
         $calls.Count | Should -Be 6
         $calls[0] | Should -Be "infra:$provider`:False:False:True:"
