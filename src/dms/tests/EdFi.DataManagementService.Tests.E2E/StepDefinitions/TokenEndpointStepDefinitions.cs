@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Tests.E2E.Authorization;
@@ -20,6 +21,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private const string TokenEndpoint = "oauth/token";
 
         private const string StoredTokenResponsesContextKey = "storedTokenResponses";
+
+        private const string TokenRequestStartedContextKey = "tokenRequestStartedUnixSeconds";
+
+        private const string CorrelationHeaderName = "X-Correlation-ID";
+
+        private const string BasicChallenge = "Basic realm=\"EdFi.DataManagementService\"";
 
         [When("a token request is made with content type {string} and body")]
         public async Task WhenATokenRequestIsMadeWithContentTypeAndBody(string contentType, string body)
@@ -78,16 +85,58 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             StoredTokenResponses()[name] = await _apiResponse.TextAsync();
         }
 
-        [Then("the token response body matches the one stored as {string}, apart from the correlationId")]
+        [Then("the token response body matches the one stored as {string}")]
         public async Task ThenTheTokenResponseBodyMatchesTheOneStoredAs(string name)
         {
-            JsonNode expected = WithoutCorrelationId(StoredTokenResponses()[name]);
-            JsonNode actual = WithoutCorrelationId(await _apiResponse.TextAsync());
+            (await _apiResponse.TextAsync()).Should().Be(StoredTokenResponses()[name]);
+        }
 
-            JsonNode
-                .DeepEquals(expected, actual)
-                .Should()
-                .BeTrue($"Expected:\n{expected}\n\nActual:\n{actual}");
+        [Then("the token error is {int} {string} with description {string}")]
+        public async Task ThenTheTokenErrorIs(int status, string code, string description)
+        {
+            await AssertTokenError(status, code, description);
+        }
+
+        [Then("the token error is {int} {string} with provider-supplied description")]
+        public async Task ThenTheTokenErrorHasProviderSuppliedDescription(int status, string code)
+        {
+            await AssertTokenError(status, code, expectedDescription: null);
+        }
+
+        private async Task AssertTokenError(int status, string code, string? expectedDescription)
+        {
+            _apiResponse.Status.Should().Be(status);
+            string contentType = ResponseHeader("content-type");
+            contentType.Split(';', 2)[0].Trim().Should().Be("application/json");
+
+            JsonNode body = JsonNode.Parse(await _apiResponse.TextAsync())!;
+            JsonObject error = body.AsObject();
+            error.Select(property => property.Key).Should().BeEquivalentTo("error", "error_description");
+            error["error"]!.GetValue<string>().Should().Be(code);
+            string actualDescription = error["error_description"]!.GetValue<string>();
+            if (expectedDescription is null)
+            {
+                actualDescription.Should().NotBeNullOrWhiteSpace();
+            }
+            else
+            {
+                actualDescription.Should().Be(expectedDescription);
+            }
+
+            string? challenge = ResponseHeaderOrNull("www-authenticate");
+            if (status == 401)
+            {
+                challenge.Should().Be(BasicChallenge);
+            }
+            else
+            {
+                challenge.Should().BeNull();
+            }
+
+            string encodedTraceId = ResponseHeader(CorrelationHeaderName);
+            encodedTraceId.Should().NotBeNullOrWhiteSpace();
+            string traceId = Uri.UnescapeDataString(encodedTraceId);
+            await AssertDmsRequestLogContains(traceId);
         }
 
         /// <summary>
@@ -105,7 +154,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 ? value => JsonEncodedText.Encode(value).ToString()
                 : Uri.EscapeDataString;
 
-            body = body.Replace("{clientId}", encode(credentials.key))
+            body = body.Replace("{oversizedClientId}", new string('x', 2049))
+                .Replace("{clientId}", encode(credentials.key))
                 .Replace("{clientSecret}", encode(credentials.secret));
 
             Dictionary<string, string> headers = new() { ["Content-Type"] = contentType };
@@ -114,6 +164,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 headers["Authorization"] = authorization;
             }
 
+            _scenarioContext[TokenRequestStartedContextKey] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             SetCurrentApiResponse(
                 await _playwrightContext.ApiRequestContext!.PostAsync(
                     TokenEndpoint,
@@ -148,11 +199,70 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             return stored;
         }
 
-        private static JsonNode WithoutCorrelationId(string body)
+        private async Task AssertDmsRequestLogContains(string traceId)
         {
-            JsonNode node = JsonNode.Parse(body)!;
-            (node as JsonObject)?.Remove("correlationId");
-            return node;
+            _scenarioContext.TryGetValue(TokenRequestStartedContextKey, out long startedAt).Should().BeTrue();
+            using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(20));
+            while (!timeout.IsCancellationRequested)
+            {
+                using Process process = new();
+                process.StartInfo = new ProcessStartInfo("docker")
+                {
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                };
+                process.StartInfo.ArgumentList.Add("logs");
+                process.StartInfo.ArgumentList.Add("--since");
+                process.StartInfo.ArgumentList.Add(
+                    startedAt.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                );
+                process.StartInfo.ArgumentList.Add("ed-fi-api");
+                process.Start();
+
+                try
+                {
+                    Task<string> stdout = process.StandardOutput.ReadToEndAsync(timeout.Token);
+                    Task<string> stderr = process.StandardError.ReadToEndAsync(timeout.Token);
+                    await process.WaitForExitAsync(timeout.Token);
+                    string logs = await stdout;
+                    _ = await stderr;
+                    if (process.ExitCode == 0 && logs.Contains(traceId, StringComparison.Ordinal))
+                    {
+                        return;
+                    }
+                }
+                catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+                {
+                    if (!process.HasExited)
+                    {
+                        process.Kill(entireProcessTree: true);
+                    }
+
+                    break;
+                }
+
+                try
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(250), timeout.Token);
+                }
+                catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+                {
+                    break;
+                }
+            }
+
+            Assert.Fail("The token response correlation identifier did not appear in DMS request logs.");
         }
+
+        private string ResponseHeader(string name) =>
+            ResponseHeaderOrNull(name)
+            ?? throw new AssertionException($"The {name} response header was missing.");
+
+        private string? ResponseHeaderOrNull(string name) =>
+            _apiResponse
+                .Headers.FirstOrDefault(header => header.Key.Equals(name, StringComparison.OrdinalIgnoreCase))
+                .Value;
     }
 }
