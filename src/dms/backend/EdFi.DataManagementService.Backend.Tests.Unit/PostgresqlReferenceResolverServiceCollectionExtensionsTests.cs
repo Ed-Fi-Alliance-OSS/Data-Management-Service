@@ -53,8 +53,6 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         var noProfilePersister = scope.ServiceProvider.GetRequiredService<IRelationalWritePersister>();
         var targetLookupService =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupService>();
-        var targetLookupResolver =
-            scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupResolver>();
         var writeExecutor = scope.ServiceProvider.GetRequiredService<IRelationalWriteExecutor>();
         var writeSessionFactory = scope.ServiceProvider.GetRequiredService<IRelationalWriteSessionFactory>();
         var documentHydrator = scope.ServiceProvider.GetRequiredService<IDocumentHydrator>();
@@ -114,7 +112,6 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         noProfileMergeSynthesizer.Should().BeOfType<RelationalWriteNoProfileMergeSynthesizer>();
         noProfilePersister.Should().BeOfType<RelationalWriteNoProfilePersister>();
         targetLookupService.Should().BeOfType<RelationalWriteTargetLookupService>();
-        targetLookupResolver.Should().BeOfType<RelationalWriteTargetLookupResolver>();
         writeExecutor.Should().BeOfType<DefaultRelationalWriteExecutor>();
         writeSessionFactory.Should().BeOfType<PostgresqlRelationalWriteSessionFactory>();
         documentHydrator.Should().BeOfType<PostgresqlDocumentHydrator>();

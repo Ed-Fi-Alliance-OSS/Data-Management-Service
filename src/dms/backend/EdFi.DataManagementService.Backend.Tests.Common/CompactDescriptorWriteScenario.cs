@@ -194,32 +194,8 @@ internal static class CompactDescriptorWriteScenario
         putNoOp.ETag.Should().Be(descriptive.ETag);
         (await SnapshotAsync(create.DocumentUuid)).Should().Be(afterDescription);
 
-        // Bypass the RI match explicitly. Equal storage alone must preserve the conflict result.
         long documentCount = await CountAsync("Document");
         long descriptorCount = await CountAsync("Descriptor");
-        DescriptorWriteRequest unmatched = postRequest(resource, descriptiveBody) with
-        {
-            ReferentialId = new ReferentialId(Guid.NewGuid()),
-        };
-        (await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(unmatched))
-            .Should()
-            .BeOfType<UpsertResult.UpsertFailureWriteConflict>();
-        (await SnapshotAsync(create.DocumentUuid)).Should().Be(afterDescription);
-        (await CountAsync("Document")).Should().Be(documentCount);
-        (await CountAsync("Descriptor")).Should().Be(descriptorCount);
-        if (!pgsql)
-        {
-            // SQL Server ignores final spaces for indexed URI equality; RI still includes them.
-            (
-                await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(
-                    postRequest(resource, Body(Namespace, "Campus#MiXeD "))
-                )
-            )
-                .Should()
-                .BeOfType<UpsertResult.UpsertFailureWriteConflict>();
-            (await SnapshotAsync(create.DocumentUuid)).Should().Be(afterDescription);
-            (await CountAsync("Document")).Should().Be(documentCount);
-        }
 
         DescriptorWriteRequest otherCreate = postRequest(otherResource, descriptiveBody);
         UpsertResult.InsertSuccess other = (
@@ -253,7 +229,6 @@ internal static class CompactDescriptorWriteScenario
             postRequest(resource, body) with
             {
                 DocumentUuid = create.DocumentUuid,
-                ReferentialId = null,
             };
         DescriptorGetByIdRequest GetRequest(QualifiedResourceName type, DocumentUuid uuid) =>
             new(
@@ -279,7 +254,6 @@ internal static class CompactDescriptorWriteScenario
             after.At.Should().BeAfter(before.At);
             after.Namespace.Should().Be(ns);
             after.CodeValue.Should().Be(code);
-            after.RiCount.Should().Be(1);
         }
         async Task ExecuteSqlAsync(string sql)
         {
@@ -312,8 +286,7 @@ internal static class CompactDescriptorWriteScenario
             command.CommandText = """
                 SELECT descriptor."DescriptorId", document."DocumentId", descriptor."ResourceKeyId",
                        descriptor."Namespace", descriptor."CodeValue", descriptor."Description", descriptor."EffectiveBeginDate",
-                       document."ContentVersion", descriptor."ContentLastModifiedAt", descriptor."ContentVersion",
-                       (SELECT COUNT(*) FROM "dms"."ReferentialIdentity" ri WHERE ri."DocumentId" = document."DocumentId")
+                       document."ContentVersion", descriptor."ContentLastModifiedAt", descriptor."ContentVersion"
                 FROM "dms"."Document" document
                 JOIN "dms"."Descriptor" descriptor ON descriptor."DocumentId" = document."DocumentId"
                 WHERE document."DocumentUuid" = @uuid
@@ -336,8 +309,7 @@ internal static class CompactDescriptorWriteScenario
                 data.GetString(5),
                 data.GetDateTime(6),
                 version,
-                at,
-                Convert.ToInt32(data.GetValue(10))
+                at
             );
         }
     }
@@ -351,7 +323,6 @@ internal static class CompactDescriptorWriteScenario
         string Description,
         DateTime BeginDate,
         long Version,
-        DateTime At,
-        int RiCount
+        DateTime At
     );
 }

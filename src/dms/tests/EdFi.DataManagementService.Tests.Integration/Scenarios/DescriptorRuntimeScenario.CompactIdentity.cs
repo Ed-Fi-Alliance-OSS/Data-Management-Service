@@ -114,44 +114,34 @@ internal static partial class DescriptorRuntimeScenario
             .BeEmpty();
     }
 
-    public static async Task It_rejects_a_duplicate_whole_URI_without_an_RI_match(
+    public static async Task It_matches_an_equal_whole_URI_post_to_the_stored_descriptor(
         ApiIntegrationHarness harness
     )
     {
         DescriptorValues original = CreateDescriptorValues("compact-conflict", codeValue: "Campus#MiXeD");
-        (string path, string etag) = await CreateDescriptorAsync(harness, original);
+        (string path, _) = await CreateDescriptorAsync(harness, original);
         long initialDocumentCount = await CountAllDocumentRowsAsync(harness);
-        // Model a row with no matching RI. Database equality must never silently select it for an upsert.
-        await ExecuteSqlAsync(
-            harness,
-            "DELETE FROM \"dms\".\"ReferentialIdentity\" WHERE \"DocumentId\" = @documentId",
-            ("@documentId", (await ReadStoredDescriptorAsync(harness, path)).DocumentId)
-        );
         StoredDescriptor before = await ReadStoredDescriptorAsync(harness, path);
         DescriptorValues components = original with
         {
             Namespace = $"{original.Namespace}#Campus",
             CodeValue = "MiXeD",
         };
+
+        // The components split differently but reconstruct the same whole URI, so the descriptor probe matches
+        // the stored row and the POST updates it instead of colliding with the URI index.
         using HttpResponseMessage duplicate = await PostJsonAsync(
             harness,
             DescriptorEndpoint,
             CreateDescriptorPayload(components)
         );
-        string duplicateBody = await duplicate.Content.ReadAsStringAsync();
-        duplicate.StatusCode.Should().Be(HttpStatusCode.InternalServerError, duplicateBody);
-        JsonObject problem = JsonNode.Parse(duplicateBody)!.AsObject();
-        problem["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:system");
-        problem["title"]!.GetValue<string>().Should().Be("System Error");
-        problem["status"]!.GetValue<int>().Should().Be(500);
-        problem["detail"]!.GetValue<string>().Should().Be("An unexpected problem has occurred.");
+
+        duplicate.StatusCode.Should().Be(HttpStatusCode.OK, await duplicate.Content.ReadAsStringAsync());
+        ToPath(duplicate.Headers.Location!).Should().Be(path);
         (await CountAllDocumentRowsAsync(harness)).Should().Be(initialDocumentCount);
-        (await ReadStoredDescriptorAsync(harness, path)).Should().Be(before);
-        await AssertResponseStateAsync(harness, path, original, etag, before);
-        (await CountDocumentRowsAsync(harness, path.Split('/')[^1])).Should().Be(1);
-        (await GetJsonArrayAsync(harness, $"{DescriptorEndpoint}?namespace={Escape(original.Namespace)}"))
-            .Count.Should()
-            .Be(1);
+        StoredDescriptor after = await ReadStoredDescriptorAsync(harness, path);
+        after.DescriptorId.Should().Be(before.DescriptorId);
+        after.DocumentId.Should().Be(before.DocumentId);
     }
 
     public static async Task It_isolates_identical_URIs_across_descriptor_types_and_projects(

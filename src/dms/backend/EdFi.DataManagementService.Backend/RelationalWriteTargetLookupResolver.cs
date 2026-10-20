@@ -12,10 +12,14 @@ namespace EdFi.DataManagementService.Backend;
 
 public interface IRelationalWriteTargetLookupService
 {
-    Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+    /// <summary>
+    /// Resolves a descriptor POST target by descriptor identity through
+    /// <see cref="RelationalWriteTargetLookupSupport.ResolveDescriptorForPostAsync"/>.
+    /// </summary>
+    Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPostAsync(
         MappingSet mappingSet,
         QualifiedResourceName resource,
-        ReferentialId referentialId,
+        string descriptorUri,
         DocumentUuid candidateDocumentUuid,
         CancellationToken cancellationToken = default
     );
@@ -24,35 +28,6 @@ public interface IRelationalWriteTargetLookupService
         MappingSet mappingSet,
         QualifiedResourceName resource,
         DocumentUuid documentUuid,
-        CancellationToken cancellationToken = default
-    );
-}
-
-public interface IRelationalWriteTargetLookupResolver
-{
-    /// <summary>
-    /// Resolves the POST target inside an open write session. Takes the session's command executor
-    /// rather than a raw connection/transaction pair so the lookup stays on the session's single
-    /// command-creation seam and a session decorator observes it.
-    /// </summary>
-    Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        ReferentialId referentialId,
-        DocumentUuid candidateDocumentUuid,
-        IRelationalCommandExecutor commandExecutor,
-        CancellationToken cancellationToken = default
-    );
-
-    /// <summary>
-    /// Resolves the PUT target inside an open write session, on the same session command-creation
-    /// seam as <see cref="ResolveForPostAsync"/>.
-    /// </summary>
-    Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        DocumentUuid documentUuid,
-        IRelationalCommandExecutor commandExecutor,
         CancellationToken cancellationToken = default
     );
 }
@@ -63,19 +38,19 @@ internal sealed class RelationalWriteTargetLookupService(IRelationalCommandExecu
     private readonly IRelationalCommandExecutor _commandExecutor =
         commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
 
-    public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+    public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPostAsync(
         MappingSet mappingSet,
         QualifiedResourceName resource,
-        ReferentialId referentialId,
+        string descriptorUri,
         DocumentUuid candidateDocumentUuid,
         CancellationToken cancellationToken = default
     )
     {
-        return RelationalWriteTargetLookupSupport.ResolveForPostAsync(
+        return RelationalWriteTargetLookupSupport.ResolveDescriptorForPostAsync(
             _commandExecutor,
             mappingSet,
             resource,
-            referentialId,
+            descriptorUri,
             candidateDocumentUuid,
             cancellationToken
         );
@@ -90,49 +65,6 @@ internal sealed class RelationalWriteTargetLookupService(IRelationalCommandExecu
     {
         return RelationalWriteTargetLookupSupport.ResolveForPutAsync(
             _commandExecutor,
-            mappingSet,
-            resource,
-            documentUuid,
-            cancellationToken
-        );
-    }
-}
-
-internal sealed class RelationalWriteTargetLookupResolver : IRelationalWriteTargetLookupResolver
-{
-    public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        ReferentialId referentialId,
-        DocumentUuid candidateDocumentUuid,
-        IRelationalCommandExecutor commandExecutor,
-        CancellationToken cancellationToken = default
-    )
-    {
-        ArgumentNullException.ThrowIfNull(commandExecutor);
-
-        return RelationalWriteTargetLookupSupport.ResolveForPostAsync(
-            commandExecutor,
-            mappingSet,
-            resource,
-            referentialId,
-            candidateDocumentUuid,
-            cancellationToken
-        );
-    }
-
-    public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        DocumentUuid documentUuid,
-        IRelationalCommandExecutor commandExecutor,
-        CancellationToken cancellationToken = default
-    )
-    {
-        ArgumentNullException.ThrowIfNull(commandExecutor);
-
-        return RelationalWriteTargetLookupSupport.ResolveForPutAsync(
-            commandExecutor,
             mappingSet,
             resource,
             documentUuid,
@@ -143,7 +75,6 @@ internal sealed class RelationalWriteTargetLookupResolver : IRelationalWriteTarg
 
 internal static class RelationalWriteTargetLookupSupport
 {
-    private const string ReferentialIdParameterName = "@referentialId";
     private const string ResourceKeyIdParameterName = "@resourceKeyId";
     private const string DocumentUuidParameterName = "@documentUuid";
     private const string DescriptorUriParameterName = "@descriptorUri";
@@ -229,35 +160,6 @@ internal static class RelationalWriteTargetLookupSupport
         );
     }
 
-    public static async Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
-        IRelationalCommandExecutor commandExecutor,
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        ReferentialId referentialId,
-        DocumentUuid candidateDocumentUuid,
-        CancellationToken cancellationToken = default
-    )
-    {
-        ArgumentNullException.ThrowIfNull(commandExecutor);
-        ArgumentNullException.ThrowIfNull(mappingSet);
-
-        var existingDocument = await TryResolveExistingDocumentByReferentialIdAsync(
-            commandExecutor,
-            mappingSet,
-            resource,
-            referentialId,
-            cancellationToken
-        );
-
-        return existingDocument is null
-            ? new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid)
-            : new RelationalWriteTargetLookupResult.ExistingDocument(
-                existingDocument.DocumentId,
-                existingDocument.DocumentUuid,
-                existingDocument.ObservedContentVersion
-            );
-    }
-
     /// <summary>
     /// Resolves a descriptor POST target by descriptor identity: the lowered whole URI and the descriptor's
     /// own resource key, folded exactly as <c>UX_Descriptor_UriLowered_ResourceKeyId</c> folds them, so the
@@ -321,31 +223,6 @@ internal static class RelationalWriteTargetLookupSupport
                 existingDocument.DocumentUuid,
                 existingDocument.ObservedContentVersion
             );
-    }
-
-    private static Task<ResolvedExistingDocument?> TryResolveExistingDocumentByReferentialIdAsync(
-        IRelationalCommandExecutor commandExecutor,
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        ReferentialId referentialId,
-        CancellationToken cancellationToken
-    )
-    {
-        var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
-
-        return ExecuteLookupAsync(
-            commandExecutor,
-            mappingSet.Key.Dialect switch
-            {
-                SqlDialect.Pgsql => BuildPostgresqlLookupByReferentialIdCommand(referentialId, resourceKeyId),
-                SqlDialect.Mssql => BuildMssqlLookupByReferentialIdCommand(referentialId, resourceKeyId),
-                _ => throw new NotSupportedException(
-                    $"Relational POST target lookup does not support SQL dialect '{mappingSet.Key.Dialect}'."
-                ),
-            },
-            $"resource '{RelationalWriteSupport.FormatResource(resource)}' and referential id '{referentialId.Value}'",
-            cancellationToken
-        );
     }
 
     private static Task<ResolvedExistingDocument?> TryResolveExistingDocumentByDocumentUuidAsync(
@@ -427,54 +304,6 @@ internal static class RelationalWriteTargetLookupSupport
                 return resolvedDocument;
             },
             cancellationToken
-        );
-    }
-
-    private static RelationalCommand BuildPostgresqlLookupByReferentialIdCommand(
-        ReferentialId referentialId,
-        short resourceKeyId
-    )
-    {
-        return new RelationalCommand(
-            """
-            SELECT
-                document."DocumentId" AS "DocumentId",
-                document."DocumentUuid" AS "DocumentUuid",
-                document."ContentVersion" AS "ContentVersion"
-            FROM dms."ReferentialIdentity" referentialIdentity
-            INNER JOIN dms."Document" document
-                ON document."DocumentId" = referentialIdentity."DocumentId"
-            WHERE referentialIdentity."ReferentialId" = @referentialId
-                AND document."ResourceKeyId" = @resourceKeyId
-            """,
-            [
-                new RelationalParameter(ReferentialIdParameterName, referentialId.Value),
-                new RelationalParameter(ResourceKeyIdParameterName, resourceKeyId),
-            ]
-        );
-    }
-
-    private static RelationalCommand BuildMssqlLookupByReferentialIdCommand(
-        ReferentialId referentialId,
-        short resourceKeyId
-    )
-    {
-        return new RelationalCommand(
-            """
-            SELECT
-                document.[DocumentId] AS [DocumentId],
-                document.[DocumentUuid] AS [DocumentUuid],
-                document.[ContentVersion] AS [ContentVersion]
-            FROM [dms].[ReferentialIdentity] referentialIdentity
-            INNER JOIN [dms].[Document] document
-                ON document.[DocumentId] = referentialIdentity.[DocumentId]
-            WHERE referentialIdentity.[ReferentialId] = @referentialId
-                AND document.[ResourceKeyId] = @resourceKeyId
-            """,
-            [
-                new RelationalParameter(ReferentialIdParameterName, referentialId.Value),
-                new RelationalParameter(ResourceKeyIdParameterName, resourceKeyId),
-            ]
         );
     }
 

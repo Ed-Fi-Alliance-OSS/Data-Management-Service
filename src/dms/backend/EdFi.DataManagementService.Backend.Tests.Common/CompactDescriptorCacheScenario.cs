@@ -161,11 +161,7 @@ internal static class CompactDescriptorCacheScenario
         }
 
         string descriptiveBody = Body($"{Namespace}#Campus", "MixedCase", "Changed description");
-        DescriptorWriteRequest put = postRequest(descriptiveBody) with
-        {
-            DocumentUuid = create.DocumentUuid,
-            ReferentialId = null,
-        };
+        DescriptorWriteRequest put = postRequest(descriptiveBody) with { DocumentUuid = create.DocumentUuid };
         (await handler.HandlePutAsync(put)).Should().BeOfType<UpdateResult.UpdateSuccess>();
         StoredDescriptor descriptive = await ReadStoredAsync();
         AssertChanged(descriptive, components);

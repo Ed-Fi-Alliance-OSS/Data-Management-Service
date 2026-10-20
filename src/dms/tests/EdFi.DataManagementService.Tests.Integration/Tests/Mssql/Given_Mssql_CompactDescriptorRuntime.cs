@@ -58,8 +58,8 @@ public sealed class Given_Mssql_CompactDescriptorRuntime : MssqlApiIntegrationTe
         );
 
     [Test]
-    public Task It_rejects_a_duplicate_whole_URI_without_an_RI_match() =>
-        DescriptorRuntimeScenario.It_rejects_a_duplicate_whole_URI_without_an_RI_match(Harness);
+    public Task It_matches_an_equal_whole_URI_post_to_the_stored_descriptor() =>
+        DescriptorRuntimeScenario.It_matches_an_equal_whole_URI_post_to_the_stored_descriptor(Harness);
 
     [Test]
     public Task It_isolates_identical_URIs_across_descriptor_types_and_projects() =>

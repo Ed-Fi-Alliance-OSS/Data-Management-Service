@@ -59,7 +59,8 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory
             .Session.Executor.Commands[0]
             .CommandText.Should()
-            .Contain("FROM dms.\"ReferentialIdentity\"");
+            .Contain("FROM \"dms\".\"Descriptor\" descriptor")
+            .And.NotContain("ReferentialIdentity");
         sessionFactory.Session.ScalarCommands.Should().BeEmpty();
     }
 
@@ -652,7 +653,6 @@ public class Given_Descriptor_Write_Preconditions
                 """
             )!,
             documentUuid,
-            null,
             new TraceId("descriptor-put-immutable-if-match")
         )
         {
@@ -1047,7 +1047,6 @@ public class Given_Descriptor_Write_Preconditions
             _descriptorResource,
             CreateRequestBody(description),
             documentUuid,
-            new ReferentialId(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
             new TraceId("descriptor-post-precondition")
         );
     }
@@ -1063,7 +1062,6 @@ public class Given_Descriptor_Write_Preconditions
             _descriptorResource,
             CreateRequestBody(description),
             documentUuid,
-            null,
             new TraceId("descriptor-put-precondition")
         );
     }
@@ -1321,10 +1319,10 @@ public class Given_Descriptor_Write_Preconditions
         public RelationalWriteTargetLookupResult PutResult { get; set; } =
             new RelationalWriteTargetLookupResult.NotFound();
 
-        public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+        public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPostAsync(
             MappingSet mappingSet,
             QualifiedResourceName resource,
-            ReferentialId referentialId,
+            string descriptorUri,
             DocumentUuid candidateDocumentUuid,
             CancellationToken cancellationToken = default
         )

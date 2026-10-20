@@ -58,7 +58,7 @@ public class Given_The_Parity_Scenario_Catalog
         "Api/DescriptorRuntime/RIPostComponentAndCasingUpdates",
         "Api/DescriptorRuntime/EqualWholeUriPut",
         "Api/DescriptorRuntime/IdenticalPostAndPutNoOps",
-        "Api/DescriptorRuntime/DuplicateWithoutRIMatch",
+        "Api/DescriptorRuntime/EqualWholeUriPostMatch",
         "Api/DescriptorRuntime/QualifiedTypeIsolation",
         "Api/DescriptorRuntime/ImmutablePutIdentity",
         "Api/DescriptorRuntime/DescriptiveAndDateUpdates",

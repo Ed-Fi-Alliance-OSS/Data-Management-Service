@@ -94,18 +94,38 @@ public partial class Given_Descriptor_Write_Response_Etags
         AssertExistingDescriptorCommands(sessionFactory, dialect, useIfMatch, writes: true);
         var update = sessionFactory.Session.Executor.Commands[^1];
         AssertRepresentationUpdate(update, dialect, incomingNamespace, incomingCode);
+        update.CommandText.Should().NotContain("ReferentialIdentity");
         update
-            .CommandText.Should()
-            .Contain(
-                dialect is SqlDialect.Pgsql
-                    ? "VALUES (@referentialId, @documentId, @resourceKeyId)"
-                    : "USING (VALUES (@referentialId, @documentId, @resourceKeyId))"
+            .Parameters.Select(parameter => parameter.Name)
+            .Should()
+            .Equal(
+                "@namespace",
+                "@codeValue",
+                "@shortDescription",
+                "@description",
+                "@effectiveBeginDate",
+                "@effectiveEndDate",
+                "@documentId",
+                "@enqueueOutcomeNoWorkQueued",
+                "@enqueueOutcomeAlreadySatisfied"
             );
-        update
-            .Parameters.Single(parameter => parameter.Name == "@referentialId")
-            .Value.Should()
-            .Be(request.ReferentialId!.Value.Value);
-        update.Parameters.Single(parameter => parameter.Name == "@resourceKeyId").Value.Should().Be((short)1);
+        if (useIfMatch)
+        {
+            // The in-session re-resolution is the descriptor identity probe, bound to the request's URI.
+            var probe = sessionFactory.Session.Executor.Commands[0];
+            probe
+                .CommandText.Should()
+                .Contain(
+                    dialect is SqlDialect.Pgsql
+                        ? "FROM \"dms\".\"Descriptor\" descriptor"
+                        : "FROM [dms].[Descriptor] descriptor"
+                );
+            probe
+                .Parameters.Should()
+                .ContainSingle()
+                .Which.Value.Should()
+                .Be($"{incomingNamespace}#{incomingCode}");
+        }
     }
 
     [TestCaseSource(nameof(PutRepresentationCases))]

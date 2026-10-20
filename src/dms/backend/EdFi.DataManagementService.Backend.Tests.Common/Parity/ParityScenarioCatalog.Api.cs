@@ -114,10 +114,10 @@ public static partial class ParityScenarioCatalog
             fixtureSuffix: "CompactDescriptorRuntime"
         ),
         Api(
-            "Api/DescriptorRuntime/DuplicateWithoutRIMatch",
-            "Equal whole-URI storage without a matching RI retains the write-conflict outcome (HTTP 500 after retries) and leaves the existing representation and stamps intact.",
-            "DescriptorRuntimeScenario.It_rejects_a_duplicate_whole_URI_without_an_RI_match",
-            "It_rejects_a_duplicate_whole_URI_without_an_RI_match",
+            "Api/DescriptorRuntime/EqualWholeUriPostMatch",
+            "A POST whose components reconstruct a stored whole URI is matched by the descriptor probe and updates that descriptor (HTTP 200) without allocating a document or descriptor id.",
+            "DescriptorRuntimeScenario.It_matches_an_equal_whole_URI_post_to_the_stored_descriptor",
+            "It_matches_an_equal_whole_URI_post_to_the_stored_descriptor",
             fixtureSuffix: "CompactDescriptorRuntime"
         ),
         Api(

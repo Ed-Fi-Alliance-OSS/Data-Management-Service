@@ -411,7 +411,6 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
             _descriptorResource,
             CreateDescriptorRequestBody("uri://ed-fi.org/SchoolTypeDescriptor", "Charter"),
             _documentUuid,
-            new ReferentialId(Guid.Parse("11111111-2222-3333-4444-555555555555")),
             new TraceId("descriptor-post-ownership-stamp"),
             [NamespaceStrategy()],
             authorizationContext
@@ -494,7 +493,8 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 namespacePrefixes: ["uri://ed-fi.org/"],
-                authorizationStrategy: NamespaceStrategy()
+                authorizationStrategy: NamespaceStrategy(),
+                @namespace: "uri://other.org/SchoolTypeDescriptor"
             )
         );
 
@@ -525,7 +525,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         };
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRowWithEdFiNamespace()]);
         sessionFactory.Session.Executor.NamespaceResults.Enqueue(
             new NamespaceAuthorizationExecutionResult.Authorized()
         );
@@ -538,7 +538,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
             CreatePostRequest(
                 namespacePrefixes: ["uri://ed-fi.org/"],
                 authorizationStrategy: NamespaceStrategy(),
-                @namespace: "uri://other.org/SchoolTypeDescriptor"
+                @namespace: "URI://ED-FI.ORG/SchoolTypeDescriptor"
             )
         );
 
@@ -582,8 +582,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 namespacePrefixes: ["uri://ed-fi.org/"],
-                authorizationStrategy: NamespaceStrategy(),
-                codeValue: "ChangedCode"
+                authorizationStrategy: NamespaceStrategy()
             )
         );
 
@@ -740,7 +739,8 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         var sut = CreateSut(sessionFactory, targetLookupService);
         var request = CreatePostRequest(
             namespacePrefixes: ["uri://ed-fi.org/"],
-            authorizationStrategy: NamespaceStrategy()
+            authorizationStrategy: NamespaceStrategy(),
+            @namespace: "uri://other.org/SchoolTypeDescriptor"
         ) with
         {
             WritePrecondition = new WritePrecondition.IfMatch("\"stale-etag\""),
@@ -1803,7 +1803,6 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
             _descriptorResource,
             CreateDescriptorRequestBody("uri://ed-fi.org/SchoolTypeDescriptor", "Charter"),
             _documentUuid,
-            new ReferentialId(Guid.Parse("11111111-2222-3333-4444-555555555555")),
             new TraceId("descriptor-write-contract"),
             evaluators,
             context
@@ -1822,7 +1821,6 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
             _descriptorResource,
             CreateDescriptorRequestBody("uri://ed-fi.org/SchoolTypeDescriptor", "Charter"),
             _documentUuid,
-            new ReferentialId(Guid.Parse("11111111-2222-3333-4444-555555555555")),
             new TraceId("descriptor-write-contract-default")
         );
 
@@ -1952,7 +1950,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         var sut = CreateSut(sessionFactory, targetLookupService);
 
         var result = await sut.HandlePostAsync(
-            CreatePolicyPostRequest(),
+            CreatePolicyPostRequest(@namespace: "uri://other.org/SchoolTypeDescriptor"),
             PolicyPair(create: [NoFurtherStrategy()], update: [NamespaceStrategy()])
         );
 
@@ -2010,7 +2008,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         var sut = CreateSut(sessionFactory, targetLookupService);
 
         var result = await sut.HandlePostAsync(
-            CreatePolicyPostRequest(codeValue: "ChangedCode"),
+            CreatePolicyPostRequest(),
             PolicyPair(create: [NamespaceStrategy()], update: [NoFurtherStrategy()])
         );
 
@@ -2033,7 +2031,10 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         var sut = CreateSut(sessionFactory, new StubRelationalWriteTargetLookupService());
 
         var result = await sut.HandlePostAsync(
-            CreatePolicyPostRequest(writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")),
+            CreatePolicyPostRequest(
+                @namespace: "uri://other.org/SchoolTypeDescriptor",
+                writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+            ),
             PolicyPair(create: [NoFurtherStrategy()], update: [NamespaceStrategy()])
         );
 
@@ -2054,7 +2055,10 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         var sut = CreateSut(sessionFactory, new StubRelationalWriteTargetLookupService());
 
         var result = await sut.HandlePostAsync(
-            CreatePolicyPostRequest(writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")),
+            CreatePolicyPostRequest(
+                @namespace: "uri://other.org/SchoolTypeDescriptor",
+                writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+            ),
             PolicyPair(create: [NamespaceStrategy()], update: [NoFurtherStrategy()])
         );
 
@@ -2213,10 +2217,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         var sut = CreateSut(sessionFactory, targetLookupService);
 
-        var staleAttempt = await sut.HandlePostAsync(
-            CreatePolicyPostRequest(codeValue: "ChangedCode"),
-            UpdateOnly()
-        );
+        var staleAttempt = await sut.HandlePostAsync(CreatePolicyPostRequest(), UpdateOnly());
         // Recreated under a new DocumentId, which the retry's lookup finds and locks.
         targetLookupService.PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(
             346L,
@@ -2226,10 +2227,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         sessionFactory.Session.ScalarResults.Enqueue(1L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRowWithEdFiNamespace()]);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow()]);
-        var retry = await sut.HandlePostAsync(
-            CreatePolicyPostRequest(codeValue: "ChangedCode"),
-            UpdateOnly()
-        );
+        var retry = await sut.HandlePostAsync(CreatePolicyPostRequest(), UpdateOnly());
 
         staleAttempt.Should().BeOfType<UpsertResult.UpsertFailureWriteConflict>();
         retry.Should().BeOfType<UpsertResult.UpdateSuccess>();
@@ -2269,7 +2267,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         var sut = CreateSut(sessionFactory, targetLookupService);
 
         var result = await sut.HandlePostAsync(
-            CreatePolicyPostRequest(),
+            CreatePolicyPostRequest(@namespace: "uri://other.org/SchoolTypeDescriptor"),
             PolicyPair(create: [NoFurtherStrategy()], update: [NamespaceStrategy()])
         );
 
@@ -2291,7 +2289,10 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         var sut = CreateSut(sessionFactory, new StubRelationalWriteTargetLookupService());
 
         var result = await sut.HandlePostAsync(
-            CreatePolicyPostRequest(writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")),
+            CreatePolicyPostRequest(
+                @namespace: "uri://other.org/SchoolTypeDescriptor",
+                writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+            ),
             PolicyPair(create: [NoFurtherStrategy()], update: [NamespaceStrategy()])
         );
 
@@ -2454,7 +2455,6 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
             _descriptorResource,
             CreateDescriptorRequestBody(@namespace, codeValue),
             _documentUuid,
-            new ReferentialId(Guid.Parse("11111111-2222-3333-4444-555555555555")),
             new TraceId("descriptor-post-namespace"),
             authorizationStrategies,
             new RelationalAuthorizationContext([], namespacePrefixes)
@@ -2475,7 +2475,6 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
             _descriptorResource,
             CreateDescriptorRequestBody(@namespace, codeValue),
             _documentUuid,
-            new ReferentialId(Guid.Parse("11111111-2222-3333-4444-555555555555")),
             new TraceId("descriptor-post-namespace"),
             [authorizationStrategy],
             new RelationalAuthorizationContext([], namespacePrefixes)
@@ -2493,7 +2492,6 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
             _descriptorResource,
             CreateDescriptorRequestBody(@namespace, codeValue),
             _documentUuid,
-            referentialId: null,
             new TraceId("descriptor-put-namespace"),
             authorizationStrategies,
             new RelationalAuthorizationContext([], namespacePrefixes)
@@ -2511,7 +2509,6 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
             _descriptorResource,
             CreateDescriptorRequestBody(@namespace, codeValue),
             _documentUuid,
-            referentialId: null,
             new TraceId("descriptor-put-namespace"),
             [authorizationStrategy],
             new RelationalAuthorizationContext([], namespacePrefixes)
@@ -2566,10 +2563,10 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         public RelationalWriteTargetLookupResult PutResult { get; set; } =
             new RelationalWriteTargetLookupResult.NotFound();
 
-        public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+        public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPostAsync(
             MappingSet mappingSet,
             QualifiedResourceName resource,
-            ReferentialId referentialId,
+            string descriptorUri,
             DocumentUuid candidateDocumentUuid,
             CancellationToken cancellationToken = default
         )
