@@ -193,7 +193,7 @@ Feature: Token validation
                   """
                     {
                       "detail": "The request could not be processed. See 'errors' for details.",
-                      "type": "urn:ed-fi:api:bad-request",
+                      "type": "urn:ed-fi:management-api:bad-request",
                       "title": "Bad Request",
                       "status": 400,
                       "validationErrors": {},

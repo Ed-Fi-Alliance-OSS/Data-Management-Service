@@ -159,7 +159,7 @@ internal static class FailureResults
     }
 
     /// <summary>
-    /// Structured 400 <c>urn:ed-fi:api:bad-request</c> response for an identity provider that
+    /// Structured 400 <c>urn:ed-fi:management-api:bad-request</c> response for an identity provider that
     /// rejected the requested scope. Only the provider's <c>error</c> and <c>error_description</c>
     /// reach the client, in the same convention the 401 and 502 use. Without a usable
     /// <c>error_description</c>, a fixed <c>invalid_scope</c> message does.

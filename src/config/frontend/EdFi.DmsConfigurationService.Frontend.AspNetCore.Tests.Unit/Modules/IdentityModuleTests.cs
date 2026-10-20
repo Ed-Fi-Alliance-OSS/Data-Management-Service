@@ -4760,7 +4760,7 @@ public class TokenEndpointInvalidScopeTests
                 """
                 {
                   "detail": "The request could not be processed. See 'errors' for details.",
-                  "type": "urn:ed-fi:api:bad-request",
+                  "type": "urn:ed-fi:management-api:bad-request",
                   "title": "Bad Request",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -4825,7 +4825,10 @@ public class TokenEndpointInvalidScopeTests
 
         [Test]
         public void It_returns_the_bad_gateway_type() =>
-            JsonNode.Parse(Body)!["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-gateway");
+            JsonNode.Parse(Body)!["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:management-api:bad-gateway");
     }
 
     [TestFixture]

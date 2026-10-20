@@ -43,7 +43,7 @@ An omitted or empty `scope` is treated as absent, as RFC 6749 section 3.2 requir
 Keycloak then issues the client's default client scopes.
 The `self-contained` provider issues the scopes registered for the client.
 
-Under Keycloak, a requested scope that Keycloak rejects answers `400` with `type` `urn:ed-fi:api:bad-request` and `errors` of `["invalid_scope. <description>"]`, for example `invalid_scope. Invalid scopes: edfi_admin_api/readonly_access`.
+Under Keycloak, a requested scope that Keycloak rejects answers `400` with `type` `urn:ed-fi:management-api:bad-request` and `errors` of `["invalid_scope. <description>"]`, for example `invalid_scope. Invalid scopes: edfi_admin_api/readonly_access`.
 It used to answer `502`.
 Other Keycloak failures keep their previous answers: a failed connection, a 5xx or any other `400` error code answers `502`, and a name-resolution failure or a timeout answers `500`.
 The `self-contained` provider does not reject an ungranted scope: it issues the requested scopes the client holds, and the client's registered scopes when it holds none of them.
