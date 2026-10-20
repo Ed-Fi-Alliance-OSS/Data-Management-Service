@@ -148,6 +148,7 @@ public class Given_A_Provisioned_Mssql_Database_Document_Safety_Net_Foreign_Keys
         await using (var transaction = await connection.BeginTransactionAsync())
         {
             await using var command = connection.CreateCommand();
+            command.CommandTimeout = 300;
             command.Transaction = (SqlTransaction)transaction;
             command.CommandText = """
                 DELETE FROM [edfi].[School] WHERE [DocumentId] = @documentId;
