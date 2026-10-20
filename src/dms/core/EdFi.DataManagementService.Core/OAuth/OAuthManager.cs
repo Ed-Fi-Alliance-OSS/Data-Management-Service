@@ -9,7 +9,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 
@@ -22,9 +21,7 @@ namespace EdFi.DataManagementService.Core.OAuth;
 public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
 {
     /// <summary>
-    /// The client-facing <c>detail</c> of every 502 this class produces, used by both the
-    /// upstream-error branch and the <c>catch</c> branch so that the two are indistinguishable
-    /// from outside.
+    /// The fixed client-facing description of every 502 this class produces.
     /// </summary>
     /// <remarks>
     /// <c>/oauth/token</c> is unauthenticated, so anything placed here is readable by any caller
@@ -35,10 +32,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
     /// reach the detail - it appears verbatim on the log entry that does record the upstream
     /// content, which is what FR-LOG-6 guarantees.
     /// </remarks>
-    private const string GatewayErrorDetail =
-        "The upstream identity service did not return a usable response. Contact your system "
-        + "administrator with the correlationId from this response, which identifies the "
-        + "corresponding server log entry.";
+    private const string GatewayErrorDetail = OAuthErrorResponse.GatewayDescription;
 
     /// <summary>
     /// The client-facing <c>detail</c> of a 401 whose upstream body carried no usable
@@ -53,8 +47,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
     /// <c>correlationId</c> still reaches it - see <c>SummarizeUpstreamFieldsForLogging</c> for
     /// what that summary keeps and what it deliberately does not.
     /// </remarks>
-    private const string UnauthorizedFallbackDetail =
-        "The upstream identity service rejected the request credentials.";
+    private const string UnauthorizedFallbackDetail = OAuthErrorResponse.UnauthorizedFallbackDescription;
 
     /// <summary>
     /// The structured-logging template for the single event that preserves what can safely be
@@ -74,6 +67,12 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         + "what its body carried is recorded here because the body is withheld from the client "
         + "- {TraceId} - standard OAuth error fields: {StandardFields} - other field names "
         + "present, their values withheld: {OtherFieldNames}";
+
+    private const string DiscardedProviderDescriptionTemplate =
+        "Upstream identity service returned an unusable error_description; its fields are "
+        + "summarized here while the fixed DMS description is returned - {TraceId} - standard "
+        + "OAuth error fields: {StandardFields} - other field names present, their values "
+        + "withheld: {OtherFieldNames}";
 
     /// <summary>
     /// RFC 6749 section 5.2 defines <c>error_uri</c> as a URI, which is why it is the one
@@ -246,6 +245,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
     )
     {
         logger.LogInformation("GetAccessTokenAsync - {TraceId}", traceId.Value);
+        bool callerUsedAuthorization = authHeaderString is not null;
 
         // The checks run in the Ed-Fi ODS/API's order: the Authorization header's shape and scheme,
         // then mixed mechanisms, then missing credentials, all before the grant type. The length
@@ -380,7 +380,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             new KeyValuePair<string, string>("grant_type", grantType),
         ]);
 
-        // In case of 5xx Error, pass 503 Service unavailable to client, otherwise forward response directly to client.
+        // Keep upstream classification and its safe client-facing description at the token boundary.
         try
         {
             logger.LogInformation("Forwarding token request to upstream service - {TraceId}", traceId.Value);
@@ -391,7 +391,14 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                 case HttpStatusCode.OK:
                     return response;
                 case HttpStatusCode.Unauthorized:
-                    return await GenerateUnauthorizedResponse(logger, traceId, response);
+                    return await GenerateProviderUnauthorizedResponse(logger, traceId, response);
+                case HttpStatusCode.BadRequest:
+                    return await GenerateProviderBadRequestResponse(
+                        logger,
+                        traceId,
+                        response,
+                        callerUsedAuthorization
+                    );
                 case HttpStatusCode.TooManyRequests:
                     return await GenerateTooManyTokensResponse(logger, traceId, response);
                 case HttpStatusCode.Conflict:
@@ -407,9 +414,11 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                             + "answered 503 so the client retries - {TraceId}",
                         traceId.Value
                     );
-                    return GenerateProblemDetailResponse(
+                    return OAuthErrorResponse.Create(
                         HttpStatusCode.ServiceUnavailable,
-                        FailureResponse.ForServiceUnavailable(traceId)
+                        "temporarily_unavailable",
+                        OAuthErrorResponse.TemporarilyUnavailableDescription,
+                        traceId
                     );
                 default:
                     var content = await response.Content.ReadAsStringAsync();
@@ -418,76 +427,38 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                         traceId.Value,
                         LoggingSanitizer.SanitizeFreeTextForLogging(content, MaxLoggedUpstreamContentLength)
                     );
-                    return GenerateProblemDetailResponse(
+                    return OAuthErrorResponse.Create(
                         HttpStatusCode.BadGateway,
-                        FailureResponse.ForGatewayError(traceId, GatewayErrorDetail)
+                        "server_error",
+                        GatewayErrorDetail,
+                        traceId
                     );
             }
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error from upstream identity service - {TraceId}", traceId.Value);
-            return GenerateProblemDetailResponse(
+            return OAuthErrorResponse.Create(
                 HttpStatusCode.BadGateway,
-                FailureResponse.ForGatewayError(traceId, GatewayErrorDetail)
+                "server_error",
+                GatewayErrorDetail,
+                traceId
             );
         }
 
-        // Attempts to read `{ "error": "...", "error_description": "..."}` from the response
-        // body, with sensible fallback mechanism if the response is in a different format.
-        // The logger is a parameter because this is a `static` local function and so cannot
-        // capture the enclosing `logger`; it is kept static deliberately, to keep the accidental
-        // capture of anything else out of reach.
-        static async Task<HttpResponseMessage> GenerateUnauthorizedResponse(
+        static async Task<HttpResponseMessage> GenerateProviderUnauthorizedResponse(
             ILogger logger,
             TraceId traceId,
             HttpResponseMessage response
         )
         {
-            var body = await response.Content.ReadAsStringAsync();
-            var error = "Unauthorized";
-            // Not `body`: handing the raw upstream body to the caller whenever it parsed as a
-            // JSON object but carried no `error_description` is the same unauthenticated
-            // disclosure as the 502 branch above.
-            var errorDescription = UnauthorizedFallbackDetail;
-            var upstreamSuppliedDescription = false;
+            string body = await response.Content.ReadAsStringAsync();
+            JsonObject? obj = JsonObjectOrNull(body);
+            string? description = GetStringOrNull(obj?["error_description"]);
+            bool hasUsableDescription = description is not null && IsUsableOAuthDescription(description);
 
-            JsonNode? parsed = JsonNode.Parse(body);
-            JsonObject? obj = null;
-            if (parsed is not null)
+            if (!hasUsableDescription)
             {
-                obj = parsed.AsObject();
-
-                // A standard field name does not establish that its contents are safe. RFC 6749
-                // section 5.2 defines both of these as strings, and `JsonNode.ToString()` on a
-                // member that arrived as an object or an array serializes the whole subtree - so
-                // `{"error":{"client_secret":"..."}}` would otherwise be echoed verbatim to a
-                // caller that has not authenticated. A malformed member falls back to the same
-                // fixed default an absent one uses.
-                error = ScalarValueOrNull(obj["error"]) ?? error;
-
-                string? suppliedDescription = ScalarValueOrNull(obj["error_description"]);
-                if (suppliedDescription is not null)
-                {
-                    errorDescription = suppliedDescription;
-                    upstreamSuppliedDescription = true;
-                }
-            }
-
-            if (!upstreamSuppliedDescription)
-            {
-                // Only on the fallback, not on every 401: a 401 is client-triggered and routine,
-                // and when the upstream did supply an `error_description` the client already has
-                // it. This is the one point at which information is about to be discarded.
-                //
-                // Information rather than the Warning its 502 sibling uses, because a rejected
-                // credential is not a condition an operator must act on (docs/LOGGING.md) - but
-                // not Debug either, since DMS ships at Information and an unemitted event would
-                // leave the correlation ID pointing at nothing.
-                //
-                // `obj` is null only when the body was the JSON literal `null`, which parses to a
-                // null JsonNode. There are no fields to summarize in that case, and the event
-                // still has to fire: the correlation ID must lead somewhere.
                 (string standardFields, string otherFieldNames) = obj is null
                     ? (NoUpstreamFieldsMarker, NoUpstreamFieldsMarker)
                     : SummarizeUpstreamFieldsForLogging(obj);
@@ -500,9 +471,66 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                 );
             }
 
-            return GenerateProblemDetailResponse(
+            return OAuthErrorResponse.Create(
                 HttpStatusCode.Unauthorized,
-                FailureResponse.ForUnauthorized(traceId, error, errorDescription)
+                InvalidClientError,
+                hasUsableDescription ? description! : UnauthorizedFallbackDetail,
+                traceId
+            );
+        }
+
+        static async Task<HttpResponseMessage> GenerateProviderBadRequestResponse(
+            ILogger logger,
+            TraceId traceId,
+            HttpResponseMessage response,
+            bool callerUsedAuthorization
+        )
+        {
+            string body = await response.Content.ReadAsStringAsync();
+            JsonObject? obj = JsonObjectOrNull(body);
+            string? error = GetStringOrNull(obj?["error"]);
+
+            if (error is null || !IsRecognizedTokenError(error))
+            {
+                logger.LogWarning(
+                    "Error from upstream identity service - {TraceId} - {Content}",
+                    traceId.Value,
+                    LoggingSanitizer.SanitizeFreeTextForLogging(body, MaxLoggedUpstreamContentLength)
+                );
+                return OAuthErrorResponse.Create(
+                    HttpStatusCode.BadGateway,
+                    "server_error",
+                    GatewayErrorDetail,
+                    traceId
+                );
+            }
+
+            string? suppliedDescription = GetStringOrNull(obj?["error_description"]);
+            bool hasUsableDescription =
+                suppliedDescription is not null && IsUsableOAuthDescription(suppliedDescription);
+            if (!hasUsableDescription)
+            {
+                (string standardFields, string otherFieldNames) = obj is null
+                    ? (NoUpstreamFieldsMarker, NoUpstreamFieldsMarker)
+                    : SummarizeUpstreamFieldsForLogging(obj);
+                logger.LogInformation(
+                    DiscardedProviderDescriptionTemplate,
+                    traceId.Value,
+                    standardFields,
+                    otherFieldNames
+                );
+            }
+
+            bool unauthorized = callerUsedAuthorization && error is InvalidClientError;
+            string fallbackDescription =
+                error is InvalidClientError
+                    ? UnauthorizedFallbackDetail
+                    : OAuthErrorResponse.ProviderRejectedDescription;
+            return OAuthErrorResponse.Create(
+                unauthorized ? HttpStatusCode.Unauthorized : HttpStatusCode.BadRequest,
+                error,
+                hasUsableDescription ? suppliedDescription! : fallbackDescription,
+                traceId
             );
         }
 
@@ -546,9 +574,11 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                     otherFieldNames
                 );
 
-                return GenerateProblemDetailResponse(
+                return OAuthErrorResponse.Create(
                     HttpStatusCode.TooManyRequests,
-                    FailureResponse.ForTooManyRequests(traceId)
+                    "temporarily_unavailable",
+                    OAuthErrorResponse.RateLimitDescription,
+                    traceId
                 );
             }
 
@@ -560,9 +590,11 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                 + limit.Value.ToString(CultureInfo.InvariantCulture)
                 + TokenLimitMessageSuffix;
 
-            return GenerateProblemDetailResponse(
+            return OAuthErrorResponse.Create(
                 HttpStatusCode.TooManyRequests,
-                FailureResponse.ForTooManyTokens(traceId, [message])
+                "temporarily_unavailable",
+                message,
+                traceId
             );
         }
 
@@ -757,20 +789,35 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         // the null into whatever their own safe default is.
         static string? ScalarValueOrNull(JsonNode? value) =>
             value is JsonValue scalar ? scalar.ToString() : null;
-
-        static HttpResponseMessage GenerateProblemDetailResponse(
-            HttpStatusCode statusCode,
-            JsonNode failureResponse
-        )
-        {
-            return new HttpResponseMessage(statusCode)
-            {
-                Content = new StringContent(
-                    failureResponse.ToString(),
-                    Encoding.UTF8,
-                    "application/problem+json"
-                ),
-            };
-        }
     }
+
+    private static bool IsRecognizedTokenError(string error) =>
+        error
+            is "invalid_request"
+                or "invalid_client"
+                or "invalid_grant"
+                or "unauthorized_client"
+                or "unsupported_grant_type"
+                or "invalid_scope";
+
+    private static bool IsUsableOAuthDescription(string description)
+    {
+        if (description.Length is 0)
+        {
+            return false;
+        }
+
+        foreach (char character in description)
+        {
+            if (character < '\u0020' || character > '\u007e' || character is '"' or '\\')
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static string? GetStringOrNull(JsonNode? value) =>
+        value is JsonValue jsonValue && jsonValue.TryGetValue(out string? text) ? text : null;
 }
