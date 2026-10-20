@@ -111,7 +111,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
             );
 
             // Ensure both nodes are not null
-            if (transformedHierarchy == null)
+            if (transformedHierarchy is null)
             {
                 transformedHierarchy = JsonNode.Parse("[]")!;
             }
@@ -302,7 +302,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
         );
         string claimSetName = claimSetData?.Name ?? Path.GetFileNameWithoutExtension(fragmentFilePath);
 
-        if (claimSetData?.ResourceClaims == null)
+        if (claimSetData?.ResourceClaims is null)
         {
             logger.LogWarning("Fragment file {FilePath} has no resource claims", fragmentFilePath);
             return null;
@@ -337,7 +337,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
             .SelectMany(x => SearchRecursive(x, resourceClaim.Name!))
             .FirstOrDefault();
 
-        if (existingClaim != null)
+        if (existingClaim is not null)
         {
             // Add additional child claims
             List<TransformationClaim> childClaims = resourceClaim
@@ -401,12 +401,12 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
                             ? new TransformationDefaultAuthorization
                             {
                                 Actions = resourceClaim
-                                    .DefaultAuthorizationStrategiesForCRUD.Where(x => x != null)
+                                    .DefaultAuthorizationStrategiesForCRUD.Where(x => x is not null)
                                     .Select(x =>
                                     {
                                         List<TransformationAuthorizationStrategy>? authStrategies = null;
                                         if (
-                                            x!.AuthorizationStrategies != null
+                                            x!.AuthorizationStrategies is not null
                                             && x.AuthorizationStrategies.Any()
                                         )
                                         {
@@ -469,17 +469,17 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
             List<ClaimSetResourceClaimActionAuthStrategies?> actionsAndAuthStrategies =
                 resourceClaim.AuthorizationStrategyOverridesForCRUD;
 
-            if (actionsAndAuthStrategies != null)
+            if (actionsAndAuthStrategies is not null)
             {
                 foreach (
                     ClaimSetResourceClaimActionAuthStrategies? actionAuthStrategy in actionsAndAuthStrategies.Where(
-                        x => x != null
+                        x => x is not null
                     )
                 )
                 {
                     List<TransformationAuthorizationStrategy>? authOverrides = null;
                     if (
-                        actionAuthStrategy!.AuthorizationStrategies != null
+                        actionAuthStrategy!.AuthorizationStrategies is not null
                         && actionAuthStrategy.AuthorizationStrategies.Any()
                     )
                     {
@@ -535,7 +535,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
             yield return claim;
         }
 
-        if (claim.Claims != null)
+        if (claim.Claims is not null)
         {
             foreach (TransformationClaim child in claim.Claims)
             {
@@ -607,13 +607,13 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
             }
 
             // If DefaultAuthorization has no actions, remove it entirely
-            if (claim.DefaultAuthorization?.Actions == null)
+            if (claim.DefaultAuthorization?.Actions is null)
             {
                 claim.DefaultAuthorization = null;
             }
 
             // Clean nested claims recursively
-            if (claim.Claims != null)
+            if (claim.Claims is not null)
             {
                 CleanupEmptyCollections(claim.Claims);
                 if (claim.Claims.Count == 0)
@@ -623,7 +623,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
             }
 
             // Clean claim set actions
-            if (claim.ClaimSets != null)
+            if (claim.ClaimSets is not null)
             {
                 foreach (TransformationClaimSet claimSet in claim.ClaimSets)
                 {
@@ -634,7 +634,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
                 }
 
                 // Remove claim sets that have no actions (violates schema requirements)
-                claim.ClaimSets.RemoveAll(cs => cs.Actions == null);
+                claim.ClaimSets.RemoveAll(cs => cs.Actions is null);
 
                 // If no claim sets remain, set to null
                 if (claim.ClaimSets.Count == 0)
