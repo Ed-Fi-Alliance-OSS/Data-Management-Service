@@ -1438,6 +1438,54 @@ function Get-DatabaseNameFromConnectionString {
     }
 }
 
+# Trailing characters the dedicated-E2E guard removes from both names before comparing them. The guard
+# applies the union of both engines' sets to every candidate, so a spelling that names the same
+# database on either engine is rejected on both. The union over-rejects on purpose: on SQL Server the
+# TAB, LF, CR and FF members name distinct databases, and on PostgreSQL createdb creates the literal
+# name, so 'edfi_dms ' is a distinct database wherever the name is not interpolated unquoted. A false
+# positive costs a rename; a false negative drops shared state. The sets are explicit because a
+# parameterless Trim/TrimEnd would also strip characters, such as U+00A0, that SQL Server keeps as
+# part of a distinct name.
+# SQL Server 2025 with SQL_Latin1_General_CP1_CI_AS measures trailing U+0020 and U+3000 as padding.
+$script:SqlServerTrailingPaddingCharacters = [char[]]@(0x0020, 0x3000)
+# PostgreSQL 16's lexer ends an unquoted identifier at U+0020, TAB, LF, CR and FF.
+$script:PostgresUnquotedTrailingWhitespaceCharacters = [char[]]@(0x0020, 0x0009, 0x000A, 0x000D, 0x000C)
+
+function Test-E2EDatabaseNameCollidesWithProtectedName {
+    <#
+    .SYNOPSIS
+        Returns true when an E2E database name and a protected database name must be treated as the
+        same database: they compare equal under -ieq once trailing characters from the explicit SQL
+        Server and PostgreSQL sets are removed from both.
+
+    .DESCRIPTION
+        Only trailing characters from those sets are removed. Leading whitespace and any other
+        trailing character, such as U+00A0, stay part of the name.
+
+        -ieq is the guard's case rule. It is culture-aware, so it also treats some zero-width and
+        control characters as ignorable and reports names that differ only by them as equal. That
+        is a conservative rejection, not a claim about how either engine compares those names.
+
+        An empty protected name, including one made only of removable characters, returns false.
+        The guard fails closed on a blank protected value before it compares.
+    #>
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string]$E2EDatabaseName,
+        [Parameter(Mandatory)] [AllowEmptyString()] [string]$ProtectedDatabaseName
+    )
+
+    $trailingCharacters = [char[]]($script:SqlServerTrailingPaddingCharacters + $script:PostgresUnquotedTrailingWhitespaceCharacters)
+
+    $normalizedProtectedName = $ProtectedDatabaseName.TrimEnd($trailingCharacters)
+    if ($normalizedProtectedName.Length -eq 0) {
+        return $false
+    }
+
+    # Assert-SafeDatabaseName lets an E2E name carry one trailing LF (its '$' anchor matches before a
+    # final newline), so the E2E side is trimmed with the same set.
+    return $E2EDatabaseName.TrimEnd($trailingCharacters) -ieq $normalizedProtectedName
+}
+
 function Assert-E2EDatabaseIsDedicated {
     <#
     .SYNOPSIS
