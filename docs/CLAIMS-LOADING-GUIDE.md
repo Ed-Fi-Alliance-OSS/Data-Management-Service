@@ -213,6 +213,13 @@ Fragment files extend the claims hierarchy. Each fragment must follow the naming
 
 A fragment can define one claim set. Its non-parent resource claims (those without `"isParent": true`) grant actions under the fragment's top-level `name`, or under the file name when `name` is absent. When the base claims do not already declare that name, it is registered as a new system-reserved claim set. Because it is system-reserved, the Management API cannot change or delete it, and removing the fragment later does not remove the claim set. A name must follow the Management API claim set name rules (non-empty, at most 256 characters, no white space). A fragment whose name contains white space or is longer than 256 characters is still applied, but its claim set is not registered and an error is logged. A fragment with an empty `name` fails claims validation, and the whole claims load is rejected. Parent resource claims (`"isParent": true`) only add hierarchy nodes and attach actions to claim sets that already exist; a fragment containing only parent entries defines no claim set.
 
+A non-parent entry's `name` is resolved to a resource claim in two steps.
+First, the name is compared as written with the last two URI segments of each claim, ignoring case, for example `ed-fi/candidateDemographics` or `domains/systemDescriptors`.
+Only if that finds no claim is the singular form tried: a final `ies` becomes `y` and otherwise a final `s` is dropped, so `ed-fi/schools` resolves to `ed-fi/school` and `ed-fi/localEducationAgencies` resolves to `ed-fi/localEducationAgency`.
+Other plurals match nothing, because the singular form of `ed-fi/people` is `ed-fi/people` and that of `ed-fi/studentPathPhaseStatuses` is `ed-fi/studentPathPhaseStatuse`, so write the claim name itself.
+Because only the last two URI segments are compared, a full claim URI does not match.
+An entry that matches no claim is skipped and a warning is logged naming the fragment file, the claim set and the name, but the service still starts and the claim set is still registered.
+
 A fragment that defines a claim set looks like this:
 
 ```json
@@ -490,6 +497,13 @@ names. Do not use `POST /management/reload-claims` to clear them: a reload repla
 stored claims document, which deletes every claim set that is not system-reserved and every grant
 that is not in the configured claims source.
 
+### Upgrading an Existing Deployment: Fragment Grant Names
+
+Earlier releases converted every non-parent fragment entry's name to its singular form before matching it, so an entry naming a claim that ends in `s`, such as `domains/educationOrganizations` or `ed-fi/candidateDemographics`, matched nothing and was skipped without a warning.
+Such an entry now matches its claim and grants the actions named in its `authorizationStrategyOverridesForCRUD` list; its `actions` list, including any `enabled` value, is not used.
+A database whose claims are already loaded keeps them after an upgrade, so the change applies the next time claims are composed from fragments: when the service starts on an empty database, or after a claims reload.
+Before that happens, review your fragments for entries that never took effect, and remove any whose access you do not want to grant.
+
 ## Security and Production Considerations
 
 ### Security Warnings
@@ -535,3 +549,10 @@ The `Authorization: Bearer $TOKEN` header shown in the examples above is enforce
    - Confirm files are in the directory specified by `CONFIGURATION_SERVICE_CLAIMS_DIRECTORY`
    - Verify file permissions allow the service to read the files
    - Check service logs for fragment discovery messages
+
+4. **A fragment grant has no effect**
+   - Check the service log for a warning containing "matches no resource claim"; it names the fragment file, the claim set and the entry that was skipped
+   - The warning is logged only when claims are composed from the fragments, which a restart against a database that already has claims does not do, so a missing warning after such a restart does not mean the entry matched
+   - Write the claim's own name, as described in [Fragment File Structure](#fragment-file-structure)
+   - The service loads claims at startup only into an empty database, so restarting after a fragment changes does not change claims that are already loaded
+   - Confirm the grant with `GET /v3/authorizationMetadata?claimSetName=<name>`; it lists leaf resource claims only, so a grant on a domain such as `domains/systemDescriptors` appears on the claims under that domain, not on the domain itself
