@@ -104,7 +104,7 @@ public class CachedClaimSetProvider(
             }
 
             logger.LogDebug(
-                "Cache miss for claim sets, fetching from CMS for tenant: {Tenant}",
+                "Cache miss for claim sets, fetching from the Configuration Service for tenant: {Tenant}",
                 LoggingSanitizer.SanitizeInternalValueForLogging(tenant)
             );
 

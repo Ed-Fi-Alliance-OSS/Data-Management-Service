@@ -93,7 +93,11 @@ public class Given_ConnectionStringDecryptionService
 
         var act = () => service.DecryptFromBase64("not-valid-base64!!!");
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("*not valid Base64*");
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*not valid Base64*Configuration Service DatabaseSettings:EncryptionKey*Ed-Fi API ConfigurationServiceSettings:EncryptionKey*"
+            );
     }
 
     [Test]
@@ -116,6 +120,10 @@ public class Given_ConnectionStringDecryptionService
 
         var act = () => service.DecryptFromBase64(malformedCiphertext);
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("*Failed to decrypt*");
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*Failed to decrypt*Configuration Service DatabaseSettings:EncryptionKey*Ed-Fi API ConfigurationServiceSettings:EncryptionKey*"
+            );
     }
 }

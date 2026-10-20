@@ -82,7 +82,7 @@ public class ConfigurationServiceProfileProvider(
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
                 logger.LogError(
-                    "Application not found in CMS although its client resolved, for applicationId: {ApplicationId}",
+                    "Application not found in the Configuration Service although its client resolved, for applicationId: {ApplicationId}",
                     applicationId
                 );
                 throw ApplicationProfileInfoUnavailable(applicationId);
@@ -234,7 +234,7 @@ public class ConfigurationServiceProfileProvider(
                 configurationServiceContext.scope
             );
 
-            logger.LogDebug("Fetching profile catalog from CMS");
+            logger.LogDebug("Fetching profile catalog from the Configuration Service");
 
             // No AllowNotFoundResponse: the list endpoint always exists, so a 404 here is a failure,
             // never an empty catalog.
@@ -259,7 +259,7 @@ public class ConfigurationServiceProfileProvider(
                 .Select(p => new CmsProfileResponse(p.Id, p.Name, p.Definition))
                 .ToList();
 
-            logger.LogDebug("Fetched {Count} profiles from CMS", results.Count);
+            logger.LogDebug("Fetched {Count} profiles from the Configuration Service", results.Count);
 
             return results;
         }

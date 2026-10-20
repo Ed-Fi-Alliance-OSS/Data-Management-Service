@@ -17,14 +17,14 @@ public class RequestLoggingMiddleware(RequestDelegate next)
     private const string ApplicationName = "EdFi.DmsConfigurationService";
 
     private const string FailedTemplate =
-        "{EventName}: CMS request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}";
+        "{EventName}: Configuration Service request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}";
 
     /// <summary>
     /// The failure event for a route marked with <see cref="ExceptionTypeOnlyLoggingMetadata"/>: the
     /// same event and fields, plus the exception type names in place of the exception object.
     /// </summary>
     private const string TypeOnlyFailedTemplate =
-        "{EventName}: CMS request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId} ({ExceptionTypes})";
+        "{EventName}: Configuration Service request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId} ({ExceptionTypes})";
 
     public async Task Invoke(HttpContext context, ILogger<RequestLoggingMiddleware> logger)
     {
@@ -116,7 +116,7 @@ public class RequestLoggingMiddleware(RequestDelegate next)
                     logger.Log(
                         logLevel,
                         RequestLoggingEventIds.HttpRequestCompleted,
-                        "{EventName}: CMS request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
+                        "{EventName}: Configuration Service request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
                         RequestLoggingEventIds.HttpRequestCompleted.Name,
                         method,
                         path,

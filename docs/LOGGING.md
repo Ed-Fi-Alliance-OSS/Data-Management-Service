@@ -114,8 +114,8 @@ this structure. Configuration Service example:
 {
   "Timestamp": "2026-06-29T14:23:45.123Z",
   "Level": "Information",
-  "MessageTemplate": "{EventName}: CMS request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
-  "RenderedMessage": "HttpRequestCompleted: CMS request completed: GET /v3/vendors responded 200 in 42 ms with TraceId 0HN...",
+  "MessageTemplate": "{EventName}: Configuration Service request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
+  "RenderedMessage": "HttpRequestCompleted: Configuration Service request completed: GET /v3/vendors responded 200 in 42 ms with TraceId 0HN...",
   "Properties": {
     "Application": "EdFi.DmsConfigurationService",
     "EventName": "HttpRequestCompleted",

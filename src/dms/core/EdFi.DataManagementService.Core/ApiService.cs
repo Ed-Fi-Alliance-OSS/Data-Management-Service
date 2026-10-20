@@ -1355,7 +1355,7 @@ internal class ApiService : IApiService
             // Force immediate reload by calling GetAllClaimSets(), which will fetch from CMS and populate the cache
             var claimSets = await _claimSetProvider.GetAllClaimSets(tenant);
             _logger.LogInformation(
-                "Claimsets reloaded successfully. Retrieved {ClaimSetCount} claimsets from CMS",
+                "Claimsets reloaded successfully. Retrieved {ClaimSetCount} claimsets from the Configuration Service",
                 claimSets.Count
             );
 
