@@ -1471,6 +1471,49 @@ function New-RestorePreflightEnvironment {
     }
 }
 
+function Wait-RestorePostgresqlTcpReady {
+    <#
+    .SYNOPSIS
+    Waits, within a bound, until the restore preflight PostgreSQL server accepts TCP connections.
+
+    .DESCRIPTION
+    On a fresh volume the official image runs initialization against a temporary server that
+    listens only on the Unix socket, stops it, and then starts the permanent server. The start
+    scripts' socket-default pg_isready can succeed against that temporary server, so restore
+    safety and scratch work could reach it while it shuts down. Only the permanent server
+    listens on TCP, so pg_isready -h 127.0.0.1 succeeding inside the container means
+    initialization has finished. Each probe is bounded by Test-NativeCommandWithTimeout and the
+    number of probes is bounded, so a server that never listens on TCP fails the run. The SQL
+    transports stay on the socket; only this gate uses TCP.
+    #>
+    param (
+        # The PostgreSQL administrator the container was initialized with (POSTGRES_USER).
+        [string]$PostgresUser = "postgres",
+
+        [string]$ContainerName = (Get-RestoreDatabaseContainerName -DatabaseEngine "postgresql"),
+
+        [ValidateRange(1, 1000)]
+        [int]$MaxAttempts = 40,
+
+        [ValidateRange(1, 60)]
+        [int]$RetryIntervalSeconds = 3
+    )
+
+    # postgresql.yml publishes the container's fixed port 5432; inside the container the server
+    # always listens on 5432, whatever POSTGRES_PORT maps on the host.
+    $probeArguments = @("exec", $ContainerName, "pg_isready", "-h", "127.0.0.1", "-p", "5432", "-U", $PostgresUser)
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        if (Test-NativeCommandWithTimeout -FilePath "docker" -ArgumentList $probeArguments -TimeoutSeconds 10) {
+            return
+        }
+        if ($attempt -lt $MaxAttempts) {
+            Start-Sleep -Seconds $RetryIntervalSeconds
+        }
+    }
+
+    throw "PostgreSQL ($ContainerName) did not accept TCP connections on 127.0.0.1:5432 after $MaxAttempts readiness probes, so fresh-volume initialization may not have finished. Nothing was restored."
+}
+
 function Invoke-RestoreCatalogQuery {
     <#
     .SYNOPSIS
@@ -3166,6 +3209,7 @@ Export-ModuleMember -Function `
     Publish-RestoreCandidateWorkspace, `
     Get-RestoreDatabaseContainerName, `
     New-RestorePreflightEnvironment, `
+    Wait-RestorePostgresqlTcpReady, `
     Invoke-RestoreCatalogQuery, `
     Get-RestoreEngineMajorVersion, `
     Get-RestorePostgresqlPlatformQuerySql, `

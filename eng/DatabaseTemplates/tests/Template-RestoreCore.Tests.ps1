@@ -71,7 +71,7 @@ BeforeAll {
             templateKind             = "Minimal"
             dataStandardVersion      = "5.2.0"
             contentProfile           = "DmsDatastoreOnly"
-            projects                 = @("ed-fi", "tpdm")
+            projects                 = @("edfi", "tpdm")
             apiSchemaFormatVersion   = "1.0.0"
             effectiveSchemaHash      = ("ab" * 32)
             resourceKeyCount         = 42
@@ -459,7 +459,7 @@ Describe "Assert-RestoreManifestShape" {
 
     It "rejects a scalar projects value: the contract requires a real JSON array" {
         $manifest = New-ValidRestoreManifest
-        $manifest.projects = "ed-fi"
+        $manifest.projects = "edfi"
         { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*'projects' must be a non-empty JSON array*"
 
         # The same strictness must hold after a JSON round trip (PSCustomObject input).
@@ -473,11 +473,11 @@ Describe "Assert-RestoreManifestShape" {
         { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*'projects' must be a non-empty JSON array*"
 
         $manifest = New-ValidRestoreManifest
-        $manifest.projects = @("ed-fi", "ED-FI")
+        $manifest.projects = @("edfi", "EDFI")
         { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*duplicate entry*"
 
         $manifest = New-ValidRestoreManifest
-        $manifest.projects = @("ed-fi", 5)
+        $manifest.projects = @("edfi", 5)
         { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*not a non-empty JSON string*"
     }
 

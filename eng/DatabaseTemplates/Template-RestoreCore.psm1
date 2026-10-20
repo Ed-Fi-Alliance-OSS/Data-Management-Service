@@ -701,11 +701,11 @@ function Assert-RestoreManifestShape {
         throw "Restore manifest is missing required field 'projects'."
     }
     if (-not (Test-RestoreJsonArray -Value $projectsWrapped.Value)) {
-        throw "Restore manifest field 'projects' must be a non-empty JSON array of project endpoint names."
+        throw "Restore manifest field 'projects' must be a non-empty JSON array of project schema names."
     }
     $projectEntries = @($projectsWrapped.Value)
     if ($projectEntries.Count -eq 0) {
-        throw "Restore manifest field 'projects' must be a non-empty JSON array of project endpoint names."
+        throw "Restore manifest field 'projects' must be a non-empty JSON array of project schema names."
     }
     $seenProjects = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     foreach ($project in $projectEntries) {

@@ -1343,6 +1343,49 @@ Describe "New-RestorePreflightEnvironment" {
     }
 }
 
+Describe "Wait-RestorePostgresqlTcpReady" {
+    BeforeEach {
+        $global:TcpReadyProbes = [System.Collections.Generic.List[string]]::new()
+        $global:TcpReadyAnswersAfter = 0
+        # A fresh volume's initialization server answers only the socket: every probe without -h
+        # succeeds, and a TCP probe succeeds only once TcpReadyAnswersAfter earlier TCP probes failed
+        # (0 = never).
+        Mock Test-NativeCommandWithTimeout {
+            $global:TcpReadyProbes.Add("$FilePath $($ArgumentList -join ' ') timeout=$TimeoutSeconds")
+            if ($ArgumentList -notcontains "-h") { return $true }
+            $tcpProbeCount = @($global:TcpReadyProbes | Where-Object { $_ -like "* -h *" }).Count
+            return ($global:TcpReadyAnswersAfter -gt 0 -and $tcpProbeCount -gt $global:TcpReadyAnswersAfter)
+        } -ModuleName bootstrap-restore
+        Mock Start-Sleep { } -ModuleName bootstrap-restore
+    }
+
+    AfterEach {
+        Remove-Variable -Name TcpReadyProbes, TcpReadyAnswersAfter -Scope Global -ErrorAction SilentlyContinue
+    }
+
+    It "returns only after a bounded TCP probe on 127.0.0.1 succeeds, never on a socket-only answer" {
+        $global:TcpReadyAnswersAfter = 2
+
+        Wait-RestorePostgresqlTcpReady -PostgresUser "dmsadmin"
+
+        @($global:TcpReadyProbes) | Should -Be @(
+            "docker exec dms-postgresql pg_isready -h 127.0.0.1 -p 5432 -U dmsadmin timeout=10"
+            "docker exec dms-postgresql pg_isready -h 127.0.0.1 -p 5432 -U dmsadmin timeout=10"
+            "docker exec dms-postgresql pg_isready -h 127.0.0.1 -p 5432 -U dmsadmin timeout=10"
+        )
+        Should -Invoke Start-Sleep -ModuleName bootstrap-restore -Times 2 -Exactly -ParameterFilter { $Seconds -eq 3 }
+    }
+
+    It "throws after the probe bound while only the socket answers, without sleeping after the last probe" {
+        { Wait-RestorePostgresqlTcpReady -MaxAttempts 3 } |
+            Should -Throw "PostgreSQL (dms-postgresql) did not accept TCP connections on 127.0.0.1:5432 after 3 readiness probes*Nothing was restored."
+
+        @($global:TcpReadyProbes) | Should -HaveCount 3
+        @($global:TcpReadyProbes | Where-Object { $_ -notlike "docker exec dms-postgresql pg_isready -h 127.0.0.1 -p 5432 -U postgres timeout=10" }) | Should -BeNullOrEmpty
+        Should -Invoke Start-Sleep -ModuleName bootstrap-restore -Times 2 -Exactly
+    }
+}
+
 Describe "Invoke-RestoreCatalogQuery" {
     BeforeAll {
         $script:createdDockerFallback = $false

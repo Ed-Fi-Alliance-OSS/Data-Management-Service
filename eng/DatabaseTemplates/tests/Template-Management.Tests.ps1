@@ -1647,6 +1647,9 @@ Describe "Build-TemplateNuGetPackage restore gate and manifest" {
                 Mock Get-TemplateSourceCatalogFacts { $cleanFacts }
                 Mock Get-UserSchemaNames { @("dms", "edfi", "tracked_changes_edfi") }
                 Mock Get-TemplateAuthoritativeObjectInventory { $cleanFacts.FullInventory }
+                # A deliberate fixture value, so the assertion below tracks what the writer read
+                # rather than the release line currently in SchemaHashConstants.cs.
+                Mock Get-RelationalMappingVersionFromSource { "v42" }
                 Mock Invoke-DatabaseDump {
                     Set-Content -LiteralPath (Join-Path $BackupDirectory $BackupFileName) -Value "fake artifact bytes"
                 }
@@ -1666,7 +1669,7 @@ Describe "Build-TemplateNuGetPackage restore gate and manifest" {
                 $manifest.contentProfile | Should -Be "DmsDatastoreOnly"
                 @($manifest.projects) | Should -Be @("edfi")
                 $manifest.effectiveSchemaHash | Should -Be ("ab" * 32)
-                $manifest.relationalMappingVersion | Should -Be "v3"
+                $manifest.relationalMappingVersion | Should -Be "v42"
                 $manifest.documentJsonColumnType | Should -Be "jsonb"
                 $manifest.artifactFileName | Should -Be "EdFi.Api.Minimal.Template.PostgreSql.5.2.0.sql"
                 $manifest.artifactSha256 | Should -Be (Get-FileSha256Hex -Path "./EdFi.Api.Minimal.Template.PostgreSql.5.2.0.sql")

@@ -1100,6 +1100,12 @@ function Invoke-BootstrapWrapper {
                     if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
                         throw "$StartScriptName -DbOnly (restore preflight) failed with exit code $LASTEXITCODE."
                     }
+                    # The start script's readiness probe also accepts the socket-only server a fresh
+                    # PostgreSQL volume initializes against; nothing touches the catalog until the
+                    # permanent server accepts TCP connections.
+                    if ($DatabaseEngine -eq "postgresql") {
+                        Wait-RestorePostgresqlTcpReady -PostgresUser $restorePostgresUser
+                    }
 
                     # Live, non-destructive target safety (D11 checks), then the scratch proof (D8).
                     Assert-RestoreTargetSafety `

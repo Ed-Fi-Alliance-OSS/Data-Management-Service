@@ -512,6 +512,12 @@ $failureStatement
                 Set-Content -LiteralPath $preflightEnvironmentPath -Value "POSTGRES_DB_NAME=edfi_dms_restore_preflight_0123456789ab" -Encoding utf8
                 [pscustomobject]@{ EnvironmentFile = $preflightEnvironmentPath; PreflightDatabaseName = "edfi_dms_restore_preflight_0123456789ab"; IsDerived = $true }
             }.GetNewClosure()
+            Set-Item function:global:Wait-RestorePostgresqlTcpReady {
+                param($PostgresUser, $ContainerName)
+                Add-Content -LiteralPath $log -Value "restore:tcp-ready"
+                Add-Content -LiteralPath $postgresUserLog -Value "tcp-ready user=[$PostgresUser]"
+                & $stubThrow "Wait-RestorePostgresqlTcpReady"
+            }.GetNewClosure()
             Set-Item function:global:Assert-RestoreTargetSafety {
                 param($DatabaseEngine, $TargetDatabaseName, $Manifest, $ContainerName, [switch]$SeparateConfigDatabase, $EffectiveConfigDatabaseName, $MssqlPassword, $PostgresUser)
                 Add-Content -LiteralPath $log -Value "restore:target-safety"
@@ -586,7 +592,8 @@ $failureStatement
                 "Find-RestoreTemplatePackage", "Assert-TrustedRestorePackage",
                 "Initialize-RestorePackageStage", "New-RestoreCandidateWorkspace",
                 "Invoke-RestoreCandidateCrossCheck", "Assert-DmsComposeProjectStopped",
-                "New-RestorePreflightEnvironment", "Assert-RestoreTargetSafety",
+                "New-RestorePreflightEnvironment", "Wait-RestorePostgresqlTcpReady",
+                "Assert-RestoreTargetSafety",
                 "Invoke-RestoreScratchValidation", "Remove-RestorePreflightDatabase",
                 "Stop-RestoreDatabaseOnlySlice",
                 "Publish-RestoreCandidateWorkspace", "Invoke-RestoreTargetReplacement",
@@ -2202,6 +2209,7 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed args=[`$(`$args -join
                 "restore:stop-proof project=dms-local",
                 "restore:stop-proof project=dms-published",
                 "start-db-only env=*preflight.env",
+                "restore:tcp-ready",
                 "restore:target-safety",
                 "restore:scratch template=Minimal",
                 "restore:preflight-drop name=[[]edfi_dms_restore_preflight_*",
@@ -2218,6 +2226,11 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed args=[`$(`$args -join
                 $currentIndex | Should -BeGreaterThan $previousIndex -Because "'$pattern' must appear after the previous step"
                 $previousIndex = $currentIndex
             }
+
+            # The TCP readiness gate runs once, between the first -DbOnly and the first catalog read.
+            @($log | Where-Object { $_ -eq "restore:tcp-ready" }).Count | Should -Be 1
+            Get-RestoreLogIndex -Log $log -Pattern "restore:tcp-ready" |
+                Should -BeLessThan (Get-RestoreLogIndex -Log $log -Pattern "start-db-only*" -Occurrence 2)
 
             # No Docker activity of any kind before the cross-check completes: nothing in the
             # log prefix ahead of it may be a start-script invocation, a raw docker call, or the
@@ -2839,6 +2852,8 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "configure dataStore=[`$Dat
                     "restore:stop-proof project=dms-published override=[[]]"
                     "restore:preflight-env"
                     "start-db-only env=*preflight.env override=[[]]"
+                    # The TCP readiness gate is PostgreSQL-only; MSSQL goes straight to the catalog.
+                    if ($Engine -eq "postgresql") { "restore:tcp-ready" }
                     "restore:target-safety engine=$Engine target=edfi_datamanagementservice"
                     "restore:scratch template=Minimal"
                     "restore:preflight-drop engine=$Engine name=[[]edfi_dms_restore_preflight_0123456789ab]"
@@ -2920,6 +2935,40 @@ exit 7
             $lines | Should -Contain "restore:remove-stage"
             Test-Path -LiteralPath $preflightEnvironmentPath | Should -BeFalse
             @($lines | Where-Object { $_ -like "start-infra*" -or $_ -like "start-dms*" }) | Should -BeNullOrEmpty
+        }
+
+        It "a PostgreSQL TCP readiness failure after the first -DbOnly authorizes no safety, scratch, publication, replacement, or CMS/DMS work, and still runs the cleanup" {
+            # The socket-default readiness probe in the start script already passed (the -DbOnly
+            # stub exits 0); the TCP gate then fails, as it does while a fresh volume's
+            # socket-only initialization server is still up.
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot -ThrowAt @("Wait-RestorePostgresqlTcpReady")
+            $log = $script:restoreLog
+            $preflightEnvironmentPath = Join-Path $script:repo.RepoRoot "preflight.env"
+            Set-Item function:global:Stop-RestoreDatabaseOnlySlice {
+                param($ProjectName, $DatabaseEngine, $EnvironmentFile)
+                Add-Content -LiteralPath $log -Value "restore:stop-db project=$ProjectName env=[$EnvironmentFile] env-exists=$(Test-Path -LiteralPath $EnvironmentFile)"
+            }.GetNewClosure()
+
+            $thrown = { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Minimal 3>$null } | Should -Throw -PassThru
+            $thrown.Exception.Message | Should -BeLike "*injected Wait-RestorePostgresqlTcpReady failure*"
+
+            $lines = @(Get-Content -LiteralPath $script:restoreLog)
+            Get-RestoreLogIndex -Log $lines -Pattern "restore:tcp-ready" |
+                Should -BeGreaterThan (Get-RestoreLogIndex -Log $lines -Pattern "start-db-only*")
+            @($lines | Where-Object { $_ -like "start-db-only*" }).Count | Should -Be 1
+            foreach ($forbiddenPattern in @("restore:target-safety*", "restore:scratch*", "restore:publish*", "restore:replacement*", "start-infra*", "configure*", "start-dms*")) {
+                @($lines | Where-Object { $_ -like $forbiddenPattern }) | Should -BeNullOrEmpty -Because "'$forbiddenPattern' must not run after a failed TCP readiness gate"
+            }
+
+            # The existing cleanup: preflight drop, then the stop of the slice this run started
+            # with the env file it started with, then the stage; the env file is gone afterwards.
+            $preflightDropIndex = Get-RestoreLogIndex -Log $lines -Pattern "restore:preflight-drop name=[[]edfi_dms_restore_preflight_0123456789ab]"
+            $stopIndex = Get-RestoreLogIndex -Log $lines -Pattern "restore:stop-db*"
+            $preflightDropIndex | Should -BeGreaterThan (Get-RestoreLogIndex -Log $lines -Pattern "restore:tcp-ready")
+            $stopIndex | Should -BeGreaterThan $preflightDropIndex
+            $lines[$stopIndex] | Should -Be "restore:stop-db project=dms-local env=[$preflightEnvironmentPath] env-exists=True"
+            Get-RestoreLogIndex -Log $lines -Pattern "restore:remove-stage" | Should -BeGreaterThan $stopIndex
+            Test-Path -LiteralPath $preflightEnvironmentPath | Should -BeFalse
         }
 
         It "a successful restore whose transient cleanup fails stops the database-only slice it still owns and never reaches -InfraOnly" {
@@ -3272,10 +3321,10 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "configure dataStore=[`$Dat
 
             $expectedLines = if ($ThrowAt.Count -gt 0) {
                 # The scratch failure leaves only the finally's best-effort preflight drop.
-                @("preflight-env user=[$Expected]", "target-safety user=[$Expected]", "scratch user=[$Expected]", "preflight-drop user=[$Expected]")
+                @("preflight-env user=[$Expected]", "tcp-ready user=[$Expected]", "target-safety user=[$Expected]", "scratch user=[$Expected]", "preflight-drop user=[$Expected]")
             }
             else {
-                @("preflight-env user=[$Expected]", "target-safety user=[$Expected]", "scratch user=[$Expected]", "preflight-drop user=[$Expected]", "replacement user=[$Expected]", "preflight-drop user=[$Expected]")
+                @("preflight-env user=[$Expected]", "tcp-ready user=[$Expected]", "target-safety user=[$Expected]", "scratch user=[$Expected]", "preflight-drop user=[$Expected]", "replacement user=[$Expected]", "preflight-drop user=[$Expected]")
             }
             @(Get-Content -LiteralPath "$script:restoreLog.postgres-users") | Should -Be $expectedLines
         }
