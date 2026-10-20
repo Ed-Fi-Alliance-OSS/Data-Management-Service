@@ -458,9 +458,9 @@ Notes:
 The mapping set is what runtime code uses after selection. It is also the semantic target of mapping pack decode.
 
 The batched natural-key reference resolver consumes the probe members in the following conceptual
-shape, including `DescriptorProbeTarget` and the lowered-URI index. POST upsert existence detection
-(DMS-1452) and descriptor writes (DMS-1454) still use RI; the natural-key workstream owns their
-later equality/index transition.
+shape, including `DescriptorProbeTarget` and the lowered-URI index. Resource POST upsert existence
+detection compiles its own-natural-key capture from the same probe metadata. Descriptor writes
+(DMS-1454) still use RI; the natural-key workstream owns their later equality/index transition.
 
 > **Mapping-pack alignment pending.** The natural-key probe metadata (`NaturalKeyProbeTargets`,
 > `OwnNaturalKeyProbesByResource`, `DescriptorProbeTarget`, `NaturalKeyProbeKeyBinding`), consumed
@@ -634,8 +634,8 @@ For a write request targeting resource `R`:
      parameters; ancestor/profile merge paths use that same key. Document references, metadata,
      locks, cache/projection work and restamps retain owning `DocumentId`.
    - The probes, memoization and validation contracts are specified in
-     [natural-key-resolution.md](natural-key-resolution.md); POST capture (DMS-1452) and
-     descriptor-write equality (DMS-1454) are later work.
+     [natural-key-resolution.md](natural-key-resolution.md); descriptor-write equality
+     (DMS-1454) is later work.
 
 4. **Build the per-request reference index**
    - Build an `IDocumentReferenceInstanceIndex` for this request using:

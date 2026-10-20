@@ -254,6 +254,13 @@ public sealed record DescriptorProbeTarget(
     public const string PostgresqlUriFoldCollation = "pg_c_utf8";
 
     /// <summary>
+    /// The SQL Server core DDL's computed, lowered descriptor URI column that
+    /// <c>UX_Descriptor_UriLowered_ResourceKeyId</c> indexes. Every SQL Server descriptor probe compares it to
+    /// <c>LOWER(@uri COLLATE &lt;identity collation&gt;)</c>.
+    /// </summary>
+    public const string MssqlUriLoweredColumn = "UriLowered";
+
+    /// <summary>
     /// The probe for <c>dms.Descriptor</c>, which core DDL owns and which is the same for every schema.
     /// </summary>
     public static DescriptorProbeTarget SharedDescriptorTable { get; } =

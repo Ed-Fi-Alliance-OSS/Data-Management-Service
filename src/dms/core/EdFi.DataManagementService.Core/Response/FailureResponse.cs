@@ -192,6 +192,21 @@ public static class FailureResponse
             errors
         );
 
+    /// <summary>
+    /// The ODS-compatible response for a unique-constraint violation that the backend could not
+    /// attribute to a more specific failure.
+    /// </summary>
+    public static JsonNode ForNonUniqueValues(TraceId traceId) =>
+        CreateBaseJsonObject(
+            detail: "A value (or a specific set of values) in the item must be unique, but another item with these values already exists.",
+            type: $"{_dataConflictTypePrefix}:non-unique-values",
+            title: "Non-Unique Values",
+            status: 409,
+            correlationId: traceId.Value,
+            validationErrors: [],
+            errors: []
+        );
+
     public static JsonNode ForDataConflict(string[] dependentItemNames, TraceId traceId)
     {
         // The relational delete path can surface an FK violation without a resolvable

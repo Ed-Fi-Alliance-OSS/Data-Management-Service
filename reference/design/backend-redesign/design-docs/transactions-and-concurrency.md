@@ -55,9 +55,10 @@ Relational tables store document references as `bigint DocumentId` FKs and descr
 The resolver consumes Core-extracted `DocumentIdentity` values and probes the compiled natural-key
 targets described in
 [natural-key-resolution.md](natural-key-resolution.md#the-natural-key-reference-resolver). It does
-not read `dms.ReferentialIdentity`. RI is still maintained for POST upsert existence detection
-(DMS-1452) and descriptor writes (DMS-1454); their natural-key cutovers, the new equality rules,
-and stored-wins descriptor writes are later work.
+not read `dms.ReferentialIdentity`. Resource POST upsert existence detection uses the generated
+own-natural-key capture instead of RI. RI is read only by descriptor writes and is maintained until
+its removal (DMS-1456); the descriptor-write natural-key cutover and stored-wins descriptor writes
+are later work (DMS-1454).
 
 It is used for:
 - resolving extracted `DocumentReference` / `DescriptorReference` instances during writes, and
@@ -274,14 +275,17 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
 3. Backend plans and writes within a single transaction:
    - For update flows, load the current document state needed for authorization, merge,
      and guarded no-op detection.
-   - Materialize the request-derived candidate rows after reference and descriptor ids have been populated. Before
-     storage binding, no-op synthesis, or collection-table DML, run the storage-resolved collection duplicate
-     validator from [natural-key-resolution.md](natural-key-resolution.md#collection-duplicate-detection).
-   - Bind candidates against current rows to produce the post-merge rowset.
-   - Future natural-key work proposes a stored-identity rebind before authorization/no-op detection in
-     [natural-key-resolution.md](natural-key-resolution.md#how-the-write-path-will-preserve-stored-casing-sql-server)
-     for SQL Server regular-resource writes and descriptor stored-wins semantics. DMS-1404 retains
-     the current proposed values and descriptor behavior described above.
+   - Materialize the request-derived candidate rows after reference and descriptor ids have been populated. While
+     materializing, and so before storage binding, no-op synthesis, or collection-table DML, the flattener rejects
+     sibling duplicates that collide only after storage resolution
+     ([natural-key-resolution.md](natural-key-resolution.md#collection-duplicate-detection)).
+   - Bind candidates against current rows to produce the post-merge rowset. On SQL Server, matched
+     collection rows take the stored values of semantic-key members equal under the identity comparer.
+   - On SQL Server regular-resource writes, rebind root identity values equal under the identity
+     comparer to their stored values before authorization/no-op detection, as described in
+     [natural-key-resolution.md](natural-key-resolution.md#how-the-write-path-will-preserve-stored-casing-sql-server).
+     Descriptor stored-wins semantics are later work (DMS-1454); descriptor writes keep the
+     behavior described above.
    - Run authorization checks against stored values and the finalized proposed rowset before any data-modifying
      statements.
    - Compare the post-merge rowset to the current persisted rowset before issuing DML. If they are equal,
@@ -354,8 +358,10 @@ Engine considerations:
 
 ### Insert vs update detection
 
-- **Upsert (POST)**: detect an existing document through RI. Generated own-natural-key capture
-  predicates and `UX_<R>_NK` probes are later work in [natural-key-resolution.md](natural-key-resolution.md).
+- **Upsert (POST)**: detect an existing document through the generated own-natural-key capture
+  predicate over the root natural-key columns (served by `UX_<R>_NK`), described in
+  [natural-key-resolution.md](natural-key-resolution.md). Descriptor POSTs still detect through RI
+  until DMS-1454.
   - The resource root table’s natural-key unique constraint is the identity-uniqueness enforcement and remains the race detector (unique violation → 409) if two writers attempt to create the same natural key concurrently.
 - **Update by id (PUT)**: detect by `DocumentUuid`:
   - Find `DocumentId` from `dms.Document` by `DocumentUuid`.

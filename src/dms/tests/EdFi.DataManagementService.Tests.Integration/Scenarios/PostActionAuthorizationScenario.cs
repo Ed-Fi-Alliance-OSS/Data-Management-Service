@@ -9,7 +9,6 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Security;
-using EdFi.DataManagementService.Core.Security.Model;
 using EdFi.DataManagementService.Tests.Integration.Doubles;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using FluentAssertions;
@@ -38,7 +37,7 @@ internal static class PostActionAuthorizationScenario
     public static IReadOnlyList<string> ConfiguredPrefixes { get; } = [AuthorizedPrefix];
 
     public static IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
-        new SwitchablePostActionGrants(fixture);
+        new SwitchablePostActionGrants(fixture, IsWrittenResource);
 
     public static async Task It_creates_but_refuses_every_update_for_a_create_only_client(
         ApiIntegrationHarness harness
@@ -368,6 +367,16 @@ internal static class PostActionAuthorizationScenario
     private static SwitchablePostActionGrants Grants(ApiIntegrationHarness harness) =>
         (SwitchablePostActionGrants)harness.Services.GetRequiredService<IClaimSetProvider>();
 
+    private static bool IsWrittenResource(QualifiedResourceName resource) =>
+        (
+            string.Equals(resource.ProjectName, "Authz", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(resource.ResourceName, "AuthorizationNullableResource", StringComparison.Ordinal)
+        )
+        || (
+            string.Equals(resource.ProjectName, "Ed-Fi", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(resource.ResourceName, "AcademicSubjectDescriptor", StringComparison.Ordinal)
+        );
+
     private static JsonObject NullableBody(string name, string? id = null)
     {
         var body = new JsonObject { ["authorizationNullableId"] = 1099, ["name"] = name };
@@ -517,56 +526,5 @@ internal static class PostActionAuthorizationScenario
             .Select(static error => error!.GetValue<string>())
             .Should()
             .Equal(expectedErrors);
-    }
-
-    /// <summary>
-    /// The claim set under test. Read and Delete are always granted, as is every action on resources the
-    /// scenario does not write; Create and Update on the written resources are whatever the test last set,
-    /// where <see langword="null"/> leaves the action ungranted. The middleware reads the claim set on every
-    /// request, so a test can seed with both actions and then narrow them.
-    /// </summary>
-    private sealed class SwitchablePostActionGrants : IClaimSetProvider
-    {
-        private readonly ConfigurableClaimSetProvider _inner;
-        private IReadOnlyList<string>? _create = _noFurther;
-        private IReadOnlyList<string>? _update = _noFurther;
-
-        public SwitchablePostActionGrants(FixtureContext fixture) =>
-            _inner = new ConfigurableClaimSetProvider(fixture, Resolve);
-
-        public void Set(IReadOnlyList<string>? create, IReadOnlyList<string>? update)
-        {
-            _create = create;
-            _update = update;
-        }
-
-        public Task<IList<ClaimSet>> GetAllClaimSets(
-            string? tenant = null,
-            CancellationToken cancellationToken = default
-        ) => _inner.GetAllClaimSets(tenant, cancellationToken);
-
-        private IReadOnlyList<string>? Resolve(QualifiedResourceName resource, string action) =>
-            IsWrittenResource(resource)
-                ? action switch
-                {
-                    "Create" => _create,
-                    "Update" => _update,
-                    _ => _noFurther,
-                }
-                : _noFurther;
-
-        private static bool IsWrittenResource(QualifiedResourceName resource) =>
-            (
-                string.Equals(resource.ProjectName, "Authz", StringComparison.OrdinalIgnoreCase)
-                && string.Equals(
-                    resource.ResourceName,
-                    "AuthorizationNullableResource",
-                    StringComparison.Ordinal
-                )
-            )
-            || (
-                string.Equals(resource.ProjectName, "Ed-Fi", StringComparison.OrdinalIgnoreCase)
-                && string.Equals(resource.ResourceName, "AcademicSubjectDescriptor", StringComparison.Ordinal)
-            );
     }
 }

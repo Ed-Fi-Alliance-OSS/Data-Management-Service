@@ -137,7 +137,7 @@ internal sealed class RelationalWriteLockedTarget
 /// </summary>
 /// <remarks>
 /// <para>
-/// Statement 0 captures and locks the target — the referential-id lookup for POST, the document-uuid
+/// Statement 0 captures and locks the target — the own-natural-key lookup for POST, the document-uuid
 /// lookup for PUT — and every later statement consumes the captured decision through the provider
 /// carrier rather than re-observing, so a concurrent create landing after the capture cannot change
 /// what this attempt decided. Stored namespace checks precede the stored relationship check, and both
@@ -162,7 +162,7 @@ internal sealed class RelationalWriteLockedTarget
 /// </para>
 /// <para>
 /// The SQL Server hint set locks a target the capture actually observes; it does not lock a range when
-/// there is none. A create — the bulk-import case, where the referential-id subquery yields no row —
+/// there is none. A create — the bulk-import case, where the natural-key subquery yields no row —
 /// takes no key lock at all, only the statement's intent lock on the table, so nothing is held across
 /// reference resolution and the DML. An update-shaped capture holds exactly one row lock, which is the
 /// reason for taking it: the observation deciding create-versus-update must be the row the write then
@@ -943,11 +943,11 @@ internal sealed class CompositeRelationalWriteFirstPhase(
     {
         var capturePredicate = input.TargetRequest switch
         {
-            RelationalWriteTargetRequest.Post(var referentialId, _) =>
-                RelationalWriteTargetLookupSupport.BuildPostCaptureTargetPredicate(
+            RelationalWriteTargetRequest.Post(var documentIdentity, _) =>
+                RelationalWriteTargetLookupSupport.BuildNaturalKeyCaptureTargetPredicate(
                     input.MappingSet,
-                    input.WritePlan.Model.Resource,
-                    referentialId
+                    input.WritePlan,
+                    documentIdentity
                 ),
             RelationalWriteTargetRequest.Put(var documentUuid) =>
                 RelationalWriteTargetLookupSupport.BuildDocumentUuidCaptureTargetPredicate(

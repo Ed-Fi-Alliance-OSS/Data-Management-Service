@@ -254,11 +254,11 @@ public class Given_RelationalWriteFlattener
             .Which.ValidationFailures.Should()
             .ContainSingle()
             .Subject;
-        failure.Path.Value.Should().Be("$.addresses[1]");
+        failure.Path.Value.Should().Be("$.addresses");
         failure
             .Message.Should()
-            .Contain(
-                "Collection table 'edfi.StudentAddress' received duplicate semantic identity values [84] under parent scope '$'."
+            .Be(
+                "The 2nd item of the addresses has the same identifying values as another item earlier in the list."
             );
     }
 
@@ -839,12 +839,12 @@ public class Given_RelationalWriteFlattener
         var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
 
         exception.ValidationFailures.Should().ContainSingle();
-        exception.ValidationFailures[0].Path.Value.Should().Be("$.addresses[1]");
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.addresses");
         exception
             .ValidationFailures[0]
             .Message.Should()
-            .Contain(
-                "Collection table 'edfi.StudentAddress' received duplicate semantic identity values ['Home'] under parent scope '$'."
+            .Be(
+                "The 2nd item of the addresses has the same identifying values as another item earlier in the list."
             );
     }
 
@@ -884,12 +884,12 @@ public class Given_RelationalWriteFlattener
         var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
 
         exception.ValidationFailures.Should().ContainSingle();
-        exception.ValidationFailures[0].Path.Value.Should().Be("$.addresses[1]");
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.addresses");
         exception
             .ValidationFailures[0]
             .Message.Should()
-            .Contain(
-                "Collection table 'edfi.StudentAddress' received duplicate semantic identity values [null] under parent scope '$'."
+            .Be(
+                "The 2nd item of the addresses has the same identifying values as another item earlier in the list."
             );
     }
 
@@ -985,14 +985,73 @@ public class Given_RelationalWriteFlattener
         var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
 
         exception.ValidationFailures.Should().ContainSingle();
-        exception.ValidationFailures[0].Path.Value.Should().Be("$.addresses[1]");
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.addresses");
         exception
             .ValidationFailures[0]
             .Message.Should()
-            .Contain(
-                "Collection table 'edfi.StudentAddress' received duplicate semantic identity values ['Home'] under parent scope '$'."
+            .Be(
+                "The 2nd item of the addresses has the same identifying values as another item earlier in the list."
             );
     }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public void It_rejects_case_variant_siblings_when_the_identity_column_uses_the_sql_server_identity_collation(
+        bool validateStorageCollapsedCollectionIdentityUniqueness
+    )
+    {
+        var fixture = FlattenerFixture.CreateWithSqlServerIdentityCollationOnAddressType();
+        var flatteningInput = fixture.CreateFlatteningInput(
+            selectedBody: CreateCaseVariantAddressTypeBody(),
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences(),
+            validateStorageCollapsedCollectionIdentityUniqueness: validateStorageCollapsedCollectionIdentityUniqueness
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.addresses");
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public void It_keeps_case_variant_siblings_when_the_identity_column_is_not_flagged(
+        bool validateStorageCollapsedCollectionIdentityUniqueness
+    )
+    {
+        var flatteningInput = _fixture.CreateFlatteningInput(
+            selectedBody: CreateCaseVariantAddressTypeBody(),
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, _fixture.DocumentUuid),
+            resolvedReferences: FlattenerFixture.CreateEmptyResolvedReferences(),
+            validateStorageCollapsedCollectionIdentityUniqueness: validateStorageCollapsedCollectionIdentityUniqueness
+        );
+
+        var result = _sut.Flatten(flatteningInput);
+
+        result
+            .RootRow.CollectionCandidates.Select(candidate => candidate.SemanticIdentityValues[0])
+            .Should()
+            .Equal((object?)"Home", (object?)"HOME");
+    }
+
+    private static JsonNode CreateCaseVariantAddressTypeBody() =>
+        JsonNode.Parse(
+            """
+            {
+              "addresses": [
+                {
+                  "addressType": "Home"
+                },
+                {
+                  "addressType": "HOME"
+                }
+              ]
+            }
+            """
+        )!;
 
     [Test]
     public void It_keeps_collection_siblings_distinct_in_profile_mode_when_one_omits_and_one_explicit_nulls_the_identity_property()
@@ -4678,6 +4737,49 @@ public class Given_RelationalWriteFlattener
             );
         }
 
+        public static FlattenerFixture CreateWithSqlServerIdentityCollationOnAddressType()
+        {
+            var fixture = Create();
+            var tables = fixture
+                .WritePlan.TablePlansInDependencyOrder.Select(table =>
+                {
+                    if (table.TableModel.Table.Name != "StudentAddress")
+                    {
+                        return table;
+                    }
+
+                    var bindings = table
+                        .ColumnBindings.Select(binding =>
+                            binding.Column.ColumnName.Value == "AddressType"
+                                ? binding with
+                                {
+                                    Column = binding.Column with { UsesSqlServerIdentityCollation = true },
+                                }
+                                : binding
+                        )
+                        .ToArray();
+                    return table with
+                    {
+                        TableModel = table.TableModel with
+                        {
+                            Columns = [.. bindings.Select(binding => binding.Column)],
+                        },
+                        ColumnBindings = [.. bindings],
+                    };
+                })
+                .ToArray();
+            return fixture with
+            {
+                WritePlan = new ResourceWritePlan(
+                    fixture.WritePlan.Model with
+                    {
+                        TablesInDependencyOrder = [.. tables.Select(table => table.TableModel)],
+                    },
+                    tables
+                ),
+            };
+        }
+
         public static FlattenerFixture CreateWithDescriptorBindings()
         {
             var fixture = Create();
@@ -5821,6 +5923,61 @@ public class Given_RelationalWriteFlattener_with_an_inlined_parent_collection
 
         var act = () => _sut.Flatten(flatteningInput);
         act.Should().Throw<RelationalWriteRequestValidationException>();
+    }
+
+    [Test]
+    public void It_reports_a_nested_duplicate_with_cores_key_and_message_under_a_non_zero_parent_ordinal()
+    {
+        // The nested scope is `$.parents[*].detail.children[*]`. Core's factory truncates at the
+        // first `[*]`, so the parent wildcard must be materialized before the call; otherwise the
+        // key would name the outer `parents` array.
+        var body = JsonNode.Parse(
+            """
+            {
+              "parents": [
+                {
+                  "identityField0": "A",
+                  "detail": {
+                    "children": [
+                      { "identityField0": "X" }
+                    ]
+                  }
+                },
+                {
+                  "identityField0": "B",
+                  "detail": {
+                    "children": [
+                      { "identityField0": "Y" },
+                      { "identityField0": "Z" },
+                      { "identityField0": "Y" }
+                    ]
+                  }
+                }
+              ]
+            }
+            """
+        )!;
+
+        var flatteningInput = new FlatteningInput(
+            RelationalWriteOperationKind.Post,
+            new RelationalWriteTargetContext.ExistingDocument(DocumentId, _documentUuid),
+            _writePlan,
+            body,
+            EmptyResolvedReferences()
+        );
+
+        var act = () => _sut.Flatten(flatteningInput);
+
+        var exception = act.Should().Throw<RelationalWriteRequestValidationException>().Which;
+        exception.ValidationFailures.Should().ContainSingle();
+        exception.ValidationFailures[0].Path.Value.Should().Be("$.parents[1].detail.children");
+        exception
+            .ValidationFailures[0]
+            .Message.Should()
+            .Be(
+                "The 3rd item of the children has the same identifying values as another item earlier in the list."
+            );
+        exception.Diagnostic.Should().Contain("Duplicate ordinal path: [1, 2]");
     }
 
     [Test]
