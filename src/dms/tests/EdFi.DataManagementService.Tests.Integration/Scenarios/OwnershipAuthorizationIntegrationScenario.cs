@@ -887,6 +887,67 @@ internal static class OwnershipAuthorizationIntegrationScenario
         ReadServedIds(underCapBody).Should().Contain([ownedId, foreignId]).And.NotContain(unstampedId);
     }
 
+    /// <summary>
+    /// A case-variant descriptor re-POST is matched to the stored descriptor by the database, so the stored
+    /// row's ownership token decides it: a foreign token is denied and the owner updates the row while the
+    /// stored casing is kept.
+    /// </summary>
+    public static async Task It_authorizes_a_case_variant_descriptor_repost_against_the_stored_rows_ownership(
+        ApiIntegrationHarness harness
+    )
+    {
+        using HttpResponseMessage ownerCreate = await PostGradeLevelDescriptorAsync(
+            harness,
+            OwnerTenant,
+            "Tenth grade"
+        );
+        ownerCreate
+            .StatusCode.Should()
+            .Be(HttpStatusCode.Created, await ownerCreate.Content.ReadAsStringAsync());
+        string ownerPath = GetLocationPath(ownerCreate);
+        Guid gradeLevelId = Guid.Parse(ownerPath.Split('/', StringSplitOptions.RemoveEmptyEntries)[^1]);
+        long documentCount = await CountDocumentsAsync(harness);
+
+        using HttpResponseMessage foreignRepost = await SendJsonAsync(
+            harness,
+            HttpMethod.Post,
+            string.Format(GradeLevelDescriptorsEndpointFormat, ForeignTenant),
+            CaseVariantGradeLevelBody("Tenth grade, foreign")
+        );
+        await AssertOwnershipDenialAsync(foreignRepost, MismatchType, []);
+        (await CountDocumentsAsync(harness)).Should().Be(documentCount);
+
+        using HttpResponseMessage ownerRepost = await SendJsonAsync(
+            harness,
+            HttpMethod.Post,
+            string.Format(GradeLevelDescriptorsEndpointFormat, OwnerTenant),
+            CaseVariantGradeLevelBody("Tenth grade, recased")
+        );
+        ownerRepost.StatusCode.Should().Be(HttpStatusCode.OK, await ownerRepost.Content.ReadAsStringAsync());
+        GetLocationPath(ownerRepost).Should().Be(ownerPath);
+        (await CountDocumentsAsync(harness)).Should().Be(documentCount);
+        (await ReadStoredOwnershipTokenAsync(harness, gradeLevelId)).Should().Be(CreatorToken);
+
+        using HttpResponseMessage ownerGet = await harness.HttpClient.GetAsync(
+            GradeLevelDescriptorPath(OwnerTenant, gradeLevelId)
+        );
+        string ownerGetBody = await ownerGet.Content.ReadAsStringAsync();
+        ownerGet.StatusCode.Should().Be(HttpStatusCode.OK, ownerGetBody);
+        JsonObject served = JsonNode.Parse(ownerGetBody)!.AsObject();
+        served["namespace"]!.GetValue<string>().Should().Be("uri://ed-fi.org/GradeLevelDescriptor");
+        served["codeValue"]!.GetValue<string>().Should().Be("Tenth grade");
+        served["description"]!.GetValue<string>().Should().Be("Tenth grade, recased");
+
+        static JsonObject CaseVariantGradeLevelBody(string description) =>
+            new()
+            {
+                ["codeValue"] = "TENTH GRADE",
+                ["description"] = description,
+                ["namespace"] = "URI://ED-FI.ORG/GradeLevelDescriptor",
+                ["shortDescription"] = "Tenth grade",
+            };
+    }
+
     private static string GradeLevelDescriptorPath(string tenant, Guid documentId) =>
         $"{string.Format(GradeLevelDescriptorsEndpointFormat, tenant)}/{documentId}";
 

@@ -14,41 +14,49 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 
 public partial class Given_Descriptor_Write_Response_Etags
 {
-    // Deliberately wider than DescriptorId: every lock, update, RI write, and cache operation
+    // Deliberately wider than DescriptorId: every lock, update, and cache operation
     // must retain the owning document key. The update SQL must not allocate or assign either key.
     private const long ExistingDocumentId = 4_000_000_345L;
 
     private static IEnumerable<TestCaseData> PostRepresentationCases() =>
-        RepresentationCases(["namespace-case", "code-case", "equal-uri-components"]);
+        RepresentationCases(
+            from change in new[] { "namespace-case", "code-case", "equal-uri-components" }
+            from descriptiveChange in new[] { false, true }
+            select new object[] { change, descriptiveChange }
+        );
 
+    // An ordinally equal URI never probes; otherwise the probe's answer for the request URI decides.
     private static IEnumerable<TestCaseData> PutRepresentationCases() =>
         RepresentationCases([
-            "namespace-case",
-            "code-case",
-            "equal-uri-components",
-            "different-code",
-            "pre-delimiter-space",
+            ["equal-uri-components", PutProbeVerdict.NotProbed],
+            ["namespace-case", PutProbeVerdict.LockedDocument],
+            ["code-case", PutProbeVerdict.LockedDocument],
+            ["code-case", PutProbeVerdict.OtherDocument],
+            ["different-code", PutProbeVerdict.Miss],
+            ["pre-delimiter-space", PutProbeVerdict.Miss],
         ]);
 
-    private static IEnumerable<TestCaseData> RepresentationCases(string[] changes)
+    private static IEnumerable<TestCaseData> RepresentationCases(IEnumerable<object[]> cases)
     {
         foreach (var dialect in new[] { SqlDialect.Pgsql, SqlDialect.Mssql })
         {
             foreach (var useIfMatch in new[] { false, true })
             {
-                foreach (var change in changes)
+                foreach (var arguments in cases)
                 {
-                    yield return new TestCaseData(dialect, useIfMatch, change);
+                    object[] testArguments = [dialect, useIfMatch, .. arguments];
+                    yield return new TestCaseData(testArguments);
                 }
             }
         }
     }
 
     [TestCaseSource(nameof(PostRepresentationCases))]
-    public async Task It_applies_incoming_components_and_returns_the_updated_etag_for_an_RI_matching_post(
+    public async Task It_binds_the_stored_identity_for_a_post_matched_by_descriptor_identity(
         SqlDialect dialect,
         bool useIfMatch,
-        string change
+        string change,
+        bool descriptiveChange
     )
     {
         var (persistedNamespace, persistedCode, incomingNamespace, incomingCode) = ComponentsFor(change);
@@ -72,6 +80,10 @@ public partial class Given_Descriptor_Write_Response_Etags
         var request = CreatePostRequest(CreateMappingSet(dialect), documentUuid);
         request.RequestBody["namespace"] = incomingNamespace;
         request.RequestBody["codeValue"] = incomingCode;
+        if (descriptiveChange)
+        {
+            request.RequestBody["shortDescription"] = "Changed";
+        }
         if (useIfMatch)
         {
             request = request with
@@ -83,32 +95,44 @@ public partial class Given_Descriptor_Write_Response_Etags
         var result = await CreateSut(targetLookupService, sessionFactory)
             .HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
+        // The probe matched the target by identity, so only a descriptive change writes, and it writes the
+        // stored components: a casing, alias or re-split identity alone is a no-op with the current ETag.
         result
             .Should()
             .BeEquivalentTo(
-                new UpsertResult.UpdateSuccess(documentUuid, ExpectedComposedDescriptorEtag(45L))
+                new UpsertResult.UpdateSuccess(
+                    documentUuid,
+                    ExpectedComposedDescriptorEtag(descriptiveChange ? 45L : 44L)
+                )
             );
         targetLookupService.ResolveForPostCallCount.Should().Be(useIfMatch ? 0 : 1);
-        sessionFactory.Session.CommitCallCount.Should().Be(1);
-        sessionFactory.Session.RollbackCallCount.Should().Be(0);
-        AssertExistingDescriptorCommands(sessionFactory, dialect, useIfMatch, writes: true);
-        var update = sessionFactory.Session.Executor.Commands[^1];
-        AssertRepresentationUpdate(update, dialect, incomingNamespace, incomingCode);
-        update.CommandText.Should().NotContain("ReferentialIdentity");
-        update
-            .Parameters.Select(parameter => parameter.Name)
-            .Should()
-            .Equal(
-                "@namespace",
-                "@codeValue",
-                "@shortDescription",
-                "@description",
-                "@effectiveBeginDate",
-                "@effectiveEndDate",
-                "@documentId",
-                "@enqueueOutcomeNoWorkQueued",
-                "@enqueueOutcomeAlreadySatisfied"
-            );
+        sessionFactory.Session.CommitCallCount.Should().Be(descriptiveChange ? 1 : 0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(descriptiveChange ? 0 : 1);
+        AssertExistingDescriptorCommands(sessionFactory, dialect, useIfMatch, writes: descriptiveChange);
+        if (descriptiveChange)
+        {
+            var update = sessionFactory.Session.Executor.Commands[^1];
+            AssertRepresentationUpdate(update, dialect, persistedNamespace, persistedCode);
+            update
+                .Parameters.Single(parameter => parameter.Name == "@shortDescription")
+                .Value.Should()
+                .Be("Changed");
+            update.CommandText.Should().NotContain("ReferentialIdentity");
+            update
+                .Parameters.Select(parameter => parameter.Name)
+                .Should()
+                .Equal(
+                    "@namespace",
+                    "@codeValue",
+                    "@shortDescription",
+                    "@description",
+                    "@effectiveBeginDate",
+                    "@effectiveEndDate",
+                    "@documentId",
+                    "@enqueueOutcomeNoWorkQueued",
+                    "@enqueueOutcomeAlreadySatisfied"
+                );
+        }
         if (useIfMatch)
         {
             // The in-session re-resolution is the descriptor identity probe, bound to the request's URI.
@@ -129,10 +153,11 @@ public partial class Given_Descriptor_Write_Response_Etags
     }
 
     [TestCaseSource(nameof(PutRepresentationCases))]
-    public async Task It_compares_the_reconstructed_whole_URI_ordinally_before_applying_a_put(
+    public async Task It_follows_the_database_descriptor_identity_verdict_before_applying_a_put(
         SqlDialect dialect,
         bool useIfMatch,
-        string change
+        string change,
+        PutProbeVerdict verdict
     )
     {
         var (persistedNamespace, persistedCode, incomingNamespace, incomingCode) = ComponentsFor(change);
@@ -152,10 +177,29 @@ public partial class Given_Descriptor_Write_Response_Etags
             persistedCode,
             useIfMatch
         );
+        if (verdict is not PutProbeVerdict.NotProbed)
+        {
+            var probedDocumentId =
+                verdict is PutProbeVerdict.LockedDocument ? ExistingDocumentId : ExistingDocumentId + 1;
+            sessionFactory.Session.Executor.ResultSets.Enqueue([
+                verdict is PutProbeVerdict.Miss
+                    ? InMemoryRelationalResultSet.Create()
+                    : InMemoryRelationalResultSet.Create(
+                        new Dictionary<string, object?>
+                        {
+                            ["DescriptorId"] = 7,
+                            ["DocumentId"] = probedDocumentId,
+                            ["DocumentUuid"] = documentUuid.Value,
+                            ["ContentVersion"] = 44L,
+                        }
+                    ),
+            ]);
+        }
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(45L)]);
         var request = CreatePutRequest(CreateMappingSet(dialect), documentUuid);
         request.RequestBody["namespace"] = incomingNamespace;
         request.RequestBody["codeValue"] = incomingCode;
+        request.RequestBody["shortDescription"] = "Changed";
         if (useIfMatch)
         {
             request = request with
@@ -166,8 +210,9 @@ public partial class Given_Descriptor_Write_Response_Etags
 
         var result = await CreateSut(targetLookupService, sessionFactory).HandlePutAsync(request);
 
-        var sameUri = change == "equal-uri-components";
-        if (sameUri)
+        var unchangedIdentity = verdict is PutProbeVerdict.NotProbed or PutProbeVerdict.LockedDocument;
+        var probes = verdict is PutProbeVerdict.NotProbed ? 0 : 1;
+        if (unchangedIdentity)
         {
             result
                 .Should()
@@ -177,8 +222,8 @@ public partial class Given_Descriptor_Write_Response_Etags
             AssertRepresentationUpdate(
                 sessionFactory.Session.Executor.Commands[^1],
                 dialect,
-                incomingNamespace,
-                incomingCode
+                persistedNamespace,
+                persistedCode
             );
         }
         else
@@ -186,9 +231,33 @@ public partial class Given_Descriptor_Write_Response_Etags
             result.Should().BeOfType<UpdateResult.UpdateFailureImmutableIdentity>();
         }
         targetLookupService.ResolveForPutCallCount.Should().Be(useIfMatch ? 0 : 1);
-        sessionFactory.Session.CommitCallCount.Should().Be(sameUri ? 1 : 0);
-        sessionFactory.Session.RollbackCallCount.Should().Be(sameUri ? 0 : 1);
-        AssertExistingDescriptorCommands(sessionFactory, dialect, useIfMatch, writes: sameUri);
+        sessionFactory.Session.CommitCallCount.Should().Be(unchangedIdentity ? 1 : 0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(unchangedIdentity ? 0 : 1);
+        AssertExistingDescriptorCommands(
+            sessionFactory,
+            dialect,
+            useIfMatch,
+            writes: unchangedIdentity,
+            probes: probes
+        );
+        if (probes == 1)
+        {
+            // Only an ordinally different URI pays for the probe, which runs on the session after the lock.
+            var probe = sessionFactory.Session.Executor.Commands[useIfMatch ? 2 : 1];
+            probe
+                .Parameters.Should()
+                .ContainSingle()
+                .Which.Value.Should()
+                .Be($"{incomingNamespace}#{incomingCode}");
+        }
+    }
+
+    public enum PutProbeVerdict
+    {
+        NotProbed,
+        LockedDocument,
+        OtherDocument,
+        Miss,
     }
 
     [TestCase(SqlDialect.Pgsql, false, false)]
@@ -408,7 +477,8 @@ public partial class Given_Descriptor_Write_Response_Etags
         RecordingRelationalWriteSessionFactory factory,
         SqlDialect dialect,
         bool useIfMatch,
-        bool writes
+        bool writes,
+        int probes = 0
     )
     {
         factory.Session.ScalarCommands.Should().ContainSingle();
@@ -419,7 +489,9 @@ public partial class Given_Descriptor_Write_Response_Etags
             .BeOfType<long>()
             .Which.Should()
             .Be(ExistingDocumentId);
-        factory.Session.Executor.Commands.Should().HaveCount((useIfMatch ? 2 : 1) + (writes ? 1 : 0));
+        factory
+            .Session.Executor.Commands.Should()
+            .HaveCount((useIfMatch ? 2 : 1) + probes + (writes ? 1 : 0));
         var read = factory.Session.Executor.Commands[useIfMatch ? 1 : 0];
         read.CommandText.Should()
             .Be(

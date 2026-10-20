@@ -37,29 +37,22 @@ public sealed class Given_Mssql_CompactDescriptorRuntime : MssqlApiIntegrationTe
     public void SetupNamespacePrefixes() => _identity.SetNamespacePrefixes(["uri://ed-fi.org/"]);
 
     [Test]
-    public Task It_applies_an_RI_matching_post_component_update() =>
-        DescriptorRuntimeScenario.It_applies_an_RI_matching_post_component_update(Harness);
+    public Task It_keeps_the_stored_components_for_an_equal_whole_URI_post() =>
+        DescriptorRuntimeScenario.It_keeps_the_stored_components_for_an_equal_whole_URI_post(Harness);
 
     [Test]
-    [Ignore(
-        "DMS-1454: Quarantined until descriptor writes stop hashing the request spelling; until then a case-variant descriptor re-POST misses its referential identity, collides with the stored URI and returns 500."
-    )]
-    public Task It_applies_an_RI_matching_post_casing_update() =>
-        DescriptorRuntimeScenario.It_applies_an_RI_matching_post_casing_update(Harness);
+    public Task It_keeps_the_stored_casing_for_a_case_variant_post() =>
+        DescriptorRuntimeScenario.It_keeps_the_stored_casing_for_a_case_variant_post(Harness);
 
     [Test]
-    public Task It_accepts_equal_whole_URI_components_on_put() =>
-        DescriptorRuntimeScenario.It_accepts_equal_whole_URI_components_on_put(Harness);
+    public Task It_keeps_the_stored_identity_for_an_equal_identity_put() =>
+        DescriptorRuntimeScenario.It_keeps_the_stored_identity_for_an_equal_identity_put(Harness);
 
     [Test]
     public Task It_preserves_all_stamps_and_change_queries_on_identical_post_and_put() =>
         DescriptorRuntimeScenario.It_preserves_all_stamps_and_change_queries_on_identical_post_and_put(
             Harness
         );
-
-    [Test]
-    public Task It_matches_an_equal_whole_URI_post_to_the_stored_descriptor() =>
-        DescriptorRuntimeScenario.It_matches_an_equal_whole_URI_post_to_the_stored_descriptor(Harness);
 
     [Test]
     public Task It_isolates_identical_URIs_across_descriptor_types_and_projects() =>

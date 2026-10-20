@@ -12,10 +12,11 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 [Parallelizable]
 public class Given_Descriptor_No_Op_Comparison
 {
+    // Identity is the engine's verdict, established before the comparer runs; the comparer leaves it alone.
     [TestCase("uri://ED-FI.org/SchoolTypeDescriptor", "Part#Charter")]
     [TestCase("uri://ed-fi.org/SchoolTypeDescriptor", "PART#Charter")]
     [TestCase("uri://ed-fi.org/SchoolTypeDescriptor#Part", "Charter")]
-    public void It_compares_each_stored_component_ordinally_even_when_URI_identity_matches(
+    public void It_treats_identity_components_as_equal_and_compares_only_descriptive_fields(
         string @namespace,
         string codeValue
     )
@@ -30,7 +31,11 @@ public class Given_Descriptor_No_Op_Comparison
         );
         var changed = original with { Namespace = @namespace, CodeValue = codeValue };
 
-        DescriptorNoOpComparer.IsUnchanged(changed, original).Should().BeFalse();
+        DescriptorNoOpComparer.IsUnchanged(changed, original).Should().BeTrue();
+        DescriptorNoOpComparer
+            .IsUnchanged(changed with { ShortDescription = "charter" }, original)
+            .Should()
+            .BeFalse();
     }
 
     [Test]
@@ -127,29 +132,5 @@ public class Given_Descriptor_No_Op_Comparison
         );
 
         DescriptorNoOpComparer.IsUnchanged(a, b).Should().BeFalse();
-    }
-
-    [Test]
-    public void It_detects_identity_change_via_namespace_and_code_value_difference()
-    {
-        var original = new ExtractedDescriptorBody(
-            "uri://ed-fi.org/AcademicSubjectDescriptor",
-            "English",
-            "English",
-            null,
-            null,
-            null
-        );
-
-        var changed = new ExtractedDescriptorBody(
-            "uri://ed-fi.org/AcademicSubjectDescriptor",
-            "Mathematics",
-            "Mathematics",
-            null,
-            null,
-            null
-        );
-
-        DescriptorNoOpComparer.IsUnchanged(original, changed).Should().BeFalse();
     }
 }

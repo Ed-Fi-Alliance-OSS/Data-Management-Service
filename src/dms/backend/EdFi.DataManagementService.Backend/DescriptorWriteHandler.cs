@@ -229,7 +229,7 @@ internal sealed class DescriptorWriteHandler(
                     writeSession,
                     cancellationToken,
                     request.ProfileName,
-                    proposedNamespace: body.Namespace,
+                    body: body,
                     postTargetSelection: selection
                 )
                 .ConfigureAwait(false);
@@ -310,11 +310,12 @@ internal sealed class DescriptorWriteHandler(
                 case DescriptorLockedPreconditionResult.Loaded(
                     var sessionTargetContext,
                     var persisted,
-                    var currentEtag
+                    var currentEtag,
+                    var bound
                 ):
                     return await ApplyLockedDescriptorPostUpsertAsync(
                             request,
-                            body,
+                            bound!.Body,
                             sessionTargetContext.DocumentId,
                             sessionTargetContext.DocumentUuid,
                             persisted,
@@ -491,7 +492,7 @@ internal sealed class DescriptorWriteHandler(
                         request.ProfileName,
                         storedNamespaceAuthorization,
                         proposedNamespaceAuthorization,
-                        body.Namespace,
+                        body,
                         customViewAuthorization,
                         storedOwnershipAuthorization: storedOwnershipAuthorization
                     )
@@ -569,11 +570,12 @@ internal sealed class DescriptorWriteHandler(
                     case DescriptorLockedPreconditionResult.Loaded(
                         var sessionTargetContext,
                         var persisted,
-                        var currentEtag
+                        var currentEtag,
+                        var bound
                     ):
                         return await ApplyLockedDescriptorPutAsync(
                                 request,
-                                body,
+                                bound!,
                                 sessionTargetContext.DocumentId,
                                 sessionTargetContext.DocumentUuid,
                                 persisted,
@@ -1056,7 +1058,7 @@ internal sealed class DescriptorWriteHandler(
         string? profileName = null,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization = null,
         RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null,
-        string? proposedNamespace = null,
+        ExtractedDescriptorBody? body = null,
         RelationalCustomViewAuthorization? customViewAuthorization = null,
         DescriptorPostTargetSelection? postTargetSelection = null,
         RelationalOwnershipAuthorization? storedOwnershipAuthorization = null
@@ -1200,7 +1202,7 @@ internal sealed class DescriptorWriteHandler(
                         mappingSet,
                         documentId: 0L,
                         proposedNamespaceAuthorization,
-                        proposedNamespace,
+                        body?.Namespace,
                         sessionCommandExecutor,
                         cancellationToken
                     )
@@ -1257,11 +1259,13 @@ internal sealed class DescriptorWriteHandler(
             )
             .ConfigureAwait(false);
 
+        BoundDescriptorBody? bound = null;
+
         // Namespace authorization AND-composes before the If-Match precondition: run the stored and
         // proposed namespace checks against the locked target so a namespace denial (403) is returned
         // ahead of a stale-ETag mismatch (412). Only run them once the row is loaded; a missing row
         // falls through to the existing not-found/not-exists handling.
-        if (lockedCurrentState is DescriptorCurrentStateLoadResult.Loaded)
+        if (lockedCurrentState is DescriptorCurrentStateLoadResult.Loaded(var loadedPersisted, _))
         {
             // Custom views AND-compose with NamespaceBased in CMS-configured order, so those configured at or
             // before it run first and those configured after it run once the stored namespace check has
@@ -1341,6 +1345,23 @@ internal sealed class DescriptorWriteHandler(
                 }
             }
 
+            // The engine's descriptor-identity verdict binds the stored identity before the proposed check
+            // reads the request's namespace, so a value that is never written cannot be denied.
+            if (body is not null)
+            {
+                bound = await BindDescriptorIdentityAsync(
+                        mappingSet,
+                        resource,
+                        targetKind,
+                        body,
+                        loadedPersisted,
+                        existingTargetContext.DocumentId,
+                        sessionCommandExecutor,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+
             // Last, because it reads the request's proposed value: every stored check has to have answered
             // against the locked row first, or a proposed denial would mask the stored custom-view answer
             // configured after NamespaceBased — including the 500 a nonconforming view behind it owes.
@@ -1350,7 +1371,7 @@ internal sealed class DescriptorWriteHandler(
                         mappingSet,
                         existingTargetContext.DocumentId,
                         proposedNamespaceAuthorization,
-                        proposedNamespace,
+                        bound?.Body.Namespace,
                         sessionCommandExecutor,
                         cancellationToken
                     )
@@ -1376,6 +1397,7 @@ internal sealed class DescriptorWriteHandler(
                     existingTargetContext,
                     persisted,
                     currentEtag,
+                    bound,
                     _logger
                 ),
             _ => throw new InvalidOperationException(
@@ -1389,6 +1411,7 @@ internal sealed class DescriptorWriteHandler(
         RelationalWriteTargetContext.ExistingDocument targetContext,
         PersistedDescriptorState persisted,
         string currentEtag,
+        BoundDescriptorBody? bound,
         ILogger logger
     )
     {
@@ -1412,7 +1435,7 @@ internal sealed class DescriptorWriteHandler(
         }
 
         return isSatisfied
-            ? new DescriptorLockedPreconditionResult.Loaded(targetContext, persisted, currentEtag)
+            ? new DescriptorLockedPreconditionResult.Loaded(targetContext, persisted, currentEtag, bound)
             : new DescriptorLockedPreconditionResult.Mismatch(
                 EtagPreconditionEvaluator.GetFailureReason(precondition)
             );
@@ -3293,7 +3316,7 @@ internal sealed class DescriptorWriteHandler(
 
     private async Task<UpdateResult> ApplyLockedDescriptorPutAsync(
         DescriptorWriteRequest request,
-        ExtractedDescriptorBody body,
+        BoundDescriptorBody bound,
         long documentId,
         DocumentUuid documentUuid,
         PersistedDescriptorState persisted,
@@ -3302,7 +3325,9 @@ internal sealed class DescriptorWriteHandler(
         CancellationToken cancellationToken
     )
     {
-        if (!string.Equals(body.Uri, persisted.Uri, StringComparison.Ordinal))
+        var body = bound.Body;
+
+        if (bound.IdentityChanged)
         {
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
             return new UpdateResult.UpdateFailureImmutableIdentity(
@@ -3384,6 +3409,7 @@ internal sealed class DescriptorWriteHandler(
     ) =>
         ApplyWithLockedDescriptorCurrentStateAsync<UpsertResult>(
             request,
+            DescriptorPreconditionTargetKind.Post,
             body,
             documentId,
             storedNamespaceAuthorization,
@@ -3403,10 +3429,10 @@ internal sealed class DescriptorWriteHandler(
                 customViewFailure
             ),
             static ownershipFailure => new UpsertResult.UpsertFailureOwnershipNotAuthorized(ownershipFailure),
-            (persisted, currentEtag, writeSession, ct) =>
+            (bound, persisted, currentEtag, writeSession, ct) =>
                 ApplyLockedDescriptorPostUpsertAsync(
                     request,
-                    body,
+                    bound.Body,
                     documentId,
                     existingDocumentUuid,
                     persisted,
@@ -3430,6 +3456,7 @@ internal sealed class DescriptorWriteHandler(
     ) =>
         ApplyWithLockedDescriptorCurrentStateAsync<UpdateResult>(
             request,
+            DescriptorPreconditionTargetKind.Put,
             body,
             documentId,
             storedNamespaceAuthorization,
@@ -3450,10 +3477,10 @@ internal sealed class DescriptorWriteHandler(
                 customViewFailure
             ),
             static ownershipFailure => new UpdateResult.UpdateFailureOwnershipNotAuthorized(ownershipFailure),
-            (persisted, currentEtag, writeSession, ct) =>
+            (bound, persisted, currentEtag, writeSession, ct) =>
                 ApplyLockedDescriptorPutAsync(
                     request,
-                    body,
+                    bound,
                     documentId,
                     documentUuid,
                     persisted,
@@ -3466,6 +3493,7 @@ internal sealed class DescriptorWriteHandler(
 
     private async Task<TResult> ApplyWithLockedDescriptorCurrentStateAsync<TResult>(
         DescriptorWriteRequest request,
+        DescriptorPreconditionTargetKind targetKind,
         ExtractedDescriptorBody body,
         long documentId,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
@@ -3481,6 +3509,7 @@ internal sealed class DescriptorWriteHandler(
         Func<CustomViewAuthorizationFailure, TResult> customViewNotAuthorizedFactory,
         Func<OwnershipAuthorizationFailure, TResult> ownershipNotAuthorizedFactory,
         Func<
+            BoundDescriptorBody,
             PersistedDescriptorState,
             string,
             IRelationalWriteSession,
@@ -3629,6 +3658,20 @@ internal sealed class DescriptorWriteHandler(
                         }
                     }
 
+                    // The engine's descriptor-identity verdict binds the stored identity before the proposed
+                    // check reads the request's namespace, so a value that is never written cannot be denied.
+                    var bound = await BindDescriptorIdentityAsync(
+                            request.MappingSet,
+                            request.Resource,
+                            targetKind,
+                            body,
+                            persisted,
+                            documentId,
+                            sessionCommandExecutor,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+
                     // Last, because it reads the request's proposed value: every stored check has to have
                     // answered against the locked row first, or a proposed denial would mask the stored
                     // custom-view answer configured after NamespaceBased — including the 500 a nonconforming
@@ -3639,7 +3682,7 @@ internal sealed class DescriptorWriteHandler(
                                 request.MappingSet,
                                 documentId,
                                 proposedNamespaceAuthorization,
-                                body.Namespace,
+                                bound.Body.Namespace,
                                 sessionCommandExecutor,
                                 cancellationToken
                             )
@@ -3676,7 +3719,13 @@ internal sealed class DescriptorWriteHandler(
                         );
                     }
 
-                    return await applyLoadedAsync(persisted, currentEtag, writeSession, cancellationToken)
+                    return await applyLoadedAsync(
+                            bound,
+                            persisted,
+                            currentEtag,
+                            writeSession,
+                            cancellationToken
+                        )
                         .ConfigureAwait(false);
 
                 default:
@@ -4374,8 +4423,6 @@ internal sealed class DescriptorWriteHandler(
     {
         return DescriptorNoOpComparer.IsUnchanged(
             body,
-            persisted.Namespace,
-            persisted.CodeValue,
             persisted.ShortDescription,
             persisted.Description,
             persisted.EffectiveBeginDate,
@@ -4397,6 +4444,67 @@ internal sealed class DescriptorWriteHandler(
     )
     {
         public string Uri => $"{Namespace}#{CodeValue}";
+    }
+
+    /// <summary>
+    /// A descriptor request body after the database's descriptor-identity verdict: when the request names the
+    /// locked descriptor, <see cref="Body"/> carries the persisted <c>Namespace</c> and <c>CodeValue</c>, so the
+    /// stored casing, SQL Server collation aliases and component splits survive; otherwise it is the request body
+    /// unchanged and <see cref="IdentityChanged"/> is set.
+    /// </summary>
+    private sealed record BoundDescriptorBody(ExtractedDescriptorBody Body, bool IdentityChanged);
+
+    /// <summary>
+    /// Binds the persisted descriptor identity into the request body. A POST target was matched by identity, so
+    /// it always binds. A PUT binds when its URI is ordinally the stored one, or when the descriptor probe
+    /// resolves its URI to the locked document; any other URI is an identity change. The probe, not a C#
+    /// comparer, decides, so PostgreSQL folds under <c>pg_c_utf8</c> and SQL Server accepts its collation
+    /// aliases exactly as the unique index does.
+    /// </summary>
+    private static async Task<BoundDescriptorBody> BindDescriptorIdentityAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DescriptorPreconditionTargetKind targetKind,
+        ExtractedDescriptorBody body,
+        PersistedDescriptorState persisted,
+        long lockedDocumentId,
+        IRelationalCommandExecutor sessionCommandExecutor,
+        CancellationToken cancellationToken
+    )
+    {
+        BoundDescriptorBody bound = new(
+            body with
+            {
+                Namespace = persisted.Namespace,
+                CodeValue = persisted.CodeValue,
+            },
+            IdentityChanged: false
+        );
+
+        if (
+            targetKind is DescriptorPreconditionTargetKind.Post
+            || string.Equals(body.Uri, persisted.Uri, StringComparison.Ordinal)
+        )
+        {
+            return bound;
+        }
+
+        var probe = await RelationalWriteTargetLookupSupport
+            .ResolveDescriptorForPostAsync(
+                sessionCommandExecutor,
+                mappingSet,
+                resource,
+                body.Uri,
+                new DocumentUuid(Guid.Empty),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return
+            probe is RelationalWriteTargetLookupResult.ExistingDocument existing
+            && existing.DocumentId == lockedDocumentId
+            ? bound
+            : new BoundDescriptorBody(body, IdentityChanged: true);
     }
 
     private enum DescriptorPreconditionTargetKind
@@ -4467,10 +4575,14 @@ internal sealed class DescriptorWriteHandler(
         public sealed record BranchImmediate(DescriptorPostBranch.Immediate Immediate)
             : DescriptorLockedPreconditionResult;
 
+        /// <param name="Bound">
+        /// The request body bound to the persisted identity for POST and PUT; <c>null</c> for DELETE.
+        /// </param>
         public sealed record Loaded(
             RelationalWriteTargetContext.ExistingDocument TargetContext,
             PersistedDescriptorState Persisted,
-            string CurrentEtag
+            string CurrentEtag,
+            BoundDescriptorBody? Bound
         ) : DescriptorLockedPreconditionResult;
     }
 

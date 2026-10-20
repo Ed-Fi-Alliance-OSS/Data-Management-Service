@@ -637,6 +637,8 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
+        // The ordinally different URI is probed after the lock; the probe finds no descriptor with it.
+        sessionFactory.Session.Executor.ResultSets.Enqueue([InMemoryRelationalResultSet.Create()]);
         var sut = CreateSut(targetLookupService, sessionFactory);
         var request = new DescriptorWriteRequest(
             CreateMappingSet(SqlDialect.Pgsql),
@@ -666,7 +668,7 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
         sessionFactory.Session.DisposeCallCount.Should().Be(1);
-        sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
+        sessionFactory.Session.Executor.Commands.Should().HaveCount(3);
         sessionFactory
             .Session.Executor.Commands.Should()
             .NotContain(command =>

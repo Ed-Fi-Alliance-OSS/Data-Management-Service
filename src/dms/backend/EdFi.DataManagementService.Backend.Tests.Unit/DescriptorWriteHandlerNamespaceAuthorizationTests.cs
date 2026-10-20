@@ -511,47 +511,64 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
-    [Test]
-    public async Task It_returns_namespace_403_and_does_not_update_when_descriptor_post_upsert_proposed_namespace_is_not_authorized()
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task It_binds_the_stored_namespace_into_the_proposed_check_for_a_case_variant_write(
+        bool post
+    )
     {
-        var documentId = 345L;
+        const string StoredNamespace = "uri://ed-fi.org/SchoolTypeDescriptor";
+        const string CaseVariantNamespace = "URI://ED-FI.ORG/SchoolTypeDescriptor";
         var targetLookupService = new StubRelationalWriteTargetLookupService
         {
-            PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(
-                documentId,
-                _documentUuid,
-                44L
-            ),
+            PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, _documentUuid, 44L),
+            PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, _documentUuid, 44L),
         };
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRowWithEdFiNamespace()]);
-        sessionFactory.Session.Executor.NamespaceResults.Enqueue(
-            new NamespaceAuthorizationExecutionResult.Authorized()
-        );
-        sessionFactory.Session.Executor.NamespaceResults.Enqueue(
-            new NamespaceAuthorizationExecutionResult.NotAuthorized(ProposedMismatchFailure())
-        );
+        if (!post)
+        {
+            // The PUT's ordinally different URI is probed; it resolves to the locked document.
+            sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow()]);
+        }
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow()]);
         var sut = CreateSut(sessionFactory, targetLookupService);
 
-        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
-            CreatePostRequest(
-                namespacePrefixes: ["uri://ed-fi.org/"],
-                authorizationStrategy: NamespaceStrategy(),
-                @namespace: "URI://ED-FI.ORG/SchoolTypeDescriptor"
+        object result = post
+            ? await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+                CreatePostRequest(
+                    namespacePrefixes: ["uri://ed-fi.org/"],
+                    authorizationStrategy: NamespaceStrategy(),
+                    @namespace: CaseVariantNamespace
+                )
             )
-        );
-
-        result
-            .As<UpsertResult.UpsertFailureNamespaceNotAuthorized>()
-            .NamespaceFailure.ValueSource.Should()
-            .Be(NamespaceAuthorizationFailureValueSource.Proposed);
-        sessionFactory
-            .Session.Executor.Commands.Should()
-            .NotContain(command =>
-                command.CommandText.Contains("UPDATE dms.\"Descriptor\"", StringComparison.Ordinal)
+            : await sut.HandlePutAsync(
+                CreatePutRequest(
+                    namespacePrefixes: ["uri://ed-fi.org/"],
+                    authorizationStrategy: NamespaceStrategy(),
+                    @namespace: CaseVariantNamespace
+                )
             );
-        sessionFactory.Session.CommitCallCount.Should().Be(0);
+
+        // PostgreSQL's proposed check is case-sensitive, so binding after it would deny a value that is never
+        // written. The proposed check and the update both carry the stored namespace.
+        result
+            .Should()
+            .BeAssignableTo(post ? typeof(UpsertResult.UpdateSuccess) : typeof(UpdateResult.UpdateSuccess));
+        sessionFactory
+            .Session.Executor.Commands.SelectMany(command => command.Parameters)
+            .Where(parameter => parameter.Name == "@proposedNamespace")
+            .Should()
+            .ContainSingle()
+            .Which.Value.Should()
+            .Be(StoredNamespace);
+        sessionFactory
+            .Session.Executor.Commands.Single(command => IsDescriptorUpdate(command))
+            .Parameters.Single(parameter => parameter.Name == "@namespace")
+            .Value.Should()
+            .Be(StoredNamespace);
+        sessionFactory.Session.CommitCallCount.Should().Be(1);
     }
 
     [Test]
