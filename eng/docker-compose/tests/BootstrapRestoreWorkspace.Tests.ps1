@@ -1578,16 +1578,55 @@ Describe "Assert-RestoreTargetSafety" {
         { Assert-RestoreTargetSafety -DatabaseEngine postgresql -TargetDatabaseName "edfi_datamanagementservice" -Manifest $script:pgManifest } |
             Should -Not -Throw
 
-        # reserved-catalog + engine-version + platform + replication-slots + target-existence;
+        # reserved-catalog + live-sessions + engine-version + platform + replication-slots + target-existence;
         # the in-target publication query must not run against an absent database.
-        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 5 -Exactly
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 6 -Exactly
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "*pg_publication*" }
     }
 
     It "passes for a safe SQL Server target" {
         { Assert-RestoreTargetSafety -DatabaseEngine mssql -TargetDatabaseName "edfi_datamanagementservice" -Manifest $script:mssqlManifest } |
             Should -Not -Throw
-        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 3 -Exactly
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 4 -Exactly
+    }
+
+    It "<Engine>: checks all target sessions from the admin database, including idle clients" -ForEach @(
+        @{ Engine = "postgresql"; AdminDatabase = "postgres"; SessionQuery = "SELECT pid FROM pg_stat_activity WHERE datname = 'edfi_datamanagementservice' AND pid <> pg_backend_pid();" }
+        @{ Engine = "mssql"; AdminDatabase = "master"; SessionQuery = "SET NOCOUNT ON; SELECT session_id FROM sys.dm_exec_sessions WHERE database_id = DB_ID(N'edfi_datamanagementservice') AND session_id <> @@SPID;" }
+    ) {
+        $manifest = if ($Engine -eq "mssql") { $script:mssqlManifest } else { $script:pgManifest }
+
+        Assert-RestoreTargetSafety -DatabaseEngine $Engine -TargetDatabaseName "edfi_datamanagementservice" -Manifest $manifest
+
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+            $Query -ceq $SessionQuery -and $DatabaseName -ceq $AdminDatabase
+        }
+    }
+
+    It "<Engine>: refuses a connected client even when only database containers are running" -ForEach @(
+        @{ Engine = "postgresql"; SessionPattern = "*FROM pg_stat_activity*" }
+        @{ Engine = "mssql"; SessionPattern = "*FROM sys.dm_exec_sessions*" }
+    ) {
+        Mock Invoke-RestoreCatalogQuery { "57" } -ModuleName bootstrap-restore -ParameterFilter { $Query -like $SessionPattern }
+        $manifest = if ($Engine -eq "mssql") { $script:mssqlManifest } else { $script:pgManifest }
+
+        { Assert-RestoreTargetSafety -DatabaseEngine $Engine -TargetDatabaseName "edfi_datamanagementservice" -Manifest $manifest } |
+            Should -Throw "*Restore target 'edfi_datamanagementservice' has connected sessions*Stop all clients*"
+
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter {
+            $Query -like "*server_version*" -or $Query -like "*ProductVersion*"
+        }
+    }
+
+    It "<Engine>: fails closed when the session check fails" -ForEach @(
+        @{ Engine = "postgresql"; SessionPattern = "*FROM pg_stat_activity*" }
+        @{ Engine = "mssql"; SessionPattern = "*FROM sys.dm_exec_sessions*" }
+    ) {
+        Mock Invoke-RestoreCatalogQuery { throw $FailureMessage } -ModuleName bootstrap-restore -ParameterFilter { $Query -like $SessionPattern }
+        $manifest = if ($Engine -eq "mssql") { $script:mssqlManifest } else { $script:pgManifest }
+
+        { Assert-RestoreTargetSafety -DatabaseEngine $Engine -TargetDatabaseName "edfi_datamanagementservice" -Manifest $manifest } |
+            Should -Throw "Live-session check failed for restore target 'edfi_datamanagementservice'."
     }
 
     It "refuses a denylisted target name before any docker or catalog activity" {
@@ -2829,7 +2868,7 @@ Describe "Invoke-RestoreTargetReplacement" {
         # The IF governs only the ALTER (no BEGIN), so a target left RESTORING is still dropped
         # instead of failing on the ALTER.
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
-            $Query -ceq "IF DATABASEPROPERTYEX(N'edfi_datamanagementservice', 'Status') = N'ONLINE' ALTER DATABASE [edfi_datamanagementservice] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [edfi_datamanagementservice];"
+            $Query -ceq "BEGIN TRY IF DATABASEPROPERTYEX(N'edfi_datamanagementservice', 'Status') = N'ONLINE' ALTER DATABASE [edfi_datamanagementservice] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [edfi_datamanagementservice]; END TRY BEGIN CATCH IF DB_ID(N'edfi_datamanagementservice') IS NOT NULL AND DATABASEPROPERTYEX(N'edfi_datamanagementservice', 'Status') = N'ONLINE' ALTER DATABASE [edfi_datamanagementservice] SET MULTI_USER WITH ROLLBACK IMMEDIATE; THROW; END CATCH;"
         }
         Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
             $joined = $args -join " "
@@ -3070,8 +3109,8 @@ Describe "Get-RestoreDatabaseCatalogFact" {
 
 Describe "Invoke-RestoreTargetReplacement target-safety recheck after the transfer" {
     # The real Assert-RestoreTargetSafety runs here, reading the same docker ps answers the restore
-    # would. A DMS container that starts while the artifact is copied in must stop the restore
-    # before any statement touches the target.
+    # would. A DMS container or external client that connects while the artifact is copied in
+    # must stop the restore before any statement touches the target.
     BeforeAll {
         $script:createdDockerFallback = $false
         if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
@@ -3156,11 +3195,48 @@ Describe "Invoke-RestoreTargetReplacement target-safety recheck after the transf
         Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $args[0] -eq "exec" -and $args[2] -eq "sha256sum" }
         # Every catalog query was a read-only safety-gate query; nothing reached the target.
         @($global:RecheckQueries | Where-Object {
-                $_ -notmatch 'datistemplate|database_id <= 4|server_version|ProductVersion|pg_replication_slots|is_cdc_enabled|^SELECT 1 FROM pg_database '
+                $_ -notmatch 'datistemplate|database_id <= 4|pg_stat_activity|sys.dm_exec_sessions|server_version|ProductVersion|pg_replication_slots|is_cdc_enabled|^SELECT 1 FROM pg_database '
             }) | Should -BeNullOrEmpty
         # SQL Server's read-only RESTORE FILELISTONLY runs before the recheck; nothing else did.
         Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $args[0] -eq "exec" -and $args[2] -notin @("sha256sum", "rm") -and ($args -join " ") -notlike "*RESTORE FILELISTONLY FROM DISK*" }
         # The transient in-container copy is still removed.
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec $Container rm -f *" }
+    }
+
+    It "<Engine>: an external client connecting during transfer prevents disconnect, drop and replay" -ForEach @(
+        @{ Engine = "postgresql"; Container = "dms-postgresql"; SessionPattern = "*FROM pg_stat_activity*" }
+        @{ Engine = "mssql"; Container = "dms-mssql"; SessionPattern = "*FROM sys.dm_exec_sessions*" }
+    ) {
+        # No compose service starts. The transfer flag now represents a host/foreign-project
+        # client's connection, visible only to the live-session query on the second gate.
+        Mock docker {
+            $global:LASTEXITCODE = 0
+            if ($args[0] -eq "ps") { return "dms-local-db-1|db" }
+            Invoke-TestContainerFileDocker -DockerArgs $args
+            if (($args -join " ") -like "*FILELISTONLY*") {
+                "edfi_dms|/var/opt/mssql/data/edfi.mdf|D|extra"
+                "edfi_dms_log|/var/opt/mssql/data/edfi_log.ldf|L|extra"
+            }
+        } -ModuleName bootstrap-restore
+        Mock Invoke-RestoreCatalogQuery {
+            $global:RecheckQueries.Add($Query)
+            if ($global:DmsStartedDuringTransfer) { return "57" }
+            return @()
+        } -ModuleName bootstrap-restore -ParameterFilter { $Query -like $SessionPattern }
+        $stage = New-ScratchStage -Directory $script:recheckRoot -DatabaseEngine $Engine
+
+        { Invoke-RestoreTargetReplacement -Stage $stage -TargetDatabaseName "edfi_datamanagementservice" -PackageSourceIdentity "11111111-1111-1111-1111-111111111111" -DatabaseEngine $Engine } |
+            Should -Throw "*Restore target 'edfi_datamanagementservice' has connected sessions*"
+
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 2 -Exactly -ParameterFilter { $Query -like $SessionPattern }
+        Should -Invoke Invoke-RestoreDockerInputCommand -ModuleName bootstrap-restore -Times 1 -Exactly
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $args[0] -eq "exec" -and $args[2] -eq "sha256sum" }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter {
+            $Query -match 'pg_terminate_backend|SINGLE_USER|DROP DATABASE|CREATE DATABASE|DataStoreIdentity'
+        }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter {
+            ($args -join " ") -like "*RESTORE DATABASE*" -or ($args -join " ") -like "*--single-transaction*"
+        }
         Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec $Container rm -f *" }
     }
 

@@ -1618,8 +1618,9 @@ function Assert-RestoreTargetSafety {
     restore step, in the design's order: reserved-name normalization + denylist and the
     separate-CMS exclusion (parameter-time), the live-catalog reserved check (a system/template
     database can hide behind a non-reserved NAME), the running-service check (only the db
-    container of either compose project may be up), the live-server engine major check (the
-    live major must be >= the manifest's - a newer artifact never replays onto an older
+    container of either compose project may be up), the live-session check (no client may be
+    connected to the target, including idle clients outside these projects), the live-server
+    engine major check (the live major must be >= the manifest's - a newer artifact never replays onto an older
     server), the PostgreSQL platform floor (PostgreSQL 18+ with a UTF-8 template1, the
     contract SchemaTools provisioning enforces), and the CDC-binding refusal (a CDC-bound
     target needs the governed new-generation recovery workflow, not an in-place replace).
@@ -1717,6 +1718,23 @@ function Assert-RestoreTargetSafety {
         if ($nonDatabaseContainers.Count -gt 0) {
             throw "Compose project '$projectName' has running non-database containers while the restore is about to touch the target: $($nonDatabaseContainers -join ', '). Only the db service may be up."
         }
+    }
+
+    # 3b) Live sessions catch host processes and clients outside the two compose projects.
+    #     Query from the admin database and include idle sessions (connection pools still use
+    #     the target). The later force-disconnect is only a backstop for a connection racing
+    #     this gate, never permission to replace a database with existing clients.
+    $sessionQuery = if ($DatabaseEngine -eq "mssql") {
+        "SET NOCOUNT ON; SELECT session_id FROM sys.dm_exec_sessions WHERE database_id = DB_ID(N'$TargetDatabaseName') AND session_id <> @@SPID;"
+    }
+    else {
+        "SELECT pid FROM pg_stat_activity WHERE datname = '$TargetDatabaseName' AND pid <> pg_backend_pid();"
+    }
+    $sessionRows = @(Invoke-RestoreCatalogQuery @catalogQueryArguments `
+            -Query $sessionQuery `
+            -FailureMessage "Live-session check failed for restore target '$TargetDatabaseName'.")
+    if (@($sessionRows | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }).Count -gt 0) {
+        throw "Restore target '$TargetDatabaseName' has connected sessions. Stop all clients using this database, including CMS and DMS, before replacing it."
     }
 
     # 4) D8a live-server engine major: the live major must be >= the manifest's engine major
@@ -3070,8 +3088,8 @@ function Invoke-RestoreTargetReplacement {
     $manifest = $Stage.Manifest
     $adminDatabaseName = if ($DatabaseEngine -eq "mssql") { "master" } else { "postgres" }
 
-    # The full non-destructive gate: name safety, live reserved catalog, running services, live
-    # engine major, PostgreSQL platform floor, CDC bindings. It runs here, so a target that is
+    # The full non-destructive gate: name safety, live reserved catalog, running services and
+    # sessions, live engine major, PostgreSQL platform floor, CDC bindings. It runs here, so a target that is
     # already unsafe never receives the transfer, and again after the transfer is verified,
     # immediately before the first statement that touches the target: CMS or DMS can start
     # while the artifact is copied.
@@ -3179,8 +3197,10 @@ function Invoke-RestoreTargetReplacement {
             if ($targetExists) {
                 # SINGLE_USER only applies to an ONLINE database: a target left RESTORING by an
                 # earlier failed RESTORE refuses the ALTER, and that error would fail the replacement.
+                # A racing client can claim the single-user slot before DROP. Restore MULTI_USER
+                # on failure so the existing database is not stranded, then propagate the error.
                 $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
-                    -Query "IF DATABASEPROPERTYEX(N'$TargetDatabaseName', 'Status') = N'ONLINE' ALTER DATABASE [$TargetDatabaseName] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [$TargetDatabaseName];" `
+                    -Query "BEGIN TRY IF DATABASEPROPERTYEX(N'$TargetDatabaseName', 'Status') = N'ONLINE' ALTER DATABASE [$TargetDatabaseName] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [$TargetDatabaseName]; END TRY BEGIN CATCH IF DB_ID(N'$TargetDatabaseName') IS NOT NULL AND DATABASEPROPERTYEX(N'$TargetDatabaseName', 'Status') = N'ONLINE' ALTER DATABASE [$TargetDatabaseName] SET MULTI_USER WITH ROLLBACK IMMEDIATE; THROW; END CATCH;" `
                     -FailureMessage "Failed to drop existing target database '$TargetDatabaseName'."
             }
 
