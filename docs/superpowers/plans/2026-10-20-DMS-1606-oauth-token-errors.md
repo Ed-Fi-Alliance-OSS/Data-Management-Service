@@ -1,6 +1,6 @@
 # DMS-1606 OAuth Token Errors Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` (Native approach approved 2026-10-20) to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver the approved OAuth JSON error contract across DMS token endpoints, with safe diagnostics and unit plus real-stack coverage of all 17 story rows.
 
@@ -19,7 +19,7 @@
 - “Do not add a new response-description size policy under this story.” Provider descriptions must satisfy the decoded-character rule in spec §5; wire validation must not change scalar log summaries.
 - “Keep the shared `FailureResponse` API and all non-token consumers.” Preserve exclusions, current logging levels and selected-summary limits; no CMS, schema, new grants, global formatting framework or unrelated cleanup. “`RelationalMappingVersion` remains v3.”
 - Follow root `AGENTS.md`: modern .NET 10, non-nullable working variables, `is null`/`is not null`, System.Text.Json only, CSharpier, sanitized logging of `.Value`, NUnit Given_/SetUp/It_ fixtures and deterministic tests. Preserve existing nullable ingress contracts rather than changing `IOAuthManager`.
-- **This is a plan awaiting review. No implementation, build, local test or Docker action is authorized in this planning turn.** Commands below are future execution instructions. Obtain plan approval before implementation and create the requested continuation handoff after that approval.
+- **This plan was approved on 2026-10-20 with the Native (`superpowers:executing-plans`) approach. No implementation, build, local test or Docker action has been performed.** Commands below are future execution instructions. The requested continuation handoff records the approved state; it does not authorize implementation in the current turn.
 
 ## Review Focus
 
@@ -244,6 +244,6 @@ Portable ODS evidence entry points are the [TokenController](https://github.com/
 
 No new product deviation or unresolved product choice is introduced by this plan. Exact new names/texts/fixture IDs above are implementation details of the approved design. Proxy reachability/abort semantics/restoration and all passing test evidence remain unverified execution obligations. Stop and obtain explicit agreement if implementation would change the story/design rather than silently relaxing coverage or expanding scope.
 
-**Plan status:** created and self-reviewed; awaiting user approval. All task checkboxes are intentionally unchecked. Self-review mapped every spec section/AC/row, checked producer/consumer signatures and the five Review Focus tests, retained both URNs, separated caller/upstream auth, and checked bounded fixture ownership and artifact retention. No implementation or local tests ran to create this document.
+**Plan status:** approved by the user on 2026-10-20; Native (`superpowers:executing-plans`) selected for later execution. All task checkboxes are intentionally unchecked. Self-review mapped every spec section/AC/row, checked producer/consumer signatures and the five Review Focus tests, retained both URNs, separated caller/upstream auth, and checked bounded fixture ownership and artifact retention. No implementation or local tests ran to create this document.
 
-**Next gate:** user reviews this plan and selects the later execution approach. Recommend Native (`superpowers:executing-plans`) because the tasks share one classification/serialization contract and evolve the same manager and HTTP/E2E tests; preserving that context avoids repeated integration work. Subagent-driven execution remains available if the user prefers its separate task reviews. After plan approval, create the requested continuation handoff with approved paths/revisions, branch, dependency reconciliation, zero implementation progress and pending verification. Do not implement as part of this handoff.
+**Next gate:** begin Task 1 later using `superpowers:executing-plans`, after verifying the current branch and worktree. The plan approval does not start implementation in this handoff session. Keep all task checkboxes unchecked until each task's red/green/commit evidence is recorded.
