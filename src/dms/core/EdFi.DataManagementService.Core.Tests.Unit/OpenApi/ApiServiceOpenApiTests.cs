@@ -68,7 +68,6 @@ public class ApiServiceOpenApiTests
             A.Fake<IEffectiveApiSchemaProvider>(),
             cachedClaimSetProvider,
             A.Fake<IDocumentValidator>(),
-            A.Fake<IMatchingDocumentUuidsValidator>(),
             A.Fake<IEqualityConstraintValidator>(),
             A.Fake<IDecimalValidator>(),
             NullLogger<ApiService>.Instance,

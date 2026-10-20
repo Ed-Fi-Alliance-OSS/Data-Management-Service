@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Reflection;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -180,7 +181,6 @@ public class PipelineOrderingTests
                 A.Fake<IEffectiveApiSchemaProvider>(),
                 A.Fake<IClaimSetProvider>(),
                 A.Fake<IDocumentValidator>(),
-                A.Fake<IMatchingDocumentUuidsValidator>(),
                 A.Fake<IEqualityConstraintValidator>(),
                 A.Fake<IDecimalValidator>(),
                 NullLogger<ApiService>.Instance,
@@ -472,7 +472,6 @@ public class PipelineOrderingTests
                 A.Fake<IEffectiveApiSchemaProvider>(),
                 A.Fake<IClaimSetProvider>(),
                 A.Fake<IDocumentValidator>(),
-                A.Fake<IMatchingDocumentUuidsValidator>(),
                 A.Fake<IEqualityConstraintValidator>(),
                 A.Fake<IDecimalValidator>(),
                 NullLogger<ApiService>.Instance,
@@ -558,7 +557,8 @@ public class PipelineOrderingTests
     /// telemetry its pipeline factories resolve.
     /// </summary>
     private static ApiService BuildRoutedResourceApiService(
-        ICollectionPagingTelemetry? collectionPagingTelemetry = null
+        ICollectionPagingTelemetry? collectionPagingTelemetry = null,
+        IDocumentValidator? documentValidator = null
     )
     {
         var services = new ServiceCollection();
@@ -625,8 +625,7 @@ public class PipelineOrderingTests
             A.Fake<IApiSchemaProvider>(),
             A.Fake<IEffectiveApiSchemaProvider>(),
             A.Fake<IClaimSetProvider>(),
-            A.Fake<IDocumentValidator>(),
-            A.Fake<IMatchingDocumentUuidsValidator>(),
+            documentValidator ?? A.Fake<IDocumentValidator>(),
             A.Fake<IEqualityConstraintValidator>(),
             A.Fake<IDecimalValidator>(),
             NullLogger<ApiService>.Instance,
@@ -1344,7 +1343,6 @@ public class PipelineOrderingTests
                 A.Fake<IEffectiveApiSchemaProvider>(),
                 claimSetProvider,
                 A.Fake<IDocumentValidator>(),
-                A.Fake<IMatchingDocumentUuidsValidator>(),
                 A.Fake<IEqualityConstraintValidator>(),
                 A.Fake<IDecimalValidator>(),
                 NullLogger<ApiService>.Instance,
@@ -1518,7 +1516,6 @@ public class PipelineOrderingTests
                 A.Fake<IEffectiveApiSchemaProvider>(),
                 A.Fake<IClaimSetProvider>(),
                 A.Fake<IDocumentValidator>(),
-                A.Fake<IMatchingDocumentUuidsValidator>(),
                 A.Fake<IEqualityConstraintValidator>(),
                 A.Fake<IDecimalValidator>(),
                 NullLogger<ApiService>.Instance,
@@ -1744,7 +1741,6 @@ public class PipelineOrderingTests
                 A.Fake<IEffectiveApiSchemaProvider>(),
                 A.Fake<IClaimSetProvider>(),
                 A.Fake<IDocumentValidator>(),
-                A.Fake<IMatchingDocumentUuidsValidator>(),
                 A.Fake<IEqualityConstraintValidator>(),
                 A.Fake<IDecimalValidator>(),
                 NullLogger<ApiService>.Instance,
@@ -1909,6 +1905,174 @@ public class PipelineOrderingTests
                 )
                 .Should()
                 .BeEquivalentTo(IdentityJsonBodyPipeline, "CreateUpsertPipeline", "CreateUpdatePipeline");
+        }
+    }
+
+    [TestFixture]
+    public class Given_The_Put_Id_Normalization_Pipeline : PipelineOrderingTests
+    {
+        [Test]
+        public void It_normalizes_after_duplicate_detection_and_before_coercion_and_validation()
+        {
+            var types = GetRoutedResourcePipelineStepTypes("CreateUpdatePipeline");
+            int normalization = types.IndexOf(typeof(NormalizePutIdMiddleware));
+            normalization.Should().BeGreaterThan(types.IndexOf(typeof(DuplicatePropertiesMiddleware)));
+            normalization.Should().Be(types.IndexOf(typeof(ProfileResolutionMiddleware)) + 1);
+            normalization.Should().BeLessThan(types.IndexOf(typeof(CoerceDateFormatMiddleware)));
+            normalization.Should().BeLessThan(types.IndexOf(typeof(CoerceDateTimesMiddleware)));
+            normalization.Should().BeLessThan(types.IndexOf(typeof(CoerceRequestValuesMiddleware)));
+            normalization.Should().BeLessThan(types.IndexOf(typeof(ValidateDocumentMiddleware)));
+            GetRoutedResourcePipelineStepTypes("CreateUpsertPipeline")
+                .Should()
+                .NotContain(typeof(NormalizePutIdMiddleware));
+        }
+
+        [TestCase("")]
+        [TestCase("\"id\":null,")]
+        public async Task It_populates_the_url_id_before_document_validation(string idProperty)
+        {
+            RequestInfo request = Context(idProperty);
+            var validator = A.Fake<IDocumentValidator>();
+            string observedId = string.Empty;
+            A.CallTo(() => validator.Validate(A<RequestInfo>._))
+                .ReturnsLazily(
+                    (RequestInfo context) =>
+                    {
+                        observedId = context.ParsedBody["id"]!.GetValue<string>();
+                        return new DocumentValidator(new CompiledSchemaCache()).Validate(context);
+                    }
+                );
+            await BodyPipeline(validator).Run(request);
+            observedId.Should().Be(NormalizePutIdMiddlewareTests.UrlId);
+            request.FrontendResponse.StatusCode.Should().NotBe(400);
+        }
+
+        [Test]
+        public async Task It_rejects_an_invalid_profile_before_a_malformed_body_id()
+        {
+            RequestInfo request = Context("\"id\":\"bad\",");
+            request.FrontendRequest.Headers["Content-Type"] = "application/vnd.ed-fi.school.invalid+json";
+            var validator = A.Fake<IDocumentValidator>();
+            var pipeline = new PipelineProvider(
+                GetSteps(BuildRoutedResourceApiService(documentValidator: validator), "CreateUpdatePipeline")
+                    .Where(step =>
+                        step
+                            is ValidateContentTypeMiddleware
+                                or ParseBodyMiddleware
+                                or DuplicatePropertiesMiddleware
+                                or ProfileResolutionMiddleware
+                                or NormalizePutIdMiddleware
+                                or ValidateDocumentMiddleware
+                    )
+                    .ToList()
+            );
+
+            await pipeline.Run(request);
+
+            request.FrontendResponse.StatusCode.Should().Be(400);
+            JsonNode response = request.FrontendResponse.Body!;
+            response["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:profile:invalid-profile-usage");
+            response["errors"]!
+                .AsArray()
+                .Select(message => message!.GetValue<string>())
+                .Should()
+                .Equal("The format of the profile-based content type header was invalid.");
+            A.CallTo(() => validator.Validate(A<RequestInfo>._)).MustNotHaveHappened();
+        }
+
+        [Test]
+        public async Task It_rejects_a_numeric_guid_shaped_id_before_coercion_or_validation()
+        {
+            const string numericGuid = "12345678901234567890123456789012";
+            Guid.TryParse(numericGuid, out _)
+                .Should()
+                .BeTrue("this input would be a valid ID if converted to a string");
+            RequestInfo request = Context("\"id\":" + numericGuid + ",");
+            var validator = A.Fake<IDocumentValidator>();
+            await BodyPipeline(validator).Run(request);
+            request.FrontendResponse.StatusCode.Should().Be(400);
+            // schoolId would have been coerced to a number if coercion had executed.
+            request.ParsedBody["schoolId"]!
+                .GetValue<string>()
+                .Should()
+                .Be("123");
+            A.CallTo(() => validator.Validate(A<RequestInfo>._)).MustNotHaveHappened();
+        }
+
+        [TestCase("bad", NormalizePutIdMiddlewareTests.UrlId)]
+        [TestCase(NormalizePutIdMiddlewareTests.UrlId, "bad")]
+        public async Task It_rejects_duplicate_ids_before_normalization_or_document_validation(
+            string firstId,
+            string secondId
+        )
+        {
+            RequestInfo request = Context($"\"id\":\"{firstId}\",\"id\":\"{secondId}\",");
+            var validator = A.Fake<IDocumentValidator>();
+
+            await BodyPipeline(validator).Run(request);
+
+            request.FrontendResponse.StatusCode.Should().Be(400);
+            JsonNode response = request.FrontendResponse.Body!;
+            response["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:api:bad-request:data-validation-failed");
+            response["validationErrors"]!.AsObject().Count.Should().Be(1);
+            response["validationErrors"]!["$.id"]!
+                .AsArray()
+                .Select(message => message!.GetValue<string>())
+                .Should()
+                .Equal("An item with the same key has already been added.");
+            response["errors"]!.AsArray().Should().BeEmpty();
+            A.CallTo(() => validator.Validate(A<RequestInfo>._)).MustNotHaveHappened();
+        }
+
+        private static RequestInfo Context(string idProperty)
+        {
+            string body =
+                "{"
+                + idProperty
+                + "\"schoolId\":\"123\",\"nameOfInstitution\":\"School\",\"gradeLevels\":{\"gradeLevelDescriptor\":\"uri://example.org/GradeLevelDescriptor#1\"}}";
+            var frontend = new FrontendRequest(
+                "ed-fi/schools/" + NormalizePutIdMiddlewareTests.UrlId,
+                Body: body,
+                Form: null,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new("put-id"),
+                RouteQualifiers: []
+            );
+            RequestInfo request = new ValidateDocumentMiddlewareTests().Context(frontend, RequestMethod.PUT);
+            request.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))!["numericJsonPaths"] =
+                new JsonArray("$.schoolId");
+            request.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))![
+                "decimalPropertyValidationInfos"
+            ] = new JsonArray();
+            request.PathComponents = request.PathComponents with
+            {
+                Operation = new ResourcePathOperation.ById(
+                    new DocumentUuid(Guid.Parse(NormalizePutIdMiddlewareTests.UrlId))
+                ),
+            };
+            return request;
+        }
+
+        private static PipelineProvider BodyPipeline(IDocumentValidator validator)
+        {
+            // Exercise the relevant instances in the order built by ApiService, including real coercion
+            // and schema validation; routing, profiles, and persistence are covered by HTTP integration tests.
+            return new PipelineProvider(
+                GetSteps(BuildRoutedResourceApiService(documentValidator: validator), "CreateUpdatePipeline")
+                    .Where(step =>
+                        step
+                            is ParseBodyMiddleware
+                                or DuplicatePropertiesMiddleware
+                                or NormalizePutIdMiddleware
+                                or CoerceRequestValuesMiddleware
+                                or ValidateDocumentMiddleware
+                    )
+                    .ToList()
+            );
         }
     }
 }

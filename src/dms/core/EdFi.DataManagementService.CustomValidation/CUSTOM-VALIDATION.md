@@ -692,14 +692,14 @@ is at
 
 The obvious move after reading the above is to reach for `$.id` in the document. It does not hold.
 
-- On `Update`, the pipeline does require a body `id` matching the route id. But that check reads the
-  **parsed request body**, while your validator receives the **profile-effective** body, and a
+- On `Update`, the pipeline validates any supplied non-null body `id` as a GUID, then populates the
+  **parsed request body** with the route id. Your validator receives the **profile-effective** body, and a
   writable profile's member filter can hide `id` from the latter while the former still carries it.
   An `IncludeOnly` content type drops `id` unavoidably: it keeps only the members it names, and `id`
   is server-generated, so no profile is permitted to name it. The surrogate `$.id` is not a resource
   identity member either, so the identity preservation that keeps a natural key such as
   `studentUniqueId` present does **not** keep `$.id` present. It can therefore be absent from what
-  you receive even on a request that was required to send it.
+  you receive even though the parsed request body carries it.
 - On `Upsert`, the body carries no `id` at all by construction. A submitted `id` is rejected with a
   400 before a validator ever runs.
 

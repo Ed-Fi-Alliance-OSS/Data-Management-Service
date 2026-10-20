@@ -93,8 +93,7 @@ public abstract record CustomValidationFailure
     /// <summary>
     /// A failure about the document as a whole, with no JSON path, such as a cross-field or
     /// external-lookup rejection.
-    /// Produces an <c>errors</c> entry, the same shape <c>Middleware/ParseBodyMiddleware.cs</c> and
-    /// <c>Middleware/ValidateMatchingDocumentUuidsMiddleware.cs</c> already emit.
+    /// Produces an <c>errors</c> entry, the same shape <c>Middleware/ParseBodyMiddleware.cs</c> already emits.
     /// </summary>
     public sealed record OnResource : CustomValidationFailure
     {
