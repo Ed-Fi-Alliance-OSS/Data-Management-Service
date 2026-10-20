@@ -155,10 +155,16 @@ function Get-UserFragmentFile {
 
     $directory = Get-Item -LiteralPath $fullPath
 
-    $claimsFiles = @(
+    # -Filter ignores case even on Linux, but CMS runs on Linux and matches -claims.json case-sensitively
+    $candidateFiles = @(
         Get-ChildItem -LiteralPath $directory.FullName -File -Filter "*-claims.json" -Recurse |
             Sort-Object -Property FullName
     )
+    $claimsFiles = @($candidateFiles | Where-Object { $_.Name.EndsWith("-claims.json", [System.StringComparison]::Ordinal) })
+
+    foreach ($mixedCaseFile in @($candidateFiles | Where-Object { -not $_.Name.EndsWith("-claims.json", [System.StringComparison]::Ordinal) })) {
+        Write-Warning "Claims fragment file '$(Format-LogSafePath $mixedCaseFile.FullName)' is not staged: fragment file names must end in lowercase -claims.json. Rename the file to apply it."
+    }
 
     # Fragments were named *-claimset.json before 8.1; they are not staged, so say so
     foreach ($retiredFile in @(

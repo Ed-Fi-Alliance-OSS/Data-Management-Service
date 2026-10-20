@@ -1135,6 +1135,21 @@ exit $ExitCode
             $warnings[0].Message | Should -BeLike "*011-tpdm-claimset.json*must end in -claims.json*"
         }
 
+        It "ignores and warns about caller files whose -claims.json suffix is not lowercase, as CMS discovery on Linux does" {
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
+            $claimsDir = Join-Path $script:repo.RepoRoot "mixed-case-suffix-claims"
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "010-tpdm-claims.json")
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "nested/011-tpdm-Claims.json")
+
+            $warnings = @(& $script:repo.PrepareClaimsScript -ClaimsDirectoryPath $claimsDir 3>&1 |
+                    Where-Object { $_ -is [System.Management.Automation.WarningRecord] })
+
+            @(Get-ChildItem -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims") -File).Name |
+                Should -Be @("010-tpdm-claims.json")
+            $warnings.Count | Should -Be 1
+            $warnings[0].Message | Should -BeLike "*011-tpdm-Claims.json*must end in lowercase -claims.json*"
+        }
+
         It "warns about retired -claimset.json files before rejecting a directory with no -claims.json files" {
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "retired-suffix-only-claims"
