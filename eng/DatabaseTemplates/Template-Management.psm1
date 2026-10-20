@@ -1310,11 +1310,10 @@ function Build-TemplateNuGetPackage {
         -SchemaFilePath $SchemaFilePath `
         -MssqlPassword $MssqlPassword
 
-    # A PostgreSQL dump carries the source's GRANT statements and a restore replays them, so a
-    # privilege the authoritative DDL does not produce is refused here, before any dump.
-    if ($DatabaseEngine -eq "postgresql") {
-        Assert-TemplateSourcePrivilege -DatabaseName $DatabaseName
-    }
+    # A PostgreSQL dump carries the source's GRANT statements and a SQL Server backup its
+    # permissions and role memberships, and a restore re-creates them, so security state the
+    # authoritative DDL does not produce is refused here, before any dump.
+    Assert-TemplateSourcePrivilege -DatabaseEngine $DatabaseEngine -DatabaseName $DatabaseName -MssqlPassword $MssqlPassword
 
     Invoke-DatabaseDump -DatabaseEngine $DatabaseEngine -DatabaseName $DatabaseName -DatabaseSchemas $databaseSchemas -BackupDirectory './' -BackupFileName $config.DatabaseBackupName -MssqlPassword $MssqlPassword
 
@@ -1781,16 +1780,42 @@ function Get-TemplateAuthoritativeObjectInventory {
 function Assert-TemplateSourcePrivilege {
     <#
     .SYNOPSIS
-    The producer's privilege gate for a PostgreSQL source: reads every privilege in the source
-    and fails, before any dump, unless each is one the authoritative DMS DDL produces (the rule
-    set the consumer's scratch validation applies to the replayed artifact).
+    The producer's privilege gate: reads every privilege in a PostgreSQL source, or every
+    permission and role membership in a SQL Server source, and fails, before any dump, unless
+    each is one the authoritative DMS DDL produces (the rule set the consumer's scratch
+    validation applies to the restored artifact).
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Forwarded to the sqlcmd transport; SecureString adds no protection across the docker exec boundary.')]
     param (
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine = "postgresql",
+
         [Parameter(Mandatory = $true)]
         [string]$DatabaseName,
 
-        [string]$ContainerName = "dms-postgresql"
+        [string]$ContainerName = "",
+
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!"
     )
+
+    if ([string]::IsNullOrWhiteSpace($ContainerName)) {
+        $ContainerName = if ($DatabaseEngine -eq "mssql") { "dms-mssql" } else { "dms-postgresql" }
+    }
+
+    if ($DatabaseEngine -eq "mssql") {
+        $securityRows = Invoke-TemplateCatalogQuery `
+            -DatabaseEngine mssql `
+            -ContainerName $ContainerName `
+            -DatabaseName $DatabaseName `
+            -MssqlPassword $MssqlPassword `
+            -Query (Get-MssqlSecurityStateQuerySql) `
+            -FailureMessage "Failed to read the permissions and role memberships of template source '$DatabaseName'; nothing was dumped."
+        Assert-MssqlArtifactSecurityState `
+            -SecurityRow $securityRows `
+            -SourceDescription "Template source database '$DatabaseName'" `
+            -FailureSuffix "A restore would re-create them in the restored database. Nothing was dumped or packaged."
+        return
+    }
 
     $privilegeRows = Invoke-TemplateCatalogQuery `
         -DatabaseEngine postgresql `

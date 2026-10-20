@@ -1975,10 +1975,99 @@ Describe "Invoke-RestoreScratchValidation" {
         }
 
         # Minimal kind: the populated predicate never runs; the scratch is dropped in finally.
-        # The PostgreSQL privilege gate has no SQL Server counterpart.
+        # SQL Server reads the scratch's permissions and role memberships, not PostgreSQL privileges.
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "*COUNT(`*)*" }
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $FailureMessage -like "Failed to read the privileges*" }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+            $Query -ceq (Get-MssqlSecurityStateQuerySql) -and $DatabaseName -like "edfi_dms_restore_scratch_*"
+        }
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -like "IF DB_ID(N'edfi_dms_restore_scratch_*DROP DATABASE*" }
+    }
+
+    It "SQL Server: accepts a restore holding only a new database's permissions and role memberships" {
+        $stage = New-ScratchStage -Directory $script:scratchRoot -DatabaseEngine mssql
+        $global:ScratchFactToReturn = New-ScratchCatalogFact -DatabaseEngine mssql
+        $global:ScratchSecurityRows = @(
+            "member|16384|1|db_owner|dbo",
+            "permission|0|CONNECT|GRANT|1|0|0|dbo|DATABASE",
+            "permission|0|VIEW ANY COLUMN ENCRYPTION KEY DEFINITION|GRANT|0|0|0|public|DATABASE",
+            "permission|0|VIEW ANY COLUMN MASTER KEY DEFINITION|GRANT|0|0|0|public|DATABASE",
+            "permission|1|SELECT|GRANT|0|-385|0|public|OBJECT::sys.objects"
+        )
+        try {
+            Mock Invoke-RestoreCatalogQuery { $global:ScratchSecurityRows } -ModuleName bootstrap-restore -ParameterFilter { $FailureMessage -like "Failed to read the permissions and role memberships of scratch database *" }
+
+            $result = Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Minimal -DatabaseEngine mssql -MssqlPassword "Scratch_Pw1!"
+
+            $result.PackageSourceIdentity | Should -Be "11111111-1111-1111-1111-111111111111"
+            Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+                $Query -ceq (Get-MssqlSecurityStateQuerySql) -and $DatabaseName -like "edfi_dms_restore_scratch_*" -and $MssqlPassword -ceq "Scratch_Pw1!"
+            }
+        }
+        finally {
+            Remove-Variable -Name ScratchSecurityRows -Scope Global -ErrorAction SilentlyContinue
+        }
+    }
+
+    It "SQL Server: refuses a restore carrying <Name> before the authoritative comparison, drops the scratch, and touches no other database" -ForEach @(
+        @{ Name = "CONNECT granted to guest"; Rows = @("permission|0|CONNECT|GRANT|2|0|0|guest|DATABASE"); Violation = "GRANT CONNECT ON DATABASE TO guest" }
+        @{ Name = "SELECT on a DMS schema granted to public"; Rows = @("permission|3|SELECT|GRANT|0|5|0|public|SCHEMA::edfi"); Violation = "GRANT SELECT ON SCHEMA::edfi TO public" }
+        @{ Name = "both grants together"; Rows = @("permission|0|CONNECT|GRANT|2|0|0|guest|DATABASE", "permission|3|SELECT|GRANT|0|5|0|public|SCHEMA::edfi"); Violation = "GRANT CONNECT ON DATABASE TO guest, GRANT SELECT ON SCHEMA::edfi TO public" }
+        @{ Name = "guest as a member of db_datareader"; Rows = @("member|16390|2|db_datareader|guest"); Violation = "role db_datareader member guest" }
+    ) {
+        $stage = New-ScratchStage -Directory $script:scratchRoot -DatabaseEngine mssql
+        $global:ScratchFactToReturn = New-ScratchCatalogFact -DatabaseEngine mssql
+        $global:ScratchSecurityRows = @("member|16384|1|db_owner|dbo", "permission|0|CONNECT|GRANT|1|0|0|dbo|DATABASE") + $Rows
+        try {
+            Mock Invoke-RestoreCatalogQuery { $global:ScratchSecurityRows } -ModuleName bootstrap-restore -ParameterFilter { $FailureMessage -like "Failed to read the permissions and role memberships of scratch database *" }
+
+            { Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Minimal -DatabaseEngine mssql } |
+                Should -Throw "Restore scratch database 'edfi_dms_restore_scratch_*' carries permissions or role memberships the authoritative DMS DDL does not produce: $Violation. Only the built-in defaults of a new database are allowed. The package is refused before the target is touched."
+
+            Should -Invoke Get-RestoreAuthoritativeObjectInventory -ModuleName bootstrap-restore -Times 0 -Exactly
+            Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "*SourceIdentity*" }
+            # Cleanup: the scratch is dropped and the in-container backup copy removed.
+            Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -like "IF DB_ID(N'edfi_dms_restore_scratch_*DROP DATABASE*" }
+            Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-mssql rm -f /var/opt/mssql/data/restore-scratch-*.bak" }
+            # Only the scratch was restored, and no statement named a database other than master
+            # or the scratch.
+            Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "*RESTORE DATABASE*" }
+            Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "*RESTORE DATABASE [[]edfi_dms_restore_scratch_*" }
+            Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $DatabaseName -cne "master" -and $DatabaseName -notlike "edfi_dms_restore_scratch_*" }
+        }
+        finally {
+            Remove-Variable -Name ScratchSecurityRows -Scope Global -ErrorAction SilentlyContinue
+        }
+    }
+
+    It "SQL Server: refuses a backup holding a <Name> file before any RESTORE, and still cleans up" -ForEach @(
+        @{ Name = "FILESTREAM (S)"; Row = "edfi_fs|/var/opt/mssql/data/edfi_fs|S|extra"; Type = "S"; LogicalName = "edfi_fs" }
+        @{ Name = "full-text catalog (F)"; Row = "edfi_ft|/var/opt/mssql/data/edfi_ft|F|extra"; Type = "F"; LogicalName = "edfi_ft" }
+    ) {
+        $global:ScratchFileListRow = $Row
+        Mock docker {
+            $global:LASTEXITCODE = 0
+            Invoke-TestContainerFileDocker -DockerArgs $args
+            if (($args -join " ") -like "*FILELISTONLY*") {
+                "edfi_dms|/var/opt/mssql/data/edfi.mdf|D|extra"
+                $global:ScratchFileListRow
+                "edfi_dms_log|/var/opt/mssql/data/edfi_log.ldf|L|extra"
+            }
+        } -ModuleName bootstrap-restore
+        $stage = New-ScratchStage -Directory $script:scratchRoot -DatabaseEngine mssql
+        $global:ScratchFactToReturn = New-ScratchCatalogFact -DatabaseEngine mssql
+        try {
+            { Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Minimal -DatabaseEngine mssql } |
+                Should -Throw "Backup 'artifact.bak' contains file '$LogicalName' of unsupported type '$Type'.*"
+
+            Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { ($args -join " ") -like "*RESTORE DATABASE*" }
+            Should -Invoke Get-RestoreDatabaseCatalogFact -ModuleName bootstrap-restore -Times 0 -Exactly
+            Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -like "IF DB_ID(N'edfi_dms_restore_scratch_*DROP DATABASE*" }
+            Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-mssql rm -f /var/opt/mssql/data/restore-scratch-*.bak" }
+        }
+        finally {
+            Remove-Variable -Name ScratchFileListRow -Scope Global -ErrorAction SilentlyContinue
+        }
     }
 
     It "<Engine>: replacing the host staging file right before the copy cannot change the replayed bytes" -ForEach @(
@@ -2624,19 +2713,43 @@ Describe "Invoke-RestoreTargetReplacement" {
         $fileListIndex = [array]::FindIndex([string[]]$sequence, [Predicate[string]] { param($c) $c -like "*RESTORE FILELISTONLY*" })
         $recheckIndex = [array]::FindLastIndex([string[]]$sequence, [Predicate[string]] { param($c) $c -ceq "safety" })
         $dropIndex = [array]::FindIndex([string[]]$sequence, [Predicate[string]] { param($c) $c -like "*SINGLE_USER*DROP DATABASE*" })
+        $restoreIndex = [array]::FindIndex([string[]]$sequence, [Predicate[string]] { param($c) $c -like "*RESTORE DATABASE*" })
         $fileListIndex | Should -BeGreaterThan 0
         $recheckIndex | Should -BeGreaterThan $fileListIndex
         $dropIndex | Should -Be ($recheckIndex + 2) -Because "only the exists-check sits between the last safety gate and the drop"
-        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -like "*SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [[]edfi_datamanagementservice*" }
+        $restoreIndex | Should -Be ($dropIndex + 1) -Because "the target RESTORE follows the completed drop"
+        # The IF governs only the ALTER (no BEGIN), so a target left RESTORING is still dropped
+        # instead of failing on the ALTER.
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+            $Query -ceq "IF DATABASEPROPERTYEX(N'edfi_datamanagementservice', 'Status') = N'ONLINE' ALTER DATABASE [edfi_datamanagementservice] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [edfi_datamanagementservice];"
+        }
         Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
             $joined = $args -join " "
             $joined -like "*RESTORE DATABASE [[]edfi_datamanagementservice] FROM DISK = N'/var/opt/mssql/data/restore-target-*.bak' WITH MOVE N'edfi_dms' TO N'/var/opt/mssql/data/edfi_datamanagementservice.mdf', MOVE N'edfi_dms_log' TO N'/var/opt/mssql/data/edfi_datamanagementservice_log.ldf', REPLACE;*"
         }
     }
 
+    It "SQL Server: a failed drop of the existing target stops the restore before the target RESTORE" {
+        Mock Invoke-RestoreCatalogQuery {
+            $global:TargetCallSequence.Add("query " + $Query)
+            if ($Query -like "*CASE WHEN DB_ID(N'edfi_datamanagementservice')*") { return "1" }
+            if ($Query -like "*DROP DATABASE*") { throw $FailureMessage }
+            return @()
+        } -ModuleName bootstrap-restore
+        $stage = New-ScratchStage -Directory $script:targetRoot -DatabaseEngine mssql
+
+        { Invoke-RestoreTargetReplacement -Stage $stage -TargetDatabaseName "edfi_datamanagementservice" -PackageSourceIdentity $script:packageSourceIdentity -DatabaseEngine mssql } |
+            Should -Throw "*Failed to drop existing target database 'edfi_datamanagementservice'.*"
+
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { ($args -join " ") -like "*RESTORE DATABASE*" }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "*DataStoreIdentity*" }
+    }
+
     It "SQL Server: <Name> stops the restore before the existing target is dropped" -ForEach @(
         @{ Name = "an unreadable file list"; Answer = $null; Expected = "*Failed to read the file list from the staged artifact*" }
         @{ Name = "a file list without a log file"; Answer = @("edfi_dms|/var/opt/mssql/data/edfi.mdf|D|extra"); Expected = "*Could not determine the data and log logical file names*" }
+        @{ Name = "a FILESTREAM (S) file in the backup"; Answer = @("edfi_dms|/var/opt/mssql/data/edfi.mdf|D|extra", "edfi_fs|/var/opt/mssql/data/edfi_fs|S|extra", "edfi_dms_log|/var/opt/mssql/data/edfi_log.ldf|L|extra"); Expected = "*contains file 'edfi_fs' of unsupported type 'S'*" }
+        @{ Name = "a full-text catalog (F) file in the backup"; Answer = @("edfi_dms|/var/opt/mssql/data/edfi.mdf|D|extra", "edfi_dms_log|/var/opt/mssql/data/edfi_log.ldf|L|extra", "edfi_ft|/var/opt/mssql/data/edfi_ft|F|extra"); Expected = "*contains file 'edfi_ft' of unsupported type 'F'*" }
     ) {
         $global:FileListAnswer = $Answer
         Mock docker {
@@ -2993,6 +3106,18 @@ Describe "Remove-RestorePreflightDatabase and Remove-RestoreScratchDatabase" {
         }
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 4 -Exactly
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $PostgresUser -cne "dmsadmin" }
+    }
+
+    It "SQL Server: switches the scratch to SINGLE_USER only when it is ONLINE, and drops it in either state" {
+        Remove-RestoreScratchDatabase -DatabaseEngine mssql -ScratchDatabaseName "edfi_dms_restore_scratch_0123456789ab" -ContainerName "dms-mssql"
+
+        # Inside the existence block the IF governs only the ALTER (no BEGIN), so a scratch left
+        # RESTORING by a failed RESTORE is still dropped instead of failing on the ALTER.
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+            $DatabaseName -ceq "master" -and
+            $Query -ceq "IF DB_ID(N'edfi_dms_restore_scratch_0123456789ab') IS NOT NULL BEGIN IF DATABASEPROPERTYEX(N'edfi_dms_restore_scratch_0123456789ab', 'Status') = N'ONLINE' ALTER DATABASE [edfi_dms_restore_scratch_0123456789ab] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [edfi_dms_restore_scratch_0123456789ab]; END"
+        }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly
     }
 
     It "is a no-op for SQL Server and for a blank name" {

@@ -1968,6 +1968,106 @@ Describe "Build-TemplateNuGetPackage PostgreSQL privilege gate" {
     }
 }
 
+Describe "Build-TemplateNuGetPackage SQL Server security-state gate" {
+    BeforeAll {
+        $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Push-Location $script:templatesDir
+        try {
+            Import-Module (Join-Path $script:templatesDir "Template-Management.psm1") -Force
+        }
+        finally {
+            Pop-Location
+        }
+
+        $script:mssqlSourceInventory = @{
+            schemas    = @(
+                @{ schemaName = "dbo"; objects = @() },
+                @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
+                @{ schemaName = "edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                @{ schemaName = "tracked_changes_edfi"; objects = @(@{ name = "School"; type = "table" }) }
+            )
+            principals = @()
+        }
+        # A new SQL Server database's security state (read live from SQL Server 2025; one of its
+        # system catalog grants stands for all of them).
+        $script:newDatabaseSecurityRows = @(
+            "member|16384|1|db_owner|dbo",
+            "permission|0|CONNECT|GRANT|1|0|0|dbo|DATABASE",
+            "permission|0|VIEW ANY COLUMN ENCRYPTION KEY DEFINITION|GRANT|0|0|0|public|DATABASE",
+            "permission|0|VIEW ANY COLUMN MASTER KEY DEFINITION|GRANT|0|0|0|public|DATABASE",
+            "permission|1|SELECT|GRANT|0|-385|0|public|OBJECT::sys.objects"
+        )
+    }
+
+    It "backs up a source holding only a new database's security state, read from the source with its password" {
+        InModuleScope Template-Management -Parameters @{
+            configPath = (Join-Path (Split-Path $PSScriptRoot -Parent) "MinimalTemplateSettings.psd1")
+            inventory  = $script:mssqlSourceInventory
+            rows       = $script:newDatabaseSecurityRows
+        } {
+            param($configPath, $inventory, $rows)
+
+            $sourceFacts = [pscustomobject]@{ DatabaseLevelObjects = @(); FullInventory = $inventory }
+            $securityRows = @($rows)
+            Mock Get-TemplateSourceCatalogFacts { $sourceFacts }
+            Mock Get-TemplateAuthoritativeObjectInventory { $sourceFacts.FullInventory }
+            Mock Invoke-TemplateCatalogQuery { $securityRows }
+            Mock Invoke-DatabaseDump {}
+            Mock Write-TemplateRestoreManifest { "restore-manifest.json" }
+            Mock New-DatabaseTemplateCsproj {}
+            Mock Add-FileToCsProjForNuget {}
+            Mock Build-NuGetPackage {}
+
+            Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0" -TemplateKind "Minimal" `
+                -DatabaseEngine mssql -MssqlPassword "Source_Pw1!" -SchemaFilePath @("ApiSchema.json")
+
+            Should -Invoke Invoke-TemplateCatalogQuery -Times 1 -Exactly -ParameterFilter {
+                $Query -ceq (Get-MssqlSecurityStateQuerySql) -and $DatabaseEngine -ceq "mssql" -and $ContainerName -ceq "dms-mssql" -and
+                $DatabaseName -ceq "edfi_datamanagementservice" -and $MssqlPassword -ceq "Source_Pw1!"
+            }
+            Should -Invoke Invoke-DatabaseDump -Times 1 -Exactly
+            Should -Invoke Build-NuGetPackage -Times 1 -Exactly
+        }
+    }
+
+    It "refuses a source carrying <Name> before any backup, manifest, or package" -ForEach @(
+        @{ Name = "CONNECT granted to guest"; Rows = @("permission|0|CONNECT|GRANT|2|0|0|guest|DATABASE"); Violation = "GRANT CONNECT ON DATABASE TO guest" }
+        @{ Name = "SELECT on a DMS schema granted to public"; Rows = @("permission|3|SELECT|GRANT|0|5|0|public|SCHEMA::edfi"); Violation = "GRANT SELECT ON SCHEMA::edfi TO public" }
+        @{ Name = "both grants together"; Rows = @("permission|0|CONNECT|GRANT|2|0|0|guest|DATABASE", "permission|3|SELECT|GRANT|0|5|0|public|SCHEMA::edfi"); Violation = "GRANT CONNECT ON DATABASE TO guest, GRANT SELECT ON SCHEMA::edfi TO public" }
+        @{ Name = "guest as a member of db_datareader"; Rows = @("member|16390|2|db_datareader|guest"); Violation = "role db_datareader member guest" }
+    ) {
+        InModuleScope Template-Management -Parameters @{
+            configPath = (Join-Path (Split-Path $PSScriptRoot -Parent) "MinimalTemplateSettings.psd1")
+            inventory  = $script:mssqlSourceInventory
+            rows       = @($script:newDatabaseSecurityRows) + $Rows
+            violation  = $Violation
+        } {
+            param($configPath, $inventory, $rows, $violation)
+
+            $configPath | Should -Exist
+            $sourceFacts = [pscustomobject]@{ DatabaseLevelObjects = @(); FullInventory = $inventory }
+            $securityRows = @($rows)
+            Mock Get-TemplateSourceCatalogFacts { $sourceFacts }
+            Mock Get-TemplateAuthoritativeObjectInventory { $sourceFacts.FullInventory }
+            Mock Invoke-TemplateCatalogQuery { $securityRows }
+            Mock Invoke-DatabaseDump {}
+            Mock Write-TemplateRestoreManifest {}
+            Mock New-DatabaseTemplateCsproj {}
+            Mock Build-NuGetPackage {}
+
+            {
+                Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0" -TemplateKind "Minimal" `
+                    -DatabaseEngine mssql -SchemaFilePath @("ApiSchema.json")
+            } | Should -Throw "Template source database 'edfi_datamanagementservice' carries permissions or role memberships the authoritative DMS DDL does not produce: $violation. *Nothing was dumped or packaged."
+
+            Should -Invoke Invoke-DatabaseDump -Times 0 -Exactly
+            Should -Invoke Write-TemplateRestoreManifest -Times 0 -Exactly
+            Should -Invoke New-DatabaseTemplateCsproj -Times 0 -Exactly
+            Should -Invoke Build-NuGetPackage -Times 0 -Exactly
+        }
+    }
+}
+
 # The synthetic inventories above cannot show that the catalog query DISCOVERS an object; this
 # live suite runs the real query, through each side's own transport, against databases built
 # from one DDL, and feeds the results to the real producer and consumer gates. OPT-IN: each
@@ -2108,6 +2208,12 @@ Describe "Authoritative inventory table constraints and indexes against a live <
         # PostgreSQL only: a database whose one difference is a grant to an unrelated cluster role.
         $script:grantRole = $null
         if ($Engine -eq "postgresql") { $script:databases["grant"] = "${prefix}_grant" }
+        # SQL Server only: databases whose one difference is guest/public access, or a role
+        # membership of a built-in principal.
+        if ($Engine -eq "mssql") {
+            $script:databases["access"] = "${prefix}_access"
+            $script:databases["member"] = "${prefix}_member"
+        }
 
         foreach ($database in $script:databases.Values) {
             $createSql = if ($Engine -eq "mssql") { "CREATE DATABASE [$database];" } else { "CREATE DATABASE `"$database`";" }
@@ -2120,6 +2226,10 @@ Describe "Authoritative inventory table constraints and indexes against a live <
             $script:grantRole = "${prefix}_reader"
             $null = Invoke-LiveQuery -Database $AdminDatabase -Query "CREATE ROLE `"$($script:grantRole)`" NOLOGIN;"
             $null = Invoke-LiveQuery -Database $script:databases["grant"] -Query "GRANT SELECT ON dms.`"Document`" TO `"$($script:grantRole)`";"
+        }
+        if ($Engine -eq "mssql") {
+            $null = Invoke-LiveQuery -Database $script:databases["access"] -Query "GRANT CONNECT TO guest; GRANT SELECT ON SCHEMA::dms TO public;"
+            $null = Invoke-LiveQuery -Database $script:databases["member"] -Query "ALTER ROLE db_datareader ADD MEMBER guest;"
         }
 
         $script:expectedInventory = Read-LiveInventory -Database $script:databases.expected
@@ -2181,6 +2291,32 @@ Describe "Authoritative inventory table constraints and indexes against a live <
         $violation = "relation dms.`"Document`" SELECT to $($script:grantRole) (owner postgres)"
         { & $producerGate $script:databases["grant"] } | Should -Throw "*carries privileges the authoritative DMS DDL does not grant: $violation.*Nothing was dumped or packaged.*"
         { & $consumerGate $script:databases["grant"] } | Should -Throw "*carries privileges the authoritative DMS DDL does not grant: $violation.*"
+    }
+
+    It "reads security state live: accepts the clean database and refuses guest/public access and a guest role membership at both gates" -Skip:([string]::IsNullOrWhiteSpace($Container) -or $Engine -ne "mssql") {
+        $producerGate = {
+            param($database)
+            InModuleScope Template-Management -Parameters @{ live = $script:live; database = $database } {
+                param($live, $database)
+                Assert-TemplateSourcePrivilege -DatabaseEngine mssql -DatabaseName $database -ContainerName $live.Container -MssqlPassword $live.Password
+            }
+        }
+        $consumerGate = {
+            param($database)
+            Assert-MssqlArtifactSecurityState -SecurityRow (Invoke-LiveQuery -Database $database -Query (Get-MssqlSecurityStateQuerySql)) `
+                -SourceDescription "Restore scratch database '$database'" -FailureSuffix "Refused."
+        }
+
+        { & $producerGate $script:databases.clean } | Should -Not -Throw
+        { & $consumerGate $script:databases.clean } | Should -Not -Throw
+
+        $accessViolation = "GRANT CONNECT ON DATABASE TO guest, GRANT SELECT ON SCHEMA::dms TO public"
+        { & $producerGate $script:databases["access"] } | Should -Throw "*carries permissions or role memberships the authoritative DMS DDL does not produce: $accessViolation.*Nothing was dumped or packaged."
+        { & $consumerGate $script:databases["access"] } | Should -Throw "*carries permissions or role memberships the authoritative DMS DDL does not produce: $accessViolation.*"
+
+        $memberViolation = "role db_datareader member guest"
+        { & $producerGate $script:databases["member"] } | Should -Throw "*carries permissions or role memberships the authoritative DMS DDL does not produce: $memberViolation.*Nothing was dumped or packaged."
+        { & $consumerGate $script:databases["member"] } | Should -Throw "*carries permissions or role memberships the authoritative DMS DDL does not produce: $memberViolation.*"
     }
 
     It "rejects <Name> at the producer gate and at the consumer gate" -ForEach $Contamination -Skip:([string]::IsNullOrWhiteSpace($Container)) {

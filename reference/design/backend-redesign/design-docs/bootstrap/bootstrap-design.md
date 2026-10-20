@@ -1288,8 +1288,9 @@ Rationale: the direct-SQL path bypasses DMS API validation and serialization, wh
   start scripts (`start-local-dms.ps1` in DMS-1153, `start-published-dms.ps1` in DMS-1255).
 - `DATABASE_TEMPLATE_PACKAGE` stays in `.env.example`: it is retained as the template-package selector for
   the CI template publish/verify workflows (the `.env.mssql` overlay rewrites its engine token to `MsSql`;
-  see `Convert-TemplatePackageToken` in `env-utility.psm1`) and for the planned template-restore flow
-  (DMS-1271). Do not remove it when deleting the module.
+  see `Convert-TemplatePackageToken` in `env-utility.psm1`) and for the delivered template-restore flow
+  (DMS-1271, `-RestoreTemplate`), which resolves feed packages through it. Do not remove it when deleting
+  the module.
 - Executed: the BulkLoadClient invocation logic described in
   [Seed Delivery Phase Behavior](#631-seed-delivery-phase-behavior) is the shipped seed path
   (`load-dms-seed-data.ps1`).
@@ -1766,9 +1767,12 @@ ODS initdev exposes skip flags so developers can bypass expensive steps when ite
 
 DMS equivalents should follow the same pattern, but only where they are justified by real developer
 workflow cost and can be made safe from live state. DMS-916 does not add a schema-deployment skip flag.
-After `configure-local-data-store.ps1` selects the target instances, `provision-dms-schema.ps1` always
-invokes the authoritative SchemaTools/runtime-owned provisioning and validation path over the staged schema
-set before any DMS process is expected to serve requests.
+In ordinary bootstrap, after `configure-local-data-store.ps1` selects the target instances,
+`provision-dms-schema.ps1` always invokes the authoritative SchemaTools/runtime-owned provisioning and
+validation path over the staged schema set before any DMS process is expected to serve requests. Restore
+mode (DMS-1271, `-RestoreTemplate`) is the one exception: its target is replaced from a template package
+that was validated in a scratch database against the candidate workspace's effective schema first, so it
+already carries the generated schema and the wrapper skips `provision-dms-schema.ps1` for that target.
 
 The existing `-LoadSeedData` flag remains the wrapper-level intentional opt-in for DMS-dependent seed
 delivery; omitting it from `bootstrap-local-dms.ps1` skips both SeedLoader credential creation and seed

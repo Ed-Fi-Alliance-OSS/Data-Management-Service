@@ -966,7 +966,9 @@ function ConvertFrom-MssqlBackupFileList {
     log (L) logical file names. Every data and log row is collected, not just the first of
     each, so multi-file backups relocate every file they list. Throws when either list is
     empty, because a restore command built from an incomplete file list would leave files
-    pointing at their original in-container paths.
+    pointing at their original in-container paths. Throws on any other file type (S for
+    FILESTREAM or memory-optimized data, F for a full-text catalog): no MOVE clause is built
+    for it, so a RESTORE would write it to its original path; DMS templates contain none.
     #>
     param (
         [AllowEmptyCollection()]
@@ -988,6 +990,9 @@ function ConvertFrom-MssqlBackupFileList {
         $fileType = $fields[2].Trim()
         if ($fileType -eq "D") { $dataLogicalNames.Add($logicalName) }
         elseif ($fileType -eq "L") { $logLogicalNames.Add($logicalName) }
+        else {
+            throw "Backup '$BackupFileName' contains file '$logicalName' of unsupported type '$fileType'. Only data (D) and log (L) files can be restored; FILESTREAM, memory-optimized, and full-text catalog files are not supported."
+        }
     }
 
     if ($dataLogicalNames.Count -eq 0 -or $logLogicalNames.Count -eq 0) {
@@ -2400,6 +2405,126 @@ function Assert-PostgresqlArtifactPrivilege {
     }
 }
 
+function Get-MssqlSecurityStateQuerySql {
+    <#
+    .SYNOPSIS
+    SQL Server SQL listing every row of sys.database_permissions and sys.database_role_members,
+    built-in principals included, as
+    "permission|class|permission_name|state_desc|grantee_id|major_id|minor_id|grantee|securable"
+    and "member|role_id|member_id|role|member" rows: the security state a backup carries and a
+    RESTORE re-creates. Judgment uses the numeric fields; the names only describe a violation.
+    Every catalog string is collated to the database default so a database whose collation
+    differs from the catalog's cannot raise a collation conflict.
+    #>
+    param ()
+
+    return @(
+        "SET NOCOUNT ON;",
+        "SELECT CONCAT(N'permission|', p.class, N'|', p.permission_name COLLATE DATABASE_DEFAULT, N'|', p.state_desc COLLATE DATABASE_DEFAULT, N'|',",
+        "  p.grantee_principal_id, N'|', p.major_id, N'|', p.minor_id, N'|', COALESCE(g.name COLLATE DATABASE_DEFAULT, N'?'), N'|',",
+        "  CASE p.class WHEN 0 THEN N'DATABASE'",
+        "    WHEN 1 THEN CONCAT(N'OBJECT::', OBJECT_SCHEMA_NAME(p.major_id) COLLATE DATABASE_DEFAULT, N'.', OBJECT_NAME(p.major_id) COLLATE DATABASE_DEFAULT,",
+        "      CASE WHEN p.minor_id <> 0 THEN N'.' + COL_NAME(p.major_id, p.minor_id) COLLATE DATABASE_DEFAULT END)",
+        "    WHEN 3 THEN CONCAT(N'SCHEMA::', SCHEMA_NAME(p.major_id) COLLATE DATABASE_DEFAULT)",
+        "    ELSE CONCAT(p.class_desc COLLATE DATABASE_DEFAULT, N'::', p.major_id, N'.', p.minor_id) END)",
+        "FROM sys.database_permissions p LEFT JOIN sys.database_principals g ON g.principal_id = p.grantee_principal_id",
+        "UNION ALL",
+        "SELECT CONCAT(N'member|', rm.role_principal_id, N'|', rm.member_principal_id, N'|', COALESCE(r.name COLLATE DATABASE_DEFAULT, N'?'), N'|', COALESCE(m.name COLLATE DATABASE_DEFAULT, N'?'))",
+        "FROM sys.database_role_members rm LEFT JOIN sys.database_principals r ON r.principal_id = rm.role_principal_id",
+        "  LEFT JOIN sys.database_principals m ON m.principal_id = rm.member_principal_id",
+        "ORDER BY 1;"
+    ) -join "`n"
+}
+
+function Assert-MssqlArtifactSecurityState {
+    <#
+    .SYNOPSIS
+    Fails unless every permission and role membership a SQL Server template source or restored
+    scratch database holds is a built-in default of a new database. Shared by the producer gate
+    (before the backup) and the consumer's scratch validation (before the target is touched),
+    because a backup carries its database permissions and role memberships and a RESTORE
+    re-creates them.
+
+    .DESCRIPTION
+    The generated MSSQL DDL emits no GRANT, DENY, CREATE USER, CREATE ROLE, or role membership,
+    so the authoritative security state is exactly what CREATE DATABASE produces. Read from new
+    databases on SQL Server 2022 (CU25) and 2025 (CU7), that is: CONNECT granted to dbo; VIEW
+    ANY COLUMN ENCRYPTION KEY DEFINITION and VIEW ANY COLUMN MASTER KEY DEFINITION granted to
+    public at database scope; SELECT granted to public on system catalog views (226 rows on
+    2022, 232 on 2025, so they are matched by shape: a system object has a negative id, which
+    no user object can have); and dbo as the only member of db_owner. Everything else is a
+    violation, judged by principal id, securable class and scope, and grant state rather than
+    by name, so a grant to guest or public is refused like any other: CONNECT granted to guest
+    admits every login, and a public grant on a DMS schema then exposes its data to them.
+    #>
+    param (
+        [AllowEmptyCollection()]
+        [AllowNull()]
+        [string[]]$SecurityRow,
+
+        [Parameter(Mandatory = $true)]
+        [string]$SourceDescription,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FailureSuffix
+    )
+
+    # Fixed principal ids in every SQL Server database.
+    $publicId = 0
+    $dboId = 1
+    $dbOwnerId = 16384
+    # permission_name|grantee_id of the built-in database-scope grants.
+    $databaseDefaults = [System.Collections.Generic.HashSet[string]]::new([string[]]@(
+            "CONNECT|$dboId",
+            "VIEW ANY COLUMN ENCRYPTION KEY DEFINITION|$publicId",
+            "VIEW ANY COLUMN MASTER KEY DEFINITION|$publicId"
+        ), [System.StringComparer]::Ordinal)
+    $violations = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($rawRow in @($SecurityRow)) {
+        if ([string]::IsNullOrWhiteSpace($rawRow)) { continue }
+        $row = $rawRow.Trim()
+        $isMember = $row.StartsWith("member|", [System.StringComparison]::Ordinal)
+        $fields = @($row -split '\|', $(if ($isMember) { 5 } else { 9 }))
+        $wellFormed = ($isMember -and $fields.Count -eq 5) -or ($fields[0] -ceq "permission" -and $fields.Count -eq 9)
+        $numbers = [System.Collections.Generic.List[int]]::new()
+        foreach ($index in $(if ($isMember) { @(1, 2) } else { @(1, 4, 5, 6) })) {
+            $number = 0
+            if ($wellFormed -and [int]::TryParse($fields[$index], [ref]$number)) { $numbers.Add($number) }
+            else { $wellFormed = $false }
+        }
+        if (-not $wellFormed) {
+            throw "$SourceDescription returned a malformed security-state row (expected 'permission|class|permission_name|state_desc|grantee_id|major_id|minor_id|grantee|securable' or 'member|role_id|member_id|role|member'): '$rawRow'. $FailureSuffix"
+        }
+
+        if ($isMember) {
+            if (-not ($numbers[0] -eq $dbOwnerId -and $numbers[1] -eq $dboId)) {
+                $violations.Add("role $($fields[3]) member $($fields[4])")
+            }
+            continue
+        }
+
+        $class, $granteeId, $majorId, $minorId = $numbers
+        $permission = $fields[2]
+        $allowed = $false
+        if ($fields[3] -ceq "GRANT" -and $minorId -eq 0) {
+            if ($class -eq 0) {
+                $allowed = $majorId -eq 0 -and $databaseDefaults.Contains("$permission|$granteeId")
+            }
+            elseif ($class -eq 1) {
+                $allowed = $majorId -lt 0 -and $granteeId -eq $publicId -and $permission -ceq "SELECT"
+            }
+        }
+        if (-not $allowed) {
+            $violations.Add("$($fields[3]) $permission ON $($fields[8]) TO $($fields[7])")
+        }
+    }
+
+    if ($violations.Count -gt 0) {
+        throw "$SourceDescription carries permissions or role memberships the authoritative DMS DDL does not produce: $($violations -join ', '). Only the built-in defaults of a new database are allowed. $FailureSuffix"
+    }
+}
+
 function Get-SourceIdentitySelectSql {
     <#
     .SYNOPSIS
@@ -2535,5 +2660,7 @@ Export-ModuleMember -Function `
     Assert-PostgresqlArtifactOwnership, `
     Get-PostgresqlPrivilegeQuerySql, `
     Assert-PostgresqlArtifactPrivilege, `
+    Get-MssqlSecurityStateQuerySql, `
+    Assert-MssqlArtifactSecurityState, `
     Get-SourceIdentitySelectSql, `
     Test-RestoredSourceIdentityValue

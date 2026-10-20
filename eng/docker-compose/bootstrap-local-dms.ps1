@@ -63,7 +63,8 @@
     carries no SCHEMA_PACKAGES). An already-staged standard-mode workspace is reused only while
     its recorded package identity still matches the effective SCHEMA_PACKAGES value. A mismatch
     stops before package downloads or Docker/CMS side effects with guidance to stop the stack and
-    remove `eng/docker-compose/.bootstrap`; guarded automatic replacement belongs to DMS-1271.
+    remove `eng/docker-compose/.bootstrap`. Guarded whole-workspace replacement exists only in
+    restore mode (`-RestoreTemplate`), which regenerates schema, claims, and seed state together.
     Expert `-ApiSchemaPath` workspaces are reused as-is. There is no
     `-Extensions` parameter; custom or unpublished schema sets are staged via expert
     `-ApiSchemaPath` before invoking the wrapper. All staging is delegated to

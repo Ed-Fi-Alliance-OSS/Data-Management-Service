@@ -619,6 +619,13 @@ function Invoke-BootstrapWrapper {
 
     $ErrorActionPreference = "Stop"
 
+    # ValidateSet accepts any casing, but the restore manifest checks compare against the
+    # canonical spellings case-sensitively, so every phase receives the canonical value.
+    $DatabaseEngine = $DatabaseEngine.ToLowerInvariant()
+    if (-not [string]::IsNullOrWhiteSpace($RestoreTemplate)) {
+        $RestoreTemplate = if ($RestoreTemplate -ieq "Minimal") { "Minimal" } else { "Populated" }
+    }
+
     # Restore mode and CDC bootstrap are mutually exclusive. A restore replaces the datastore
     # from a packaged artifact and deliberately skips the provision phase, but CDC enablement is
     # driven by that phase's authoritative provisioning receipt - so the combination would run the

@@ -2684,6 +2684,21 @@ function Invoke-RestoreScratchValidation {
                 -SourceDescription "Restore scratch database '$scratchDatabaseName'" `
                 -FailureSuffix "The package is refused before the target is touched."
         }
+        else {
+            # The RESTORE re-created the backup's permissions and role memberships, built-in
+            # principals included; only a new database's defaults may survive into the target.
+            $securityRows = Invoke-RestoreCatalogQuery `
+                -DatabaseEngine $DatabaseEngine `
+                -ContainerName $ContainerName `
+                -DatabaseName $scratchDatabaseName `
+                -MssqlPassword $MssqlPassword `
+                -Query (Get-MssqlSecurityStateQuerySql) `
+                -FailureMessage "Failed to read the permissions and role memberships of scratch database '$scratchDatabaseName'."
+            Assert-MssqlArtifactSecurityState `
+                -SecurityRow $securityRows `
+                -SourceDescription "Restore scratch database '$scratchDatabaseName'" `
+                -FailureSuffix "The package is refused before the target is touched."
+        }
 
         Assert-RestoreManifestMatchesDatabase `
             -Manifest $manifest `
@@ -2853,8 +2868,10 @@ function Remove-RestoreScratchDatabase {
             -FailureMessage "Failed to drop scratch database '$ScratchDatabaseName'."
     }
     else {
+        # SINGLE_USER only applies to an ONLINE database: a scratch left RESTORING by a failed
+        # RESTORE refuses the ALTER, and that error would fail the cleanup.
         $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
-            -Query "IF DB_ID(N'$ScratchDatabaseName') IS NOT NULL BEGIN ALTER DATABASE [$ScratchDatabaseName] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [$ScratchDatabaseName]; END" `
+            -Query "IF DB_ID(N'$ScratchDatabaseName') IS NOT NULL BEGIN IF DATABASEPROPERTYEX(N'$ScratchDatabaseName', 'Status') = N'ONLINE' ALTER DATABASE [$ScratchDatabaseName] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [$ScratchDatabaseName]; END" `
             -FailureMessage "Failed to drop scratch database '$ScratchDatabaseName'."
     }
 }
@@ -3081,8 +3098,10 @@ function Invoke-RestoreTargetReplacement {
                     -FailureMessage "Failed to check whether target database '$TargetDatabaseName' exists.")
             $targetExists = (@($existsRows | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -First 1) -eq "1")
             if ($targetExists) {
+                # SINGLE_USER only applies to an ONLINE database: a target left RESTORING by an
+                # earlier failed RESTORE refuses the ALTER, and that error would fail the replacement.
                 $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
-                    -Query "ALTER DATABASE [$TargetDatabaseName] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [$TargetDatabaseName];" `
+                    -Query "IF DATABASEPROPERTYEX(N'$TargetDatabaseName', 'Status') = N'ONLINE' ALTER DATABASE [$TargetDatabaseName] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [$TargetDatabaseName];" `
                     -FailureMessage "Failed to drop existing target database '$TargetDatabaseName'."
             }
 

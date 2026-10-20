@@ -599,6 +599,18 @@ Describe "ConvertFrom-MssqlBackupFileList" {
         { ConvertFrom-MssqlBackupFileList -BackupFileName "b.bak" -FileListOutput @("OnlyData|/p|D|X") } | Should -Throw "*Could not determine*"
         { ConvertFrom-MssqlBackupFileList -BackupFileName "b.bak" -FileListOutput @("OnlyLog|/p|L|X") } | Should -Throw "*Could not determine*"
     }
+
+    It "refuses a backup holding a <Case> file, which no MOVE clause would relocate" -ForEach @(
+        @{ Case = "FILESTREAM (S)"; Row = "MyDb_fs|/var/opt/mssql/data/MyDb_fs|S|FsGroup"; Type = "S"; LogicalName = "MyDb_fs" }
+        @{ Case = "full-text catalog (F)"; Row = "MyDb_ft|/var/opt/mssql/data/MyDb_ft|F|NULL"; Type = "F"; LogicalName = "MyDb_ft" }
+    ) {
+        { ConvertFrom-MssqlBackupFileList -BackupFileName "b.bak" -FileListOutput @(
+                "MyDb|/var/opt/mssql/data/MyDb.mdf|D|PRIMARY",
+                $Row,
+                "MyDb_log|/var/opt/mssql/data/MyDb_log.ldf|L|NULL"
+            ) } |
+            Should -Throw "Backup 'b.bak' contains file '$LogicalName' of unsupported type '$Type'. Only data (D) and log (L) files can be restored*"
+    }
 }
 
 Describe "New-MssqlRestoreMoveClause" {
@@ -835,6 +847,56 @@ Describe "Assert-PostgresqlArtifactOwnership" {
     ) {
         { Assert-PostgresqlArtifactOwnership -SourceDescription "Restore scratch database 'x'" -FailureSuffix "Refused." -OwnershipRow @('schema|pg_database_owner|public', $Row) } |
             Should -Throw "Restore scratch database 'x' carries ownership the authoritative DMS DDL does not produce: $Named. Only the administrator, edfi_dms_enqueue_owner (functions only), and pg_database_owner (the public schema only) may own objects. Refused."
+    }
+}
+
+Describe "Assert-MssqlArtifactSecurityState" {
+    BeforeAll {
+        # A new SQL Server database's security state, in the query's row shape (read live from
+        # SQL Server 2025; the system catalog grants are a sample of the 232 it holds).
+        $script:newDatabaseRows = @(
+            "member|16384|1|db_owner|dbo",
+            "permission|0|CONNECT|GRANT|1|0|0|dbo|DATABASE",
+            "permission|0|VIEW ANY COLUMN ENCRYPTION KEY DEFINITION|GRANT|0|0|0|public|DATABASE",
+            "permission|0|VIEW ANY COLUMN MASTER KEY DEFINITION|GRANT|0|0|0|public|DATABASE",
+            "permission|1|SELECT|GRANT|0|-385|0|public|OBJECT::sys.objects",
+            "permission|1|SELECT|GRANT|0|-686|0|public|OBJECT::sys.json_indexes",
+            ""
+        )
+    }
+
+    It "accepts the security state of a new database, and an empty one" {
+        { Assert-MssqlArtifactSecurityState -SourceDescription "Scratch" -FailureSuffix "Refused." -SecurityRow $script:newDatabaseRows } | Should -Not -Throw
+        { Assert-MssqlArtifactSecurityState -SourceDescription "Scratch" -FailureSuffix "Refused." -SecurityRow @() } | Should -Not -Throw
+    }
+
+    It "refuses <Case>" -ForEach @(
+        @{ Case = "CONNECT granted to guest"; Rows = @("permission|0|CONNECT|GRANT|2|0|0|guest|DATABASE"); Named = "GRANT CONNECT ON DATABASE TO guest" }
+        @{ Case = "SELECT on a DMS schema granted to public"; Rows = @("permission|3|SELECT|GRANT|0|5|0|public|SCHEMA::edfi"); Named = "GRANT SELECT ON SCHEMA::edfi TO public" }
+        @{ Case = "guest CONNECT combined with public SELECT on a DMS schema, naming both"; Rows = @("permission|0|CONNECT|GRANT|2|0|0|guest|DATABASE", "permission|3|SELECT|GRANT|0|5|0|public|SCHEMA::edfi"); Named = "GRANT CONNECT ON DATABASE TO guest, GRANT SELECT ON SCHEMA::edfi TO public" }
+        @{ Case = "a column grant on a DMS table to guest"; Rows = @("permission|1|SELECT|GRANT|2|1221579390|1|guest|OBJECT::edfi.School.Id"); Named = "GRANT SELECT ON OBJECT::edfi.School.Id TO guest" }
+        @{ Case = "a DMS table granted to public"; Rows = @("permission|1|SELECT|GRANT|0|1221579390|0|public|OBJECT::edfi.School"); Named = "GRANT SELECT ON OBJECT::edfi.School TO public" }
+        @{ Case = "a built-in database grant made grantable"; Rows = @("permission|0|CONNECT|GRANT_WITH_GRANT_OPTION|1|0|0|dbo|DATABASE"); Named = "GRANT_WITH_GRANT_OPTION CONNECT ON DATABASE TO dbo" }
+        @{ Case = "a database permission to public beyond the defaults"; Rows = @("permission|0|SELECT|GRANT|0|0|0|public|DATABASE"); Named = "GRANT SELECT ON DATABASE TO public" }
+        @{ Case = "a system catalog grant to guest"; Rows = @("permission|1|SELECT|GRANT|2|-385|0|guest|OBJECT::sys.objects"); Named = "GRANT SELECT ON OBJECT::sys.objects TO guest" }
+        @{ Case = "a system object EXECUTE grant to public"; Rows = @("permission|1|EXECUTE|GRANT|0|-1000|0|public|OBJECT::sys.sp_x"); Named = "GRANT EXECUTE ON OBJECT::sys.sp_x TO public" }
+        @{ Case = "a DENY on a system catalog view"; Rows = @("permission|1|SELECT|DENY|0|-385|0|public|OBJECT::sys.objects"); Named = "DENY SELECT ON OBJECT::sys.objects TO public" }
+        @{ Case = "guest as a member of db_owner"; Rows = @("member|16384|2|db_owner|guest"); Named = "role db_owner member guest" }
+        @{ Case = "guest as a member of db_datareader"; Rows = @("member|16390|2|db_datareader|guest"); Named = "role db_datareader member guest" }
+        @{ Case = "dbo as a member of another role"; Rows = @("member|16390|1|db_datareader|dbo"); Named = "role db_datareader member dbo" }
+    ) {
+        { Assert-MssqlArtifactSecurityState -SourceDescription "Restore scratch database 'x'" -FailureSuffix "Refused." -SecurityRow (@($script:newDatabaseRows) + $Rows) } |
+            Should -Throw "Restore scratch database 'x' carries permissions or role memberships the authoritative DMS DDL does not produce: $Named. Only the built-in defaults of a new database are allowed. Refused."
+    }
+
+    It "fails closed on a malformed row (<Case>)" -ForEach @(
+        @{ Case = "unknown kind"; Row = "grant|0|CONNECT|GRANT|2|0|0|guest|DATABASE" }
+        @{ Case = "missing fields"; Row = "permission|0|CONNECT|GRANT|2" }
+        @{ Case = "non-numeric principal id"; Row = "member|db_owner|guest|db_owner|guest" }
+        @{ Case = "non-numeric scope"; Row = "permission|0|CONNECT|GRANT|1|x|0|dbo|DATABASE" }
+    ) {
+        { Assert-MssqlArtifactSecurityState -SourceDescription "Scratch" -FailureSuffix "Refused." -SecurityRow @($Row) } |
+            Should -Throw "Scratch returned a malformed security-state row*'$Row'. Refused."
     }
 }
 

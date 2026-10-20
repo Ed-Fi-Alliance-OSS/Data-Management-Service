@@ -3196,6 +3196,52 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "configure dataStore=[`$Dat
             )
         }
 
+        It "canonicalizes -DatabaseEngine <Engine> -RestoreTemplate <Template> before any restore phase, so the package's canonical manifest matches" -ForEach @(
+            @{ Engine = "PostgreSQL"; Template = "minimal"; CanonicalEngine = "postgresql"; CanonicalTemplate = "Minimal" }
+            @{ Engine = "POSTGRESQL"; Template = "POPULATED"; CanonicalEngine = "postgresql"; CanonicalTemplate = "Populated" }
+            @{ Engine = "MSSQL"; Template = "mInImAl"; CanonicalEngine = "mssql"; CanonicalTemplate = "Minimal" }
+            @{ Engine = "MsSql"; Template = "populated"; CanonicalEngine = "mssql"; CanonicalTemplate = "Populated" }
+        ) {
+            $engineEnvFile = $script:repo.EnvFile
+            if ($CanonicalEngine -ceq "mssql") {
+                $engineEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.restore-casing"
+                @(Get-Content -LiteralPath $script:repo.EnvFile) + @("DMS_DATASTORE=mssql") | Set-Content -LiteralPath $engineEnvFile -Encoding utf8
+            }
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
+            # The staging stub runs the REAL request check against the manifest a producer writes,
+            # whose engine and template kind are always the canonical spellings.
+            $realModule = Import-Module (Join-Path $script:sourceDockerComposeRoot "bootstrap-restore.psm1") -Force -PassThru -Prefix RealCasing
+            try {
+                $log = $script:restoreLog
+                $root = $script:repo.RepoRoot
+                $manifest = [pscustomobject]@{ databaseEngine = $CanonicalEngine; templateKind = $CanonicalTemplate; dataStandardVersion = "5.2.0"; artifactSha256 = ("aa" * 32) }
+                Set-Item function:global:Initialize-RestorePackageStage {
+                    param($Package, $AuthenticatedPackageSha256, $Producer, $DatabaseEngine, $RestoreTemplate)
+                    Add-Content -LiteralPath $log -Value "restore:stage engine=$DatabaseEngine template=$RestoreTemplate"
+                    & $realModule {
+                        param($stagedManifest, $engine, $template)
+                        Assert-RestoreManifestMatchesRequest -Manifest $stagedManifest -DatabaseEngine $engine -RestoreTemplate $template -DataStandardVersion "5.2.0"
+                    } $manifest $DatabaseEngine $RestoreTemplate
+                    [pscustomobject]@{ StageDirectory = (Join-Path $root "stage"); PackagePath = "p"; PackageSha256 = ("aa" * 32); Manifest = $manifest; ManifestPath = "m"; ArtifactPath = "a"; ArtifactSha256 = ("aa" * 32); Producer = "test-producer" }
+                }.GetNewClosure()
+
+                & $script:repo.WrapperScript -EnvironmentFile $engineEnvFile -DatabaseEngine $Engine -RestoreTemplate $Template
+            }
+            finally {
+                Remove-Module -ModuleInfo $realModule -Force -ErrorAction SilentlyContinue
+            }
+
+            # Every phase saw the canonical spellings (compared case-sensitively), and the run
+            # reached DMS startup.
+            $lines = @(Get-Content -LiteralPath $script:restoreLog)
+            $lines -ccontains "restore:resolve-target engine=$CanonicalEngine" | Should -BeTrue
+            $lines -ccontains "restore:find template=$CanonicalTemplate packagedir=[]" | Should -BeTrue
+            $lines -ccontains "restore:stage engine=$CanonicalEngine template=$CanonicalTemplate" | Should -BeTrue
+            $lines -ccontains "restore:scratch template=$CanonicalTemplate" | Should -BeTrue
+            @($lines | Where-Object { $_ -clike "restore:stop-db project=dms-local engine=$CanonicalEngine *" }) | Should -HaveCount 1
+            @($lines | Where-Object { $_ -like "start-dms env=*" }) | Should -HaveCount 1
+        }
+
         It "postgresql: the PostgreSQL administrator reaches every restore database helper and the preflight cleanup (<Case>)" -ForEach @(
             @{ Case = "set only in the environment file"; FileValue = "dmsadmin"; Ambient = $null; ThrowAt = @(); Expected = "dmsadmin" }
             @{ Case = "ambient value wins over the environment file"; FileValue = "dmsadmin"; Ambient = "ambientadmin"; ThrowAt = @(); Expected = "ambientadmin" }
