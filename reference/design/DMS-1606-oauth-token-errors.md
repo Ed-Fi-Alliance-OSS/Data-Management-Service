@@ -1,6 +1,6 @@
 # DMS-1606: OAuth token error contract
 
-Date: 2026-10-20. Status: **written specification awaiting user approval**. The decisions and two design sections below were approved in conversation; that does not approve this written artifact or an implementation plan. No story implementation, builds, local tests, or Docker actions have been performed.
+Date: 2026-10-20. Status: **approved specification**. The user approved this written artifact on 2026-10-20: “Approved. Use superpowers:writing-plans to create the implementation plan. Do not implement or run local tests.” This approval does not approve the subsequent implementation plan. No story implementation, builds, local tests, or Docker actions have been performed.
 
 ## 1. Intent, authority and scope
 
@@ -110,6 +110,6 @@ Run a dedicated token-contract lane: start/check proxy readiness, compose an ove
 
 Self-review: all five ACs and 17 rows are mapped, including row 14's header-auth exception and unusable-code fallback. Human/nano shared gaps are reconciled against the review and current code; the approved choices are distinguished from evidence and excluded scope. The ODS parity check adds no claim of complete or live equivalence. No unsupported success result or unapproved E2E waiver is asserted.
 
-Remaining gate: user review/approval of this written specification. No unresolved product choice remains from the discussion. Runtime fixture feasibility and test results remain implementation obligations, not fabricated evidence or an E2E waiver.
+Written-spec gate: approved by the user on 2026-10-20. No unresolved product choice remains from the discussion. Runtime fixture feasibility and test results remain implementation obligations, not fabricated evidence or an E2E waiver.
 
 After written-spec approval, invoke `superpowers:writing-plans` to create the implementation plan. Do not implement or run local tests while creating that plan. Obtain approval of the created plan and execution method; then create the continuation handoff requested by the user. The handoff must identify approved spec/plan paths and revisions, this branch/ref, dependency reconciliation, pending verification and zero implementation progress. Do not claim a plan or handoff is approved before it exists and is reviewed.
