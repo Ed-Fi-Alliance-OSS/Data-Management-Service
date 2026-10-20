@@ -1461,6 +1461,71 @@ Describe "Invoke-RestoreCatalogQuery" {
                 -FailureMessage "Live check failed." } |
             Should -Throw "Live check failed.*connection refused*"
     }
+
+    Context "standard output and standard error" {
+        BeforeEach {
+            # The stub runs a real child process, so rows and diagnostics leave on the two OS
+            # streams exactly as docker exec's would, and the exit code is the child's own.
+            $global:CatalogStreamCalls = [System.Collections.Generic.List[string]]::new()
+            Mock docker {
+                $global:CatalogStreamCalls.Add($args -join " ")
+                & ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName) -NoProfile -NonInteractive -Command $global:CatalogStreamChildCommand
+            } -ModuleName bootstrap-restore
+        }
+
+        AfterEach {
+            Remove-Variable -Name CatalogStreamCalls, CatalogStreamChildCommand -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        It "<Engine>: a successful query returns only its standard-output rows, never its standard-error diagnostic" -ForEach @(
+            @{ Engine = "postgresql"; Database = "postgres"; Transport = "exec dms-postgresql psql -U postgres -d postgres -tA -c SELECT 1;"; Diagnostic = "WARNING:  there is no transaction in progress" }
+            @{ Engine = "mssql"; Database = "master"; Transport = "exec -e SQLCMDPASSWORD=pw! dms-mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -d master -C -b -h -1 -W -Q SELECT 1;"; Diagnostic = "Sqlcmd: Warning: The last operation was terminated because the user pressed CTRL+C." }
+        ) {
+            $global:CatalogStreamChildCommand = "[Console]::Out.WriteLine('row1'); [Console]::Error.WriteLine('$Diagnostic'); [Console]::Out.WriteLine('row2'); exit 0"
+            $container = if ($Engine -eq "mssql") { "dms-mssql" } else { "dms-postgresql" }
+
+            $rows = Invoke-RestoreCatalogQuery `
+                -DatabaseEngine $Engine `
+                -ContainerName $container `
+                -DatabaseName $Database `
+                -MssqlPassword "pw!" `
+                -Query "SELECT 1;" `
+                -FailureMessage "query failed."
+
+            @($rows) | Should -Be @("row1", "row2")
+            @($global:CatalogStreamCalls) | Should -Be @($Transport)
+        }
+
+        It "<Engine>: a failed query throws with its standard-error diagnostic and its partial output" -ForEach @(
+            @{ Engine = "postgresql"; Database = "postgres"; Diagnostic = "ERROR:  relation dms.missing does not exist" }
+            @{ Engine = "mssql"; Database = "master"; Diagnostic = "Msg 208, Level 16, State 1: Invalid object name dms.missing." }
+        ) {
+            $global:CatalogStreamChildCommand = "[Console]::Out.WriteLine('partial-row'); [Console]::Error.WriteLine('$Diagnostic'); exit 1"
+            $container = if ($Engine -eq "mssql") { "dms-mssql" } else { "dms-postgresql" }
+
+            $message = $null
+            try {
+                Invoke-RestoreCatalogQuery `
+                    -DatabaseEngine $Engine `
+                    -ContainerName $container `
+                    -DatabaseName $Database `
+                    -MssqlPassword "pw!" `
+                    -Query "SELECT 1;" `
+                    -FailureMessage "Live check failed." | Out-Null
+            }
+            catch {
+                $message = $_.Exception.Message
+            }
+
+            # The two pipes are drained independently, so only their presence is asserted, not
+            # their relative order.
+            $message | Should -BeLike "Live check failed. (*)"
+            $message | Should -BeLike "*$Diagnostic*"
+            $message | Should -BeLike "*partial-row*"
+            @($global:CatalogStreamCalls) | Should -HaveCount 1
+            $global:CatalogStreamCalls[0] | Should -BeLike "exec *$container*-d $Database *"
+        }
+    }
 }
 
 Describe "Assert-RestoreTargetSafety" {
@@ -2721,7 +2786,7 @@ Describe "Invoke-RestoreTargetReplacement" {
         Should -Invoke Invoke-RestoreDockerInputCommand -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($ArgumentList -join " ") -ceq "cp - dms-postgresql:/tmp" }
         @($global:TestContainerFiles.Keys) | Should -HaveCount 1
         @($global:TestContainerFiles.Keys)[0] | Should -BeLike "/tmp/restore-target-*.sql"
-        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql psql -U postgres -d edfi_datamanagementservice -v ON_ERROR_STOP=1 -f $(@($global:TestContainerFiles.Keys)[0])" }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql psql -U postgres -d edfi_datamanagementservice -v ON_ERROR_STOP=1 --single-transaction -f $(@($global:TestContainerFiles.Keys)[0])" }
         # Reseed runs against the TARGET database, then the transient file is removed.
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -like "*UPDATE*DataStoreIdentity*" -and $DatabaseName -eq "edfi_datamanagementservice" }
         Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql rm -f /tmp/restore-target-*.sql" }
@@ -2733,7 +2798,7 @@ Describe "Invoke-RestoreTargetReplacement" {
         Invoke-RestoreTargetReplacement -Stage $stage -TargetDatabaseName "edfi_datamanagementservice" -PackageSourceIdentity $script:packageSourceIdentity -DatabaseEngine postgresql -PostgresUser "dmsadmin" | Out-Null
 
         Should -Invoke Assert-RestoreTargetSafety -ModuleName bootstrap-restore -Times 2 -Exactly -ParameterFilter { $PostgresUser -ceq "dmsadmin" }
-        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql psql -U dmsadmin -d edfi_datamanagementservice -v ON_ERROR_STOP=1 -f /tmp/restore-target-*.sql" }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql psql -U dmsadmin -d edfi_datamanagementservice -v ON_ERROR_STOP=1 --single-transaction -f /tmp/restore-target-*.sql" }
         Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { ($args -join " ") -like "*psql -U postgres*" }
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
             $Query -eq 'DROP DATABASE IF EXISTS "edfi_datamanagementservice";' -and $PostgresUser -ceq "dmsadmin"
@@ -2858,7 +2923,7 @@ Describe "Invoke-RestoreTargetReplacement" {
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -ceq 'CREATE DATABASE "EdFi_DMS";' }
         # The psql connection parameter is exact-case by nature; the replay targets the same
         # database the quoted CREATE produced.
-        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -clike "exec dms-postgresql psql -U postgres -d EdFi_DMS -v ON_ERROR_STOP=1 -f /tmp/restore-target-*.sql" }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -clike "exec dms-postgresql psql -U postgres -d EdFi_DMS -v ON_ERROR_STOP=1 --single-transaction -f /tmp/restore-target-*.sql" }
     }
 
     It "PostgreSQL: a copy failure leaves the target completely untouched - no drop, no create" {
@@ -2875,6 +2940,31 @@ Describe "Invoke-RestoreTargetReplacement" {
 
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "DROP DATABASE*" }
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "CREATE DATABASE*" }
+    }
+
+    It "PostgreSQL: a failed single-transaction replay stops before the reseed and reports the target as not restored" {
+        Mock docker {
+            $global:TargetCallSequence.Add("docker " + ($args -join " "))
+            Invoke-TestContainerFileDocker -DockerArgs $args
+            $global:LASTEXITCODE = 0
+            if (($args -join " ") -like "*psql*--single-transaction -f /tmp/restore-target-*") {
+                $global:LASTEXITCODE = 3
+                "psql:/tmp/restore-target.sql:4120: ERROR:  out of shared memory"
+            }
+        } -ModuleName bootstrap-restore
+        $stage = New-ScratchStage -Directory $script:targetRoot
+
+        { Invoke-RestoreTargetReplacement -Stage $stage -TargetDatabaseName "edfi_datamanagementservice" -PackageSourceIdentity $script:packageSourceIdentity -DatabaseEngine postgresql } |
+            Should -Throw "Replay of the artifact into target database 'edfi_datamanagementservice' failed, so target restoration did not complete. The target was already dropped and recreated; rerun the restore before using 'edfi_datamanagementservice'. (*out of shared memory*)"
+
+        # The replay ran as one transaction after the drop/create, and nothing ran on the target
+        # after it: no reseed, no identity read; only the transient artifact was removed.
+        $sequence = @($global:TargetCallSequence)
+        $replayIndex = [array]::FindIndex([string[]]$sequence, [Predicate[string]] { param($c) $c -like "docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice -v ON_ERROR_STOP=1 --single-transaction -f /tmp/restore-target-*.sql" })
+        $replayIndex | Should -BeGreaterThan ([array]::IndexOf([string[]]$sequence, 'query CREATE DATABASE "edfi_datamanagementservice";'))
+        @($sequence[($replayIndex + 1)..($sequence.Count - 1)]) | Should -HaveCount 1
+        $sequence[-1] | Should -BeLike "docker exec dms-postgresql rm -f /tmp/restore-target-*.sql"
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "*DataStoreIdentity*" }
     }
 
     It "<Engine>: replacing the host staging file after scratch validation cannot change the bytes the target restores" -ForEach @(

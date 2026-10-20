@@ -478,6 +478,14 @@ is skipped in restore mode: the restored artifact already carries the schema and
 ./bootstrap-local-dms.ps1 -RestoreTemplate Minimal -LoadSeedData -SeedTemplate Minimal
 ```
 
+The tracked `template-trust-policy.json` currently lists no trusted producers, so the feed
+example above refuses every package for now. That empty policy is intentional fail-closed
+behavior: a feed restore requires a package attested by a producer configured as a trust anchor
+in the tracked policy or the local overlay. Older packages that lack the restore manifest and
+attestation are not eligible for `-RestoreTemplate`. The database engine could still read their
+`.sql` or `.bak` artifact, but engine-level backup compatibility does not make a package eligible
+for the guarded bootstrap restore.
+
 Restore works on both database engines (`-DatabaseEngine`) and on both wrappers
 (`bootstrap-local-dms.ps1` and `bootstrap-published-dms.ps1`). It rejects `-InfraOnly`,
 `-NoDataStore`, and `-SchoolYearRange`: one restore invocation replaces exactly one

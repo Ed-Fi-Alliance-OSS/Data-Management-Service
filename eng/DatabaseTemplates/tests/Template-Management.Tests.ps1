@@ -2654,6 +2654,78 @@ Describe "Build-TemplateNuGetPackage attestation" {
     }
 }
 
+Describe "Write-TemplatePackageAttestation" {
+    BeforeAll {
+        $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Push-Location $script:templatesDir
+        try {
+            Import-Module (Join-Path $script:templatesDir "Template-Management.psm1") -Force
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    It "attests the package the shared config names, without building the companion or running dotnet" {
+        # The CI signing step calls this while it holds the private key, so it must sign and
+        # nothing else: the companion's dotnet restore/pack runs in a later step.
+        $workDir = Join-Path $TestDrive ([Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $workDir -Force | Out-Null
+
+        InModuleScope Template-Management -Parameters @{
+            configPath = (Join-Path (Split-Path $PSScriptRoot -Parent) "MinimalTemplateSettings.psd1")
+            workDir    = $workDir
+        } {
+            param($configPath, $workDir)
+
+            Mock Build-TemplateAttestationCompanionPackage {}
+            Mock dotnet { $global:LASTEXITCODE = 0 }
+            $signingKey = New-TemplateAttestationSigningKey -PrivateKeyPath (Join-Path $workDir "signer.pem")
+
+            $config = Get-TemplatePackageConfig -ConfigFilePath $configPath -StandardVersion "5.2.0" -DatabaseEngine mssql
+            $config.Id | Should -Be "EdFi.Api.Minimal.Template.MsSql.5.2.0"
+            $packagePath = Join-Path $workDir "EdFi.Api.Minimal.Template.MsSql.5.2.0.1.0.123.nupkg"
+            Set-Content -LiteralPath $packagePath -Value "packed bytes"
+
+            $attestationPath = Write-TemplatePackageAttestation `
+                -Config $config `
+                -PackageVersion "1.0.123" `
+                -BackupDirectory $workDir `
+                -AttestationSignerKeyPath $signingKey.PrivateKeyPath `
+                -AttestationProducer "local-dev"
+
+            $attestationPath | Should -Be "$packagePath.attestation.json"
+            $policyPath = Join-Path $workDir "template-trust-policy.json"
+            [ordered]@{
+                version   = 1
+                producers = @(
+                    [ordered]@{
+                        name       = "local-dev"
+                        provider   = "detached-attestation"
+                        publicKeys = @(
+                            [ordered]@{
+                                keyId            = $signingKey.KeyId
+                                algorithm        = $signingKey.Algorithm
+                                publicKeySpkiB64 = $signingKey.PublicKeySpkiB64
+                            }
+                        )
+                    }
+                )
+            } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $policyPath -Encoding utf8
+            $verdict = Test-TemplateAttestation `
+                -AttestationJson (Get-Content -LiteralPath $attestationPath -Raw) `
+                -PackageSha256 (Get-FileSha256Hex -Path $packagePath) `
+                -ExpectedPackageId "EdFi.Api.Minimal.Template.MsSql.5.2.0" `
+                -ExpectedPackageVersion "1.0.123" `
+                -TrustPolicy (Read-TemplateTrustPolicy -TrackedPolicyPath $policyPath)
+            $verdict.IsTrusted | Should -BeTrue
+
+            Should -Invoke Build-TemplateAttestationCompanionPackage -Times 0 -Exactly
+            Should -Invoke dotnet -Times 0 -Exactly
+        }
+    }
+}
+
 Describe "Build-TemplateAttestationCompanionPackage" {
     BeforeAll {
         $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))

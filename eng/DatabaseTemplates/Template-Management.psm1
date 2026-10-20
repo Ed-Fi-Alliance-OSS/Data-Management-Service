@@ -1158,6 +1158,42 @@ function Restore-TemplatePackage {
     }
 }
 
+function Get-TemplatePackageConfig {
+    <#
+    .SYNOPSIS
+    Reads a template package settings .psd1 and substitutes its "{StandardVersion}",
+    "{DatabaseEngine}", and "{ArtifactExtension}" placeholders, so the package build and a
+    later CI signing step derive the same package identity.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$ConfigFilePath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$StandardVersion,
+
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine = "postgresql"
+    )
+
+    $config = Import-PowerShellDataFile -Path $ConfigFilePath
+
+    # Mirrors PostgreSql/.sql, the literal tokens the .psd1 files carried before these
+    # placeholders were introduced, so PostgreSQL output stays byte-for-byte unchanged.
+    $engineToken = if ($DatabaseEngine -eq "mssql") { "MsSql" } else { "PostgreSql" }
+    $artifactExtension = if ($DatabaseEngine -eq "mssql") { "bak" } else { "sql" }
+
+    foreach ($key in @($config.Keys)) {
+        if ($null -ne $key -and $config[$key] -is [string]) {
+            $config[$key] = $config[$key].Replace("{StandardVersion}", $StandardVersion)
+            $config[$key] = $config[$key].Replace("{DatabaseEngine}", $engineToken)
+            $config[$key] = $config[$key].Replace("{ArtifactExtension}", $artifactExtension)
+        }
+    }
+
+    return $config
+}
+
 <#
 .SYNOPSIS
     Builds a NuGet package containing a database backup.
@@ -1198,7 +1234,9 @@ function Restore-TemplatePackage {
     $schemaFiles = & (Import-Module ../docker-compose/bootstrap-restore.psm1 -PassThru) {
         (Get-RestoreCandidateSchemaFact -CandidateDirectory (Resolve-Path ../docker-compose/.bootstrap).Path).SchemaFilePaths
     }
-    Build-TemplateNuGetPackage -ConfigFilePath "./MinimalTemplateSettings.psd1" -TemplateKind Minimal -StandardVersion "5.3.0" -PackageVersion "1.0.0" -SchemaFilePath $schemaFiles
+    # PostgreSQL (the default engine) needs -DumpAllUserSchemas: a restorable package must
+    # dump the complete validated datastore, not only the dms schema.
+    Build-TemplateNuGetPackage -ConfigFilePath "./MinimalTemplateSettings.psd1" -TemplateKind Minimal -StandardVersion "5.3.0" -PackageVersion "1.0.0" -DumpAllUserSchemas -SchemaFilePath $schemaFiles
 #>
 function Build-TemplateNuGetPackage {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Template tooling intentionally writes operator progress to the console.')]
@@ -1257,20 +1295,7 @@ function Build-TemplateNuGetPackage {
         Assert-TemplateAttestationSignerKey -PrivateKeyPath $AttestationSignerKeyPath
     }
 
-    $config = Import-PowerShellDataFile -Path $ConfigFilePath
-
-    # Mirrors PostgreSql/.sql, the literal tokens the .psd1 files carried before these
-    # placeholders were introduced, so PostgreSQL output stays byte-for-byte unchanged.
-    $engineToken = if ($DatabaseEngine -eq "mssql") { "MsSql" } else { "PostgreSql" }
-    $artifactExtension = if ($DatabaseEngine -eq "mssql") { "bak" } else { "sql" }
-
-    foreach ($key in @($config.Keys)) {
-        if ($null -ne $key -and $config[$key] -is [string]) {
-            $config[$key] = $config[$key].Replace("{StandardVersion}", $StandardVersion)
-            $config[$key] = $config[$key].Replace("{DatabaseEngine}", $engineToken)
-            $config[$key] = $config[$key].Replace("{ArtifactExtension}", $artifactExtension)
-        }
-    }
+    $config = Get-TemplatePackageConfig -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -DatabaseEngine $DatabaseEngine
 
     $databaseSchemas =
         if ($DumpAllUserSchemas) {
@@ -2042,17 +2067,18 @@ function Build-TemplateAttestationCompanionPackage {
     return $companionPackagePath
 }
 
-function Invoke-TemplatePackageAttestation {
+function Write-TemplatePackageAttestation {
     <#
     .SYNOPSIS
     Attests the exact bytes of the packed template .nupkg: hashes the final package file,
-    signs the detached attestation document with the supplied key, writes the sibling
-    "<nupkg>.attestation.json", and packs the companion attestation package for feed
-    distribution. Runs strictly after dotnet pack, so any repack invalidates a previous
-    attestation by construction.
+    signs the detached attestation document with the supplied key, and writes the sibling
+    "<nupkg>.attestation.json". Signing only: it runs no dependency tooling, so CI can hold
+    the private key for this call alone and build the companion package after removing it.
+
+    .OUTPUTS
+    The path of the written attestation document.
     #>
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Template tooling intentionally writes operator progress to the console.')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Template build helper invoked non-interactively; it writes attestation artifacts into the controlled package workspace.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Template tooling intentionally writes operator progress to the console; the function returns the attestation path, so Write-Output would corrupt the pipeline result.')]
     param (
         [Parameter(Mandatory = $true)]
         [hashtable]$Config,
@@ -2089,6 +2115,36 @@ function Invoke-TemplatePackageAttestation {
 
     Write-Host "Attestation Created: " -ForegroundColor Green -NoNewline
     Write-Host $attestationPath
+
+    return $attestationPath
+}
+
+function Invoke-TemplatePackageAttestation {
+    <#
+    .SYNOPSIS
+    Attests the exact bytes of the packed template .nupkg (Write-TemplatePackageAttestation)
+    and packs the companion attestation package for feed distribution. Runs strictly after
+    dotnet pack, so any repack invalidates a previous attestation by construction.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Template build helper invoked non-interactively; it writes attestation artifacts into the controlled package workspace.')]
+    param (
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Config,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PackageVersion,
+
+        [Parameter(Mandatory = $true)]
+        [string]$BackupDirectory,
+
+        [Parameter(Mandatory = $true)]
+        [string]$AttestationSignerKeyPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$AttestationProducer
+    )
+
+    $attestationPath = Write-TemplatePackageAttestation @PSBoundParameters
 
     Build-TemplateAttestationCompanionPackage `
         -Config $Config `
@@ -2353,4 +2409,4 @@ function Build-Template {
     Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion -TemplateKind ([string]$TemplateType) -DatabaseName $DataStoreDatabaseName -DumpAllUserSchemas:$DumpAllUserSchemas -DatabaseEngine $DatabaseEngine -MssqlPassword $MssqlPassword -AttestationSignerKeyPath $AttestationSignerKeyPath -AttestationProducer $AttestationProducer -SchemaFilePath $SchemaFilePath
 }
 
-Export-ModuleMember -Function Build-Template, Build-TemplateNuGetPackage, Invoke-TemplatePackageAttestation, Get-UserSchemaNames, Assert-DocumentTableShape, Restore-TemplatePackage, Get-TemplateSourceCatalogFacts, Get-EducatorPreparationSampleFileName, Get-EducationOrganizationIdsFromSampleData, Get-TemplateBulkLoadTuning
+Export-ModuleMember -Function Build-Template, Build-TemplateNuGetPackage, Get-TemplatePackageConfig, Invoke-TemplatePackageAttestation, Write-TemplatePackageAttestation, Build-TemplateAttestationCompanionPackage, Get-UserSchemaNames, Assert-DocumentTableShape, Restore-TemplatePackage, Get-TemplateSourceCatalogFacts, Get-EducatorPreparationSampleFileName, Get-EducationOrganizationIdsFromSampleData, Get-TemplateBulkLoadTuning

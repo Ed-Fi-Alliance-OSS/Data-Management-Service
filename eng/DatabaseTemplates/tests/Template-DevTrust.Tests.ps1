@@ -178,4 +178,27 @@ Describe "new-template-dev-trust.ps1 -Purpose CI" {
         $policy.Producers[0].Name | Should -Be "edfi-alliance-ci"
         $policy.Producers[0].PublicKeys[0].KeyId | Should -Be $result.KeyId
     }
+
+    It "tells the administrator to protect the signing environment before installing the key" {
+        $workspace = New-TestWorkspace
+
+        $printed = (@(& $script:devTrustScript -Purpose CI -OutputDirectory (Join-Path $workspace "ci-out") 6>&1 |
+                    Where-Object { $_ -is [System.Management.Automation.InformationRecord] } |
+                    ForEach-Object { "$_" }) -join "`n")
+
+        $protectIndex = $printed.IndexOf("Protect the GitHub environment 'template-attestation-signing' BEFORE installing the key.")
+        $installIndex = $printed.IndexOf("Install the PRIVATE key only as the secret TEMPLATE_ATTESTATION_PRIVATE_KEY of that environment.")
+        $protectIndex | Should -BeGreaterThan -1
+        $installIndex | Should -BeGreaterThan $protectIndex
+        foreach ($expected in @(
+                "*a ref name does not show that*its commit was reviewed*"
+                "*required reviewers, with self-review prevented*"
+                "*deployment refs restricted to main and the release tag pattern*"
+                "*enforced tag ruleset restricting release-tag creation, updates, and deletion to*authorized release maintainers*"
+                "*approve a signing deployment only after verifying that its commit is approved*"
+                "*Never install it as a repository or organization secret*"
+            )) {
+            $printed | Should -BeLike $expected
+        }
+    }
 }

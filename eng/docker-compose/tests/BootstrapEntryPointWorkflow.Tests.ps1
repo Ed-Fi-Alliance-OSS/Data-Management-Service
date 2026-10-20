@@ -5035,6 +5035,58 @@ CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
             }
         }
 
+        It "refuses -RestoreTemplate with -LoadSeedData before any build, teardown, or bootstrap work, and keeps plain -LoadSeedData (behavioral, AST-extracted)" {
+            # StartEnvironment exposes neither -SeedTemplate nor -SeedDataPath, which the wrapper
+            # requires for a restore-mode seed, so the combination is refused up front.
+            $buildScriptPath = Join-Path $script:sourceRepoRoot "build-dms.ps1"
+            $tokens = $null
+            $parseErrors = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($buildScriptPath, [ref]$tokens, [ref]$parseErrors)
+            $parseErrors | Should -BeNullOrEmpty
+            $functionAst = $ast.Find({
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                    $node.Name -eq "Start-BootstrapDockerEnvironment"
+            }, $true)
+            $functionAst | Should -Not -BeNullOrEmpty
+
+            $probePath = Join-Path $script:repo.RepoRoot "start-bootstrap-restore-seed-probe.ps1"
+            @(
+                "param([string]`$Mode)"
+                "`$EnvironmentFile = 'probe.env'"
+                "function Resolve-E2EEnvironmentFilePath { param([string]`$Path) Write-Host 'RESOLVE-ENVIRONMENT-CALLED'; 'resolved.env' }"
+                "function Stop-DockerEnvironment { param(`$EnvironmentFilePath, `$IdentityProvider, `$DatabaseEngine) Write-Output 'STOP-DOCKER-ENVIRONMENT-CALLED' }"
+                "function DockerBuild { Write-Output 'DOCKER-BUILD-CALLED' }"
+                "function Invoke-Step { param(`$Block) & `$Block }"
+                "function Invoke-Execute { param(`$Block) Write-Output 'INVOKE-EXECUTE-CALLED' }"
+                $functionAst.Extent.Text
+                "try {"
+                "    if (`$Mode -eq 'local') {"
+                "        Start-BootstrapDockerEnvironment -DatabaseEngine postgresql -RestoreTemplate Minimal -LoadSeedData"
+                "    } elseif (`$Mode -eq 'published') {"
+                "        Start-BootstrapDockerEnvironment -UsePublishedImage -DatabaseEngine mssql -RestoreTemplate Populated -PackageDirectory 'C:\packages' -LoadSeedData"
+                "    } else {"
+                "        Start-BootstrapDockerEnvironment -DatabaseEngine postgresql -LoadSeedData"
+                "    }"
+                "} catch {"
+                "    Write-Output `"REFUSED: `$(`$_.Exception.Message)`""
+                "    exit 7"
+                "}"
+            ) -join "`n" | Set-Content -LiteralPath $probePath -Encoding utf8
+
+            foreach ($mode in @("local", "published")) {
+                $refusedOutput = @(& pwsh -NoProfile -NonInteractive -File $probePath -Mode $mode 2>&1)
+                $LASTEXITCODE | Should -Be 7
+                $refusedOutput | Should -Be @(
+                    "REFUSED: StartEnvironment does not support -RestoreTemplate with -LoadSeedData: restore mode's supplemental API seed needs an explicit -SeedTemplate or -SeedDataPath, which build-dms.ps1 does not expose. Run eng/docker-compose/bootstrap-local-dms.ps1 (or bootstrap-published-dms.ps1) with -RestoreTemplate, -LoadSeedData, and -SeedTemplate or -SeedDataPath, or omit -LoadSeedData. Nothing was built, stopped, or started."
+                ) -Because "the $mode refusal precedes environment resolution, the image build, the teardown, and the wrapper"
+            }
+
+            $seedOutput = @(& pwsh -NoProfile -NonInteractive -File $probePath -Mode seed 2>&1)
+            $LASTEXITCODE | Should -Be 0
+            $seedOutput | Should -Be @("RESOLVE-ENVIRONMENT-CALLED", "DOCKER-BUILD-CALLED", "STOP-DOCKER-ENVIRONMENT-CALLED", "INVOKE-EXECUTE-CALLED") -Because "a non-restore -LoadSeedData run keeps its build, teardown, and wrapper invocation"
+        }
+
         It "normalizes -PackageDirectory against the caller's CWD before the eng/docker-compose Push-Location" {
             $buildScript = Get-Content -LiteralPath (
                 Join-Path $script:sourceRepoRoot "build-dms.ps1"

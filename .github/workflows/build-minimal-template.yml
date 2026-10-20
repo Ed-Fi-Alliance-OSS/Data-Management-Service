@@ -60,13 +60,19 @@ on:
       TEMPLATE_ATTESTATION_PRIVATE_KEY:
         # PKCS#8 ECDSA P-256 private key (PEM) for the 'edfi-alliance-ci' trust-policy
         # producer. Optional: without it the build is UNATTESTED (loud notice) and restore
-        # consumers refuse the published package (fail-closed). It is an ENVIRONMENT secret of
-        # the protected 'template-attestation-signing' environment, whose deployment refs are
-        # main and v*.*.* tags, never a repository or organization secret: callers pass it by
-        # name, and only build-template on an approved ref sets that environment and so
-        # receives it. Generate with eng/DatabaseTemplates/new-template-dev-trust.ps1 -Purpose CI;
-        # the matching public key belongs in eng/docker-compose/template-trust-policy.json via
-        # a reviewed commit.
+        # consumers refuse the published package (fail-closed). Callers pass it by name. It must
+        # exist ONLY as a secret of the 'template-attestation-signing' environment, never as a
+        # repository or organization secret, because the ref check in this workflow is not a
+        # security boundary: a ref name such as refs/tags/v* does not show that its commit was
+        # reviewed. GitHub releases an environment secret only after the environment's
+        # protection rules pass, so an administrator configures that environment, before
+        # installing the key, with required reviewers (self-review prevented), deployment refs
+        # limited to main and the release tag pattern, and an enforced tag ruleset that lets
+        # only authorized release maintainers create, update, or delete release tags; reviewers
+        # approve a signing deployment only after verifying that its commit is approved.
+        # Generate with eng/DatabaseTemplates/new-template-dev-trust.ps1 -Purpose CI; the
+        # matching public key belongs in eng/docker-compose/template-trust-policy.json via a
+        # reviewed commit.
         required: false
     outputs:
       hash-code:
@@ -95,11 +101,14 @@ jobs:
   build-template:
     name: Build Minimal Template Package
     if: ${{ github.event_name != 'release' }}
-    # Trusted signing runs only on approved refs (main pushes and dispatches, v*.*.* tags) and
-    # never for pull_request. Elsewhere the job has no environment, so the CI key, an
-    # environment secret, is unreachable and the build is unattested. The environment's own
-    # deployment-ref rules are the boundary pull request code cannot edit; this expression and
-    # the signer step's identical one only keep ineligible runs from asking for the key.
+    # Signing is requested only for main pushes and dispatches and v*.*.* tag refs, never for
+    # pull_request. Elsewhere the job has no environment, so the CI key, an environment secret,
+    # is unreachable and the build is unattested. This expression and the signer step's
+    # identical one only keep ineligible runs from asking for the key; matching a ref name is
+    # not enough to authorize signing. The boundary is the environment's protection rules
+    # (required reviewers without self-review, deployment-ref restrictions, an enforced
+    # release-tag ruleset, and reviewer verification that the commit is approved), which GitHub
+    # checks before releasing the secret and which pull request code cannot edit.
     environment: ${{ (github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) && 'template-attestation-signing' || '' }}
     runs-on: ubuntu-latest
     defaults:
@@ -258,35 +267,8 @@ jobs:
             throw "DMS did not become ready within the timeout period"
           }
 
-      # Attestation signing is gated on a signing-eligible run (the job's environment
-      # expression: main or a v*.*.* tag, never a pull request) and on the
-      # TEMPLATE_ATTESTATION_PRIVATE_KEY secret: with both, the packed template is attested for
-      # the tracked-policy producer 'edfi-alliance-ci' and the companion attestation package is
-      # built beside it; otherwise the build proceeds UNATTESTED with a loud notice and restore
-      # consumers refuse the package (fail-closed). An ineligible run never puts the key in this
-      # step's environment. The key never touches the workspace: it lands under RUNNER_TEMP and
-      # is removed by the cleanup step below.
-      - name: Materialize attestation signing key
-        id: attestation-signer
-        env:
-          SIGNING_ELIGIBLE: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
-          TEMPLATE_ATTESTATION_PRIVATE_KEY: ${{ (github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) && secrets.TEMPLATE_ATTESTATION_PRIVATE_KEY || '' }}
-        run: |
-          if ($env:SIGNING_ELIGIBLE -ne 'true') {
-            Write-Host "::notice title=Unattested template build::Only main and v*.*.* tag runs (never pull requests) sign template packages; this template package will be UNATTESTED and restore consumers will refuse it (fail-closed)."
-            "signer-available=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          }
-          elseif ([string]::IsNullOrWhiteSpace($env:TEMPLATE_ATTESTATION_PRIVATE_KEY)) {
-            Write-Host "::notice title=Unattested template build::TEMPLATE_ATTESTATION_PRIVATE_KEY is not configured; this template package will be UNATTESTED and restore consumers will refuse it (fail-closed)."
-            "signer-available=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          }
-          else {
-            $signerKeyPath = Join-Path $env:RUNNER_TEMP "template-attestation-signer.pem"
-            Set-Content -LiteralPath $signerKeyPath -Value $env:TEMPLATE_ATTESTATION_PRIVATE_KEY
-            "signer-available=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            "signer-key-path=$signerKeyPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          }
-
+      # Generation and packing run without signing credentials; the next step attests the
+      # completed package.
       - name: Generate Minimal Template package
         run: |
           Import-Module ./Template-Management.psm1 -Force
@@ -304,14 +286,6 @@ jobs:
           # Generate unique application name for this run
           $uniqueAppName = "Demo application ${{ github.run_id }}"
 
-          # Attestation is secret-gated (see the attestation-signer step); the splat is empty
-          # on unattested builds so the invocation below is identical either way.
-          $attestationArguments = @{}
-          if ('${{ steps.attestation-signer.outputs.signer-available }}' -eq 'true') {
-            $attestationArguments.AttestationSignerKeyPath = '${{ steps.attestation-signer.outputs.signer-key-path }}'
-            $attestationArguments.AttestationProducer = 'edfi-alliance-ci'
-          }
-
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
           Build-Template `
                   -TemplateType Minimal `
@@ -327,10 +301,74 @@ jobs:
                   -DataStoreId $env:RELATIONAL_DATA_STORE_ID `
                   -DumpAllUserSchemas `
                   -DatabaseEngine '${{ inputs.database_engine }}' `
-                  -SchemaFilePath $schemaFiles `
-                  @attestationArguments
+                  -SchemaFilePath $schemaFiles
         working-directory: eng/DatabaseTemplates/
 
+      # Attestation runs only after the template is generated and packed, so the private key
+      # is never present while schema resolution, the data load, or packing run dependency
+      # tooling. It is gated on a signing-eligible run (the job's environment expression: main
+      # or a v*.*.* tag, never a pull request) and on the TEMPLATE_ATTESTATION_PRIVATE_KEY
+      # secret: with both, the exact packed template is attested for the tracked-policy producer
+      # 'edfi-alliance-ci'; otherwise the build proceeds UNATTESTED with a loud notice and
+      # restore consumers refuse the package (fail-closed). An ineligible run never puts the
+      # key in this step's environment. The key file lands under RUNNER_TEMP, is created
+      # owner-only (0600) before any key byte is written, and is removed in finally whether
+      # signing succeeds or fails.
+      - name: Attest template package
+        id: attestation-signer
+        env:
+          SIGNING_ELIGIBLE: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+          TEMPLATE_ATTESTATION_PRIVATE_KEY: ${{ (github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) && secrets.TEMPLATE_ATTESTATION_PRIVATE_KEY || '' }}
+        run: |
+          if ($env:SIGNING_ELIGIBLE -ne 'true') {
+            Write-Host "::notice title=Unattested template build::Only main and v*.*.* tag runs (never pull requests) sign template packages; this template package will be UNATTESTED and restore consumers will refuse it (fail-closed)."
+            "attested=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+          elseif ([string]::IsNullOrWhiteSpace($env:TEMPLATE_ATTESTATION_PRIVATE_KEY)) {
+            Write-Host "::notice title=Unattested template build::TEMPLATE_ATTESTATION_PRIVATE_KEY is not configured; this template package will be UNATTESTED and restore consumers will refuse it (fail-closed)."
+            "attested=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+          else {
+            Import-Module ./Template-Management.psm1 -Force
+            $config = Get-TemplatePackageConfig -ConfigFilePath './MinimalTemplateSettings.psd1' -StandardVersion '${{ inputs.standard_version }}' -DatabaseEngine '${{ inputs.database_engine }}'
+            $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+
+            $signerKeyPath = Join-Path $env:RUNNER_TEMP "template-attestation-signer.pem"
+            try {
+              # CreateNew with an owner-only mode: the file is 0600 from creation, before any key
+              # byte is written, and a file already at that path is refused.
+              $keyFileOptions = [System.IO.FileStreamOptions]@{
+                Mode   = [System.IO.FileMode]::CreateNew
+                Access = [System.IO.FileAccess]::Write
+              }
+              $keyFileOptions.UnixCreateMode = [System.IO.UnixFileMode]'UserRead, UserWrite'
+              $keyFile = [System.IO.FileStream]::new($signerKeyPath, $keyFileOptions)
+              try {
+                $keyBytes = [System.Text.UTF8Encoding]::new($false).GetBytes($env:TEMPLATE_ATTESTATION_PRIVATE_KEY)
+                $keyFile.Write($keyBytes, 0, $keyBytes.Length)
+              }
+              finally {
+                $keyFile.Dispose()
+              }
+
+              $attestationPath = Write-TemplatePackageAttestation `
+                      -Config $config `
+                      -PackageVersion $packageVersion `
+                      -BackupDirectory './' `
+                      -AttestationSignerKeyPath $signerKeyPath `
+                      -AttestationProducer 'edfi-alliance-ci'
+            }
+            finally {
+              if (Test-Path -LiteralPath $signerKeyPath) {
+                Remove-Item -LiteralPath $signerKeyPath -Force
+              }
+            }
+            "attested=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            "attestation-path=$attestationPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+        working-directory: eng/DatabaseTemplates/
+
+      # Backstop for a runner that stops the signing step before its finally runs.
       - name: Remove attestation signing key
         if: always()
         run: |
@@ -338,6 +376,21 @@ jobs:
           if (Test-Path -LiteralPath $signerKeyPath) {
             Remove-Item -LiteralPath $signerKeyPath -Force
           }
+
+      # The companion attestation package runs dotnet restore and dotnet pack, so it is built
+      # only after the key file is removed, in a step without the signing secret.
+      - name: Build attestation companion package
+        if: ${{ steps.attestation-signer.outputs.attested == 'true' }}
+        run: |
+          Import-Module ./Template-Management.psm1 -Force
+          $config = Get-TemplatePackageConfig -ConfigFilePath './MinimalTemplateSettings.psd1' -StandardVersion '${{ inputs.standard_version }}' -DatabaseEngine '${{ inputs.database_engine }}'
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+          Build-TemplateAttestationCompanionPackage `
+                  -Config $config `
+                  -PackageVersion $packageVersion `
+                  -BackupDirectory './' `
+                  -AttestationPath '${{ steps.attestation-signer.outputs.attestation-path }}' | Out-Null
+        working-directory: eng/DatabaseTemplates/
 
       # A loader that exits 0 does not guarantee it wrote anything: gate on descriptor content
       # here, before the package is uploaded or published, so an empty bulk load cannot slip

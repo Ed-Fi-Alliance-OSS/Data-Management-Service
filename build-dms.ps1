@@ -152,8 +152,9 @@ param(
 
     # Restore mode, StartEnvironment only: restores the DMS datastore from a trusted
     # database-template package of this kind before services start. Forwarded unchanged to the
-    # bootstrap wrapper, which owns every restore-mode preflight and exclusion; build-dms adds
-    # no policy of its own.
+    # bootstrap wrapper, which owns every restore-mode preflight and exclusion. build-dms adds
+    # one refusal of its own: -LoadSeedData, because restore mode's supplemental seed needs a
+    # -SeedTemplate or -SeedDataPath that build-dms does not expose.
     [string]
     [ValidateSet("Minimal", "Populated")]
     $RestoreTemplate,
@@ -1289,14 +1290,21 @@ function Start-BootstrapDockerEnvironment {
         $DataStandardVersionSupplied,
 
         # Restore mode: forwarded to the bootstrap wrapper only when supplied; the wrapper owns
-        # every restore-mode preflight and exclusion (build-dms adds no policy). Plain strings so
-        # forwarding an unset value from the caller does not trip validation.
+        # every restore-mode preflight and exclusion except the -LoadSeedData refusal below.
+        # Plain strings so forwarding an unset value from the caller does not trip validation.
         [string]
         $RestoreTemplate,
 
         [string]
         $PackageDirectory
     )
+
+    # The wrapper accepts restore plus -LoadSeedData only with an explicit -SeedTemplate or
+    # -SeedDataPath, which StartEnvironment does not expose, so the combination could only fail
+    # later. Refuse it here, before any image build, teardown, or bootstrap work.
+    if (-not [string]::IsNullOrWhiteSpace($RestoreTemplate) -and $LoadSeedData) {
+        throw "StartEnvironment does not support -RestoreTemplate with -LoadSeedData: restore mode's supplemental API seed needs an explicit -SeedTemplate or -SeedDataPath, which build-dms.ps1 does not expose. Run eng/docker-compose/bootstrap-local-dms.ps1 (or bootstrap-published-dms.ps1) with -RestoreTemplate, -LoadSeedData, and -SeedTemplate or -SeedDataPath, or omit -LoadSeedData. Nothing was built, stopped, or started."
+    }
 
     $environmentFilePath = Resolve-E2EEnvironmentFilePath -Path $EnvironmentFile
 

@@ -1518,9 +1518,11 @@ function Invoke-RestoreCatalogQuery {
     <#
     .SYNOPSIS
     Runs one read-only catalog query against a database inside the running engine container,
-    returning the raw output rows. Same psql/sqlcmd transports as the template producer's
-    catalog reader, hardened fail-closed: an unresolvable docker, an invocation failure, or a
-    nonzero exit each throw - a silent empty answer must never read as "no rows".
+    returning its standard-output rows only. Same psql/sqlcmd transports as the template
+    producer's catalog reader, hardened fail-closed: an unresolvable docker, an invocation
+    failure, or a nonzero exit each throw - a silent empty answer must never read as "no rows".
+    Standard error is kept apart from the rows (a diagnostic on a successful query is not
+    data) and is reported with the failure message when the query fails.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The MSSQL password is handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); the MSSQL account is always "sa", and -PostgresUser names a PostgreSQL account that has no password here (psql authenticates over the container socket), so a PSCredential adds no protection across that boundary.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The MSSQL password is handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); SecureString adds no protection across that boundary.')]
@@ -1567,11 +1569,15 @@ function Invoke-RestoreCatalogQuery {
     catch {
         throw "$FailureMessage Invoking docker exec failed: $(($_.Exception.Message | Out-String).Trim())"
     }
+    # 2>&1 delivers each standard-error line as an ErrorRecord and each standard-output line as
+    # a string, so the two streams separate by type; each keeps its own line order.
+    $rows = @($output | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] })
     if ($LASTEXITCODE -ne 0) {
-        throw "$FailureMessage ($(($output | Out-String).Trim()))"
+        $diagnostics = (@($output | ForEach-Object { [string]$_ }) -join [Environment]::NewLine).Trim()
+        throw "$FailureMessage ($diagnostics)"
     }
 
-    return @($output)
+    return $rows
 }
 
 function Get-RestorePostgresqlPlatformQuerySql {
@@ -2995,7 +3001,8 @@ function Invoke-RestoreTargetReplacement {
     transfer-integrity check), runs the target-safety gate once more immediately before the
     first destructive statement (a service may have started during the transfer), then
     dispatches per engine: PostgreSQL ensures the shared restore-global role, terminates
-    connections, drops and recreates the target, and replays via psql ON_ERROR_STOP;
+    connections, drops and recreates the target, and replays via psql ON_ERROR_STOP in a
+    single transaction;
     SQL Server reads the copied backup's file list and builds one MOVE per logical file to
     target-derived physical names before that last gate, then single-user-drops an existing
     target and restores with those MOVE clauses plus REPLACE. Afterwards dms.DataStoreIdentity.SourceIdentity is reseeded and verified against
@@ -3131,9 +3138,12 @@ function Invoke-RestoreTargetReplacement {
                 -Query "CREATE DATABASE `"$TargetDatabaseName`";" `
                 -FailureMessage "Failed to create target database '$TargetDatabaseName'."
 
+            # One transaction: a statement failure rolls back everything the replay created,
+            # so a failed replay cannot leave partial contents that later startup could mistake
+            # for a completed restore. The target was already dropped and recreated above.
             $null = Invoke-RestoreDockerCommand `
-                -ArgumentList @("exec", $ContainerName, "psql", "-U", $PostgresUser, "-d", $TargetDatabaseName, "-v", "ON_ERROR_STOP=1", "-f", $containerArtifactPath) `
-                -FailureMessage "Replay of the artifact into target database '$TargetDatabaseName' failed."
+                -ArgumentList @("exec", $ContainerName, "psql", "-U", $PostgresUser, "-d", $TargetDatabaseName, "-v", "ON_ERROR_STOP=1", "--single-transaction", "-f", $containerArtifactPath) `
+                -FailureMessage "Replay of the artifact into target database '$TargetDatabaseName' failed, so target restoration did not complete. The target was already dropped and recreated; rerun the restore before using '$TargetDatabaseName'."
         }
         else {
             $existsRows = @(Invoke-RestoreCatalogQuery @adminQueryArguments `

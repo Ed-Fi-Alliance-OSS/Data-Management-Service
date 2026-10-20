@@ -22,12 +22,23 @@
 
     CI: generates the keypair for the shared CI producer into a caller-supplied output
     directory and prints the tracked-policy producer block. Nothing tracked or local is
-    modified: a repository administrator installs the private half as the
-    TEMPLATE_ATTESTATION_PRIVATE_KEY secret of the protected 'template-attestation-signing'
-    GitHub environment, whose deployment branches and tags are limited to main and v*.*.*
-    (never as a repository or organization secret, which pull request jobs could read), and
-    the printed block is added to the tracked eng/docker-compose/template-trust-policy.json in
-    a reviewed commit.
+    modified: a repository administrator installs the private half only as the
+    TEMPLATE_ATTESTATION_PRIVATE_KEY secret of the 'template-attestation-signing' GitHub
+    environment (never as a repository or organization secret, which pull request jobs could
+    read), and the printed block is added to the tracked
+    eng/docker-compose/template-trust-policy.json in a reviewed commit.
+
+    The template workflows request that environment only for main and v*.*.* tag refs, but a
+    ref name alone does not show that its commit was reviewed: anyone who can create or move
+    a v* tag could otherwise reach the key. GitHub releases an environment secret only after
+    the environment's protection rules pass, so before installing the key the administrator
+    configures:
+      - required reviewers on the environment, with self-review prevented;
+      - deployment-ref restrictions limited to main and the release tag pattern;
+      - an enforced tag ruleset that restricts creating, updating, and deleting release tags
+        to authorized release maintainers;
+      - a reviewer practice of approving a signing deployment only after verifying that its
+        commit is approved.
 
     Key rotation is deliberately manual: an existing key file or an existing producer entry
     is never overwritten; remove them explicitly first.
@@ -138,12 +149,19 @@ if ($Purpose -eq "CI") {
     $trackedPolicyProducerJson = $producerEntry | ConvertTo-Json -Depth 4
 
     Write-Host "CI attestation signer generated." -ForegroundColor Green
-    Write-Host "  1. Install the PRIVATE key as the secret TEMPLATE_ATTESTATION_PRIVATE_KEY of the GitHub environment"
-    Write-Host "     'template-attestation-signing', with deployment branches and tags limited to main and v*.*.*."
+    Write-Host "  1. Protect the GitHub environment 'template-attestation-signing' BEFORE installing the key."
+    Write-Host "     The workflows' ref-name check (main, v*.*.*) is not enough: a ref name does not show that"
+    Write-Host "     its commit was reviewed. GitHub releases the secret only after these protection rules pass:"
+    Write-Host "       - required reviewers, with self-review prevented;"
+    Write-Host "       - deployment refs restricted to main and the release tag pattern;"
+    Write-Host "       - an enforced tag ruleset restricting release-tag creation, updates, and deletion to"
+    Write-Host "         authorized release maintainers;"
+    Write-Host "       - reviewers approve a signing deployment only after verifying that its commit is approved."
+    Write-Host "  2. Install the PRIVATE key only as the secret TEMPLATE_ATTESTATION_PRIVATE_KEY of that environment."
     Write-Host "     Never install it as a repository or organization secret: pull request jobs can read those."
     Write-Host "       $privateKeyPath"
     Write-Host "     Then delete the file. Never commit it."
-    Write-Host "  2. Add this producer entry to the tracked eng/docker-compose/template-trust-policy.json 'producers' array in a reviewed commit:"
+    Write-Host "  3. Add this producer entry to the tracked eng/docker-compose/template-trust-policy.json 'producers' array in a reviewed commit:"
     Write-Host $trackedPolicyProducerJson
 
     return [pscustomobject]@{

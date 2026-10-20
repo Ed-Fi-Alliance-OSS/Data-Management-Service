@@ -240,6 +240,16 @@ starting the stack:
 ./bootstrap-local-dms.ps1 -RestoreTemplate Minimal
 ```
 
+The tracked trust policy, `eng/docker-compose/template-trust-policy.json`,
+currently lists no trusted producers, so a feed restore refuses every package
+for now. That empty policy is intentional fail-closed behavior: a feed restore
+requires a package attested by a producer configured as a trust anchor in that
+policy (or in your local overlay). Older packages that lack the restore manifest
+and attestation are not eligible for `-RestoreTemplate`, even though the
+database engine could still read their `.sql` or `.bak` artifact; engine-level
+backup compatibility does not make a package eligible for the guarded bootstrap
+restore.
+
 Use `-PackageDirectory <path>` to restore from a local directory holding the
 template `.nupkg` and its sibling attestation document instead of the feed (no
 NuGet version key needed). See `eng/docker-compose/README.md` for the full
