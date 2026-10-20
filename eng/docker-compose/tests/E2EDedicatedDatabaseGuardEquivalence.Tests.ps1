@@ -11,8 +11,10 @@
 # call it through InModuleScope.
 #
 # Rows a bare -ieq comparison already decides the same way are preservation cases. Rows it gets wrong
-# are regression cases, and each asserts that -ieq alone returns false for it, so the row fails if the
-# comparer is reduced to -ieq. Characters are written as code points; no literal non-ASCII text.
+# are regression cases: comparer rows assert that -ieq alone returns false for them, and the guard
+# matrix keeps them in the context named for what -ieq misses, so they fail if either the comparer or
+# the guard's use of it is reduced to -ieq. Every other guard context is preservation. Characters are
+# written as code points; no literal non-ASCII text.
 
 Describe "Dedicated E2E database name comparer" {
     BeforeAll {
@@ -152,6 +154,330 @@ Describe "Dedicated E2E database name comparer" {
             $trimCalls.Count | Should -BeGreaterThan 0 -Because "the scan is meaningful only if it finds the comparer's trim calls"
             foreach ($trimCall in $trimCalls) {
                 ($null -ne $trimCall.Arguments -and $trimCall.Arguments.Count -gt 0) | Should -BeTrue -Because "'$($trimCall.Extent.Text)' must name the characters it removes"
+            }
+        }
+    }
+}
+
+BeforeDiscovery {
+    $script:directDatabaseNameKeys = @("MSSQL_DB_NAME", "POSTGRES_DB_NAME")
+    $script:connectionStringKeys = @("DATABASE_CONNECTION_STRING_ADMIN", "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING")
+
+    # Spellings of the protected name 'edfi_dms' that differ only by case and a trailing run from the
+    # explicit sets. A bare -ieq calls every one of them distinct from 'edfi_dms'.
+    $script:suffixedSpellings = @(
+        @{ Label = "edfi_dms + U+0020"; Name = "edfi_dms " }
+        @{ Label = "edfi_dms + U+3000"; Name = "edfi_dms$([char]0x3000)" }
+        @{ Label = "edfi_dms + TAB"; Name = "edfi_dms`t" }
+        @{ Label = "edfi_dms + LF"; Name = "edfi_dms`n" }
+        @{ Label = "edfi_dms + CR"; Name = "edfi_dms`r" }
+        @{ Label = "edfi_dms + FF"; Name = "edfi_dms`f" }
+        @{ Label = "EDFI_DMS + U+0020"; Name = "EDFI_DMS " }
+        @{ Label = "Edfi_Dms + U+3000, U+0020, TAB"; Name = "Edfi_Dms$([char]0x3000) `t" }
+    )
+    # A dotenv line cannot carry LF or CR, so file-reader rows use the subset a line can hold.
+    $script:fileSpellings = @($script:suffixedSpellings | Where-Object { $_.Name -notmatch "[`r`n]" })
+
+    $script:quotedRawMapRows = foreach ($key in $script:directDatabaseNameKeys) {
+        foreach ($quote in @("'", '"')) {
+            foreach ($spelling in $script:suffixedSpellings) {
+                @{ Key = $key; Quote = $quote; Label = $spelling.Label; RawValue = "$quote$($spelling.Name)$quote" }
+            }
+        }
+    }
+
+    $script:ambientRows = foreach ($key in $script:directDatabaseNameKeys) {
+        foreach ($spelling in $script:suffixedSpellings) {
+            @{ Key = $key; Label = $spelling.Label; AmbientValue = $spelling.Name }
+        }
+    }
+
+    $script:fileReaderRows = foreach ($reader in @("ReadValuesFromEnvFile", "Get-EnvironmentValueMap")) {
+        foreach ($key in $script:directDatabaseNameKeys) {
+            foreach ($quote in @("'", '"')) {
+                foreach ($spelling in $script:fileSpellings) {
+                    @{ Reader = $reader; Key = $key; Quote = $quote; Label = $spelling.Label; Line = "$key=$quote$($spelling.Name)$quote" }
+                }
+            }
+        }
+    }
+}
+
+# Guard-level matrix for Assert-E2EDatabaseIsDedicated. Every row runs through Invoke-IsolatedGuard,
+# which clears the four protected keys and any helper variable the row names from the process
+# environment and restores them in finally, so an ambient value on the machine or a row's own ambient
+# value never leaks into another row. Rejections assert the full, unchanged diagnostic.
+Describe "Dedicated E2E database guard" {
+    BeforeAll {
+        $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        # Dot-source provision (its dot-source guard returns before any provisioning) for its
+        # Get-EnvironmentValueMap reader; the script also imports env-utility.psm1, which provides
+        # ReadValuesFromEnvFile, and database-safety.psm1.
+        . (Join-Path $script:dockerComposeRoot "provision-e2e-database.ps1")
+
+        $script:protectedKeys = @(
+            "POSTGRES_DB_NAME",
+            "MSSQL_DB_NAME",
+            "DATABASE_CONNECTION_STRING_ADMIN",
+            "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"
+        )
+        $script:environmentFileLabel = ".env.guard-matrix"
+
+        # PowerShell passes $null to a .NET string parameter as "", so SetEnvironmentVariable($name,
+        # $null) leaves the variable defined and empty, which the guard reads as a configured blank key.
+        # Absence is therefore recorded and restored with Remove-Item.
+        function Save-AmbientVariable {
+            param([string]$Name)
+            @{ Name = $Name; Exists = (Test-Path -LiteralPath "Env:$Name"); Value = [System.Environment]::GetEnvironmentVariable($Name) }
+        }
+
+        function Restore-AmbientVariable {
+            param([hashtable]$Saved)
+            if ($Saved.Exists) {
+                [System.Environment]::SetEnvironmentVariable($Saved.Name, $Saved.Value)
+            }
+            else {
+                Remove-Item -LiteralPath "Env:$($Saved.Name)" -ErrorAction SilentlyContinue
+            }
+        }
+
+        function Invoke-IsolatedGuard {
+            param(
+                [hashtable]$EnvironmentValues = @{},
+                [hashtable]$AmbientValues = @{},
+                [string[]]$HelperVariables = @(),
+                [string]$E2EDatabaseName = "edfi_dms"
+            )
+
+            $isolatedNames = @($script:protectedKeys + $HelperVariables + @($AmbientValues.Keys)) | Select-Object -Unique
+            $savedVariables = foreach ($name in $isolatedNames) {
+                Save-AmbientVariable -Name $name
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+            }
+
+            try {
+                foreach ($name in $AmbientValues.Keys) {
+                    [System.Environment]::SetEnvironmentVariable($name, $AmbientValues[$name])
+                }
+
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues $EnvironmentValues `
+                    -EnvironmentFilePath $script:environmentFileLabel `
+                    -E2EDatabaseName $E2EDatabaseName
+            }
+            finally {
+                foreach ($savedVariable in $savedVariables) {
+                    Restore-AmbientVariable -Saved $savedVariable
+                }
+            }
+        }
+
+        function Get-DedicatedDiagnostic {
+            param([string]$Key, [string]$E2EDatabaseName = "edfi_dms")
+            "E2E database '$E2EDatabaseName' in '$script:environmentFileLabel' must be dedicated and cannot match $Key."
+        }
+
+        function Get-SeparateDiagnostic {
+            param([string]$Key)
+            "E2E database 'edfi_dms' in '$script:environmentFileLabel' must stay separate from $Key."
+        }
+    }
+
+    Context "direct keys: trailing runs a bare -ieq comparison misses" {
+        It "rejects <Key> = <Quote><Label><Quote> from a raw map" -ForEach $script:quotedRawMapRows {
+            { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = $RawValue } } |
+                Should -Throw -ExpectedMessage (Get-DedicatedDiagnostic -Key $Key)
+        }
+
+        It "rejects <Key> = <Quote><Label><Quote> read from a file by <Reader>" -ForEach $script:fileReaderRows {
+            $environmentFile = Join-Path $TestDrive "guard-$([guid]::NewGuid().ToString('N')).env"
+            [System.IO.File]::WriteAllText($environmentFile, "# guard matrix row`n$Line`n", [System.Text.UTF8Encoding]::new($false))
+
+            $environmentValues = if ($Reader -eq "ReadValuesFromEnvFile") {
+                ReadValuesFromEnvFile -EnvironmentFile $environmentFile
+            }
+            else {
+                Get-EnvironmentValueMap -EnvironmentFilePath $environmentFile
+            }
+
+            { Invoke-IsolatedGuard -EnvironmentValues $environmentValues } |
+                Should -Throw -ExpectedMessage (Get-DedicatedDiagnostic -Key $Key)
+        }
+
+        It "rejects <Key> = <Label> supplied by the ambient environment" -ForEach $script:ambientRows {
+            { Invoke-IsolatedGuard -AmbientValues @{ $Key = $AmbientValue } } |
+                Should -Throw -ExpectedMessage (Get-DedicatedDiagnostic -Key $Key)
+        }
+
+        It "rejects an ambient <Key> = 'edfi_dms' + U+0020 that overrides a distinct file value" -ForEach @(
+            @{ Key = "MSSQL_DB_NAME" }
+            @{ Key = "POSTGRES_DB_NAME" }
+        ) {
+            { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = "edfi_dms_file" } -AmbientValues @{ $Key = "edfi_dms " } } |
+                Should -Throw -ExpectedMessage (Get-DedicatedDiagnostic -Key $Key)
+        }
+
+        It "rejects <Key> whose double-quoted value appends U+3000 to a reference resolved <Source>" -ForEach @(
+            @{ Key = "MSSQL_DB_NAME"; Source = "from the file" }
+            @{ Key = "POSTGRES_DB_NAME"; Source = "from the file" }
+            @{ Key = "MSSQL_DB_NAME"; Source = "from the ambient environment" }
+            @{ Key = "POSTGRES_DB_NAME"; Source = "from the ambient environment" }
+        ) {
+            $environmentValues = @{ $Key = "`"`${GUARD_MATRIX_BASE_NAME}$([char]0x3000)`"" }
+            $ambientValues = @{}
+            if ($Source -eq "from the file") {
+                $environmentValues["GUARD_MATRIX_BASE_NAME"] = "edfi_dms"
+            }
+            else {
+                $ambientValues["GUARD_MATRIX_BASE_NAME"] = "edfi_dms"
+            }
+
+            { Invoke-IsolatedGuard -EnvironmentValues $environmentValues -AmbientValues $ambientValues -HelperVariables @("GUARD_MATRIX_BASE_NAME") } |
+                Should -Throw -ExpectedMessage (Get-DedicatedDiagnostic -Key $Key)
+        }
+
+        It "rejects the E2E name with the one trailing LF Assert-SafeDatabaseName admits against <Key> = 'edfi_dms'" -ForEach @(
+            @{ Key = "MSSQL_DB_NAME" }
+            @{ Key = "POSTGRES_DB_NAME" }
+        ) {
+            { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = "edfi_dms" } -E2EDatabaseName "edfi_dms`n" } |
+                Should -Throw -ExpectedMessage (Get-DedicatedDiagnostic -Key $Key -E2EDatabaseName "edfi_dms`n")
+        }
+    }
+
+    Context "direct keys: verdicts the guard already gives" {
+        It "rejects <Key> = <Label> unquoted, which the resolver trims" -ForEach @(
+            foreach ($key in @("MSSQL_DB_NAME", "POSTGRES_DB_NAME")) {
+                @{ Key = $key; Label = "edfi_dms"; RawValue = "edfi_dms" }
+                @{ Key = $key; Label = "EDFI_DMS"; RawValue = "EDFI_DMS" }
+                @{ Key = $key; Label = "edfi_dms + U+0020"; RawValue = "edfi_dms " }
+                @{ Key = $key; Label = "edfi_dms + U+3000"; RawValue = "edfi_dms$([char]0x3000)" }
+                @{ Key = $key; Label = "edfi_dms + TAB"; RawValue = "edfi_dms`t" }
+                @{ Key = $key; Label = "edfi_dms + FF"; RawValue = "edfi_dms`f" }
+                @{ Key = $key; Label = "'EDFI_DMS' (single-quoted case variant)"; RawValue = "'EDFI_DMS'" }
+            }
+        ) {
+            { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = $RawValue } } |
+                Should -Throw -ExpectedMessage (Get-DedicatedDiagnostic -Key $Key)
+        }
+
+        It "fails closed on a configured <Key> that resolves blank or unresolved (<Label>)" -ForEach @(
+            foreach ($key in @("MSSQL_DB_NAME", "POSTGRES_DB_NAME")) {
+                @{ Key = $key; Label = "empty"; RawValue = "" }
+                @{ Key = $key; Label = "quoted empty"; RawValue = "''" }
+                @{ Key = $key; Label = "quoted U+0020 only"; RawValue = "' '" }
+                @{ Key = $key; Label = "quoted U+3000 only"; RawValue = "`"$([char]0x3000)`"" }
+                @{ Key = $key; Label = "undefined reference"; RawValue = "`${GUARD_MATRIX_UNDEFINED}" }
+                @{ Key = $key; Label = "single-quoted literal reference"; RawValue = "'`${GUARD_MATRIX_UNDEFINED}'" }
+            }
+        ) {
+            { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = $RawValue } -HelperVariables @("GUARD_MATRIX_UNDEFINED") } |
+                Should -Throw -ExpectedMessage "E2E database safety check could not resolve $Key in '$script:environmentFileLabel' (blank, or an unresolved or cyclic reference)*"
+        }
+
+        It "accepts a dedicated E2E name when no protected key is configured" {
+            { Invoke-IsolatedGuard } | Should -Not -Throw
+        }
+
+        It "accepts <Key> = <Label>, a distinct name with a trailing run" -ForEach @(
+            foreach ($key in @("MSSQL_DB_NAME", "POSTGRES_DB_NAME")) {
+                @{ Key = $key; Label = "'edfi_dms_primary' + U+0020, single-quoted"; RawValue = "'edfi_dms_primary '"; Ambient = $false }
+                @{ Key = $key; Label = "'edfi_dms_cms' + U+3000, double-quoted"; RawValue = "`"edfi_dms_cms$([char]0x3000)`""; Ambient = $false }
+                @{ Key = $key; Label = "'EDFI_OTHER' + TAB, LF, ambient"; RawValue = "EDFI_OTHER`t`n"; Ambient = $true }
+            }
+        ) {
+            if ($Ambient) {
+                { Invoke-IsolatedGuard -AmbientValues @{ $Key = $RawValue } } | Should -Not -Throw
+            }
+            else {
+                { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = $RawValue } } | Should -Not -Throw
+            }
+        }
+
+        It "accepts the E2E name 'edfi_dms_e2e' beside <Key> = 'edfi_dms' + U+0020, double-quoted" -ForEach @(
+            @{ Key = "MSSQL_DB_NAME" }
+            @{ Key = "POSTGRES_DB_NAME" }
+        ) {
+            { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = "`"edfi_dms `"" } -E2EDatabaseName "edfi_dms_e2e" } | Should -Not -Throw
+        }
+    }
+
+    Context "connection-string keys: verdicts the guard already gives" {
+        It "rejects <Key> = <Label>" -ForEach @(
+            foreach ($key in @("DATABASE_CONNECTION_STRING_ADMIN", "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING")) {
+                @{ Key = $key; Label = "Database quoted with trailing U+0020"; Value = "Server=s;Database=`"edfi_dms `";User Id=sa"; Ambient = $false }
+                @{ Key = $key; Label = "Initial Catalog quoted, case variant with trailing U+3000"; Value = "'Server=s;Initial Catalog=`"EDFI_DMS$([char]0x3000)`";User Id=sa'"; Ambient = $false }
+                @{ Key = $key; Label = "Database unquoted with trailing TAB"; Value = "Host=h;Database=edfi_dms`t;Username=u"; Ambient = $false }
+                @{ Key = $key; Label = "DB single-quoted with trailing FF"; Value = "Host=h;DB='edfi_dms`f';Username=u"; Ambient = $false }
+                @{ Key = $key; Label = "a decoy Database before a quoted Initial Catalog with trailing U+0020"; Value = "Server=s;Database=other;Initial Catalog=`"edfi_dms `";User Id=sa"; Ambient = $false }
+                @{ Key = $key; Label = "Database quoted with trailing U+3000, ambient"; Value = "Host=h;Database=`"edfi_dms$([char]0x3000)`";Username=u"; Ambient = $true }
+            }
+        ) {
+            if ($Ambient) {
+                { Invoke-IsolatedGuard -AmbientValues @{ $Key = $Value } } |
+                    Should -Throw -ExpectedMessage (Get-SeparateDiagnostic -Key $Key)
+            }
+            else {
+                { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = $Value } } |
+                    Should -Throw -ExpectedMessage (Get-SeparateDiagnostic -Key $Key)
+            }
+        }
+
+        It "fails closed on a configured blank <Key>" -ForEach @(
+            @{ Key = "DATABASE_CONNECTION_STRING_ADMIN" }
+            @{ Key = "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" }
+        ) {
+            { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = "" } } |
+                Should -Throw -ExpectedMessage "E2E database safety check could not resolve $Key in '$script:environmentFileLabel'; refusing*"
+        }
+
+        It "accepts <Key> naming a distinct database with a quoted trailing run" -ForEach @(
+            @{ Key = "DATABASE_CONNECTION_STRING_ADMIN" }
+            @{ Key = "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" }
+        ) {
+            { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = "Server=s;Database=`"edfi_dms_admin $([char]0x3000)`";User Id=sa" } } |
+                Should -Not -Throw
+        }
+    }
+
+    Context "ambient isolation" {
+        It "restores a protected key's prior ambient value after a row sets it" {
+            $savedVariable = Save-AmbientVariable -Name "MSSQL_DB_NAME"
+            try {
+                [System.Environment]::SetEnvironmentVariable("MSSQL_DB_NAME", "guard_matrix_sentinel")
+
+                { Invoke-IsolatedGuard -AmbientValues @{ MSSQL_DB_NAME = "EDFI_DMS" } } |
+                    Should -Throw -ExpectedMessage (Get-DedicatedDiagnostic -Key "MSSQL_DB_NAME")
+                [System.Environment]::GetEnvironmentVariable("MSSQL_DB_NAME") | Should -Be "guard_matrix_sentinel"
+            }
+            finally {
+                Restore-AmbientVariable -Saved $savedVariable
+            }
+        }
+
+        It "leaves a protected key absent after a row sets it when it was absent before" {
+            $savedVariable = Save-AmbientVariable -Name "POSTGRES_DB_NAME"
+            try {
+                Remove-Item -LiteralPath "Env:POSTGRES_DB_NAME" -ErrorAction SilentlyContinue
+
+                { Invoke-IsolatedGuard -AmbientValues @{ POSTGRES_DB_NAME = "EDFI_DMS" } } |
+                    Should -Throw -ExpectedMessage (Get-DedicatedDiagnostic -Key "POSTGRES_DB_NAME")
+                Test-Path -LiteralPath "Env:POSTGRES_DB_NAME" | Should -BeFalse
+            }
+            finally {
+                Restore-AmbientVariable -Saved $savedVariable
+            }
+        }
+
+        It "hides a protected value already set in the session from a row that does not set it" {
+            $savedVariable = Save-AmbientVariable -Name "POSTGRES_DB_NAME"
+            try {
+                [System.Environment]::SetEnvironmentVariable("POSTGRES_DB_NAME", "edfi_dms")
+
+                { Invoke-IsolatedGuard } | Should -Not -Throw
+            }
+            finally {
+                Restore-AmbientVariable -Saved $savedVariable
             }
         }
     }

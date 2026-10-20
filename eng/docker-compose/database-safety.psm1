@@ -1508,16 +1508,16 @@ function Assert-E2EDatabaseIsDedicated {
     # connection-string override make the live shared database equal the reset target while this guard
     # sees a different file value and permits a destructive reset/drop.
     #
-    # All comparisons are case-insensitive, and that is required on BOTH engines rather than merely
-    # conservative on one. SQL Server's default collation treats database identifiers case-insensitively,
-    # so a case-variant of a protected name IS the same database there. PostgreSQL folds an UNQUOTED
-    # identifier to lower case, and the reset path drops with an unquoted one
-    # (Template-Management.psm1's `DROP DATABASE IF EXISTS $DatabaseName;`), so a case-variant resolves to
-    # the same physical database there too. An ordinal comparison would let a case-variant of a protected
-    # name past a guard standing in front of DROP DATABASE, where a false positive costs a rename and a
-    # false negative drops shared state. The guard fails closed: a protected key that is
-    # configured (in the file or the ambient environment) but cannot be resolved throws rather than
-    # silently skipping the collision check.
+    # Every comparison goes through Test-E2EDatabaseNameCollidesWithProtectedName: trailing characters
+    # from the explicit SQL Server and PostgreSQL sets are removed from both names, then -ieq compares
+    # them. Under SQL_Latin1_General_CP1_CI_AS SQL Server compares database identifiers case-insensitively
+    # and ignores trailing U+0020 and U+3000, so those variants of a protected name ARE the same database
+    # there. On PostgreSQL the E2E reset drops with `dropdb`, which takes the name literally, so the case
+    # and suffix rules over-reject there; the repository's one unquoted drop, the template restore in
+    # Template-Management.psm1 (`DROP DATABASE IF EXISTS $DatabaseName;`), folds case and accepts only
+    # letters, digits and underscore. A false positive costs a rename; a false negative drops shared
+    # state. The guard fails closed: a protected key that is configured (in the file or the ambient
+    # environment) but cannot be resolved throws rather than silently skipping the collision check.
     foreach ($databaseNameKey in @("POSTGRES_DB_NAME", "MSSQL_DB_NAME")) {
         if (-not (Test-ProtectedKeyConfigured -EnvironmentValues $EnvironmentValues -Name $databaseNameKey)) {
             continue
@@ -1533,7 +1533,7 @@ function Assert-E2EDatabaseIsDedicated {
             throw "E2E database safety check could not resolve $databaseNameKey in '$EnvironmentFilePath' (blank, or an unresolved or cyclic reference); refusing a destructive reset that cannot be proven dedicated."
         }
 
-        if ($E2EDatabaseName -ieq $protectedDatabaseName) {
+        if (Test-E2EDatabaseNameCollidesWithProtectedName -E2EDatabaseName $E2EDatabaseName -ProtectedDatabaseName $protectedDatabaseName) {
             throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must be dedicated and cannot match $databaseNameKey."
         }
     }
@@ -1574,7 +1574,7 @@ function Assert-E2EDatabaseIsDedicated {
                 throw "E2E database safety check could not fully resolve the database name from $connectionStringKey in '$EnvironmentFilePath' (unresolved or cyclic reference); refusing a destructive reset that cannot be proven dedicated."
             }
 
-            if ($E2EDatabaseName -ieq $connectionStringDatabaseName) {
+            if (Test-E2EDatabaseNameCollidesWithProtectedName -E2EDatabaseName $E2EDatabaseName -ProtectedDatabaseName $connectionStringDatabaseName) {
                 throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must stay separate from $connectionStringKey."
             }
         }
