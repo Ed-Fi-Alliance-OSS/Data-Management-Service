@@ -5,6 +5,7 @@
 
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.OAuth;
@@ -93,14 +94,57 @@ public class OAuthManagerTests
         /// The <c>detail</c> of the problem response OAuthManager returned.
         /// </summary>
         protected async Task<string> ResponseDetail() =>
-            JsonNode.Parse(await _response.Content.ReadAsStringAsync())!["detail"]!.GetValue<string>();
+            (
+                JsonNode.Parse(await _response.Content.ReadAsStringAsync())!["error_description"]
+                ?? JsonNode.Parse(await _response.Content.ReadAsStringAsync())!["detail"]
+            )!.GetValue<string>();
 
         /// <summary>
         /// The <c>title</c> of the problem response OAuthManager returned, which carries the
         /// OAuth error code on a 401.
         /// </summary>
         protected async Task<string> ResponseTitle() =>
-            JsonNode.Parse(await _response.Content.ReadAsStringAsync())!["title"]!.GetValue<string>();
+            (
+                JsonNode.Parse(await _response.Content.ReadAsStringAsync())!["error"]
+                ?? JsonNode.Parse(await _response.Content.ReadAsStringAsync())!["title"]
+            )!.GetValue<string>();
+
+        protected async Task AssertOAuthErrorResponse(
+            HttpStatusCode expectedStatus,
+            string expectedError,
+            string expectedDescription
+        )
+        {
+            _response.StatusCode.Should().Be(expectedStatus);
+            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+            using JsonDocument body = JsonDocument.Parse(await _response.Content.ReadAsStringAsync());
+            body.RootElement.EnumerateObject()
+                .Select(property => property.Name)
+                .Should()
+                .BeEquivalentTo("error", "error_description");
+            body.RootElement.GetProperty("error").GetString().Should().Be(expectedError);
+            body.RootElement.GetProperty("error_description").GetString().Should().Be(expectedDescription);
+            _response
+                .Headers.GetValues("X-Correlation-ID")
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(Uri.EscapeDataString(TraceId.Value));
+
+            if (expectedStatus is HttpStatusCode.Unauthorized)
+            {
+                _response
+                    .Headers.WwwAuthenticate.Select(challenge => challenge.ToString())
+                    .Should()
+                    .ContainSingle()
+                    .Which.Should()
+                    .Be("Basic realm=\"EdFi.DataManagementService\"");
+            }
+            else
+            {
+                _response.Headers.WwwAuthenticate.Should().BeEmpty();
+            }
+        }
 
         public async Task ActWithException(string message)
         {
@@ -249,13 +293,13 @@ public class OAuthManagerTests
                 _response
                     .Content.Headers.ContentType!.MediaType.Should()
                     .NotBeNull()
-                    .And.Be("application/problem+json");
+                    .And.Be("application/json");
             }
 
             [Test]
             public async Task Then_The_Response_Carries_The_Invalid_Request_Error()
             {
-                (await ResponseTitle()).Should().Be(ExpectedInvalidRequestError);
+                (await ResponseTitle()).Should().Be(ExpectedInvalidClientError);
             }
 
             [Test]
@@ -443,7 +487,7 @@ public class OAuthManagerTests
                 _response
                     .Content.Headers.ContentType!.MediaType.Should()
                     .NotBeNull()
-                    .And.Be("application/problem+json");
+                    .And.Be("application/json");
             }
 
             [Test]
@@ -451,7 +495,8 @@ public class OAuthManagerTests
             {
                 var content = await _response.Content.ReadAsStringAsync();
                 content.Should().NotBeNull();
-                content!.Should().Contain("\"detail\": \"Unsupported grant type\"");
+                (await ResponseTitle()).Should().Be("unsupported_grant_type");
+                (await ResponseDetail()).Should().Be("Unsupported grant type");
             }
         }
 
@@ -584,7 +629,7 @@ public class OAuthManagerTests
             [Test]
             public void Then_The_Response_ContentType_Is_Problem_JSON()
             {
-                _response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+                _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
             }
 
             [Test]
@@ -710,7 +755,7 @@ public class OAuthManagerTests
             [Test]
             public void Then_The_Response_ContentType_Is_Problem_JSON()
             {
-                _response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+                _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
             }
 
             [Test]
@@ -766,13 +811,25 @@ public class OAuthManagerTests
             [Test]
             public void Then_It_Responds_With_Unauthorized()
             {
-                _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+                _response
+                    .StatusCode.Should()
+                    .Be(
+                        string.IsNullOrWhiteSpace(clientId) && string.IsNullOrWhiteSpace(clientSecret)
+                            ? HttpStatusCode.Unauthorized
+                            : HttpStatusCode.BadRequest
+                    );
             }
 
             [Test]
             public async Task Then_The_Response_Carries_The_Invalid_Request_Error()
             {
-                (await ResponseTitle()).Should().Be(ExpectedInvalidRequestError);
+                (await ResponseTitle())
+                    .Should()
+                    .Be(
+                        string.IsNullOrWhiteSpace(clientId) && string.IsNullOrWhiteSpace(clientSecret)
+                            ? ExpectedInvalidClientError
+                            : ExpectedInvalidRequestError
+                    );
             }
 
             [Test]
@@ -786,6 +843,134 @@ public class OAuthManagerTests
             {
                 _upstreamRequest.Should().BeNull();
             }
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Local_OAuth_Validation_Error : When_Getting_An_Access_Token
+    {
+        [TestCase(
+            null,
+            null,
+            null,
+            "client_credentials",
+            HttpStatusCode.Unauthorized,
+            "invalid_client",
+            "Client credentials must be supplied in an Authorization: Basic header or as client_id and client_secret in the request body"
+        )]
+        [TestCase(
+            null,
+            "client",
+            null,
+            "client_credentials",
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "Client credentials must be supplied in an Authorization: Basic header or as client_id and client_secret in the request body"
+        )]
+        [TestCase(
+            null,
+            null,
+            "secret",
+            "client_credentials",
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "Client credentials must be supplied in an Authorization: Basic header or as client_id and client_secret in the request body"
+        )]
+        [TestCase(
+            "Bearer token",
+            "client",
+            "secret",
+            "client_credentials",
+            HttpStatusCode.Unauthorized,
+            "invalid_client",
+            "The Authorization header must use the Basic scheme"
+        )]
+        [TestCase(
+            "",
+            "client",
+            "secret",
+            "client_credentials",
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "The Authorization header must not be empty"
+        )]
+        [TestCase(
+            "Basicxyz:s3cr3t-sentinel",
+            null,
+            null,
+            "client_credentials",
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "Malformed Authorization header"
+        )]
+        [TestCase(
+            "Basic abc:123",
+            "client",
+            "secret",
+            "client_credentials",
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "Only one client authentication mechanism may be used"
+        )]
+        [TestCase(
+            null,
+            "client",
+            "secret",
+            null,
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "The grant_type request parameter must be supplied"
+        )]
+        [TestCase(
+            null,
+            "client",
+            "secret",
+            "password",
+            HttpStatusCode.BadRequest,
+            "unsupported_grant_type",
+            "Unsupported grant type"
+        )]
+        public async Task It_returns_the_exact_oauth_contract_without_sending_upstream(
+            string? authHeader,
+            string? clientId,
+            string? clientSecret,
+            string? grantType,
+            HttpStatusCode expectedStatus,
+            string expectedError,
+            string expectedDescription
+        )
+        {
+            await Act(
+                authHeader,
+                HttpStatusCode.OK,
+                "{}",
+                grantType!,
+                new TokenRequestCredentials(clientId, clientSecret)
+            );
+
+            await AssertOAuthErrorResponse(expectedStatus, expectedError, expectedDescription);
+            A.CallTo(() => _httpClient.SendAsync(A<HttpRequestMessage>._)).MustNotHaveHappened();
+        }
+
+        [TestCase(2049, 8)]
+        [TestCase(8, 2049)]
+        public async Task It_rejects_either_over_cap_body_credential(int clientIdLength, int secretLength)
+        {
+            await Act(
+                null,
+                HttpStatusCode.OK,
+                "{}",
+                "client_credentials",
+                new TokenRequestCredentials(new string('i', clientIdLength), new string('s', secretLength))
+            );
+
+            await AssertOAuthErrorResponse(
+                HttpStatusCode.BadRequest,
+                "invalid_request",
+                ExpectedOversizedBodyCredentialDetail
+            );
+            A.CallTo(() => _httpClient.SendAsync(A<HttpRequestMessage>._)).MustNotHaveHappened();
         }
     }
 
@@ -812,7 +997,7 @@ public class OAuthManagerTests
         [Test]
         public async Task Then_The_Response_Carries_The_Invalid_Request_Error()
         {
-            (await ResponseTitle()).Should().Be(ExpectedInvalidRequestError);
+            (await ResponseTitle()).Should().Be(ExpectedInvalidClientError);
         }
     }
 
@@ -847,7 +1032,8 @@ public class OAuthManagerTests
         [Test]
         public async Task Then_The_Response_Content_Says_The_Grant_Type_Is_Unsupported()
         {
-            (await ResponseDetail()).Should().Be("Unsupported grant type");
+            (await ResponseTitle()).Should().Be(ExpectedInvalidRequestError);
+            (await ResponseDetail()).Should().Be("The grant_type request parameter must be supplied");
         }
 
         [Test]
@@ -930,8 +1116,8 @@ public class OAuthManagerTests
     }
 
     /// <summary>
-    /// Missing credentials outrank the length cap, so a partial pair whose one value is over the
-    /// cap still gets the ODS/API's <c>401 invalid_request</c>.
+    /// A partial pair is classified before the length cap, so its fixed missing-credential
+    /// description wins even when the supplied value is over the cap.
     /// </summary>
     [TestFixture]
     [Parallelizable]
@@ -949,8 +1135,9 @@ public class OAuthManagerTests
         [Test]
         public async Task Then_The_Missing_Credentials_Rule_Answers()
         {
-            _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             (await ResponseTitle()).Should().Be(ExpectedInvalidRequestError);
+            (await ResponseDetail()).Should().Be(ExpectedMissingCredentialsDetail);
         }
     }
 
@@ -1093,7 +1280,7 @@ public class OAuthManagerTests
         [Test]
         public void Then_The_Response_ContentType_Is_Problem_JSON()
         {
-            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
         }
 
         [Test]
@@ -1249,7 +1436,8 @@ public class OAuthManagerTests
         {
             _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             JsonNode body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!;
-            body["detail"]!.GetValue<string>().Should().Be(ExpectedMalformedAuthorizationDetail);
+            body["error"]!.GetValue<string>().Should().Be(ExpectedInvalidRequestError);
+            body["error_description"]!.GetValue<string>().Should().Be(ExpectedMalformedAuthorizationDetail);
             body.ToJsonString().Should().NotContain(Sentinel);
         }
 
