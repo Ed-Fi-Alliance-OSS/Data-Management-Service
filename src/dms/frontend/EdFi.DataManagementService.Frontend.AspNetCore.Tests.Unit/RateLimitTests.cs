@@ -226,6 +226,33 @@ public class Given_A_Rate_Limit_Rejection_Without_Retry_After_Metadata
 }
 
 [TestFixture]
+public class Given_A_Selected_Token_Endpoint_Rejected_By_The_Limiter
+{
+    [Test]
+    public async Task It_writes_the_oauth_error_contract_and_preserves_rounded_retry_after()
+    {
+        DefaultHttpContext context = RateLimitRejectionTestContext.CreateHttpContext();
+        context.SetEndpoint(
+            new Endpoint(null, new EndpointMetadataCollection(TokenEndpointMetadata.Instance), "token")
+        );
+
+        await WebApplicationBuilderExtensions.WriteRateLimitRejectionAsync(
+            new OnRejectedContext
+            {
+                HttpContext = context,
+                Lease = new RateLimitRejectionTestContext.StubLease(TimeSpan.FromMilliseconds(1100)),
+            },
+            CancellationToken.None
+        );
+
+        JsonNode body = await RateLimitRejectionTestContext.ReadBody(context);
+        context.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+        context.Response.Headers.RetryAfter.ToString().Should().Be("2");
+        body["error"]!.GetValue<string>().Should().Be("temporarily_unavailable");
+    }
+}
+
+[TestFixture]
 [Parallelizable]
 public class Given_A_Rate_Limit_Rejection_With_Sub_Second_Retry_After_Metadata
 {

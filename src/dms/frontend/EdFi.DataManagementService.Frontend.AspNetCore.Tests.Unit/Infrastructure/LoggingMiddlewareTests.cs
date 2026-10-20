@@ -11,6 +11,7 @@ using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using EdFi.DataManagementService.Core.External.Logging;
+using EdFi.DataManagementService.Core.OAuth;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using FluentAssertions;
@@ -394,6 +395,117 @@ public class Given_LoggingMiddleware
         httpContext.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
         httpContext.Response.ContentType.Should().Be("application/json");
         responseBody.ToArray().Should().NotBeEmpty();
+    }
+
+    [Test]
+    public async Task It_writes_token_endpoint_exceptions_as_oauth_server_errors_without_rethrowing()
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Method = HttpMethods.Post;
+        httpContext.Request.Path = "/oauth/token";
+        httpContext.SetEndpoint(
+            new Endpoint(null, new EndpointMetadataCollection(TokenEndpointMetadata.Instance), "token")
+        );
+        httpContext.Response.Body = new MemoryStream();
+        var logger = new TestLogger<LoggingMiddleware>();
+        var middleware = new LoggingMiddleware(
+            _ => throw new InvalidOperationException("boom"),
+            AppSettingsWithCorrelationHeader(string.Empty)
+        );
+
+        await FluentActions.Awaiting(() => middleware.Invoke(httpContext, logger)).Should().NotThrowAsync();
+
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+        var body = JsonNode.Parse(
+            System.Text.Encoding.UTF8.GetString(((MemoryStream)httpContext.Response.Body).ToArray())
+        );
+        body!["error"]!.GetValue<string>().Should().Be("server_error");
+        body["error_description"]!.GetValue<string>().Should().Be(OAuthErrorResponse.ServerErrorDescription);
+        body.AsObject()
+            .Select(property => property.Key)
+            .Should()
+            .BeEquivalentTo("error", "error_description");
+        httpContext.Response.ContentType.Should().StartWith("application/json");
+        Uri.UnescapeDataString(
+                httpContext.Response.Headers[OAuthErrorResponse.CorrelationHeaderName].ToString()
+            )
+            .Should()
+            .Be(
+                logger
+                    .Entries.Single(entry => entry.EventId.Name == "HttpRequestFailed")
+                    .State.GetStructuredProperty("TraceId")
+                    ?.ToString()
+                    ?? string.Empty
+            );
+        logger.Entries.Should().ContainSingle(entry => entry.EventId.Name == "HttpRequestFailed");
+        logger.Entries.Should().NotContain(entry => entry.EventId.Name == "HttpRequestCompleted");
+    }
+
+    [Test]
+    public async Task It_formats_token_request_size_rejections_as_invalid_request()
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Method = HttpMethods.Post;
+        httpContext.Request.Path = "/oauth/token";
+        httpContext.SetEndpoint(
+            new Endpoint(null, new EndpointMetadataCollection(TokenEndpointMetadata.Instance), "token")
+        );
+        httpContext.Response.Body = new MemoryStream();
+        var logger = new TestLogger<LoggingMiddleware>();
+        var middleware = new LoggingMiddleware(
+            _ =>
+                throw new BadHttpRequestException(
+                    "Request body too large.",
+                    StatusCodes.Status413PayloadTooLarge
+                ),
+            AppSettingsWithCorrelationHeader(string.Empty)
+        );
+
+        await FluentActions.Awaiting(() => middleware.Invoke(httpContext, logger)).Should().NotThrowAsync();
+
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status413PayloadTooLarge);
+        var body = JsonNode.Parse(
+            System.Text.Encoding.UTF8.GetString(((MemoryStream)httpContext.Response.Body).ToArray())
+        );
+        body!["error"]!.GetValue<string>().Should().Be("invalid_request");
+        body["error_description"]!
+            .GetValue<string>()
+            .Should()
+            .Be(OAuthErrorResponse.PayloadTooLargeDescription);
+        body.AsObject()
+            .Select(property => property.Key)
+            .Should()
+            .BeEquivalentTo("error", "error_description");
+        httpContext.Response.ContentType.Should().StartWith("application/json");
+        logger.Entries.Should().ContainSingle(entry => entry.EventId.Name == "HttpRequestCompleted");
+        logger
+            .Entries.Single(entry => entry.EventId.Name == "HttpRequestCompleted")
+            .State.ContainStructuredProperty("StatusCode", StatusCodes.Status413PayloadTooLarge);
+    }
+
+    [Test]
+    public async Task It_does_not_rewrite_a_started_token_response()
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Method = HttpMethods.Post;
+        httpContext.Request.Path = "/oauth/token";
+        httpContext.SetEndpoint(
+            new Endpoint(null, new EndpointMetadataCollection(TokenEndpointMetadata.Instance), "token")
+        );
+        httpContext.Features.Set<IHttpResponseFeature>(
+            new StartedHttpResponseFeature { StatusCode = StatusCodes.Status418ImATeapot }
+        );
+        var logger = new TestLogger<LoggingMiddleware>();
+        var middleware = new LoggingMiddleware(
+            _ => throw new InvalidOperationException("boom"),
+            AppSettingsWithCorrelationHeader(string.Empty)
+        );
+
+        Func<Task> invoke = () => middleware.Invoke(httpContext, logger);
+        await invoke.Should().ThrowAsync<InvalidOperationException>();
+
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status418ImATeapot);
+        logger.Entries.Should().ContainSingle(entry => entry.EventId.Name == "HttpRequestFailed");
     }
 
     [Test]

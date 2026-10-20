@@ -47,6 +47,11 @@ public static class OAuthErrorResponse
     public const string TemporarilyUnavailableDescription =
         "The service is temporarily unable to handle the request. Retry the request later.";
 
+    public const string PayloadTooLargeDescription = "The token request body exceeds the allowed size.";
+
+    public const string ServerErrorDescription =
+        "The server encountered an unexpected condition that prevented it from fulfilling the request.";
+
     public const string GatewayDescription =
         "The upstream identity service did not return a usable response. Contact your system "
         + "administrator with the X-Correlation-ID response header, decoded once using UTF-8 "
