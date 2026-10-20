@@ -87,7 +87,7 @@
 
 .PARAMETER AddExtensionSecurityMetadata
     Forwarded to `start-published-dms.ps1`. Required by E2E pipelines that depend on
-    extension claimset fragments (e.g. Sample, Homograph) being loaded from the
+    extension claims fragments (e.g. Sample, Homograph) being loaded from the
     AdditionalClaims directory.
 
 .PARAMETER SchoolYearRange

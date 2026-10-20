@@ -192,6 +192,19 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
                 .OrderBy(f => f)
                 .ToList();
 
+            // Fragments were named *-claimset.json before 8.1; they are not read, so say so
+            foreach (
+                string retiredFile in Directory
+                    .GetFiles(fragmentsPath, "*-claimset.json", SearchOption.AllDirectories)
+                    .OrderBy(f => f)
+            )
+            {
+                logger.LogWarning(
+                    "Claims fragment file {FilePath} is not read: fragment file names must end in -claims.json. Rename the file to apply it.",
+                    retiredFile
+                );
+            }
+
             logger.LogDebug(
                 "Discovered {Count} fragment files in {Path}",
                 fragmentFiles.Count,

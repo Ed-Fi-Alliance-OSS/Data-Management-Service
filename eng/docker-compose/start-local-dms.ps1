@@ -166,7 +166,7 @@ param (
     # passing this switch sets CONFIGURATION_SERVICE_CLAIMS_SOURCE=Hybrid and CONFIGURATION_SERVICE_CLAIMS_DIRECTORY=/app/additional-claims
     # and stages the AdditionalClaims fragments plus the test-owned E2E fragments into
     # eng/docker-compose/.e2e-claims, which local-config.yml mounts at /app/additional-claims. Extension
-    # claimset fragments (e.g. Sample, Homograph) and the E2E claim sets are therefore both loaded.
+    # claims fragments (e.g. Sample, Homograph) and the E2E claim sets are therefore both loaded.
     # This flag is intentionally kept as a transitional helper for non-bootstrap extension E2E setups.
     [Switch]
     $AddExtensionSecurityMetadata,

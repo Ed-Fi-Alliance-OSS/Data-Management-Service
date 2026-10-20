@@ -633,9 +633,9 @@ PostgreSQL or SQL Server database as DMS:
   the core Ed-Fi claims hierarchy covering standard Data Standard resources. No external files are
   needed.
 - **`Hybrid`** - CMS loads the same embedded `Claims.json` as the base, then discovers every
-  `*-claims.json` file in `DMS_CONFIG_CLAIMS_DIRECTORY` (container path `/app/additional-claims`)
-  and composes them in deterministic filename order on top of the base using the current CMS additive
-  fragment behavior.
+  `*-claims.json` file under `CONFIGURATION_SERVICE_CLAIMS_DIRECTORY` (container path
+  `/app/additional-claims`), including subdirectories, and composes them in deterministic file path
+  order on top of the base using the current CMS additive fragment behavior.
 
 **Fragment file contract:** each `*-claims.json` file is a JSON object with a `resourceClaims` array
 and an optional top-level `name`. When `name` is absent, the current CMS implementation falls back to the
@@ -1556,7 +1556,7 @@ Extensions in DMS map to two concerns: (1) security metadata (claimsets) and (2)
 (ApiSchema overlays). Today the two concerns use different startup paths and neither has a single
 selection abstraction.
 
-**Claimset loading** is gated by the `-AddExtensionSecurityMetadata` flag on `start-local-dms.ps1`. When set, the script exports `DMS_CONFIG_CLAIMS_DIRECTORY=/app/additional-claims`, stages `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaims` plus the test-owned E2E fragments from `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/Fragments` into `eng/docker-compose/.e2e-claims`, and the Config Service compose startup mounts that directory to that path, so the E2E claim sets are loaded too. The Config Service reads every JSON file found in the directory on startup. There is no filtering - all mounted claimset files are loaded regardless of which extensions the developer intends to use.
+**Claimset loading** is gated by the `-AddExtensionSecurityMetadata` flag on `start-local-dms.ps1`. When set, the script exports `CONFIGURATION_SERVICE_CLAIMS_SOURCE=Hybrid` and `CONFIGURATION_SERVICE_CLAIMS_DIRECTORY=/app/additional-claims`, stages `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaims` plus the test-owned E2E fragments from `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/Fragments` into `eng/docker-compose/.e2e-claims`, and the Config Service compose startup mounts that directory to that path, so the E2E claim sets are loaded too. On startup the Config Service reads every `*-claims.json` file under the directory, including subdirectories, and logs a warning for each file still named `*-claimset.json`, which it does not read. There is no filtering by extension - all mounted fragment files are loaded regardless of which extensions the developer intends to use.
 
 **ApiSchema overlays** are configured through package-backed environment variables:
 `USE_API_SCHEMA_PATH=true`, `API_SCHEMA_PATH=/app/ApiSchema`, and `SCHEMA_PACKAGES=...`. At container
@@ -1847,8 +1847,8 @@ Each validation rule below is owned by the phase command responsible for the aff
 | `-NoDataStore` with `-SchoolYearRange` | "Error: -NoDataStore with -SchoolYearRange is not supported in DMS-916. Tear down and recreate the environment for multi-year runs." |
 | `-SchoolYearRange` is not in `YYYY-YYYY` format with four-digit integers and `endYear >= startYear` | "Error: -SchoolYearRange must use YYYY-YYYY format with four-digit years, and the ending year must be greater than or equal to the starting year." |
 | `-ClaimsDirectoryPath` path does not exist or contains no `*-claims.json` files | "Error: -ClaimsDirectoryPath must point to a directory containing one or more *-claims.json files." |
-| `-ClaimsDirectoryPath` fragments collide with staged extension fragments by filename | "Error: Claimset fragment filename collision detected for '<file>'. Each staged *-claims.json filename must be unique before bootstrapping." |
-| `-ClaimsDirectoryPath` fragment references a claim set name that does not exist in the embedded `Claims.json` | "Error: Claimset fragment '<file>' references unknown claim set '<name>'. DMS-916 additive fragments may only attach to claim sets declared in the embedded Claims.json." |
+| `-ClaimsDirectoryPath` fragments collide with staged extension fragments by filename | "Error: Claims fragment filename collision detected for '<file>'. Each staged *-claims.json filename must be unique before bootstrapping." |
+| `-ClaimsDirectoryPath` fragment references a claim set name that does not exist in the embedded `Claims.json` | "Error: Claims fragment '<file>' references unknown claim set '<name>'. DMS-916 additive fragments may only attach to claim sets declared in the embedded Claims.json." |
 | Seed delivery runs but the pinned BulkLoadClient package cannot be resolved or does not expose the CLI surface required by the active phase | "Error: BulkLoadClient package resolution failed or the CLI surface required by the active phase (XML in Phase 1, JSONL in Phase 2) is unavailable." |
 | Seed delivery runs but the embedded claims metadata does not define the top-level `SeedLoader` claim set | "Error: Seed delivery requires the embedded CMS claims metadata to define the top-level SeedLoader claim set. Bootstrap cannot continue to BulkLoadClient until that claim set exists." |
 | Core package cannot be resolved in standard mode | "Error: Core ApiSchema package resolution failed. Check the configured feed and package metadata, or supply a direct schema directory with -ApiSchemaPath." |

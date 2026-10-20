@@ -17,8 +17,10 @@ Available out of the box (`CONFIGURATION_SERVICE_CLAIMS_SOURCE=Embedded`). Confi
 The test-only `E2E-*` claim sets are not built in; they exist only in the repository's E2E test
 setup.
 
-Extension claim sets (`SampleExtensionClaims`, `HomographExtensionClaims`) are **not** embedded —
-they ship only as filesystem fragments, so they are available only via **Hybrid** mode (below).
+There are no extension claim sets. `SampleExtensionClaims` and `HomographExtensionClaims` are the
+labels of the repository's Sample and Homograph fragments, which contain only parent entries: they add
+extension resource claims and grant them to existing claim sets such as `EdFiSandbox`, and create no
+claim set. This stack does not mount them.
 
 ## School / district-level access
 

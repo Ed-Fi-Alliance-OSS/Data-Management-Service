@@ -361,10 +361,16 @@ public class Given_Embedded_Claims_Json
             "AdditionalClaims"
         );
         JsonObject baseClaims = LoadEmbeddedClaims(standardFolder);
+        ClaimsFragmentComposer composer = new(A.Fake<ILogger<ClaimsFragmentComposer>>());
 
-        ClaimsLoadResult result = new ClaimsFragmentComposer(
-            A.Fake<ILogger<ClaimsFragmentComposer>>()
-        ).ComposeClaimsFromFragments(
+        // Without this, a wrong directory path would compose no fragments and pass vacuously
+        composer
+            .DiscoverFragmentFiles(defaultFragmentsPath)
+            .Select(Path.GetFileName)
+            .Should()
+            .Equal("004-sample-extension-claims.json", "005-homograph-extension-claims.json");
+
+        ClaimsLoadResult result = composer.ComposeClaimsFromFragments(
             new ClaimsDocument(baseClaims["claimSets"]!, baseClaims["claimsHierarchy"]!),
             defaultFragmentsPath
         );

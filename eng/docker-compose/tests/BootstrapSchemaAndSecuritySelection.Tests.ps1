@@ -50,7 +50,7 @@ Describe "Story 00 bootstrap" {
         Copy-Item -LiteralPath (Join-Path $claimsSourceRoot "Claims") -Destination $claimsTargetRoot -Recurse
         Copy-Item -LiteralPath (Join-Path $claimsSourceRoot "Deploy") -Destination $claimsTargetRoot -Recurse
 
-        # Copy the test-owned E2E claimset fragments that Initialize-E2EClaimsWorkspace stages.
+        # Copy the test-owned E2E claims fragments that Initialize-E2EClaimsWorkspace stages.
         $e2eFragmentsRelativePath = "src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/Fragments"
         $e2eFragmentsTargetRoot = Join-Path $repoRoot $e2eFragmentsRelativePath
         New-Item -ItemType Directory -Path $e2eFragmentsTargetRoot -Force | Out-Null
@@ -1120,16 +1120,37 @@ exit $ExitCode
                 Should -Throw -ExpectedMessage "*missing 'name'*"
         }
 
-        It "ignores caller files with the retired -claimset.json suffix, as CMS discovery does" {
+        It "ignores and warns about caller files with the retired -claimset.json suffix, as CMS discovery does" {
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "retired-suffix-claims"
             New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "010-tpdm-claims.json")
-            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "011-tpdm-claimset.json")
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "nested/011-tpdm-claimset.json")
 
-            Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir
+            $warnings = @(& $script:repo.PrepareClaimsScript -ClaimsDirectoryPath $claimsDir 3>&1 |
+                    Where-Object { $_ -is [System.Management.Automation.WarningRecord] })
 
             @(Get-ChildItem -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims") -File).Name |
                 Should -Be @("010-tpdm-claims.json")
+            $warnings.Count | Should -Be 1
+            $warnings[0].Message | Should -BeLike "*011-tpdm-claimset.json*must end in -claims.json*"
+        }
+
+        It "warns about retired -claimset.json files before rejecting a directory with no -claims.json files" {
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
+            $claimsDir = Join-Path $script:repo.RepoRoot "retired-suffix-only-claims"
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "010-tpdm-claimset.json")
+
+            $warnings = $null
+            $thrown = $null
+            try {
+                & $script:repo.PrepareClaimsScript -ClaimsDirectoryPath $claimsDir -WarningVariable warnings -WarningAction SilentlyContinue
+            } catch {
+                $thrown = $_
+            }
+
+            "$thrown" | Should -BeLike "*does not contain any*-claims.json files*"
+            @($warnings).Count | Should -Be 1
+            @($warnings)[0].Message | Should -BeLike "*010-tpdm-claimset.json*"
         }
 
         It "discovers caller fragments recursively to match CMS ClaimsFragmentComposer" {
@@ -2132,14 +2153,17 @@ exit 0
             Test-Path -LiteralPath (Join-Path $workspace "README.md") | Should -BeFalse
         }
 
-        It "removes a stale claimset fragment left by a previous run" {
+        It "removes a stale claims fragment left by a previous run" {
             $workspace = Initialize-E2EClaimsWorkspace
             $stalePath = Join-Path $workspace "099-stale-claims.json"
             Set-Content -LiteralPath $stalePath -Value "{}"
+            $retiredPath = Join-Path $workspace "001-namespace-claimset.json"
+            Set-Content -LiteralPath $retiredPath -Value "{}"
 
             $null = Initialize-E2EClaimsWorkspace
 
             Test-Path -LiteralPath $stalePath | Should -BeFalse
+            Test-Path -LiteralPath $retiredPath | Should -BeFalse
             @(Get-ChildItem -LiteralPath $workspace -File).Count | Should -Be $script:expectedE2EClaimsFiles.Count
         }
 
@@ -2154,7 +2178,7 @@ exit 0
         It "throws when the E2E fragment directory is missing instead of staging without the E2E claim sets" {
             Remove-Item -LiteralPath $script:repo.E2EFragmentsRoot -Recurse -Force
 
-            { Initialize-E2EClaimsWorkspace } | Should -Throw "*E2E claimset fragment directory does not exist*"
+            { Initialize-E2EClaimsWorkspace } | Should -Throw "*E2E claims fragment directory does not exist*"
         }
 
         It "reuses the same directory when called again, as the -InfraOnly then -DmsOnly phases do" {
@@ -2288,7 +2312,7 @@ exit 0
 
         It "passes AddExtensionSecurityMetadata in E2E setup scripts to enable Hybrid claims for extension schemas" {
             # Confirm that both E2E setup wrappers pass -AddExtensionSecurityMetadata to start-local-dms.ps1
-            # so extension claimset fragments (e.g. Sample, Homograph) are loaded in non-bootstrap mode.
+            # so extension claims fragments (e.g. Sample, Homograph) are loaded in non-bootstrap mode.
             foreach ($path in @(
                 (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1"),
                 (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1")

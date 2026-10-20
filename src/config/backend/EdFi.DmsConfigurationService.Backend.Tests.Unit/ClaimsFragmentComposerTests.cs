@@ -40,6 +40,14 @@ public class ClaimsFragmentComposerTests
         }
     }
 
+    private List<string> WarningMessages() =>
+        Fake.GetCalls(_logger)
+            .Where(call =>
+                call.Method.Name == nameof(ILogger.Log) && call.GetArgument<LogLevel>(0) == LogLevel.Warning
+            )
+            .Select(call => call.Arguments[2]!.ToString()!)
+            .ToList();
+
     [TestFixture]
     public class Given_DiscoverFragmentFiles : ClaimsFragmentComposerTests
     {
@@ -59,6 +67,7 @@ public class ClaimsFragmentComposerTests
                 "config.json", // Should be excluded (wrong pattern)
                 "test-claims.txt", // Should be excluded (wrong extension)
                 "legacy-claimset.json", // Should be excluded (retired suffix)
+                "customclaims.json", // Should be excluded (no dash before the suffix)
             };
 
             foreach (var file in fragmentFiles.Concat(nonFragmentFiles))
@@ -81,6 +90,7 @@ public class ClaimsFragmentComposerTests
             Assert.That(result, Does.Not.Contain(Path.Combine(_testFragmentsPath, "config.json")));
             Assert.That(result, Does.Not.Contain(Path.Combine(_testFragmentsPath, "test-claims.txt")));
             Assert.That(result, Does.Not.Contain(Path.Combine(_testFragmentsPath, "legacy-claimset.json")));
+            Assert.That(result, Does.Not.Contain(Path.Combine(_testFragmentsPath, "customclaims.json")));
         }
 
         [Test]
@@ -125,6 +135,66 @@ public class ClaimsFragmentComposerTests
             Assert.That(result.Count, Is.EqualTo(2));
             Assert.That(result, Does.Contain(Path.Combine(_testFragmentsPath, "root-claims.json")));
             Assert.That(result, Does.Contain(Path.Combine(subDir, "sub-claims.json")));
+        }
+
+        [Test]
+        public void It_should_warn_about_each_file_with_the_retired_suffix()
+        {
+            // Arrange
+            var subDir = Path.Combine(_testFragmentsPath, "subdirectory");
+            Directory.CreateDirectory(subDir);
+            File.WriteAllText(Path.Combine(_testFragmentsPath, "001-current-claims.json"), "{}");
+            File.WriteAllText(Path.Combine(_testFragmentsPath, "002-old-claimset.json"), "{}");
+            File.WriteAllText(Path.Combine(subDir, "003-nested-claimset.json"), "{}");
+
+            // Act
+            var result = _composer.DiscoverFragmentFiles(_testFragmentsPath);
+
+            // Assert
+            result.Should().Equal(Path.Combine(_testFragmentsPath, "001-current-claims.json"));
+            List<string> warnings = WarningMessages();
+            warnings.Should().HaveCount(2);
+            warnings
+                .Should()
+                .ContainSingle(message =>
+                    message.Contains(Path.Combine(_testFragmentsPath, "002-old-claimset.json"))
+                );
+            warnings
+                .Should()
+                .ContainSingle(message => message.Contains(Path.Combine(subDir, "003-nested-claimset.json")));
+            warnings.Should().OnlyContain(message => message.Contains("must end in -claims.json"));
+        }
+
+        [Test]
+        public void It_should_warn_and_return_no_fragments_when_only_retired_files_exist()
+        {
+            // Arrange
+            File.WriteAllText(Path.Combine(_testFragmentsPath, "001-old-claimset.json"), "{}");
+
+            // Act
+            var result = _composer.DiscoverFragmentFiles(_testFragmentsPath);
+
+            // Assert
+            result.Should().BeEmpty();
+            WarningMessages()
+                .Should()
+                .ContainSingle(message =>
+                    message.Contains(Path.Combine(_testFragmentsPath, "001-old-claimset.json"))
+                );
+        }
+
+        [Test]
+        public void It_should_not_warn_when_every_file_uses_the_current_suffix()
+        {
+            // Arrange
+            File.WriteAllText(Path.Combine(_testFragmentsPath, "001-current-claims.json"), "{}");
+            File.WriteAllText(Path.Combine(_testFragmentsPath, "Claims.json"), "{}");
+
+            // Act
+            _composer.DiscoverFragmentFiles(_testFragmentsPath);
+
+            // Assert
+            WarningMessages().Should().BeEmpty();
         }
 
         [Test]

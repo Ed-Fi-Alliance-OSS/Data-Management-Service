@@ -98,6 +98,7 @@ Commands are labeled **[bash]** (WSL shell) or **[pwsh]** (`pwsh` inside WSL) an
 
    `ADMIN_ID` and `ADMIN_SECRET` come from step 1.
    A claim set defined in a `*-claims.json` file under `compose/claims` is not at risk: the reload reads those files again.
+   Builds before the fragment rename named these files `*-claimset.json`, which newer builds do not read; Part B renames them before updating.
 
 4. Back up the credential state.
    Stop Keycloak briefly so its H2 files are copied consistently.
@@ -149,6 +150,18 @@ grep -nE '^[[:space:]]*(export[[:space:]]+)?(DMS_CONFIG_|CONFIG_SERVICE_)[A-Za-z
 Comments are left unchanged.
 `cp -p` keeps the owner-only mode, because `.env.before-rename` holds the secrets too; delete it once the stack is healthy.
 If the update below fails, copy it back over `.env` before running the previous build again.
+
+Claims fragment files under `compose/claims` must now end in `-claims.json`; the Configuration Service no longer reads `*-claimset.json` files and only logs a warning for each.
+A fragment without a top-level `name` takes its claim set name from the file name, so renaming it also renames the claim set: first add `"name": "<old file name without .json>"` to any such file.
+Then rename the files, including any in subdirectories; `find` lists nothing once they are all renamed:
+
+```bash
+cd ~/dms-src/eng/azure-vm/compose/claims &&
+  find . -type f -name '*-claimset.json' -exec sh -c 'mv -n -- "$1" "${1%-claimset.json}-claims.json"' _ {} \; &&
+  find . -type f -name '*-claimset.json'
+```
+
+`mv -n` never overwrites: if a file is still listed, a `-claims.json` file with the same stem already exists, so merge or remove one of them by hand.
 
 ```bash
 cd ~/dms-src && git restore -- '*packages.lock.json' &&

@@ -584,7 +584,7 @@ that already contains them.
 # built-in extensions (Sample, Homograph, TPDM) need no fragment argument: Sample and Homograph
 # stage claim fragments, while TPDM's claims ship in the embedded DS 5.2 set (no fragment staged).
 ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema
-./prepare-dms-claims.ps1 [-ClaimsDirectoryPath <directory-with-custom-extension-claimset-fragment>]
+./prepare-dms-claims.ps1 [-ClaimsDirectoryPath <directory-with-custom-extension-claims-fragment>]
 ./bootstrap-local-dms.ps1
 ```
 

@@ -26,7 +26,7 @@ param (
     [ValidateSet("keycloak", "self-contained")]
     $IdentityProvider="self-contained",
 
-    # Stage the test-owned E2E claim sets with the default claimset fragments and mount them for CMS
+    # Stage the test-owned E2E claim sets with the default claims fragments and mount them for CMS
     [Switch]
     $AddE2EClaimSets
 )

@@ -12,7 +12,7 @@
 
     Extension schema packages (Sample, Homograph) are loaded through the file-based SCHEMA_PACKAGES path.
     The -AddExtensionSecurityMetadata switch activates Hybrid claims mode so extension
-    claimset fragments are loaded from /app/additional-claims. The switch stages the
+    claims fragments are loaded from /app/additional-claims. The switch stages the
     AdditionalClaims fragments plus the test-owned E2E fragments into
     eng/docker-compose/.e2e-claims and mounts that directory, so the E2E claim sets are
     loaded too. This is the non-bootstrap compatibility path; bootstrap mode
