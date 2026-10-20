@@ -76,10 +76,13 @@ unpaired-surrogate escape in any request-body string is rejected at body parse w
 malformed-body 400, whose message names the path. Reference resolution and descriptor-valued query
 filters use the lowered-URI natural-key probes, which return both IDs in one lookup and fold case
 in SQL; original-case responses reconstruct the whole string. Resource POST target detection
-uses the natural-key columns of the resource; the runtime still calculates and maintains RI for
-descriptor writes. On SQL Server, identity values that are equal under the identity comparer
-(`OrdinalIgnoreCase`) keep their stored casing on POST and PUT. RI removal and stored-wins descriptor writes belong to later
-stories. Abstract identity
+uses the natural-key columns of the resource; only descriptor writes still read RI, which is
+still calculated for every document and maintained for every resource and descriptor. On SQL
+Server, a resource's own identity values, including the values of the references that are part
+of it, and the string values that identify collection items keep their stored casing on POST and
+PUT when they are equal under the identity comparer (`OrdinalIgnoreCase`). Values inside other
+references, including the references that identify collection items, are stored as sent. RI
+removal and stored-wins descriptor writes belong to later stories. Abstract identity
 discriminators and union-view discriminator outputs remain unchanged.
 
 The regenerated [DS 5.2 artifacts](../src/dms/backend/Fixtures/authoritative/ds-5.2/expected)

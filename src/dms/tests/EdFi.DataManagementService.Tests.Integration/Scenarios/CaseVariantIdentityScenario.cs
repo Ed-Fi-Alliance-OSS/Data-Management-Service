@@ -50,6 +50,12 @@ internal static class CaseVariantIdentityScenario
         "urn:ed-fi:api:bad-request:data-validation-failed:key-change-not-supported";
     private const string OwnershipMismatchType =
         "urn:ed-fi:api:security:authorization:ownership:access-denied:ownership-mismatch";
+    private const string DataPolicyEnforcedType = "urn:ed-fi:api:data-policy-enforced";
+
+    // Fixtures/Profiles/AuthoritativeDs52/studenteducationorganizationassociation-hiddenindicator.xml
+    private const string HiddenIndicatorWritableContentType =
+        "application/vnd.ed-fi.studenteducationorganizationassociation."
+        + "studenteducationorganizationassociation-hiddenindicator.writable+json";
 
     private static readonly string[] _noFurther =
     [
@@ -97,25 +103,7 @@ internal static class CaseVariantIdentityScenario
     )
     {
         var seed = await SeedClassPeriodAsync(harness, DataRoot);
-        string bellScheduleLocation = await PostExpectingCreatedAsync(
-            harness,
-            $"{DataRoot}/ed-fi/bellSchedules",
-            new JsonObject
-            {
-                ["bellScheduleName"] = $"Bell {seed.Suffix}",
-                ["schoolReference"] = new JsonObject { ["schoolId"] = seed.SchoolId },
-                ["classPeriods"] = new JsonArray(
-                    new JsonObject
-                    {
-                        ["classPeriodReference"] = new JsonObject
-                        {
-                            ["classPeriodName"] = seed.ClassPeriodName,
-                            ["schoolId"] = seed.SchoolId,
-                        },
-                    }
-                ),
-            }
-        );
+        string bellScheduleLocation = await SeedBellScheduleAsync(harness, seed);
         long classPeriodDocumentId = await DocumentIdAsync(harness, seed.Location);
         long bellScheduleDocumentId = await DocumentIdAsync(harness, bellScheduleLocation);
         long originalContentVersion = await ContentVersionAsync(harness, classPeriodDocumentId);
@@ -374,6 +362,179 @@ internal static class CaseVariantIdentityScenario
     }
 
     /// <summary>
+    /// A ClassPeriod PUT that recases <c>classPeriodName</c> and moves the class period to another School. Its
+    /// BellSchedule referrer's foreign key cascades on both engines, so the cascade is observable on SQL Server
+    /// too. SQL Server: one key change in which only the school changes; the referrer receives the new school
+    /// and keeps the stored class period name casing. PostgreSQL: both columns change and cascade.
+    /// </summary>
+    public static async Task It_cascades_only_the_genuinely_changed_column_of_a_mixed_class_period_put(
+        ApiIntegrationHarness harness
+    )
+    {
+        var seed = await SeedClassPeriodAsync(harness, DataRoot);
+        var (_, _, secondSchoolId) = await SeedSchoolAsync(harness, DataRoot);
+        string bellScheduleLocation = await SeedBellScheduleAsync(harness, seed);
+        long classPeriodDocumentId = await DocumentIdAsync(harness, seed.Location);
+        long bellScheduleDocumentId = await DocumentIdAsync(harness, bellScheduleLocation);
+        string recasedClassPeriodName = seed.ClassPeriodName.ToUpperInvariant();
+
+        JsonObject putBody = ClassPeriodBody(recasedClassPeriodName, secondSchoolId);
+        putBody["id"] = IdOf(seed.Location);
+        using HttpResponseMessage response = await SendAsync(harness, HttpMethod.Put, seed.Location, putBody);
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent, await response.Content.ReadAsStringAsync());
+
+        string expectedClassPeriodName = IsPostgresql(harness)
+            ? recasedClassPeriodName
+            : seed.ClassPeriodName;
+        var (classPeriodBody, _) = await GetAsync(harness, seed.Location);
+        classPeriodBody["classPeriodName"]!.GetValue<string>().Should().Be(expectedClassPeriodName);
+        classPeriodBody["schoolReference"]!["schoolId"]!.GetValue<long>().Should().Be(secondSchoolId);
+
+        string referrerFilter =
+            $"FROM {Q(harness, "edfi")}.{Q(harness, "BellScheduleClassPeriod")} "
+            + $"WHERE {Q(harness, "BellSchedule_DocumentId")} = @documentId";
+        (
+            await ScalarAsync<string>(
+                harness,
+                $"SELECT {Q(harness, "ClassPeriod_ClassPeriodName")} {referrerFilter}",
+                ("documentId", bellScheduleDocumentId)
+            )
+        )
+            .Should()
+            .Be(expectedClassPeriodName);
+        (
+            await ScalarAsync<long>(
+                harness,
+                $"SELECT {Q(harness, "ClassPeriod_SchoolId")} {referrerFilter}",
+                ("documentId", bellScheduleDocumentId)
+            )
+        )
+            .Should()
+            .Be(secondSchoolId);
+
+        await AssertKeyChangeCountAsync(harness, "ClassPeriod", classPeriodDocumentId, 1);
+        string keyChangeFilter =
+            $"FROM {Q(harness, "tracked_changes_edfi")}.{Q(harness, "ClassPeriod")} "
+            + $"WHERE {Q(harness, "DocumentId")} = @documentId";
+        (
+            await ScalarAsync<string>(
+                harness,
+                $"SELECT {Q(harness, "NewClassPeriodName")} {keyChangeFilter}",
+                ("documentId", classPeriodDocumentId)
+            )
+        )
+            .Should()
+            .Be(expectedClassPeriodName);
+        (
+            await ScalarAsync<long>(
+                harness,
+                $"SELECT {Q(harness, "NewSchool_SchoolId")} {keyChangeFilter}",
+                ("documentId", classPeriodDocumentId)
+            )
+        )
+            .Should()
+            .Be(secondSchoolId);
+    }
+
+    /// <summary>
+    /// A profiled PUT that recases a <c>studentIndicators</c> item's <c>indicatorName</c> through a profile that
+    /// hides the item's required <c>indicator</c>. Core compares items by exact text, so it treats the recased
+    /// item as new and not creatable. SQL Server: the backend matches it to the stored row under the identity
+    /// collation, so the PUT succeeds, the row keeps its <c>CollectionItemId</c>, and the stored casing and hidden
+    /// <c>indicator</c> are preserved. PostgreSQL: the item is new, so the profile's creatability rule rejects it.
+    /// </summary>
+    public static async Task It_merges_a_recased_profiled_item_whose_profile_hides_a_required_member(
+        ApiIntegrationHarness harness
+    )
+    {
+        var (suffix, _, schoolId) = await SeedSchoolAsync(harness, DataRoot);
+        string studentUniqueId = $"stu-{suffix}";
+        await PostExpectingCreatedAsync(
+            harness,
+            $"{DataRoot}/ed-fi/students",
+            new JsonObject
+            {
+                ["studentUniqueId"] = studentUniqueId,
+                ["firstName"] = "Case",
+                ["lastSurname"] = "Variant",
+                ["birthDate"] = "2012-01-01",
+            }
+        );
+        const string storedIndicatorName = "Reading Level";
+        const string hiddenIndicator = "Proficient";
+        JsonObject AssociationBody(string indicatorName, string indicator)
+        {
+            var item = new JsonObject
+            {
+                ["indicatorName"] = indicatorName,
+                ["indicator"] = indicator,
+                ["periods"] = new JsonArray(new JsonObject { ["beginDate"] = "2024-08-20" }),
+            };
+
+            return new JsonObject
+            {
+                ["studentReference"] = new JsonObject { ["studentUniqueId"] = studentUniqueId },
+                ["educationOrganizationReference"] = new JsonObject
+                {
+                    ["educationOrganizationId"] = schoolId,
+                },
+                ["studentIndicators"] = new JsonArray(item),
+            };
+        }
+
+        string location = await PostExpectingCreatedAsync(
+            harness,
+            $"{DataRoot}/ed-fi/studentEducationOrganizationAssociations",
+            AssociationBody(storedIndicatorName, hiddenIndicator)
+        );
+        long documentId = await DocumentIdAsync(harness, location);
+        string indicatorRowFilter =
+            $"FROM {Q(harness, "edfi")}.{Q(harness, "StudentEducationOrganizationAssociationStudentIndicator")} "
+            + $"WHERE {Q(harness, "StudentEducationOrganizationAssociation_DocumentId")} = @documentId";
+        long originalCollectionItemId = await ScalarAsync<long>(
+            harness,
+            $"SELECT {Q(harness, "CollectionItemId")} {indicatorRowFilter}",
+            ("documentId", documentId)
+        );
+
+        // The profile strips the hidden indicator from the request, so its value must not reach storage.
+        JsonObject putBody = AssociationBody(storedIndicatorName.ToUpperInvariant(), "Advanced");
+        putBody["id"] = IdOf(location);
+        using HttpResponseMessage response = await SendAsync(
+            harness,
+            HttpMethod.Put,
+            location,
+            putBody,
+            HiddenIndicatorWritableContentType
+        );
+        string responseBody = await response.Content.ReadAsStringAsync();
+
+        if (IsPostgresql(harness))
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, responseBody);
+            JsonNode.Parse(responseBody)!["type"]!.GetValue<string>().Should().Be(DataPolicyEnforcedType);
+        }
+        else
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.NoContent, responseBody);
+        }
+
+        var (body, _) = await GetAsync(harness, location);
+        JsonNode storedItem = body["studentIndicators"]!.AsArray().Should().ContainSingle().Subject!;
+        storedItem["indicatorName"]!.GetValue<string>().Should().Be(storedIndicatorName);
+        storedItem["indicator"]!.GetValue<string>().Should().Be(hiddenIndicator);
+        (
+            await ScalarAsync<long>(
+                harness,
+                $"SELECT {Q(harness, "CollectionItemId")} {indicatorRowFilter}",
+                ("documentId", documentId)
+            )
+        )
+            .Should()
+            .Be(originalCollectionItemId);
+    }
+
+    /// <summary>
     /// A client granted Create but not Update on ClassPeriod. SQL Server: the recased POST targets the stored
     /// document, so it is authorized as an Update and refused with 403 naming Update; body and ETag are
     /// unchanged. PostgreSQL: a create, so it succeeds with 201.
@@ -582,6 +743,27 @@ internal static class CaseVariantIdentityScenario
 
         return new ClassPeriodSeed(suffix, schoolId, classPeriodName, location);
     }
+
+    private static Task<string> SeedBellScheduleAsync(ApiIntegrationHarness harness, ClassPeriodSeed seed) =>
+        PostExpectingCreatedAsync(
+            harness,
+            $"{DataRoot}/ed-fi/bellSchedules",
+            new JsonObject
+            {
+                ["bellScheduleName"] = $"Bell {seed.Suffix}",
+                ["schoolReference"] = new JsonObject { ["schoolId"] = seed.SchoolId },
+                ["classPeriods"] = new JsonArray(
+                    new JsonObject
+                    {
+                        ["classPeriodReference"] = new JsonObject
+                        {
+                            ["classPeriodName"] = seed.ClassPeriodName,
+                            ["schoolId"] = seed.SchoolId,
+                        },
+                    }
+                ),
+            }
+        );
 
     private static async Task<ProgramSeed> SeedProgramAsync(ApiIntegrationHarness harness, string programName)
     {
@@ -848,12 +1030,13 @@ internal static class CaseVariantIdentityScenario
         ApiIntegrationHarness harness,
         HttpMethod method,
         string endpoint,
-        JsonObject body
+        JsonObject body,
+        string contentType = "application/json"
     )
     {
         using var request = new HttpRequestMessage(method, endpoint)
         {
-            Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"),
+            Content = new StringContent(body.ToJsonString(), Encoding.UTF8, contentType),
         };
 
         return await harness.HttpClient.SendAsync(request);

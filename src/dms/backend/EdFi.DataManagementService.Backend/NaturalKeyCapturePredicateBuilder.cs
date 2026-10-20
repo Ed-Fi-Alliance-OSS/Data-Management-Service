@@ -33,8 +33,6 @@ internal sealed class NaturalKeyCapturePredicateBuilder
     private readonly Dictionary<string, string> _valuesByPath;
     private readonly List<RelationalParameter> _parameters = [];
 
-    // Key-unified identity paths can share a column. A (column, value) pair is written once; two different
-    // values for one column both stay, so the conflicting request matches nothing.
     private int _targetAliasCount;
     private int _descriptorAliasCount;
 
@@ -70,6 +68,9 @@ internal sealed class NaturalKeyCapturePredicateBuilder
         subselect = null;
         List<string> predicates = [];
         HashSet<int> writtenReferenceIndexes = [];
+
+        // Key-unified identity paths can share a column. A (column, value) pair is written once; two different
+        // values for one column both stay, so the conflicting request matches nothing.
         HashSet<(string Column, string Value)> writtenValues = [];
 
         foreach (var keyColumn in _probe.KeyColumns)

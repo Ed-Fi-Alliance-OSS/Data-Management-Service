@@ -40,11 +40,13 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
 
     [TestCase(RelationalWriteOperationKind.Post)]
     [TestCase(RelationalWriteOperationKind.Put)]
-    public void It_maps_unresolved_unique_violations_to_non_unique_values_and_logs_the_provider_exception(
+    public void It_maps_unresolved_unique_violations_to_non_unique_values_and_logs_only_the_constraint_name(
         RelationalWriteOperationKind operationKind
     )
     {
-        var exception = new StubDbException("unique violation");
+        var exception = new StubDbException(
+            "Cannot insert duplicate key in object 'edfi.SchoolAddress'. The duplicate key value is (Austin)."
+        );
         _writeExceptionClassifier.ClassificationToReturn =
             new RelationalWriteExceptionClassification.UniqueConstraintViolation("UX_SchoolAddress");
         _writeConstraintResolver.ResolutionToReturn = new RelationalWriteConstraintResolution.Unresolved(
@@ -55,7 +57,10 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
 
         isMapped.Should().BeTrue();
         result.Should().BeEquivalentTo(NonUniqueValuesResult(operationKind));
-        _logger.Entries.Should().ContainSingle().Which.Exception.Should().BeSameAs(exception);
+        var entry = _logger.Entries.Should().ContainSingle().Subject;
+        entry.Level.Should().Be(LogLevel.Warning);
+        entry.Exception.Should().BeNull();
+        entry.Message.Should().Contain("UX_SchoolAddress").And.NotContain("Austin");
     }
 
     [TestCase(RelationalWriteOperationKind.Post)]
@@ -64,7 +69,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
         RelationalWriteOperationKind operationKind
     )
     {
-        var exception = new StubDbException("localized unique violation");
+        var exception = new StubDbException("localized unique violation for the value (Austin)");
         _writeExceptionClassifier.ClassificationToReturn = RelationalWriteExceptionClassification
             .UnrecognizedWriteFailure
             .Instance;
@@ -75,7 +80,10 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
         isMapped.Should().BeTrue();
         result.Should().BeEquivalentTo(NonUniqueValuesResult(operationKind));
         _writeConstraintResolver.ResolveCallCount.Should().Be(0);
-        _logger.Entries.Should().ContainSingle().Which.Exception.Should().BeSameAs(exception);
+        var entry = _logger.Entries.Should().ContainSingle().Subject;
+        entry.Level.Should().Be(LogLevel.Warning);
+        entry.Exception.Should().BeNull();
+        entry.Message.Should().Contain("(not parsed)").And.NotContain("Austin");
     }
 
     [TestCase(RelationalWriteOperationKind.Post)]
@@ -853,7 +861,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
 
     private sealed class CapturingLogger : ILogger
     {
-        public List<(LogLevel Level, Exception? Exception)> Entries { get; } = [];
+        public List<(LogLevel Level, Exception? Exception, string Message)> Entries { get; } = [];
 
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull => null;
@@ -866,7 +874,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             TState state,
             Exception? exception,
             Func<TState, Exception?, string> formatter
-        ) => Entries.Add((logLevel, exception));
+        ) => Entries.Add((logLevel, exception, formatter(state, exception)));
     }
 }
 

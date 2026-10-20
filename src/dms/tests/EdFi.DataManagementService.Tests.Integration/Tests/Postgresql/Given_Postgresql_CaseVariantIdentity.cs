@@ -49,6 +49,18 @@ public sealed class Given_Postgresql_CaseVariantIdentity : PostgresqlApiIntegrat
     [Test]
     public Task It_cascades_only_the_genuinely_changed_column_of_a_mixed_put() =>
         CaseVariantIdentityScenario.It_cascades_only_the_genuinely_changed_column_of_a_mixed_put(Harness);
+
+    [Test]
+    public Task It_cascades_only_the_genuinely_changed_column_of_a_mixed_class_period_put() =>
+        CaseVariantIdentityScenario.It_cascades_only_the_genuinely_changed_column_of_a_mixed_class_period_put(
+            Harness
+        );
+
+    [Test]
+    public Task It_merges_a_recased_profiled_item_whose_profile_hides_a_required_member() =>
+        CaseVariantIdentityScenario.It_merges_a_recased_profiled_item_whose_profile_hides_a_required_member(
+            Harness
+        );
 }
 
 /// <summary>
