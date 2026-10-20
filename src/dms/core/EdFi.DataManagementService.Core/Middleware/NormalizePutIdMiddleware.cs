@@ -6,7 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
-using EdFi.DataManagementService.Core.Response;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
@@ -15,6 +15,11 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// Validates a supplied PUT body ID before replacing it with the authoritative URL ID.
 /// ODS/API permits absent, null, and different valid GUID body IDs.
 /// </summary>
+/// <remarks>
+/// Duplicate-property detection must run first so duplicate IDs receive the duplicate-property error.
+/// Normalization must precede coercion so non-string IDs cannot become valid GUID strings, and
+/// document validation so omitted or null IDs satisfy the normalized-document schema.
+/// </remarks>
 internal class NormalizePutIdMiddleware(ILogger logger) : IPipelineStep
 {
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
@@ -36,15 +41,16 @@ internal class NormalizePutIdMiddleware(ILogger logger) : IPipelineStep
                 )
             )
             {
-                requestInfo.FrontendResponse = new FrontendResponse(
-                    StatusCode: 400,
-                    Body: FailureResponse.ForDataValidation(
-                        FailureResponse.ValidationErrorsArmDetail,
-                        requestInfo.FrontendRequest.TraceId,
-                        new Dictionary<string, string[]> { ["$.id"] = ["id must be a valid GUID string."] },
-                        []
-                    ),
-                    Headers: []
+                logger.LogDebug(
+                    "Invalid PUT body ID validation: returning 400 - {TraceId}",
+                    requestInfo.FrontendRequest.TraceId.Value
+                );
+                requestInfo.FrontendResponse = ValidationErrorFactory.CreateValidationErrorResponse(
+                    new Dictionary<string, string[]>
+                    {
+                        ["$.id"] = ["id must be omitted, null, or a valid GUID string."],
+                    },
+                    requestInfo.FrontendRequest.TraceId
                 );
                 return;
             }

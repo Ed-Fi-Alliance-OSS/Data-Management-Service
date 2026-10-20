@@ -318,6 +318,7 @@ Feature: Update a Descriptor
 
         @API-044
         @e2e-ci-shard-2
+        @DMS-1623-PutBodyId
         Scenario: 12 Put an empty JSON body
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -351,6 +352,7 @@ Feature: Update a Descriptor
 
         @API-045
         @e2e-ci-shard-2
+        @DMS-1623-PutBodyId
         Scenario: 13 Update a descriptor using the URL id when the body id differs
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -377,6 +379,7 @@ Feature: Update a Descriptor
 
         @API-046
         @e2e-ci-shard-2
+        @DMS-1623-PutBodyId
         Scenario: 14 Update a descriptor with a blank id
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -400,7 +403,7 @@ Feature: Update a Descriptor
                     "correlationId": null,
                     "validationErrors": {
                         "$.id": [
-                            "id must be a valid GUID string."
+                            "id must be omitted, null, or a valid GUID string."
                         ]
                     },
                     "errors": []
@@ -409,6 +412,7 @@ Feature: Update a Descriptor
 
         @API-047
         @e2e-ci-shard-2
+        @DMS-1623-PutBodyId
         Scenario: 15 Update a descriptor with an invalid id format in the body
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -432,7 +436,7 @@ Feature: Update a Descriptor
                     "correlationId": null,
                     "validationErrors": {
                         "$.id": [
-                            "id must be a valid GUID string."
+                            "id must be omitted, null, or a valid GUID string."
                         ]
                     },
                     "errors": []
@@ -595,5 +599,33 @@ Feature: Update a Descriptor
                         ]
                       },
                       "errors": []
+                  }
+                  """
+
+        @DMS-1623-PutBodyId @PUT
+        @e2e-ci-shard-2 @MssqlRepresentative
+        Scenario: 21 Update an existing descriptor with the body id omitted
+             When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
+                  """
+                  {
+                    "codeValue": "Sick Leave",
+                    "description": "Updated without a body id",
+                    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                    "shortDescription": "Sick Leave Short Description",
+                    "effectiveBeginDate": "2025-05-14",
+                    "effectiveEndDate": "2027-05-14"
+                  }
+                  """
+             Then it should respond with 204
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": "{id}",
+                    "codeValue": "Sick Leave",
+                    "description": "Updated without a body id",
+                    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                    "shortDescription": "Sick Leave Short Description",
+                    "effectiveBeginDate": "2025-05-14",
+                    "effectiveEndDate": "2027-05-14"
                   }
                   """

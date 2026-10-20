@@ -1965,6 +1965,34 @@ public class PipelineOrderingTests
             A.CallTo(() => validator.Validate(A<RequestInfo>._)).MustNotHaveHappened();
         }
 
+        [TestCase("bad", NormalizePutIdMiddlewareTests.UrlId)]
+        [TestCase(NormalizePutIdMiddlewareTests.UrlId, "bad")]
+        public async Task It_rejects_duplicate_ids_before_normalization_or_document_validation(
+            string firstId,
+            string secondId
+        )
+        {
+            RequestInfo request = Context($"\"id\":\"{firstId}\",\"id\":\"{secondId}\",");
+            var validator = A.Fake<IDocumentValidator>();
+
+            await BodyPipeline(validator).Run(request);
+
+            request.FrontendResponse.StatusCode.Should().Be(400);
+            JsonNode response = request.FrontendResponse.Body!;
+            response["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:api:bad-request:data-validation-failed");
+            response["validationErrors"]!.AsObject().Count.Should().Be(1);
+            response["validationErrors"]!["$.id"]!
+                .AsArray()
+                .Select(message => message!.GetValue<string>())
+                .Should()
+                .Equal("An item with the same key has already been added.");
+            response["errors"]!.AsArray().Should().BeEmpty();
+            A.CallTo(() => validator.Validate(A<RequestInfo>._)).MustNotHaveHappened();
+        }
+
         private static RequestInfo Context(string idProperty)
         {
             string body =

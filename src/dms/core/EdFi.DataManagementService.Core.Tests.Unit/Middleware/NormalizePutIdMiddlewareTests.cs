@@ -101,7 +101,7 @@ public class NormalizePutIdMiddlewareTests
             _request.FrontendResponse.Body!["validationErrors"]!["$.id"]![0]!
                 .GetValue<string>()
                 .Should()
-                .Be("id must be a valid GUID string.");
+                .Be("id must be omitted, null, or a valid GUID string.");
 
         [Test]
         public void It_stops_the_pipeline() => _continued.Should().BeFalse();

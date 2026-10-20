@@ -501,6 +501,7 @@ internal class ApiService : IApiService
             new ParseBodyMiddleware(_logger),
             new RequestInfoBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
             new DuplicatePropertiesMiddleware(_logger),
+            // NormalizePutIdMiddleware must follow duplicate detection and precede coercion and document validation.
             new NormalizePutIdMiddleware(_logger),
             _serviceProvider.GetRequiredService<ProfileResolutionMiddleware>(),
             new CoerceDateFormatMiddleware(_logger),

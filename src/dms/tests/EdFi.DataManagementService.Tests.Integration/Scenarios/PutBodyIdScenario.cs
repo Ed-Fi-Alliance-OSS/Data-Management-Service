@@ -100,10 +100,20 @@ internal static class PutBodyIdScenario
                 .StatusCode.Should()
                 .Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
             JsonObject error = JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject();
+            error["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data-validation-failed");
+            error["title"]!.GetValue<string>().Should().Be("Data Validation Failed");
+            error["status"]!.GetValue<int>().Should().Be(400);
+            error["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Data validation failed. See 'validationErrors' for details.");
+            error["errors"]!.AsArray().Should().BeEmpty();
+            error["validationErrors"]!.AsObject().Count.Should().Be(1);
+            error["validationErrors"]!["$.id"]!.AsArray().Count.Should().Be(1);
             error["validationErrors"]!["$.id"]![0]!
                 .GetValue<string>()
                 .Should()
-                .Be("id must be a valid GUID string.");
+                .Be("id must be omitted, null, or a valid GUID string.");
         }
         (await ReadAsync(harness, targetPath))[changedField]!.GetValue<string>().Should().Be("empty-guid");
 
@@ -116,7 +126,7 @@ internal static class PutBodyIdScenario
                 .StatusCode.Should()
                 .Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
             string error = await response.Content.ReadAsStringAsync();
-            error.Should().NotContain("id must be a valid GUID string.");
+            error.Should().NotContain("id must be omitted, null, or a valid GUID string.");
         }
         using var badUrlContent = Content(target.ToJsonString());
         using var badUrlResponse = await harness.HttpClient.PutAsync(

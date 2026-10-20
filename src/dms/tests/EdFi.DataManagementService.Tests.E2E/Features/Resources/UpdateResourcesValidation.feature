@@ -175,6 +175,7 @@ Feature: Resources "Update" Operation validations
 
         @API-190 @PUT
         @e2e-ci-shard-1
+        @DMS-1623-PutBodyId
         Scenario: 07 Put an empty JSON body (Resource)
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -205,6 +206,7 @@ Feature: Resources "Update" Operation validations
 
         @API-191 @PUT
         @e2e-ci-shard-1
+        @DMS-1623-PutBodyId
         Scenario: 08 Update a document using the URL id when the body id differs (Resource)
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -229,6 +231,7 @@ Feature: Resources "Update" Operation validations
 
         @API-192 @PUT
         @e2e-ci-shard-1
+        @DMS-1623-PutBodyId
         Scenario: 09 Update a document with a blank id (Resource)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -250,7 +253,7 @@ Feature: Resources "Update" Operation validations
                     "correlationId": null,
                     "validationErrors": {
                         "$.id": [
-                            "id must be a valid GUID string."
+                            "id must be omitted, null, or a valid GUID string."
                         ]
                     },
                     "errors": []
@@ -259,6 +262,7 @@ Feature: Resources "Update" Operation validations
 
         @API-193 @PUT
         @e2e-ci-shard-1
+        @DMS-1623-PutBodyId
         Scenario: 10 Update a document with an invalid id format (Resource)
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -280,7 +284,7 @@ Feature: Resources "Update" Operation validations
                     "correlationId": null,
                     "validationErrors": {
                         "$.id": [
-                            "id must be a valid GUID string."
+                            "id must be omitted, null, or a valid GUID string."
                         ]
                     },
                     "errors": []
@@ -1187,5 +1191,31 @@ Feature: Resources "Update" Operation validations
                       "$.items[1].x": ["An item with the same key has already been added."]
                     },
                     "errors": []
+                  }
+                  """
+
+        @DMS-1623-PutBodyId @PUT
+        @e2e-ci-shard-1 @MssqlRepresentative
+        Scenario: 25 Update an existing resource with the body id omitted
+             When a PUT request is made to "/ed-fi/educationContents/{id}" with
+                  """
+                  {
+                    "contentIdentifier": "Testing",
+                    "namespace": "Testing",
+                    "shortDescription": "Updated without a body id",
+                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                    "learningResourceMetadataURI": "Testing"
+                  }
+                  """
+             Then it should respond with 204
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": "{id}",
+                    "contentIdentifier": "Testing",
+                    "namespace": "Testing",
+                    "shortDescription": "Updated without a body id",
+                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                    "learningResourceMetadataURI": "Testing"
                   }
                   """
