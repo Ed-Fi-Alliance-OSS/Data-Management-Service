@@ -149,6 +149,17 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        // Build the resolved-reference lookups once and share them with the ancestor alignment, the
+        // root-table synthesis and each separate-table synthesis so we avoid redundant construction.
+        // The stored descriptor projection seeds the URI cache with the stored spelling of every
+        // request-resolved descriptor, so a client that changes a descriptor's casing still matches its
+        // stored rows without C# folding case.
+        var resolvedReferenceLookups = FlatteningResolvedReferenceLookupSet.Create(
+            request.WritePlan,
+            request.ResolvedReferences,
+            storedDescriptorRows: request.CurrentState?.DescriptorRowsInPlanOrder
+        );
+
         // Request-side ancestor chains are rewritten to the stored spelling of a parent the request
         // names in another case (SQL Server only), so every lookup the walker and the aligned and
         // inlined scope synthesis key by the stored parent finds the request-side entries.
@@ -157,7 +168,8 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             ProfileRequest = AlignRequestAncestorsToStoredIdentities(
                 request.ProfileRequest,
                 request.ProfileAppliedContext,
-                request.WritePlan
+                request.WritePlan,
+                resolvedReferenceLookups
             ),
         };
 
@@ -192,17 +204,6 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         {
             tableStateBuilders[plan.TableModel.Table] = new ProfileTableStateBuilder(plan);
         }
-
-        // Build the resolved-reference lookups once and share them with both the root-table
-        // synthesis and each separate-table synthesis so we avoid redundant construction.
-        // The stored descriptor projection seeds the URI cache with the stored spelling of every
-        // request-resolved descriptor, so a client that changes a descriptor's casing still matches its
-        // stored rows without C# folding case.
-        var resolvedReferenceLookups = FlatteningResolvedReferenceLookupSet.Create(
-            request.WritePlan,
-            request.ResolvedReferences,
-            storedDescriptorRows: request.CurrentState?.DescriptorRowsInPlanOrder
-        );
 
         // 1. Root-table merge — append merged + current rows into the root builder.
         var rootTable = request.WritePlan.TablePlansInDependencyOrder[0];
@@ -1839,16 +1840,19 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// The planner matches a request item to a stored row under the identity comparer, and the walker
     /// then recurses into the matched row with the stored identity. Without this alignment every
     /// request-side entry under a parent recased by the request would be keyed by the request spelling
-    /// and fail closed as an orphan or a missing scope state. Both sides are Core-emitted raw forms
-    /// (descriptor URIs, reference natural keys), so they compare before any backend canonicalization;
-    /// only members flagged for the SQL Server identity collation can differ, which leaves every
-    /// PostgreSQL request, and every request without a casing difference, untouched. A request item's
-    /// own identity is not rewritten: the planner matches it and the overlay keeps the stored values.
+    /// and fail closed as an orphan or a missing scope state. Both sides are Core-emitted raw forms, so
+    /// the comparison mirrors what the planner sees after canonicalization: a descriptor URI compares
+    /// by the descriptor id <paramref name="resolvedReferenceLookups"/> resolves it to (falling back to
+    /// its text), and a reference natural-key member compares as the reference identity column it is
+    /// stored in. Only tables with a member flagged for the SQL Server identity collation are aligned,
+    /// which leaves every PostgreSQL request untouched. A request item's own identity is not
+    /// rewritten: the planner matches it and the overlay keeps the stored values.
     /// </remarks>
     internal static ProfileAppliedWriteRequest AlignRequestAncestorsToStoredIdentities(
         ProfileAppliedWriteRequest profileRequest,
         ProfileAppliedWriteContext? profileAppliedContext,
-        ResourceWritePlan writePlan
+        ResourceWritePlan writePlan,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups
     )
     {
         if (
@@ -1859,26 +1863,25 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             return profileRequest;
         }
 
-        var equalityByJsonScope = new Dictionary<string, CollectionSemanticIdentityEquality>(
-            StringComparer.Ordinal
-        );
+        var alignmentByJsonScope = new Dictionary<string, AncestorAlignmentScope>(StringComparer.Ordinal);
 
         foreach (var tablePlan in writePlan.TablePlansInDependencyOrder)
         {
-            if (tablePlan.CollectionMergePlan is null)
+            if (
+                tablePlan.CollectionMergePlan is null
+                || !CollectionSemanticIdentityEquality.For(tablePlan).HasCaseInsensitiveMembers
+            )
             {
                 continue;
             }
 
-            var equality = CollectionSemanticIdentityEquality.For(tablePlan);
-
-            if (equality.HasCaseInsensitiveMembers)
-            {
-                equalityByJsonScope[tablePlan.TableModel.JsonScope.Canonical] = equality;
-            }
+            alignmentByJsonScope[tablePlan.TableModel.JsonScope.Canonical] = AncestorAlignmentScope.For(
+                tablePlan,
+                writePlan
+            );
         }
 
-        if (equalityByJsonScope.Count == 0)
+        if (alignmentByJsonScope.Count == 0)
         {
             return profileRequest;
         }
@@ -1900,12 +1903,16 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             {
                 var ancestor = ancestors[i];
 
-                if (!equalityByJsonScope.TryGetValue(ancestor.JsonScope, out var equality))
+                if (!alignmentByJsonScope.TryGetValue(ancestor.JsonScope, out var alignment))
                 {
                     continue;
                 }
 
                 var alignedPrefix = builder is null ? ancestors[..i] : builder.ToImmutable()[..i];
+                var requestIdentity = alignment.ResolveDescriptorMembers(
+                    ancestor.SemanticIdentityInOrder,
+                    resolvedReferenceLookups
+                );
                 var matches = storedRows
                     .Select(storedRow => storedRow.Address)
                     .Where(storedAddress =>
@@ -1914,9 +1921,12 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                             storedAddress.ParentAddress.AncestorCollectionInstances,
                             alignedPrefix
                         )
-                        && equality.PresenceAware.Equals(
-                            storedAddress.SemanticIdentityInOrder,
-                            ancestor.SemanticIdentityInOrder
+                        && alignment.Equality.PresenceAware.Equals(
+                            alignment.ResolveDescriptorMembers(
+                                storedAddress.SemanticIdentityInOrder,
+                                resolvedReferenceLookups
+                            ),
+                            requestIdentity
                         )
                     )
                     .Take(2)
@@ -1973,6 +1983,94 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             VisibleRequestCollectionItems = [.. alignedItems],
             RequestScopeStates = [.. alignedScopeStates],
         };
+    }
+
+    /// <summary>
+    /// How <see cref="AlignRequestAncestorsToStoredIdentities"/> compares the raw semantic identities of
+    /// one collection scope: each member compares as the column its value is stored in (the reference
+    /// identity column for a document-reference natural-key member), and descriptor members compare by
+    /// resolved descriptor id.
+    /// </summary>
+    private sealed record AncestorAlignmentScope(
+        CollectionSemanticIdentityEquality Equality,
+        IReadOnlyList<(int IdentityIndex, QualifiedResourceName DescriptorResource)> DescriptorMembers
+    )
+    {
+        public static AncestorAlignmentScope For(TableWritePlan tablePlan, ResourceWritePlan writePlan)
+        {
+            DbColumnModel[] memberColumns =
+            [
+                .. tablePlan.CollectionMergePlan!.SemanticIdentityBindings.Select(binding =>
+                    tablePlan.ColumnBindings[binding.BindingIndex].Column
+                ),
+            ];
+
+            foreach (var part in ResolveDocumentReferenceIdentityParts(writePlan, tablePlan))
+            {
+                var identityColumn = tablePlan.TableModel.Columns.FirstOrDefault(column =>
+                    column.ColumnName.Equals(part.IdentityBinding.Column)
+                );
+
+                if (identityColumn is not null && part.IdentityIndex < memberColumns.Length)
+                {
+                    memberColumns[part.IdentityIndex] = identityColumn;
+                }
+            }
+
+            List<(int, QualifiedResourceName)> descriptorMembers = [];
+
+            for (var index = 0; index < memberColumns.Length; index++)
+            {
+                if (memberColumns[index] is { Kind: ColumnKind.DescriptorFk, TargetResource: { } resource })
+                {
+                    descriptorMembers.Add((index, resource));
+                }
+            }
+
+            return new AncestorAlignmentScope(
+                CollectionSemanticIdentityEquality.ForMemberColumns(memberColumns),
+                descriptorMembers
+            );
+        }
+
+        /// <summary>
+        /// Replaces each descriptor URI member that <paramref name="resolvedReferenceLookups"/> resolves
+        /// with its descriptor id, so two spellings of one descriptor compare equal.
+        /// </summary>
+        public ImmutableArray<SemanticIdentityPart> ResolveDescriptorMembers(
+            ImmutableArray<SemanticIdentityPart> identity,
+            FlatteningResolvedReferenceLookupSet resolvedReferenceLookups
+        )
+        {
+            ImmutableArray<SemanticIdentityPart>.Builder? builder = null;
+
+            foreach (var (identityIndex, descriptorResource) in DescriptorMembers)
+            {
+                if (identityIndex >= identity.Length)
+                {
+                    continue;
+                }
+
+                var part = identity[identityIndex];
+
+                if (
+                    part.Value is JsonValue value
+                    && value.TryGetValue<string>(out var uri)
+                    && !string.IsNullOrWhiteSpace(uri)
+                    && resolvedReferenceLookups.TryGetDescriptorIdByUri(
+                        descriptorResource,
+                        uri,
+                        out var descriptorId
+                    )
+                )
+                {
+                    builder ??= identity.ToBuilder();
+                    builder[identityIndex] = part with { Value = JsonValue.Create(descriptorId) };
+                }
+            }
+
+            return builder is null ? identity : builder.MoveToImmutable();
+        }
     }
 
     private static bool AncestorChainsEqual(

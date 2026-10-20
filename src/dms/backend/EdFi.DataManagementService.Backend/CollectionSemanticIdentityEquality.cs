@@ -69,12 +69,28 @@ internal sealed class CollectionSemanticIdentityEquality
                 $"Collection table '{tableWritePlan.TableModel.Table}' does not have a compiled collection merge plan."
             );
 
-        var bindings = collectionMergePlan.SemanticIdentityBindings;
-        var memberComparers = new StringComparer?[bindings.Length];
+        return ForMemberColumns([
+            .. collectionMergePlan.SemanticIdentityBindings.Select(binding =>
+                tableWritePlan.ColumnBindings[binding.BindingIndex].Column
+            ),
+        ]);
+    }
 
-        for (var index = 0; index < bindings.Length; index++)
+    /// <summary>
+    /// Builds the equality from the column each semantic-identity member's value is compared as, in
+    /// member order.
+    /// </summary>
+    public static CollectionSemanticIdentityEquality ForMemberColumns(
+        IReadOnlyList<DbColumnModel> memberColumns
+    )
+    {
+        ArgumentNullException.ThrowIfNull(memberColumns);
+
+        var memberComparers = new StringComparer?[memberColumns.Count];
+
+        for (var index = 0; index < memberColumns.Count; index++)
         {
-            var column = tableWritePlan.ColumnBindings[bindings[index].BindingIndex].Column;
+            var column = memberColumns[index];
 
             memberComparers[index] = column.UsesSqlServerIdentityCollation
                 ? IdentityEqualityContract.ComparerFor(column)
