@@ -278,8 +278,8 @@ Describe "Dedicated E2E database guard" {
         }
 
         function Get-SeparateDiagnostic {
-            param([string]$Key)
-            "E2E database 'edfi_dms' in '$script:environmentFileLabel' must stay separate from $Key."
+            param([string]$Key, [string]$E2EDatabaseName = "edfi_dms")
+            "E2E database '$E2EDatabaseName' in '$script:environmentFileLabel' must stay separate from $Key."
         }
     }
 
@@ -402,9 +402,22 @@ Describe "Dedicated E2E database guard" {
         }
     }
 
+    # The extractor already trims each connection-string candidate, so the E2E name is the only side
+    # these rows leave untrimmed.
+    Context "connection-string keys: an E2E name a bare -ieq comparison misses" {
+        It "rejects the E2E name with the one trailing LF Assert-SafeDatabaseName admits against <Key> naming 'edfi_dms'" -ForEach @(
+            @{ Key = "DATABASE_CONNECTION_STRING_ADMIN" }
+            @{ Key = "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" }
+        ) {
+            { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = "Server=s;Database=edfi_dms;User Id=sa" } -E2EDatabaseName "edfi_dms`n" } |
+                Should -Throw -ExpectedMessage (Get-SeparateDiagnostic -Key $Key -E2EDatabaseName "edfi_dms`n")
+        }
+    }
+
     Context "connection-string keys: verdicts the guard already gives" {
         It "rejects <Key> = <Label>" -ForEach @(
             foreach ($key in @("DATABASE_CONNECTION_STRING_ADMIN", "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING")) {
+                @{ Key = $key; Label = "double-quoted whole value, Database single-quoted with trailing U+0020"; Value = "`"Server=s;Database='edfi_dms ';User Id=sa`""; Ambient = $false }
                 @{ Key = $key; Label = "Database quoted with trailing U+0020"; Value = "Server=s;Database=`"edfi_dms `";User Id=sa"; Ambient = $false }
                 @{ Key = $key; Label = "Initial Catalog quoted, case variant with trailing U+3000"; Value = "'Server=s;Initial Catalog=`"EDFI_DMS$([char]0x3000)`";User Id=sa'"; Ambient = $false }
                 @{ Key = $key; Label = "Database unquoted with trailing TAB"; Value = "Host=h;Database=edfi_dms`t;Username=u"; Ambient = $false }
