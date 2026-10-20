@@ -81,6 +81,7 @@ public class Given_The_Parity_Scenario_Catalog
         "Api/CompactDescriptorHistory/NamespaceHistoryAuthorization",
         "Api/CompactDescriptorHistory/CustomViewLiveSeek",
         "Api/CompactDescriptorHistory/CustomViewTombstoneProbe",
+        "Api/CaseVariantIdentity/ResolvesCaseVariantPostByIdentityCollation",
     ];
 
     private static readonly string[] ExpectedProfileIds =
@@ -166,7 +167,6 @@ public class Given_The_Parity_Scenario_Catalog
         "NoProfileMultiBatchCollection/ChangedUpdateBatchPartitions",
         "NoProfilePostAsUpdate",
         "NoProfilePostAsUpdate/FocusedStableKey",
-        "NoProfilePostAsUpdate/ImmutableIdentityRejected",
         "NoProfilePostAsUpdate/CreateRaceConvertedToUpdate",
         "NoProfilePostAsUpdate/AuthoritativeDs52SchoolYearType",
         "NoProfilePostAsUpdate/AuthoritativeStudentAcademicRecord",

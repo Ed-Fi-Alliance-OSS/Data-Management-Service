@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -21,6 +22,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
 {
     private RecordingRelationalWriteExceptionClassifier _writeExceptionClassifier = null!;
     private RecordingRelationalWriteConstraintResolver _writeConstraintResolver = null!;
+    private CapturingLogger _logger = null!;
     private RelationalWriteDatabaseFailureResultMapper _sut = null!;
 
     [SetUp]
@@ -28,10 +30,173 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
     {
         _writeExceptionClassifier = new RecordingRelationalWriteExceptionClassifier();
         _writeConstraintResolver = new RecordingRelationalWriteConstraintResolver();
+        _logger = new CapturingLogger();
         _sut = new RelationalWriteDatabaseFailureResultMapper(
             _writeExceptionClassifier,
-            _writeConstraintResolver
+            _writeConstraintResolver,
+            _logger
         );
+    }
+
+    [TestCase(RelationalWriteOperationKind.Post)]
+    [TestCase(RelationalWriteOperationKind.Put)]
+    public void It_maps_unresolved_unique_violations_to_non_unique_values_and_logs_only_the_constraint_name(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        var exception = new StubDbException(
+            "Cannot insert duplicate key in object 'edfi.SchoolAddress'. The duplicate key value is (Austin)."
+        );
+        _writeExceptionClassifier.ClassificationToReturn =
+            new RelationalWriteExceptionClassification.UniqueConstraintViolation("UX_SchoolAddress");
+        _writeConstraintResolver.ResolutionToReturn = new RelationalWriteConstraintResolution.Unresolved(
+            "UX_SchoolAddress"
+        );
+
+        var isMapped = _sut.TryBuild(CreateRequest(operationKind), exception, out var result);
+
+        isMapped.Should().BeTrue();
+        result.Should().BeEquivalentTo(NonUniqueValuesResult(operationKind));
+        var entry = _logger.Entries.Should().ContainSingle().Subject;
+        entry.Level.Should().Be(LogLevel.Warning);
+        entry.Exception.Should().BeNull();
+        entry.Message.Should().Contain("UX_SchoolAddress").And.NotContain("Austin");
+    }
+
+    [TestCase(RelationalWriteOperationKind.Post)]
+    [TestCase(RelationalWriteOperationKind.Put)]
+    public void It_maps_unique_violations_without_a_parseable_constraint_name_to_non_unique_values(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        var exception = new StubDbException("localized unique violation for the value (Austin)");
+        _writeExceptionClassifier.ClassificationToReturn = RelationalWriteExceptionClassification
+            .UnrecognizedWriteFailure
+            .Instance;
+        _writeExceptionClassifier.IsUniqueConstraintViolationToReturn = true;
+
+        var isMapped = _sut.TryBuild(CreateRequest(operationKind), exception, out var result);
+
+        isMapped.Should().BeTrue();
+        result.Should().BeEquivalentTo(NonUniqueValuesResult(operationKind));
+        _writeConstraintResolver.ResolveCallCount.Should().Be(0);
+        var entry = _logger.Entries.Should().ContainSingle().Subject;
+        entry.Level.Should().Be(LogLevel.Warning);
+        entry.Exception.Should().BeNull();
+        entry.Message.Should().Contain("(not parsed)").And.NotContain("Austin");
+    }
+
+    [TestCase(RelationalWriteOperationKind.Post)]
+    [TestCase(RelationalWriteOperationKind.Put)]
+    public void It_keeps_unrecognized_non_unique_failures_as_unknown_failures(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        _writeExceptionClassifier.ClassificationToReturn = RelationalWriteExceptionClassification
+            .UnrecognizedWriteFailure
+            .Instance;
+
+        _sut.TryBuild(CreateRequest(operationKind), new StubDbException("provider failure"), out var result);
+
+        result
+            .Should()
+            .BeEquivalentTo(UnknownFailureResult(operationKind, "an unrecognized final write failure"));
+    }
+
+    [TestCase(RelationalWriteOperationKind.Post)]
+    [TestCase(RelationalWriteOperationKind.Put)]
+    public void It_keeps_unresolved_foreign_key_violations_as_unknown_failures(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        _writeExceptionClassifier.ClassificationToReturn =
+            new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation("FK_Unknown");
+        _writeConstraintResolver.ResolutionToReturn = new RelationalWriteConstraintResolution.Unresolved(
+            "FK_Unknown"
+        );
+
+        _sut.TryBuild(CreateRequest(operationKind), new StubDbException("fk violation"), out var result);
+
+        result
+            .Should()
+            .BeEquivalentTo(UnknownFailureResult(operationKind, "a non-user-facing constraint violation"));
+    }
+
+    [TestCase(RelationalWriteOperationKind.Post)]
+    [TestCase(RelationalWriteOperationKind.Put)]
+    public void It_prefers_the_root_natural_key_identity_conflict_over_the_non_unique_values_fallback(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        ConfigureRootNaturalKeyUniqueViolation();
+        _writeExceptionClassifier.IsUniqueConstraintViolationToReturn = true;
+
+        _sut.TryBuild(CreateRequest(operationKind), new StubDbException("unique violation"), out var result);
+
+        KeyValuePair<string, string>[] duplicateIdentityValues = [new("schoolId", "255901")];
+        result
+            .Should()
+            .BeEquivalentTo(
+                operationKind == RelationalWriteOperationKind.Post
+                    ? (RelationalWriteExecutorResult)
+                        new RelationalWriteExecutorResult.Upsert(
+                            new UpsertResult.UpsertFailureIdentityConflict(
+                                new ResourceName("School"),
+                                duplicateIdentityValues
+                            )
+                        )
+                    : new RelationalWriteExecutorResult.Update(
+                        new UpdateResult.UpdateFailureIdentityConflict(
+                            new ResourceName("School"),
+                            duplicateIdentityValues
+                        )
+                    )
+            );
+    }
+
+    [TestCase(RelationalWriteOperationKind.Post)]
+    [TestCase(RelationalWriteOperationKind.Put)]
+    public void It_prefers_a_transient_classification_over_a_unique_violation(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        _writeExceptionClassifier.IsTransientFailureToReturn = true;
+        _writeExceptionClassifier.IsUniqueConstraintViolationToReturn = true;
+        _writeExceptionClassifier.ClassificationToReturn =
+            new RelationalWriteExceptionClassification.UniqueConstraintViolation("UX_SchoolAddress");
+
+        _sut.TryBuild(CreateRequest(operationKind), new StubDbException("deadlock"), out var result);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                operationKind == RelationalWriteOperationKind.Post
+                    ? (RelationalWriteExecutorResult)
+                        new RelationalWriteExecutorResult.Upsert(
+                            new UpsertResult.UpsertFailureWriteConflict()
+                        )
+                    : new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureWriteConflict())
+            );
+    }
+
+    private static RelationalWriteExecutorResult NonUniqueValuesResult(
+        RelationalWriteOperationKind operationKind
+    ) =>
+        operationKind == RelationalWriteOperationKind.Post
+            ? new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureNonUniqueValues())
+            : new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNonUniqueValues());
+
+    private static RelationalWriteExecutorResult UnknownFailureResult(
+        RelationalWriteOperationKind operationKind,
+        string reason
+    )
+    {
+        var message =
+            $"Relational write failed for resource 'Ed-Fi.School' because the database reported {reason}.";
+
+        return operationKind == RelationalWriteOperationKind.Post
+            ? new RelationalWriteExecutorResult.Upsert(new UpsertResult.UnknownFailure(message))
+            : new RelationalWriteExecutorResult.Update(new UpdateResult.UnknownFailure(message));
     }
 
     [Test]
@@ -625,7 +790,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             operationKind == RelationalWriteOperationKind.Put
                 ? new RelationalWriteTargetRequest.Put(updateDocumentUuid)
                 : new RelationalWriteTargetRequest.Post(
-                    new ReferentialId(Guid.Parse("99999999-8888-7777-6666-555555555555")),
+                    new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
                     createDocumentUuid
                 ),
             resourceWritePlan,
@@ -776,7 +941,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             operationKind == RelationalWriteOperationKind.Put
                 ? new RelationalWriteTargetRequest.Put(updateDocumentUuid)
                 : new RelationalWriteTargetRequest.Post(
-                    new ReferentialId(Guid.Parse("99999999-8888-7777-6666-555555555555")),
+                    new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
                     createDocumentUuid
                 ),
             writePlan,
@@ -802,7 +967,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             mappingSet,
             RelationalWriteOperationKind.Post,
             new RelationalWriteTargetRequest.Post(
-                new ReferentialId(Guid.Parse("99999999-8888-7777-6666-555555555555")),
+                new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
                 createDocumentUuid
             ),
             writePlan,
@@ -827,7 +992,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             mappingSet,
             RelationalWriteOperationKind.Post,
             new RelationalWriteTargetRequest.Post(
-                new ReferentialId(Guid.Parse("99999999-8888-7777-6666-555555555555")),
+                new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
                 createDocumentUuid
             ),
             writePlan,
@@ -885,6 +1050,8 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
 
         public bool IsTransientFailureToReturn { get; set; }
 
+        public bool IsUniqueConstraintViolationToReturn { get; set; }
+
         public bool TryClassify(
             DbException exception,
             [NotNullWhen(true)] out RelationalWriteExceptionClassification? classification
@@ -897,7 +1064,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
 
         public bool IsForeignKeyViolation(DbException exception) => false;
 
-        public bool IsUniqueConstraintViolation(DbException exception) => false;
+        public bool IsUniqueConstraintViolation(DbException exception) => IsUniqueConstraintViolationToReturn;
 
         public bool IsTransientFailure(DbException exception)
         {
@@ -924,6 +1091,24 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
     }
 
     internal sealed class StubDbException(string message) : DbException(message);
+
+    private sealed class CapturingLogger : ILogger
+    {
+        public List<(LogLevel Level, Exception? Exception, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        ) => Entries.Add((logLevel, exception, formatter(state, exception)));
+    }
 }
 
 /// <summary>
@@ -1027,7 +1212,7 @@ public class Given_A_Root_Natural_Key_Violation_With_A_Non_Ordinal_Identity
             mappingSet,
             RelationalWriteOperationKind.Post,
             new RelationalWriteTargetRequest.Post(
-                new ReferentialId(Guid.Parse("99999999-8888-7777-6666-555555555555")),
+                new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
                 createDocumentUuid
             ),
             writePlan,

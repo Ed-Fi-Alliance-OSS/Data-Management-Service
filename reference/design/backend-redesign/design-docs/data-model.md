@@ -6,7 +6,8 @@ Draft.
 
 This document is the data-model deep dive for `overview.md`. Descriptor storage below
 reflects the DMS-1404 compact baseline; reference resolution and descriptor filters use the
-natural-key probes, while POST upserts and descriptor writes still use RI. Later natural-key
+natural-key probes, resource POST upserts use the own-natural-key capture, and descriptor writes
+still use RI. Later natural-key
 proposals remain identified as future work and do not change this story's equality or platform
 contract.
 
@@ -129,9 +130,10 @@ CREATE INDEX IX_Document_CreatedByOwnershipTokenId
 
 Notes:
 
-- `DocumentUuid` remains stable across identity updates. Current POST matching and reference
-  resolution use RI; the generated natural-key probes described in
-  [natural-key-resolution.md](natural-key-resolution.md) belong to later stories.
+- `DocumentUuid` remains stable across identity updates. Resource POST matching uses the
+  own-natural-key capture, and reference resolution uses the natural-key probes described in
+  [natural-key-resolution.md](natural-key-resolution.md); descriptor POSTs still match through RI
+  until DMS-1454.
 - `ResourceKeyId` identifies the document’s concrete resource type; use `dms.ResourceKey` for `(ProjectName, ResourceName)` when needed (diagnostics, CDC metadata).
 - `dms.Document` deliberately carries no `(ResourceKeyId, DocumentId)` resource-type scan index. Descriptor paging roots on `dms.Descriptor` via its denormalized `ResourceKeyId` (see §2), while document UUID probes retain their existing path. `FK_Descriptor_DocumentResourceKey` enforces descriptor document/type agreement through `UX_Document_DocumentId_ResourceKeyId`. `FK_Document_ResourceKey` needs no referencing-side index because resource-key seeds are immutable at runtime.
 - `dms.Document` has no `(ContentVersion, DocumentId)` projector-discovery index. Durable
@@ -296,7 +298,7 @@ discriminator output retain their existing columns and behavior.
 The effective date columns remain part of the descriptor field contract, as in legacy ODS.
 DMS uses one shared descriptor table without per-descriptor marker tables.
 
-Descriptor references and identity resolution (natural-key resolution; RI retained for POST upserts and descriptor writes):
+Descriptor references and identity resolution (natural-key resolution; RI retained for descriptor writes):
 
 - Resource tables' stored `DescriptorFk` values are `Int32` and their FKs target
   `dms.Descriptor(DescriptorId)` with existing `NO ACTION` deletion protection. This includes
@@ -313,8 +315,8 @@ Descriptor references and identity resolution (natural-key resolution; RI retain
   trimmed or Unicode-normalized. Descriptor identity components and reference values containing
   NUL or an unpaired surrogate are rejected with a path-attributed 400.
 
-The [natural-key workstream](natural-key-resolution.md) owns later POST upsert capture,
-descriptor-write equality, RI removal and stored-wins semantics.
+The [natural-key workstream](natural-key-resolution.md) owns later descriptor-write equality,
+RI removal and stored-wins semantics.
 Those proposals are not the DMS-1404 runtime contract.
 
 Descriptor update semantics:

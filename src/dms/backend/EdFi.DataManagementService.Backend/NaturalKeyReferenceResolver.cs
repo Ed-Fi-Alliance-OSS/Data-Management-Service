@@ -116,7 +116,7 @@ internal sealed class NaturalKeyReferenceResolver(
 
             var uri = DescriptorUri(reference);
 
-            if (!FitsDescriptorUri(mappingSet.Key.Dialect, uri))
+            if (!NaturalKeyValueConverter.FitsDescriptorUri(mappingSet.Key.Dialect, uri))
             {
                 unmatchable.Add(key);
                 continue;
@@ -411,10 +411,13 @@ internal sealed class NaturalKeyReferenceResolver(
 
             object? value = keyColumn.Binding switch
             {
-                NaturalKeyProbeKeyBinding.Descriptor => FitsDescriptorUri(dialect, rawValue)
+                NaturalKeyProbeKeyBinding.Descriptor => NaturalKeyValueConverter.FitsDescriptorUri(
+                    dialect,
+                    rawValue
+                )
                     ? rawValue
                     : null,
-                NaturalKeyProbeKeyBinding.Scalar scalar => ConvertScalar(
+                NaturalKeyProbeKeyBinding.Scalar scalar => NaturalKeyValueConverter.ConvertScalar(
                     dialect,
                     rawValue,
                     scalar.ScalarType
@@ -435,43 +438,6 @@ internal sealed class NaturalKeyReferenceResolver(
 
         return keyValues;
     }
-
-    private static object? ConvertScalar(SqlDialect dialect, string rawValue, RelationalScalarType scalarType)
-    {
-        if (!RelationalScalarLiteralParser.TryParse(rawValue, scalarType, out var value))
-        {
-            return null;
-        }
-
-        return
-            scalarType.Kind is ScalarKind.String
-            && (
-                // PostgreSQL text cannot hold NUL, so binding it would fail the whole lookup.
-                (dialect == SqlDialect.Pgsql && rawValue.Contains('\0'))
-                || (scalarType.MaxLength is { } maxLength && StoredLength(dialect, rawValue) > maxLength)
-            )
-            ? null
-            : value;
-    }
-
-    /// <summary>
-    /// The length a string column measures: SQL Server <c>nvarchar(n)</c> counts UTF-16 code units, and
-    /// PostgreSQL <c>varchar(n)</c> counts characters.
-    /// </summary>
-    private static int StoredLength(SqlDialect dialect, string value) =>
-        dialect == SqlDialect.Mssql ? value.Length : value.EnumerateRunes().Count();
-
-    /// <summary>
-    /// Whether a descriptor URI can match a stored one. SQL Server's identity collation ignores unweighted
-    /// characters, so there the database decides any URI its lookup can read.
-    /// </summary>
-    private static bool FitsDescriptorUri(SqlDialect dialect, string uri) =>
-        StoredLength(dialect, uri)
-        <= (
-            dialect == SqlDialect.Mssql
-                ? NaturalKeyLookupLimits.MaxMssqlDescriptorUriProbeLength
-                : NaturalKeyLookupLimits.MaxDescriptorUriLength
-        );
 
     private static string DescriptorUri(DescriptorReference reference) =>
         reference.DocumentIdentity.DocumentIdentityElements is [var element]

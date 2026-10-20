@@ -121,7 +121,66 @@ public class Given_A_Mssql_NoProfile_Post_With_Storage_Collapsed_Sibling_Identit
         result.Should().BeOfType<UpsertResult.UpsertFailureValidation>();
         var failure = (UpsertResult.UpsertFailureValidation)result;
         failure.ValidationFailures.Should().ContainSingle();
-        failure.ValidationFailures[0].Message.Should().Contain("received duplicate semantic identity values");
+        failure.ValidationFailures[0].Path.Value.Should().Be("$.addresses");
+        failure
+            .ValidationFailures[0]
+            .Message.Should()
+            .Be(
+                "The 2nd item of the addresses has the same identifying values as another item earlier in the list."
+            );
+    }
+
+    [Test]
+    public async Task It_returns_validation_failure_when_request_contains_case_variant_identity_siblings()
+    {
+        // City is a string semantic-identity member, so SQL Server stores it under the
+        // case-insensitive identity collation: "Austin" and "AUSTIN" would collide on the
+        // collection's unique key. The flattener must reject the pair as a duplicate (400)
+        // before any database write, instead of letting the unique violation surface.
+        var body = new JsonObject
+        {
+            ["schoolId"] = checked((int)SchoolId),
+            ["addresses"] = new JsonArray(
+                new JsonObject { ["city"] = "Austin" },
+                new JsonObject { ["city"] = "AUSTIN" }
+            ),
+        };
+
+        var result = await ExecuteUpsertAsync(body);
+
+        result.Should().BeOfType<UpsertResult.UpsertFailureValidation>();
+        var failure = (UpsertResult.UpsertFailureValidation)result;
+        failure.ValidationFailures.Should().ContainSingle();
+        failure.ValidationFailures[0].Path.Value.Should().Be("$.addresses");
+        failure
+            .ValidationFailures[0]
+            .Message.Should()
+            .Be(
+                "The 2nd item of the addresses has the same identifying values as another item earlier in the list."
+            );
+        (await MssqlProfileTopLevelCollectionMergeSupport.ReadDocumentCountAsync(_database)).Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_returns_non_unique_values_when_siblings_collide_only_under_the_database_collation()
+    {
+        // "Straße" and "Strasse" differ under the in-process OrdinalIgnoreCase comparer, so the
+        // flattener lets them through, but the identity collation equates them and the
+        // collection's unique key rejects the second row. That unattributed unique violation
+        // takes the generic non-unique-values fallback instead of a 500.
+        var body = new JsonObject
+        {
+            ["schoolId"] = checked((int)SchoolId),
+            ["addresses"] = new JsonArray(
+                new JsonObject { ["city"] = "Straße" },
+                new JsonObject { ["city"] = "Strasse" }
+            ),
+        };
+
+        var result = await ExecuteUpsertAsync(body);
+
+        result.Should().BeOfType<UpsertResult.UpsertFailureNonUniqueValues>();
+        (await MssqlProfileTopLevelCollectionMergeSupport.ReadDocumentCountAsync(_database)).Should().Be(0);
     }
 
     private async Task<UpsertResult> ExecuteUpsertAsync(JsonNode body)

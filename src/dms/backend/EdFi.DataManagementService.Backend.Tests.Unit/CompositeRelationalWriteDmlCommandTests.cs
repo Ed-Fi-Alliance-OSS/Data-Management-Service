@@ -975,7 +975,7 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
     ) =>
         CreateInput(
                 new RelationalWriteTargetRequest.Post(
-                    new ReferentialId(Guid.Parse("11111111-2222-3333-4444-555555555555")),
+                    new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
                     CreatedDocumentUuid
                 ),
                 withProposedAuthorization

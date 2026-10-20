@@ -617,6 +617,95 @@ public abstract class NaturalKeyLookupDatabaseTests
     }
 
     [Test]
+    public async Task It_captures_the_stored_document_for_a_scalar_own_natural_key()
+    {
+        (
+            await CaptureAsync(
+                _school,
+                CaptureIdentity(("$.schoolId", SchoolId.ToString(CultureInfo.InvariantCulture)))
+            )
+        )
+            .Should()
+            .Equal(_schoolDocumentId);
+    }
+
+    [Test]
+    public async Task It_captures_through_the_compact_descriptor_id_and_the_abstract_reference_target()
+    {
+        // The decoy Program stores a DescriptorId equal to the career descriptor's DocumentId, so a capture that
+        // compared DocumentId would reach it instead.
+        (await CaptureAsync(_program, CaptureProgramIdentity(ProgramName, CareerUri)))
+            .Should()
+            .Equal(_programDocumentId);
+    }
+
+    [Test]
+    public async Task It_captures_nothing_when_no_stored_row_has_the_identity()
+    {
+        (await CaptureAsync(_program, CaptureProgramIdentity("Unknown Program", CareerUri)))
+            .Should()
+            .BeEmpty();
+        (await CaptureAsync(_program, CaptureProgramIdentity(ProgramName, DecoyUri))).Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_folds_descriptor_uri_case_on_both_engines()
+    {
+        (await CaptureAsync(_program, CaptureProgramIdentity(ProgramName, CareerUri.ToUpperInvariant())))
+            .Should()
+            .Equal(_programDocumentId);
+    }
+
+    [Test]
+    public async Task It_follows_the_engine_identity_collation_for_a_case_variant_scalar()
+    {
+        var captured = await CaptureAsync(
+            _program,
+            CaptureProgramIdentity(ProgramName.ToUpperInvariant(), CareerUri)
+        );
+
+        // SQL Server identity columns use the case-insensitive identity collation; PostgreSQL's are exact.
+        if (IsPgsql)
+        {
+            captured.Should().BeEmpty();
+        }
+        else
+        {
+            captured.Should().Equal(_programDocumentId);
+        }
+    }
+
+    [Test]
+    public async Task It_fails_the_capture_when_the_natural_key_admits_more_than_one_row()
+    {
+        await ExecuteAsync(
+            _connection,
+            _transaction,
+            $"""
+            ALTER TABLE {Table("edfi", "Program")} DROP CONSTRAINT {Q("UX_Program_NK")};
+            DELETE FROM {Table("dms", "ReferentialIdentity")} WHERE {Q("DocumentId")} = @documentId;
+            """,
+            // The duplicate's trigger-maintained referential id equals the original's.
+            ("documentId", _programDocumentId)
+        );
+        await InsertProgramAsync(_connection, ProgramName, CareerDescriptorId, _transaction);
+
+        var act = () => CaptureAsync(_program, CaptureProgramIdentity(ProgramName, CareerUri));
+
+        var exception = (await act.Should().ThrowAsync<DbException>()).Which;
+
+        // A multi-row scalar subquery: PostgreSQL SQLSTATE 21000, SQL Server error 512. Never a silent pick.
+        if (IsPgsql)
+        {
+            exception.SqlState.Should().Be("21000");
+        }
+        else
+        {
+            exception.GetType().GetProperty("Number")!.GetValue(exception).Should().Be(512);
+        }
+    }
+
+    [Test]
     public async Task It_resolves_from_rows_decoded_out_of_a_composite_command_on_a_real_session()
     {
         DocumentReference[] documents =
@@ -771,6 +860,55 @@ public abstract class NaturalKeyLookupDatabaseTests
         new(new ProjectName(resource.ProjectName), new ResourceName(resource.ResourceName), isDescriptor);
 
     private static DocumentIdentity Identity(params (string Path, string Value)[] elements) =>
+        new([
+            .. elements.Select(element => new DocumentIdentityElement(
+                new JsonPath(element.Path),
+                element.Value
+            )),
+        ]);
+
+    /// <summary>
+    /// Runs the POST capture predicate the way the capture statement embeds it, over <c>dms.Document d</c>,
+    /// on the real session executor.
+    /// </summary>
+    private Task<List<long>> CaptureAsync(QualifiedResourceName resource, DocumentIdentity identity)
+    {
+        var predicate = RelationalWriteTargetLookupSupport.BuildNaturalKeyCaptureTargetPredicate(
+            _mappingSet,
+            _mappingSet.WritePlansByResource[resource],
+            identity
+        );
+
+        return ExecuteAsync(
+            new RelationalCommand(
+                $"SELECT d.{Q("DocumentId")} FROM {Table("dms", "Document")} d WHERE {predicate.CommandText};",
+                predicate.Parameters
+            ),
+            static async (reader, cancellationToken) =>
+            {
+                List<long> documentIds = [];
+
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    documentIds.Add(reader.GetFieldValue<long>(0));
+                }
+
+                return documentIds;
+            }
+        );
+    }
+
+    private static DocumentIdentity CaptureProgramIdentity(string programName, string programTypeUri) =>
+        CaptureIdentity(
+            (
+                "$.educationOrganizationReference.educationOrganizationId",
+                SchoolId.ToString(CultureInfo.InvariantCulture)
+            ),
+            ("$.programName", programName),
+            ("$.programTypeDescriptor", programTypeUri)
+        );
+
+    private static DocumentIdentity CaptureIdentity(params (string Path, string Value)[] elements) =>
         new([
             .. elements.Select(element => new DocumentIdentityElement(
                 new JsonPath(element.Path),
@@ -988,11 +1126,17 @@ public abstract class NaturalKeyLookupDatabaseTests
         return rows.ToDictionary(row => Convert.ToInt64(row[0]), row => Convert.ToInt64(row[1]));
     }
 
-    private async Task<long> InsertProgramAsync(DbConnection connection, string programName, int descriptorId)
+    private async Task<long> InsertProgramAsync(
+        DbConnection connection,
+        string programName,
+        int descriptorId,
+        DbTransaction? transaction = null
+    )
     {
-        var documentId = await InsertDocumentAsync(connection, _program);
+        var documentId = await InsertDocumentAsync(connection, _program, transaction);
         await ExecuteAsync(
             connection,
+            transaction,
             $"INSERT INTO {Table("edfi", "Program")} ({Q("DocumentId")}, {Q("EducationOrganization_DocumentId")}, {Q("EducationOrganization_EducationOrganizationId")}, {Q("ProgramTypeDescriptor_DescriptorId")}, {Q("ProgramName")}) VALUES (@documentId, @schoolDocumentId, @schoolId, @descriptorId, @programName);",
             ("documentId", documentId),
             ("schoolDocumentId", _schoolDocumentId),

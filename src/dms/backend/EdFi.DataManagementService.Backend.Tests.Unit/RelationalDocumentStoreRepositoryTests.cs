@@ -9672,7 +9672,9 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Post);
         _capturedExecutorRequest
             .TargetRequest.Should()
-            .BeEquivalentTo(new RelationalWriteTargetRequest.Post(documentInfo.ReferentialId, documentUuid));
+            .BeEquivalentTo(
+                new RelationalWriteTargetRequest.Post(documentInfo.DocumentIdentity, documentUuid)
+            );
         _capturedExecutorRequest
             .WritePlan.Model.Resource.Should()
             .Be(new QualifiedResourceName("Ed-Fi", "School"));
@@ -9741,7 +9743,9 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Post);
         _capturedExecutorRequest
             .TargetRequest.Should()
-            .BeEquivalentTo(new RelationalWriteTargetRequest.Post(documentInfo.ReferentialId, documentUuid));
+            .BeEquivalentTo(
+                new RelationalWriteTargetRequest.Post(documentInfo.DocumentIdentity, documentUuid)
+            );
         _capturedExecutorRequest.ExistingDocumentReadPlan.Should().BeSameAs(expectedReadPlan);
         _capturedExecutorRequest.SelectedBody.Should().BeSameAs(requestBody);
         _capturedExecutorRequest.TraceId.Should().Be(traceId);
@@ -12037,7 +12041,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             .Should()
             .OnlyContain(targetRequest =>
                 targetRequest.Equals(
-                    new RelationalWriteTargetRequest.Post(documentInfo.ReferentialId, documentUuid)
+                    new RelationalWriteTargetRequest.Post(documentInfo.DocumentIdentity, documentUuid)
                 )
             );
         A.CallTo(() => _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorInput>._, A<CancellationToken>._))

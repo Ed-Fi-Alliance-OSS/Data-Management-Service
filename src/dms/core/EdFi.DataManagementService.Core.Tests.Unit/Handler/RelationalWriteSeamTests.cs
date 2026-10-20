@@ -78,7 +78,7 @@ public class Given_Relational_Write_Seam
             .TargetRequest.Should()
             .BeEquivalentTo(
                 new RelationalWriteTargetRequest.Post(
-                    documentInfo.ReferentialId,
+                    documentInfo.DocumentIdentity,
                     ((RelationalWriteTargetRequest.Post)request.TargetRequest).CandidateDocumentUuid
                 )
             );
