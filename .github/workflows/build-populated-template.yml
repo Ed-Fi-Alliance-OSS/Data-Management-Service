@@ -64,9 +64,13 @@ on:
       TEMPLATE_ATTESTATION_PRIVATE_KEY:
         # PKCS#8 ECDSA P-256 private key (PEM) for the 'edfi-alliance-ci' trust-policy
         # producer. Optional: without it the build is UNATTESTED (loud notice) and restore
-        # consumers refuse the published package (fail-closed). Generate with
-        # eng/DatabaseTemplates/new-template-dev-trust.ps1 -Purpose CI; the matching public
-        # key belongs in eng/docker-compose/template-trust-policy.json via a reviewed commit.
+        # consumers refuse the published package (fail-closed). It is an ENVIRONMENT secret of
+        # the protected 'template-attestation-signing' environment, whose deployment refs are
+        # main and v*.*.* tags, never a repository or organization secret: callers pass it by
+        # name, and only build-template on an approved ref sets that environment and so
+        # receives it. Generate with eng/DatabaseTemplates/new-template-dev-trust.ps1 -Purpose CI;
+        # the matching public key belongs in eng/docker-compose/template-trust-policy.json via
+        # a reviewed commit.
         required: false
       SLACK_WEBHOOK_URL:
         required: false
@@ -97,6 +101,12 @@ jobs:
   build-template:
     name: Build Populated Template Package
     if: ${{ github.event_name != 'release' }}
+    # Trusted signing runs only on approved refs (main pushes and dispatches, v*.*.* tags) and
+    # never for pull_request. Elsewhere the job has no environment, so the CI key, an
+    # environment secret, is unreachable and the build is unattested. The environment's own
+    # deployment-ref rules are the boundary pull request code cannot edit; this expression and
+    # the signer step's identical one only keep ineligible runs from asking for the key.
+    environment: ${{ (github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) && 'template-attestation-signing' || '' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -263,18 +273,25 @@ jobs:
             throw "DMS did not become ready within the timeout period"
           }
 
-      # Attestation signing is gated on the TEMPLATE_ATTESTATION_PRIVATE_KEY secret: with it,
-      # the packed template is attested for the tracked-policy producer 'edfi-alliance-ci'
-      # and the companion attestation package is built beside it; without it, the build
-      # proceeds UNATTESTED with a loud notice and restore consumers refuse the package
-      # (fail-closed). The key never touches the workspace: it lands under RUNNER_TEMP and
+      # Attestation signing is gated on a signing-eligible run (the job's environment
+      # expression: main or a v*.*.* tag, never a pull request) and on the
+      # TEMPLATE_ATTESTATION_PRIVATE_KEY secret: with both, the packed template is attested for
+      # the tracked-policy producer 'edfi-alliance-ci' and the companion attestation package is
+      # built beside it; otherwise the build proceeds UNATTESTED with a loud notice and restore
+      # consumers refuse the package (fail-closed). An ineligible run never puts the key in this
+      # step's environment. The key never touches the workspace: it lands under RUNNER_TEMP and
       # is removed by the cleanup step below.
       - name: Materialize attestation signing key
         id: attestation-signer
         env:
-          TEMPLATE_ATTESTATION_PRIVATE_KEY: ${{ secrets.TEMPLATE_ATTESTATION_PRIVATE_KEY }}
+          SIGNING_ELIGIBLE: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+          TEMPLATE_ATTESTATION_PRIVATE_KEY: ${{ (github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) && secrets.TEMPLATE_ATTESTATION_PRIVATE_KEY || '' }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:TEMPLATE_ATTESTATION_PRIVATE_KEY)) {
+          if ($env:SIGNING_ELIGIBLE -ne 'true') {
+            Write-Host "::notice title=Unattested template build::Only main and v*.*.* tag runs (never pull requests) sign template packages; this template package will be UNATTESTED and restore consumers will refuse it (fail-closed)."
+            "signer-available=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+          elseif ([string]::IsNullOrWhiteSpace($env:TEMPLATE_ATTESTATION_PRIVATE_KEY)) {
             Write-Host "::notice title=Unattested template build::TEMPLATE_ATTESTATION_PRIVATE_KEY is not configured; this template package will be UNATTESTED and restore consumers will refuse it (fail-closed)."
             "signer-available=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           }

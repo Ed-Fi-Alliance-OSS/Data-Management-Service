@@ -23,8 +23,11 @@
     CI: generates the keypair for the shared CI producer into a caller-supplied output
     directory and prints the tracked-policy producer block. Nothing tracked or local is
     modified: a repository administrator installs the private half as the
-    TEMPLATE_ATTESTATION_PRIVATE_KEY Actions secret and the printed block is added to the
-    tracked eng/docker-compose/template-trust-policy.json in a reviewed commit.
+    TEMPLATE_ATTESTATION_PRIVATE_KEY secret of the protected 'template-attestation-signing'
+    GitHub environment, whose deployment branches and tags are limited to main and v*.*.*
+    (never as a repository or organization secret, which pull request jobs could read), and
+    the printed block is added to the tracked eng/docker-compose/template-trust-policy.json in
+    a reviewed commit.
 
     Key rotation is deliberately manual: an existing key file or an existing producer entry
     is never overwritten; remove them explicitly first.
@@ -135,7 +138,9 @@ if ($Purpose -eq "CI") {
     $trackedPolicyProducerJson = $producerEntry | ConvertTo-Json -Depth 4
 
     Write-Host "CI attestation signer generated." -ForegroundColor Green
-    Write-Host "  1. Install the PRIVATE key as the repository Actions secret TEMPLATE_ATTESTATION_PRIVATE_KEY:"
+    Write-Host "  1. Install the PRIVATE key as the secret TEMPLATE_ATTESTATION_PRIVATE_KEY of the GitHub environment"
+    Write-Host "     'template-attestation-signing', with deployment branches and tags limited to main and v*.*.*."
+    Write-Host "     Never install it as a repository or organization secret: pull request jobs can read those."
     Write-Host "       $privateKeyPath"
     Write-Host "     Then delete the file. Never commit it."
     Write-Host "  2. Add this producer entry to the tracked eng/docker-compose/template-trust-policy.json 'producers' array in a reviewed commit:"

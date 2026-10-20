@@ -1002,4 +1002,15 @@ Describe "Assert-RestoreTargetDatabaseNameSafe" {
         { Assert-RestoreTargetDatabaseNameSafe -DatabaseEngine mssql -TargetDatabaseName "edfi_datamanagementservice" -SeparateConfigDatabase } |
             Should -Throw "*requires the effective Configuration Service database name*"
     }
+
+    It "on SQL Server, never allows the separate topology's fixed edfi_configurationservice, whatever the effective Configuration Service name (<Target>)" -ForEach @(
+        @{ Target = "edfi_configurationservice" }
+        @{ Target = "EDFI_ConfigurationService" }
+    ) {
+        { Assert-RestoreTargetDatabaseNameSafe -DatabaseEngine mssql -TargetDatabaseName $Target -SeparateConfigDatabase -EffectiveConfigDatabaseName "ambient_cms" } |
+            Should -Throw "*resolves to 'edfi_configurationservice'*Restore never replaces a separate CMS database."
+        # Shared topology restores into the shared database by design; the fixed name is not
+        # refused there.
+        { Assert-RestoreTargetDatabaseNameSafe -DatabaseEngine mssql -TargetDatabaseName $Target } | Should -Not -Throw
+    }
 }

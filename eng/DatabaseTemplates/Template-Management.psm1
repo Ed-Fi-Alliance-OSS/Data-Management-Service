@@ -1193,7 +1193,12 @@ function Restore-TemplatePackage {
     The MSSQL "sa" password. Defaults to environment variable MSSQL_SA_PASSWORD or "abcdefgh1!".
 
 .EXAMPLE
-    Build-TemplateNuGetPackage -ConfigFilePath "./MinimalTemplateSettings.psd1" -StandardVersion "5.3.0" -PackageVersion "1.0.0"
+    # From eng/DatabaseTemplates: the ApiSchema files the source stack was provisioned from,
+    # as its staged workspace lists them.
+    $schemaFiles = & (Import-Module ../docker-compose/bootstrap-restore.psm1 -PassThru) {
+        (Get-RestoreCandidateSchemaFact -CandidateDirectory (Resolve-Path ../docker-compose/.bootstrap).Path).SchemaFilePaths
+    }
+    Build-TemplateNuGetPackage -ConfigFilePath "./MinimalTemplateSettings.psd1" -TemplateKind Minimal -StandardVersion "5.3.0" -PackageVersion "1.0.0" -SchemaFilePath $schemaFiles
 #>
 function Build-TemplateNuGetPackage {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Template tooling intentionally writes operator progress to the console.')]
@@ -2141,7 +2146,11 @@ enum TemplateType {
         -ConfigFilePath "./MinimalTemplateSettings.psd1" `
         -StandardVersion "5.3.0" `
         -PackageVersion "1.0.0" `
-        -PostgresPassword "mypassword"
+        -PostgresPassword "mypassword" `
+        -SchemaFilePath $schemaFiles
+
+    $schemaFiles names the ApiSchema files the source stack was provisioned from; see the
+    Build-TemplateNuGetPackage example for reading them from its staged workspace.
 #>
 function Build-Template {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The PostgreSQL and MSSQL passwords are handed to a database connection string / sqlcmd where they must be plaintext; there is no companion username credential and a PSCredential adds no protection across that boundary.')]

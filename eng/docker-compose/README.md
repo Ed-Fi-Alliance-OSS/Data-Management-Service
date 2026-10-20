@@ -490,6 +490,9 @@ These refusals also happen before anything is restored:
 
 * `-EnableKafkaCdc`: a restore skips the provision phase that produces the CDC provisioning
   receipt. Enable CDC on a bootstrap that provisions its own schema.
+* `-IncludeE2EClaimSets` (an option of the shared `Invoke-BootstrapWrapper` that the Kafka CDC
+  E2E setup passes; the wrapper scripts do not expose it): the restore candidate stages claims
+  without the test-only E2E claim sets, so they would be silently dropped.
 * `-d` (with or without `-v`) together with `-RestoreTemplate` or `-PackageDirectory`: teardown
   and restore are separate invocations, and nothing is torn down.
 * A retained CDC deployment for the wrapper's compose project (`dms-local` or `dms-published`):

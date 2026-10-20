@@ -2550,6 +2550,57 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "configure dataStore=[`$Dat
             )
         }
 
+        It "SQL Server separate topology: refuses MSSQL_DB_NAME=<Target> while an ambient CONFIGURATION_SERVICE_DATABASE_NAME names another database, before any candidate, Docker, or target work" -ForEach @(
+            @{ Target = "edfi_configurationservice" }
+            @{ Target = "EDFI_ConfigurationService" }
+        ) {
+            # The SQL Server separate topology's CMS database is edfi_configurationservice; the
+            # check that enforces it runs only at the CMS-participating start, after restore. An
+            # ambient override moves the effective CMS name the exclusion compares against, so
+            # only the fixed name keeps the real CMS database out of reach.
+            # MSSQL_DB_NAME comes from the engine overlay the wrapper composes onto the base env
+            # (this fixture is per-test, so its copy is edited in place).
+            $mssqlOverlay = Join-Path $script:repo.DockerComposeRoot ".env.mssql"
+            $overlayLines = @(Get-Content -LiteralPath $mssqlOverlay)
+            @($overlayLines | Where-Object { $_ -clike "MSSQL_DB_NAME=*" }) | Should -HaveCount 1
+            $overlayLines -creplace '^MSSQL_DB_NAME=.*$', "MSSQL_DB_NAME=$Target" | Set-Content -LiteralPath $mssqlOverlay -Encoding utf8
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
+            $realModule = Install-RealRestoreCandidateAndTarget -LogPath $script:restoreLog -DockerComposeRoot $script:repo.DockerComposeRoot
+            $log = $script:restoreLog
+            # The real guard, logging what the wrapper hands it.
+            Set-Item function:global:Assert-RestoreTargetDatabaseNameSafe {
+                param($DatabaseEngine, $TargetDatabaseName, [switch]$SeparateConfigDatabase, $EffectiveConfigDatabaseName)
+                Add-Content -LiteralPath $log -Value "restore:name-safety target=$TargetDatabaseName cms=[$EffectiveConfigDatabaseName]"
+                $guardArguments = $PSBoundParameters
+                & $realModule { param($arguments) Assert-RestoreTargetDatabaseNameSafe @arguments } $guardArguments
+            }.GetNewClosure()
+            $savedAmbient = [System.Environment]::GetEnvironmentVariable("CONFIGURATION_SERVICE_DATABASE_NAME")
+            $env:CONFIGURATION_SERVICE_DATABASE_NAME = "ambient_cms"
+            try {
+                { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -DatabaseEngine mssql -SeparateConfigDatabase -RestoreTemplate Minimal } |
+                    Should -Throw "The restore target database resolves to 'edfi_configurationservice', the dedicated Configuration Service database the SQL Server separate topology selected by -SeparateConfigDatabase uses. Restore never replaces a separate CMS database."
+
+                # The refusal is the parameter-time check: nothing after it ran - no package work,
+                # candidate, stop proof, Docker command, database-only start, or replacement.
+                @(Get-Content -LiteralPath $script:restoreLog) | Should -Be @(
+                    "restore:resolve-target engine=mssql target=$Target"
+                    "restore:name-safety target=$Target cms=[ambient_cms]"
+                )
+                # No candidate and no active workspace: only the (emptied) derived-env directory the
+                # wrapper's env resolution uses remains.
+                $restoreRoot = Join-Path $script:repo.DockerComposeRoot ".bootstrap-restore"
+                @(Get-ChildItem -LiteralPath $restoreRoot -Recurse -Force -File -ErrorAction SilentlyContinue) | Should -HaveCount 0
+                @(Get-ChildItem -LiteralPath $restoreRoot -Force -Directory -ErrorAction SilentlyContinue | ForEach-Object Name) | Should -Be @("derived")
+                Test-Path -LiteralPath (Join-Path $script:repo.DockerComposeRoot ".bootstrap") | Should -BeFalse
+            }
+            finally {
+                if ($null -eq $savedAmbient) { Remove-Item Env:\CONFIGURATION_SERVICE_DATABASE_NAME -ErrorAction SilentlyContinue }
+                else { $env:CONFIGURATION_SERVICE_DATABASE_NAME = $savedAmbient }
+                Remove-Module -ModuleInfo $realModule -Force -ErrorAction SilentlyContinue
+                Remove-Item Env:\DMS_BOOTSTRAP_ROOT_OVERRIDE -ErrorAction SilentlyContinue
+            }
+        }
+
         It "PostgreSQL: the preflight drop before the commit is required, the later drops are not (<Case>)" -ForEach @(
             @{ Case = "drop succeeds"; FailRequired = $false }
             @{ Case = "required drop fails"; FailRequired = $true }

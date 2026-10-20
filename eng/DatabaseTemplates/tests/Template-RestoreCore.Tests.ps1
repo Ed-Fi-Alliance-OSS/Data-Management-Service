@@ -789,11 +789,52 @@ Describe "PostgreSQL template ownership finalization" {
         @{ Case = "a case-variant enqueue owner name"; Row = 'function|EDFI_DMS_ENQUEUE_OWNER|dms.f()'; Named = 'function dms.f() (owner EDFI_DMS_ENQUEUE_OWNER)' }
     ) {
         { ConvertTo-PostgresqlTemplateOwnershipFinalizationSql -OwnershipRow @('function|edfi_dms_enqueue_owner|dms.ok()', $Row) } |
-            Should -Throw "*cannot reproduce: $Named.*Nothing was dumped or packaged*"
+            Should -Throw "The template source carries ownership the authoritative DMS DDL does not produce: $Named.*Nothing was dumped or packaged."
     }
 
     It "rejects a malformed ownership row" {
         { ConvertTo-PostgresqlTemplateOwnershipFinalizationSql -OwnershipRow @("function|edfi_dms_enqueue_owner") } | Should -Throw "*malformed row*"
+    }
+
+    It "without -SchemaName, reads ownership from every schema outside the PostgreSQL system schemas" {
+        $sql = Get-PostgresqlTemplateOwnershipQuerySql
+
+        $sql | Should -BeLike "*WHERE x.ns !~ '^pg_' AND x.ns <> 'information_schema' AND x.owner <> (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = current_user)*"
+        $sql | Should -Not -BeLike "*x.ns IN (*"
+    }
+
+    It "refuses an empty -SchemaName rather than emitting an empty IN list" {
+        { Get-PostgresqlTemplateOwnershipQuerySql -SchemaName @() } | Should -Throw "*needs at least one schema name*"
+    }
+}
+
+Describe "Assert-PostgresqlArtifactOwnership" {
+    It "accepts the enqueue owner's functions and the built-in public schema owner, returning only the functions" {
+        $functions = Assert-PostgresqlArtifactOwnership -SourceDescription "Scratch" -FailureSuffix "Refused." -OwnershipRow @(
+            'function|edfi_dms_enqueue_owner|dms."TF_Document_EnqueueProjectionInsert"()',
+            'schema|pg_database_owner|public',
+            ''
+        )
+
+        @($functions) | Should -Be @('dms."TF_Document_EnqueueProjectionInsert"()')
+    }
+
+    It "accepts a database the connected administrator owns entirely (the query returns no rows)" {
+        @(Assert-PostgresqlArtifactOwnership -SourceDescription "Scratch" -FailureSuffix "Refused." -OwnershipRow @()) | Should -HaveCount 0
+    }
+
+    It "refuses <Case>, keeping each owner exception to its own object kind" -ForEach @(
+        @{ Case = "an unexpected existing role owning a table"; Row = 'relation|reporting_reader|dms."Document"'; Named = 'relation dms."Document" (owner reporting_reader)' }
+        @{ Case = "an unexpected role owning a function"; Row = 'function|reporting_reader|dms.uuidv5(namespace_uuid uuid, name_text text)'; Named = 'function dms.uuidv5(namespace_uuid uuid, name_text text) (owner reporting_reader)' }
+        @{ Case = "the enqueue owner owning a table"; Row = 'relation|edfi_dms_enqueue_owner|dms."DocumentProjectionWork"'; Named = 'relation dms."DocumentProjectionWork" (owner edfi_dms_enqueue_owner)' }
+        @{ Case = "the enqueue owner owning a schema"; Row = 'schema|edfi_dms_enqueue_owner|dms'; Named = 'schema dms (owner edfi_dms_enqueue_owner)' }
+        @{ Case = "pg_database_owner owning a DMS schema"; Row = 'schema|pg_database_owner|dms'; Named = 'schema dms (owner pg_database_owner)' }
+        @{ Case = "pg_database_owner owning a DMS table"; Row = 'relation|pg_database_owner|dms."Document"'; Named = 'relation dms."Document" (owner pg_database_owner)' }
+        @{ Case = "pg_database_owner owning a function in public"; Row = 'function|pg_database_owner|public.f()'; Named = 'function public.f() (owner pg_database_owner)' }
+        @{ Case = "an unexpected role owning the public schema"; Row = 'schema|reporting_reader|public'; Named = 'schema public (owner reporting_reader)' }
+    ) {
+        { Assert-PostgresqlArtifactOwnership -SourceDescription "Restore scratch database 'x'" -FailureSuffix "Refused." -OwnershipRow @('schema|pg_database_owner|public', $Row) } |
+            Should -Throw "Restore scratch database 'x' carries ownership the authoritative DMS DDL does not produce: $Named. Only the administrator, edfi_dms_enqueue_owner (functions only), and pg_database_owner (the public schema only) may own objects. Refused."
     }
 }
 
@@ -1391,9 +1432,24 @@ Describe "Assert-DmsOnlyInventory" {
 }
 
 Describe "Get-RelationalMappingVersionFromSource" {
-    It "reads the authoritative constant from the real repo source file" {
+    It "reads the constant's exact value from a C# source file" {
+        $fixturePath = Join-Path $TestDrive "SchemaHashConstants.cs"
+        @(
+            'namespace EdFi.DataManagementService.Core.Utilities;',
+            '',
+            'internal static class SchemaHashConstants',
+            '{',
+            '    /// RelationalMappingVersion is mentioned here without being declared.',
+            '    public const string RelationalMappingVersion = "v42";',
+            '}'
+        ) | Set-Content -LiteralPath $fixturePath -Encoding utf8
+
+        Get-RelationalMappingVersionFromSource -SchemaHashConstantsPath $fixturePath | Should -Be "v42"
+    }
+
+    It "reads a v<number> constant from the real repo source file, whatever the release line's value" {
         $constantsPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../src/dms/core/EdFi.DataManagementService.Core/Utilities/SchemaHashConstants.cs"))
-        Get-RelationalMappingVersionFromSource -SchemaHashConstantsPath $constantsPath | Should -Be "v3"
+        Get-RelationalMappingVersionFromSource -SchemaHashConstantsPath $constantsPath | Should -MatchExactly '^v[0-9]+$'
     }
 
     It "fails on a missing file or an ambiguous constant" {

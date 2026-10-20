@@ -2159,18 +2159,29 @@ function Get-PostgresqlTemplateOwnershipQuerySql {
     the restoring administrator owns everything, exactly as provisioning would. These rows are
     the ownership that --no-owner would otherwise drop. Identities are pre-quoted (%I), and the
     identity is the last field because a quoted name may itself contain the separator.
+
+    Without -SchemaName the rows cover every schema outside the PostgreSQL system schemas (the
+    privilege query's scope): the consumer's scratch validation reads ownership that way, because
+    a replay is not confined to the schemas a manifest names.
     #>
     param (
-        [Parameter(Mandatory = $true)]
         [string[]]$SchemaName
     )
 
-    foreach ($name in $SchemaName) {
-        if ($name -cnotmatch '^[A-Za-z0-9_]+\z') {
-            throw "Dumped schema name '$name' contains unsupported characters. Only letters, digits, and underscores are allowed."
+    $schemaFilter = if ($PSBoundParameters.ContainsKey("SchemaName")) {
+        if (@($SchemaName).Count -eq 0) {
+            throw "Get-PostgresqlTemplateOwnershipQuerySql -SchemaName needs at least one schema name."
         }
+        foreach ($name in $SchemaName) {
+            if ($name -cnotmatch '^[A-Za-z0-9_]+\z') {
+                throw "Dumped schema name '$name' contains unsupported characters. Only letters, digits, and underscores are allowed."
+            }
+        }
+        "x.ns IN (" + (($SchemaName | ForEach-Object { "'" + $_ + "'" }) -join ", ") + ")"
     }
-    $schemaList = ($SchemaName | ForEach-Object { "'" + $_ + "'" }) -join ", "
+    else {
+        "x.ns !~ '^pg_' AND x.ns <> 'information_schema'"
+    }
 
     return @(
         "SELECT x.kind || '|' || pg_catalog.pg_get_userbyid(x.owner) || '|' || x.identity FROM (",
@@ -2183,7 +2194,7 @@ function Get-PostgresqlTemplateOwnershipQuerySql {
         "    FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace",
         "    WHERE $(Get-PostgresqlStandaloneTypeFilterSql)",
         ") x",
-        "WHERE x.ns IN ($schemaList) AND x.owner <> (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = current_user)",
+        "WHERE $schemaFilter AND x.owner <> (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = current_user)",
         "ORDER BY 1;"
     ) -join "`n"
 }
@@ -2206,28 +2217,70 @@ function ConvertTo-PostgresqlTemplateOwnershipFinalizationSql {
         [string[]]$OwnershipRow
     )
 
+    $enqueueOwnedFunctions = @(Assert-PostgresqlArtifactOwnership `
+            -OwnershipRow $OwnershipRow `
+            -SourceDescription "The template source" `
+            -FailureSuffix "A portable dump cannot reproduce it without naming a source role. Nothing was dumped or packaged.")
+    $statements = @($enqueueOwnedFunctions | ForEach-Object { "ALTER FUNCTION $_ OWNER TO `"edfi_dms_enqueue_owner`";" })
+
+    return (@("", "-- Ownership the --no-owner dump does not carry (DMS template finalization).") + $statements) -join "`n"
+}
+
+function Assert-PostgresqlArtifactOwnership {
+    <#
+    .SYNOPSIS
+    Fails unless every row of Get-PostgresqlTemplateOwnershipQuerySql (the objects the connected
+    administrator does not own) is ownership the authoritative DMS DDL produces, and returns the
+    identities of the functions edfi_dms_enqueue_owner owns. Shared by the producer's ownership
+    finalization (before pg_dump) and the consumer's scratch validation (before the target is
+    touched), so both judge ownership by one rule set.
+
+    .DESCRIPTION
+    Everything belongs to the connected administrator (the dumping one at the producer, the
+    restoring one, whatever its name, at the consumer) except, each scoped to its object kind:
+    functions owned by edfi_dms_enqueue_owner (the SECURITY DEFINER enqueue trigger functions),
+    and the public schema owned by pg_database_owner (PostgreSQL's built-in owner of a new
+    database's public schema). Ownership comes from the catalog's owner columns, not from ACLs,
+    so an object whose ACL expands to no privilege rows is still judged.
+    #>
+    param (
+        [AllowEmptyCollection()]
+        [AllowNull()]
+        [string[]]$OwnershipRow,
+
+        [Parameter(Mandatory = $true)]
+        [string]$SourceDescription,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FailureSuffix
+    )
+
     $enqueueOwnerRoleName = "edfi_dms_enqueue_owner"
-    $statements = [System.Collections.Generic.List[string]]::new()
+    $enqueueOwnedFunctions = [System.Collections.Generic.List[string]]::new()
     $unsupported = [System.Collections.Generic.List[string]]::new()
 
     foreach ($rawRow in @($OwnershipRow)) {
         if ([string]::IsNullOrWhiteSpace($rawRow)) { continue }
         $fields = $rawRow.Trim() -split '\|', 3
         if ($fields.Count -ne 3 -or [string]::IsNullOrWhiteSpace($fields[2])) {
-            throw "Template ownership query returned a malformed row (expected 'kind|owner|identity'): '$rawRow'."
+            throw "$SourceDescription returned a malformed row (expected 'kind|owner|identity'): '$rawRow'. $FailureSuffix"
         }
-        if ($fields[0] -ceq "function" -and $fields[1] -ceq $enqueueOwnerRoleName) {
-            $statements.Add("ALTER FUNCTION $($fields[2]) OWNER TO `"$enqueueOwnerRoleName`";")
+        $kind, $owner, $identity = $fields
+        if ($kind -ceq "function" -and $owner -ceq $enqueueOwnerRoleName) {
+            $enqueueOwnedFunctions.Add($identity)
             continue
         }
-        $unsupported.Add("$($fields[0]) $($fields[2]) (owner $($fields[1]))")
+        if ($kind -ceq "schema" -and $identity -ceq "public" -and $owner -ceq "pg_database_owner") {
+            continue
+        }
+        $unsupported.Add("$kind $identity (owner $owner)")
     }
 
     if ($unsupported.Count -gt 0) {
-        throw "The template source carries ownership a portable dump cannot reproduce: $($unsupported -join ', '). Only the dumping administrator and $enqueueOwnerRoleName (functions only) may own dumped objects. Nothing was dumped or packaged."
+        throw "$SourceDescription carries ownership the authoritative DMS DDL does not produce: $($unsupported -join ', '). Only the administrator, $enqueueOwnerRoleName (functions only), and pg_database_owner (the public schema only) may own objects. $FailureSuffix"
     }
 
-    return (@("", "-- Ownership the --no-owner dump does not carry (DMS template finalization).") + $statements) -join "`n"
+    return [string[]]$enqueueOwnedFunctions.ToArray()
 }
 
 function Get-PostgresqlPrivilegeQuerySql {
@@ -2278,7 +2331,8 @@ function Assert-PostgresqlArtifactPrivilege {
 
     .DESCRIPTION
     Only granted privileges are judged; roles that merely exist on the cluster are not. Allowed:
-    every privilege an object's owner holds; PUBLIC's built-in defaults (EXECUTE on functions,
+    every privilege an object's owner holds (who may own what is Assert-PostgresqlArtifactOwnership's
+    rule, which both callers apply too); PUBLIC's built-in defaults (EXECUTE on functions,
     USAGE on types, USAGE on the public schema); and exactly the grants the core DDL emitter
     makes to edfi_dms_enqueue_owner (USAGE on schema dms, SELECT/INSERT/UPDATE on
     dms.DocumentProjectionWork, SELECT on dms.DocumentCacheState). The SECURITY DEFINER
@@ -2478,6 +2532,7 @@ Export-ModuleMember -Function `
     Get-PostgresqlRestoreGlobalRoleSql, `
     Get-PostgresqlTemplateOwnershipQuerySql, `
     ConvertTo-PostgresqlTemplateOwnershipFinalizationSql, `
+    Assert-PostgresqlArtifactOwnership, `
     Get-PostgresqlPrivilegeQuerySql, `
     Assert-PostgresqlArtifactPrivilege, `
     Get-SourceIdentitySelectSql, `

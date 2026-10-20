@@ -16,6 +16,50 @@
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Pester stubs intentionally keep production-compatible signatures.')]
 param()
 
+BeforeAll {
+    # The one signing-eligibility rule: never a pull request, and only main or a v*.*.* tag.
+    # Each reusable workflow states it three times (the job's environment, the signer step's
+    # SIGNING_ELIGIBLE, and the gate on the key itself), and the tests require each verbatim.
+    $script:signingEligibleExpression = "github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))"
+
+    function script:Test-SigningEligibleExpression {
+        # Evaluates the workflow expression for one event and ref by translating its few
+        # operators into PowerShell, with GitHub's case-insensitive string comparison. Any token
+        # outside that vocabulary survives the translation and fails to parse, so a changed rule
+        # cannot pass by being ignored.
+        param([string]$Expression, [string]$EventName, [string]$Ref)
+
+        $translated = $Expression.
+            Replace("github.event_name", '$EventName').
+            Replace("github.ref", '$Ref').
+            Replace("!=", "-ine").
+            Replace("==", "-ieq").
+            Replace("&&", "-and").
+            Replace("||", "-or")
+        $translated = [regex]::Replace($translated, "startsWith\(\`$Ref, '([^']*)'\)", '$Ref.StartsWith(''$1'', [StringComparison]::OrdinalIgnoreCase)')
+        return [bool](& ([scriptblock]::Create("param(`$EventName, `$Ref) $translated")) $EventName $Ref)
+    }
+
+    function script:Get-WorkflowStepRunScript {
+        # The run block of one step, cut from the workflow text with its indentation removed.
+        param([string]$Content, [string]$StepName)
+
+        $lines = $Content -split "`n"
+        $stepIndex = [array]::IndexOf($lines, "      - name: $StepName")
+        $stepIndex | Should -BeGreaterThan 0
+        $runIndex = $stepIndex + 1
+        while ($lines[$runIndex] -ne "        run: |") {
+            $lines[$runIndex] | Should -Match '^ {8,}\S' -Because "the step's own keys precede its run block"
+            $runIndex++
+        }
+        $body = foreach ($line in $lines[($runIndex + 1)..($lines.Count - 1)]) {
+            if ($line.Trim().Length -gt 0 -and -not $line.StartsWith("          ")) { break }
+            if ($line.Length -ge 10) { $line.Substring(10) } else { "" }
+        }
+        return ($body -join "`n")
+    }
+}
+
 Describe "template build workflow attestation wiring (<WorkflowFile>)" -ForEach @(
     @{ WorkflowFile = "build-minimal-template.yml"; GenerateStepName = "Generate Minimal Template package"; PushStepName = "Push Minimal Template Package to Azure" }
     @{ WorkflowFile = "build-populated-template.yml"; GenerateStepName = "Generate Populated Template package"; PushStepName = "Push Populated Template Package to Azure" }
@@ -29,18 +73,76 @@ Describe "template build workflow attestation wiring (<WorkflowFile>)" -ForEach 
     It "declares TEMPLATE_ATTESTATION_PRIVATE_KEY as an optional workflow_call secret" {
         $secretIndex = $script:content.IndexOf("TEMPLATE_ATTESTATION_PRIVATE_KEY:")
         $secretIndex | Should -BeGreaterThan 0
-        $declarationTail = $script:content.Substring($secretIndex, 600)
-        $declarationTail.Contains("required: false") | Should -BeTrue
+        # The declaration's first key after its comment block.
+        $requiredIndex = $script:content.IndexOf("required:", $secretIndex)
+        $script:content.Substring($requiredIndex, "required: false".Length) | Should -Be "required: false"
+        $script:content.IndexOf("outputs:", $secretIndex) | Should -BeGreaterThan $requiredIndex
     }
 
     It "materializes the signing key from the secret, under RUNNER_TEMP, with a loud unattested notice on the skip path" {
         $script:content.Contains("- name: Materialize attestation signing key") | Should -BeTrue
         $script:content.Contains("id: attestation-signer") | Should -BeTrue
-        $script:content.Contains('TEMPLATE_ATTESTATION_PRIVATE_KEY: ${{ secrets.TEMPLATE_ATTESTATION_PRIVATE_KEY }}') | Should -BeTrue
+        $script:content.Contains("TEMPLATE_ATTESTATION_PRIVATE_KEY: `${{ ($script:signingEligibleExpression) && secrets.TEMPLATE_ATTESTATION_PRIVATE_KEY || '' }}") | Should -BeTrue
         $script:content.Contains('$env:RUNNER_TEMP "template-attestation-signer.pem"') | Should -BeTrue
         $script:content.Contains("will be UNATTESTED and restore consumers will refuse it (fail-closed)") | Should -BeTrue
         $script:content.Contains('"signer-available=false"') | Should -BeTrue
         $script:content.Contains('"signer-available=true"') | Should -BeTrue
+    }
+
+    It "binds only build-template, and only on a signing-eligible run, to the protected signing environment" {
+        $environmentLines = @($script:content -split "`n" | Where-Object { $_ -match '^\s*environment:' })
+        $environmentLines | Should -Be @("    environment: `${{ ($script:signingEligibleExpression) && 'template-attestation-signing' || '' }}")
+
+        $jobStart = $script:content.IndexOf("`n  build-template:`n")
+        $jobEnd = $script:content.IndexOf("`n  generate-package-sbom:`n")
+        $environmentIndex = $script:content.IndexOf($environmentLines[0])
+        $environmentIndex | Should -BeGreaterThan $jobStart
+        $environmentIndex | Should -BeLessThan $jobEnd
+        # The key reaches the job only through that environment: the step gates on the same rule.
+        $script:content.Contains("SIGNING_ELIGIBLE: `${{ $script:signingEligibleExpression }}") | Should -BeTrue
+    }
+
+    It "decides signing eligibility for <Case>" -ForEach @(
+        @{ Case = "a pull request (merge ref)"; EventName = "pull_request"; Ref = "refs/pull/1185/merge"; Eligible = $false }
+        @{ Case = "a pull request, even one whose ref reads as main"; EventName = "pull_request"; Ref = "refs/heads/main"; Eligible = $false }
+        @{ Case = "a push to main"; EventName = "push"; Ref = "refs/heads/main"; Eligible = $true }
+        @{ Case = "a release tag push"; EventName = "push"; Ref = "refs/tags/v8.1.0"; Eligible = $true }
+        @{ Case = "a manual dispatch from main"; EventName = "workflow_dispatch"; Ref = "refs/heads/main"; Eligible = $true }
+        @{ Case = "a manual dispatch from a feature branch"; EventName = "workflow_dispatch"; Ref = "refs/heads/DMS-1271"; Eligible = $false }
+        @{ Case = "a push to a branch named like main"; EventName = "push"; Ref = "refs/heads/main-backport"; Eligible = $false }
+    ) {
+        Test-SigningEligibleExpression -Expression $script:signingEligibleExpression -EventName $EventName -Ref $Ref | Should -Be $Eligible
+    }
+
+    It "the signer step writes the key only on an eligible run that has it (<Case>)" -ForEach @(
+        @{ Case = "ineligible run, key present"; Eligible = "false"; Key = "-----BEGIN PRIVATE KEY-----"; Available = "false"; Notice = "*Only main and v*.*.* tag runs (never pull requests) sign template packages*" }
+        @{ Case = "eligible run, key missing"; Eligible = "true"; Key = ""; Available = "false"; Notice = "*TEMPLATE_ATTESTATION_PRIVATE_KEY is not configured*" }
+        @{ Case = "eligible run, key present"; Eligible = "true"; Key = "-----BEGIN PRIVATE KEY-----"; Available = "true"; Notice = $null }
+    ) {
+        $runnerTemp = (New-Item -ItemType Directory -Path (Join-Path $TestDrive "signer-$([Guid]::NewGuid().ToString('n'))")).FullName
+        $outputFile = Join-Path $runnerTemp "github-output"
+        $saved = @{}
+        foreach ($name in @("SIGNING_ELIGIBLE", "TEMPLATE_ATTESTATION_PRIVATE_KEY", "RUNNER_TEMP", "GITHUB_OUTPUT")) {
+            $saved[$name] = [System.Environment]::GetEnvironmentVariable($name)
+        }
+        try {
+            $env:SIGNING_ELIGIBLE = $Eligible
+            [System.Environment]::SetEnvironmentVariable("TEMPLATE_ATTESTATION_PRIVATE_KEY", $Key)
+            $env:RUNNER_TEMP = $runnerTemp
+            $env:GITHUB_OUTPUT = $outputFile
+
+            $printed = @(& ([scriptblock]::Create((Get-WorkflowStepRunScript -Content $script:content -StepName "Materialize attestation signing key"))) 6>&1 | ForEach-Object { "$_" })
+
+            @(Get-Content -LiteralPath $outputFile) | Should -Contain "signer-available=$Available"
+            Test-Path -LiteralPath (Join-Path $runnerTemp "template-attestation-signer.pem") | Should -Be ($Available -eq "true")
+            if ($null -ne $Notice) { ($printed -join "`n") | Should -BeLike $Notice }
+        }
+        finally {
+            foreach ($name in $saved.Keys) {
+                if ($null -eq $saved[$name]) { Remove-Item "Env:\$name" -ErrorAction SilentlyContinue }
+                else { [System.Environment]::SetEnvironmentVariable($name, $saved[$name]) }
+            }
+        }
     }
 
     It "gates the Build-Template attestation arguments on the signer output and binds the edfi-alliance-ci producer" {
@@ -110,8 +212,11 @@ Describe "template build workflow attestation wiring (<WorkflowFile>)" -ForEach 
 }
 
 Describe "template publication keeps each template with its own attestation on duplicates (<WorkflowFile>)" -ForEach @(
-    @{ WorkflowFile = "build-minimal-template.yml"; PushStepName = "Push Minimal Template Package to Azure" }
-    @{ WorkflowFile = "build-populated-template.yml"; PushStepName = "Push Populated Template Package to Azure" }
+    # Unattested publication keeps each workflow's historical duplicate behavior: Minimal pushed
+    # through build-dms.ps1 Push, which never passed --skip-duplicate, so a duplicate fails;
+    # Populated always passed --skip-duplicate.
+    @{ WorkflowFile = "build-minimal-template.yml"; PushStepName = "Push Minimal Template Package to Azure"; UnattestedPushArguments = ""; UnattestedDuplicateFails = $true }
+    @{ WorkflowFile = "build-populated-template.yml"; PushStepName = "Push Populated Template Package to Azure"; UnattestedPushArguments = " --skip-duplicate"; UnattestedDuplicateFails = $false }
 ) {
     # Runs the push step's own script. Its run block is cut from the workflow text and its
     # expressions are bound to test values; dotnet and the two feed reads are replaced by a model
@@ -268,13 +373,28 @@ Describe "template publication keeps each template with its own attestation on d
         @($global:TemplatePublishCalls | Where-Object { $_ -like "dotnet *" }) | Should -BeNullOrEmpty
     }
 
-    It "leaves unattested publication as it was: no feed check, and the template pushes with --skip-duplicate" {
+    It "publishes an unattested template with no feed check and the workflow's historical duplicate handling" {
         Remove-Item -LiteralPath (Join-Path $script:packageDirectory $script:companionFile), (Join-Path $script:packageDirectory "$script:templateFile.attestation.json")
-        $global:TemplatePublishFeed[$script:templateFile.ToLowerInvariant()] = [byte[]](9, 9, 9)
 
         Invoke-PushStep
 
-        @($global:TemplatePublishCalls) | Should -Be @("dotnet nuget push $script:templateFile --api-key test-key --source $script:feedUrl --skip-duplicate")
+        @($global:TemplatePublishCalls) | Should -Be @("dotnet nuget push $script:templateFile --api-key test-key --source $($script:feedUrl)$UnattestedPushArguments")
+        $global:TemplatePublishFeed[$script:templateFile.ToLowerInvariant()] | Should -Be ([byte[]](1, 1, 1))
+    }
+
+    It "on an unattested duplicate, <WorkflowFile> fails the push: <UnattestedDuplicateFails>" {
+        Remove-Item -LiteralPath (Join-Path $script:packageDirectory $script:companionFile), (Join-Path $script:packageDirectory "$script:templateFile.attestation.json")
+        $global:TemplatePublishFeed[$script:templateFile.ToLowerInvariant()] = [byte[]](9, 9, 9)
+
+        if ($UnattestedDuplicateFails) {
+            { Invoke-PushStep } | Should -Throw "Package push failed for '$script:templateFile' with exit code 1."
+        }
+        else {
+            Invoke-PushStep
+        }
+
+        @($global:TemplatePublishCalls) | Should -Be @("dotnet nuget push $script:templateFile --api-key test-key --source $($script:feedUrl)$UnattestedPushArguments")
+        $global:TemplatePublishFeed[$script:templateFile.ToLowerInvariant()] | Should -Be ([byte[]](9, 9, 9))
     }
 }
 
@@ -284,10 +404,27 @@ Describe "template caller workflows pass the attestation secret through (<Caller
     @{ CallerFile = "EdFi.Api.Populated.Template.PostgreSQL.yml" }
     @{ CallerFile = "EdFi.Api.Populated.Template.MsSql.yml" }
 ) {
+    BeforeAll {
+        $script:callerContent = Get-Content -LiteralPath ([System.IO.Path]::GetFullPath(
+                (Join-Path $PSScriptRoot "../../../.github/workflows/$CallerFile"))) -Raw
+    }
+
     It "forwards TEMPLATE_ATTESTATION_PRIVATE_KEY to the reusable workflow" {
-        $callerPath = [System.IO.Path]::GetFullPath(
-            (Join-Path $PSScriptRoot "../../../.github/workflows/$CallerFile"))
-        (Get-Content -LiteralPath $callerPath -Raw).Contains(
+        # Passing it by name is what lets the called job receive the ENVIRONMENT secret: the
+        # called job's environment takes precedence, and a secret that exists only in the
+        # environment can still be passed by name.
+        $script:callerContent.Contains(
             'TEMPLATE_ATTESTATION_PRIVATE_KEY: ${{ secrets.TEMPLATE_ATTESTATION_PRIVATE_KEY }}') | Should -BeTrue
+    }
+
+    It "leaves the environment to the reusable workflow and still builds pull requests, unsigned" {
+        # A job that calls a reusable workflow cannot set an environment; the called
+        # build-template job does, and only on an eligible run.
+        @($script:callerContent -split "`n" | Where-Object { $_ -match '^\s*environment:' }) | Should -BeNullOrEmpty
+        $script:callerContent | Should -Match '(?m)^  pull_request:$'
+        $script:callerContent.Contains("uses: ./.github/workflows/build-") | Should -BeTrue
+        # Pull request builds stay unpublished; that they are also unsigned is the reusable
+        # workflow's eligibility rule, pinned in the wiring Describe above.
+        $script:callerContent.Contains("publish_package: `${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.publish_package == true) }}") | Should -BeTrue
     }
 }

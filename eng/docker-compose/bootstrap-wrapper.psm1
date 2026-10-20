@@ -599,7 +599,9 @@ function Invoke-BootstrapWrapper {
         # this kind (Minimal or Populated) before services start. Mutually exclusive with
         # -InfraOnly, -NoDataStore, and -SchoolYearRange (one invocation = one route-unqualified
         # physical target), and combining -LoadSeedData turns it into the explicit supplemental
-        # seed, which requires its own -SeedTemplate or -SeedDataPath.
+        # seed, which requires its own -SeedTemplate or -SeedDataPath. Refused with
+        # -EnableKafkaCdc, with -IncludeE2EClaimSets (the candidate stages claims without them),
+        # and, on PostgreSQL only, while POSTGRES_USE_TMPFS=true.
         [ValidateSet("Minimal", "Populated")]
         [string]$RestoreTemplate,
 

@@ -1495,6 +1495,13 @@ Describe "Assert-RestoreTargetSafety" {
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly
     }
 
+    It "SQL Server: refuses the separate topology's fixed edfi_configurationservice before any docker or catalog activity, even when the effective CMS name differs" {
+        { Assert-RestoreTargetSafety -DatabaseEngine mssql -TargetDatabaseName "EDFI_ConfigurationService" -Manifest $script:mssqlManifest -SeparateConfigDatabase -EffectiveConfigDatabaseName "ambient_cms" } |
+            Should -Throw "*resolves to 'edfi_configurationservice'*Restore never replaces a separate CMS database."
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly
+    }
+
     It "refuses a target the live catalog marks as template/system, whatever its name (<Engine>)" -ForEach @(
         @{ Engine = "postgresql"; QueryPattern = "*datistemplate*" }
         @{ Engine = "mssql"; QueryPattern = "*database_id <= 4*" }
@@ -1891,6 +1898,63 @@ Describe "Invoke-RestoreScratchValidation" {
             Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 2 -Exactly -ParameterFilter { $Query -like 'DROP DATABASE IF EXISTS "edfi_dms_restore_scratch_*' }
         }
         finally {
+            Remove-Variable -Name ScratchPrivilegeRows -Scope Global -ErrorAction SilentlyContinue
+        }
+    }
+
+    It "PostgreSQL: accepts the restoring administrator's ownership plus the enqueue functions and the built-in public schema owner, read as that administrator" {
+        $stage = New-ScratchStage -Directory $script:scratchRoot
+        $global:ScratchOwnershipRows = @(
+            'function|edfi_dms_enqueue_owner|dms."TF_Document_EnqueueProjectionInsert"()',
+            'schema|pg_database_owner|public'
+        )
+        try {
+            Mock Invoke-RestoreCatalogQuery { $global:ScratchOwnershipRows } -ModuleName bootstrap-restore -ParameterFilter { $FailureMessage -like "Failed to read the object ownership of scratch database *" }
+
+            $result = Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Minimal -DatabaseEngine postgresql -PostgresUser "dmsadmin"
+
+            $result.PackageSourceIdentity | Should -Be "11111111-1111-1111-1111-111111111111"
+            # Every non-system schema, connected as the custom administrator, so "not owned by
+            # current_user" means "not owned by the administrator that restored it".
+            Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+                $Query -ceq (Get-PostgresqlTemplateOwnershipQuerySql) -and $DatabaseName -like "edfi_dms_restore_scratch_*" -and $PostgresUser -ceq "dmsadmin"
+            }
+        }
+        finally {
+            Remove-Variable -Name ScratchOwnershipRows -Scope Global -ErrorAction SilentlyContinue
+        }
+    }
+
+    It "PostgreSQL: refuses <Name> before any target work, and drops the scratch" -ForEach @(
+        # The privilege rows alone pass: the unexpected owner holds only its own privileges.
+        @{ Name = "an object owned by an unexpected existing role"; OwnershipRow = 'relation|reporting_reader|dms."Document"'; PrivilegeRow = 'relation|SELECT|reporting_reader|reporting_reader|dms."Document"'; Violation = 'relation dms."Document" (owner reporting_reader)' }
+        # An empty ACL expands to no privilege rows at all, so only the ownership read sees it.
+        @{ Name = "an unexpectedly owned object with no privilege rows"; OwnershipRow = 'relation|reporting_reader|dms."Document"'; PrivilegeRow = $null; Violation = 'relation dms."Document" (owner reporting_reader)' }
+        @{ Name = "a table owned by the enqueue owner"; OwnershipRow = 'relation|edfi_dms_enqueue_owner|dms."DocumentProjectionWork"'; PrivilegeRow = $null; Violation = 'relation dms."DocumentProjectionWork" (owner edfi_dms_enqueue_owner)' }
+        @{ Name = "a DMS schema owned by the public-schema owner"; OwnershipRow = 'schema|pg_database_owner|dms'; PrivilegeRow = $null; Violation = 'schema dms (owner pg_database_owner)' }
+    ) {
+        $stage = New-ScratchStage -Directory $script:scratchRoot
+        $global:ScratchOwnershipRows = @('schema|pg_database_owner|public', $OwnershipRow)
+        $global:ScratchPrivilegeRows = @('schema|USAGE|postgres|edfi_dms_enqueue_owner|dms', $PrivilegeRow) | Where-Object { $null -ne $_ }
+        try {
+            Mock Invoke-RestoreCatalogQuery { $global:ScratchOwnershipRows } -ModuleName bootstrap-restore -ParameterFilter { $FailureMessage -like "Failed to read the object ownership of scratch database *" }
+            Mock Invoke-RestoreCatalogQuery { $global:ScratchPrivilegeRows } -ModuleName bootstrap-restore -ParameterFilter { $FailureMessage -like "Failed to read the privileges of scratch database *" }
+
+            { Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Minimal -DatabaseEngine postgresql } |
+                Should -Throw "Restore scratch database 'edfi_dms_restore_scratch_*' carries ownership the authoritative DMS DDL does not produce: $Violation. Only the administrator, edfi_dms_enqueue_owner (functions only), and pg_database_owner (the public schema only) may own objects. The package is refused before the target is touched."
+
+            Should -Invoke Get-RestoreAuthoritativeObjectInventory -ModuleName bootstrap-restore -Times 0 -Exactly
+            # Cleanup: the scratch is dropped again in finally and the in-container replay file removed.
+            Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 2 -Exactly -ParameterFilter { $Query -like 'DROP DATABASE IF EXISTS "edfi_dms_restore_scratch_*' }
+            Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql rm -f /tmp/restore-scratch-*.sql" }
+            # Nothing outside the administrative and scratch databases was touched: the only
+            # replay went into the scratch, and no catalog statement named another database.
+            Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql psql * -f *" }
+            Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql psql -U postgres -d edfi_dms_restore_scratch_* -v ON_ERROR_STOP=1 -f *" }
+            Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $DatabaseName -cne "postgres" -and $DatabaseName -notlike "edfi_dms_restore_scratch_*" }
+        }
+        finally {
+            Remove-Variable -Name ScratchOwnershipRows -Scope Global -ErrorAction SilentlyContinue
             Remove-Variable -Name ScratchPrivilegeRows -Scope Global -ErrorAction SilentlyContinue
         }
     }

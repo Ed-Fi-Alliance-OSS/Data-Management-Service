@@ -633,7 +633,7 @@ Describe "Invoke-DatabaseDump" {
                 Mock docker { $global:LASTEXITCODE = 0 }
 
                 { Invoke-DatabaseDump -DatabaseEngine postgresql -ContainerName "dms-postgresql" -DatabaseName "edfi_datamanagementservice" -DatabaseSchemas @("dms") -BackupDirectory $backupDir -BackupFileName "refused.sql" } |
-                    Should -Throw '*cannot reproduce: relation dms."Document" (owner someone_else)*Nothing was dumped or packaged*'
+                    Should -Throw '*does not produce: relation dms."Document" (owner someone_else)*Nothing was dumped or packaged*'
 
                 Should -Invoke docker -Times 0 -Exactly
                 Test-Path -LiteralPath (Join-Path $backupDir "refused.sql") | Should -BeFalse

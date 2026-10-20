@@ -151,7 +151,10 @@
     kind (Minimal or Populated) before services start, instead of provisioning an empty schema.
     Mutually exclusive with -InfraOnly, -NoDataStore, and -SchoolYearRange. Combining
     -LoadSeedData opts into the explicit supplemental seed and requires its own -SeedTemplate
-    or -SeedDataPath.
+    or -SeedDataPath. Refused with -EnableKafkaCdc (a restore skips the provision phase that
+    produces the CDC provisioning receipt) and, on PostgreSQL only, while POSTGRES_USE_TMPFS=true
+    (the restored database would live in container memory and be lost when the database
+    container restarts after the restore).
 
 .PARAMETER PackageDirectory
     Restore mode. Explicit local package source: a directory holding exactly one matching

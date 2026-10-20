@@ -687,7 +687,8 @@ function Assert-RestoreTargetDatabaseNameSafe {
     Parameter-time target safety: the selected restore target must be a safe identifier,
     never a reserved system database (PostgreSQL postgres/template0/template1, SQL Server
     master/model/msdb/tempdb), and - with -SeparateConfigDatabase - never the dedicated
-    Configuration Service database, which restore must never replace. In shared topology the
+    Configuration Service database (on SQL Server also never the topology's fixed
+    edfi_configurationservice), which restore must never replace. In shared topology the
     target IS the shared database by design, so no separate-CMS comparison applies. The same
     checks run again against the live catalog before any destructive work.
     #>
@@ -712,6 +713,14 @@ function Assert-RestoreTargetDatabaseNameSafe {
         }
         if ($TargetDatabaseName.Trim().Equals($EffectiveConfigDatabaseName.Trim(), [System.StringComparison]::OrdinalIgnoreCase)) {
             throw "The restore target database resolves to the dedicated Configuration Service database ('$($EffectiveConfigDatabaseName.Trim())') selected by -SeparateConfigDatabase. Restore never replaces a separate CMS database."
+        }
+        # The SQL Server separate topology fixes the CMS database at edfi_configurationservice
+        # (Assert-MssqlTopologyPhysicalConsistency), and that check runs only after restore. An
+        # ambient CONFIGURATION_SERVICE_DATABASE_NAME can make the effective name above differ
+        # from it, so the fixed name is refused whatever that name is.
+        if ($DatabaseEngine -eq "mssql" -and
+            $TargetDatabaseName.Trim().Equals("edfi_configurationservice", [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "The restore target database resolves to 'edfi_configurationservice', the dedicated Configuration Service database the SQL Server separate topology selected by -SeparateConfigDatabase uses. Restore never replaces a separate CMS database."
         }
     }
 }
@@ -2645,9 +2654,24 @@ function Invoke-RestoreScratchValidation {
             -DatabaseLevelObject $scratchFacts.DatabaseLevelObjects `
             -SourceDescription "Restore scratch database '$scratchDatabaseName'"
 
-        # The replay re-ran every GRANT the artifact carries against this server's roles; only
-        # the privileges the authoritative DDL produces may survive into the target.
+        # The replay re-ran every GRANT and ALTER ... OWNER the artifact carries against this
+        # server's roles; only the ownership and privileges the authoritative DDL produces may
+        # survive into the target. Ownership is read as the restoring administrator, so whatever
+        # it is named, the objects it owns are its own; the privilege rule trusts owners, so
+        # ownership is judged first.
         if ($DatabaseEngine -eq "postgresql") {
+            $ownershipRows = Invoke-RestoreCatalogQuery `
+                -DatabaseEngine $DatabaseEngine `
+                -ContainerName $ContainerName `
+                -DatabaseName $scratchDatabaseName `
+                -PostgresUser $PostgresUser `
+                -Query (Get-PostgresqlTemplateOwnershipQuerySql) `
+                -FailureMessage "Failed to read the object ownership of scratch database '$scratchDatabaseName'."
+            $null = Assert-PostgresqlArtifactOwnership `
+                -OwnershipRow $ownershipRows `
+                -SourceDescription "Restore scratch database '$scratchDatabaseName'" `
+                -FailureSuffix "The package is refused before the target is touched."
+
             $privilegeRows = Invoke-RestoreCatalogQuery `
                 -DatabaseEngine $DatabaseEngine `
                 -ContainerName $ContainerName `
