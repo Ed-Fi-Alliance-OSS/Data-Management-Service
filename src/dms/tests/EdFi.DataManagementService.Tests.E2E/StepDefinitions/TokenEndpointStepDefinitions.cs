@@ -28,6 +28,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
         private const string BasicChallenge = "Basic realm=\"EdFi.DataManagementService\"";
 
+        private const string TokenContractCorrelationHeader = "X-DMS-1606-Correlation";
+
+        private const string TokenContractCorrelationValue = "dms1606-token-contract";
+
         [When("a token request is made with content type {string} and body")]
         public async Task WhenATokenRequestIsMadeWithContentTypeAndBody(string contentType, string body)
         {
@@ -45,6 +49,76 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 contentType,
                 body,
                 BasicAuthorization(credentials.key, credentials.secret)
+            );
+        }
+
+        [When("a token request is made with fixture Basic client ID {string}")]
+        public async Task WhenATokenRequestIsMadeWithFixtureBasicClientId(string clientId)
+        {
+            await SendTokenRequest(
+                "application/x-www-form-urlencoded",
+                "grant_type=client_credentials",
+                BasicAuthorization(clientId, "fixture-secret")
+            );
+        }
+
+        [When("a token request is made with fixture Basic client ID {string} at path {string}")]
+        public async Task WhenATokenRequestIsMadeWithFixtureBasicClientIdAtPath(string clientId, string path)
+        {
+            await SendTokenRequest(
+                "application/x-www-form-urlencoded",
+                "grant_type=client_credentials",
+                BasicAuthorization(clientId, "fixture-secret"),
+                path
+            );
+        }
+
+        [When(
+            "equivalent token errors are requested from the root and qualified routes using fixture client ID {string}"
+        )]
+        public async Task WhenEquivalentTokenErrorsAreRequestedFromRootAndQualifiedRoutes(string clientId)
+        {
+            string authorization = BasicAuthorization(clientId, "fixture-secret");
+            await SendTokenRequest(
+                "application/x-www-form-urlencoded",
+                "grant_type=client_credentials",
+                authorization
+            );
+            await AssertTokenError(401, "invalid_client", "Fixture rejected credentials");
+            Dictionary<string, string?> root = new()
+            {
+                ["body"] = await _apiResponse.TextAsync(),
+                ["challenge"] = ResponseHeaderOrNull("www-authenticate"),
+                ["correlation"] = ResponseHeader("X-Correlation-ID"),
+            };
+
+            await SendTokenRequest(
+                "application/x-www-form-urlencoded",
+                "grant_type=client_credentials",
+                authorization,
+                "2025/oauth/token"
+            );
+            await AssertTokenError(401, "invalid_client", "Fixture rejected credentials");
+            (await _apiResponse.TextAsync()).Should().Be(root["body"]);
+            ResponseHeaderOrNull("www-authenticate").Should().Be(root["challenge"]);
+            ResponseHeader("X-Correlation-ID").Should().Be(root["correlation"]);
+        }
+
+        [When(
+            "a token request is made with a Basic Authorization header at path {string}, content type {string} and body"
+        )]
+        public async Task WhenATokenRequestIsMadeWithBasicAuthorizationHeaderAtPath(
+            string path,
+            string contentType,
+            string body
+        )
+        {
+            ClientCredentials credentials = AuthorizationDataProvider.CurrentClientCredentials;
+            await SendTokenRequest(
+                contentType,
+                body,
+                BasicAuthorization(credentials.key, credentials.secret),
+                path
             );
         }
 
@@ -144,7 +218,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         /// <c>{clientSecret}</c> with the provisioned client's credentials, encoded for the content
         /// type so that any character a generated key or secret contains survives the trip.
         /// </summary>
-        private async Task SendTokenRequest(string contentType, string body, string? authorization)
+        private async Task SendTokenRequest(
+            string contentType,
+            string body,
+            string? authorization,
+            string path = TokenEndpoint
+        )
         {
             ClientCredentials credentials = AuthorizationDataProvider.CurrentClientCredentials;
             Func<string, string> encode = contentType.StartsWith(
@@ -164,10 +243,15 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 headers["Authorization"] = authorization;
             }
 
+            if (Environment.GetEnvironmentVariable("DMS_TOKEN_CONTRACT_PROXY_ACTIVE") == "1")
+            {
+                headers[TokenContractCorrelationHeader] = TokenContractCorrelationValue;
+            }
+
             _scenarioContext[TokenRequestStartedContextKey] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             SetCurrentApiResponse(
                 await _playwrightContext.ApiRequestContext!.PostAsync(
-                    TokenEndpoint,
+                    path,
                     new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = headers }
                 )
             );

@@ -224,9 +224,100 @@ Feature: Client credentials at the token endpoint
 
     @DMS-1606
     @e2e-ci-shard-1
-    Scenario: 17 A malformed Basic value is rejected as invalid client authentication
-      When a token request is made with Authorization header "Basic malformed", content type "application/x-www-form-urlencoded" and body
+    Scenario: 17 A malformed Basic-like Authorization value is rejected safely
+      When a token request is made with Authorization header "Basicxyz:secret", content type "application/x-www-form-urlencoded" and body
         """
         grant_type=client_credentials
         """
-      Then the token error is 401 "invalid_client" with provider-supplied description
+      Then the token error is 400 "invalid_request" with description "Malformed Authorization header"
+
+  Rule: Provider response failures preserve the OAuth token contract
+
+    @DMS-1606 @TokenContractProxy
+    Scenario: 18 A JSON provider 401 is normalized and challenged
+      When a token request is made with fixture Basic client ID "dms1606-401-object"
+      Then the token error is 401 "invalid_client" with description "Fixture rejected credentials"
+
+    @DMS-1606 @TokenContractProxy
+    Scenario: 19 An HTML provider 401 uses a safe OAuth fallback
+      When a token request is made with fixture Basic client ID "dms1606-401-html"
+      Then the token error is 401 "invalid_client" with description "The upstream identity service rejected the request credentials."
+
+    @DMS-1606 @TokenContractProxy
+    Scenario: 20 A provider invalid_scope response is preserved for body authentication
+      When a token request is made with content type "application/x-www-form-urlencoded" and body
+        """
+        grant_type=client_credentials&client_id=dms1606-400-invalid-scope&client_secret=fixture-secret
+        """
+      Then the token error is 400 "invalid_scope" with description "Fixture rejected request"
+
+    @DMS-1606 @TokenContractProxy
+    Scenario: 21 A provider invalid_client response after Basic authentication becomes 401
+      When a token request is made with fixture Basic client ID "dms1606-400-invalid-client"
+      Then the token error is 401 "invalid_client" with description "Fixture rejected request"
+
+    @DMS-1606 @TokenContractProxy
+    Scenario: 22 A provider invalid_client response after body authentication remains 400
+      When a token request is made with content type "application/x-www-form-urlencoded" and body
+        """
+        grant_type=client_credentials&client_id=dms1606-400-invalid-client&client_secret=fixture-secret
+        """
+      Then the token error is 400 "invalid_client" with description "Fixture rejected request"
+
+    @DMS-1606 @TokenContractProxy
+    Scenario: 23 An unknown provider 400 is safely classified as a gateway error
+      When a token request is made with fixture Basic client ID "dms1606-400-unknown"
+      Then the token error is 502 "server_error" with description "The upstream identity service did not return a usable response. Contact your system administrator with the X-Correlation-ID response header, decoded once using UTF-8 percent decoding, which identifies the corresponding server log entry."
+
+    @DMS-1606 @TokenContractProxy
+    Scenario Outline: 24 A canonical token limit from either provider contract retains its limit
+      When a token request is made with fixture Basic client ID "<clientId>"
+      Then the token error is 429 "temporarily_unavailable" with description "Too many access tokens have been requested (limit is 7). Access tokens should be reused until they expire."
+
+      Examples:
+        | clientId                 |
+        | dms1606-429-legacy       |
+        | dms1606-429-management   |
+
+    @DMS-1606 @TokenContractProxy
+    Scenario: 25 A generic provider 429 with hostile fields uses the safe fallback
+      When a token request is made with fixture Basic client ID "dms1606-429-generic"
+      Then the token error is 429 "temporarily_unavailable" with description "The number of allowed requests has been exceeded. Retry the request later."
+
+    @DMS-1606 @TokenContractProxy
+    Scenario: 26 A provider conflict requests a retry without disclosing its body
+      When a token request is made with fixture Basic client ID "dms1606-409"
+      Then the token error is 503 "temporarily_unavailable" with description "The service is temporarily unable to handle the request. Retry the request later."
+
+    @DMS-1606 @TokenContractProxy
+    Scenario: 27 A provider server error uses the safe gateway response
+      When a token request is made with fixture Basic client ID "dms1606-500"
+      Then the token error is 502 "server_error" with description "The upstream identity service did not return a usable response. Contact your system administrator with the X-Correlation-ID response header, decoded once using UTF-8 percent decoding, which identifies the corresponding server log entry."
+
+    @DMS-1606 @TokenContractProxy
+    Scenario: 28 A provider connection abort uses the safe gateway response
+      When a token request is made with fixture Basic client ID "dms1606-abort"
+      Then the token error is 502 "server_error" with description "The upstream identity service did not return a usable response. Contact your system administrator with the X-Correlation-ID response header, decoded once using UTF-8 percent decoding, which identifies the corresponding server log entry."
+
+    @DMS-1606 @TokenContractProxy @TokenContractQualified
+    Scenario: 29 Root token route stays available with qualified routes enabled
+      When a token request is made with fixture Basic client ID "dms1606-401-object" at path "oauth/token"
+      Then the token error is 401 "invalid_client" with description "Fixture rejected credentials"
+
+    @DMS-1606 @TokenContractProxy @TokenContractQualified
+    Scenario: 30 Qualified token route returns the same provider error contract
+      When a token request is made with fixture Basic client ID "dms1606-401-object" at path "2025/oauth/token"
+      Then the token error is 401 "invalid_client" with description "Fixture rejected credentials"
+
+    @DMS-1606 @TokenContractProxy @TokenContractQualified
+    Scenario: 32 Root and qualified error routes return equivalent OAuth responses
+      When equivalent token errors are requested from the root and qualified routes using fixture client ID "dms1606-401-object"
+
+    @DMS-1606 @TokenContractProxy @TokenContractQualified
+    Scenario: 31 Qualified token route issues a real token
+      When a token request is made with a Basic Authorization header at path "2025/oauth/token", content type "application/x-www-form-urlencoded" and body
+        """
+        grant_type=client_credentials
+        """
+      Then it should respond with 200
+      And the token response carries an access token
