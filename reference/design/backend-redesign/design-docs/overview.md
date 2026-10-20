@@ -55,8 +55,9 @@ this storage change.
   - update tracking metadata is maintained by normal document-version and root/descriptor timestamp stamping (no read-time dependency derivation required); see [update-tracking.md](update-tracking.md).
 - Reference resolution probes generated natural-key indexes; descriptor probes fold the raw URI
   in SQL and return both the compact key and owning document key without another round trip.
-  POST matching still uses `dms.ReferentialIdentity` until its natural-key cutover. Relational
-  unique constraints remain the integrity backstop.
+  Resource POST matching uses the own-natural-key capture; descriptor POST matching still uses
+  `dms.ReferentialIdentity` until its natural-key cutover. Relational unique constraints remain
+  the integrity backstop.
 - `dms.Descriptor` has native independent `int DescriptorId` allocation, a unique non-null
   `bigint DocumentId` FK, and `smallint ResourceKeyId` type identity checked against its owner
   by the stamping trigger and constrained to the resource-key catalog.
@@ -68,8 +69,8 @@ this storage change.
   `Uri` index that inherits the `SQL_Latin1_General_CP1_CI_AS` identity collation of its components. Live descriptor discriminator storage is removed; shared history routes
   by `ResourceKeyId`. Abstract identity discriminators and union-view outputs remain unchanged.
 - Generated natural-key and lowered-URI probes are described in
-  [natural-key-resolution.md](natural-key-resolution.md); POST capture and descriptor writes move
-  to them in later work.
+  [natural-key-resolution.md](natural-key-resolution.md); resource POST capture uses them, and
+  descriptor writes move to them in later work.
 
 ## High-Level Architecture
 

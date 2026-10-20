@@ -969,8 +969,9 @@ equal the fixed DMS SQL Server collation, and the two can disagree in either dir
   comparer: the update target can only exist because the CI probe matched under the identity-column
   collation.
 - *Comparer looser than the collation* — a pair `OrdinalIgnoreCase` equates but the collation
-  distinguishes. No such pair is currently known: .NET's `OrdinalIgnoreCase` uses simple case
-  folding and, measured on .NET 10, does *not* equate `ſ`/`s`, dotless `ı`/`i`, or Kelvin `K`
+  distinguishes. `OrdinalIgnoreCase` compares simple uppercase mappings, so the micro sign `µ`
+  (U+00B5) and Greek `μ` (U+03BC), which both uppercase to U+039C, are one such pair; the collation
+  keeps them distinct. Measured on .NET 10, it does *not* equate `ſ`/`s`, dotless `ı`/`i`, or Kelvin `K`
   (U+212A)/`k`; and code points the version-80 collation has no data for are unweighted, which makes
   them compare *equal* on the SQL side as well (`Ǹ`/`ǹ` is equal under both). If the
   engine-divergence fixtures ever surface such a pair, the behavior is defined here rather than left
@@ -1571,7 +1572,7 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
 7. **Casing comparer approximation** — the runtime provider will derive `OrdinalIgnoreCase` from the
    fixed SQL Server identity contract, but it will still not emulate every
    `SQL_Latin1_General_CP1_CI_AS` equality. Where the comparer is stricter the guard will fail closed;
-   where it is looser (no instance currently known) a collation-distinct value would be treated as
+   where it is looser (for example `µ`/`μ`) a collation-distinct value would be treated as
    unchanged and the stored value kept (non-destructive but silent). Both directions are documented
    above, pinned by the engine-divergence fixtures, and identical to ODS; neither silently
    redefines database identity.

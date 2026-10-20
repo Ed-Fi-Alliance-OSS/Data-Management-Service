@@ -4,11 +4,36 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.Composite;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
+
+/// <summary>
+/// The fake first phase's target-observation seam. Production POST captures the target by its own natural key
+/// inside the composite command, so a POST lookup here takes the request identity the capture would match.
+/// </summary>
+internal interface IFakeRelationalWriteTargetLookup
+{
+    Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentIdentity documentIdentity,
+        DocumentUuid candidateDocumentUuid,
+        IRelationalCommandExecutor commandExecutor,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        IRelationalCommandExecutor commandExecutor,
+        CancellationToken cancellationToken = default
+    );
+}
 
 /// <summary>
 /// A first phase for executor unit tests that performs the phase's observations through the fixture's
@@ -20,7 +45,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 /// provider tests.
 /// </summary>
 internal sealed class FakeSequentialRelationalWriteFirstPhase(
-    IRelationalWriteTargetLookupResolver targetLookupResolver,
+    IFakeRelationalWriteTargetLookup targetLookupResolver,
     RecordingSessionReferenceResolver referenceResolver,
     IRelationalWriteCurrentStateLoader currentStateLoader,
     IRelationalParameterConfigurator? relationalParameterConfigurator = null,
@@ -44,11 +69,11 @@ internal sealed class FakeSequentialRelationalWriteFirstPhase(
 
         RelationalWriteTargetLookupResult lookupResult = input.TargetRequest switch
         {
-            RelationalWriteTargetRequest.Post(var referentialId, var candidateDocumentUuid) =>
+            RelationalWriteTargetRequest.Post(var documentIdentity, var candidateDocumentUuid) =>
                 await targetLookupResolver.ResolveForPostAsync(
                     input.MappingSet,
                     input.WritePlan.Model.Resource,
-                    referentialId,
+                    documentIdentity,
                     candidateDocumentUuid,
                     lookupExecutor,
                     cancellationToken

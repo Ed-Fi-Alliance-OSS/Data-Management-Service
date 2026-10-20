@@ -160,7 +160,8 @@ file static class WriteSessionCommandStreamTestSupport
         MappingSet mappingSet,
         int addressCount,
         DocumentUuid documentUuid,
-        string traceId
+        string traceId,
+        UpsertActionAuthorization? actionAuthorization = null
     ) =>
         new(
             ResourceInfo: SchoolResourceInfo,
@@ -183,7 +184,8 @@ file static class WriteSessionCommandStreamTestSupport
         )
         {
             ActionAuthorization =
-                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+                actionAuthorization
+                ?? UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
         };
 
     public static UpdateRequest CreateUpdateRequest(
@@ -246,34 +248,64 @@ file static class WriteSessionCommandStreamTestSupport
     public static WriteSessionCommandStreamSummary Summarize(
         RelationalWriteSessionCommandRecorder recorder
     ) =>
+        Summarize(
+            recorder.Commands,
+            recorder.CommandCount,
+            recorder.BeginCount,
+            recorder.CommitCount,
+            recorder.RollbackCount
+        );
+
+    /// <summary>
+    /// Classifies one recorded command on its own, with no transaction boundary, so a test can assert
+    /// what a single command of the stream carries.
+    /// </summary>
+    public static WriteSessionCommandStreamSummary SummarizeCommand(RecordedSessionCommand command) =>
+        Summarize([command], totalCommandCount: 1, beginCount: 0, commitCount: 0, rollbackCount: 0);
+
+    private static WriteSessionCommandStreamSummary Summarize(
+        IReadOnlyList<RecordedSessionCommand> commands,
+        int totalCommandCount,
+        int beginCount,
+        int commitCount,
+        int rollbackCount
+    ) =>
         new(
-            TotalCommandCount: recorder.CommandCount,
-            BeginCount: recorder.BeginCount,
-            CommitCount: recorder.CommitCount,
-            RollbackCount: recorder.RollbackCount,
-            ReferentialIdentityLookupCount: recorder.Commands.Count(command =>
+            TotalCommandCount: totalCommandCount,
+            BeginCount: beginCount,
+            CommitCount: commitCount,
+            RollbackCount: rollbackCount,
+            ReferentialIdentityLookupCount: commands.Count(command =>
                 command.CommandText.Contains("dms.\"ReferentialIdentity\"", StringComparison.Ordinal)
             ),
             // The hydration batch reads the root table and its child collection together and modifies
             // neither. Touching several tables no longer separates it from persistence, because the DML
             // command co-batches every table's statements; being read-only still does. The same rule is
             // used by the SQL Server adapter so the two classifications stay comparable.
-            HydrationBatchCount: recorder.Commands.Count(command =>
+            HydrationBatchCount: commands.Count(command =>
                 command.CommandText.Contains("\"edfi\".\"School\"", StringComparison.Ordinal)
                 && command.CommandText.Contains("\"edfi\".\"SchoolAddress\"", StringComparison.Ordinal)
                 && !ModifiesResourceTables(command.CommandText)
             ),
             // The PUT capture predicate is the only place the aliased dms."Document" row filters on
-            // the external DocumentUuid; the POST capture reaches the same table through
-            // "ReferentialIdentity". The parameter suffix is allocator-issued, so the match is on the
-            // stable prefix.
-            DocumentUuidLookupCount: recorder.Commands.Count(command =>
+            // the external DocumentUuid; the POST capture filters on the resource's own natural key. The
+            // parameter suffix is allocator-issued, so the match is on the stable prefix.
+            DocumentUuidLookupCount: commands.Count(command =>
                 command.CommandText.Contains("d.\"DocumentUuid\" = @documentUuid", StringComparison.Ordinal)
             ),
-            NaturalKeyLookupCount: recorder.Commands.Count(command =>
+            NaturalKeyLookupCount: commands.Count(command =>
                 command.CommandText.Contains(NaturalKeyLookupMarker, StringComparison.Ordinal)
+            ),
+            NaturalKeyCaptureCount: commands.Count(command =>
+                command.CommandText.Contains(NaturalKeyCaptureMarker, StringComparison.Ordinal)
             )
         );
+
+    /// <summary>
+    /// The POST target capture binds each own-natural-key value as a plain scalar named <c>@nk{n}</c>. No other
+    /// statement uses that prefix, and the composite rewrite only suffixes the name, so the prefix survives.
+    /// </summary>
+    public const string NaturalKeyCaptureMarker = "@nk";
 
     /// <summary>
     /// A natural-key lookup group reads its bound key arrays through a leftmost <c>unnest</c> of parameters named
@@ -615,5 +647,104 @@ public class Given_A_Postgresql_Write_Session_Command_Stream_For_A_Missing_Put_T
     public void It_observes_the_missing_target_inside_the_transaction_and_rolls_back() =>
         WriteSessionCommandStreamScenarios.AssertMissingPutTargetStreamIsFullyObserved(
             WriteSessionCommandStreamTestSupport.Summarize(_recorder)
+        );
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+public class Given_A_Postgresql_Write_Session_Command_Stream_For_An_Ordered_Segments_Post_Create
+    : PostgresqlWriteSessionCommandStreamFixtureTestBase
+{
+    private static readonly DocumentUuid _schoolDocumentUuid = new(
+        Guid.Parse("1a1a1a1a-0000-0000-0000-000000000005")
+    );
+
+    private UpsertResult _result = null!;
+
+    protected override async Task SetUpTestAsync()
+    {
+        using var scope = CreateSelectedScope();
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        _result = await repository.UpsertDocument(
+            WriteSessionCommandStreamTestSupport.CreateUpsertRequest(
+                _mappingSet,
+                addressCount: 2,
+                _schoolDocumentUuid,
+                "postgresql-write-session-stream-ordered-create",
+                UpsertActionAuthorizationTestSupport.CreateOnlyWithNoFurtherAuthorizationRequired
+            )
+        );
+    }
+
+    [Test]
+    public void It_creates_the_document() => _result.Should().BeOfType<UpsertResult.InsertSuccess>();
+
+    [Test]
+    public void It_keeps_the_ordered_segments_round_trips_with_the_capture_alone_first() =>
+        WriteSessionCommandStreamScenarios.AssertOrderedSegmentsPostStreamIsFullyObserved(
+            WriteSessionCommandStreamTestSupport.Summarize(_recorder),
+            WriteSessionCommandStreamTestSupport.SummarizeCommand(_recorder.Commands[0]),
+            expectedTotalCommandCount: 3,
+            expectedHydrationBatchCount: 0
+        );
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+public class Given_A_Postgresql_Write_Session_Command_Stream_For_An_Ordered_Segments_Post_As_Update
+    : PostgresqlWriteSessionCommandStreamFixtureTestBase
+{
+    private static readonly DocumentUuid _schoolDocumentUuid = new(
+        Guid.Parse("1a1a1a1a-0000-0000-0000-000000000006")
+    );
+
+    private UpsertResult _result = null!;
+
+    protected override async Task SetUpTestAsync()
+    {
+        using (var createScope = CreateSelectedScope())
+        {
+            var createRepository =
+                createScope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+            await createRepository.UpsertDocument(
+                WriteSessionCommandStreamTestSupport.CreateUpsertRequest(
+                    _mappingSet,
+                    addressCount: 2,
+                    _schoolDocumentUuid,
+                    "postgresql-write-session-stream-ordered-post-as-update-seed"
+                )
+            );
+        }
+
+        _recorder.Reset();
+
+        using var scope = CreateSelectedScope();
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        _result = await repository.UpsertDocument(
+            WriteSessionCommandStreamTestSupport.CreateUpsertRequest(
+                _mappingSet,
+                addressCount: 3,
+                new DocumentUuid(Guid.Parse("1a1a1a1a-0000-0000-0000-0000000000fe")),
+                "postgresql-write-session-stream-ordered-post-as-update",
+                UpsertActionAuthorizationTestSupport.UpdateOnlyWithNoFurtherAuthorizationRequired
+            )
+        );
+    }
+
+    [Test]
+    public void It_updates_the_existing_document() => _result.Should().BeOfType<UpsertResult.UpdateSuccess>();
+
+    [Test]
+    public void It_keeps_the_ordered_segments_round_trips_with_the_capture_alone_first() =>
+        WriteSessionCommandStreamScenarios.AssertOrderedSegmentsPostStreamIsFullyObserved(
+            WriteSessionCommandStreamTestSupport.Summarize(_recorder),
+            WriteSessionCommandStreamTestSupport.SummarizeCommand(_recorder.Commands[0]),
+            expectedTotalCommandCount: 4,
+            expectedHydrationBatchCount: 1
         );
 }

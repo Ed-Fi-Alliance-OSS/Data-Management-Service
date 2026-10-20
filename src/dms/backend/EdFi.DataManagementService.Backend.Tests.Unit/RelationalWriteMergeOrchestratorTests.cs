@@ -66,7 +66,7 @@ internal static class RelationalWriteMergeOrchestratorTestSupport
             mappingSet,
             RelationalWriteOperationKind.Post,
             new RelationalWriteTargetRequest.Post(
-                new ReferentialId(Guid.Parse("99999999-8888-7777-6666-555555555555")),
+                new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
                 documentUuid
             ),
             writePlan,

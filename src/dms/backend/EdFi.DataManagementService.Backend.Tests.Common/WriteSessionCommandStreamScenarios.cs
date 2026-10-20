@@ -17,8 +17,8 @@ namespace EdFi.DataManagementService.Backend.Tests.Common;
 /// <param name="CommitCount">Commits, counted separately from commands.</param>
 /// <param name="RollbackCount">Rollbacks, counted separately from commands.</param>
 /// <param name="ReferentialIdentityLookupCount">
-/// Commands that read <c>dms.ReferentialIdentity</c>: the in-session POST target lookup. It was invisible
-/// to the session recorder before it was routed through the session's command-creation seam.
+/// Commands that read <c>dms.ReferentialIdentity</c>. Resource writes never do: the POST target is captured
+/// by its own natural key, and only descriptor writes still resolve through the referential identity.
 /// </param>
 /// <param name="HydrationBatchCount">
 /// Current-state hydration batches. Also previously invisible to the session recorder.
@@ -32,6 +32,11 @@ namespace EdFi.DataManagementService.Backend.Tests.Common;
 /// Commands carrying a natural-key reference lookup, matched on the lookup's own group parameters so that
 /// other reads of a bound key list (SQL Server hydration's <c>OPENJSON</c>) never classify as one.
 /// </param>
+/// <param name="NaturalKeyCaptureCount">
+/// Commands carrying the POST target capture by the resource's own natural key, matched on the capture's
+/// <c>@nk</c> parameters. Counted apart from <paramref name="NaturalKeyLookupCount"/>: the capture binds
+/// plain scalars, never a lookup group's key list.
+/// </param>
 public sealed record WriteSessionCommandStreamSummary(
     int TotalCommandCount,
     int BeginCount,
@@ -40,7 +45,8 @@ public sealed record WriteSessionCommandStreamSummary(
     int ReferentialIdentityLookupCount,
     int HydrationBatchCount,
     int DocumentUuidLookupCount,
-    int NaturalKeyLookupCount
+    int NaturalKeyLookupCount,
+    int NaturalKeyCaptureCount
 );
 
 /// <summary>
@@ -54,13 +60,14 @@ public sealed record WriteSessionCommandStreamSummary(
 public static class WriteSessionCommandStreamScenarios
 {
     /// <summary>
-    /// A POST create's first phase is one composite command whose capture statement reads
-    /// <c>dms.ReferentialIdentity</c> to observe and lock the target, which embeds the request's
+    /// A POST create's first phase is one composite command whose capture statement matches the
+    /// resource's own natural key to observe and lock the target, which embeds the request's
     /// natural-key reference lookup, and which speculatively carries the hydration batch — the command
     /// is built before create-vs-update is known, so one command serves both branches and the create
-    /// branch pays the batch's empty result sets. With one lookup, one hydration batch and only two
-    /// commands, only the first command can carry all three, so the lookup is co-batched rather than a
-    /// round trip of its own, and nothing observes the target again on the normal path.
+    /// branch pays the batch's empty result sets. With one capture, one lookup, one hydration batch and
+    /// only two commands, only the first command can carry all three, so neither the capture nor the
+    /// lookup is a round trip of its own, and nothing observes the target again on the normal path. No
+    /// command reads <c>dms.ReferentialIdentity</c>.
     /// </summary>
     public static void AssertCreateStreamIsFullyObserved(
         WriteSessionCommandStreamSummary summary,
@@ -69,7 +76,8 @@ public static class WriteSessionCommandStreamScenarios
     {
         ArgumentNullException.ThrowIfNull(summary);
 
-        summary.ReferentialIdentityLookupCount.Should().Be(1);
+        summary.ReferentialIdentityLookupCount.Should().Be(0);
+        summary.NaturalKeyCaptureCount.Should().Be(1);
         summary.NaturalKeyLookupCount.Should().Be(1);
         summary.DocumentUuidLookupCount.Should().Be(0);
         summary.HydrationBatchCount.Should().Be(1);
@@ -80,8 +88,9 @@ public static class WriteSessionCommandStreamScenarios
     /// <summary>
     /// A PUT against an existing target resolves it by external <c>DocumentUuid</c> in the capture
     /// statement of one composite first-phase command, which also carries the hydration batch. One
-    /// command classifies as both, and no <c>dms.ReferentialIdentity</c> read appears on this path. The
-    /// request carries no reference, so no command classifies as a natural-key lookup.
+    /// command classifies as both, and neither a <c>dms.ReferentialIdentity</c> read nor a natural-key
+    /// capture appears on this path. The request carries no reference, so no command classifies as a
+    /// natural-key lookup.
     /// </summary>
     public static void AssertUpdateStreamIsFullyObserved(
         WriteSessionCommandStreamSummary summary,
@@ -93,6 +102,7 @@ public static class WriteSessionCommandStreamScenarios
         summary.HydrationBatchCount.Should().Be(1);
         summary.DocumentUuidLookupCount.Should().Be(1);
         summary.ReferentialIdentityLookupCount.Should().Be(0);
+        summary.NaturalKeyCaptureCount.Should().Be(0);
         summary.NaturalKeyLookupCount.Should().Be(0);
         summary.TotalCommandCount.Should().Be(expectedTotalCommandCount);
         AssertCommittedTransactionBoundary(summary);
@@ -100,8 +110,8 @@ public static class WriteSessionCommandStreamScenarios
 
     /// <summary>
     /// A POST that resolves to an existing document makes the same one composite first-phase command a
-    /// POST create makes — capture through <c>dms.ReferentialIdentity</c> plus the hydration batch —
-    /// and here the batch hydrates the locked target's current state. The capture is the only target
+    /// POST create makes — the own-natural-key capture plus the hydration batch — and here the batch
+    /// hydrates the locked target's current state. The capture is the only target
     /// observation: it decides create-vs-update for the attempt and is never repeated on the normal
     /// path.
     /// </summary>
@@ -126,12 +136,45 @@ public static class WriteSessionCommandStreamScenarios
 
         summary.DocumentUuidLookupCount.Should().Be(1);
         summary.ReferentialIdentityLookupCount.Should().Be(0);
+        summary.NaturalKeyCaptureCount.Should().Be(0);
         summary.NaturalKeyLookupCount.Should().Be(0);
         summary.HydrationBatchCount.Should().Be(1);
         summary.TotalCommandCount.Should().Be(1);
         summary.BeginCount.Should().Be(1);
         summary.CommitCount.Should().Be(0);
         summary.RollbackCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// A POST whose Create and Update policies differ takes the ordered-segments first phase: the capture
+    /// runs alone as the first command, so the branch the target selects is known before any stored check,
+    /// then the reference lookup runs as its own command. A create needs no hydration and goes straight to
+    /// the DML command (3 commands); an update hydrates the locked target first (4 commands). The counts
+    /// are the ones the referential-identity capture produced, so the cutover keeps every round trip.
+    /// </summary>
+    public static void AssertOrderedSegmentsPostStreamIsFullyObserved(
+        WriteSessionCommandStreamSummary summary,
+        WriteSessionCommandStreamSummary firstCommand,
+        int expectedTotalCommandCount,
+        int expectedHydrationBatchCount
+    )
+    {
+        ArgumentNullException.ThrowIfNull(summary);
+        ArgumentNullException.ThrowIfNull(firstCommand);
+
+        summary.ReferentialIdentityLookupCount.Should().Be(0);
+        summary.NaturalKeyCaptureCount.Should().Be(1);
+        summary.NaturalKeyLookupCount.Should().Be(1);
+        summary.DocumentUuidLookupCount.Should().Be(0);
+        summary.HydrationBatchCount.Should().Be(expectedHydrationBatchCount);
+        summary.TotalCommandCount.Should().Be(expectedTotalCommandCount);
+        AssertCommittedTransactionBoundary(summary);
+
+        // The capture is the first command and carries nothing else.
+        firstCommand.NaturalKeyCaptureCount.Should().Be(1);
+        firstCommand.NaturalKeyLookupCount.Should().Be(0);
+        firstCommand.HydrationBatchCount.Should().Be(0);
+        firstCommand.ReferentialIdentityLookupCount.Should().Be(0);
     }
 
     /// <summary>
