@@ -7,7 +7,6 @@ using System.Net;
 using System.Text.Json;
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.OAuth;
-using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
@@ -71,7 +70,7 @@ public class TokenEndpointModule : IEndpointModule
                 await WriteBadRequest(
                     httpContext,
                     appSettings,
-                    "A request parameter was included more than once"
+                    OAuthErrorResponse.DuplicateParameterDescription
                 );
                 return;
             }
@@ -103,13 +102,17 @@ public class TokenEndpointModule : IEndpointModule
     )
     {
         var traceId = AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, appSettings);
-        httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
-        // Matches the media type of the manager's problem responses, which are UTF-8 StringContent.
-        httpContext.Response.ContentType = "application/problem+json; charset=utf-8";
-        await httpContext.Response.WriteAsync(
-            FailureResponse.ForBadRequest(detail, traceId, [], []).ToString()
+        using var response = OAuthErrorResponse.Create(
+            System.Net.HttpStatusCode.BadRequest,
+            "invalid_request",
+            detail,
+            traceId
         );
+        await TokenErrorResponseWriter.WriteAsync(httpContext, response);
     }
+
+    private const string MalformedJsonDescription =
+        "The token request body must be a valid JSON object with string-valued fields";
 
     internal static async Task HandleJsonData(
         HttpContext httpContext,
@@ -138,7 +141,13 @@ public class TokenEndpointModule : IEndpointModule
         {
             var traceId = AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, appSettings);
             logger.LogDebug("Token request body is not valid JSON - {TraceId}", traceId.Value);
-            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            using var response = OAuthErrorResponse.Create(
+                System.Net.HttpStatusCode.BadRequest,
+                "invalid_request",
+                MalformedJsonDescription,
+                traceId
+            );
+            await TokenErrorResponseWriter.WriteAsync(httpContext, response);
             return;
         }
 
@@ -184,7 +193,7 @@ public class TokenEndpointModule : IEndpointModule
             ? authHeaderValues.ToString()
             : null;
 
-        var response = await oAuthManager.GetAccessTokenAsync(
+        using var response = await oAuthManager.GetAccessTokenAsync(
             client,
             tokenRequest.grant_type ?? string.Empty,
             authHeader,
@@ -201,12 +210,7 @@ public class TokenEndpointModule : IEndpointModule
                 traceId.Value
             );
         }
-        httpContext.Response.StatusCode = (int)response.StatusCode;
-        // The manager labels its own problem responses application/problem+json, and a relayed
-        // upstream success carries the identity provider's JSON media type; both are kept.
-        httpContext.Response.ContentType =
-            response.Content.Headers.ContentType?.ToString() ?? "application/json; charset=utf-8";
-        await response.Content.CopyToAsync(httpContext.Response.Body);
+        await TokenErrorResponseWriter.WriteAsync(httpContext, response);
     }
 }
 

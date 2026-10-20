@@ -31,6 +31,8 @@ public static class OAuthErrorResponse
 
     public const string MixedMechanismsDescription = "Only one client authentication mechanism may be used";
 
+    public const string DuplicateParameterDescription = "A request parameter was included more than once";
+
     public const string MissingGrantDescription = "The grant_type request parameter must be supplied";
 
     public const string ProviderRejectedDescription =
