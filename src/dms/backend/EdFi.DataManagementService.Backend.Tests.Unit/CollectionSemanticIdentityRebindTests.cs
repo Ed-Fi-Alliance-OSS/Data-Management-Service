@@ -195,6 +195,133 @@ internal static class RequestAncestorAlignmentTestSupport
         };
     }
 
+    public const string ClassPeriodNameMember = "classPeriodReference.classPeriodName";
+
+    // WritePlan(addressTypeUsesSqlServerIdentityCollation: true) plus a classPeriodReference member at
+    // binding 4 that precedes addressType. The member binds ClassPeriod_DocumentId, an unflagged
+    // DocumentFk, and stores its natural key in the flagged ClassPeriod_ClassPeriodName copy column.
+    public static ResourceWritePlan ReferenceWritePlan()
+    {
+        var writePlan = WritePlan(addressTypeUsesSqlServerIdentityCollation: true);
+        var collectionPlan = writePlan.TablePlansInDependencyOrder[1];
+        var tableModel = collectionPlan.TableModel;
+        var mergePlan = collectionPlan.CollectionMergePlan!;
+        var classPeriodResource = new QualifiedResourceName("Ed-Fi", "ClassPeriod");
+        var memberPath = new JsonPathExpression(
+            "$.classPeriodReference.classPeriodName",
+            [
+                new JsonPathSegment.Property("classPeriodReference"),
+                new JsonPathSegment.Property("classPeriodName"),
+            ]
+        );
+        var documentIdColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("ClassPeriod_DocumentId"),
+            Kind: ColumnKind.DocumentFk,
+            ScalarType: new RelationalScalarType(ScalarKind.Int64),
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: classPeriodResource
+        );
+        var classPeriodNameColumn = new DbColumnModel(
+            ColumnName: new DbColumnName("ClassPeriod_ClassPeriodName"),
+            Kind: ColumnKind.Scalar,
+            ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        )
+        {
+            UsesSqlServerIdentityCollation = true,
+        };
+        var referenceCollectionPlan = collectionPlan with
+        {
+            TableModel = tableModel with
+            {
+                Columns = [.. tableModel.Columns, documentIdColumn, classPeriodNameColumn],
+                IdentityMetadata = tableModel.IdentityMetadata with
+                {
+                    SemanticIdentityBindings =
+                    [
+                        new CollectionSemanticIdentityBinding(memberPath, documentIdColumn.ColumnName),
+                        .. tableModel.IdentityMetadata.SemanticIdentityBindings,
+                    ],
+                },
+            },
+            ColumnBindings =
+            [
+                .. collectionPlan.ColumnBindings,
+                new WriteColumnBinding(
+                    documentIdColumn,
+                    new WriteValueSource.DocumentReference(0),
+                    "ClassPeriod_DocumentId"
+                ),
+            ],
+            CollectionMergePlan = mergePlan with
+            {
+                SemanticIdentityBindings =
+                [
+                    new CollectionMergeSemanticIdentityBinding(memberPath, 4),
+                    .. mergePlan.SemanticIdentityBindings,
+                ],
+            },
+        };
+        var documentReferenceBinding = new DocumentReferenceBinding(
+            IsIdentityComponent: false,
+            ReferenceObjectPath: new JsonPathExpression(
+                "$.addresses[*].classPeriodReference",
+                [
+                    new JsonPathSegment.Property("addresses"),
+                    new JsonPathSegment.AnyArrayElement(),
+                    new JsonPathSegment.Property("classPeriodReference"),
+                ]
+            ),
+            Table: tableModel.Table,
+            FkColumn: documentIdColumn.ColumnName,
+            TargetResource: classPeriodResource,
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    new JsonPathExpression(
+                        "$.classPeriodName",
+                        [new JsonPathSegment.Property("classPeriodName")]
+                    ),
+                    new JsonPathExpression(
+                        "$.addresses[*].classPeriodReference.classPeriodName",
+                        [
+                            new JsonPathSegment.Property("addresses"),
+                            new JsonPathSegment.AnyArrayElement(),
+                            new JsonPathSegment.Property("classPeriodReference"),
+                            new JsonPathSegment.Property("classPeriodName"),
+                        ]
+                    ),
+                    classPeriodNameColumn.ColumnName
+                ),
+            ]
+        );
+
+        return new ResourceWritePlan(
+            writePlan.Model with
+            {
+                TablesInDependencyOrder = [writePlan.Model.Root, referenceCollectionPlan.TableModel],
+                DocumentReferenceBindings = [documentReferenceBinding],
+            },
+            [writePlan.TablePlansInDependencyOrder[0], referenceCollectionPlan]
+        );
+    }
+
+    public static ImmutableArray<SemanticIdentityPart> ReferenceIdentity(
+        string classPeriodName,
+        string addressType
+    ) =>
+        [
+            new SemanticIdentityPart(
+                ClassPeriodNameMember,
+                JsonValue.Create(classPeriodName),
+                IsPresent: true
+            ),
+            new SemanticIdentityPart("addressType", JsonValue.Create(addressType), IsPresent: true),
+        ];
+
     // The request resolves requestUri to StateAbbreviationDescriptorId and the stored projection holds
     // storedUri for that id, as a SQL Server database that equates the two spellings would.
     public static FlatteningResolvedReferenceLookupSet DescriptorLookups(
@@ -548,4 +675,47 @@ public class Given_request_ancestor_alignment_for_a_parent_whose_descriptor_reso
             .AncestorValues(_aligned.VisibleRequestCollectionItems[1].Address.ParentAddress)
             .Should()
             .Equal(RequestStateUri, "HOME");
+}
+
+[TestFixture]
+[Parallelizable]
+public class Given_request_ancestor_alignment_for_a_parent_recased_on_a_collated_column_and_a_reference
+{
+    private ProfileAppliedWriteRequest _aligned = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // The reference member binds an unflagged DocumentFk, so only its flagged identity copy column
+        // lets the recased natural key "PERIOD 1" compare equal to the stored "Period 1".
+        var request = RequestAncestorAlignmentTestSupport.Request(
+            RequestAncestorAlignmentTestSupport.ReferenceIdentity("PERIOD 1", "HOME")
+        );
+        var writePlan = RequestAncestorAlignmentTestSupport.ReferenceWritePlan();
+
+        _aligned = RelationalWriteProfileMergeSynthesizer.AlignRequestAncestorsToStoredIdentities(
+            request,
+            RequestAncestorAlignmentTestSupport.StoredContext(
+                request,
+                RequestAncestorAlignmentTestSupport.ReferenceIdentity("Period 1", "Home"),
+                RequestAncestorAlignmentTestSupport.ReferenceIdentity("Period 1", "Work")
+            ),
+            writePlan,
+            RequestAncestorAlignmentTestSupport.NoLookups(writePlan)
+        );
+    }
+
+    [Test]
+    public void It_aligns_the_parent_address_of_a_nested_request_item() =>
+        RequestAncestorAlignmentTestSupport
+            .AncestorValues(_aligned.VisibleRequestCollectionItems[1].Address.ParentAddress)
+            .Should()
+            .Equal("Period 1", "Home");
+
+    [Test]
+    public void It_aligns_the_ancestors_of_a_request_scope_state() =>
+        RequestAncestorAlignmentTestSupport
+            .AncestorValues(_aligned.RequestScopeStates[1].Address)
+            .Should()
+            .Equal("Period 1", "Home");
 }
