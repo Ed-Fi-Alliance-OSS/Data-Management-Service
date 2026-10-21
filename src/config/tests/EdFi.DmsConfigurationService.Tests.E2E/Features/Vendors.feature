@@ -293,7 +293,7 @@ Feature: Vendors endpoints
                         "company": "Acme",
                         "contactName": "George",
                         "contactEmailAddress": "George@compuserv.net",
-                        "namespacePrefixes": "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
+                        "namespacePrefixes": "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345"
                     }
                   """
              Then it should respond with 400
@@ -306,7 +306,7 @@ Feature: Vendors endpoints
                     "status": 400,
                     "validationErrors": {
                       "NamespacePrefixes": [
-                        "Each NamespacePrefix length must be 128 characters or fewer."
+                        "Each NamespacePrefix length must be 255 characters or fewer."
                     ]
                     },
                    "errors": []
@@ -803,3 +803,57 @@ Feature: Vendors endpoints
              When a token is requested with the credentials captured as "s22" and scope "Claim06"
              Then it should respond with 200
               And the token carries "uri://dms-1532.org" in the namespacePrefixes claim
+
+        @MssqlRepresentative
+        Scenario: 23 Vendor with a 255-character namespace prefix is stored and carried in tokens
+             When a POST request is made to "/v3/vendors" with
+                  """
+                    {
+                        "company": "Scenario 23 {scenarioRunId}",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": "uri://s23.example.org/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                    }
+                  """
+             Then it should respond with 201
+              And the response location id is captured as "s23VendorId"
+             When a GET request is made to "/v3/vendors/{s23VendorId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                    "id": {s23VendorId},
+                    "company": "Scenario 23 {scenarioRunId}",
+                    "contactName": "Test",
+                    "contactEmailAddress": "test@gmail.com",
+                    "namespacePrefixes": "uri://s23.example.org/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                  }
+                  """
+             When a POST request is made to "/v3/applications" with
+                  """
+                  {
+                   "vendorId": {s23VendorId},
+                   "applicationName": "Scenario 23 Application",
+                   "claimSetName": "Claim06",
+                   "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             Then it should respond with 201
+              And the response body credentials are captured as "s23"
+             When a token is requested with the credentials captured as "s23" and scope "Claim06"
+             Then it should respond with 200
+              And the token carries "uri://s23.example.org/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" in the namespacePrefixes claim
+             When a PUT request is made to "/v3/vendors/{s23VendorId}" with
+                  """
+                    {
+                        "id": {s23VendorId},
+                        "company": "Scenario 23 {scenarioRunId}",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": "uri://s23.example.org/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxy"
+                    }
+                  """
+             Then it should respond with 204
+             When a token is requested with the credentials captured as "s23" and scope "Claim06"
+             Then it should respond with 200
+              And the token carries "uri://s23.example.org/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxy" in the namespacePrefixes claim

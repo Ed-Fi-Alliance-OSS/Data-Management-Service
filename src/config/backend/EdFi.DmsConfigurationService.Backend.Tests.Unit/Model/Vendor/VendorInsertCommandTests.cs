@@ -105,7 +105,7 @@ public class VendorInsertCommandTests
         var command = new VendorInsertCommand
         {
             Company = "ValidCompany",
-            ContactName = new string('a', 129),
+            ContactName = new string('a', 256),
             ContactEmailAddress = "valid@example.com",
             NamespacePrefixes = "prefix1,prefix2",
         };
@@ -282,14 +282,14 @@ public class VendorInsertCommandTests
 
     [TestCase(1)]
     [TestCase(2)]
-    public void Validate_With128CharacterNamespacePrefixes_ShouldPassValidation(int prefixCount)
+    public void Validate_With255CharacterNamespacePrefixes_ShouldPassValidation(int prefixCount)
     {
         var command = new VendorInsertCommand
         {
             Company = "ValidCompany",
             ContactName = "ValidContactName",
             ContactEmailAddress = "valid@example.com",
-            NamespacePrefixes = string.Join(',', Enumerable.Repeat(new string('a', 128), prefixCount)),
+            NamespacePrefixes = string.Join(',', Enumerable.Repeat(new string('a', 255), prefixCount)),
         };
 
         var result = _validator.Validate(command);
@@ -299,7 +299,7 @@ public class VendorInsertCommandTests
 
     [TestCase("")]
     [TestCase("prefix1,")]
-    public void Validate_With129CharacterNamespacePrefix_ShouldFailWithLengthMessage(string precedingPrefixes)
+    public void Validate_With256CharacterNamespacePrefix_ShouldFailWithLengthMessage(string precedingPrefixes)
     {
         // Arrange
         var command = new VendorInsertCommand
@@ -307,7 +307,7 @@ public class VendorInsertCommandTests
             Company = "ValidCompany",
             ContactName = "ValidContactName",
             ContactEmailAddress = "valid@example.com",
-            NamespacePrefixes = precedingPrefixes + new string('a', 129),
+            NamespacePrefixes = precedingPrefixes + new string('a', 256),
         };
 
         // Act
@@ -320,7 +320,7 @@ public class VendorInsertCommandTests
             .Which.Should()
             .Match<FluentValidation.Results.ValidationFailure>(error =>
                 error.PropertyName == "NamespacePrefixes"
-                && error.ErrorMessage == "Each NamespacePrefix length must be 128 characters or fewer."
+                && error.ErrorMessage == "Each NamespacePrefix length must be 255 characters or fewer."
             );
     }
 }

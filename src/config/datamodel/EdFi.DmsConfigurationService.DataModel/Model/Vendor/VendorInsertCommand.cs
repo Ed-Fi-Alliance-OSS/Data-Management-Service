@@ -10,6 +10,8 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 
 public class VendorInsertCommand
 {
+    public const int NamespacePrefixMaxLength = 255;
+
     private string _namespacePrefixes = "";
 
     public string Company { get; set; } = "";
@@ -44,9 +46,11 @@ public class VendorInsertCommand
                         ',',
                         StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
                     );
-                    return !Array.Exists(split, x => x.Length > 128);
+                    return !Array.Exists(split, x => x.Length > NamespacePrefixMaxLength);
                 })
-                .WithMessage("Each NamespacePrefix length must be 128 characters or fewer.");
+                .WithMessage(
+                    $"Each NamespacePrefix length must be {NamespacePrefixMaxLength} characters or fewer."
+                );
         }
     }
 }

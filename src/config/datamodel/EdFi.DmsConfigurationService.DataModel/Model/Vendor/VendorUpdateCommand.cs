@@ -25,9 +25,11 @@ public class VendorUpdateCommand : VendorInsertCommand
                         ',',
                         StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
                     );
-                    return !Array.Exists(split, x => x.Length > 128);
+                    return !Array.Exists(split, x => x.Length > NamespacePrefixMaxLength);
                 })
-                .WithMessage("Each NamespacePrefix length must be 128 characters or fewer.");
+                .WithMessage(
+                    $"Each NamespacePrefix length must be {NamespacePrefixMaxLength} characters or fewer."
+                );
         }
     }
 }
