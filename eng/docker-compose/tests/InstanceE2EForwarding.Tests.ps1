@@ -146,6 +146,32 @@ Describe "Get-InstanceE2ETestEnvironmentContext resolves engine, databases, and 
         Should -Invoke New-E2EDataStoreConnectionStrings -Times 0 -Exactly
     }
 
+    It "rejects a third route name equal to a quoted trailing-space POSTGRES_DB_NAME before building any connection string" {
+        $script:contextEnvValues["POSTGRES_DB_NAME"] = "'$($script:contextEnvValues['INSTANCE_E2E_DATABASE_3_NAME']) '"
+
+        # The guard resolves protected keys with Compose precedence, so an ambient value would replace
+        # the mocked file value; this case clears them and restores each prior state afterward.
+        $savedVariables = foreach ($name in @("POSTGRES_DB_NAME", "MSSQL_DB_NAME", "DATABASE_CONNECTION_STRING_ADMIN", "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING")) {
+            @{ Name = $name; Exists = (Test-Path -LiteralPath "Env:$name"); Value = [System.Environment]::GetEnvironmentVariable($name) }
+            Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+        }
+        try {
+            { Get-InstanceE2ETestEnvironmentContext -EnvironmentFile "./.env.routeContext.e2e" -DatabaseEngine "postgresql" } |
+                Should -Throw -ExpectedMessage "E2E database 'edfi_datamanagementservice_d255902_sy2024' in '/resolved/base.env' must be dedicated and cannot match POSTGRES_DB_NAME."
+            Should -Invoke New-E2EDataStoreConnectionStrings -Times 0 -Exactly
+        }
+        finally {
+            foreach ($savedVariable in $savedVariables) {
+                if ($savedVariable.Exists) {
+                    [System.Environment]::SetEnvironmentVariable($savedVariable.Name, $savedVariable.Value)
+                }
+                else {
+                    Remove-Item -LiteralPath "Env:$($savedVariable.Name)" -ErrorAction SilentlyContinue
+                }
+            }
+        }
+    }
+
     It "builds all three registration strings when every route name is safe and dedicated" {
         Get-InstanceE2ETestEnvironmentContext -EnvironmentFile "./.env.routeContext.e2e" -DatabaseEngine "postgresql" | Out-Null
         Should -Invoke New-E2EDataStoreConnectionStrings -Times 3 -Exactly

@@ -1041,3 +1041,184 @@ catch {
         $record.DestructiveLogExists | Should -BeFalse -Because "the sentinel stops the run before Reset-* and SchemaTools"
     }
 }
+
+# Behavioral evidence that the Instance Management setup validates all three route-context names before
+# it starts infrastructure or provisions a database. The real setup-local-dms.ps1, env-utility.psm1 and
+# database-safety.psm1 run from an isolated tree at their real relative depth, in a child pwsh invoked
+# with -ResolvedEnvironmentFile so no overlay composition runs. Stubs in that tree record each call to a
+# per-run log:
+# - dms-schema-environment.psm1: Invoke-WithDmsEnvironmentFileSchemaAuthority records the phase and
+#   runs the action.
+# - start-local-dms.ps1: records its arguments and throws a sentinel, so a control run stops at the
+#   first -InfraOnly start.
+# - provision-e2e-database.ps1: records any call.
+# - docker: a child function that records its arguments and sets $global:LASTEXITCODE to 0, so the
+#   setup's 'docker version' check passes. That check runs before the guard by design.
+# The collision runs fail if the guard compares with -ieq alone or the names are validated after the
+# first start; the control runs are preservation.
+Describe "Dedicated E2E database guard in the Instance Management setup" {
+    BeforeAll {
+        $sourceRepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
+        $script:setupRoot = Join-Path ([System.IO.Path]::GetTempPath()) "e2e-guard-im-$([Guid]::NewGuid().ToString('N'))"
+        $setupScriptDirectory = Join-Path $script:setupRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E"
+        $setupDockerComposeRoot = Join-Path $script:setupRoot "eng/docker-compose"
+        New-Item -ItemType Directory -Path $setupScriptDirectory, $setupDockerComposeRoot -Force | Out-Null
+
+        Copy-Item -LiteralPath (Join-Path $sourceRepoRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1") -Destination $setupScriptDirectory
+        foreach ($fileName in @("env-utility.psm1", "database-safety.psm1")) {
+            Copy-Item -LiteralPath (Join-Path $sourceRepoRoot "eng/docker-compose/$fileName") -Destination (Join-Path $setupDockerComposeRoot $fileName)
+        }
+        $script:setupScript = Join-Path $setupScriptDirectory "setup-local-dms.ps1"
+
+        @'
+function Invoke-WithDmsEnvironmentFileSchemaAuthority {
+    param([Parameter(Mandatory)] [scriptblock]$Action)
+    Add-Content -LiteralPath $env:GUARD_IM_AUTHORITY_LOG -Value "phase"
+    & $Action
+}
+
+Export-ModuleMember -Function Invoke-WithDmsEnvironmentFileSchemaAuthority
+'@ | Set-Content -LiteralPath (Join-Path $setupDockerComposeRoot "dms-schema-environment.psm1") -Encoding utf8
+
+        @'
+Add-Content -LiteralPath $env:GUARD_IM_START_LOG -Value ($args -join " ")
+throw "guard-im sentinel: start-local-dms reached"
+'@ | Set-Content -LiteralPath (Join-Path $setupDockerComposeRoot "start-local-dms.ps1") -Encoding utf8
+
+        @'
+Add-Content -LiteralPath $env:GUARD_IM_PROVISION_LOG -Value ($args -join " ")
+'@ | Set-Content -LiteralPath (Join-Path $setupDockerComposeRoot "provision-e2e-database.ps1") -Encoding utf8
+
+        $script:setupChildScript = Join-Path $script:setupRoot "invoke-setup.ps1"
+        @'
+param(
+    [string]$SetupScript,
+    [string]$ResolvedEnvironmentFile,
+    [string]$DatabaseEngine,
+    [string]$RunDirectory
+)
+
+foreach ($name in @(
+        "POSTGRES_DB_NAME", "MSSQL_DB_NAME", "DATABASE_CONNECTION_STRING_ADMIN",
+        "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING", "INSTANCE_E2E_DATABASE_1_NAME",
+        "INSTANCE_E2E_DATABASE_2_NAME", "INSTANCE_E2E_DATABASE_3_NAME", "POSTGRES_USER"
+    )) {
+    Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+}
+
+$logs = [ordered]@{
+    Authority = Join-Path $RunDirectory "authority.log"
+    Start = Join-Path $RunDirectory "start.log"
+    Provision = Join-Path $RunDirectory "provision.log"
+    Docker = Join-Path $RunDirectory "docker.log"
+}
+$env:GUARD_IM_AUTHORITY_LOG = $logs.Authority
+$env:GUARD_IM_START_LOG = $logs.Start
+$env:GUARD_IM_PROVISION_LOG = $logs.Provision
+$env:GUARD_IM_DOCKER_LOG = $logs.Docker
+
+function global:docker {
+    Add-Content -LiteralPath $env:GUARD_IM_DOCKER_LOG -Value ($args -join " ")
+    $global:LASTEXITCODE = 0
+    "docker stub"
+}
+
+$hadExitCode = Test-Path -LiteralPath "Variable:global:LASTEXITCODE"
+$priorExitCode = if ($hadExitCode) { $global:LASTEXITCODE } else { $null }
+$outcome = "completed"
+$message = $null
+try {
+    & $SetupScript -SkipDockerBuild -DatabaseEngine $DatabaseEngine -ResolvedEnvironmentFile $ResolvedEnvironmentFile *> $null
+}
+catch {
+    $outcome = "threw"
+    $message = $_.Exception.Message
+}
+finally {
+    if ($hadExitCode) {
+        $global:LASTEXITCODE = $priorExitCode
+    }
+    else {
+        Remove-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+    }
+}
+
+$record = [ordered]@{ Outcome = $outcome; Message = $message }
+foreach ($name in $logs.Keys) {
+    $record["$($name)LogExists"] = Test-Path -LiteralPath $logs[$name]
+    $record["$($name)Log"] = @(if (Test-Path -LiteralPath $logs[$name]) { Get-Content -LiteralPath $logs[$name] })
+}
+$record | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $RunDirectory "record.json") -Encoding utf8
+'@ | Set-Content -LiteralPath $script:setupChildScript -Encoding utf8
+
+        $script:pwshPath = (Get-Process -Id $PID).Path
+
+        function Invoke-InstanceSetup {
+            param(
+                [string]$Name,
+                [string]$DatabaseEngine,
+                [string[]]$EnvironmentLines
+            )
+
+            $runDirectory = Join-Path $script:setupRoot "runs/$Name"
+            New-Item -ItemType Directory -Path $runDirectory -Force | Out-Null
+            $environmentFile = Join-Path $runDirectory ".env.instance"
+            [System.IO.File]::WriteAllLines($environmentFile, $EnvironmentLines, [System.Text.UTF8Encoding]::new($false))
+
+            $childOutput = & $script:pwshPath -NoProfile -NonInteractive -File $script:setupChildScript `
+                -SetupScript $script:setupScript `
+                -ResolvedEnvironmentFile $environmentFile `
+                -DatabaseEngine $DatabaseEngine `
+                -RunDirectory $runDirectory 2>&1
+
+            $recordPath = Join-Path $runDirectory "record.json"
+            if (-not (Test-Path -LiteralPath $recordPath)) {
+                throw "The setup child wrote no record. Output:`n$($childOutput -join "`n")"
+            }
+
+            $record = Get-Content -LiteralPath $recordPath -Raw | ConvertFrom-Json
+            $record | Add-Member -NotePropertyName EnvironmentFile -NotePropertyValue $environmentFile
+            return $record
+        }
+
+        $script:routeNameLines = @(
+            "INSTANCE_E2E_DATABASE_1_NAME=edfi_route_d1",
+            "INSTANCE_E2E_DATABASE_2_NAME=edfi_route_d2",
+            "INSTANCE_E2E_DATABASE_3_NAME=edfi_route_d3"
+        )
+    }
+
+    AfterAll {
+        if ($script:setupRoot -and (Test-Path -LiteralPath $script:setupRoot)) {
+            Remove-Item -LiteralPath $script:setupRoot -Recurse -Force
+        }
+    }
+
+    It "rejects a <Engine> setup whose third route name matches <Key> before any start or provisioning" -ForEach @(
+        @{ Engine = "postgresql"; Key = "POSTGRES_DB_NAME"; Protected = "POSTGRES_DB_NAME='edfi_route_d3 '" }
+        @{ Engine = "mssql"; Key = "MSSQL_DB_NAME"; Protected = "MSSQL_DB_NAME=`"EDFI_ROUTE_D3$([char]0x3000)`"" }
+    ) {
+        $record = Invoke-InstanceSetup -Name "collision-$Engine" -DatabaseEngine $Engine -EnvironmentLines ($script:routeNameLines + $Protected)
+
+        $record.Outcome | Should -Be "threw"
+        $record.Message | Should -BeExactly "E2E database 'edfi_route_d3' in '$($record.EnvironmentFile)' must be dedicated and cannot match $Key."
+        $record.AuthorityLogExists | Should -BeFalse -Because "no guarded phase may begin after a rejection"
+        $record.StartLogExists | Should -BeFalse -Because "infrastructure must not start after a rejection"
+        $record.ProvisionLogExists | Should -BeFalse -Because "route database 1 must never be provisioned before a later name fails"
+        ($record.DockerLog -join "`n") | Should -BeExactly "version" -Because "only the read-only docker version check precedes the guard"
+    }
+
+    It "lets a <Engine> setup with a distinct <Key> reach the first -InfraOnly start, then stop" -ForEach @(
+        @{ Engine = "postgresql"; Key = "POSTGRES_DB_NAME"; Protected = "POSTGRES_DB_NAME='edfi_primary '" }
+        @{ Engine = "mssql"; Key = "MSSQL_DB_NAME"; Protected = "MSSQL_DB_NAME=`"EDFI_PRIMARY$([char]0x3000)`"" }
+    ) {
+        $record = Invoke-InstanceSetup -Name "control-$Engine" -DatabaseEngine $Engine -EnvironmentLines ($script:routeNameLines + $Protected)
+
+        $record.Outcome | Should -Be "threw"
+        $record.Message | Should -BeExactly "guard-im sentinel: start-local-dms reached"
+        ($record.AuthorityLog -join "`n") | Should -BeExactly "phase"
+        ($record.StartLog -join "`n") | Should -BeExactly "-InfraOnly -EnableConfig -EnvironmentFile $($record.EnvironmentFile) -DatabaseEngine $Engine -IdentityProvider self-contained -AddExtensionSecurityMetadata"
+        $record.ProvisionLogExists | Should -BeFalse -Because "the start sentinel stops the run before provisioning"
+        ($record.DockerLog -join "`n") | Should -BeExactly "version"
+    }
+}
