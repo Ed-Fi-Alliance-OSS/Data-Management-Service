@@ -13,10 +13,10 @@ BeforeAll {
     if ($parseErrors.Count -gt 0) { throw "Launcher parse failed: $($parseErrors[0].Message)" }
 
     foreach ($functionName in @(
-        'Get-TokenContractOverlayLines',
+        'Get-TokenContractOverlayLine',
         'Get-TokenContractUpstreamUri',
         'Get-TokenContractTestFilter',
-        'Get-TokenContractBuildArguments',
+        'Get-TokenContractBuildArgument',
         'Invoke-WithTokenContractProxyEnvironment',
         'Assert-TokenContractTrx',
         'Assert-NativeCommandSucceeded',
@@ -66,8 +66,8 @@ Describe 'DMS-1606 token contract E2E launcher' {
     }
 
     It 'overlays only the selected container token endpoint and correlation input header' {
-        $selfContained = @(Get-TokenContractOverlayLines -Provider self-contained)
-        $keycloak = @(Get-TokenContractOverlayLines -Provider keycloak)
+        $selfContained = @(Get-TokenContractOverlayLine -Provider self-contained)
+        $keycloak = @(Get-TokenContractOverlayLine -Provider keycloak)
 
         $selfContained | Should -Be @(
             'SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT=http://dms-token-proxy:8080/token',
@@ -81,7 +81,7 @@ Describe 'DMS-1606 token contract E2E launcher' {
     }
 
     It 'adds only the route qualifier to the second overlay' {
-        $lines = @(Get-TokenContractOverlayLines -Provider self-contained -Qualified)
+        $lines = @(Get-TokenContractOverlayLine -Provider self-contained -Qualified)
         $lines | Should -Be @(
             'SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT=http://dms-token-proxy:8080/token',
             'CORRELATION_ID_HEADER=X-DMS-1606-Correlation',
@@ -142,10 +142,11 @@ Describe 'DMS-1606 token contract E2E launcher' {
     }
 
     It 'scopes the selected endpoint and correlation override and restores them on failure' -TestCases @(
-        @{ Provider = 'self-contained'; Key = 'SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT'; OtherKey = 'KEYCLOAK_OAUTH_TOKEN_ENDPOINT' },
-        @{ Provider = 'keycloak'; Key = 'KEYCLOAK_OAUTH_TOKEN_ENDPOINT'; OtherKey = 'SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT' }
+        @{ IdentityProvider = 'self-contained'; Key = 'SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT'; OtherKey = 'KEYCLOAK_OAUTH_TOKEN_ENDPOINT' },
+        @{ IdentityProvider = 'keycloak'; Key = 'KEYCLOAK_OAUTH_TOKEN_ENDPOINT'; OtherKey = 'SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT' }
     ) {
-        param($Provider, $Key, $OtherKey)
+        param($IdentityProvider, $Key, $OtherKey)
+        $selectedProvider = $IdentityProvider
         foreach ($hadPreviousValues in @($false, $true)) {
             if ($hadPreviousValues) {
                 [Environment]::SetEnvironmentVariable($Key, 'http://original-provider/token')
@@ -154,7 +155,7 @@ Describe 'DMS-1606 token contract E2E launcher' {
             [Environment]::SetEnvironmentVariable($OtherKey, 'http://unselected-provider/token')
             foreach ($fail in @($false, $true)) {
                 $invoke = {
-                    Invoke-WithTokenContractProxyEnvironment -Provider $Provider -SkipBuild -Action {
+                    Invoke-WithTokenContractProxyEnvironment -Provider $selectedProvider -SkipBuild -Action {
                         [Environment]::GetEnvironmentVariable($Key) | Should -Be 'http://dms-token-proxy:8080/token'
                         [Environment]::GetEnvironmentVariable($OtherKey) | Should -Be 'http://unselected-provider/token'
                         $env:CORRELATION_ID_HEADER | Should -Be 'X-DMS-1606-Correlation'
@@ -176,7 +177,7 @@ Describe 'DMS-1606 token contract E2E launcher' {
     }
 
     It 'binds the build script parameters by name and forwards requested switches' {
-        $parameters = Get-TokenContractBuildArguments `
+        $parameters = Get-TokenContractBuildArgument `
             -Provider keycloak -Engine mssql `
             -EnvironmentPath '/repo/eng/docker-compose/.env.e2e' -OverlayPath '/repo/.derived/overlay.env' `
             -TestFilter '(Category=@TokenContractQualified)&(Category!=@PostgresqlOnly)' `
@@ -198,7 +199,7 @@ Describe 'DMS-1606 token contract E2E launcher' {
             $parameters.ContainsKey($key) | Should -BeTrue
             $parameters[$key] | Should -Be $expectedParameters[$key]
         }
-        $withoutSwitches = Get-TokenContractBuildArguments `
+        $withoutSwitches = Get-TokenContractBuildArgument `
             -Provider self-contained -Engine postgresql `
             -EnvironmentPath '/repo/.env.e2e' -OverlayPath '/repo/overlay.env' `
             -TestFilter 'Category=@DMS-1606' -BuildConfiguration Debug
