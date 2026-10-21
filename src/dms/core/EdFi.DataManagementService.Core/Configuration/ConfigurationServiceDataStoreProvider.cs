@@ -613,9 +613,13 @@ public class ConfigurationServiceDataStoreProvider(
             }
             catch (InvalidOperationException ex)
             {
-                // The decryption service wraps invalid Base64, a payload no longer than the IV, and a
-                // wrong-key failure in this one exception type. Catching only it keeps an unrelated
-                // runtime or programming defect from being reinterpreted as absent configuration.
+                // The decryption service wraps each of its failures in this one exception type: invalid
+                // Base64; a length that fits neither stored form; an envelope that is malformed,
+                // unrecognized, of an unsupported version, or fails authentication, or whose
+                // authenticated plain text has invalid padding or is not UTF-8; and a legacy value
+                // whose padding does not verify, usually a wrong key. Catching only it keeps an
+                // unrelated runtime or programming defect from being reinterpreted as absent
+                // configuration.
                 // The exception object itself is not logged, so the no-secret guarantee is this
                 // boundary's own rather than the decryptor's message discipline: the tenant, parent
                 // data store, derivative type, and exception type identify the bad row, and nothing

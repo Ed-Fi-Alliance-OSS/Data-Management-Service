@@ -1264,14 +1264,14 @@ function Get-EndpointFromResolvedConnectionString {
 function ConvertFrom-CmsEncryptedConnectionString {
     <#
     .SYNOPSIS
-        Decrypts a data store connection string as a Configuration Service response carries it, in either stored form
-        (ConnectionStringCipherText in the Configuration Service describes both):
+        Decrypts a data store connection string as a Configuration Service response carries it, in
+        either stored form (ConnectionStringCipherText in the Configuration Service describes both):
         - envelope: "EdFi.CS.Envelope" (16 bytes), version 1 (1), nonce (12), tag (16), then AES-256-GCM
           cipher text of the PKCS7-padded UTF-8 text, with marker and version as associated data, under a
           key derived by HKDF-SHA256 from the key material;
         - legacy: a 16-byte IV followed by AES-CBC/PKCS7 cipher text under the key material itself.
-        The key material is CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY (the same key the Configuration Service encrypts
-        with) padded with '0' and cut to 32 characters, as UTF-8.
+        The key material is CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY (the same key the
+        Configuration Service encrypts with) padded with '0' and cut to 32 characters, as UTF-8.
     .DESCRIPTION
         Shared by the provisioning phase, which hands the decrypted target to SchemaTools, and by the
         configure phase's restore reuse check, which compares it with the restored target. Every
@@ -1338,7 +1338,7 @@ function ConvertFrom-CmsEncryptedConnectionString {
             $aesGcm.Decrypt($nonce, $cipherText, $tag, $padded, $header)
         }
         catch {
-            throw "Configuration Service data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY."
+            throw "Configuration Service data store encrypted connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY."
         }
         finally {
             $aesGcm.Dispose()
@@ -1371,7 +1371,7 @@ function ConvertFrom-CmsEncryptedConnectionString {
     [Array]::Copy($encryptedBytes, 16, $cipherText, 0, $cipherText.Length)
 
     $aes = [System.Security.Cryptography.Aes]::Create()
-    # Legacy CMS values are AES-CBC / PKCS7; set explicitly rather than relying on .NET defaults.
+    # Legacy Configuration Service values are AES-CBC / PKCS7; set explicitly rather than relying on .NET defaults.
     $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
     $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
     try {

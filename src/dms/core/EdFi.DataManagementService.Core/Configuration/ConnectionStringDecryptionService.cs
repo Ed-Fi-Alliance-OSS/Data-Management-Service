@@ -9,14 +9,14 @@ using System.Text;
 namespace EdFi.DataManagementService.Core.Configuration;
 
 /// <summary>
-/// Decrypts connection strings produced by the CMS <c>ConnectionStringEncryptionService</c>, Base64-encoded
-/// for transport. Two stored forms exist, and this must stay in step with the CMS
-/// <c>ConnectionStringCipherText</c> that defines them:
+/// Decrypts connection strings produced by the Configuration Service <c>ConnectionStringEncryptionService</c>,
+/// Base64-encoded for transport. Two stored forms exist, and this must stay in step with the Configuration
+/// Service <c>ConnectionStringCipherText</c> that defines them:
 /// <list type="bullet">
-/// <item>Envelope (written by current CMS): marker "EdFi.CS.Envelope" (16) || version 1 (1) || nonce (12)
-/// || tag (16) || AES-256-GCM cipher text of the PKCS7-padded UTF-8 text, with marker and version as
-/// associated data. The key is HKDF-SHA256 over the key material below. Every envelope is 13 bytes past
-/// a 16-byte block multiple.</item>
+/// <item>Envelope (written by the current Configuration Service): marker "EdFi.CS.Envelope" (16) ||
+/// version 1 (1) || nonce (12) || tag (16) || AES-256-GCM cipher text of the PKCS7-padded UTF-8 text, with
+/// marker and version as associated data. The key is HKDF-SHA256 over the key material below. Every
+/// envelope is 13 bytes past a 16-byte block multiple.</item>
 /// <item>Legacy: IV (16) || AES-CBC/PKCS7 cipher text, keyed by the key material directly; always a
 /// whole number of blocks.</item>
 /// </list>
@@ -97,7 +97,7 @@ public class ConnectionStringDecryptionService(string encryptionKey) : IConnecti
 
         throw new InvalidOperationException(
             $"Encrypted connection string has an invalid length ({encryptedBytes.Length} bytes); "
-                + "it is neither a CMS connection string envelope nor legacy AES-CBC cipher text."
+                + "it is neither a Configuration Service connection string envelope nor legacy AES-CBC cipher text."
         );
     }
 
@@ -124,7 +124,7 @@ public class ConnectionStringDecryptionService(string encryptionKey) : IConnecti
         {
             throw new InvalidOperationException(
                 $"Encrypted connection string envelope has unsupported format version {header[^1]}. "
-                    + "Verify that this DMS version supports the connection strings the CMS writes."
+                    + "Verify that this Ed-Fi API version supports the connection strings the Configuration Service writes."
             );
         }
 
@@ -146,8 +146,11 @@ public class ConnectionStringDecryptionService(string encryptionKey) : IConnecti
         catch (AuthenticationTagMismatchException ex)
         {
             throw new InvalidOperationException(
-                "Failed to decrypt the connection string: it failed authentication. "
-                    + "Verify that CMS and DMS are configured with the same EncryptionKey.",
+                "Failed to decrypt the connection string: it failed authentication, so either the stored "
+                    + "value was altered or it was encrypted with a different key. "
+                    + "Verify that the Configuration Service DatabaseSettings:EncryptionKey and the Ed-Fi API "
+                    + "ConfigurationServiceSettings:EncryptionKey have the same value (the provided Docker Compose "
+                    + "deployments set both from CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY).",
                 ex
             );
         }

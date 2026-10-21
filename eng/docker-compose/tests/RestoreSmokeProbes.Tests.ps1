@@ -2128,9 +2128,9 @@ Describe "Served-data API probe" {
         It "does not select a data store whose connection string is <case>, and names no secret" -ForEach @(
             @{ Case = "plaintext (no fallback)"; Value = "plaintext"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string is not CMS Base64 cipher text" }
             @{ Case = "not Base64"; Value = "not-base64"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string is not CMS Base64 cipher text" }
-            @{ Case = "the Base64 of an unencrypted connection string"; Value = "base64-plaintext"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string cipher text is truncated or malformed (103 bytes; expected a CMS connection string envelope, or a 16-byte IV and whole 16-byte AES blocks)" }
-            @{ Case = "truncated mid-block"; Value = "truncated"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string cipher text is truncated or malformed (123 bytes; expected a CMS connection string envelope, or a 16-byte IV and whole 16-byte AES blocks)" }
-            @{ Case = "an IV without cipher text"; Value = "iv-only"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string cipher text is truncated or malformed (16 bytes; expected a CMS connection string envelope, or a 16-byte IV and whole 16-byte AES blocks)" }
+            @{ Case = "the Base64 of an unencrypted connection string"; Value = "base64-plaintext"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string cipher text is truncated or malformed (103 bytes; expected a Configuration Service connection string envelope, or a 16-byte IV and whole 16-byte AES blocks)" }
+            @{ Case = "truncated mid-block"; Value = "truncated"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string cipher text is truncated or malformed (123 bytes; expected a Configuration Service connection string envelope, or a 16-byte IV and whole 16-byte AES blocks)" }
+            @{ Case = "an IV without cipher text"; Value = "iv-only"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string cipher text is truncated or malformed (16 bytes; expected a Configuration Service connection string envelope, or a 16-byte IV and whole 16-byte AES blocks)" }
             @{ Case = "missing its final block"; Value = "final-block-dropped"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY" }
             @{ Case = "encrypted under another key"; Value = "wrong-key"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY" }
         ) {
@@ -2187,12 +2187,12 @@ Describe "Served-data API probe" {
         # Each change keeps the envelope on the envelope path: a changed marker byte keeps the length
         # class, so it is refused there rather than decrypted as legacy CBC.
         It "refuses the shared envelope vector with <case>" -ForEach (
-            @(0..15 | ForEach-Object { @{ Case = "marker byte $_ changed"; Index = $_; Value = $null; Reason = "its connection string cipher text is not a recognized CMS connection string envelope" } }) + @(
-                @{ Case = "version 0"; Index = 16; Value = 0; Reason = "its connection string cipher text uses an unsupported CMS connection string envelope version" }
-                @{ Case = "version 2"; Index = 16; Value = 2; Reason = "its connection string cipher text uses an unsupported CMS connection string envelope version" }
-                @{ Case = "a changed nonce"; Index = 17; Value = $null; Reason = "its connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY" }
-                @{ Case = "a changed tag"; Index = 29; Value = $null; Reason = "its connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY" }
-                @{ Case = "changed cipher text"; Index = 45; Value = $null; Reason = "its connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY" }
+            @(0..15 | ForEach-Object { @{ Case = "marker byte $_ changed"; Index = $_; Value = $null; Reason = "its connection string cipher text is not a recognized Configuration Service connection string envelope" } }) + @(
+                @{ Case = "version 0"; Index = 16; Value = 0; Reason = "its connection string cipher text uses an unsupported Configuration Service connection string envelope version" }
+                @{ Case = "version 2"; Index = 16; Value = 2; Reason = "its connection string cipher text uses an unsupported Configuration Service connection string envelope version" }
+                @{ Case = "a changed nonce"; Index = 17; Value = $null; Reason = "its connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY" }
+                @{ Case = "a changed tag"; Index = 29; Value = $null; Reason = "its connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY" }
+                @{ Case = "changed cipher text"; Index = 45; Value = $null; Reason = "its connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY" }
             )
         ) {
             $vectors = Get-TestConnectionStringEncryptionVectors
@@ -2218,7 +2218,7 @@ Describe "Served-data API probe" {
             $result = ConvertFrom-RestoreSmokeDataStoreCipherText -CipherText ([System.Convert]::ToBase64String([byte[]]$payload[0..($kept - 1)])) -Key $keyBytes
 
             $result.PlainText | Should -BeNullOrEmpty
-            $result.Reason | Should -BeExactly "its connection string cipher text is truncated or malformed ($kept bytes; expected a CMS connection string envelope, or a 16-byte IV and whole 16-byte AES blocks)"
+            $result.Reason | Should -BeExactly "its connection string cipher text is truncated or malformed ($kept bytes; expected a Configuration Service connection string envelope, or a 16-byte IV and whole 16-byte AES blocks)"
         }
 
         It "refuses the shared envelope vector under another key" {
@@ -2228,7 +2228,7 @@ Describe "Served-data API probe" {
             $result = ConvertFrom-RestoreSmokeDataStoreCipherText -CipherText $vectors.envelopeV1 -Key $keyBytes
 
             $result.PlainText | Should -BeNullOrEmpty
-            $result.Reason | Should -BeExactly "its connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY"
+            $result.Reason | Should -BeExactly "its connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY"
         }
 
         It "selects the data store from the CMS's own <engine> cipher text and records no secret (<name>)" -ForEach $script:cmsCipherFixtures {

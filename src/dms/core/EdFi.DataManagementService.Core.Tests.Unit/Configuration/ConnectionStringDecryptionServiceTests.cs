@@ -115,7 +115,9 @@ public class Given_ConnectionStringDecryptionService
 
         var act = () => service.DecryptFromBase64(Convert.ToBase64String(new byte[byteCount]));
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("*invalid length*");
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*invalid length*neither a Configuration Service connection string envelope*");
     }
 
     [Test]
@@ -209,7 +211,9 @@ public class Given_ConnectionStringDecryptionService_and_the_interoperability_ve
 
         act.Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("*failed authentication*")
+            .WithMessage(
+                "*failed authentication*stored value was altered*different key*Configuration Service DatabaseSettings:EncryptionKey*Ed-Fi API ConfigurationServiceSettings:EncryptionKey*"
+            )
             .WithInnerExceptionExactly<AuthenticationTagMismatchException>();
     }
 
@@ -277,7 +281,11 @@ public class Given_ConnectionStringDecryptionService_and_a_corrupted_envelope
 
         var act = () => _service.DecryptFromBase64(Convert.ToBase64String(corrupted));
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("*unsupported format version*");
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*unsupported format version*Ed-Fi API version supports the connection strings the Configuration Service writes*"
+            );
     }
 
     [TestCase(NonceOffset, TestName = "It_fails_authentication_for_a_changed_nonce")]
@@ -289,7 +297,9 @@ public class Given_ConnectionStringDecryptionService_and_a_corrupted_envelope
 
         act.Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("*failed authentication*")
+            .WithMessage(
+                "*failed authentication*stored value was altered*different key*Configuration Service DatabaseSettings:EncryptionKey*Ed-Fi API ConfigurationServiceSettings:EncryptionKey*"
+            )
             .WithInnerExceptionExactly<AuthenticationTagMismatchException>();
     }
 

@@ -823,7 +823,7 @@ exit $ExitCode
             # 33 bytes is neither whole AES blocks (legacy) nor 13 bytes past them (envelope).
             $misshapen = [Convert]::ToBase64String([byte[]]::new(33))
             { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $misshapen -EnvValues $envValues } |
-                Should -Throw -ExpectedMessage "CMS data store encrypted connection string payload is invalid."
+                Should -Throw -ExpectedMessage "Configuration Service data store encrypted connection string payload is invalid."
         }
 
         It "rejects an encrypted connection string that cannot be decrypted with the configured key" {
@@ -859,12 +859,12 @@ exit $ExitCode
         # Each change keeps the envelope on the envelope path: a changed marker byte keeps the length
         # class, so it is refused there rather than decrypted as legacy CBC.
         It "rejects the shared envelope vector with <case>" -ForEach (
-            @(0..15 | ForEach-Object { @{ Case = "marker byte $_ changed"; Index = $_; Value = $null; Expected = "CMS data store encrypted connection string envelope is not recognized." } }) + @(
-                @{ Case = "version 0"; Index = 16; Value = 0; Expected = "CMS data store encrypted connection string uses an unsupported envelope format version." }
-                @{ Case = "version 2"; Index = 16; Value = 2; Expected = "CMS data store encrypted connection string uses an unsupported envelope format version." }
-                @{ Case = "a changed nonce"; Index = 17; Value = $null; Expected = "CMS data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY." }
-                @{ Case = "a changed tag"; Index = 29; Value = $null; Expected = "CMS data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY." }
-                @{ Case = "changed cipher text"; Index = 45; Value = $null; Expected = "CMS data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY." }
+            @(0..15 | ForEach-Object { @{ Case = "marker byte $_ changed"; Index = $_; Value = $null; Expected = "Configuration Service data store encrypted connection string envelope is not recognized." } }) + @(
+                @{ Case = "version 0"; Index = 16; Value = 0; Expected = "Configuration Service data store encrypted connection string uses an unsupported envelope format version." }
+                @{ Case = "version 2"; Index = 16; Value = 2; Expected = "Configuration Service data store encrypted connection string uses an unsupported envelope format version." }
+                @{ Case = "a changed nonce"; Index = 17; Value = $null; Expected = "Configuration Service data store encrypted connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY." }
+                @{ Case = "a changed tag"; Index = 29; Value = $null; Expected = "Configuration Service data store encrypted connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY." }
+                @{ Case = "changed cipher text"; Index = 45; Value = $null; Expected = "Configuration Service data store encrypted connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY." }
             )
         ) {
             . $script:repo.ProvisionScript
@@ -886,7 +886,7 @@ exit $ExitCode
             $kept = if ($Length -lt 0) { $payload.Length + $Length } else { $Length }
 
             { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString ([Convert]::ToBase64String([byte[]]$payload[0..($kept - 1)])) -EnvValues @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = $vectors.keyText } } |
-                Should -Throw -ExpectedMessage "CMS data store encrypted connection string payload is invalid."
+                Should -Throw -ExpectedMessage "Configuration Service data store encrypted connection string payload is invalid."
         }
 
         It "rejects the shared envelope vector under another key" {
@@ -894,7 +894,7 @@ exit $ExitCode
             $vectors = Get-TestConnectionStringEncryptionVectors
 
             { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $vectors.envelopeV1 -EnvValues @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = "Rk3pQ8sT2vW9xZ4bC6dE1gH5jL7mN0rY" } } |
-                Should -Throw -ExpectedMessage "CMS data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY."
+                Should -Throw -ExpectedMessage "Configuration Service data store encrypted connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY."
         }
 
         It "fails fast when CMS instance results reach the query page size" {

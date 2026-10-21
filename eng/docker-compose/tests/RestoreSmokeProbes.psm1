@@ -1651,12 +1651,12 @@ function Reset-RestoreSmokeApiSession {
 function Get-RestoreSmokeDataStoreAesKey {
     <#
     .SYNOPSIS
-    The key material CMS takes from CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY, exactly as
-    ConnectionStringEncryptionService does: the key string padded with '0' to 32 characters, cut to
-    its first 32, then UTF-8 encoded. It is the AES key of legacy values and the HKDF input for
-    envelopes. Throws for a blank key, or for one whose first 32 characters do not encode to 32
-    bytes (legacy AES needs exactly 32, and the CMS validator rejects such a key). Messages never
-    carry the key.
+    The key material the Configuration Service takes from
+    CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY, exactly as ConnectionStringEncryptionService
+    does: the key string padded with '0' to 32 characters, cut to its first 32, then UTF-8 encoded.
+    It is the AES key of legacy values and the HKDF input for envelopes. Throws for a blank key, or
+    for one whose first 32 characters do not encode to 32 bytes (legacy AES needs exactly 32, and
+    the Configuration Service validator rejects such a key). Messages never carry the key.
     #>
     param(
         [Parameter(Mandatory)]
@@ -1677,16 +1677,17 @@ function Get-RestoreSmokeDataStoreAesKey {
 function ConvertFrom-RestoreSmokeDataStoreCipherText {
     <#
     .SYNOPSIS
-    Decrypts one connection string as a CMS data store response carries it, in either stored form
-    (ConnectionStringCipherText in the CMS describes both): an envelope ("EdFi.CS.Envelope", version 1,
-    12-byte nonce, 16-byte tag, then AES-256-GCM cipher text of the PKCS7-padded text, under a key
-    HKDF-SHA256 derives from -Key), or a legacy 16-byte IV followed by AES-CBC/PKCS7 cipher text under
-    -Key itself. -Key is the key material Get-RestoreSmokeDataStoreAesKey returns. Returns PlainText,
-    or a Reason when the value is not Base64, has a length neither form can have, is an envelope with
-    an unrecognized marker or unsupported version, does not decrypt (or authenticate) under the key, or
-    does not decrypt to UTF-8 text. A value with the envelope length class or marker is never retried
-    as legacy. Plaintext input is rejected, never parsed as a fallback. A Reason never carries the
-    key, the value, its plaintext, or exception text. Requires PowerShell 7.4 or later (.NET 8 AesGcm).
+    Decrypts one connection string as a Configuration Service data store response carries it, in
+    either stored form (ConnectionStringCipherText in the Configuration Service describes both): an
+    envelope ("EdFi.CS.Envelope", version 1, 12-byte nonce, 16-byte tag, then AES-256-GCM cipher
+    text of the PKCS7-padded text, under a key HKDF-SHA256 derives from -Key), or a legacy 16-byte
+    IV followed by AES-CBC/PKCS7 cipher text under -Key itself. -Key is the key material
+    Get-RestoreSmokeDataStoreAesKey returns. Returns PlainText, or a Reason when the value is not
+    Base64, has a length neither form can have, is an envelope with an unrecognized marker or
+    unsupported version, does not decrypt (or authenticate) under the key, or does not decrypt to
+    UTF-8 text. A value with the envelope length class or marker is never retried as legacy.
+    Plaintext input is rejected, never parsed as a fallback. A Reason never carries the key, the
+    value, its plaintext, or exception text. Requires PowerShell 7.4 or later (.NET 8 AesGcm).
     #>
     param(
         [AllowNull()]
@@ -1707,7 +1708,7 @@ function ConvertFrom-RestoreSmokeDataStoreCipherText {
         return $result
     }
 
-    $malformedReason = "its connection string cipher text is truncated or malformed ($($payload.Length) bytes; expected a CMS connection string envelope, or a 16-byte IV and whole 16-byte AES blocks)"
+    $malformedReason = "its connection string cipher text is truncated or malformed ($($payload.Length) bytes; expected a Configuration Service connection string envelope, or a 16-byte IV and whole 16-byte AES blocks)"
     $undecryptableReason = "its connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY"
     $hasMarker = $payload.Length -ge 16 -and [System.Convert]::ToHexString($payload, 0, 16) -eq "456446692E43532E456E76656C6F7065"
     $plainTextBytes = $null
@@ -1718,11 +1719,11 @@ function ConvertFrom-RestoreSmokeDataStoreCipherText {
             return $result
         }
         if (-not $hasMarker) {
-            $result.Reason = "its connection string cipher text is not a recognized CMS connection string envelope"
+            $result.Reason = "its connection string cipher text is not a recognized Configuration Service connection string envelope"
             return $result
         }
         if ($payload[16] -ne 1) {
-            $result.Reason = "its connection string cipher text uses an unsupported CMS connection string envelope version"
+            $result.Reason = "its connection string cipher text uses an unsupported Configuration Service connection string envelope version"
             return $result
         }
 
@@ -1748,7 +1749,7 @@ function ConvertFrom-RestoreSmokeDataStoreCipherText {
             $aesGcm.Decrypt($nonce, $sealed, $tag, $padded, $header)
         }
         catch {
-            $result.Reason = $undecryptableReason
+            $result.Reason = "its connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY"
             return $result
         }
         finally {
