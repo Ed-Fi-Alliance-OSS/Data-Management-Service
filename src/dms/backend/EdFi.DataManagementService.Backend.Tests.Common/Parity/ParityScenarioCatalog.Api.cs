@@ -129,7 +129,7 @@ public static partial class ParityScenarioCatalog
         ),
         Api(
             "Api/DescriptorRuntime/ImmutablePutIdentity",
-            "Ordinal PUT rejects changed whole URI, including casing-only changes, with exact 400 problem details and unchanged storage/stamps.",
+            "A PUT whose whole URI is a different descriptor identity under the engine's comparison (not a casing change or component re-split) returns 400 with exact problem details and unchanged storage/stamps.",
             "DescriptorRuntimeScenario.It_rejects_descriptor_identity_changes",
             "It_rejects_descriptor_identity_changes",
             fixtureSuffix: "CompactDescriptorRuntime"
