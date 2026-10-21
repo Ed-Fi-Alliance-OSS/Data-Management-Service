@@ -338,15 +338,14 @@ function SetAuthenticationServiceURL {
         [string]
         $E2EDirectory
     )
+    if ($env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE -eq "1") {
+        # The launcher scopes AppSettings__AuthenticationService to the test process. Leave the
+        # compiled settings intact so later prebuilt runs cannot inherit the removed proxy URL.
+        return
+    }
     $appSettingsPath = Join-Path -Path $E2EDirectory -ChildPath "appsettings.json"
     $json = Get-Content $appSettingsPath -Raw | ConvertFrom-Json
-    if ($env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE -eq "1") {
-        # The host-run E2E process cannot resolve DMS's Docker-network alias. Route its normal
-        # setup/authentication token requests through the proxy's loopback-published port; DMS
-        # itself uses the container-side dms-token-proxy alias from the endpoint overlay.
-        $json.AuthenticationService = "http://127.0.0.1:18987/token"
-    }
-    elseif ($IdentityProvider -eq  "self-contained") {
+    if ($IdentityProvider -eq  "self-contained") {
         $json.AuthenticationService ="http://ed-fi-api-config:8081/connect/token"
     }
     else {

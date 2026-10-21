@@ -156,28 +156,73 @@ Describe 'DMS-1606 token contract E2E launcher' {
             Should -Throw '*failed with exit code 9*'
     }
 
-    It 'restores the previous test marker after both success and failure' {
+    It 'restores the previous proxy environment after both success and failure' {
         $hadMarker = Test-Path Env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE
         $previousMarker = $env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE
         $hadDmsImage = Test-Path Env:DMS_DOCKER_IMAGE
         $previousDmsImage = $env:DMS_DOCKER_IMAGE
+        $hadAuthenticationService = Test-Path Env:AppSettings__AuthenticationService
+        $previousAuthenticationService = $env:AppSettings__AuthenticationService
         try {
             $env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE = 'previous'
             $env:DMS_DOCKER_IMAGE = 'previous-image'
+            $env:AppSettings__AuthenticationService = 'http://original-provider/token'
             Invoke-WithTokenContractProxyEnvironment -Action {
                 $env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE | Should -Be '1'
                 $env:DMS_DOCKER_IMAGE | Should -Be 'local/ed-fi-api'
+                $env:AppSettings__AuthenticationService | Should -Be 'http://127.0.0.1:18987/token'
             }
             $env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE | Should -Be 'previous'
             $env:DMS_DOCKER_IMAGE | Should -Be 'previous-image'
+            $env:AppSettings__AuthenticationService | Should -Be 'http://original-provider/token'
 
             { Invoke-WithTokenContractProxyEnvironment -Action { throw 'fixture failure' } } | Should -Throw '*fixture failure*'
             $env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE | Should -Be 'previous'
             $env:DMS_DOCKER_IMAGE | Should -Be 'previous-image'
+            $env:AppSettings__AuthenticationService | Should -Be 'http://original-provider/token'
+
+            Remove-Item Env:AppSettings__AuthenticationService
+            Invoke-WithTokenContractProxyEnvironment -Action {
+                $env:AppSettings__AuthenticationService | Should -Be 'http://127.0.0.1:18987/token'
+            }
+            Test-Path Env:AppSettings__AuthenticationService | Should -BeFalse
+
+            { Invoke-WithTokenContractProxyEnvironment -Action { throw 'fixture failure' } } | Should -Throw '*fixture failure*'
+            Test-Path Env:AppSettings__AuthenticationService | Should -BeFalse
         }
         finally {
             if ($hadMarker) { $env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE = $previousMarker }
             else { Remove-Item Env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE -ErrorAction SilentlyContinue }
+            if ($hadDmsImage) { $env:DMS_DOCKER_IMAGE = $previousDmsImage }
+            else { Remove-Item Env:DMS_DOCKER_IMAGE -ErrorAction SilentlyContinue }
+            if ($hadAuthenticationService) { $env:AppSettings__AuthenticationService = $previousAuthenticationService }
+            else { Remove-Item Env:AppSettings__AuthenticationService -ErrorAction SilentlyContinue }
+        }
+    }
+
+    It 'preserves the configured CI image when Docker builds are skipped' {
+        $hadDmsImage = Test-Path Env:DMS_DOCKER_IMAGE
+        $previousDmsImage = $env:DMS_DOCKER_IMAGE
+        try {
+            $env:DMS_DOCKER_IMAGE = 'ghcr.io/example/dms:commit-sha'
+            Invoke-WithTokenContractProxyEnvironment -SkipBuild -Action {
+                $env:DMS_DOCKER_IMAGE | Should -Be 'ghcr.io/example/dms:commit-sha'
+            }
+            $env:DMS_DOCKER_IMAGE | Should -Be 'ghcr.io/example/dms:commit-sha'
+
+            { Invoke-WithTokenContractProxyEnvironment -SkipBuild -Action {
+                $env:DMS_DOCKER_IMAGE | Should -Be 'ghcr.io/example/dms:commit-sha'
+                throw 'fixture failure'
+            } } | Should -Throw '*fixture failure*'
+            $env:DMS_DOCKER_IMAGE | Should -Be 'ghcr.io/example/dms:commit-sha'
+
+            Remove-Item Env:DMS_DOCKER_IMAGE
+            Invoke-WithTokenContractProxyEnvironment -SkipBuild -Action {
+                Test-Path Env:DMS_DOCKER_IMAGE | Should -BeFalse
+            }
+            Test-Path Env:DMS_DOCKER_IMAGE | Should -BeFalse
+        }
+        finally {
             if ($hadDmsImage) { $env:DMS_DOCKER_IMAGE = $previousDmsImage }
             else { Remove-Item Env:DMS_DOCKER_IMAGE -ErrorAction SilentlyContinue }
         }
@@ -248,20 +293,39 @@ Describe 'DMS-1606 token contract E2E launcher' {
         }
     }
 
-    It 'keeps host-run authentication on the proxy loopback port only during the dedicated lane' {
+    It 'leaves compiled settings unchanged during successful and failed proxy runs' {
+        $settingsPath = Join-Path $TestDrive 'appsettings.json'
+        $originalBytes = [Text.Encoding]::UTF8.GetBytes("{`n  `"AuthenticationService`": `"http://original-provider/token`"`n}`n")
+        [IO.File]::WriteAllBytes($settingsPath, $originalBytes)
+        $settingsDirectory = $TestDrive
+
+        Invoke-WithTokenContractProxyEnvironment -Action {
+            SetAuthenticationServiceURL -E2EDirectory $settingsDirectory
+            $env:AppSettings__AuthenticationService | Should -Be 'http://127.0.0.1:18987/token'
+        }
+        [Convert]::ToBase64String([IO.File]::ReadAllBytes($settingsPath)) | Should -BeExactly ([Convert]::ToBase64String($originalBytes))
+
+        { Invoke-WithTokenContractProxyEnvironment -Action {
+            SetAuthenticationServiceURL -E2EDirectory $settingsDirectory
+            throw 'fixture failure'
+        } } | Should -Throw '*fixture failure*'
+        [Convert]::ToBase64String([IO.File]::ReadAllBytes($settingsPath)) | Should -BeExactly ([Convert]::ToBase64String($originalBytes))
+    }
+
+    It 'keeps ordinary authentication settings for both supported providers' {
         $settingsPath = Join-Path $TestDrive 'appsettings.json'
         '{"AuthenticationService":"unchanged"}' | Set-Content $settingsPath
         $hadMarker = Test-Path Env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE
         $previousMarker = $env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE
-        $script:IdentityProvider = 'self-contained'
         try {
-            $env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE = '1'
-            SetAuthenticationServiceURL -E2EDirectory $TestDrive
-            (Get-Content $settingsPath -Raw | ConvertFrom-Json).AuthenticationService | Should -Be 'http://127.0.0.1:18987/token'
-
             Remove-Item Env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE -ErrorAction SilentlyContinue
+            $script:IdentityProvider = 'self-contained'
             SetAuthenticationServiceURL -E2EDirectory $TestDrive
             (Get-Content $settingsPath -Raw | ConvertFrom-Json).AuthenticationService | Should -Be 'http://ed-fi-api-config:8081/connect/token'
+
+            $script:IdentityProvider = 'keycloak'
+            SetAuthenticationServiceURL -E2EDirectory $TestDrive
+            (Get-Content $settingsPath -Raw | ConvertFrom-Json).AuthenticationService | Should -Be 'http://dms-keycloak:8080/realms/edfi/protocol/openid-connect/token'
         }
         finally {
             if ($hadMarker) { $env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE = $previousMarker }

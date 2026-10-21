@@ -302,7 +302,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 process.StartInfo.ArgumentList.Add(
                     startedAt.ToString(System.Globalization.CultureInfo.InvariantCulture)
                 );
-                process.StartInfo.ArgumentList.Add("ed-fi-api");
+                process.StartInfo.ArgumentList.Add(AppSettings.DmsContainerName);
                 process.Start();
 
                 try
