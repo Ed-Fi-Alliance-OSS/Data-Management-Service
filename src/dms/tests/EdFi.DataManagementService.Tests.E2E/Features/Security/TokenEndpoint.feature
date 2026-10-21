@@ -244,6 +244,15 @@ Feature: Client credentials at the token endpoint
 
     @DMS-1606
     @e2e-ci-shard-1
+    Scenario: 36 An unsupported JSON charset is rejected as a request error
+      When a token request is made with content type "application/json; charset=dms-unknown" and body
+        """
+        {"grant_type":"client_credentials","client_id":"{clientId}","client_secret":"{clientSecret}"}
+        """
+      Then the token error is 400 "invalid_request" with description "The token request body declares an unsupported JSON charset"
+
+    @DMS-1606
+    @e2e-ci-shard-1
     Scenario: 16 A credential longer than 2048 characters is rejected
       When a token request is made with content type "application/x-www-form-urlencoded" and body
         """

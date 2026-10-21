@@ -623,6 +623,12 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                 // as unusable so the 401/429 branch still emits its safe fallback and summary.
                 return string.Empty;
             }
+            catch (NotSupportedException)
+            {
+                // A recognized but unavailable encoding (such as disabled UTF-7) is not wrapped
+                // by HttpContent. Buffering already succeeded, so this is also unusable content.
+                return string.Empty;
+            }
         }
 
         // The limit carried by a canonical token-limit body, or null when the body deviates from

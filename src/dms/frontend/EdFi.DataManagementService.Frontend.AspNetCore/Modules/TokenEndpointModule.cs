@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.OAuth;
@@ -12,6 +13,7 @@ using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.Options;
+using Microsoft.Net.Http.Headers;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
@@ -138,6 +140,29 @@ public class TokenEndpointModule : IEndpointModule
         IHttpClientFactory httpClientFactory
     )
     {
+        // Validate only charset resolution here. ReadFromJsonAsync wraps an unsupported encoding
+        // in InvalidOperationException, which must not turn ordinary input errors into server failures.
+        // Keep body reads outside this guard so I/O, cancellation, size limits and server faults propagate.
+        if (
+            MediaTypeHeaderValue.TryParse(httpContext.Request.ContentType, out var contentType)
+            && contentType.Charset.HasValue
+        )
+        {
+            try
+            {
+                _ = Encoding.GetEncoding(contentType.Charset.Value);
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
+            {
+                await WriteBadRequest(
+                    httpContext,
+                    appSettings,
+                    "The token request body declares an unsupported JSON charset"
+                );
+                return;
+            }
+        }
+
         // Manually read the JSON body so the framework's binder never sees it: its parse errors
         // quote the body, and the framework logs them (or throws them into the error log).
         TokenRequest? tokenRequest = null;

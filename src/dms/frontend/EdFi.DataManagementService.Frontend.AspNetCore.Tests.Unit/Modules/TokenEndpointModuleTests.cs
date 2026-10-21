@@ -14,6 +14,7 @@ using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
@@ -607,7 +608,9 @@ public class TokenEndpointModuleTests
         HttpRequestMessage request,
         string environment = "Test",
         ILoggerProvider? loggerProvider = null,
-        string correlationHeader = ""
+        string correlationHeader = "",
+        string routeQualifierSegments = "",
+        Exception? bodyReadFailure = null
     )
     {
         List<ManagerCall> calls = [];
@@ -653,6 +656,7 @@ public class TokenEndpointModuleTests
                             ["AppSettings:ApiSchema:UseCustomPath"] = "false",
                             ["AppSettings:BypassAuthorization"] = "true",
                             ["AppSettings:CorrelationIdHeader"] = correlationHeader,
+                            ["AppSettings:RouteQualifierSegments"] = routeQualifierSegments,
                             ["JwtAuthentication:MetadataAddress"] =
                                 "http://test-idp/.well-known/openid-configuration",
                             ["JwtAuthentication:RequireHttpsMetadata"] = "false",
@@ -675,6 +679,10 @@ public class TokenEndpointModuleTests
             {
                 TestMockHelper.AddEssentialMocks(collection);
                 collection.AddTransient(_ => oAuthManager);
+                if (bodyReadFailure is not null)
+                {
+                    collection.AddSingleton<IStartupFilter>(new FailingRequestBodyFilter(bodyReadFailure));
+                }
             });
         });
         using var client = factory.CreateClient();
@@ -717,6 +725,315 @@ public class TokenEndpointModuleTests
     /// and quotes the rest of the value in its exception message.
     /// </summary>
     private const string LeakSentinel = "topSECRETvalue";
+
+    private sealed class FailingReadStream(Exception failure) : MemoryStream
+    {
+        public override int Read(byte[] buffer, int offset, int count) => throw failure;
+
+        public override int Read(Span<byte> buffer) => throw failure;
+
+        public override Task<int> ReadAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken
+        ) => Task.FromException<int>(failure);
+
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default
+        ) => ValueTask.FromException<int>(failure);
+    }
+
+    private sealed class FailingRequestBodyFilter(Exception failure) : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) =>
+            app =>
+            {
+                app.Use(
+                    async (context, nextMiddleware) =>
+                    {
+                        using var body = new FailingReadStream(failure);
+                        context.Request.Body = body;
+                        await nextMiddleware(context);
+                    }
+                );
+                next(app);
+            };
+    }
+
+    [TestFixture("/oauth/token", "Production", "dms-unknown")]
+    [TestFixture("/2025/oauth/token", "Development", "dms-unknown")]
+    [TestFixture("/oauth/token", "Production", "utf-7")]
+    public class Given_An_Unsupported_Json_Charset(string path, string environment, string charset)
+        : TokenEndpointModuleTests
+    {
+        private HttpResponseMessage _response = null!;
+        private List<ManagerCall> _calls = null!;
+        private RecordingLoggerProvider _logs = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            using var request = UnauthenticatedRequest(
+                """{"grant_type":"client_credentials","client_id":"x","client_secret":"topSECRETvalue"}""",
+                "application/json"
+            );
+            request.RequestUri = new Uri(path, UriKind.Relative);
+            request.Content!.Headers.ContentType!.CharSet = charset;
+            request.Headers.Add("x-token-trace", "charset%trace+id/1");
+            _logs = new RecordingLoggerProvider();
+            (_response, _calls) = SendCapturingManagerCalls(
+                request,
+                environment,
+                _logs,
+                correlationHeader: "x-token-trace",
+                routeQualifierSegments: "schoolYear"
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _logs.Dispose();
+        }
+
+        [Test]
+        public async Task It_rejects_the_request_with_the_safe_oauth_contract()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            _response.Content.Headers.ContentType!.ToString().Should().Be("application/json; charset=utf-8");
+            JsonObject body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!.AsObject();
+            body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
+            body["error"]!.GetValue<string>().Should().Be("invalid_request");
+            body["error_description"]!
+                .GetValue<string>()
+                .Should()
+                .Be("The token request body declares an unsupported JSON charset");
+            _response.Headers.WwwAuthenticate.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_encodes_the_same_correlation_id_that_is_logged()
+        {
+            _response
+                .Headers.GetValues("X-Correlation-ID")
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be("charset%25trace%2Bid%2F1");
+            _logs
+                .Entries.Should()
+                .Contain(entry => entry.Contains("charset%trace+id/1", StringComparison.Ordinal));
+        }
+
+        [Test]
+        public void It_does_not_log_a_request_failure_or_disclose_the_secret()
+        {
+            _logs
+                .Entries.Should()
+                .NotContain(entry => entry.Contains("HttpRequestFailed", StringComparison.Ordinal));
+            _logs
+                .Entries.Should()
+                .NotContain(entry => entry.Contains(LeakSentinel, StringComparison.Ordinal));
+        }
+
+        [Test]
+        public void It_does_not_forward_the_request()
+        {
+            _calls.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture("utf-8")]
+    [TestFixture("utf-16")]
+    [TestFixture("")]
+    public class Given_A_Supported_Json_Charset(string charset) : TokenEndpointModuleTests
+    {
+        private HttpResponseMessage _response = null!;
+        private List<ManagerCall> _calls = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            Encoding encoding = charset.Length == 0 ? Encoding.UTF8 : Encoding.GetEncoding(charset);
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/oauth/token")
+            {
+                Content = new StringContent(
+                    """{"grant_type":"client_credentials","client_id":"café","client_secret":"secret"}""",
+                    encoding,
+                    "application/json"
+                ),
+            };
+            if (charset.Length == 0)
+            {
+                request.Content.Headers.ContentType!.CharSet = null;
+            }
+            (_response, _calls) = SendCapturingManagerCalls(request);
+        }
+
+        [TearDown]
+        public void TearDown() => _response.Dispose();
+
+        [Test]
+        public void It_preserves_decoding_and_forwards_the_credentials()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.OK);
+            _calls
+                .Should()
+                .ContainSingle()
+                .Which.BodyCredentials.Should()
+                .Be(new TokenRequestCredentials("café", "secret"));
+        }
+    }
+
+    [TestFixture("/oauth/token", 413, "invalid_request", "The token request body exceeds the allowed size.")]
+    [TestFixture(
+        "/2025/oauth/token",
+        500,
+        "server_error",
+        "The server encountered an unexpected condition that prevented it from fulfilling the request."
+    )]
+    public class Given_A_Routed_Json_Body_Read_Failure(
+        string path,
+        int status,
+        string error,
+        string description
+    ) : TokenEndpointModuleTests
+    {
+        private HttpResponseMessage _response = null!;
+        private List<ManagerCall> _calls = null!;
+        private RecordingLoggerProvider _logs = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            Exception failure =
+                status == 413
+                    ? new BadHttpRequestException(
+                        "Request body too large",
+                        StatusCodes.Status413PayloadTooLarge
+                    )
+                    : new InvalidOperationException("Unexpected body reader failure");
+            using var request = UnauthenticatedRequest("{}", "application/json");
+            request.RequestUri = new Uri(path, UriKind.Relative);
+            request.Headers.Add("x-token-trace", "read%trace+id/1");
+            _logs = new RecordingLoggerProvider();
+            (_response, _calls) = SendCapturingManagerCalls(
+                request,
+                loggerProvider: _logs,
+                correlationHeader: "x-token-trace",
+                routeQualifierSegments: "schoolYear",
+                bodyReadFailure: failure
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _logs.Dispose();
+        }
+
+        [Test]
+        public async Task It_preserves_the_middleware_status_and_oauth_contract()
+        {
+            ((int)_response.StatusCode).Should().Be(status);
+            _response.Content.Headers.ContentType!.ToString().Should().Be("application/json; charset=utf-8");
+            JsonObject body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!.AsObject();
+            body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
+            body["error"]!.GetValue<string>().Should().Be(error);
+            body["error_description"]!.GetValue<string>().Should().Be(description);
+            _response.Headers.WwwAuthenticate.Should().BeEmpty();
+            _response
+                .Headers.GetValues("X-Correlation-ID")
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be("read%25trace%2Bid%2F1");
+        }
+
+        [Test]
+        public void It_leaves_failure_logging_to_the_middleware()
+        {
+            _logs
+                .Entries.Any(entry => entry.Contains("HttpRequestFailed", StringComparison.Ordinal))
+                .Should()
+                .Be(status == 500);
+            _logs
+                .Entries.Should()
+                .Contain(entry => entry.Contains("read%trace+id/1", StringComparison.Ordinal));
+            _calls.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture("io")]
+    [TestFixture("invalid-operation")]
+    [TestFixture("cancellation")]
+    [TestFixture("body-size")]
+    public class Given_A_Json_Read_Failure_That_Is_Not_A_Charset_Error(string failure)
+        : TokenEndpointModuleTests
+    {
+        private Exception _exception = null!;
+        private Exception _caught = null!;
+        private DefaultHttpContext _context = null!;
+
+        [SetUp]
+        public async Task SetUp()
+        {
+            _exception = failure switch
+            {
+                "io" => new IOException("Interrupted request body"),
+                "invalid-operation" => new InvalidOperationException("Unexpected body reader failure"),
+                "cancellation" => new OperationCanceledException(),
+                _ => new BadHttpRequestException(
+                    "Request body too large",
+                    StatusCodes.Status413PayloadTooLarge
+                ),
+            };
+            _context = new DefaultHttpContext();
+            _context.Request.ContentType = "application/json; charset=utf-8";
+            _context.Request.Body = new FailingReadStream(_exception);
+            _context.Response.Body = new MemoryStream();
+            try
+            {
+                await AspNetCore.Modules.TokenEndpointModule.HandleJsonData(
+                    _context,
+                    Options.Create(
+                        new AppSettings
+                        {
+                            AuthenticationService = "http://localhost/connect/token",
+                            Datastore = "postgresql",
+                            CorrelationIdHeader = "",
+                        }
+                    ),
+                    Options.Create(new Microsoft.AspNetCore.Http.Json.JsonOptions()),
+                    A.Fake<IOAuthManager>(),
+                    NullLogger<AspNetCore.Modules.TokenEndpointModule>.Instance,
+                    A.Fake<IHttpClientFactory>()
+                );
+            }
+            catch (Exception ex)
+            {
+                _caught = ex;
+            }
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _context.Request.Body.Dispose();
+            _context.Response.Body.Dispose();
+        }
+
+        [Test]
+        public void It_preserves_the_original_failure_for_the_middleware()
+        {
+            _caught.Should().BeSameAs(_exception);
+            ((MemoryStream)_context.Response.Body).Length.Should().Be(0);
+        }
+    }
 
     [TestFixture("Production")]
     [TestFixture("Development")]
