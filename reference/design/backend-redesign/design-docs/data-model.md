@@ -194,7 +194,7 @@ CREATE SEQUENCE dms.CollectionItemIdSequence
 Descriptors remain documents, with a shared table whose independently allocated `int`
 `DescriptorId` is the physical primary key. Its unique, non-null `bigint` `DocumentId`
 associates the row with its owning document. Resource descriptor FKs use the compact key;
-UUIDs, document-level RI, locks, concurrency, paging, cache work, and restamping use the
+UUIDs, locks, concurrency, paging, cache work, and restamping use the
 owning document key. Neither allocator narrows or reuses the other's values, and an update
 allocates neither key again.
 
@@ -307,11 +307,12 @@ Descriptor references and identity resolution (natural-key resolution; no write 
   direct descriptor FK requirements to those projections.
 - Resolution probes `UX_Descriptor_UriLowered_ResourceKeyId` with the raw URI folded in SQL, not
   `dms.ReferentialIdentity`, and returns both `int DescriptorId` and `long DocumentId` in the same
-  command. Stored descriptor joins and query parameters use the compact key; document/RI
+  command. Stored descriptor joins and query parameters use the compact key; document
   operations use `DocumentId`.
-- Descriptor POST and PUT detect their target with the same probe: the request's whole URI
-  against `UX_Descriptor_UriLowered_ResourceKeyId` for the descriptor's own `ResourceKeyId`,
-  projecting both keys and binding the owning `DocumentId`. Descriptor writes no longer write
+- Descriptor POST detects its target with the same probe: the request's whole URI against
+  `UX_Descriptor_UriLowered_ResourceKeyId` for the descriptor's own `ResourceKeyId`, projecting
+  both keys and binding the owning `DocumentId`. PUT addresses its target by document UUID and
+  uses the probe only for its identity verdict (below). Descriptor writes no longer write
   `dms.ReferentialIdentity` rows, and no runtime path reads RI.
 - Resource RI triggers still reconstruct `Namespace + '#' + CodeValue` for descriptor-valued
   identity parts until RI is removed; C# never case-folds a descriptor URI. Original-case response URIs reconstruct
