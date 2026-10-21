@@ -32,8 +32,6 @@ $resolvedEnvironmentPath = $null
 $proxyLaunchAttempted = $false
 $e2eAttempted = $false
 $usableDmsWasStarted = $false
-$e2eAppSettingsPath = Join-Path $repoRoot 'src/dms/tests/EdFi.DataManagementService.Tests.E2E/appsettings.json'
-$originalE2EAppSettingsBytes = $null
 
 function Get-TokenContractOverlayLines {
     param(
@@ -99,17 +97,25 @@ function Get-TokenContractBuildArguments {
 }
 
 function Invoke-WithTokenContractProxyEnvironment {
-    param([Parameter(Mandatory)] [scriptblock] $Action)
+    param(
+        [Parameter(Mandatory)] [scriptblock] $Action,
+        [switch] $SkipBuild
+    )
 
     $hadPreviousMarker = Test-Path Env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE
     $previousMarker = $env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE
     $hadPreviousDmsImage = Test-Path Env:DMS_DOCKER_IMAGE
     $previousDmsImage = $env:DMS_DOCKER_IMAGE
+    $hadPreviousAuthenticationService = Test-Path Env:AppSettings__AuthenticationService
+    $previousAuthenticationService = $env:AppSettings__AuthenticationService
     try {
         $env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE = '1'
-        # build-dms.ps1 tags the source image as local/ed-fi-api; select that exact image for the
-        # Compose run instead of an older default ed-fi-api-local tag on the host.
-        $env:DMS_DOCKER_IMAGE = 'local/ed-fi-api'
+        # Host-run setup/authentication uses the loopback port; DMS uses the Docker-network alias
+        # from the endpoint overlay. Environment configuration overrides compiled appsettings.
+        $env:AppSettings__AuthenticationService = 'http://127.0.0.1:18987/token'
+        # A source build produces local/ed-fi-api. When reusing images, preserve the CI-selected
+        # reference or Compose's ed-fi-api-local default instead of selecting an unbuilt tag.
+        if (-not $SkipBuild) { $env:DMS_DOCKER_IMAGE = 'local/ed-fi-api' }
         & $Action
     }
     finally {
@@ -117,6 +123,8 @@ function Invoke-WithTokenContractProxyEnvironment {
         else { Remove-Item Env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE -ErrorAction SilentlyContinue }
         if ($hadPreviousDmsImage) { $env:DMS_DOCKER_IMAGE = $previousDmsImage }
         else { Remove-Item Env:DMS_DOCKER_IMAGE -ErrorAction SilentlyContinue }
+        if ($hadPreviousAuthenticationService) { $env:AppSettings__AuthenticationService = $previousAuthenticationService }
+        else { Remove-Item Env:AppSettings__AuthenticationService -ErrorAction SilentlyContinue }
     }
 }
 
@@ -283,13 +291,12 @@ try {
     }
     if (-not $ready) { throw 'The token proxy did not become ready at http://127.0.0.1:18987/health within 90 seconds.' }
 
-    $originalE2EAppSettingsBytes = [IO.File]::ReadAllBytes($e2eAppSettingsPath)
     $rootOverlay = Join-Path $ownedRoot 'root.overlay.env'
     $qualifiedOverlay = Join-Path $ownedRoot 'qualified.overlay.env'
     [IO.File]::WriteAllLines($rootOverlay, (Get-TokenContractOverlayLines -Provider $IdentityProvider), [Text.UTF8Encoding]::new($false))
     [IO.File]::WriteAllLines($qualifiedOverlay, (Get-TokenContractOverlayLines -Provider $IdentityProvider -Qualified), [Text.UTF8Encoding]::new($false))
 
-    Invoke-WithTokenContractProxyEnvironment -Action {
+    Invoke-WithTokenContractProxyEnvironment -SkipBuild:$SkipDockerBuild -Action {
         $passFailures = [Collections.Generic.List[string]]::new()
         $passes = @(
             @{
@@ -369,19 +376,6 @@ finally {
     elseif ($e2eAttempted) {
         $stopResult = Stop-TokenContractDmsIfPresent
         $cleanupFailures.Add("No usable provisioned DMS test run was observed; fixture-dependent container stop result: $stopResult.")
-    }
-
-    if ($null -ne $originalE2EAppSettingsBytes) {
-        try {
-            [IO.File]::WriteAllBytes($e2eAppSettingsPath, $originalE2EAppSettingsBytes)
-            $restoredAppSettingsBytes = [IO.File]::ReadAllBytes($e2eAppSettingsPath)
-            if ([Convert]::ToBase64String($originalE2EAppSettingsBytes) -cne [Convert]::ToBase64String($restoredAppSettingsBytes)) {
-                throw 'The E2E appsettings file did not match its original bytes after restoration.'
-            }
-        }
-        catch {
-            $cleanupFailures.Add("E2E appsettings restoration failed: $($_.Exception.GetType().Name).")
-        }
     }
 
     if ($null -ne $ownedRoot -and (Test-Path -LiteralPath $ownedRoot)) {
