@@ -7,7 +7,7 @@ Draft.
 This document is the data-model deep dive for `overview.md`. Descriptor storage below
 reflects the DMS-1404 compact baseline; reference resolution and descriptor filters use the
 natural-key probes, resource POST upserts use the own-natural-key capture, and descriptor writes
-still use RI. Later natural-key
+use the lowered-URI descriptor probe with stored-wins identity. Later natural-key
 proposals remain identified as future work and do not change this story's equality or platform
 contract.
 
@@ -132,8 +132,8 @@ Notes:
 
 - `DocumentUuid` remains stable across identity updates. Resource POST matching uses the
   own-natural-key capture, and reference resolution uses the natural-key probes described in
-  [natural-key-resolution.md](natural-key-resolution.md); descriptor POSTs still match through RI
-  until DMS-1454.
+  [natural-key-resolution.md](natural-key-resolution.md); descriptor POSTs match through the
+  lowered-URI descriptor probe (§2).
 - `ResourceKeyId` identifies the document’s concrete resource type; use `dms.ResourceKey` for `(ProjectName, ResourceName)` when needed (diagnostics, CDC metadata).
 - `dms.Document` deliberately carries no `(ResourceKeyId, DocumentId)` resource-type scan index. Descriptor paging roots on `dms.Descriptor` via its denormalized `ResourceKeyId` (see §2), while document UUID probes retain their existing path. `FK_Descriptor_DocumentResourceKey` enforces descriptor document/type agreement through `UX_Document_DocumentId_ResourceKeyId`. `FK_Document_ResourceKey` needs no referencing-side index because resource-key seeds are immutable at runtime.
 - `dms.Document` has no `(ContentVersion, DocumentId)` projector-discovery index. Durable
@@ -298,7 +298,7 @@ discriminator output retain their existing columns and behavior.
 The effective date columns remain part of the descriptor field contract, as in legacy ODS.
 DMS uses one shared descriptor table without per-descriptor marker tables.
 
-Descriptor references and identity resolution (natural-key resolution; RI retained for descriptor writes):
+Descriptor references and identity resolution (natural-key resolution; no write maintains descriptor RI):
 
 - Resource tables' stored `DescriptorFk` values are `Int32` and their FKs target
   `dms.Descriptor(DescriptorId)` with existing `NO ACTION` deletion protection. This includes
@@ -309,28 +309,34 @@ Descriptor references and identity resolution (natural-key resolution; RI retain
   `dms.ReferentialIdentity`, and returns both `int DescriptorId` and `long DocumentId` in the same
   command. Stored descriptor joins and query parameters use the compact key; document/RI
   operations use `DocumentId`.
-- RI maintenance still reconstructs `Namespace + '#' + CodeValue` for its hashing until RI is
-  removed; C# never case-folds a descriptor URI. Original-case response URIs reconstruct
+- Descriptor POST and PUT detect their target with the same probe: the request's whole URI
+  against `UX_Descriptor_UriLowered_ResourceKeyId` for the descriptor's own `ResourceKeyId`,
+  projecting both keys and binding the owning `DocumentId`. Descriptor writes no longer write
+  `dms.ReferentialIdentity` rows, and no runtime path reads RI.
+- Resource RI triggers still reconstruct `Namespace + '#' + CodeValue` for descriptor-valued
+  identity parts until RI is removed; C# never case-folds a descriptor URI. Original-case response URIs reconstruct
   from the same stored components. Incoming references remain whole strings: they are not split on `#`,
   trimmed or Unicode-normalized. Descriptor identity components and reference values containing
   NUL or an unpaired surrogate are rejected with a path-attributed 400.
 
-The [natural-key workstream](natural-key-resolution.md) owns later descriptor-write equality,
-RI removal and stored-wins semantics.
-Those proposals are not the DMS-1404 runtime contract.
+The [natural-key workstream](natural-key-resolution.md) owns RI removal (DMS-1456).
 
-Descriptor update semantics:
+Descriptor update semantics (stored wins):
 
-- An authorized POST matched through RI preserves both IDs and applies incoming namespace/code
-  components, including casing changes. Provider equality alone does not prove an RI match;
-  existing conflict behavior remains.
-- PUT compares the incoming and reconstructed stored whole URI ordinally. Different text,
-  including a case-only change, returns 400 for immutable identity without changing stamps.
-  Different component pairs producing exactly the same whole URI pass that guard and persist.
-- Namespace and code value are independently compared representation fields. Accepted component
-  changes, descriptive changes and date changes receive normal stamps/ETags. An unchanged POST
-  returns HTTP 200 and an unchanged PUT returns HTTP 204; both preserve IDs, ETag, content stamps,
-  and change-query state. `ResourceKeyId` and both keys remain immutable.
+- A POST matched by the probe is an update of that descriptor. The stored `Namespace` and
+  `CodeValue` are bound before the proposed-namespace authorization check and the DML, so a
+  case-variant re-POST, a SQL Server collation alias (for example `ß`/`ss`) or a component
+  re-split that reconstructs the same URI keeps the stored components. Both IDs are preserved.
+- PUT follows the database's descriptor-identity verdict. An ordinally equal whole URI is
+  unchanged without a probe; otherwise the probe decides, and the identity is unchanged only
+  when it resolves to the locked document. An unchanged identity (casing, SQL Server collation
+  aliases, re-split components) keeps the stored components; a different identity returns 400
+  for immutable identity without changing stamps.
+- Identity equality is that engine verdict. The descriptive fields (`shortDescription`,
+  `description`, `effectiveBeginDate`, `effectiveEndDate`) compare ordinally. Descriptive and
+  date changes receive normal stamps/ETags. An unchanged POST, including a casing-only re-POST,
+  returns HTTP 200 and an unchanged PUT returns HTTP 204; both preserve IDs, ETag, content
+  stamps, and change-query state. `ResourceKeyId` and both keys remain immutable.
 - Descriptor endpoint query fields map to shared descriptor columns with root-table-only semantics, including `namespace`, `codeValue`, `shortDescription`, `description`, `effectiveBeginDate`, and `effectiveEndDate`.
 - Stable compact FKs are not rewritten by descriptor metadata updates.
 

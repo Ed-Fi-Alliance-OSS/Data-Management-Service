@@ -56,9 +56,9 @@ The resolver consumes Core-extracted `DocumentIdentity` values and probes the co
 targets described in
 [natural-key-resolution.md](natural-key-resolution.md#the-natural-key-reference-resolver). It does
 not read `dms.ReferentialIdentity`. Resource POST upsert existence detection uses the generated
-own-natural-key capture instead of RI. RI is read only by descriptor writes and is maintained until
-its removal (DMS-1456); the descriptor-write natural-key cutover and stored-wins descriptor writes
-are later work (DMS-1454).
+own-natural-key capture instead of RI, and descriptor writes detect their target through the
+lowered-URI descriptor probe. No runtime path reads RI. Descriptor writes no longer write RI rows;
+resource RI rows stay trigger-maintained until RI removal (DMS-1456).
 
 It is used for:
 - resolving extracted `DocumentReference` / `DescriptorReference` instances during writes, and
@@ -171,22 +171,29 @@ URI consumers reconstruct `Namespace + '#' + CodeValue` before their existing co
 
 The current descriptor behavior on both providers is:
 
-- Create allocates an independent compact identity and a document identity. An authorized POST
-  matching through RI preserves both IDs and applies incoming Namespace/CodeValue and descriptive
-  fields. Accepted component changes, including case changes, receive normal stamps and ETag changes.
-  Database equality alone does not establish an RI match; a conflicting insert remains a conflict.
-- PUT by document UUID rejects different whole-URI text ordinally with immutable-identity 400,
-  including case-only changes, leaving values and stamps unchanged. Different component pairs that
-  reconstruct exactly the same URI pass the guard; accepted component changes still stamp.
-- An unchanged POST returns HTTP 200 and an unchanged PUT returns HTTP 204; both preserve IDs,
-  ETag, content stamps, and change-query state.
-  Descriptive updates and stored/proposed authorization retain their existing rules.
+- Create allocates an independent compact identity and a document identity. POST detects an
+  existing descriptor with the lowered-URI probe on `UX_Descriptor_UriLowered_ResourceKeyId`,
+  which projects both keys and binds the owning `DocumentId`. A probe result that is stale by the
+  time the row is locked fails closed to a retryable conflict, and a unique violation on a racing
+  create remains a conflict.
+- Stored wins. A POST matched by the probe binds the persisted `Namespace`/`CodeValue` before the
+  proposed-namespace authorization check and the DML, preserving both IDs. A case-variant re-POST,
+  a SQL Server collation alias (for example `ß`/`ss`) or a component re-split reconstructing the
+  same URI therefore keeps the stored components.
+- PUT by document UUID follows the database's descriptor-identity verdict: an ordinally equal
+  whole URI is unchanged without a probe; otherwise the identity is unchanged only when the probe
+  resolves to the locked document. An unchanged identity keeps the stored components; a different
+  identity returns immutable-identity 400, leaving values and stamps unchanged.
+- Identity equality is the engine verdict above; descriptive fields compare ordinally. An
+  unchanged POST, including a casing-only re-POST, returns HTTP 200 and an unchanged PUT returns
+  HTTP 204; both preserve IDs, ETag, content stamps, and change-query state.
+  Stored/proposed authorization keeps its order and precedence (403 before 412 before 400).
 - `dms.Document.ContentVersion` remains the concurrency authority. Descriptor triggers advance
   that version through the owning `DocumentId`, mirror the version and generate the authoritative
   `dms.Descriptor.ContentLastModifiedAt` in the same transaction.
   Representation restamping, cache work, and custom-view membership also retain `DocumentId`.
 
-These rules do not implement the later stored-wins descriptor proposal. Abstract identity
+Abstract identity
 discriminators and regular-resource identity-update behavior remain unchanged.
 
 #### How polymorphic (abstract) references work end-to-end
@@ -267,7 +274,7 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
    - document references with target resource, fully-flattened identity values, and request paths
    - descriptor references with target resource, concrete request paths, and the raw validated URI
    - for descriptor resource writes, the URI derived from canonicalized `namespace` + `#` +
-     `codeValue`, under the existing validation and RI calculation rules
+     `codeValue`, under the existing validation rules
 2. Backend resolves references in bulk:
    - Use the natural-key resolver for concrete, reference-bearing, and abstract targets.
    - Descriptor results carry `int DescriptorId` for stored bindings and owning `bigint DocumentId`
@@ -284,8 +291,8 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
    - On SQL Server regular-resource writes, rebind root identity values equal under the identity
      comparer to their stored values before authorization/no-op detection, as described in
      [natural-key-resolution.md](natural-key-resolution.md#how-the-write-path-will-preserve-stored-casing-sql-server).
-     Descriptor stored-wins semantics are later work (DMS-1454); descriptor writes keep the
-     behavior described above.
+     Descriptor writes bind the stored `Namespace`/`CodeValue` of the probe-matched row on both
+     engines before proposed authorization and no-op detection, as described above.
    - Run authorization checks against stored values and the finalized proposed rowset before any data-modifying
      statements.
    - Compare the post-merge rowset to the current persisted rowset before issuing DML. If they are equal,
@@ -360,8 +367,8 @@ Engine considerations:
 
 - **Upsert (POST)**: detect an existing document through the generated own-natural-key capture
   predicate over the root natural-key columns (served by `UX_<R>_NK`), described in
-  [natural-key-resolution.md](natural-key-resolution.md). Descriptor POSTs still detect through RI
-  until DMS-1454.
+  [natural-key-resolution.md](natural-key-resolution.md). Descriptor POSTs detect through the
+  lowered-URI descriptor probe.
   - The resource root table’s natural-key unique constraint is the identity-uniqueness enforcement and remains the race detector (unique violation → 409) if two writers attempt to create the same natural key concurrently.
 - **Update by id (PUT)**: detect by `DocumentUuid`:
   - Find `DocumentId` from `dms.Document` by `DocumentUuid`.

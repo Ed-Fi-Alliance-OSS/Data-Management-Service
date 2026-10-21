@@ -4,10 +4,10 @@
 
 Draft. This is an initial design proposal for replacing the current three-table document store (`Document`/`Alias`/`Reference`) with a relational model using tables per resource, while keeping DMS behavior metadata-driven via `ApiSchema.json`.
 
-The DMS-1404 storage baseline uses compact descriptor keys with the existing RI runtime.
-The natural-key resolver proposals linked below belong to later stories; lowered-URI
-lookup, RI removal, new validation/equality rules and stored-wins writes are not part of
-this storage change.
+The DMS-1404 storage baseline uses compact descriptor keys. Reference resolution, resource
+POST matching and descriptor writes use the natural-key and lowered-URI probes linked below, and
+Core computes no referential ids. `dms.ReferentialIdentity` is still provisioned and
+trigger-maintained for resources until its removal, but no runtime path reads it.
 
 ## Table of Contents
 
@@ -31,7 +31,7 @@ this storage change.
 
 ### Constraints / Explicit Decisions
 
-- **ETag/LastModified are representation metadata (required)**: DMS updates stored `ContentVersion` / `ContentLastModifiedAt` when the full resource state changes, including due to identity cascades. It serves `_lastModifiedDate` from that timestamp and composes `_etag` from `ContentVersion` plus the request's representation `variantKey`, without hashing canonical JSON. Readable profile, link shaping, and content coding participate in the served tag through `profileCode`, `linkFlag`, and `contentCoding`, so byte-different variants have different ETags even though they share the same stored stamp. Descriptor PUT retains its ordinal whole-URI guard, including rejection of case-only URI changes. An RI-matched POST may update incoming components; accepted component changes, even with an unchanged whole URI, receive normal descriptor stamps. An unchanged representation preserves its stamps.
+- **ETag/LastModified are representation metadata (required)**: DMS updates stored `ContentVersion` / `ContentLastModifiedAt` when the full resource state changes, including due to identity cascades. It serves `_lastModifiedDate` from that timestamp and composes `_etag` from `ContentVersion` plus the request's representation `variantKey`, without hashing canonical JSON. Readable profile, link shaping, and content coding participate in the served tag through `profileCode`, `linkFlag`, and `contentCoding`, so byte-different variants have different ETags even though they share the same stored stamp. Descriptor writes keep the stored identity components: a probe-matched POST and a PUT whose identity the database treats as unchanged (including case-only URI changes) leave the identity and its stamps alone, while descriptive changes receive normal descriptor stamps. An unchanged representation preserves its stamps.
   - This redesign stores the version on `dms.Document` and the authoritative timestamp on the root/descriptor, updating them in the same transaction. Indirect state changes are realized as FK-cascade updates to canonical stored identity columns that back the local reference-identity bindings (which may be generated/persisted aliases under key unification), which then trigger normal stamping. See [update-tracking.md](update-tracking.md).
 - **Schema updates are validated, not applied**: DMS does not perform in-place schema changes. On first use of a given database connection string (after instance routing), DMS reads the database’s recorded effective schema fingerprint (the singleton `dms.EffectiveSchema` row + `dms.SchemaComponent` rows keyed by `EffectiveSchemaHash`), caches it per connection string, and selects a matching compiled mapping set. Requests fail fast if no matching mapping is available. In-process schema reload/hot-reload is out of scope for this design.
 - **Authentication & authorization**: request authentication (token validation) and authorization (data access decisions) are addressed in [auth.md](auth.md). This redesign assumes:
@@ -55,28 +55,27 @@ this storage change.
   - update tracking metadata is maintained by normal document-version and root/descriptor timestamp stamping (no read-time dependency derivation required); see [update-tracking.md](update-tracking.md).
 - Reference resolution probes generated natural-key indexes; descriptor probes fold the raw URI
   in SQL and return both the compact key and owning document key without another round trip.
-  Resource POST matching uses the own-natural-key capture; descriptor POST matching still uses
-  `dms.ReferentialIdentity` until its natural-key cutover. Relational unique constraints remain
-  the integrity backstop.
+  Resource POST matching uses the own-natural-key capture and descriptor POST matching uses the
+  lowered-URI probe. Relational unique constraints remain the integrity backstop.
 - `dms.Descriptor` has native independent `int DescriptorId` allocation, a unique non-null
   `bigint DocumentId` FK, and `smallint ResourceKeyId` type identity checked against its owner
   by the stamping trigger and constrained to the resource-key catalog.
   Every stored descriptor FK targets `DescriptorId`, including copied reference identities,
-  collections, extensions and unified keys. Document/RI, UUID, locking, concurrency, cache,
+  collections, extensions and unified keys. Document, UUID, locking, concurrency, cache,
   restamp and paging operations retain `DocumentId`.
 - Descriptor uniqueness uses `(ResourceKeyId, Namespace + '#' + CodeValue)`: a PostgreSQL
   expression index under the database-default collation, and a SQL Server non-persisted computed
   `Uri` index that inherits the `SQL_Latin1_General_CP1_CI_AS` identity collation of its components. Live descriptor discriminator storage is removed; shared history routes
   by `ResourceKeyId`. Abstract identity discriminators and union-view outputs remain unchanged.
 - Generated natural-key and lowered-URI probes are described in
-  [natural-key-resolution.md](natural-key-resolution.md); resource POST capture uses them, and
-  descriptor writes move to them in later work.
+  [natural-key-resolution.md](natural-key-resolution.md); resource POST capture and descriptor
+  writes use them.
 
 ## High-Level Architecture
 
 Keep DMS Core mostly intact:
 
-- Core remains the home of API canonicalization, validation, and identity/reference extraction. It preserves document/RI identities and ordered reference details for current lookup and later natural-key resolution.
+- Core remains the home of API canonicalization, validation, and identity/reference extraction. It preserves document identities and ordered reference details for natural-key resolution; it computes no referential ids.
 - For baseline non-profile relational writes, the required Core extraction-model change is to add concrete *JSON location* (with indices) to extracted document references (see “Document references inside nested collections” in [flattening-reconstitution.md](flattening-reconstitution.md)). Descriptors already carry location via `DescriptorReference.Path`.
 - Profile-constrained collection merges add a second Core/backend contract: Core supplies an optional request-scoped `ProfileAppliedWriteRequest` with a `WritableRequestBody`; backend then loads the current stored document and invokes a Core-owned projector to derive `ProfileAppliedWriteContext` (`VisibleStoredBody`, `StoredScopeStates`, and `VisibleStoredCollectionRows`) so merge/delete decisions come from Core-projected stored state rather than backend-owned profile evaluation.
 - Core MUST reject any writable profile definition that excludes a field required to compute the compiled semantic identity of a persisted multi-item collection scope.

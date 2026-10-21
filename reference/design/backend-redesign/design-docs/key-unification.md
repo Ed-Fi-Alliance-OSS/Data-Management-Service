@@ -597,9 +597,7 @@ For each table row being materialized, and for each `KeyUnificationClass` on tha
      comparison and no C# case folding, as in
      [flattening-reconstitution.md](flattening-reconstitution.md#52-reference--descriptor-resolution-bulk);
      the resolver folds case in SQL, so case variants resolve to the same `DescriptorId`.
-     Do not split on `#`, trim components, or introduce Unicode normalization. Engine-owned
-     equality for descriptor writes and stored-wins behavior in
-     [natural-key-resolution.md](natural-key-resolution.md) belong to later work.
+     Do not split on `#`, trim components, or introduce Unicode normalization.
      If a descriptor URI is present but cannot be resolved to a `DescriptorId`, the write MUST fail closed (descriptor
      reference validation failure).
 3. Apply conflict detection:
@@ -1172,8 +1170,9 @@ Implications when descriptor identity parts participate in key unification:
 - Descriptor FK unification MUST be resource-type safe: a unification class must not mix descriptor FK members that
   target different descriptor resource types.
 - Both descriptor IDs remain stable across accepted updates, and descriptor FKs retain `ON UPDATE NO ACTION`.
-  Current RI-matched POSTs apply incoming components; PUT checks whole-URI text ordinally. Unification
-  prevents drift between duplicated bindings without changing either operation's behavior.
+  Descriptor writes keep the stored identity components (a probe-matched POST or identity-equal PUT
+  never changes them). Unification prevents drift between duplicated bindings without changing either
+  operation's behavior.
 - Hydration and RI maintenance join the canonical/alias compact value to `dms.Descriptor.DescriptorId`
   and reconstruct the whole original-case URI before each consumer's existing transformation.
   History snapshots keep namespace/code values; authorization-view membership bridges to the descriptor's
