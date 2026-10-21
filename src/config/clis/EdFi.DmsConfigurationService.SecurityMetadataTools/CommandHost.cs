@@ -54,9 +54,13 @@ internal static class CommandHost
         try
         {
             // Complete conversion, CMS validation, and serialization before touching the destination.
-            string json = OdsXmlToClaimsConverter
-                .Convert(File.ReadAllText(inputPath))
-                .ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+            string json;
+            using (FileStream input = File.OpenRead(inputPath))
+            {
+                json = OdsXmlToClaimsConverter
+                    .Convert(input)
+                    .ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+            }
             string destination = Path.GetFullPath(outputPath);
             if (File.Exists(destination) && !force)
             {

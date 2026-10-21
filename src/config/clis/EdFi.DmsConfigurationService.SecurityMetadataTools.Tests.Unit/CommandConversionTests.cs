@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json.Nodes;
 using FluentAssertions;
 
@@ -123,6 +124,10 @@ public class Given_a_successful_conversion_command(bool overwrite)
 [TestFixture("missing-input", true)]
 [TestFixture("unreadable-input", false)]
 [TestFixture("unreadable-input", true)]
+[TestFixture("invalid-utf8", false)]
+[TestFixture("invalid-utf8", true)]
+[TestFixture("dtd", false)]
+[TestFixture("dtd", true)]
 public class Given_a_failed_conversion_command(string failure, bool existingOutput)
 {
     private CommandWorkspace _workspace = null!;
@@ -182,6 +187,13 @@ public class Given_a_failed_conversion_command(string failure, bool existingOutp
                 xml = xml.Replace("name=\"Reader\"", "name=\"Reader&#xA;forged\"", StringComparison.Ordinal);
                 _expectedDiagnostic = "control characters";
                 break;
+            case "invalid-utf8":
+                _expectedDiagnostic = "Invalid security metadata XML at line";
+                break;
+            case "dtd":
+                xml = "<!DOCTYPE SecurityMetadata [<!ENTITY policy 'Reader'>]>" + xml;
+                _expectedDiagnostic = "DTD is prohibited";
+                break;
             default:
                 throw new InvalidOperationException($"Unknown test case: {failure}");
         }
@@ -189,6 +201,14 @@ public class Given_a_failed_conversion_command(string failure, bool existingOutp
         if (failure == "unreadable-input")
         {
             Directory.CreateDirectory(_workspace.InputPath);
+        }
+        else if (failure == "invalid-utf8")
+        {
+            byte[] bytes = Encoding.UTF8.GetBytes(xml);
+            // Corrupt a policy attribute, leaving the surrounding XML structure intact.
+            int nameStart = xml.IndexOf("Reader", StringComparison.Ordinal);
+            bytes[Encoding.UTF8.GetByteCount(xml[..nameStart])] = 0xFF;
+            await File.WriteAllBytesAsync(_workspace.InputPath, bytes);
         }
         else if (failure != "missing-input")
         {

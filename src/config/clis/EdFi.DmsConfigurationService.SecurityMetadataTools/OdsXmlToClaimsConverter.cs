@@ -21,13 +21,20 @@ internal static class OdsXmlToClaimsConverter
     public static JsonObject Convert(string xml)
     {
         using StringReader input = new(xml);
-        using XmlReader reader = XmlReader.Create(
-            input,
-            new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null }
-        );
+        return ParseAndConvert(settings => XmlReader.Create(input, settings));
+    }
+
+    public static JsonObject Convert(Stream input) =>
+        ParseAndConvert(settings => XmlReader.Create(input, settings));
+
+    private static JsonObject ParseAndConvert(Func<XmlReaderSettings, XmlReader> createReader)
+    {
         XDocument document;
         try
         {
+            using XmlReader reader = createReader(
+                new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null }
+            );
             document = XDocument.Load(reader, LoadOptions.SetLineInfo);
         }
         catch (XmlException exception)
