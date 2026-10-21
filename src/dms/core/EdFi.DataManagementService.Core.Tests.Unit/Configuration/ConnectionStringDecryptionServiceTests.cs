@@ -8,6 +8,8 @@ using System.Text;
 using System.Text.Json;
 using EdFi.DataManagementService.Core.Configuration;
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Configuration;
@@ -317,5 +319,203 @@ public class Given_ConnectionStringDecryptionService_and_a_corrupted_envelope
         var act = () => _service.DecryptFromBase64(Convert.ToBase64String(_envelope[..CipherTextOffset]));
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*envelope is malformed*");
+    }
+}
+
+/// <summary>
+/// Legacy values written with a fixed IV, so a test can change the first plain text block through the
+/// IV alone, as someone who can write the data store tables could.
+/// </summary>
+internal static class LegacyConnectionStrings
+{
+    public const string Key = "TestEncryptionKey123456789012345678901234567890";
+    public const string PlainText = "host=dbhost;port=5432;database=edfi;";
+    public const string RedirectedPlainText = "host=evil.exampl=5432;database=edfi;";
+
+    public static byte[] Encrypt(string plainText)
+    {
+        using var aes = Aes.Create();
+        aes.Key = Encoding.UTF8.GetBytes(Key.PadRight(32, '0')[..32]);
+        byte[] iv = new byte[16];
+        byte[] cipherText = aes.EncryptCbc(Encoding.UTF8.GetBytes(plainText), iv, PaddingMode.PKCS7);
+        return [.. iv, .. cipherText];
+    }
+
+    /// <summary>
+    /// The value of <see cref="PlainText"/> with its IV changed so that it decrypts, with valid
+    /// padding, to <see cref="RedirectedPlainText"/>: "dbhost;port" becomes "evil.exampl".
+    /// </summary>
+    public static string WithRedirectedHost()
+    {
+        byte[] value = Encrypt(PlainText);
+        byte[] original = Encoding.UTF8.GetBytes(PlainText[..16]);
+        byte[] redirected = Encoding.UTF8.GetBytes(RedirectedPlainText[..16]);
+
+        for (int index = 0; index < 16; index++)
+        {
+            value[index] ^= (byte)(original[index] ^ redirected[index]);
+        }
+
+        return Convert.ToBase64String(value);
+    }
+}
+
+[TestFixture]
+public class Given_ConnectionStringDecryptionService_with_legacy_connection_strings_allowed
+{
+    private ConnectionStringDecryptionService _service = null!;
+
+    [SetUp]
+    public void Setup() => _service = new ConnectionStringDecryptionService(LegacyConnectionStrings.Key);
+
+    [Test]
+    public void It_decrypts_a_legacy_value() =>
+        _service
+            .DecryptFromBase64(
+                Convert.ToBase64String(LegacyConnectionStrings.Encrypt(LegacyConnectionStrings.PlainText))
+            )
+            .Should()
+            .Be(LegacyConnectionStrings.PlainText);
+
+    /// <summary>
+    /// The exposure that disallowing legacy values closes: the IV change is not detected.
+    /// </summary>
+    [Test]
+    public void It_returns_the_redirected_host_of_a_legacy_value_changed_through_its_IV() =>
+        _service
+            .DecryptFromBase64(LegacyConnectionStrings.WithRedirectedHost())
+            .Should()
+            .Be(LegacyConnectionStrings.RedirectedPlainText);
+}
+
+[TestFixture]
+public class Given_ConnectionStringDecryptionService_with_legacy_connection_strings_disallowed
+{
+    private ConnectionStringEncryptionVectors _vectors = null!;
+    private ConnectionStringDecryptionService _service = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _vectors = ConnectionStringEncryptionVectors.Load();
+        _service = new ConnectionStringDecryptionService(
+            _vectors.KeyText,
+            allowLegacyConnectionStrings: false
+        );
+    }
+
+    private static void ShouldBeRejectedAsLegacy(Func<string?> act) =>
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*legacy AES-CBC format*ConfigurationServiceSettings:AllowLegacyConnectionStrings is false*"
+            )
+            .Which.InnerException.Should()
+            .BeNull();
+
+    [Test]
+    public void It_decrypts_the_version_1_envelope() =>
+        _service.DecryptFromBase64(_vectors.EnvelopeV1).Should().Be(_vectors.PlainText);
+
+    [Test]
+    public void It_rejects_the_legacy_vector() =>
+        ShouldBeRejectedAsLegacy(() => _service.DecryptFromBase64(_vectors.LegacyCbc));
+
+    [Test]
+    public void It_rejects_a_legacy_value_changed_through_its_IV()
+    {
+        var service = new ConnectionStringDecryptionService(
+            LegacyConnectionStrings.Key,
+            allowLegacyConnectionStrings: false
+        );
+
+        ShouldBeRejectedAsLegacy(() =>
+            service.DecryptFromBase64(LegacyConnectionStrings.WithRedirectedHost())
+        );
+    }
+
+    /// <summary>
+    /// Rejected the same way as a valid legacy value, so padding validity cannot be probed.
+    /// </summary>
+    [Test]
+    public void It_rejects_a_legacy_length_value_with_invalid_padding_the_same_way() =>
+        ShouldBeRejectedAsLegacy(() => _service.DecryptFromBase64(Convert.ToBase64String(new byte[32])));
+
+    [Test]
+    public void It_still_rejects_a_tampered_envelope_by_authentication()
+    {
+        byte[] tampered = Convert.FromBase64String(_vectors.EnvelopeV1);
+        tampered[^1] ^= 0x01;
+
+        var act = () => _service.DecryptFromBase64(Convert.ToBase64String(tampered));
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*failed authentication*")
+            .WithInnerExceptionExactly<AuthenticationTagMismatchException>();
+    }
+}
+
+/// <summary>
+/// The shared registration the Ed-Fi API and the dms-document-cache tool both use.
+/// </summary>
+[TestFixture]
+public class Given_the_shared_data_store_provider_registration_and_AllowLegacyConnectionStrings
+{
+    private static IConnectionStringDecryptionService Register(string? allowLegacyConnectionStrings)
+    {
+        Dictionary<string, string?> settings = new()
+        {
+            ["ConfigurationServiceSettings:BaseUrl"] = "https://cms.example.com",
+            ["ConfigurationServiceSettings:EncryptionKey"] = LegacyConnectionStrings.Key,
+        };
+
+        if (allowLegacyConnectionStrings is not null)
+        {
+            settings["ConfigurationServiceSettings:AllowLegacyConnectionStrings"] =
+                allowLegacyConnectionStrings;
+        }
+
+        IConfiguration configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+        var services = new ServiceCollection();
+        services.AddDmsConfigurationServiceDataStoreProvider(configuration);
+
+        return services.BuildServiceProvider().GetRequiredService<IConnectionStringDecryptionService>();
+    }
+
+    private static string LegacyValue =>
+        Convert.ToBase64String(LegacyConnectionStrings.Encrypt(LegacyConnectionStrings.PlainText));
+
+    [TestCase(null)]
+    [TestCase("true")]
+    [TestCase("True")]
+    public void It_reads_legacy_values_when_the_setting_is_absent_or_true(string? value) =>
+        Register(value).DecryptFromBase64(LegacyValue).Should().Be(LegacyConnectionStrings.PlainText);
+
+    [TestCase("false")]
+    [TestCase("False")]
+    [TestCase(" false ")]
+    public void It_rejects_legacy_values_when_the_setting_is_false(string value)
+    {
+        IConnectionStringDecryptionService service = Register(value);
+
+        var act = () => service.DecryptFromBase64(LegacyValue);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*AllowLegacyConnectionStrings is false*");
+    }
+
+    [TestCase("")]
+    [TestCase("no")]
+    [TestCase("0")]
+    [TestCase("flase")]
+    public void It_fails_registration_for_a_blank_or_malformed_value_without_echoing_it(string value)
+    {
+        var act = () => Register(value);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("ConfigurationServiceSettings:AllowLegacyConnectionStrings must be true or false.");
     }
 }

@@ -21,8 +21,12 @@ namespace EdFi.DataManagementService.Core.Configuration;
 /// whole number of blocks.</item>
 /// </list>
 /// The key material is the first 32 characters of the configured key, padded with '0'.
+/// When <c>allowLegacyConnectionStrings</c> is false, every legacy-shaped value is rejected
+/// before any CBC decryption, so a value altered through its IV is never returned and padding validity
+/// cannot be probed.
 /// </summary>
-public class ConnectionStringDecryptionService(string encryptionKey) : IConnectionStringDecryptionService
+public class ConnectionStringDecryptionService(string encryptionKey, bool allowLegacyConnectionStrings = true)
+    : IConnectionStringDecryptionService
 {
     private const int BlockLength = 16;
     private const int EnvelopeHeaderLength = 17;
@@ -92,6 +96,15 @@ public class ConnectionStringDecryptionService(string encryptionKey) : IConnecti
 
         if (encryptedBytes.Length >= MinimumLegacyLength && encryptedBytes.Length % BlockLength == 0)
         {
+            if (!allowLegacyConnectionStrings)
+            {
+                throw new InvalidOperationException(
+                    "Encrypted connection string is in the legacy AES-CBC format, which is rejected because "
+                        + "ConfigurationServiceSettings:AllowLegacyConnectionStrings is false. Re-encrypt "
+                        + "legacy connection strings in the Configuration Service before disabling them."
+                );
+            }
+
             return DecryptLegacy(encryptedBytes);
         }
 

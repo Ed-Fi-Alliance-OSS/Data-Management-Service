@@ -31,6 +31,9 @@ settings from environment variables under two prefixes:
 passes its single value to the Configuration Service's `DatabaseSettings__EncryptionKey` and to the
 Ed-Fi API's `ConfigurationServiceSettings__EncryptionKey`; see the shared-key note under
 [ConfigurationServiceSettings](#configurationservicesettings).
+`CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS` is shared the same way: Compose passes it
+to `DatabaseSettings__AllowLegacyConnectionStrings` and `ConfigurationServiceSettings__AllowLegacyConnectionStrings`,
+and the setup scripts read it too. It defaults to `true`.
 
 ### Migrating from the earlier variable names
 
@@ -447,6 +450,7 @@ These settings configure how the DMS API connects to the Configuration Service t
 | ClientId               | The client identifier (client ID) used to access the Configuration Service endpoints.                                                                                    |
 | ClientSecret           | The client secret associated with the client ID for accessing the Configuration Service endpoints. Set via the `DMS_CONFIGURATION_SERVICE_CLIENT_SECRET` environment variable. Must satisfy the Configuration Service client-secret rules described in [IdentitySettings.ClientSecretValidation](#identitysettingsclientsecretvalidation). |
 | EncryptionKey         | Key used to encrypt and decrypt Configuration Service connection strings. Set via the `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` environment variable and must match the Configuration Service `DatabaseSettings:EncryptionKey`. Used by `provision-dms-schema.ps1` to decrypt protected Configuration Service datastore connection strings. DMS requires only a non-empty value; the Configuration Service rejects its `DatabaseSettings:EncryptionKey` at startup unless the value is at least 32 characters, ASCII, and does not derive the same key as the former shipped `appsettings.json` default. See the note below for valid-value semantics. |
+| AllowLegacyConnectionStrings | Whether legacy AES-CBC connection strings are still read. Default: `true`. Set via the `CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS` environment variable, which also sets the Configuration Service `DatabaseSettings:AllowLegacyConnectionStrings` and governs the setup scripts. Also read by the `dms-document-cache` tool. When set, it must be `true` or `false`; any other value, including a blank one, fails startup. Compose treats a blank `CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS` as unset. See **Rejecting legacy values** in the note below. |
 | Scope                  | The authorization scope required for accessing the Configuration Service endpoints. Example: `edfi_admin_api/authMetadata_readonly_access`. With multi-tenancy enabled, use `edfi_admin_api/readonly_access`: DMS also reads `/v3/tenants`, which the limited scope does not grant (see [ROLES-SCOPES.md](ROLES-SCOPES.md)). |
 
 > [!NOTE]
@@ -515,6 +519,17 @@ These settings configure how the DMS API connects to the Configuration Service t
 > values that are read as envelopes are authenticated. An envelope is
 > also not bound to its row, so swapping two valid envelopes between rows goes
 > undetected.
+>
+> **Rejecting legacy values.** Legacy values are read while
+> `AllowLegacyConnectionStrings` is `true`, the default, and the exposure above
+> remains for as long as it is. Setting it to `false` on the Configuration
+> Service (`DatabaseSettings:AllowLegacyConnectionStrings`), the Ed-Fi API and
+> the `dms-document-cache` tool (`ConfigurationServiceSettings:AllowLegacyConnectionStrings`)
+> and the setup scripts (`CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS`)
+> makes each of them reject every legacy-format value before decrypting it, so
+> an altered legacy value is never used and its padding cannot be probed. Any
+> connection string still stored in the legacy format then fails to read, so set
+> it to `false` only after every stored value has been re-encrypted.
 >
 > **Upgrading.** Earlier releases of DMS, `provision-dms-schema.ps1` and
 > `configure-local-data-store.ps1` read only the legacy format, and fail on any

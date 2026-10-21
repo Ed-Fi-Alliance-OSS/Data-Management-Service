@@ -12,6 +12,13 @@ namespace EdFi.DmsConfigurationService.Backend
     {
         public required string DatabaseConnection { get; set; }
         public required string EncryptionKey { get; set; }
+
+        /// <summary>
+        /// Whether legacy AES-CBC connection strings are still read. True keeps values stored by
+        /// earlier releases readable; they have no integrity protection. False rejects every legacy
+        /// value before decryption, once every stored connection string has been re-encrypted.
+        /// </summary>
+        public bool AllowLegacyConnectionStrings { get; set; } = true;
     }
 
     public class DatabaseOptionsValidator : IValidateOptions<DatabaseOptions>

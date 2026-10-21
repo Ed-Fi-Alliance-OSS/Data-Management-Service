@@ -70,6 +70,7 @@ x-dms-common-env: &dms-common-env
   ConfigurationServiceSettings__Scope: "${DMS_CONFIGURATION_SERVICE_CLIENT_SCOPE:-edfi_admin_api/readonly_access}"
   ConfigurationServiceSettings__ClientSecret: "${DMS_CONFIGURATION_SERVICE_CLIENT_SECRET:?set DMS_CONFIGURATION_SERVICE_CLIENT_SECRET in .env}"
   ConfigurationServiceSettings__EncryptionKey: "${CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY:?set CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY in .env}"
+  ConfigurationServiceSettings__AllowLegacyConnectionStrings: "${CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS:-true}"
   # JWT validation. Authority = public issuer (must match token `iss`);
   # MetadataAddress = internal so DMS never has to trust the gateway cert.
   JwtAuthentication__Authority: "${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL in .env}/auth/realms/${KEYCLOAK_REALM:-edfi}"
@@ -90,6 +91,7 @@ x-cms-common-env: &cms-common-env
   ASPNETCORE_HTTP_PORTS: "8081"
   AppSettings__Datastore: "postgresql"
   DatabaseSettings__EncryptionKey: "${CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY:?set CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY in .env}"
+  DatabaseSettings__AllowLegacyConnectionStrings: "${CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS:-true}"
   AppSettings__DeployDatabaseOnStartup: "true"
   # Keycloak-only: the DMS/CMS token endpoints, JWT authority, and metadata addresses in
   # these env blocks are all wired to the shared Keycloak realm, so an alternative identity

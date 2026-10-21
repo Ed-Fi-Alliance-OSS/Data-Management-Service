@@ -1587,6 +1587,8 @@ function Resolve-RestoreSmokeApiEndpoint {
     It also returns the stack's CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY (DataStoreEncryptionKey): CMS
     returns every data store connection string as Base64 AES cipher text under that key, so data
     store selection needs it. A stack without it is refused. The value is never logged or recorded.
+    AllowLegacyConnectionStrings is the stack's CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS,
+    resolved as the containers receive it, so selection refuses legacy values exactly when they do.
     #>
     param(
         [Parameter(Mandatory)]
@@ -1605,10 +1607,11 @@ function Resolve-RestoreSmokeApiEndpoint {
     }
 
     return [pscustomobject]@{
-        CmsUrl                 = ([string](Resolve-CmsBaseUrl -EnvValues $values)).TrimEnd("/")
-        DmsUrl                 = ([string](Resolve-DockerLocalDmsBaseUrl -EnvValues $values)).TrimEnd("/")
-        AdminClient            = Resolve-BootstrapAdminClient -EnvValues $values
-        DataStoreEncryptionKey = $encryptionKey
+        CmsUrl                       = ([string](Resolve-CmsBaseUrl -EnvValues $values)).TrimEnd("/")
+        DmsUrl                       = ([string](Resolve-DockerLocalDmsBaseUrl -EnvValues $values)).TrimEnd("/")
+        AdminClient                  = Resolve-BootstrapAdminClient -EnvValues $values
+        DataStoreEncryptionKey       = $encryptionKey
+        AllowLegacyConnectionStrings = Test-LegacyConnectionStringAllowed -EnvValues $values
     }
 }
 
@@ -1688,6 +1691,9 @@ function ConvertFrom-RestoreSmokeDataStoreCipherText {
     UTF-8 text. A value with the envelope length class or marker is never retried as legacy.
     Plaintext input is rejected, never parsed as a fallback. A Reason never carries the key, the
     value, its plaintext, or exception text. Requires PowerShell 7.4 or later (.NET 8 AesGcm).
+    With -AllowLegacyConnectionStrings $false, a legacy-length value is refused before any CBC
+    decryption, so a value altered through its IV is never returned and padding validity cannot be
+    probed.
     #>
     param(
         [AllowNull()]
@@ -1695,7 +1701,9 @@ function ConvertFrom-RestoreSmokeDataStoreCipherText {
         [string]$CipherText,
 
         [Parameter(Mandatory)]
-        [byte[]]$Key
+        [byte[]]$Key,
+
+        [bool]$AllowLegacyConnectionStrings = $true
     )
 
     $result = [pscustomobject]@{ PlainText = $null; Reason = $null }
@@ -1773,6 +1781,10 @@ function ConvertFrom-RestoreSmokeDataStoreCipherText {
             $result.Reason = $malformedReason
             return $result
         }
+        if (-not $AllowLegacyConnectionStrings) {
+            $result.Reason = "its connection string is in the legacy AES-CBC format, which is rejected because CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS is false"
+            return $result
+        }
 
         $iv = [byte[]]::new(16)
         [System.Array]::Copy($payload, 0, $iv, 0, 16)
@@ -1821,7 +1833,8 @@ function Select-RestoreSmokeDataStore {
     CMS returns each connection string as Base64 AES cipher text, so each one is decrypted with
     -EncryptionKey (the stack's CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY) before it is parsed. A value
     that does not decrypt is not selected, with a reason that names no key or value. A blank key throws
-    before any data store is examined.
+    before any data store is examined. -AllowLegacyConnectionStrings $false refuses legacy values, as
+    the stack does when CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS is false.
     #>
     param(
         [AllowNull()]
@@ -1837,7 +1850,9 @@ function Select-RestoreSmokeDataStore {
 
         [Parameter(Mandatory)]
         [AllowEmptyString()]
-        [string]$EncryptionKey
+        [string]$EncryptionKey,
+
+        [bool]$AllowLegacyConnectionStrings = $true
     )
 
     $keyBytes = Get-RestoreSmokeDataStoreAesKey -EncryptionKey $EncryptionKey
@@ -1886,7 +1901,7 @@ function Select-RestoreSmokeDataStore {
             $record.Reason = "CMS returned no connection string for it"
             continue
         }
-        $decrypted = ConvertFrom-RestoreSmokeDataStoreCipherText -CipherText $cipherText -Key $keyBytes
+        $decrypted = ConvertFrom-RestoreSmokeDataStoreCipherText -CipherText $cipherText -Key $keyBytes -AllowLegacyConnectionStrings $AllowLegacyConnectionStrings
         if ($null -ne $decrypted.Reason) {
             $record.Reason = $decrypted.Reason
             continue
@@ -2048,6 +2063,15 @@ function Test-RestoreSmokeApiRead {
 
     $adminSecret = [string]$Endpoint.AdminClient.ClientSecret
     $encryptionKey = [string](Get-RestoreSmokeEvidenceValue $Endpoint "DataStoreEncryptionKey")
+    # An endpoint without the setting predates it and keeps the compatible default. A present value
+    # must already be a boolean: a [bool] cast would turn the string "false" into true.
+    $allowLegacyConnectionStrings = Get-RestoreSmokeEvidenceValue $Endpoint "AllowLegacyConnectionStrings"
+    if ($null -eq $allowLegacyConnectionStrings) {
+        $allowLegacyConnectionStrings = $true
+    }
+    elseif ($allowLegacyConnectionStrings -isnot [bool]) {
+        throw "The served-data probe endpoint's AllowLegacyConnectionStrings must be a boolean."
+    }
     $tokenReused = $null -ne $Session.Token
     if (-not $tokenReused) {
         $cmsToken = $null
@@ -2058,7 +2082,7 @@ function Test-RestoreSmokeApiRead {
         catch {
             throw "The served-data probe could not list the CMS data stores: $(ConvertTo-RestoreSmokeRedactedText $_.Exception.Message -Secret @($adminSecret, $cmsToken, $encryptionKey))"
         }
-        $selection = Select-RestoreSmokeDataStore -DataStores $dataStores -TargetDatabaseName $TargetDatabaseName -DatabaseEngine $DatabaseEngine -EncryptionKey $encryptionKey
+        $selection = Select-RestoreSmokeDataStore -DataStores $dataStores -TargetDatabaseName $TargetDatabaseName -DatabaseEngine $DatabaseEngine -EncryptionKey $encryptionKey -AllowLegacyConnectionStrings $allowLegacyConnectionStrings
 
         $applicationSecret = $null
         $token = $null

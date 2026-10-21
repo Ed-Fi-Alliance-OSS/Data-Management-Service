@@ -1890,6 +1890,31 @@ Describe "Served-data API probe" {
         }
         $script:ambientDataStoreKey = [System.Environment]::GetEnvironmentVariable("CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY")
         Set-TestAmbientDataStoreKey $null
+        $script:ambientAllowLegacy = [System.Environment]::GetEnvironmentVariable("CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS")
+        [System.Environment]::SetEnvironmentVariable("CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS", [NullString]::Value)
+
+        # A CMS legacy fixture changed through its IV alone (as someone who can write the data store
+        # tables could), so it decrypts, with valid padding, to another host.
+        function script:New-TestLegacyCipherTextWithRedirectedHost {
+            param(
+                [Parameter(Mandatory)]
+                [string]$CipherText,
+
+                [Parameter(Mandatory)]
+                [string]$PlainText
+            )
+
+            $payload = [System.Convert]::FromBase64String($CipherText)
+            $original = [System.Text.Encoding]::UTF8.GetBytes($PlainText.Substring(0, 16))
+            $redirected = [System.Text.Encoding]::UTF8.GetBytes("host=evil.exampl")
+            for ($index = 0; $index -lt 16; $index++) {
+                $payload[$index] = $payload[$index] -bxor $original[$index] -bxor $redirected[$index]
+            }
+            return [pscustomobject]@{
+                CipherText = [System.Convert]::ToBase64String($payload)
+                PlainText = "host=evil.exampl" + $PlainText.Substring(16)
+            }
+        }
 
         # This file's own CMS-compatible encryptor: the ConnectionStringEncryptionService steps with a
         # caller-chosen IV (-InitializationVector; -IV would collide with -InformationVariable's alias),
@@ -1977,6 +2002,8 @@ Describe "Served-data API probe" {
 
     AfterAll {
         Set-TestAmbientDataStoreKey $script:ambientDataStoreKey
+        $resolvedAllowLegacy = if ([string]::IsNullOrEmpty($script:ambientAllowLegacy)) { [NullString]::Value } else { $script:ambientAllowLegacy }
+        [System.Environment]::SetEnvironmentVariable("CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS", $resolvedAllowLegacy)
     }
 
     Context "Resolve-RestoreSmokeApiEndpoint" {
@@ -2009,6 +2036,30 @@ Describe "Served-data API probe" {
             $endpoint.CmsUrl | Should -Be "http://localhost:8081"
             $endpoint.DmsUrl | Should -Be "http://localhost:8080"
             $endpoint.AdminClient.ClientId | Should -Be "dms-data-store-admin"
+            $endpoint.AllowLegacyConnectionStrings | Should -BeOfType [bool]
+            $endpoint.AllowLegacyConnectionStrings | Should -BeTrue
+        }
+
+        It "reads CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS=<value> from the env file as a boolean" -ForEach @(
+            @{ Value = "false"; Expected = $false }
+            @{ Value = "False"; Expected = $false }
+            @{ Value = "true"; Expected = $true }
+        ) {
+            $file = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N") + ".env")
+            Set-Content -LiteralPath $file -Value @("CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=$($script:dataStoreKey)", "CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS=$Value")
+
+            $endpoint = Resolve-RestoreSmokeApiEndpoint -EnvironmentFile $file
+
+            $endpoint.AllowLegacyConnectionStrings | Should -BeOfType [bool]
+            $endpoint.AllowLegacyConnectionStrings | Should -Be $Expected
+        }
+
+        It "refuses a malformed CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS without echoing it" {
+            $file = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N") + ".env")
+            Set-Content -LiteralPath $file -Value @("CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=$($script:dataStoreKey)", "CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS=flase")
+
+            { Resolve-RestoreSmokeApiEndpoint -EnvironmentFile $file } |
+                Should -Throw -ExpectedMessage "CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS must be true or false."
         }
 
         It "refuses a multi-tenant stack (CONFIGURATION_SERVICE_MULTI_TENANCY=<value>)" -ForEach @(
@@ -2229,6 +2280,67 @@ Describe "Served-data API probe" {
 
             $result.PlainText | Should -BeNullOrEmpty
             $result.Reason | Should -BeExactly "its connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY"
+        }
+
+        It "returns the redirected host of a legacy value changed through its IV while legacy values are allowed" -ForEach @($script:cmsCipherFixtures[0]) {
+            $redirected = New-TestLegacyCipherTextWithRedirectedHost -CipherText $CipherText -PlainText $PlainText
+            $keyBytes = Get-RestoreSmokeDataStoreAesKey -EncryptionKey $script:dataStoreKey
+
+            $result = ConvertFrom-RestoreSmokeDataStoreCipherText -CipherText $redirected.CipherText -Key $keyBytes
+
+            $result.Reason | Should -BeNullOrEmpty
+            $result.PlainText | Should -BeExactly $redirected.PlainText
+        }
+
+        It "refuses <case> when legacy values are disallowed" -ForEach @(
+            @{ Case = "the shared legacy vector"; Kind = "vector"; Fixture = $script:cmsCipherFixtures[0] }
+            @{ Case = "a CMS legacy fixture"; Kind = "fixture"; Fixture = $script:cmsCipherFixtures[0] }
+            @{ Case = "a legacy value changed through its IV"; Kind = "redirected"; Fixture = $script:cmsCipherFixtures[0] }
+            @{ Case = "a legacy-length value with invalid padding"; Kind = "padding"; Fixture = $script:cmsCipherFixtures[0] }
+        ) {
+            $vectors = Get-TestConnectionStringEncryptionVectors
+            $keyText = if ($Kind -eq "vector") { $vectors.keyText } else { $script:dataStoreKey }
+            $keyBytes = Get-RestoreSmokeDataStoreAesKey -EncryptionKey $keyText
+            $cipherText = switch ($Kind) {
+                "vector" { $vectors.legacyCbc }
+                "fixture" { $Fixture.CipherText }
+                "redirected" { (New-TestLegacyCipherTextWithRedirectedHost -CipherText $Fixture.CipherText -PlainText $Fixture.PlainText).CipherText }
+                "padding" { [System.Convert]::ToBase64String([byte[]]::new(32)) }
+            }
+
+            $result = ConvertFrom-RestoreSmokeDataStoreCipherText -CipherText $cipherText -Key $keyBytes -AllowLegacyConnectionStrings $false
+
+            $result.PlainText | Should -BeNullOrEmpty
+            $result.Reason | Should -BeExactly "its connection string is in the legacy AES-CBC format, which is rejected because CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS is false"
+        }
+
+        It "decrypts the shared envelope vector when legacy values are disallowed" {
+            $vectors = Get-TestConnectionStringEncryptionVectors
+            $keyBytes = Get-RestoreSmokeDataStoreAesKey -EncryptionKey $vectors.keyText
+
+            $result = ConvertFrom-RestoreSmokeDataStoreCipherText -CipherText $vectors.envelopeV1 -Key $keyBytes -AllowLegacyConnectionStrings $false
+
+            $result.Reason | Should -BeNullOrEmpty
+            $result.PlainText | Should -BeExactly $vectors.plainText
+        }
+
+        It "still refuses a tampered envelope by authentication when legacy values are disallowed" {
+            $vectors = Get-TestConnectionStringEncryptionVectors
+            $keyBytes = Get-RestoreSmokeDataStoreAesKey -EncryptionKey $vectors.keyText
+            $payload = [System.Convert]::FromBase64String($vectors.envelopeV1)
+            $payload[$payload.Length - 1] = $payload[$payload.Length - 1] -bxor 1
+
+            $result = ConvertFrom-RestoreSmokeDataStoreCipherText -CipherText ([System.Convert]::ToBase64String($payload)) -Key $keyBytes -AllowLegacyConnectionStrings $false
+
+            $result.PlainText | Should -BeNullOrEmpty
+            $result.Reason | Should -BeExactly "its connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY"
+        }
+
+        It "does not select a legacy data store when legacy values are disallowed" -ForEach @($script:cmsCipherFixtures[0]) {
+            $stores = @(New-TestDataStore -Id 3 -ConnectionString $CipherText -Raw)
+
+            { Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine postgresql -EncryptionKey $script:dataStoreKey -AllowLegacyConnectionStrings $false } |
+                Should -Throw -ExpectedMessage "*id=3 name='Local Development Data Store': its connection string is in the legacy AES-CBC format, which is rejected because CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS is false*"
         }
 
         It "selects the data store from the CMS's own <engine> cipher text and records no secret (<name>)" -ForEach $script:cmsCipherFixtures {
@@ -2639,6 +2751,39 @@ Describe "Served-data API probe" {
             }
             @($global:RestoreSmokeApiTest.Calls) | Should -Be @("Get-CmsToken", "Get-DataStore")
             $script:session.Token | Should -BeNullOrEmpty
+        }
+
+        It "refuses a legacy data store through the stack's own env file when it disallows legacy values, before creating any credential" -ForEach @($script:cmsCipherFixtures[0]) {
+            $file = Join-Path $TestDrive "probe-legacy-disallowed.env"
+            Set-Content -LiteralPath $file -Value @(
+                "DMS_HTTP_PORTS=18080"
+                "CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081"
+                "DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=Admin-S3cret!"
+                "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=$($script:dataStoreKey)"
+                "CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS=false"
+            )
+            $global:RestoreSmokeApiTest.DataStores = @(New-TestDataStore -Id 3 -ConnectionString $CipherText -Raw)
+            $endpoint = Resolve-RestoreSmokeApiEndpoint -EnvironmentFile $file
+
+            $failure = $null
+            try {
+                Test-RestoreSmokeApiRead -Session $script:session -Endpoint $endpoint -TargetDatabaseName $script:target -DatabaseEngine postgresql
+            }
+            catch {
+                $failure = $_.Exception.Message
+            }
+
+            $failure | Should -BeExactly "No route-unqualified data store targets the restored database 'edfi_datamanagementservice' (1 listed: id=3 name='Local Development Data Store': its connection string is in the legacy AES-CBC format, which is rejected because CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS is false)."
+            @($global:RestoreSmokeApiTest.Calls) | Should -Be @("Get-CmsToken", "Get-DataStore")
+            $script:session.Token | Should -BeNullOrEmpty
+        }
+
+        It "fails clearly when the endpoint's AllowLegacyConnectionStrings is not a boolean" {
+            $endpoint = New-TestEndpoint
+            $endpoint | Add-Member -NotePropertyName AllowLegacyConnectionStrings -NotePropertyValue "false"
+
+            { Test-RestoreSmokeApiRead -Session $script:session -Endpoint $endpoint -TargetDatabaseName $script:target -DatabaseEngine postgresql } |
+                Should -Throw -ExpectedMessage "The served-data probe endpoint's AllowLegacyConnectionStrings must be a boolean."
         }
 
         It "fails clearly when the endpoint carries no data store encryption key" {

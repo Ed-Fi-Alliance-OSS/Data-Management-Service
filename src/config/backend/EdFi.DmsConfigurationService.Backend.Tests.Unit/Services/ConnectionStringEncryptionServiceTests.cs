@@ -7,6 +7,8 @@ using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.TestHelpers;
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.Services;
@@ -59,12 +61,58 @@ public class ConnectionStringEncryptionServiceTests
         _service = new ConnectionStringEncryptionService(_databaseOptions);
     }
 
-    private static ConnectionStringEncryptionService ServiceWithKey(string encryptionKey) =>
+    private static ConnectionStringEncryptionService ServiceWithKey(
+        string encryptionKey,
+        bool allowLegacyConnectionStrings = true
+    ) =>
         new(
             Options.Create(
-                new DatabaseOptions { DatabaseConnection = "Server=test;", EncryptionKey = encryptionKey }
+                new DatabaseOptions
+                {
+                    DatabaseConnection = "Server=test;",
+                    EncryptionKey = encryptionKey,
+                    AllowLegacyConnectionStrings = allowLegacyConnectionStrings,
+                }
             )
         );
+
+    private const string LegacyKey = "TestEncryptionKey123456789012345678901234567890";
+    private const string LegacyPlainText = "host=dbhost;port=5432;database=edfi;";
+    private const string RedirectedPlainText = "host=evil.exampl=5432;database=edfi;";
+
+    /// <summary>
+    /// A legacy value with a fixed IV, so a test can change its first plain text block through the IV
+    /// alone, as someone who can write the data store tables could.
+    /// </summary>
+    private static byte[] EncryptLegacy(string plainText)
+    {
+        using var aes = Aes.Create();
+        aes.Key = System.Text.Encoding.UTF8.GetBytes(LegacyKey[..32]);
+        byte[] iv = new byte[16];
+        return
+        [
+            .. iv,
+            .. aes.EncryptCbc(System.Text.Encoding.UTF8.GetBytes(plainText), iv, PaddingMode.PKCS7),
+        ];
+    }
+
+    /// <summary>
+    /// <see cref="LegacyPlainText"/> with its IV changed so that it decrypts, with valid padding, to
+    /// <see cref="RedirectedPlainText"/>: "dbhost;port" becomes "evil.exampl".
+    /// </summary>
+    private static byte[] LegacyWithRedirectedHost()
+    {
+        byte[] value = EncryptLegacy(LegacyPlainText);
+        byte[] original = System.Text.Encoding.UTF8.GetBytes(LegacyPlainText[..16]);
+        byte[] redirected = System.Text.Encoding.UTF8.GetBytes(RedirectedPlainText[..16]);
+
+        for (int index = 0; index < 16; index++)
+        {
+            value[index] ^= (byte)(original[index] ^ redirected[index]);
+        }
+
+        return value;
+    }
 
     [TestFixture]
     public class Given_valid_connection_string : ConnectionStringEncryptionServiceTests
@@ -425,6 +473,148 @@ public class ConnectionStringEncryptionServiceTests
                     .Decrypt(Convert.FromBase64String(vectors.LegacyCbc));
 
             act.Should().Throw<CryptographicException>();
+        }
+    }
+
+    [TestFixture]
+    public class Given_legacy_connection_strings_allowed
+    {
+        /// <summary>
+        /// The exposure that disallowing legacy values closes: the IV change is not detected.
+        /// </summary>
+        [Test]
+        public void It_returns_the_redirected_host_of_a_legacy_value_changed_through_its_IV() =>
+            ServiceWithKey(LegacyKey).Decrypt(LegacyWithRedirectedHost()).Should().Be(RedirectedPlainText);
+    }
+
+    [TestFixture]
+    public class Given_legacy_connection_strings_disallowed
+    {
+        private ConnectionStringEncryptionVectors _vectors = null!;
+        private ConnectionStringEncryptionService _service = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _vectors = ConnectionStringEncryptionVectors.Load();
+            _service = ServiceWithKey(_vectors.KeyText, allowLegacyConnectionStrings: false);
+        }
+
+        private static void ShouldBeRejectedAsLegacy(Func<string?> act) =>
+            act.Should()
+                .ThrowExactly<CryptographicException>()
+                .WithMessage("*legacy AES-CBC format*DatabaseSettings:AllowLegacyConnectionStrings is false*")
+                .Which.InnerException.Should()
+                .BeNull();
+
+        [Test]
+        public void It_decrypts_the_version_1_envelope() =>
+            _service.Decrypt(Convert.FromBase64String(_vectors.EnvelopeV1)).Should().Be(_vectors.PlainText);
+
+        [Test]
+        public void It_still_writes_an_envelope()
+        {
+            byte[] written = _service.Encrypt(_vectors.PlainText)!;
+
+            written[..ExpectedEnvelopeHeader.Length].Should().Equal(ExpectedEnvelopeHeader);
+            _service.Decrypt(written).Should().Be(_vectors.PlainText);
+        }
+
+        [Test]
+        public void It_rejects_the_legacy_vector() =>
+            ShouldBeRejectedAsLegacy(() => _service.Decrypt(Convert.FromBase64String(_vectors.LegacyCbc)));
+
+        [Test]
+        public void It_rejects_a_legacy_value_changed_through_its_IV() =>
+            ShouldBeRejectedAsLegacy(() =>
+                ServiceWithKey(LegacyKey, allowLegacyConnectionStrings: false)
+                    .Decrypt(LegacyWithRedirectedHost())
+            );
+
+        /// <summary>
+        /// Rejected the same way as a valid legacy value, so padding validity cannot be probed.
+        /// </summary>
+        [Test]
+        public void It_rejects_a_legacy_length_value_with_invalid_padding_the_same_way() =>
+            ShouldBeRejectedAsLegacy(() => _service.Decrypt(new byte[32]));
+
+        [Test]
+        public void It_still_rejects_a_tampered_envelope_by_authentication()
+        {
+            byte[] tampered = Convert.FromBase64String(_vectors.EnvelopeV1);
+            tampered[^1] ^= 0x01;
+
+            var act = () => _service.Decrypt(tampered);
+
+            act.Should().ThrowExactly<AuthenticationTagMismatchException>();
+        }
+    }
+
+    /// <summary>
+    /// Binds DatabaseSettings the way the Configuration Service registers it.
+    /// </summary>
+    [TestFixture]
+    public class Given_AllowLegacyConnectionStrings_bound_from_DatabaseSettings
+    {
+        private static IOptions<DatabaseOptions> Bind(string? allowLegacyConnectionStrings)
+        {
+            Dictionary<string, string?> settings = new()
+            {
+                ["DatabaseSettings:DatabaseConnection"] = "Server=test;",
+                ["DatabaseSettings:EncryptionKey"] = LegacyKey,
+            };
+
+            if (allowLegacyConnectionStrings is not null)
+            {
+                settings["DatabaseSettings:AllowLegacyConnectionStrings"] = allowLegacyConnectionStrings;
+            }
+
+            IConfiguration configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+            var services = new ServiceCollection();
+            services.Configure<DatabaseOptions>(configuration.GetSection("DatabaseSettings"));
+
+            return services.BuildServiceProvider().GetRequiredService<IOptions<DatabaseOptions>>();
+        }
+
+        [TestCase(null)]
+        [TestCase("true")]
+        [TestCase("True")]
+        public void It_reads_legacy_values_when_the_setting_is_absent_or_true(string? value) =>
+            new ConnectionStringEncryptionService(Bind(value))
+                .Decrypt(EncryptLegacy(LegacyPlainText))
+                .Should()
+                .Be(LegacyPlainText);
+
+        [TestCase("false")]
+        [TestCase("False")]
+        public void It_rejects_legacy_values_when_the_setting_is_false(string value)
+        {
+            var service = new ConnectionStringEncryptionService(Bind(value));
+
+            var act = () => service.Decrypt(EncryptLegacy(LegacyPlainText));
+
+            act.Should()
+                .ThrowExactly<CryptographicException>()
+                .WithMessage("*AllowLegacyConnectionStrings is false*");
+        }
+
+        /// <summary>
+        /// Fails closed: the options never resolve, so a typo cannot leave legacy reads enabled. The
+        /// Configuration Service resolves these options at startup. Compose never passes a blank value:
+        /// it substitutes true for a blank CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS.
+        /// </summary>
+        [TestCase("")]
+        [TestCase("flase")]
+        [TestCase("0")]
+        public void It_fails_binding_for_a_blank_or_malformed_value(string value)
+        {
+            IOptions<DatabaseOptions> options = Bind(value);
+
+            var act = () => options.Value;
+
+            act.Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage("*DatabaseSettings:AllowLegacyConnectionStrings*System.Boolean*");
         }
     }
 }

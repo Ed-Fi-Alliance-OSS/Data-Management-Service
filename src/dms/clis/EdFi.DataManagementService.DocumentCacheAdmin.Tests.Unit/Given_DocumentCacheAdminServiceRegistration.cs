@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Cdc;
@@ -414,6 +416,66 @@ public sealed class Given_DocumentCacheAdminServiceRegistration
             .ContainSingle()
             .Which.Should()
             .Be(invocationTarget);
+    }
+
+    [TestCase(null)]
+    [TestCase("true")]
+    public void It_reads_legacy_connection_strings_in_the_tool_unless_disallowed(
+        string? allowLegacyConnectionStrings
+    )
+    {
+        using ServiceProvider serviceProvider = BuildServiceProviderAllowingLegacy(
+            allowLegacyConnectionStrings
+        );
+
+        serviceProvider
+            .GetRequiredService<IConnectionStringDecryptionService>()
+            .DecryptFromBase64(EncryptLegacy(LegacyPlainText))
+            .Should()
+            .Be(LegacyPlainText);
+    }
+
+    [Test]
+    public void It_rejects_legacy_connection_strings_in_the_tool_when_disallowed()
+    {
+        using ServiceProvider serviceProvider = BuildServiceProviderAllowingLegacy("false");
+        IConnectionStringDecryptionService decryption =
+            serviceProvider.GetRequiredService<IConnectionStringDecryptionService>();
+
+        var read = () => decryption.DecryptFromBase64(EncryptLegacy(LegacyPlainText));
+
+        read.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*ConfigurationServiceSettings:AllowLegacyConnectionStrings is false*");
+    }
+
+    private const string LegacyPlainText = "host=dbhost;port=5432;database=edfi;";
+
+    private static ServiceProvider BuildServiceProviderAllowingLegacy(string? allowLegacyConnectionStrings) =>
+        BuildAdminServiceProvider(
+            CreateConfiguration(
+                DocumentCacheAdminCommandSurface.PostgresqlDatastoreOptionValue,
+                new Dictionary<string, string?>
+                {
+                    ["ConfigurationServiceSettings:AllowLegacyConnectionStrings"] =
+                        allowLegacyConnectionStrings,
+                }
+            ),
+            DocumentCacheTargetKey.Create(string.Empty, 1)
+        );
+
+    /// <summary>
+    /// The legacy AES-CBC form, under the encryption key <see cref="CreateConfiguration"/> sets.
+    /// </summary>
+    private static string EncryptLegacy(string plainText)
+    {
+        using var aes = Aes.Create();
+        aes.Key = Encoding.UTF8.GetBytes("TestEncryptionKey123456789012345678901234567890"[..32]);
+        byte[] iv = new byte[16];
+        return Convert.ToBase64String([
+            .. iv,
+            .. aes.EncryptCbc(Encoding.UTF8.GetBytes(plainText), iv, PaddingMode.PKCS7),
+        ]);
     }
 
     private static IConfiguration CreateConfiguration(

@@ -1261,6 +1261,28 @@ function Get-EndpointFromResolvedConnectionString {
     }
 }
 
+function Test-LegacyConnectionStringAllowed {
+    <#
+    .SYNOPSIS
+        Reads CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS the way Docker Compose passes it to
+        the Configuration Service and the Ed-Fi API: absent or blank is true, the compatible default.
+        Any other value must be true or false (case-insensitive); a malformed one throws a fixed
+        message that names the setting without echoing its value, so it never silently re-enables
+        legacy reads. Parsed with [bool]::TryParse, not a [bool] cast, which would make "false" true.
+    #>
+    param(
+        [hashtable]
+        $EnvValues
+    )
+
+    $value = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvValues -Name "CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS" -DefaultValue "true"
+    $allowLegacyConnectionStrings = $false
+    if (-not [bool]::TryParse($value, [ref]$allowLegacyConnectionStrings)) {
+        throw "CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS must be true or false."
+    }
+    return $allowLegacyConnectionStrings
+}
+
 function ConvertFrom-CmsEncryptedConnectionString {
     <#
     .SYNOPSIS
@@ -1278,7 +1300,10 @@ function ConvertFrom-CmsEncryptedConnectionString {
         failure is one of the fixed messages below; none carries the key, the cipher text, or the
         decrypted text. An envelope is 13 bytes past a 16-byte block multiple and legacy cipher text is
         a whole number of blocks, so a value with that length class or the marker is held to the
-        envelope rules and never retried as legacy. Requires PowerShell 7.4 or later (.NET 8 AesGcm).
+        envelope rules and never retried as legacy. When CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS
+        is false, a legacy-length value is rejected before any CBC decryption, so a value altered
+        through its IV is never returned and padding validity cannot be probed. Requires PowerShell
+        7.4 or later (.NET 8 AesGcm).
     #>
     param(
         [string]
@@ -1292,6 +1317,7 @@ function ConvertFrom-CmsEncryptedConnectionString {
     if ([string]::IsNullOrWhiteSpace($encryptionKey)) {
         throw "Configuration Service data store connection string is encrypted, but CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY is not set in the environment file."
     }
+    $allowLegacyConnectionStrings = Test-LegacyConnectionStringAllowed -EnvValues $EnvValues
 
     try {
         $encryptedBytes = [Convert]::FromBase64String($ProtectedConnectionString)
@@ -1362,6 +1388,9 @@ function ConvertFrom-CmsEncryptedConnectionString {
 
     if ($length -lt 32 -or ($length % 16) -ne 0) {
         throw "Configuration Service data store encrypted connection string payload is invalid."
+    }
+    if (-not $allowLegacyConnectionStrings) {
+        throw "Configuration Service data store encrypted connection string is in the legacy AES-CBC format, which is rejected because CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS is false."
     }
 
     $iv = [byte[]]::new(16)
@@ -1679,6 +1708,7 @@ Export-ModuleMember -Function `
     Get-DatabaseNameFromConnectionString, `
     Get-DatabaseNameFromResolvedConnectionString, `
     Get-EndpointFromResolvedConnectionString, `
+    Test-LegacyConnectionStringAllowed, `
     ConvertFrom-CmsEncryptedConnectionString, `
     Get-SqlServerDataSourceEndpoint, `
     Get-PostgresHostCandidateEndpoint, `

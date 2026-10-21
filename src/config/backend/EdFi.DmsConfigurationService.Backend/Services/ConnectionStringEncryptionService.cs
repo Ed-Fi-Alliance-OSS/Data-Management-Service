@@ -13,7 +13,8 @@ namespace EdFi.DmsConfigurationService.Backend.Services;
 /// <summary>
 /// Encrypts connection strings as AES-256-GCM envelopes and reads both envelopes and legacy AES-CBC
 /// values; <see cref="ConnectionStringCipherText"/> describes both forms. A legacy value is upgraded
-/// when its connection string is next written, since every write produces an envelope.
+/// when its connection string is next written, since every write produces an envelope. Legacy values
+/// are read only while <see cref="DatabaseOptions.AllowLegacyConnectionStrings"/> is true.
 /// </summary>
 public class ConnectionStringEncryptionService(IOptions<DatabaseOptions> databaseOptions)
     : IConnectionStringEncryptionService
@@ -94,6 +95,16 @@ public class ConnectionStringEncryptionService(IOptions<DatabaseOptions> databas
 
         if (HasLegacyLength(encryptedConnectionString.Length))
         {
+            // Rejected before any CBC decryption, so a value altered through its IV is never returned
+            // and padding validity cannot be probed.
+            if (!databaseOptions.Value.AllowLegacyConnectionStrings)
+            {
+                throw new CryptographicException(
+                    "The encrypted connection string is in the legacy AES-CBC format, which is rejected "
+                        + "because DatabaseSettings:AllowLegacyConnectionStrings is false."
+                );
+            }
+
             return DecryptLegacy(encryptedConnectionString);
         }
 
