@@ -1,4 +1,4 @@
-# Additional Claimsets for Claims Fragment Composition
+# Additional Claims for Claims Fragment Composition
 
 ## Overview
 
@@ -9,15 +9,15 @@ This directory contains JSON fragment files that extend the base Ed-Fi claims co
 The claims composition system works as follows:
 
 1. **Base Claims Loading**: The service loads the embedded `Claims.json` from assembly resources
-2. **Fragment Discovery**: All files matching the pattern `*-claimset.json` are discovered in this directory
+2. **Fragment Discovery**: All files matching the pattern `*-claims.json` are discovered in this directory
 3. **Sequential Application**: Fragments are applied in alphabetical order (hence the numeric prefixes)
 4. **Final Composition**: The result is a merged claims document with all fragments integrated
 
 ## File Naming Convention
 
 Fragment files must follow this naming pattern:
-- **Format**: `{number}-{description}-claimset.json`
-- **Examples**: `004-sample-extension-claimset.json`, `005-homograph-extension-claimset.json`
+- **Format**: `{number}-{description}-claims.json`
+- **Examples**: `004-sample-extension-claims.json`, `005-homograph-extension-claims.json`
 - **Ordering**: Files are processed in alphabetical order, so numeric prefixes control the application sequence
 
 ## Current Fragment Files
@@ -26,13 +26,13 @@ The E2E-only fragments (`001` through `003c`, which define the `E2E-*` claim set
 live in the test-owned `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/Fragments/`
 directory and are staged together with the files below only by the E2E setup scripts.
 
-### 004-sample-extension-claimset.json
+### 004-sample-extension-claims.json
 **Top-level name**: `SampleExtensionClaims` (label only; parent-only fragment, grants attach to `EdFiSandbox`)
 - Demonstrates extension resource claims
 - Includes custom extension resources with various authorization patterns
 - Used for testing extension-based authorization scenarios
 
-### 005-homograph-extension-claimset.json
+### 005-homograph-extension-claims.json
 **Top-level name**: `HomographExtensionClaims` (label only; parent-only fragment, grants attach to `EdFiSandbox`)
 - Demonstrates homograph extension resources
 - Includes resources with similar names but different namespaces
@@ -105,7 +105,7 @@ The fragments are typically mounted into the container via Docker volumes:
 
 ```yaml
 volumes:
-  - ./src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets:/app/additional-claims:ro
+  - ./src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaims:/app/additional-claims:ro
 ```
 
 ### Docker Environment Configuration
@@ -144,7 +144,7 @@ To add a new fragment:
 
 Common issues and solutions:
 
-1. **Fragment not loaded**: Ensure file follows `*-claimset.json` pattern
+1. **Fragment not loaded**: Ensure file follows `*-claims.json` pattern
 2. **Invalid composition**: Check fragment JSON structure matches schema
 3. **Missing claim sets**: Verify `CONFIGURATION_SERVICE_CLAIMS_SOURCE=Hybrid` and `CONFIGURATION_SERVICE_CLAIMS_DIRECTORY` is correctly set
 

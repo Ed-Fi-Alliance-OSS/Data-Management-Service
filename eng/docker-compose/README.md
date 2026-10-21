@@ -643,7 +643,7 @@ that already contains them.
 # built-in extensions (Sample, Homograph, TPDM) need no fragment argument: Sample and Homograph
 # stage claim fragments, while TPDM's claims ship in the embedded DS 5.2 set (no fragment staged).
 ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema
-./prepare-dms-claims.ps1 [-ClaimsDirectoryPath <directory-with-custom-extension-claimset-fragment>]
+./prepare-dms-claims.ps1 [-ClaimsDirectoryPath <directory-with-custom-extension-claims-fragment>]
 ./bootstrap-local-dms.ps1
 ```
 
@@ -672,7 +672,7 @@ for diagnostics and for other tooling to sequence a database-only startup around
 Expert mode (`-ApiSchemaPath`) and standard mode (omit `-ApiSchemaPath`) are the two schema-selection
 paths; there is no `-Extensions` parameter.
 
-`prepare-dms-claims.ps1` stages `*-claimset.json` fragments into
+`prepare-dms-claims.ps1` stages `*-claims.json` fragments into
 `.bootstrap/claims`. When a bootstrap manifest is present, startup activates
 `USE_API_SCHEMA_PATH`/`API_SCHEMA_PATH` and mounts `.bootstrap/ApiSchema` into
 the DMS container via `bootstrap-dms.yml`; staged claims are activated per

@@ -209,7 +209,7 @@ CONFIGURATION_SERVICE_CLAIMS_DIRECTORY=/app/claims-fragments  # if using Hybrid 
 
 ### Fragment File Structure
 
-Fragment files extend the claims hierarchy. Each fragment must follow the naming pattern `*-claimset.json` and contains only the resource claims to be added.
+Fragment files extend the claims hierarchy. Each fragment must follow the naming pattern `*-claims.json`. A fragment can add resource claims to the hierarchy and grant actions on resource claims that already exist.
 
 A fragment can define one claim set. Its non-parent resource claims (those without `"isParent": true`) grant actions under the fragment's top-level `name`, or under the file name when `name` is absent. When the base claims do not already declare that name, it is registered as a new system-reserved claim set. Because it is system-reserved, the Management API cannot change or delete it, and removing the fragment later does not remove the claim set. A name must follow the Management API claim set name rules (non-empty, at most 256 characters, no white space). A fragment whose name contains white space or is longer than 256 characters is still applied, but its claim set is not registered and an error is logged. A fragment with an empty `name` fails claims validation, and the whole claims load is rejected. Parent resource claims (`"isParent": true`) only add hierarchy nodes and attach actions to claim sets that already exist; a fragment containing only parent entries defines no claim set.
 
@@ -269,15 +269,15 @@ A fragment that defines a claim set looks like this:
 
 ### Fragment File Naming Convention
 
-Files must follow the pattern: `{number}-{description}-claimset.json`
+Files must follow the pattern: `{number}-{description}-claims.json`
 
 Examples:
-- `004-sample-extension-claimset.json`
-- `005-homograph-extension-claimset.json`
+- `004-sample-extension-claims.json`
+- `005-homograph-extension-claims.json`
 
 ### Fragment Composition Process
 
-1. **Discovery**: System scans the configured directory for `*-claimset.json` files
+1. **Discovery**: System scans the configured directory for `*-claims.json` files
 2. **Ordering**: Files are sorted alphabetically (use numeric prefixes for control)
 3. **Transformation**: Each fragment is applied sequentially to the base claims
 4. **Validation**: Final composition is validated against JSON Schema
@@ -539,7 +539,7 @@ The `Authorization: Bearer $TOKEN` header shown in the examples above is enforce
 1. **Claims not loading from filesystem**
    - Verify `CONFIGURATION_SERVICE_CLAIMS_SOURCE` is set to `Hybrid` or `Filesystem`
    - Check that `CONFIGURATION_SERVICE_CLAIMS_DIRECTORY` points to the correct directory
-   - Ensure fragment files follow the `*-claimset.json` naming pattern
+   - Ensure fragment files follow the `*-claims.json` naming pattern
 
 2. **Management endpoints returning 404**
    - Verify `CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=true` is set
@@ -549,6 +549,10 @@ The `Authorization: Bearer $TOKEN` header shown in the examples above is enforce
    - Confirm files are in the directory specified by `CONFIGURATION_SERVICE_CLAIMS_DIRECTORY`
    - Verify file permissions allow the service to read the files
    - Check service logs for fragment discovery messages
+   - A warning that a fragment file "is not read" names a file still using the pre-8.1
+     `*-claimset.json` suffix; rename it to end in `-claims.json`. Fragments are read only when
+     an empty database is seeded, on a claims reload, and on the first
+     `GET /management/current-claims`, so the warning does not appear at every startup
 
 4. **A fragment grant has no effect**
    - Check the service log for a warning containing "matches no resource claim"; it names the fragment file, the claim set and the entry that was skipped

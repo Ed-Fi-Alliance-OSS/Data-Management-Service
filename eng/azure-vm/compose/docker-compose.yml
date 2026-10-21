@@ -123,7 +123,7 @@ x-cms-common-env: &cms-common-env
   IdentitySettings__RoleClaimType: "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
   # Embedded claim sets include EdFiSandbox (the bootstrap default: broad access, with
   # relationship-based data scoped to the app's EdOrgs) and the other built-in claim sets.
-  # Set CONFIGURATION_SERVICE_CLAIMS_SOURCE=Hybrid to also load *-claimset.json fragments dropped into
+  # Set CONFIGURATION_SERVICE_CLAIMS_SOURCE=Hybrid to also load *-claims.json fragments dropped into
   # ./claims (mounted below). Custom claim sets can also be created at runtime via
   # POST/import /v3/claimSets.
   ClaimsOptions__ClaimsSource: "${CONFIGURATION_SERVICE_CLAIMS_SOURCE:-Embedded}"

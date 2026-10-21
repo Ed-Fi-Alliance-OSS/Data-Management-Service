@@ -121,7 +121,7 @@ public class ClaimsProviderTests
             _fragmentsPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             Directory.CreateDirectory(_fragmentsPath);
             File.WriteAllText(
-                Path.Combine(_fragmentsPath, "001-defined-claimset.json"),
+                Path.Combine(_fragmentsPath, "001-defined-claims.json"),
                 $$"""
                 {
                   "name": "{{DefinedClaimSetName}}",
@@ -252,11 +252,11 @@ public class ClaimsProviderTests
             _fragmentsPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             Directory.CreateDirectory(_fragmentsPath);
             File.WriteAllText(
-                Path.Combine(_fragmentsPath, "001-invalid-claimset.json"),
+                Path.Combine(_fragmentsPath, "001-invalid-claims.json"),
                 Fragment(InvalidClaimSetName)
             );
             File.WriteAllText(
-                Path.Combine(_fragmentsPath, "002-valid-claimset.json"),
+                Path.Combine(_fragmentsPath, "002-valid-claims.json"),
                 Fragment(ValidClaimSetName)
             );
 
