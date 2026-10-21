@@ -87,7 +87,7 @@ param (
     [string]
     $SchoolYearRange = "",
 
-    # Database name to use when creating CMS data stores. Defaults to POSTGRES_DB_NAME for
+    # Database name to use when creating Configuration Service data stores. Defaults to POSTGRES_DB_NAME for
     # PostgreSQL or MSSQL_DB_NAME for SQL Server from the effective environment file.
     [string]
     $DataStoreDatabaseName = "",
@@ -131,7 +131,7 @@ param (
 
     # Database engine for the whole stack. "postgresql" (default) uses postgresql.yml.
     # "mssql" swaps in mssql.yml: SQL Server hosts the DMS datastore, the Configuration
-    # Service (CMS SQL Server backend), and the self-contained OpenIddict identity stores -
+    # Service (its SQL Server backend), and the self-contained OpenIddict identity stores -
     # no PostgreSQL container runs. The relational backend has no Debezium CDC (Kafka is
     # PostgreSQL-only and omitted). The .env.mssql overlay (DMS_DATASTORE=mssql,
     # CONFIGURATION_SERVICE_DATASTORE=mssql, the MSSQL_* keys, and the SQL Server connection strings)
@@ -141,12 +141,12 @@ param (
     [string]
     $DatabaseEngine = "postgresql",
 
-    # Redirects the CMS (Configuration Service) database to a dedicated edfi_configurationservice
-    # database instead of sharing the DMS datastore database. Applies only when CMS actually
+    # Redirects the Configuration Service database to a dedicated edfi_configurationservice
+    # database instead of sharing the DMS datastore database. Applies only when the Configuration Service actually
     # participates (the default/-InfraOnly shape); has no effect with -DmsOnly/-DbOnly/-d, where
-    # CMS does not start. Also adds published-config.yml to the managed compose set even when no
+    # the Configuration Service does not start. Also adds published-config.yml to the managed compose set even when no
     # other condition would (e.g. -IdentityProvider keycloak without -EnableConfig/-InfraOnly),
-    # since CMS must actually run to create the separate database. Supported on both database
+    # since the Configuration Service must actually run to create the separate database. Supported on both database
     # engines.
     [Switch]
     $SeparateConfigDatabase

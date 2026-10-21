@@ -173,7 +173,7 @@ param(
 
     # Database engine for the whole stack. "mssql" swaps mssql.yml in for postgresql.yml:
     # SQL Server hosts the DMS datastore (relational backend), the Configuration Service
-    # (CMS SQL Server backend), and the self-contained OpenIddict identity stores - no
+    # (its SQL Server backend), and the self-contained OpenIddict identity stores - no
     # PostgreSQL container runs. Forwarded to start-published-dms.ps1. The .env.mssql overlay
     # (DMS_DATASTORE=mssql, CONFIGURATION_SERVICE_DATASTORE=mssql, the MSSQL_* keys, and the SQL Server
     # connection strings) is composed automatically onto -EnvironmentFile, so no
@@ -181,9 +181,9 @@ param(
     [ValidateSet("postgresql", "mssql")]
     [string]$DatabaseEngine = "postgresql",
 
-    # Redirects the CMS (Configuration Service) database to a dedicated edfi_configurationservice
+    # Redirects the Configuration Service database to a dedicated edfi_configurationservice
     # database instead of sharing the DMS datastore database. Forwarded unchanged to
-    # start-published-dms.ps1, where it also brings published-config.yml into the compose set so CMS
+    # start-published-dms.ps1, where it also brings published-config.yml into the compose set so the Configuration Service
     # actually runs to create that database. Also forwarded to both datastore phases, each of which
     # enforces one half of the rule that the DMS datastore may not land in the dedicated
     # Configuration Service database: the configure phase judges a name it is about to register, and

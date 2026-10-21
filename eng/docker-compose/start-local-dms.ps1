@@ -70,7 +70,7 @@
 .PARAMETER DmsBaseUrl
     The base URL of an IDE-hosted (externally launched) DMS process to health-wait.
     Valid only with -InfraOnly; not valid with -DmsOnly. When set the script starts
-    or verifies infrastructure (docker compose up is idempotent), waits for Config
+    or verifies infrastructure (docker compose up is idempotent), waits for Configuration
     Service readiness and the claims-ready gate, then polls <DmsBaseUrl>/health until
     HTTP 200 is returned or the 300-second timeout elapses. No data-store, schema
     provisioning, smoke-credential, or seed work is performed on this path — those
@@ -124,8 +124,8 @@ param (
     $EnableKafkaUI,
 
     # Enable the DMS Configuration Service.
-    # Retained for backward compatibility; Config Service is now always included in the compose set.
-    # Per the bootstrap entry-point spec (DMS-1153), every non-teardown run starts Config Service,
+    # Retained for backward compatibility; Configuration Service is now always included in the compose set.
+    # Per the bootstrap entry-point spec (DMS-1153), every non-teardown run starts Configuration Service,
     # including keycloak-backed runs. Passing this switch has no additional effect.
     [Switch]
     $EnableConfig,
@@ -171,7 +171,7 @@ param (
     [Switch]
     $AddExtensionSecurityMetadata,
 
-    # Base URL of an IDE-hosted DMS process to health-wait after infrastructure and Config Service
+    # Base URL of an IDE-hosted DMS process to health-wait after infrastructure and Configuration Service
     # are ready. Valid only with -InfraOnly; not valid with -DmsOnly. When set, the script polls
     # <DmsBaseUrl>/health until HTTP 200 is returned (300-second timeout). No data-store,
     # provisioning, smoke-credential, or seed work is performed — those are caller preconditions.
@@ -187,7 +187,7 @@ param (
 
     # Database engine for the whole stack. "postgresql" (default) uses postgresql.yml.
     # "mssql" swaps in mssql.yml: SQL Server hosts the DMS datastore, the Configuration
-    # Service (CMS SQL Server backend), and the self-contained OpenIddict identity stores —
+    # Service (its SQL Server backend), and the self-contained OpenIddict identity stores —
     # no PostgreSQL container runs. The relational backend has no Debezium CDC (Kafka is
     # PostgreSQL-only and omitted). The .env.mssql overlay (DMS_DATASTORE=mssql,
     # CONFIGURATION_SERVICE_DATASTORE=mssql, the MSSQL_* keys, and the SQL Server connection strings)
@@ -197,10 +197,10 @@ param (
     [string]
     $DatabaseEngine = "postgresql",
 
-    # Redirects the CMS (Configuration Service) database to a dedicated edfi_configurationservice
-    # database instead of sharing the DMS datastore database. Applies only when CMS actually
+    # Redirects the Configuration Service database to a dedicated edfi_configurationservice
+    # database instead of sharing the DMS datastore database. Applies only when the Configuration Service actually
     # participates (the default/-InfraOnly shape); has no effect with -DmsOnly/-DbOnly/-d, where
-    # CMS does not start. Supported on both database engines.
+    # the Configuration Service does not start. Supported on both database engines.
     [Switch]
     $SeparateConfigDatabase,
 
