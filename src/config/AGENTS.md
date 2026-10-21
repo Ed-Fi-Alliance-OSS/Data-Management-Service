@@ -6,7 +6,10 @@ in `Infrastructure/Authorization/EndpointBuilderExtensions.cs`; they compose the
 service-role and scope policies. Use `MapLimitedAccess` only for reads DMS performs.
 
 Anonymous endpoints (`/health`, `/`, `/tenancy`, metadata, `/.well-known/*`, and the
-OAuth `/connect/*` endpoints) are intentional. Prefer `MapPublic` for new ones.
+OAuth `/connect/*` endpoints other than introspect and revoke) are intentional. Prefer `MapPublic` for new ones.
+
+`/connect/introspect` and `/connect/revoke` authenticate the caller with client credentials inside the handler,
+so they are not mapped with `MapSecured*`.
 
 ## Tenancy Is Not Authorization
 

@@ -12,9 +12,10 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 /// <c>Authorization: Bearer</c> header processed by the JWT bearer handler. <c>UseAuthentication</c>
 /// authenticates every request with the default scheme whatever the endpoint requires, so leaving
 /// out <c>RequireAuthorization()</c> does not keep the handler away. Only <c>/connect/revoke</c>
-/// carries it (DMS-1327 D-03, D-07.4): the handler's key resolver loads keys through the JWKS helper,
-/// which creates a development certificate when the file is missing, and revocation would then verify
-/// the token against that unrelated key and answer an empty 200 without revoking.
+/// and <c>/connect/introspect</c> carry it (DMS-1327 D-03, D-07.4): the handler's key resolver loads keys
+/// through the JWKS helper, which creates a development certificate when the file is missing, and
+/// revocation would then verify the token against that unrelated key and answer an empty 200 without
+/// revoking.
 /// </summary>
 internal sealed class BearerAuthenticationExemptMetadata
 {

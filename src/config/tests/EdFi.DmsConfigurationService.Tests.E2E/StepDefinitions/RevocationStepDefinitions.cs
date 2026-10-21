@@ -182,9 +182,11 @@ public partial class StepDefinitions
 
     /// <summary>
     /// The self-contained provider is observed through CMS <c>/connect/introspect</c>, which checks
-    /// the token's stored status. Keycloak access tokens are observed through Keycloak's own
-    /// introspection endpoint by the feature's dedicated observer client, whose credentials are
-    /// never sent to revocation (D-16). Does not replace the scenario's last response.
+    /// the token's stored status; the observer authenticates with HTTP Basic as the token's owner
+    /// (the scenario's current client), the only caller introspection reports on. Keycloak access
+    /// tokens are observed through Keycloak's own introspection endpoint by the feature's dedicated
+    /// observer client, whose credentials are never sent to revocation (D-16). Does not replace the
+    /// scenario's last response.
     /// </summary>
     private async Task<bool> IsTokenActive(string token)
     {
@@ -198,6 +200,7 @@ public partial class StepDefinitions
             Headers = new Dictionary<string, string>
             {
                 { "Content-Type", "application/x-www-form-urlencoded" },
+                { "Authorization", BasicAuthorization(_lastClientId, _lastClientSecret) },
             },
             Data = await new FormUrlEncodedContent(
                 new Dictionary<string, string> { { "token", token } }

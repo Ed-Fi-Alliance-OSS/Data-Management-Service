@@ -25,7 +25,7 @@ The CMS exposes standard OAuth 2.0 endpoints:
 | Endpoint | Purpose | Caller authentication |
 | --- | --- | --- |
 | `POST /connect/token` | Issue an access token (client credentials grant only) | Anonymous (client credentials in the request) |
-| `POST /connect/introspect` | Introspect a token (RFC 7662) | Anonymous |
+| `POST /connect/introspect` | Introspect a token (RFC 7662) | Client credentials (HTTP Basic or form body, exactly one of them) [^introspect] |
 | `POST /connect/revoke` | Revoke a token (RFC 7009) | Client credentials (HTTP Basic or form body, exactly one of them) [^revoke] |
 
 [^revoke]: RFC 7009 §2.1 requires the revocation caller to authenticate the same
@@ -33,6 +33,12 @@ way it authenticates to the token endpoint (RFC 6749 §2.3), with client credent
 and not a bearer access token. Both identity provider modes enforce it and both revoke:
 `self-contained` in the CMS token store, `keycloak` by delegating to Keycloak. See
 [Token revocation](#token-revocation).
+
+[^introspect]: RFC 7662 §2.1 requires some form of authorization to call the introspection endpoint, such as client
+authentication, so that it cannot be used to scan for valid tokens.
+§2.3 answers invalid client credentials as RFC 6749 §5.2 describes.
+Here the caller authenticates with client credentials as at `/connect/revoke`, and not with a bearer access token.
+See [Token introspection](#token-introspection).
 
 `/connect/token` accepts client credentials as HTTP Basic or as form fields in both identity provider modes, with Basic taking precedence.
 Each value a parsed Basic header supplies wins, and a form field only fills a value Basic left empty, such as the empty secret in `Basic base64("id:")`.
@@ -273,8 +279,10 @@ the endpoint from becoming an oracle for token existence and ownership, but it m
 (containing a leaked credential, for example) confirms through the provider's validation
 path:
 
-- **`self-contained`**: `POST /connect/introspect` with `token=<target>` reports
-  `{"active": false}` once the token is revoked. A protected CMS request with the token
+- **`self-contained`**: `POST /connect/introspect` with `token=<target>`, authenticated with
+  the token owner's client credentials, reports `{"active": false}` once the token is revoked.
+  Any other caller always receives `{"active": false}`, so only the owner's credentials can confirm anything.
+  A protected CMS request with the token
   answers `401`.
 - **`keycloak`**: CMS `/connect/introspect` cannot observe Keycloak tokens (it always
   answers `{"active": false}` in this mode). Use Keycloak's own endpoint,
@@ -463,6 +471,37 @@ expires. Token lifetimes are short and the population drains on its own.
 Under `keycloak`, client ids are case-sensitive at Keycloak, and the client-type check matches
 ordinally, so a case variant is an unknown client (`invalid_client`).
 
+## Token introspection
+
+`POST /connect/introspect` reports the state of a token to the client that owns it.
+
+- **The caller authenticates with client credentials.**
+  Exactly one of HTTP Basic or the form fields `client_id` and `client_secret` is accepted.
+  A bearer `Authorization` header is not authentication and is ignored.
+- **The request rules and their order are those of `/connect/revoke`.**
+  See [Request rules](#request-rules).
+  The client's credentials are checked after them.
+  Errors are RFC 6749 JSON (`{"error", "error_description"}`).
+  A missing `token` is `400 invalid_request`.
+  This is an exception to the problem-details format DMS-1218 gave that response, as it is for revoke.
+  Failed credentials answer `invalid_client`: `401` with a `WWW-Authenticate: Basic` challenge when HTTP Basic was attempted, `400` otherwise.
+- **Only the token's own client receives metadata.**
+  Ownership compares the token's `client_id` claim with the caller's stored client id, ordinally.
+  For the owner's valid token the answer is `200` with `active` true, `client_id`, `scope`, `exp`, `iat`, `sub`, `aud`, `iss` and `token_type` `Bearer`.
+  `exp` and `iat` are JSON integers.
+- **Every other outcome is exactly `{"active": false}`.**
+  That covers another client's token and an unknown, malformed, unverifiable, expired or revoked token.
+  A token the service could not decide because the signing-key store or the token-status store failed is also `{"active": false}`, and logs the Error in [Log signals](#log-signals).
+- **A client-store failure while authenticating the caller is `503 temporarily_unavailable`.**
+  The request was not judged, so an outage cannot read as rejected credentials.
+  Retrying is safe.
+- **`keycloak` mode is unchanged.**
+  The Configuration Service cannot observe Keycloak tokens.
+  In this mode the endpoint makes no credential checks and answers `{"active": false}` for any request that carries a token.
+  A request without a token receives the OAuth `400 invalid_request`, as in `self-contained` mode.
+- **Discovery.**
+  `introspection_endpoint_auth_methods_supported` and `revocation_endpoint_auth_methods_supported` are both `["client_secret_basic", "client_secret_post"]`.
+
 ## Signing keys in self-contained mode
 
 This section applies to `self-contained` mode only. In `keycloak` mode none of these
@@ -509,8 +548,9 @@ paths make it, and both make it only after the token's verification succeeds and
 - **Bearer authentication** (`Bearer`, `DmsJwtBearer`) checks the token from the
   `Authorization` header. On this path, a request without a bearer token reads no status.
   Neither does a request whose token fails verification or has no usable `jti`.
-- **Introspection** checks the token supplied in the request form, whatever the request's
-  own `Authorization` header.
+- **Introspection** checks the token supplied in the request form.
+  The request's `Authorization` header is used only for HTTP Basic client authentication,
+  and a bearer header is ignored.
 
 Revocation verifies the token but does not read its status. See [Cached keys do not keep the service available through a
 database outage](#cached-keys-do-not-keep-the-service-available-through-a-database-outage).
@@ -634,7 +674,7 @@ decision:
 
 | Situation | Protected endpoints | `GET /.well-known/jwks.json` | Introspection | Revocation |
 | --- | --- | --- | --- | --- |
-| Usable snapshot, valid token, token status valid | Request proceeds | `200` with keys | `{"active": true}` | Revokes; `200` |
+| Usable snapshot, valid token, token status valid | Request proceeds | `200` with keys | `{"active": true}` for the token's owner | Revokes; `200` |
 | Token rejected: bad signature, wrong issuer or audience, expired, missing or unknown `kid`, revoked, malformed | **401**, `WWW-Authenticate: Bearer`, no `Retry-After` | unaffected | `{"active": false}` | No-op `200` |
 | No usable snapshot (never loaded, or past maximum staleness) | **503**, category `SigningKeyStore` | **503** | `{"active": false}` and an Error log | not affected (revocation reads its keys itself; a failed read is `503 temporarily_unavailable`) |
 | Token-status read fails (usable snapshot) | **503**, category `TokenStatusStore` | unaffected | `{"active": false}` and an Error log | not affected (revocation does not read the status) |
@@ -667,7 +707,8 @@ decision:
     instance's snapshot. Before relying on a key change, verify it on every instance; see
     [Verifying a key change on every instance](#verifying-a-key-change-on-every-instance).
 - **Introspection is unchanged on the wire.** It keeps its protocol answer
-  (`{"active": false}`) when a dependency fails, and logs an Error naming the category.
+  (`{"active": false}`) when a dependency fails while deciding the token, and logs an Error naming the category.
+  A failure of the client store while authenticating the caller is the exception: it answers `503 temporarily_unavailable`.
   Revocation answers `503 temporarily_unavailable` instead (see
   [Token revocation](#token-revocation)).
 - Failures after authentication, in the endpoint's own data access, are not part of this
@@ -911,6 +952,9 @@ Clients holding tokens signed with the old certificate must obtain new ones.
 | JWKS 503 | Error | `The JWKS could not be served: the SigningKeyStore is unavailable (trace …)` |
 | Introspection could not decide (answers `{"active": false}`) | Error | `Token validation could not reach a decision: the {Category} is unavailable` |
 | Revocation could not decide (answers `503`) | Error | `Revocation could not be completed: …` |
+| Introspection could not authenticate the caller (answers `503`) | Error | `Introspection could not be completed: {Boundary} failed ({ExceptionTypes})`, then `Introspection for client {ClientId} could not be completed ({Reason}); answering 503` |
+| Introspection answered inactive for another client's token | Debug | `Introspection answered inactive: the supplied token does not belong to the calling client {CallerClientId}` |
+| Introspection Basic credentials malformed | Information | `Introspection Basic credentials were malformed at the {Stage} stage` |
 
 A snapshot publication labelled `Request` is a normal background reload started by a
 request that found the snapshot overdue. It is not a fault. The message
@@ -921,8 +965,8 @@ request that found the snapshot overdue. It is not a fault. The message
 - **Unknown key ids:** `was not in the signing-key snapshot` matches both unknown-key
   lines. The bearer line alone misses introspection.
 - **Undecided requests:** `is unavailable` matches the dependency 503, the JWKS 503, and
-  the introspection line. Introspection keeps its protocol answer on the wire, so that log
-  is the only signal of its failures. Revocation answers `503` and logs
+  the introspection line. Introspection keeps its protocol answer on the wire when it cannot decide a token, so that log
+  is the only signal of those failures. Revocation answers `503` and logs
   `Revocation could not be completed`.
 
 ### Connection capacity

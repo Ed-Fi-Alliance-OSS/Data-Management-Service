@@ -107,6 +107,8 @@ the stored status is `valid`. The Configuration Service exposes:
   ownership details here are `self-contained` behaviour; see the Keycloak section below
   for how the endpoint revokes in `keycloak` mode.
 - `POST /connect/introspect` (RFC 7662) — reports active/inactive status.
+  The caller must authenticate with client credentials, and only the token's own client receives its metadata.
+  Any other token is reported as `{"active": false}`.
 
 This is **not** one-time-use enforcement (a valid token remains reusable until it
 expires or is revoked), but it does provide **immediate, server-side revocation**:
@@ -121,7 +123,7 @@ success, wrong owner, unverifiable token, expired token, unknown token. RFC 7009
 this, and it is what stops the endpoint from becoming an oracle for token existence and
 ownership, but it also means the status code carries no confirmation. **Incident response
 must not treat `200 OK` as proof that a leaked credential was contained** — confirm with
-`POST /connect/introspect` (self-contained), which reports `{"active": false}` only once
+`POST /connect/introspect` (self-contained) authenticated as the token's owner, which reports `{"active": false}` only once
 revocation has actually taken effect, or with Keycloak's own introspection endpoint in
 `keycloak` mode (see the Keycloak section below). A `503` is not a "not revoked" answer
 either: it means the outcome could not be confirmed, and the caller should retry (which is
@@ -177,7 +179,7 @@ Keycloak tokens locally and keep accepting a revoked token until it expires (plu
 clock skew). Confirm a revocation through Keycloak's introspection endpoint with a
 confidential client that is in the token's audience (from Keycloak 26.4.12, per Red Hat's
 migration guide, and observed on 26.7.5, any other client is answered `active:false`) —
-Configuration Service `/connect/introspect` cannot observe Keycloak tokens. Details: [CS-AUTH.md § Token revocation](../reference/design/configuration-service/CS-AUTH.md#token-revocation).
+Configuration Service `/connect/introspect` cannot observe Keycloak tokens (it makes no credential checks in that mode and answers `{"active": false}`). Details: [CS-AUTH.md § Token revocation](../reference/design/configuration-service/CS-AUTH.md#token-revocation).
 
 ## `jti` handling matrix
 
@@ -359,7 +361,8 @@ The behaviors above are exercised by automated tests:
   mis-cased `client_id` the way SQL Server's collation does, and the token minted under
   the canonical spelling is still revoked — the case that would otherwise be a silent
   `200 OK` no-op against the caller's own token. A final fixture asserts
-  `/connect/register`, `/connect/token` and `/connect/introspect` stayed anonymous.
+  `/connect/register` and `/connect/token` are not answered `401`, and that `/connect/introspect` rejects a
+  request without client credentials with `400 invalid_client`.
 - The Configuration Service — `EdFi.DmsConfigurationService.Backend.Tests.Unit/KeycloakTokenRevocationManagerTests.cs`
   and `KeycloakClientFacadeTests.cs`: the delegated request carries the caller's
   credentials and never the service secret, forwards only recognised hints, and is sent

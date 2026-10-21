@@ -27,7 +27,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
     /// development certificate is obtained from the shared <see cref="DevelopmentCertificateStore"/> (D-10).
     /// Revocation is the one exception: it verifies against a per-call, read-only key load that fails closed on a
     /// missing certificate or an unusable key row, where the snapshot would create the certificate or discard the row
-    /// (DMS-1327 D-07.4).
+    /// (DMS-1327 D-07.4). Introspection (<see cref="ITokenIntrospectionManager"/>) uses the snapshot, like the bearer
+    /// path.
     /// </summary>
     public class OpenIddictTokenManager(
         IOptions<IdentityOptions> identityOptions,
@@ -36,7 +37,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         IOpenIddictTokenRepository tokenRepository,
         ISigningKeySnapshotProvider signingKeyProvider,
         DevelopmentCertificateStore developmentCertificateStore
-    ) : ITokenManager, ITokenRevocationManager
+    ) : ITokenManager, ITokenRevocationManager, ITokenIntrospectionManager
     {
         private readonly IOptions<IdentityOptions> _identityOptions = identityOptions;
         private readonly ILogger<OpenIddictTokenManager> _logger = logger;
@@ -440,6 +441,150 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         }
 
         /// <summary>
+        /// RFC 7662 introspection for the self-contained provider (CS-AUTH.md). The order is authenticate,
+        /// verify, compare ownership, read status. Authentication runs before the token is looked at, so a bad
+        /// token can never turn a failed authentication into an answer, and a failed client-store dependency is
+        /// <see cref="TokenIntrospectionResult.TemporarilyUnavailable"/> as it is for revocation (DMS-1327 D-07).
+        /// After authentication every token outcome is <see cref="TokenIntrospectionResult.Inactive"/>: an
+        /// unverifiable, expired, revoked or unknown token, another client's token (never an oracle), and a token
+        /// whose verification or status dependency failed, which is logged at Error with its category (DMS-1556
+        /// 4.7). Verification uses the signing-key snapshot, like the bearer path and unlike revocation, and
+        /// only the verified token's claims are reported. The comparison and parsing logic between the
+        /// boundaries is deliberately not wrapped, so a fault there propagates as an exception (D-13.1). Nothing
+        /// from the caller or a client-store exception reaches a log on the authentication path except the
+        /// sanitized canonical client id and exception type names (D-15).
+        /// </summary>
+        public async Task<TokenIntrospectionResult> IntrospectTokenAsync(
+            TokenIntrospectionRequest request,
+            CancellationToken cancellationToken
+        )
+        {
+            if (
+                string.IsNullOrWhiteSpace(request.ClientId) || string.IsNullOrWhiteSpace(request.ClientSecret)
+            )
+            {
+                return new TokenIntrospectionResult.InvalidClient();
+            }
+
+            ApplicationInfo? applicationInfo;
+            try
+            {
+                (applicationInfo, _) = await ValidateClientSecretAsync(
+                    request.ClientId,
+                    request.ClientSecret,
+                    preserveVerificationFailures: true
+                );
+            }
+            catch (Exception ex) when (!IsCallerCancellation(ex, cancellationToken))
+            {
+                return IntrospectionUnavailable(ClientAuthenticationBoundary, ex);
+            }
+
+            if (applicationInfo is null)
+            {
+                return new TokenIntrospectionResult.InvalidClient();
+            }
+
+            // Tokens are minted from the stored canonical id, so that is what the ownership
+            // comparison must be given, not the caller's own spelling (DMS-1478).
+            string callerClientId = CanonicalClientId(applicationInfo, request.ClientId);
+
+            TokenVerification verification;
+            try
+            {
+                verification = await VerifyTokenAsync(request.Token);
+            }
+            catch (AuthenticationDependencyUnavailableException ex)
+            {
+                return UndecidedToken(ex);
+            }
+
+            if (verification.Token is not { } jwtToken)
+            {
+                LogVerificationFailure("Token introspection failed", verification);
+                return new TokenIntrospectionResult.Inactive();
+            }
+
+            string? tokenClientId = jwtToken
+                .Claims.FirstOrDefault(x => x.Type == SecurityConstants.ClientIdClaimType)
+                ?.Value;
+            if (!TokenBelongsToCaller(tokenClientId, callerClientId))
+            {
+                // Debug, not Warning: an expected answer any authenticated caller can trigger at
+                // will, so a higher level would let them flood a severity operators alert on.
+                _logger.LogDebug(
+                    "Introspection answered inactive: the supplied token does not belong to the calling client {CallerClientId}",
+                    LoggingUtility.SanitizeForLog(callerClientId)
+                );
+                return new TokenIntrospectionResult.Inactive();
+            }
+
+            string? jti = jwtToken.Claims.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;
+            if (!Guid.TryParse(jti, out Guid tokenId))
+            {
+                return new TokenIntrospectionResult.Inactive();
+            }
+
+            string? status;
+            try
+            {
+                status = await GetTokenStatusAsync(tokenId);
+            }
+            catch (AuthenticationDependencyUnavailableException ex)
+            {
+                return UndecidedToken(ex);
+            }
+
+            if (status != "valid")
+            {
+                return new TokenIntrospectionResult.Inactive();
+            }
+
+            if (
+                !long.TryParse(ClaimValue(jwtToken, JwtRegisteredClaimNames.Exp), out long exp)
+                || !long.TryParse(ClaimValue(jwtToken, JwtRegisteredClaimNames.Iat), out long iat)
+            )
+            {
+                return new TokenIntrospectionResult.Inactive();
+            }
+
+            return new TokenIntrospectionResult.Active(
+                new IntrospectedToken(
+                    ClientId: tokenClientId ?? string.Empty,
+                    Scope: string.Join(
+                        " ",
+                        jwtToken.Claims.Where(x => x.Type == "scope").Select(x => x.Value)
+                    ),
+                    Exp: exp,
+                    Iat: iat,
+                    Sub: ClaimValue(jwtToken, JwtRegisteredClaimNames.Sub),
+                    Aud: ClaimValue(jwtToken, JwtRegisteredClaimNames.Aud),
+                    Iss: ClaimValue(jwtToken, JwtRegisteredClaimNames.Iss)
+                )
+            );
+        }
+
+        private static string? ClaimValue(JwtSecurityToken token, string claimType) =>
+            token.Claims.FirstOrDefault(x => x.Type == claimType)?.Value;
+
+        /// <summary>
+        /// A token that could not be decided because a signing-key or token-status dependency failed. Answered
+        /// as inactive, as the bearer-validation introspection always did (DMS-1556 4.7), so the category is
+        /// logged or an unavailable store is indistinguishable from an invalid token.
+        /// </summary>
+        private TokenIntrospectionResult UndecidedToken(
+            AuthenticationDependencyUnavailableException exception
+        )
+        {
+            _logger.LogError(
+                exception,
+                "Token validation could not reach a decision: the {Category} is unavailable",
+                exception.Category
+            );
+            return new TokenIntrospectionResult.Inactive();
+        }
+
+        /// <summary>
         /// Ordinal (case-sensitive) on purpose: a case-insensitive comparison would make the
         /// ownership boundary depend on the deployed engine's collation, since Postgres is
         /// case-sensitive and SQL Server is not by default (DMS-1478). Virtual only so a test can
@@ -464,6 +609,20 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 ExceptionTypeChain(exception)
             );
             return new TokenRevocationResult.TemporarilyUnavailable(boundary);
+        }
+
+        /// <summary>
+        /// The introspection sibling of <see cref="Unavailable"/>: same rule, only the operation named in the
+        /// message differs.
+        /// </summary>
+        private TokenIntrospectionResult IntrospectionUnavailable(string boundary, Exception exception)
+        {
+            _logger.LogError(
+                "Introspection could not be completed: {Boundary} failed ({ExceptionTypes})",
+                boundary,
+                ExceptionTypeChain(exception)
+            );
+            return new TokenIntrospectionResult.TemporarilyUnavailable(boundary);
         }
 
         private static string ExceptionTypeChain(Exception exception)

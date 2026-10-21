@@ -129,6 +129,46 @@ public class TokenRevocationStartupTests
             _boot.ProviderConnectionsAtStartup.Should().Be(0);
     }
 
+    /// <summary>
+    /// The introspection registration is pinned here because it shares this file's boot harness. The
+    /// self-contained shapes ship <see cref="OpenIddictTokenManager"/>; Keycloak ships none, so
+    /// introspection there answers inactive without any check.
+    /// </summary>
+    [TestFixtureSource(typeof(TokenRevocationStartupTests), nameof(Shapes))]
+    public class Given_a_boot_with_the_introspection_registration_its_provider_ships(
+        string provider,
+        string datastore
+    )
+    {
+        private RevocationBoot _boot = null!;
+
+        [OneTimeSetUp]
+        public void OneTimeSetUp() => _boot = RevocationBoot.Run(provider, datastore);
+
+        [OneTimeTearDown]
+        public void OneTimeTearDown() => _boot.Dispose();
+
+        [Test]
+        public void It_starts() => _boot.StartupException.Should().BeNull();
+
+        [Test]
+        public void It_resolves_the_providers_introspection_manager()
+        {
+            using IServiceScope scope = _boot.Factory.Services.CreateScope();
+            ITokenIntrospectionManager? manager =
+                scope.ServiceProvider.GetService<ITokenIntrospectionManager>();
+
+            if (provider == "keycloak")
+            {
+                manager.Should().BeNull();
+            }
+            else
+            {
+                manager.Should().BeOfType<OpenIddictTokenManager>();
+            }
+        }
+    }
+
     [TestFixtureSource(typeof(TokenRevocationStartupTests), nameof(Shapes))]
     public class Given_a_boot_with_no_revocation_manager_registered(string provider, string datastore)
     {
