@@ -3702,8 +3702,9 @@ public class OpenIddictTokenManagerTests
         new(callerClientId, CallerSecret, token, TokenTypeHint.None);
 
     /// <summary>
-    /// A signed token carrying the claims introspection reports. The expiry is set by the signing helper, so tests
-    /// compare against the token's own payload rather than a second hardcoded clock.
+    /// A signed token carrying the claims introspection reports, with the single <c>scope</c> claim
+    /// <c>JwtTokenGenerator</c> mints. The expiry is set by the signing helper, so tests compare against
+    /// the token's own payload rather than a second hardcoded clock.
     /// </summary>
     private static string CreateIntrospectableToken(
         RsaSecurityKey signingKey,
@@ -3718,7 +3719,6 @@ public class OpenIddictTokenManagerTests
                 new Claim(JwtRegisteredClaimNames.Jti, jti.ToString()),
                 new Claim("client_id", clientId),
                 new Claim("scope", "edfi_admin_api/full_access"),
-                new Claim("scope", "edfi_admin_api/read_only"),
                 new Claim(JwtRegisteredClaimNames.Sub, clientId),
                 new Claim(JwtRegisteredClaimNames.Iat, iat),
             }
@@ -3755,7 +3755,7 @@ public class OpenIddictTokenManagerTests
                 .Be(
                     new IntrospectedToken(
                         OwnerClientId,
-                        "edfi_admin_api/full_access edfi_admin_api/read_only",
+                        "edfi_admin_api/full_access",
                         _mintedExp,
                         IntrospectionIssuedAt,
                         OwnerClientId,

@@ -48,13 +48,13 @@ public class IdentityModule : IEndpointModule
             .MapPost("connect/revoke/{**contextPath}", RevokeToken)
             .DisableAntiforgery()
             .WithMetadata(
-                OAuthErrorContractMetadata.Instance,
+                OAuthErrorContractMetadata.Revocation,
                 ExceptionTypeOnlyLoggingMetadata.Instance,
                 BearerAuthenticationExemptMetadata.Instance
             );
-        // The same contract as /connect/revoke, for the same reasons. RFC 7662 §2.1 requires the
-        // caller to authenticate with client credentials (RFC 6749 §2.3), not a bearer access
-        // token, so a bearer header neither authenticates the caller nor reaches bearer processing.
+        // The same contract as /connect/revoke. RFC 7662 §2.1 requires some form of authorization
+        // to call the endpoint; CMS uses client credentials (RFC 6749 §2.3), as at /connect/revoke,
+        // so a bearer header neither authenticates the caller nor reaches bearer processing.
         // Failures are answered in the OAuth error format. The manager the handler resolves can be
         // constructed by a plugin, so failures are logged by exception type names only
         // (DMS-1327 D-03, D-15, D-17, CS-AUTH.md).
@@ -62,7 +62,7 @@ public class IdentityModule : IEndpointModule
             .MapPost("connect/introspect/{**contextPath}", IntrospectToken)
             .DisableAntiforgery()
             .WithMetadata(
-                OAuthErrorContractMetadata.Instance,
+                OAuthErrorContractMetadata.Introspection,
                 ExceptionTypeOnlyLoggingMetadata.Instance,
                 BearerAuthenticationExemptMetadata.Instance
             );
@@ -182,8 +182,8 @@ public class IdentityModule : IEndpointModule
 
     /// <summary>
     /// Parses HTTP Basic auth credentials (client_id:client_secret) from the Authorization
-    /// header for /connect/token. Lenient by design and unchanged by DMS-1327: /connect/revoke
-    /// uses the strict <see cref="ParseStrictBasicCredentials"/> instead.
+    /// header for /connect/token. Lenient by design and unchanged by DMS-1327: /connect/revoke and
+    /// /connect/introspect use the strict <see cref="ParseStrictBasicCredentials"/> instead.
     /// </summary>
     private static void TryParseBasicAuthCredentials(
         HttpContext httpContext,
@@ -388,7 +388,7 @@ public class IdentityModule : IEndpointModule
         ClientAuthenticatedForm form = await ReadClientAuthenticatedFormAsync(
             logger,
             httpContext,
-            "Introspection"
+            ClientAuthenticatedEndpoint.Introspection
         );
         if (form is ClientAuthenticatedForm.Rejected rejected)
         {
@@ -487,7 +487,7 @@ public class IdentityModule : IEndpointModule
         ClientAuthenticatedForm form = await ReadClientAuthenticatedFormAsync(
             logger,
             httpContext,
-            "Revocation"
+            ClientAuthenticatedEndpoint.Revocation
         );
         if (form is ClientAuthenticatedForm.Rejected rejected)
         {
@@ -540,54 +540,61 @@ public class IdentityModule : IEndpointModule
     }
 
     /// <summary>
+    /// The client-authenticated form endpoints, which each log with their own fixed message templates.
+    /// </summary>
+    private enum ClientAuthenticatedEndpoint
+    {
+        Revocation,
+        Introspection,
+    }
+
+    /// <summary>
     /// The request-shape and client-credential checks of a client-authenticated form endpoint, in the
-    /// DMS-1327 D-03 order, rows 1-7. The first failure answers: form content type, charset and
-    /// encoding, duplicates, mixed mechanisms, the token, then the client credentials. None of them
-    /// touches the token, the database or the identity provider. A form body <c>ReadFormAsync</c>
-    /// cannot parse throws and is answered in the OAuth format by <c>GlobalExceptionHandler</c>,
-    /// selected by the route's <see cref="OAuthErrorContractMetadata"/>. <c>ReadFormAsync</c> does not
-    /// reject malformed URL encoding, though: it keeps an invalid escape such as <c>%GG</c> as literal
-    /// text and leaves percent-encoded bytes that are not UTF-8 undecoded, so that is checked here.
-    /// The check is UTF-8 and <c>ReadFormAsync</c> decodes with the declared charset, so a URL-encoded
-    /// body may declare no charset or UTF-8 only; the two then always decode the same way.
-    /// <paramref name="operation"/> names the endpoint's operation in the malformed-Basic log line.
+    /// DMS-1327 D-03 order, rows 1-7. The first failure answers: content type, charset and encoding,
+    /// duplicates, mixed mechanisms, the token, then the client credentials. None of them touches the
+    /// token, the database or the identity provider. The body must be
+    /// <c>application/x-www-form-urlencoded</c>, the request format RFC 7009 §2.1 and RFC 7662 §2.1
+    /// define; any other content type, <c>multipart/form-data</c> included, is refused before the body
+    /// is read. A body <c>ReadFormAsync</c> cannot parse throws and is answered in the OAuth format by
+    /// <c>GlobalExceptionHandler</c>, selected by the route's <see cref="OAuthErrorContractMetadata"/>.
+    /// <c>ReadFormAsync</c> does not reject malformed URL encoding, though: it keeps an invalid escape
+    /// such as <c>%GG</c> as literal text and leaves percent-encoded bytes that are not UTF-8
+    /// undecoded, so that is checked here. The check is UTF-8 and <c>ReadFormAsync</c> decodes with
+    /// the declared charset, so the body may declare no charset or UTF-8 only; the two then always
+    /// decode the same way. <paramref name="endpoint"/> selects the malformed-Basic log line.
     /// </summary>
     private static async Task<ClientAuthenticatedForm> ReadClientAuthenticatedFormAsync(
         ILogger<IdentityModule> logger,
         HttpContext httpContext,
-        string operation
+        ClientAuthenticatedEndpoint endpoint
     )
     {
         HttpRequest httpRequest = httpContext.Request;
 
-        if (!httpRequest.HasFormContentType)
-        {
-            return new ClientAuthenticatedForm.Rejected(
-                InvalidRequest("The request body must be application/x-www-form-urlencoded.")
-            );
-        }
-
-        UrlEncodedFormValidatingStream? encodingCheck = null;
         MediaTypeHeaderValue? contentType = httpRequest.GetTypedHeaders().ContentType;
         if (
             contentType?.MediaType.Equals(
                 "application/x-www-form-urlencoded",
                 StringComparison.OrdinalIgnoreCase
             )
-            is true
+            is not true
         )
         {
-            if (!IsAbsentOrUtf8(contentType.Charset))
-            {
-                return new ClientAuthenticatedForm.Rejected(InvalidRequest(UnsupportedCharsetDescription));
-            }
-
-            encodingCheck = new UrlEncodedFormValidatingStream(httpRequest.Body);
-            httpRequest.Body = encodingCheck;
+            return new ClientAuthenticatedForm.Rejected(
+                InvalidRequest("The request body must be application/x-www-form-urlencoded.")
+            );
         }
 
+        if (!IsAbsentOrUtf8(contentType.Charset))
+        {
+            return new ClientAuthenticatedForm.Rejected(InvalidRequest(UnsupportedCharsetDescription));
+        }
+
+        UrlEncodedFormValidatingStream encodingCheck = new(httpRequest.Body);
+        httpRequest.Body = encodingCheck;
+
         IFormCollection form = await httpRequest.ReadFormAsync(httpContext.RequestAborted);
-        if (encodingCheck?.IsMalformed() is true)
+        if (encodingCheck.IsMalformed())
         {
             return new ClientAuthenticatedForm.Rejected(InvalidRequest(MalformedFormDescription));
         }
@@ -630,11 +637,20 @@ public class IdentityModule : IEndpointModule
             StrictBasicCredentials parsed = ParseStrictBasicCredentials(afterBasicScheme);
             if (parsed is StrictBasicCredentials.Malformed malformed)
             {
-                logger.LogInformation(
-                    "{Operation} Basic credentials were malformed at the {Stage} stage",
-                    operation,
-                    malformed.Stage
-                );
+                if (endpoint == ClientAuthenticatedEndpoint.Revocation)
+                {
+                    logger.LogInformation(
+                        "Revocation Basic credentials were malformed at the {Stage} stage",
+                        malformed.Stage
+                    );
+                }
+                else
+                {
+                    logger.LogInformation(
+                        "Introspection Basic credentials were malformed at the {Stage} stage",
+                        malformed.Stage
+                    );
+                }
                 return new ClientAuthenticatedForm.Rejected(
                     InvalidClient(httpContext, basicAttempted, InvalidClientCredentialsDescription)
                 );
@@ -726,8 +742,8 @@ public class IdentityModule : IEndpointModule
     /// <c>form-urlencode(client_id) ":" form-urlencode(client_secret)</c>. Each stage is validated
     /// explicitly because the framework decoders are lenient: <c>Convert.FromBase64String</c> skips
     /// whitespace, default UTF-8 decoding substitutes U+FFFD, and <c>WebUtility.UrlDecode</c> keeps
-    /// malformed escapes. Used by <c>/connect/revoke</c> only; <c>/connect/token</c> keeps the lenient
-    /// <see cref="TryParseBasicAuthCredentials"/> (DMS-1327 D-04).
+    /// malformed escapes. Used by <c>/connect/revoke</c> and <c>/connect/introspect</c>;
+    /// <c>/connect/token</c> keeps the lenient <see cref="TryParseBasicAuthCredentials"/> (DMS-1327 D-04).
     /// </summary>
     private static StrictBasicCredentials ParseStrictBasicCredentials(string afterScheme)
     {
@@ -1076,7 +1092,8 @@ public class IdentityModule : IEndpointModule
     /// judged. This answers 503, not <c>invalid_client</c>, so an outage cannot read as rejected
     /// credentials. A dependency failure after authentication, while deciding the token, still
     /// answers <c>{"active": false}</c> (CS-AUTH.md). The manager has already logged the boundary and
-    /// exception types; this records only the sanitized caller and the fixed boundary label.
+    /// exception types at Error; this records only the sanitized caller and the fixed boundary label,
+    /// at Warning like the revocation endpoint's line, so one outage request is one Error event.
     /// </summary>
     private static IResult IntrospectionUnavailable(
         ILogger<IdentityModule> logger,
@@ -1084,7 +1101,7 @@ public class IdentityModule : IEndpointModule
         TokenIntrospectionResult.TemporarilyUnavailable unavailable
     )
     {
-        logger.LogError(
+        logger.LogWarning(
             "Introspection for client {ClientId} could not be completed ({Reason}); answering 503",
             LoggingUtility.SanitizeForLog(clientId),
             unavailable.Reason

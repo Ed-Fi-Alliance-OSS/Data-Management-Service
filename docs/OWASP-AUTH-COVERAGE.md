@@ -123,8 +123,9 @@ success, wrong owner, unverifiable token, expired token, unknown token. RFC 7009
 this, and it is what stops the endpoint from becoming an oracle for token existence and
 ownership, but it also means the status code carries no confirmation. **Incident response
 must not treat `200 OK` as proof that a leaked credential was contained** — confirm with
-`POST /connect/introspect` (self-contained) authenticated as the token's owner, which reports `{"active": false}` only once
-revocation has actually taken effect, or with Keycloak's own introspection endpoint in
+`POST /connect/introspect` (self-contained) authenticated as the token's owner, which reports `{"active": false}` once
+revocation has taken effect (or when it could not decide the token because a key or token-status store failed, which it
+logs as the Error `Token validation could not reach a decision`), or with Keycloak's own introspection endpoint in
 `keycloak` mode (see the Keycloak section below). A `503` is not a "not revoked" answer
 either: it means the outcome could not be confirmed, and the caller should retry (which is
 safe) and confirm the same way.

@@ -3572,7 +3572,7 @@ public class IntrospectionOwnershipTests
     }
 
     /// <summary>
-    /// Authentication runs before the token is evaluated (AC4): a wrong secret is 401 invalid_client
+    /// Authentication runs before the token is evaluated: a wrong secret is 401 invalid_client
     /// even though the token alone would have answered <c>{"active":false}</c>.
     /// </summary>
     [TestFixture]
@@ -3717,7 +3717,8 @@ public class IdentityProviderErrorParsingTests
 /// tests for those routes never install an authentication scheme, so they would not notice. These
 /// install the harness's test authentication, present no credentials, and assert register and token are
 /// never 401. <c>/connect/introspect</c> authenticates the client itself, so it answers 400
-/// <c>invalid_client</c>, never a framework 401. Non-fixture container; the runnable fixture is the nested <c>Given_…</c> class.
+/// <c>invalid_client</c>, never a framework 401. Non-fixture container; the runnable fixture is the
+/// nested <c>Given_…</c> class.
 /// </summary>
 public class TokenEndpointAnonymityTests
 {
@@ -3804,6 +3805,11 @@ public class RevocationRequestContractTests
 
     /// <summary>Planted in caller input that is rejected, to prove it never reaches a log.</summary>
     private const string Sentinel = "SECRET-REVOKE-SENTINEL";
+
+    /// <summary>
+    /// One character past <c>FormOptions.KeyLengthLimit</c>, so <c>ReadFormAsync</c> throws.
+    /// </summary>
+    private static readonly string OverLongFormKey = new('k', 2049);
 
     private const string Challenge = "Basic realm=\"EdFi.DmsConfigurationService\"";
     private const string DuplicateDescription = "A request parameter or header was included more than once.";
@@ -3990,7 +3996,7 @@ public class RevocationRequestContractTests
         }
     }
 
-    // ----- D-03 row 1: no form content type -----
+    // ----- D-03 row 1: not application/x-www-form-urlencoded -----
 
     public static IEnumerable<TestFixtureData> NonFormBodies()
     {
@@ -4000,10 +4006,15 @@ public class RevocationRequestContractTests
             )
         ).SetArgDisplayNames("a JSON body");
         yield return new TestFixtureData(new Func<HttpContent?>(() => null)).SetArgDisplayNames("no body");
+        yield return new TestFixtureData(
+            new Func<HttpContent?>(() =>
+                new MultipartFormDataContent { { new StringContent(Token), "token" } }
+            )
+        ).SetArgDisplayNames("a well-formed multipart/form-data body");
     }
 
     [TestFixtureSource(typeof(RevocationRequestContractTests), nameof(NonFormBodies))]
-    public class Given_a_revocation_request_without_a_form_body(Func<HttpContent?> body)
+    public class Given_a_revocation_request_without_a_url_encoded_body(Func<HttpContent?> body)
         : RevocationRequestFixture
     {
         protected override HttpContent? Body => body();
@@ -4025,24 +4036,14 @@ public class RevocationRequestContractTests
     // ----- D-03 row 2 / D-17: malformed form, through the exception handler -----
 
     /// <summary>
-    /// <c>multipart/form-data</c> without a boundary makes <c>ReadFormAsync</c> throw
-    /// <see cref="InvalidDataException"/>. The handler selects the OAuth writer from the route's
-    /// marker, read off <c>IExceptionHandlerFeature.Endpoint</c> (A-05).
+    /// A form key longer than <c>FormOptions.KeyLengthLimit</c> (2048 characters) makes
+    /// <c>ReadFormAsync</c> throw <see cref="InvalidDataException"/>. The handler selects the OAuth
+    /// writer from the route's marker, read off <c>IExceptionHandlerFeature.Endpoint</c> (A-05).
     /// </summary>
     [TestFixture]
     public class Given_a_revocation_request_with_a_malformed_form_payload : RevocationRequestFixture
     {
-        protected override HttpContent? Body
-        {
-            get
-            {
-                StringContent content = new($"token={Sentinel}");
-                content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
-                    "multipart/form-data"
-                );
-                return content;
-            }
-        }
+        protected override HttpContent? Body => RawForm($"{OverLongFormKey}=x&token={Sentinel}");
 
         protected override IEnumerable<string> AuthorizationValues => [_validBasic];
 
@@ -4055,8 +4056,7 @@ public class RevocationRequestContractTests
             );
 
         [Test]
-        public void It_does_not_leak_the_framework_parsing_message() =>
-            Content.Should().NotContain("boundary");
+        public void It_does_not_leak_the_framework_parsing_message() => Content.Should().NotContain("limit");
 
         [Test]
         public void It_does_not_call_the_manager() => AssertManagerNotCalled();
@@ -5159,7 +5159,6 @@ public class IntrospectionRequestContractTests
 
     public static IEnumerable<TestFixtureData> RejectedRequests()
     {
-        const string multipart = "multipart/form-data";
         yield return new TestFixtureData(
             new Func<HttpContent?>(() => new StringContent("{}", Encoding.UTF8, "application/json")),
             new[] { _validBasic },
@@ -5170,8 +5169,16 @@ public class IntrospectionRequestContractTests
         ).SetArgDisplayNames("row 1, no form content type");
         yield return new TestFixtureData(
             new Func<HttpContent?>(() =>
-                new StringContent("token=x", new System.Net.Http.Headers.MediaTypeHeaderValue(multipart))
+                new MultipartFormDataContent { { new StringContent("x"), "token" } }
             ),
+            new[] { _validBasic },
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "The request body must be application/x-www-form-urlencoded.",
+            false
+        ).SetArgDisplayNames("row 1, a well-formed multipart/form-data body");
+        yield return new TestFixtureData(
+            new Func<HttpContent?>(() => RawForm($"{new string('k', 2049)}=x&token=x")),
             new[] { _validBasic },
             HttpStatusCode.BadRequest,
             "invalid_request",
@@ -5427,11 +5434,11 @@ public class IntrospectionRequestContractTests
         public void It_does_not_claim_the_token_is_inactive() => Content.Should().NotContain("active");
 
         [Test]
-        public void It_logs_the_sanitized_client_and_reason_at_error() =>
+        public void It_logs_the_sanitized_client_and_reason_at_warning() =>
             Logs
                 .Records.Should()
                 .ContainSingle(record =>
-                    record.Level == LogLevel.Error
+                    record.Level == LogLevel.Warning
                     && record.Message.Contains(ClientId)
                     && record.Message.Contains("contract-boundary")
                 );
@@ -5572,7 +5579,7 @@ public class IntrospectionRequestContractTests
 
         [Test]
         public void It_carries_the_oauth_error_contract() =>
-            _metadata.Should().Contain(OAuthErrorContractMetadata.Instance);
+            _metadata.Should().Contain(OAuthErrorContractMetadata.Introspection);
 
         [Test]
         public void It_carries_exception_type_only_logging() =>

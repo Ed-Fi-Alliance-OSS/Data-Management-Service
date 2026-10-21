@@ -27,8 +27,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
     /// development certificate is obtained from the shared <see cref="DevelopmentCertificateStore"/> (D-10).
     /// Revocation is the one exception: it verifies against a per-call, read-only key load that fails closed on a
     /// missing certificate or an unusable key row, where the snapshot would create the certificate or discard the row
-    /// (DMS-1327 D-07.4). Introspection (<see cref="ITokenIntrospectionManager"/>) uses the snapshot, like the bearer
-    /// path.
+    /// (DMS-1327 D-07.4). Introspection (<see cref="ITokenIntrospectionManager"/>) uses the snapshot,
+    /// like the bearer path.
     /// </summary>
     public class OpenIddictTokenManager(
         IOptions<IdentityOptions> identityOptions,
@@ -441,18 +441,19 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         }
 
         /// <summary>
-        /// RFC 7662 introspection for the self-contained provider (CS-AUTH.md). The order is authenticate,
-        /// verify, compare ownership, read status. Authentication runs before the token is looked at, so a bad
-        /// token can never turn a failed authentication into an answer, and a failed client-store dependency is
-        /// <see cref="TokenIntrospectionResult.TemporarilyUnavailable"/> as it is for revocation (DMS-1327 D-07).
-        /// After authentication every token outcome is <see cref="TokenIntrospectionResult.Inactive"/>: an
-        /// unverifiable, expired, revoked or unknown token, another client's token (never an oracle), and a token
-        /// whose verification or status dependency failed, which is logged at Error with its category (DMS-1556
-        /// 4.7). Verification uses the signing-key snapshot, like the bearer path and unlike revocation, and
-        /// only the verified token's claims are reported. The comparison and parsing logic between the
-        /// boundaries is deliberately not wrapped, so a fault there propagates as an exception (D-13.1). Nothing
-        /// from the caller or a client-store exception reaches a log on the authentication path except the
-        /// sanitized canonical client id and exception type names (D-15).
+        /// RFC 7662 introspection for the self-contained provider (CS-AUTH.md). The order is
+        /// authenticate, verify, compare ownership, read status. Authentication runs before the token is
+        /// looked at, so a bad token can never turn a failed authentication into an answer, and a failed
+        /// client-store dependency is <see cref="TokenIntrospectionResult.TemporarilyUnavailable"/> as it
+        /// is for revocation (DMS-1327 D-07). After authentication every token outcome is
+        /// <see cref="TokenIntrospectionResult.Inactive"/>: an unverifiable, expired, revoked or unknown
+        /// token, another client's token (never an oracle), and a token whose verification or status
+        /// dependency failed, which is logged at Error with its category (DMS-1556 §4.7). Verification
+        /// uses the signing-key snapshot, like the bearer path and unlike revocation, and only the
+        /// verified token's claims are reported. The comparison and parsing logic between the boundaries
+        /// is deliberately not wrapped, so a fault there propagates as an exception (DMS-1327 D-13.1).
+        /// Nothing from the caller or a client-store exception reaches a log on the authentication path
+        /// except the sanitized canonical client id and exception type names (DMS-1327 D-15).
         /// </summary>
         public async Task<TokenIntrospectionResult> IntrospectTokenAsync(
             TokenIntrospectionRequest request,
@@ -568,9 +569,9 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
             token.Claims.FirstOrDefault(x => x.Type == claimType)?.Value;
 
         /// <summary>
-        /// A token that could not be decided because a signing-key or token-status dependency failed. Answered
-        /// as inactive, as the bearer-validation introspection always did (DMS-1556 4.7), so the category is
-        /// logged or an unavailable store is indistinguishable from an invalid token.
+        /// A token that could not be decided because a signing-key or token-status dependency failed.
+        /// Answered as inactive, the introspection contract DMS-1556 §4.7 kept, so the category is logged
+        /// or an unavailable store would be indistinguishable from an invalid token.
         /// </summary>
         private TokenIntrospectionResult UndecidedToken(
             AuthenticationDependencyUnavailableException exception

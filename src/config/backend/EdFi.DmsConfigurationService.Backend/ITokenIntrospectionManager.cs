@@ -8,10 +8,11 @@ namespace EdFi.DmsConfigurationService.Backend;
 /// <summary>
 /// Provider-neutral RFC 7662 introspection. The implementation owns the ordering
 /// <c>authenticate → verify → ownership → status</c> for its identity provider; the endpoint
-/// owns request shape and the HTTP status and challenge rules. <see cref="TokenIntrospectionResult.Inactive"/>
-/// covers every token outcome, a token issued to another client included, so the answer is never
-/// an oracle. One method rather than a separate authentication step because the endpoint must
-/// never see stored client secrets. See reference/design/configuration-service/CS-AUTH.md.
+/// owns request shape and the HTTP status and challenge rules.
+/// <see cref="TokenIntrospectionResult.Inactive"/> covers every token outcome, a token issued to
+/// another client included, so the answer is never an oracle. One method rather than a separate
+/// authentication step because the endpoint must never see stored client secrets. See
+/// reference/design/configuration-service/CS-AUTH.md.
 /// </summary>
 public interface ITokenIntrospectionManager
 {
@@ -47,8 +48,11 @@ public sealed record IntrospectedToken(
 );
 
 /// <summary>
-/// The outcome of one introspection attempt. Token outcomes and authentication outcomes are kept
-/// apart from operational failures so that an outage can never be answered as "inactive".
+/// The outcome of one introspection attempt. A failure that prevents authenticating the caller is
+/// kept apart from the authentication and token outcomes, so it is never answered as rejected
+/// credentials. Once the caller is authenticated, every token outcome is
+/// <see cref="Inactive"/>, including a token that could not be decided because a dependency
+/// failed.
 /// </summary>
 public abstract record TokenIntrospectionResult
 {
@@ -59,17 +63,22 @@ public abstract record TokenIntrospectionResult
 
     /// <summary>
     /// RFC 7662 inactive: the token was unknown, invalid, expired, revoked, or belongs to another
-    /// client. All of these are the same <c>active:false</c> to the caller.
+    /// client, or it could not be decided because a dependency needed to verify it or read its
+    /// status failed after the caller was authenticated. All of these are the same
+    /// <c>active:false</c> to the caller.
     /// </summary>
     public sealed record Inactive : TokenIntrospectionResult;
 
-    /// <summary>The caller failed client authentication: unknown, wrong secret, unapproved, or a public client.</summary>
+    /// <summary>
+    /// The caller failed client authentication, for example an unknown client, a wrong secret or an
+    /// unapproved client.
+    /// </summary>
     public sealed record InvalidClient : TokenIntrospectionResult;
 
     /// <summary>
-    /// An operational failure: database, signing-key retrieval, or provider timeout, unreachable,
-    /// 5xx or malformed answer. The state of the token is not known. <paramref name="Reason"/>
-    /// is a fixed boundary label for logs only and never carries caller or provider content.
+    /// An operational failure that prevented authenticating the caller, such as a client store that
+    /// could not be read, so the request was not judged. <paramref name="Reason"/> is a fixed
+    /// boundary label for logs only and never carries caller or provider content.
     /// </summary>
     public sealed record TemporarilyUnavailable(string Reason) : TokenIntrospectionResult;
 }

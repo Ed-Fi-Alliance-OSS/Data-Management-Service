@@ -35,9 +35,12 @@ and not a bearer access token. Both identity provider modes enforce it and both 
 [Token revocation](#token-revocation).
 
 [^introspect]: RFC 7662 §2.1 requires some form of authorization to call the introspection endpoint, such as client
-authentication, so that it cannot be used to scan for valid tokens.
-§2.3 answers invalid client credentials as RFC 6749 §5.2 describes.
-Here the caller authenticates with client credentials as at `/connect/revoke`, and not with a bearer access token.
+authentication or a bearer access token, so that it cannot be used to scan for valid tokens.
+The Configuration Service uses client credentials, as at `/connect/revoke`; a bearer access token is not accepted.
+RFC 7662 §2.3 answers invalid client credentials with `401`, "as described in Section 5.2" of RFC 6749.
+The endpoint sends that `401`, with a `WWW-Authenticate: Basic` challenge, when HTTP Basic was attempted.
+Failed form credentials get `400 invalid_client`, as at `/connect/revoke`: RFC 6749 §5.2 requires the `401` only for
+`Authorization` header authentication, and a challenge would invite a scheme the caller did not use.
 See [Token introspection](#token-introspection).
 
 `/connect/token` accepts client credentials as HTTP Basic or as form fields in both identity provider modes, with Basic taking precedence.
@@ -282,6 +285,9 @@ path:
 - **`self-contained`**: `POST /connect/introspect` with `token=<target>`, authenticated with
   the token owner's client credentials, reports `{"active": false}` once the token is revoked.
   Any other caller always receives `{"active": false}`, so only the owner's credentials can confirm anything.
+  A token the service could not decide, because its signing-key or token-status store failed, also reports
+  `{"active": false}` and logs the Error `Token validation could not reach a decision`, so check for that line
+  before treating the answer as confirmation.
   A protected CMS request with the token
   answers `401`.
 - **`keycloak`**: CMS `/connect/introspect` cannot observe Keycloak tokens (it always
@@ -495,6 +501,9 @@ ordinally, so a case variant is an unknown client (`invalid_client`).
 - **A client-store failure while authenticating the caller is `503 temporarily_unavailable`.**
   The request was not judged, so an outage cannot read as rejected credentials.
   Retrying is safe.
+- **A `self-contained` host refuses to start without an introspection implementation.**
+  Without one, the endpoint would make no credential checks, which is right only in `keycloak` mode.
+  As for revocation, the startup error names only the exception types.
 - **`keycloak` mode is unchanged.**
   The Configuration Service cannot observe Keycloak tokens.
   In this mode the endpoint makes no credential checks and answers `{"active": false}` for any request that carries a token.
@@ -706,7 +715,7 @@ decision:
   - **Fresh keys still need verifying.** A successful `200` still shows only that
     instance's snapshot. Before relying on a key change, verify it on every instance; see
     [Verifying a key change on every instance](#verifying-a-key-change-on-every-instance).
-- **Introspection is unchanged on the wire.** It keeps its protocol answer
+- **Introspection answers an undecided token as inactive.** It keeps its protocol answer
   (`{"active": false}`) when a dependency fails while deciding the token, and logs an Error naming the category.
   A failure of the client store while authenticating the caller is the exception: it answers `503 temporarily_unavailable`.
   Revocation answers `503 temporarily_unavailable` instead (see
@@ -952,7 +961,7 @@ Clients holding tokens signed with the old certificate must obtain new ones.
 | JWKS 503 | Error | `The JWKS could not be served: the SigningKeyStore is unavailable (trace …)` |
 | Introspection could not decide (answers `{"active": false}`) | Error | `Token validation could not reach a decision: the {Category} is unavailable` |
 | Revocation could not decide (answers `503`) | Error | `Revocation could not be completed: …` |
-| Introspection could not authenticate the caller (answers `503`) | Error | `Introspection could not be completed: {Boundary} failed ({ExceptionTypes})`, then `Introspection for client {ClientId} could not be completed ({Reason}); answering 503` |
+| Introspection could not authenticate the caller (answers `503`) | Error | `Introspection could not be completed: {Boundary} failed ({ExceptionTypes})`, followed by the Warning `Introspection for client {ClientId} could not be completed ({Reason}); answering 503` |
 | Introspection answered inactive for another client's token | Debug | `Introspection answered inactive: the supplied token does not belong to the calling client {CallerClientId}` |
 | Introspection Basic credentials malformed | Information | `Introspection Basic credentials were malformed at the {Stage} stage` |
 
