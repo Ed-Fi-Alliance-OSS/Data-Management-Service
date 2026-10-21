@@ -1469,12 +1469,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
 
     private static DescriptorReference CreateSchoolTypeDescriptorReference(
         string uri = "uri://ed-fi.org/SchoolTypeDescriptor#Alternative"
-    ) =>
-        RelationalAccessTestData.CreateDescriptorReference(
-            new ReferentialId(Guid.Parse("87654321-1111-2222-3333-444444444444")),
-            uri,
-            "$.schoolTypeDescriptor"
-        );
+    ) => RelationalAccessTestData.CreateDescriptorReference(uri, "$.schoolTypeDescriptor");
 
     private static INaturalKeyLookupCommandBuilder CreateNaturalKeyLookupCommandBuilder(SqlDialect dialect) =>
         dialect is SqlDialect.Pgsql

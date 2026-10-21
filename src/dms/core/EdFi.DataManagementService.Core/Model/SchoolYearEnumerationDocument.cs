@@ -6,7 +6,6 @@
 using System.Diagnostics;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
-using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
 
 namespace EdFi.DataManagementService.Core.Model;
 
@@ -40,12 +39,11 @@ internal record SchoolYearEnumerationDocument(JsonNode _document)
     /// <summary>
     /// Creates a new DocumentInfo from the SchoolYearEnumerationDocument
     /// </summary>
-    public DocumentInfo ToDocumentInfo(BaseResourceInfo resourceInfo)
+    public DocumentInfo ToDocumentInfo()
     {
         DocumentIdentity documentIdentity = ToDocumentIdentity();
         return new(
             DocumentIdentity: documentIdentity,
-            ReferentialId: ReferentialIdFrom(resourceInfo, documentIdentity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],

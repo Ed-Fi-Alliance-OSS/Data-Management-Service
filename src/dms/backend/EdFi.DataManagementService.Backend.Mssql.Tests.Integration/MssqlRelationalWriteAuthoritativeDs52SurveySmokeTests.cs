@@ -16,7 +16,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -875,11 +874,11 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
         );
     }
 
-    private static ReferentialId ReferentialIdOf(DocumentReference reference) =>
-        ReferentialIdCalculator.ReferentialIdFrom(reference.ResourceInfo, reference.DocumentIdentity);
+    private static Guid ReferentialIdOf(DocumentReference reference) =>
+        ReferentialIdTestHelper.ReferentialIdFrom(reference.ResourceInfo, reference.DocumentIdentity);
 
     private async Task UpsertReferentialIdentityAsync(
-        ReferentialId referentialId,
+        Guid referentialId,
         long documentId,
         short resourceKeyId
     )
@@ -896,7 +895,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
             VALUES (@referentialId, @documentId, @resourceKeyId);
             """,
-            new SqlParameter("@referentialId", referentialId.Value),
+            new SqlParameter("@referentialId", referentialId),
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId)
         );

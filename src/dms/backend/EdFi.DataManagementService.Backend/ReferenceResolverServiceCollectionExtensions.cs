@@ -356,12 +356,6 @@ public static class ReferenceResolverServiceCollectionExtensions
             >()
         );
         services.TryAdd(
-            ServiceDescriptor.Scoped<
-                IRelationalWriteTargetLookupResolver,
-                RelationalWriteTargetLookupResolver
-            >()
-        );
-        services.TryAdd(
             ServiceDescriptor.Scoped<IRelationalWriteConstraintResolver, RelationalWriteConstraintResolver>()
         );
         // Singleton so the per-model-set ConditionalWeakTable cache is reused across requests.

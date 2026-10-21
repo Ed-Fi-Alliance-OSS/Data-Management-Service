@@ -19,7 +19,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -390,7 +389,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_A_Focused_Stable_Key_F
     private IReadOnlyList<FocusedPostAsUpdateSchoolExtensionAddressRow> _extensionAddressesAfterPostAsUpdate =
         null!;
     private UpsertResult _postAsUpdateResult = null!;
-    private ReferentialId _persistedSchoolReferentialId;
     private long _documentCount;
     private long _incomingDocumentUuidCount;
 
@@ -425,20 +423,11 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_A_Focused_Stable_Key_F
         _extensionAddressesBeforePostAsUpdate = await ReadSchoolExtensionAddressesAsync(
             _documentBeforePostAsUpdate.DocumentId
         );
-        _persistedSchoolReferentialId = new ReferentialId(
-            (
-                await ReadReferentialIdentityRowAsync(
-                    _documentBeforePostAsUpdate.DocumentId,
-                    _mappingSet.ResourceKeyIdByResource[SchoolResource]
-                )
-            ).ReferentialId
-        );
 
         _postAsUpdateResult = await ExecuteUpsertAsync(
             PostAsUpdateRequestBodyJson,
             IncomingPostAsUpdateDocumentUuid,
-            "mssql-post-as-update-existing-document",
-            _persistedSchoolReferentialId
+            "mssql-post-as-update-existing-document"
         );
 
         _documentAfterPostAsUpdate = await ReadDocumentAsync(ExistingSchoolDocumentUuid.Value);
@@ -508,8 +497,7 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_A_Focused_Stable_Key_F
     private async Task<UpsertResult> ExecuteUpsertAsync(
         string requestBodyJson,
         DocumentUuid documentUuid,
-        string traceId,
-        ReferentialId? referentialId = null
+        string traceId
     )
     {
         using var scope = _serviceProvider.CreateScope();
@@ -527,20 +515,17 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_A_Focused_Stable_Key_F
             );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
-        return await repository.UpsertDocument(
-            CreateUpsertRequest(requestBodyJson, documentUuid, traceId, referentialId)
-        );
+        return await repository.UpsertDocument(CreateUpsertRequest(requestBodyJson, documentUuid, traceId));
     }
 
     private UpsertRequest CreateUpsertRequest(
         string requestBodyJson,
         DocumentUuid documentUuid,
-        string traceId,
-        ReferentialId? referentialId
+        string traceId
     ) =>
         new(
             ResourceInfo: SchoolResourceInfo,
-            DocumentInfo: CreateSchoolDocumentInfo(referentialId),
+            DocumentInfo: CreateSchoolDocumentInfo(),
             MappingSet: _mappingSet,
             EdfiDoc: JsonNode.Parse(requestBodyJson)!,
             Headers: [],
@@ -552,7 +537,7 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_A_Focused_Stable_Key_F
                 UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
         };
 
-    private static DocumentInfo CreateSchoolDocumentInfo(ReferentialId? referentialId = null)
+    private static DocumentInfo CreateSchoolDocumentInfo()
     {
         var schoolIdentity = new DocumentIdentity([
             new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
@@ -560,8 +545,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_A_Focused_Stable_Key_F
 
         return new DocumentInfo(
             DocumentIdentity: schoolIdentity,
-            ReferentialId: referentialId
-                ?? ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],
@@ -604,33 +587,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_A_Focused_Stable_Key_F
         return rows.Count == 1
             ? PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "Count")
             : throw new InvalidOperationException($"Expected exactly one count row, but found {rows.Count}.");
-    }
-
-    private async Task<ReferentialIdentityRow> ReadReferentialIdentityRowAsync(
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT [ReferentialId], [DocumentId], [ResourceKeyId]
-            FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] = @documentId
-                AND [ResourceKeyId] = @resourceKeyId;
-            """,
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-
-        return rows.Count == 1
-            ? new ReferentialIdentityRow(
-                PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "ReferentialId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId")
-            )
-            : throw new InvalidOperationException(
-                $"Expected exactly one referential identity row for document id '{documentId}' and resource key '{resourceKeyId}', but found {rows.Count}."
-            );
     }
 
     private async Task<long> ReadDocumentCountAsync(Guid documentUuid)
@@ -776,7 +732,7 @@ public class Given_A_Mssql_Relational_Post_Create_Race_With_The_Focused_Stable_K
     private Task<UpsertResult> _staleCreateCandidateTask = null!;
     private UpsertResult _createWinnerResult = null!;
     private UpsertResult _staleCreateCandidateResult = null!;
-    private ReferentialId _sharedSchoolReferentialId;
+    private Guid _sharedSchoolReferentialId;
     private FocusedPostAsUpdateDocumentRow _documentAfterRequests = null!;
     private FocusedPostAsUpdateSchoolRow _schoolAfterRequests = null!;
     private IReadOnlyList<FocusedPostAsUpdateSchoolAddressRow> _addressesAfterRequests = null!;
@@ -801,13 +757,12 @@ public class Given_A_Mssql_Relational_Post_Create_Race_With_The_Focused_Stable_K
         _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
         _raceCoordinator = new ConcurrentPostCreateRaceCoordinator();
         _serviceProvider = PostAsUpdateIntegrationTestSupport.CreateServiceProvider(_raceCoordinator);
-        _sharedSchoolReferentialId = new ReferentialId(await ComputeSchoolReferentialIdAsync());
+        _sharedSchoolReferentialId = await ComputeSchoolReferentialIdAsync();
 
         _staleCreateCandidateTask = ExecuteUpsertAsync(
             StaleCreateCandidateRequestBodyJson,
             StaleCreateCandidateDocumentUuid,
-            "mssql-post-create-race-stale-candidate",
-            _sharedSchoolReferentialId
+            "mssql-post-create-race-stale-candidate"
         );
 
         // Race readiness against the worker task under a bounded timeout — a bare readiness wait would
@@ -826,12 +781,11 @@ public class Given_A_Mssql_Relational_Post_Create_Race_With_The_Focused_Stable_K
         _createWinnerResult = await ExecuteUpsertAsync(
             CreateWinnerRequestBodyJson,
             CreateWinnerDocumentUuid,
-            "mssql-post-create-race-create-winner",
-            _sharedSchoolReferentialId
+            "mssql-post-create-race-create-winner"
         );
 
         (await ReadDocumentCountAsync(CreateWinnerDocumentUuid.Value)).Should().Be(1);
-        (await ReadReferentialIdentityCountAsync(_sharedSchoolReferentialId.Value)).Should().Be(1);
+        (await ReadReferentialIdentityCountAsync(_sharedSchoolReferentialId)).Should().Be(1);
 
         _raceCoordinator.ReleaseFirstWriteSession();
 
@@ -913,8 +867,7 @@ public class Given_A_Mssql_Relational_Post_Create_Race_With_The_Focused_Stable_K
     private async Task<UpsertResult> ExecuteUpsertAsync(
         string requestBodyJson,
         DocumentUuid documentUuid,
-        string traceId,
-        ReferentialId? referentialId = null
+        string traceId
     )
     {
         using var scope = _serviceProvider.CreateScope();
@@ -932,20 +885,17 @@ public class Given_A_Mssql_Relational_Post_Create_Race_With_The_Focused_Stable_K
             );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
-        return await repository.UpsertDocument(
-            CreateUpsertRequest(requestBodyJson, documentUuid, traceId, referentialId)
-        );
+        return await repository.UpsertDocument(CreateUpsertRequest(requestBodyJson, documentUuid, traceId));
     }
 
     private UpsertRequest CreateUpsertRequest(
         string requestBodyJson,
         DocumentUuid documentUuid,
-        string traceId,
-        ReferentialId? referentialId
+        string traceId
     ) =>
         new(
             ResourceInfo: SchoolResourceInfo,
-            DocumentInfo: CreateSchoolDocumentInfo(referentialId),
+            DocumentInfo: CreateSchoolDocumentInfo(),
             MappingSet: _mappingSet,
             EdfiDoc: JsonNode.Parse(requestBodyJson)!,
             Headers: [],
@@ -957,14 +907,12 @@ public class Given_A_Mssql_Relational_Post_Create_Race_With_The_Focused_Stable_K
                 UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
         };
 
-    private static DocumentInfo CreateSchoolDocumentInfo(ReferentialId? referentialId = null)
+    private static DocumentInfo CreateSchoolDocumentInfo()
     {
         var schoolIdentity = CreateSchoolIdentity();
 
         return new DocumentInfo(
             DocumentIdentity: schoolIdentity,
-            ReferentialId: referentialId
-                ?? ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],
@@ -1171,7 +1119,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Ds52
     private AuthoritativePostAsUpdateDocumentRow _documentAfterPostAsUpdate = null!;
     private AuthoritativeSchoolYearTypeRow _schoolYearTypeAfterPostAsUpdate = null!;
     private UpsertResult _postAsUpdateResult = null!;
-    private ReferentialId _persistedSchoolYearTypeReferentialId;
     private long _documentCount;
     private long _incomingDocumentUuidCount;
 
@@ -1202,20 +1149,11 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Ds52
         createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
 
         _documentBeforePostAsUpdate = await ReadDocumentAsync(ExistingSchoolYearTypeDocumentUuid.Value);
-        _persistedSchoolYearTypeReferentialId = new ReferentialId(
-            (
-                await ReadReferentialIdentityRowAsync(
-                    _documentBeforePostAsUpdate.DocumentId,
-                    _mappingSet.ResourceKeyIdByResource[SchoolYearTypeResource]
-                )
-            ).ReferentialId
-        );
 
         _postAsUpdateResult = await ExecuteUpsertAsync(
             PostAsUpdateRequestBodyJson,
             IncomingSchoolYearTypeDocumentUuid,
-            "mssql-authoritative-school-year-type-post-as-update",
-            _persistedSchoolYearTypeReferentialId
+            "mssql-authoritative-school-year-type-post-as-update"
         );
 
         _documentAfterPostAsUpdate = await ReadDocumentAsync(ExistingSchoolYearTypeDocumentUuid.Value);
@@ -1266,8 +1204,7 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Ds52
     private async Task<UpsertResult> ExecuteUpsertAsync(
         string requestBodyJson,
         DocumentUuid documentUuid,
-        string traceId,
-        ReferentialId? referentialId = null
+        string traceId
     )
     {
         using var scope = _serviceProvider.CreateScope();
@@ -1285,20 +1222,17 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Ds52
             );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
-        return await repository.UpsertDocument(
-            CreateUpsertRequest(requestBodyJson, documentUuid, traceId, referentialId)
-        );
+        return await repository.UpsertDocument(CreateUpsertRequest(requestBodyJson, documentUuid, traceId));
     }
 
     private UpsertRequest CreateUpsertRequest(
         string requestBodyJson,
         DocumentUuid documentUuid,
-        string traceId,
-        ReferentialId? referentialId
+        string traceId
     ) =>
         new(
             ResourceInfo: SchoolYearTypeResourceInfo,
-            DocumentInfo: CreateSchoolYearTypeDocumentInfo(referentialId),
+            DocumentInfo: CreateSchoolYearTypeDocumentInfo(),
             MappingSet: _mappingSet,
             EdfiDoc: JsonNode.Parse(requestBodyJson)!,
             Headers: [],
@@ -1310,7 +1244,7 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Ds52
                 UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
         };
 
-    private static DocumentInfo CreateSchoolYearTypeDocumentInfo(ReferentialId? referentialId = null)
+    private static DocumentInfo CreateSchoolYearTypeDocumentInfo()
     {
         var schoolYearIdentity = new DocumentIdentity([
             new DocumentIdentityElement(new JsonPath("$.schoolYear"), "2026"),
@@ -1318,8 +1252,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Ds52
 
         return new DocumentInfo(
             DocumentIdentity: schoolYearIdentity,
-            ReferentialId: referentialId
-                ?? ReferentialIdCalculator.ReferentialIdFrom(SchoolYearTypeResourceInfo, schoolYearIdentity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],
@@ -1400,33 +1332,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Ds52
             )
             : throw new InvalidOperationException(
                 $"Expected exactly one SchoolYearType row for document id '{documentId}', but found {rows.Count}."
-            );
-    }
-
-    private async Task<ReferentialIdentityRow> ReadReferentialIdentityRowAsync(
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT [ReferentialId], [DocumentId], [ResourceKeyId]
-            FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] = @documentId
-                AND [ResourceKeyId] = @resourceKeyId;
-            """,
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-
-        return rows.Count == 1
-            ? new ReferentialIdentityRow(
-                PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "ReferentialId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId")
-            )
-            : throw new InvalidOperationException(
-                $"Expected exactly one referential identity row for document id '{documentId}' and resource key '{resourceKeyId}', but found {rows.Count}."
             );
     }
 }
@@ -2669,7 +2574,7 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
     }
 
     private async Task InsertReferentialIdentityAsync(
-        ReferentialId referentialId,
+        Guid referentialId,
         long documentId,
         short resourceKeyId
     )
@@ -2684,7 +2589,7 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
             VALUES (@referentialId, @documentId, @resourceKeyId);
             """,
-            new SqlParameter("@referentialId", referentialId.Value),
+            new SqlParameter("@referentialId", referentialId),
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId)
         );
@@ -2708,12 +2613,12 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
         }
     }
 
-    private static ReferentialId CreateReferentialId(
+    private static Guid CreateReferentialId(
         (string ProjectName, string ResourceName, bool IsDescriptor) targetResource,
         params (string IdentityJsonPath, string IdentityValue)[] identityElements
     )
     {
-        return ReferentialIdCalculator.ReferentialIdFrom(
+        return ReferentialIdTestHelper.ReferentialIdFrom(
             new BaseResourceInfo(
                 new ProjectName(targetResource.ProjectName),
                 new ResourceName(targetResource.ResourceName),
@@ -2728,7 +2633,7 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
         );
     }
 
-    private static ReferentialId CreateDescriptorReferentialId(
+    private static Guid CreateDescriptorReferentialId(
         string projectName,
         string resourceName,
         string descriptorUri
@@ -3479,7 +3384,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
         null!;
     private UpsertResult _postAsUpdateResult = null!;
     private UpsertResult _repeatPostAsUpdateResult = null!;
-    private ReferentialId _persistedStudentAcademicRecordReferentialId;
     private long _resourceDocumentCount;
     private long _incomingDocumentUuidCount;
     private long _repeatIncomingDocumentUuidCount;
@@ -3537,20 +3441,11 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
 
         createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
         _stateAfterCreate = await ReadPersistedStateAsync(ExistingStudentAcademicRecordDocumentUuid.Value);
-        _persistedStudentAcademicRecordReferentialId = new ReferentialId(
-            (
-                await ReadReferentialIdentityRowAsync(
-                    _stateAfterCreate.Document.DocumentId,
-                    _mappingSet.ResourceKeyIdByResource[StudentAcademicRecordResource]
-                )
-            ).ReferentialId
-        );
 
         _postAsUpdateResult = await ExecuteUpsertAsync(
             PostAsUpdateRequestBodyJson,
             IncomingStudentAcademicRecordDocumentUuid,
-            "mssql-authoritative-sample-student-academic-record-post-as-update",
-            _persistedStudentAcademicRecordReferentialId
+            "mssql-authoritative-sample-student-academic-record-post-as-update"
         );
 
         if (_postAsUpdateResult is UpsertResult.UpsertFailureReference postAsUpdateReferenceFailure)
@@ -3570,8 +3465,7 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
         _repeatPostAsUpdateResult = await ExecuteUpsertAsync(
             PostAsUpdateRequestBodyJson,
             RepeatStudentAcademicRecordDocumentUuid,
-            "mssql-authoritative-sample-student-academic-record-repeat-post-as-update",
-            _persistedStudentAcademicRecordReferentialId
+            "mssql-authoritative-sample-student-academic-record-repeat-post-as-update"
         );
 
         if (_repeatPostAsUpdateResult is UpsertResult.UpsertFailureReference repeatPostReferenceFailure)
@@ -3845,8 +3739,7 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
     private async Task<UpsertResult> ExecuteUpsertAsync(
         string requestBodyJson,
         DocumentUuid documentUuid,
-        string traceId,
-        ReferentialId? referentialId = null
+        string traceId
     )
     {
         using var scope = _serviceProvider.CreateScope();
@@ -3864,23 +3757,20 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
             );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
-        return await repository.UpsertDocument(
-            CreateUpsertRequest(requestBodyJson, documentUuid, traceId, referentialId)
-        );
+        return await repository.UpsertDocument(CreateUpsertRequest(requestBodyJson, documentUuid, traceId));
     }
 
     private UpsertRequest CreateUpsertRequest(
         string requestBodyJson,
         DocumentUuid documentUuid,
-        string traceId,
-        ReferentialId? referentialId
+        string traceId
     )
     {
         var requestBody = JsonNode.Parse(requestBodyJson)!;
 
         return new(
             ResourceInfo: _resourceInfo,
-            DocumentInfo: CreateDocumentInfo(requestBody, referentialId),
+            DocumentInfo: CreateDocumentInfo(requestBody),
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
             Headers: [],
@@ -3893,7 +3783,7 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
         };
     }
 
-    private DocumentInfo CreateDocumentInfo(JsonNode requestBody, ReferentialId? referentialId = null)
+    private DocumentInfo CreateDocumentInfo(JsonNode requestBody)
     {
         return RelationalDocumentInfoTestHelper.CreateDocumentInfo(
             requestBody,
@@ -3908,7 +3798,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
                     UseRelationalDescriptorExtraction: false
                 ),
             ],
-            referentialIdOverride: referentialId,
             logger: NullLogger.Instance
         );
     }
@@ -4443,7 +4332,7 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
     }
 
     private async Task InsertReferentialIdentityAsync(
-        ReferentialId referentialId,
+        Guid referentialId,
         long documentId,
         short resourceKeyId
     )
@@ -4458,7 +4347,7 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
             VALUES (@referentialId, @documentId, @resourceKeyId);
             """,
-            new SqlParameter("@referentialId", referentialId.Value),
+            new SqlParameter("@referentialId", referentialId),
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId)
         );
@@ -4482,12 +4371,12 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
         }
     }
 
-    private static ReferentialId CreateReferentialId(
+    private static Guid CreateReferentialId(
         (string ProjectName, string ResourceName, bool IsDescriptor) targetResource,
         params (string IdentityJsonPath, string IdentityValue)[] identityElements
     )
     {
-        return ReferentialIdCalculator.ReferentialIdFrom(
+        return ReferentialIdTestHelper.ReferentialIdFrom(
             new BaseResourceInfo(
                 new ProjectName(targetResource.ProjectName),
                 new ResourceName(targetResource.ResourceName),
@@ -4502,7 +4391,7 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
         );
     }
 
-    private static ReferentialId CreateDescriptorReferentialId(
+    private static Guid CreateDescriptorReferentialId(
         string projectName,
         string resourceName,
         string descriptorUri
@@ -4743,33 +4632,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
                 PostAsUpdateIntegrationTestSupport.GetString(row, "IssuerName")
             ))
             .ToArray();
-    }
-
-    private async Task<ReferentialIdentityRow> ReadReferentialIdentityRowAsync(
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT [ReferentialId], [DocumentId], [ResourceKeyId]
-            FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] = @documentId
-              AND [ResourceKeyId] = @resourceKeyId;
-            """,
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-
-        return rows.Count == 1
-            ? new ReferentialIdentityRow(
-                PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "ReferentialId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId")
-            )
-            : throw new InvalidOperationException(
-                $"Expected exactly one referential identity row for document id '{documentId}' and resource key '{resourceKeyId}', but found {rows.Count}."
-            );
     }
 
     private async Task<long> ReadDocumentCountAsync(short resourceKeyId)

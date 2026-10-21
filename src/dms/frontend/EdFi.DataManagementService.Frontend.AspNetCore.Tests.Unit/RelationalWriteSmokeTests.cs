@@ -706,10 +706,10 @@ public class Given_A_Host_Using_The_Relational_Backend
 
     private sealed class CapturingRelationalWriteTargetLookupService : IRelationalWriteTargetLookupService
     {
-        public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+        public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPostAsync(
             MappingSet mappingSet,
             QualifiedResourceName resource,
-            ReferentialId referentialId,
+            string descriptorUri,
             DocumentUuid candidateDocumentUuid,
             CancellationToken cancellationToken = default
         )

@@ -4153,10 +4153,9 @@ internal static class AllOrNoneCheckFixture
 // ═══════════════════════════════════════════════════════════════════
 
 /// <summary>
-/// Guard test ensuring the DDL emitter's embedded UUIDv5 namespace stays in sync with
-/// <c>ReferentialIdCalculator.EdFiUuidv5Namespace</c> in <c>EdFi.DataManagementService.Core</c>.
-/// If this test fails, either the emitter or the calculator has been changed independently,
-/// which would cause emitted triggers to compute referential IDs that don't match runtime.
+/// Guard test pinning the DDL emitter's embedded UUIDv5 namespace to the canonical Ed-Fi value.
+/// If this test fails, emitted triggers would compute referential IDs that differ from those
+/// already stored in provisioned databases.
 /// </summary>
 [TestFixture]
 public class Given_Uuidv5Namespace_Constant
@@ -4164,8 +4163,6 @@ public class Given_Uuidv5Namespace_Constant
     [Test]
     public void It_should_match_the_canonical_EdFi_UUIDv5_namespace()
     {
-        // This value must match ReferentialIdCalculator.EdFiUuidv5Namespace in
-        // EdFi.DataManagementService.Core.Extraction.
         const string expected = "edf1edf1-3df1-3df1-3df1-3df1edf1edf1";
 
         RelationalModelDdlEmitter.Uuidv5Namespace.Should().Be(expected);

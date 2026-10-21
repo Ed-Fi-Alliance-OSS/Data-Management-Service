@@ -18,7 +18,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
@@ -157,11 +156,11 @@ file static class MssqlStudentSchoolAssociationIntegrationTestSupport
     public static string FormatReferenceFailure(UpsertResult.UpsertFailureReference failure) =>
         FormatReferenceFailure(failure.InvalidDocumentReferences, failure.InvalidDescriptorReferences);
 
-    public static ReferentialId CreateReferentialId(
+    public static Guid CreateReferentialId(
         (string ProjectName, string ResourceName, bool IsDescriptor) targetResource,
         params (string IdentityJsonPath, string IdentityValue)[] identityElements
     ) =>
-        ReferentialIdCalculator.ReferentialIdFrom(
+        ReferentialIdTestHelper.ReferentialIdFrom(
             new BaseResourceInfo(
                 new ProjectName(targetResource.ProjectName),
                 new ResourceName(targetResource.ResourceName),
@@ -175,7 +174,7 @@ file static class MssqlStudentSchoolAssociationIntegrationTestSupport
             ])
         );
 
-    public static ReferentialId CreateDescriptorReferentialId(
+    public static Guid CreateDescriptorReferentialId(
         string projectName,
         string resourceName,
         string descriptorUri
@@ -1465,7 +1464,7 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
     }
 
     private async Task UpsertReferentialIdentityAsync(
-        ReferentialId referentialId,
+        Guid referentialId,
         long documentId,
         short resourceKeyId
     )
@@ -1490,7 +1489,7 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
                 _ => throw new InvalidOperationException("Expected ReferentialId to be a Guid."),
             };
 
-            existingReferentialId.Should().Be(referentialId.Value);
+            existingReferentialId.Should().Be(referentialId);
             return;
         }
 
@@ -1499,7 +1498,7 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
             VALUES (@referentialId, @documentId, @resourceKeyId);
             """,
-            new SqlParameter("@referentialId", referentialId.Value),
+            new SqlParameter("@referentialId", referentialId),
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId)
         );

@@ -3,10 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Collections;
 using System.Data;
-using System.Data.Common;
-using System.Diagnostics.CodeAnalysis;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
@@ -18,64 +15,6 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_RelationalWrite_Target_Lookup_Surfaces
 {
     private static readonly QualifiedResourceName _requestResource = new("Ed-Fi", "Student");
-
-    [Test]
-    public async Task It_returns_create_new_for_post_re_evaluation_when_request_referential_id_does_not_match_an_existing_document()
-    {
-        var referentialId = new ReferentialId(Guid.NewGuid());
-        var candidateDocumentUuid = new DocumentUuid(Guid.NewGuid());
-        var writeSession = CreateWriteSession(CreateLookupReader());
-        var sut = new RelationalWriteTargetLookupResolver();
-
-        var result = await sut.ResolveForPostAsync(
-            CreateMappingSet(SqlDialect.Pgsql),
-            _requestResource,
-            referentialId,
-            candidateDocumentUuid,
-            ((IRelationalWriteSession)writeSession).CreateCommandExecutor()
-        );
-
-        result
-            .Should()
-            .BeEquivalentTo(new RelationalWriteTargetLookupResult.CreateNew(candidateDocumentUuid));
-        writeSession.Connection.CreateCommandCallCount.Should().Be(1);
-        writeSession.Connection.Command.CommandText.Should().Contain("dms.\"ReferentialIdentity\"");
-        writeSession
-            .Connection.Command.Parameters.Select(parameter => parameter.Value)
-            .Should()
-            .Equal(referentialId.Value, (short)1);
-    }
-
-    [Test]
-    public async Task It_returns_existing_document_for_post_re_evaluation_when_request_referential_id_matches_a_persisted_document()
-    {
-        var referentialId = new ReferentialId(Guid.NewGuid());
-        var candidateDocumentUuid = new DocumentUuid(Guid.NewGuid());
-        var existingDocumentUuid = new DocumentUuid(Guid.NewGuid());
-        const long observedContentVersion = 701L;
-        var writeSession = CreateWriteSession(
-            CreateLookupReader((101L, existingDocumentUuid.Value, observedContentVersion))
-        );
-        var sut = new RelationalWriteTargetLookupResolver();
-
-        var result = await sut.ResolveForPostAsync(
-            CreateMappingSet(SqlDialect.Pgsql),
-            _requestResource,
-            referentialId,
-            candidateDocumentUuid,
-            ((IRelationalWriteSession)writeSession).CreateCommandExecutor()
-        );
-
-        result
-            .Should()
-            .BeEquivalentTo(
-                new RelationalWriteTargetLookupResult.ExistingDocument(
-                    101L,
-                    existingDocumentUuid,
-                    observedContentVersion
-                )
-            );
-    }
 
     [TestCase(SqlDialect.Pgsql, "dms.\"Document\"")]
     [TestCase(SqlDialect.Mssql, "[dms].[Document]")]
@@ -248,15 +187,6 @@ public class Given_RelationalWrite_Target_Lookup_Surfaces
         return table.CreateDataReader();
     }
 
-    private static TestRelationalWriteSession CreateWriteSession(DataTableReader reader)
-    {
-        var command = new TrackingDbCommand(reader);
-        var connection = new NpgsqlTestDbConnection(command);
-        var transaction = new TestDbTransaction(connection);
-
-        return new TestRelationalWriteSession(connection, transaction);
-    }
-
     private sealed class RecordingRelationalCommandExecutor(DataTableReader reader)
         : IRelationalCommandExecutor
     {
@@ -282,243 +212,110 @@ public class Given_RelationalWrite_Target_Lookup_Surfaces
             return await readAsync(relationalReader, cancellationToken);
         }
     }
+}
 
-    private sealed class TestRelationalWriteSession(
-        NpgsqlTestDbConnection connection,
-        TestDbTransaction transaction
-    ) : IRelationalWriteSession
+[TestFixture(SqlDialect.Pgsql)]
+[TestFixture(SqlDialect.Mssql)]
+public class Given_The_Descriptor_Target_Probe_Command(SqlDialect dialect)
+{
+    private const string DescriptorUri = "URI://ed-fi.org/ProgramTypeDescriptor#Career";
+    private const int DescriptorId = 7;
+    private const long OwningDocumentId = 900_001L;
+    private const long ContentVersion = 41L;
+
+    private readonly DocumentUuid _documentUuid = new(Guid.NewGuid());
+    private short _resourceKeyId;
+    private RelationalCommand _command = null!;
+    private RelationalWriteTargetLookupResult _result = null!;
+
+    [SetUp]
+    public async Task Setup()
     {
-        public NpgsqlTestDbConnection Connection { get; } = connection;
+        var mappingSet = NaturalKeyLookupTestMappingSets.Ds52(dialect);
+        _resourceKeyId = mappingSet.ResourceKeyIdByResource[
+            NaturalKeyLookupTestMappingSets.ProgramTypeDescriptor
+        ];
+        var commandExecutor = new InMemoryRelationalCommandExecutor(
+            [
+                new InMemoryRelationalCommandExecution([
+                    InMemoryRelationalResultSet.Create(
+                        RelationalAccessTestData.CreateRow(
+                            ("DescriptorId", DescriptorId),
+                            ("DocumentId", OwningDocumentId),
+                            ("DocumentUuid", _documentUuid.Value),
+                            ("ContentVersion", ContentVersion)
+                        )
+                    ),
+                ]),
+            ],
+            dialect
+        );
 
-        DbConnection IRelationalWriteSession.Connection => Connection;
-
-        public DbTransaction Transaction { get; } = transaction;
-
-        /// <summary>
-        /// Mirrors the production session so the in-session POST target lookup is created through
-        /// this seam rather than straight off the connection.
-        /// </summary>
-        public DbCommand CreateCommand(RelationalCommand command)
-        {
-            ArgumentNullException.ThrowIfNull(command);
-
-            var dbCommand = Connection.CreateCommand();
-            dbCommand.Transaction = Transaction;
-            dbCommand.CommandText = command.CommandText;
-
-            foreach (var parameter in command.Parameters)
-            {
-                var dbParameter = dbCommand.CreateParameter();
-                dbParameter.ParameterName = parameter.Name;
-                dbParameter.Value = parameter.Value ?? DBNull.Value;
-                parameter.ConfigureParameter?.Invoke(dbParameter);
-                dbCommand.Parameters.Add(dbParameter);
-            }
-
-            return dbCommand;
-        }
-
-        public Task CommitAsync(CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public Task RollbackAsync(CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        _result = await RelationalWriteTargetLookupSupport.ResolveDescriptorForPostAsync(
+            commandExecutor,
+            mappingSet,
+            NaturalKeyLookupTestMappingSets.ProgramTypeDescriptor,
+            DescriptorUri,
+            new DocumentUuid(Guid.NewGuid())
+        );
+        _command = commandExecutor.Commands.Single();
     }
 
-    private sealed class NpgsqlTestDbConnection(TrackingDbCommand command) : DbConnection
+    [Test]
+    public void It_probes_the_descriptor_index_fold_and_the_descriptor_type_literal()
     {
-        private ConnectionState _state = ConnectionState.Open;
+        // PostgreSQL folds both sides exactly as the descriptor URI index expression does, and SQL Server
+        // collates the parameter inside LOWER before comparing the indexed lowered column.
+        var expected =
+            dialect == SqlDialect.Pgsql
+                ? $"""
+                    SELECT
+                        descriptor."DescriptorId" AS "DescriptorId",
+                        descriptor."DocumentId" AS "DocumentId",
+                        document."DocumentUuid" AS "DocumentUuid",
+                        document."ContentVersion" AS "ContentVersion"
+                    FROM "dms"."Descriptor" descriptor
+                    INNER JOIN "dms"."Document" document
+                        ON document."DocumentId" = descriptor."DocumentId"
+                    WHERE lower((descriptor."Namespace" || '#' || descriptor."CodeValue") COLLATE "pg_c_utf8") = lower(@descriptorUri COLLATE "pg_c_utf8")
+                        AND descriptor."ResourceKeyId" = CAST({_resourceKeyId} AS smallint)
+                    """
+                : $"""
+                    SELECT
+                        descriptor.[DescriptorId] AS [DescriptorId],
+                        descriptor.[DocumentId] AS [DocumentId],
+                        document.[DocumentUuid] AS [DocumentUuid],
+                        document.[ContentVersion] AS [ContentVersion]
+                    FROM [dms].[Descriptor] descriptor
+                    INNER JOIN [dms].[Document] document
+                        ON document.[DocumentId] = descriptor.[DocumentId]
+                    WHERE descriptor.[UriLowered] = LOWER(@descriptorUri COLLATE SQL_Latin1_General_CP1_CI_AS)
+                        AND descriptor.[ResourceKeyId] = CAST({_resourceKeyId} AS smallint)
+                    """;
 
-        public TrackingDbCommand Command { get; } = command;
-
-        public int CreateCommandCallCount { get; private set; }
-
-        [AllowNull]
-        public override string ConnectionString { get; set; } = "Host=localhost;Database=test";
-
-        public override string Database => "test";
-
-        public override string DataSource => "npgsql";
-
-        public override string ServerVersion => "1.0";
-
-        public override ConnectionState State => _state;
-
-        public override void ChangeDatabase(string databaseName) => throw new NotSupportedException();
-
-        public override void Close() => _state = ConnectionState.Closed;
-
-        public override void Open() => _state = ConnectionState.Open;
-
-        protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) =>
-            new TestDbTransaction(this);
-
-        protected override DbCommand CreateDbCommand()
-        {
-            CreateCommandCallCount++;
-            Command.AttachConnection(this);
-            return Command;
-        }
+        _command.CommandText.Should().Be(expected);
     }
 
-    private sealed class TestDbTransaction(DbConnection connection) : DbTransaction
+    [Test]
+    public void It_binds_only_the_unmodified_request_uri()
     {
-        public override IsolationLevel IsolationLevel => IsolationLevel.ReadCommitted;
-
-        protected override DbConnection DbConnection { get; } = connection;
-
-        public override void Commit() { }
-
-        public override void Rollback() { }
+        _command
+            .Parameters.Select(parameter => (parameter.Name, parameter.Value))
+            .Should()
+            .Equal(("@descriptorUri", (object?)DescriptorUri));
     }
 
-    private sealed class TrackingDbCommand(DbDataReader reader) : DbCommand
+    [Test]
+    public void It_returns_the_owning_document_rather_than_the_descriptor_key()
     {
-        private readonly TrackingDbParameterCollection _parameters = [];
-        private readonly DbDataReader _reader = reader;
-
-        [AllowNull]
-        public override string CommandText { get; set; } = string.Empty;
-
-        public override int CommandTimeout { get; set; }
-
-        public override CommandType CommandType { get; set; } = CommandType.Text;
-
-        protected override DbConnection? DbConnection { get; set; }
-
-        protected override DbParameterCollection DbParameterCollection => _parameters;
-
-        protected override DbTransaction? DbTransaction { get; set; }
-
-        public override bool DesignTimeVisible { get; set; }
-
-        public override UpdateRowSource UpdatedRowSource { get; set; }
-
-        public new List<TrackingDbParameter> Parameters => _parameters.Items;
-
-        public void AttachConnection(NpgsqlTestDbConnection connection) => DbConnection = connection;
-
-        public override void Cancel() { }
-
-        public override int ExecuteNonQuery() => throw new NotSupportedException();
-
-        public override object? ExecuteScalar() => throw new NotSupportedException();
-
-        public override void Prepare() { }
-
-        protected override DbParameter CreateDbParameter() => new TrackingDbParameter();
-
-        protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior) => _reader;
-
-        protected override Task<DbDataReader> ExecuteDbDataReaderAsync(
-            CommandBehavior behavior,
-            CancellationToken cancellationToken
-        )
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(_reader);
-        }
-    }
-
-    private sealed class TrackingDbParameterCollection : DbParameterCollection
-    {
-        public List<TrackingDbParameter> Items { get; } = [];
-
-        public override int Count => Items.Count;
-
-        public override object SyncRoot => ((ICollection)Items).SyncRoot!;
-
-        public override int Add(object value)
-        {
-            Items.Add((TrackingDbParameter)value);
-            return Items.Count - 1;
-        }
-
-        public override void AddRange(Array values)
-        {
-            foreach (var value in values)
-            {
-                Add(value!);
-            }
-        }
-
-        public override void Clear() => Items.Clear();
-
-        public override bool Contains(object value) => Items.Contains((TrackingDbParameter)value);
-
-        public override bool Contains(string value) =>
-            Items.Exists(parameter => parameter.ParameterName == value);
-
-        public override void CopyTo(Array array, int index) => ((ICollection)Items).CopyTo(array, index);
-
-        public override IEnumerator GetEnumerator() => Items.GetEnumerator();
-
-        protected override DbParameter GetParameter(int index) => Items[index];
-
-        protected override DbParameter GetParameter(string parameterName) =>
-            Items.Single(parameter => parameter.ParameterName == parameterName);
-
-        public override int IndexOf(object value) => Items.IndexOf((TrackingDbParameter)value);
-
-        public override int IndexOf(string parameterName) =>
-            Items.FindIndex(parameter => parameter.ParameterName == parameterName);
-
-        public override void Insert(int index, object value) =>
-            Items.Insert(index, (TrackingDbParameter)value);
-
-        public override void Remove(object value) => Items.Remove((TrackingDbParameter)value);
-
-        public override void RemoveAt(int index) => Items.RemoveAt(index);
-
-        public override void RemoveAt(string parameterName)
-        {
-            var index = IndexOf(parameterName);
-
-            if (index >= 0)
-            {
-                Items.RemoveAt(index);
-            }
-        }
-
-        protected override void SetParameter(int index, DbParameter value) =>
-            Items[index] = (TrackingDbParameter)value;
-
-        protected override void SetParameter(string parameterName, DbParameter value)
-        {
-            var index = IndexOf(parameterName);
-
-            if (index < 0)
-            {
-                Items.Add((TrackingDbParameter)value);
-                return;
-            }
-
-            Items[index] = (TrackingDbParameter)value;
-        }
-    }
-
-    private sealed class TrackingDbParameter : DbParameter
-    {
-        public override DbType DbType { get; set; }
-
-        public override ParameterDirection Direction { get; set; } = ParameterDirection.Input;
-
-        public override bool IsNullable { get; set; }
-
-        [AllowNull]
-        public override string ParameterName { get; set; } = string.Empty;
-
-        [AllowNull]
-        public override string SourceColumn { get; set; } = string.Empty;
-
-        public override object? Value { get; set; }
-
-        public override bool SourceColumnNullMapping { get; set; }
-
-        public override int Size { get; set; }
-
-        public override void ResetDbType() => DbType = DbType.Object;
+        _result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteTargetLookupResult.ExistingDocument(
+                    OwningDocumentId,
+                    _documentUuid,
+                    ContentVersion
+                )
+            );
     }
 }

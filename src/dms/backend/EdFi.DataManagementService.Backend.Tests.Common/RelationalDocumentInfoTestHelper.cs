@@ -38,7 +38,6 @@ internal static class RelationalDocumentInfoTestHelper
         MappingSet mappingSet,
         IReadOnlyList<RelationalDocumentInfoExtractionSource>? additionalSources = null,
         RelationalDocumentInfoSupplement? supplement = null,
-        ReferentialId? referentialIdOverride = null,
         ILogger? logger = null
     )
     {
@@ -91,8 +90,6 @@ internal static class RelationalDocumentInfoTestHelper
 
         return new(
             DocumentIdentity: documentIdentity,
-            ReferentialId: referentialIdOverride
-                ?? ReferentialIdCalculator.ReferentialIdFrom(resourceInfo, documentIdentity),
             DocumentReferences: [.. documentReferences],
             DocumentReferenceArrays: [.. documentReferenceArrays],
             DescriptorReferences: [.. descriptorReferencesByPath.Values],

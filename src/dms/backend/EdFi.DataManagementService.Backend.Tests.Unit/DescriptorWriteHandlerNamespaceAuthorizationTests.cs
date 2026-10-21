@@ -411,7 +411,6 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
             _descriptorResource,
             CreateDescriptorRequestBody("uri://ed-fi.org/SchoolTypeDescriptor", "Charter"),
             _documentUuid,
-            new ReferentialId(Guid.Parse("11111111-2222-3333-4444-555555555555")),
             new TraceId("descriptor-post-ownership-stamp"),
             [NamespaceStrategy()],
             authorizationContext
@@ -494,7 +493,8 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 namespacePrefixes: ["uri://ed-fi.org/"],
-                authorizationStrategy: NamespaceStrategy()
+                authorizationStrategy: NamespaceStrategy(),
+                @namespace: "uri://other.org/SchoolTypeDescriptor"
             )
         );
 
@@ -511,47 +511,64 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
-    [Test]
-    public async Task It_returns_namespace_403_and_does_not_update_when_descriptor_post_upsert_proposed_namespace_is_not_authorized()
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task It_binds_the_stored_namespace_into_the_proposed_check_for_a_case_variant_write(
+        bool post
+    )
     {
-        var documentId = 345L;
+        const string StoredNamespace = "uri://ed-fi.org/SchoolTypeDescriptor";
+        const string CaseVariantNamespace = "URI://ED-FI.ORG/SchoolTypeDescriptor";
         var targetLookupService = new StubRelationalWriteTargetLookupService
         {
-            PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(
-                documentId,
-                _documentUuid,
-                44L
-            ),
+            PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, _documentUuid, 44L),
+            PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, _documentUuid, 44L),
         };
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
-        sessionFactory.Session.Executor.NamespaceResults.Enqueue(
-            new NamespaceAuthorizationExecutionResult.Authorized()
-        );
-        sessionFactory.Session.Executor.NamespaceResults.Enqueue(
-            new NamespaceAuthorizationExecutionResult.NotAuthorized(ProposedMismatchFailure())
-        );
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRowWithEdFiNamespace()]);
+        if (!post)
+        {
+            // The PUT's ordinally different URI is probed; it resolves to the locked document.
+            sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow()]);
+        }
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow()]);
         var sut = CreateSut(sessionFactory, targetLookupService);
 
-        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
-            CreatePostRequest(
-                namespacePrefixes: ["uri://ed-fi.org/"],
-                authorizationStrategy: NamespaceStrategy(),
-                @namespace: "uri://other.org/SchoolTypeDescriptor"
+        object result = post
+            ? await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+                CreatePostRequest(
+                    namespacePrefixes: ["uri://ed-fi.org/"],
+                    authorizationStrategy: NamespaceStrategy(),
+                    @namespace: CaseVariantNamespace
+                )
             )
-        );
-
-        result
-            .As<UpsertResult.UpsertFailureNamespaceNotAuthorized>()
-            .NamespaceFailure.ValueSource.Should()
-            .Be(NamespaceAuthorizationFailureValueSource.Proposed);
-        sessionFactory
-            .Session.Executor.Commands.Should()
-            .NotContain(command =>
-                command.CommandText.Contains("UPDATE dms.\"Descriptor\"", StringComparison.Ordinal)
+            : await sut.HandlePutAsync(
+                CreatePutRequest(
+                    namespacePrefixes: ["uri://ed-fi.org/"],
+                    authorizationStrategy: NamespaceStrategy(),
+                    @namespace: CaseVariantNamespace
+                )
             );
-        sessionFactory.Session.CommitCallCount.Should().Be(0);
+
+        // PostgreSQL's proposed check is case-sensitive, so binding after it would deny a value that is never
+        // written. The proposed check and the update both carry the stored namespace.
+        result
+            .Should()
+            .BeAssignableTo(post ? typeof(UpsertResult.UpdateSuccess) : typeof(UpdateResult.UpdateSuccess));
+        sessionFactory
+            .Session.Executor.Commands.SelectMany(command => command.Parameters)
+            .Where(parameter => parameter.Name == "@proposedNamespace")
+            .Should()
+            .ContainSingle()
+            .Which.Value.Should()
+            .Be(StoredNamespace);
+        sessionFactory
+            .Session.Executor.Commands.Single(command => IsDescriptorUpdate(command))
+            .Parameters.Single(parameter => parameter.Name == "@namespace")
+            .Value.Should()
+            .Be(StoredNamespace);
+        sessionFactory.Session.CommitCallCount.Should().Be(1);
     }
 
     [Test]
@@ -582,8 +599,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 namespacePrefixes: ["uri://ed-fi.org/"],
-                authorizationStrategy: NamespaceStrategy(),
-                codeValue: "ChangedCode"
+                authorizationStrategy: NamespaceStrategy()
             )
         );
 
@@ -740,7 +756,8 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         var sut = CreateSut(sessionFactory, targetLookupService);
         var request = CreatePostRequest(
             namespacePrefixes: ["uri://ed-fi.org/"],
-            authorizationStrategy: NamespaceStrategy()
+            authorizationStrategy: NamespaceStrategy(),
+            @namespace: "uri://other.org/SchoolTypeDescriptor"
         ) with
         {
             WritePrecondition = new WritePrecondition.IfMatch("\"stale-etag\""),
@@ -1803,7 +1820,6 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
             _descriptorResource,
             CreateDescriptorRequestBody("uri://ed-fi.org/SchoolTypeDescriptor", "Charter"),
             _documentUuid,
-            new ReferentialId(Guid.Parse("11111111-2222-3333-4444-555555555555")),
             new TraceId("descriptor-write-contract"),
             evaluators,
             context
@@ -1822,7 +1838,6 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
             _descriptorResource,
             CreateDescriptorRequestBody("uri://ed-fi.org/SchoolTypeDescriptor", "Charter"),
             _documentUuid,
-            new ReferentialId(Guid.Parse("11111111-2222-3333-4444-555555555555")),
             new TraceId("descriptor-write-contract-default")
         );
 
@@ -1952,7 +1967,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         var sut = CreateSut(sessionFactory, targetLookupService);
 
         var result = await sut.HandlePostAsync(
-            CreatePolicyPostRequest(),
+            CreatePolicyPostRequest(@namespace: "uri://other.org/SchoolTypeDescriptor"),
             PolicyPair(create: [NoFurtherStrategy()], update: [NamespaceStrategy()])
         );
 
@@ -2010,7 +2025,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         var sut = CreateSut(sessionFactory, targetLookupService);
 
         var result = await sut.HandlePostAsync(
-            CreatePolicyPostRequest(codeValue: "ChangedCode"),
+            CreatePolicyPostRequest(),
             PolicyPair(create: [NamespaceStrategy()], update: [NoFurtherStrategy()])
         );
 
@@ -2033,7 +2048,10 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         var sut = CreateSut(sessionFactory, new StubRelationalWriteTargetLookupService());
 
         var result = await sut.HandlePostAsync(
-            CreatePolicyPostRequest(writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")),
+            CreatePolicyPostRequest(
+                @namespace: "uri://other.org/SchoolTypeDescriptor",
+                writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+            ),
             PolicyPair(create: [NoFurtherStrategy()], update: [NamespaceStrategy()])
         );
 
@@ -2054,7 +2072,10 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         var sut = CreateSut(sessionFactory, new StubRelationalWriteTargetLookupService());
 
         var result = await sut.HandlePostAsync(
-            CreatePolicyPostRequest(writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")),
+            CreatePolicyPostRequest(
+                @namespace: "uri://other.org/SchoolTypeDescriptor",
+                writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+            ),
             PolicyPair(create: [NamespaceStrategy()], update: [NoFurtherStrategy()])
         );
 
@@ -2213,10 +2234,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         var sut = CreateSut(sessionFactory, targetLookupService);
 
-        var staleAttempt = await sut.HandlePostAsync(
-            CreatePolicyPostRequest(codeValue: "ChangedCode"),
-            UpdateOnly()
-        );
+        var staleAttempt = await sut.HandlePostAsync(CreatePolicyPostRequest(), UpdateOnly());
         // Recreated under a new DocumentId, which the retry's lookup finds and locks.
         targetLookupService.PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(
             346L,
@@ -2226,10 +2244,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         sessionFactory.Session.ScalarResults.Enqueue(1L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRowWithEdFiNamespace()]);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow()]);
-        var retry = await sut.HandlePostAsync(
-            CreatePolicyPostRequest(codeValue: "ChangedCode"),
-            UpdateOnly()
-        );
+        var retry = await sut.HandlePostAsync(CreatePolicyPostRequest(), UpdateOnly());
 
         staleAttempt.Should().BeOfType<UpsertResult.UpsertFailureWriteConflict>();
         retry.Should().BeOfType<UpsertResult.UpdateSuccess>();
@@ -2269,7 +2284,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         var sut = CreateSut(sessionFactory, targetLookupService);
 
         var result = await sut.HandlePostAsync(
-            CreatePolicyPostRequest(),
+            CreatePolicyPostRequest(@namespace: "uri://other.org/SchoolTypeDescriptor"),
             PolicyPair(create: [NoFurtherStrategy()], update: [NamespaceStrategy()])
         );
 
@@ -2291,7 +2306,10 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         var sut = CreateSut(sessionFactory, new StubRelationalWriteTargetLookupService());
 
         var result = await sut.HandlePostAsync(
-            CreatePolicyPostRequest(writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")),
+            CreatePolicyPostRequest(
+                @namespace: "uri://other.org/SchoolTypeDescriptor",
+                writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+            ),
             PolicyPair(create: [NoFurtherStrategy()], update: [NamespaceStrategy()])
         );
 
@@ -2454,7 +2472,6 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
             _descriptorResource,
             CreateDescriptorRequestBody(@namespace, codeValue),
             _documentUuid,
-            new ReferentialId(Guid.Parse("11111111-2222-3333-4444-555555555555")),
             new TraceId("descriptor-post-namespace"),
             authorizationStrategies,
             new RelationalAuthorizationContext([], namespacePrefixes)
@@ -2475,7 +2492,6 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
             _descriptorResource,
             CreateDescriptorRequestBody(@namespace, codeValue),
             _documentUuid,
-            new ReferentialId(Guid.Parse("11111111-2222-3333-4444-555555555555")),
             new TraceId("descriptor-post-namespace"),
             [authorizationStrategy],
             new RelationalAuthorizationContext([], namespacePrefixes)
@@ -2493,7 +2509,6 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
             _descriptorResource,
             CreateDescriptorRequestBody(@namespace, codeValue),
             _documentUuid,
-            referentialId: null,
             new TraceId("descriptor-put-namespace"),
             authorizationStrategies,
             new RelationalAuthorizationContext([], namespacePrefixes)
@@ -2511,7 +2526,6 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
             _descriptorResource,
             CreateDescriptorRequestBody(@namespace, codeValue),
             _documentUuid,
-            referentialId: null,
             new TraceId("descriptor-put-namespace"),
             [authorizationStrategy],
             new RelationalAuthorizationContext([], namespacePrefixes)
@@ -2566,10 +2580,10 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         public RelationalWriteTargetLookupResult PutResult { get; set; } =
             new RelationalWriteTargetLookupResult.NotFound();
 
-        public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+        public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPostAsync(
             MappingSet mappingSet,
             QualifiedResourceName resource,
-            ReferentialId referentialId,
+            string descriptorUri,
             DocumentUuid candidateDocumentUuid,
             CancellationToken cancellationToken = default
         )

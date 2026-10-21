@@ -107,17 +107,24 @@ public static partial class ParityScenarioCatalog
             profiled: true
         ),
         Api(
-            "Api/DescriptorRuntime/RIPostComponentAndCasingUpdates",
-            "RI-matching authorized POST applies incoming equal-URI components and casing, retains independent IDs, and advances stamps and ETags.",
-            "DescriptorRuntimeScenario.It_applies_RI_matching_post_component_and_casing_updates",
-            "It_applies_RI_matching_post_component_and_casing_updates",
+            "Api/DescriptorRuntime/StoredWinsPostIdentity",
+            "An authorized POST matched by descriptor identity keeps the stored components: an equal-URI re-split alone is a no-op with the same ETag, and a descriptive change updates with the stored components, retained IDs and advanced stamps.",
+            "DescriptorRuntimeScenario.It_keeps_the_stored_components_for_an_equal_whole_URI_post",
+            "It_keeps_the_stored_components_for_an_equal_whole_URI_post",
             fixtureSuffix: "CompactDescriptorRuntime"
         ),
         Api(
-            "Api/DescriptorRuntime/EqualWholeUriPut",
-            "Ordinal PUT accepts changed components reconstructing the same whole URI and stamps a representation update.",
-            "DescriptorRuntimeScenario.It_accepts_equal_whole_URI_components_on_put",
-            "It_accepts_equal_whole_URI_components_on_put",
+            "Api/DescriptorRuntime/StoredWinsCaseVariantPost",
+            "An authorized POST that differs from the stored descriptor only in casing keeps the stored casing: alone it is a no-op with the same ETag, and with a descriptive change it updates with the stored identity, retained IDs and advanced stamps.",
+            "DescriptorRuntimeScenario.It_keeps_the_stored_casing_for_a_case_variant_post",
+            "It_keeps_the_stored_casing_for_a_case_variant_post",
+            fixtureSuffix: "CompactDescriptorRuntime"
+        ),
+        Api(
+            "Api/DescriptorRuntime/EqualIdentityPut",
+            "A PUT whose components reconstruct the stored whole URI, or differ from it only in casing, keeps the stored identity and returns 204 with unchanged stamps and ETag.",
+            "DescriptorRuntimeScenario.It_keeps_the_stored_identity_for_an_equal_identity_put",
+            "It_keeps_the_stored_identity_for_an_equal_identity_put",
             fixtureSuffix: "CompactDescriptorRuntime"
         ),
         Api(
@@ -125,13 +132,6 @@ public static partial class ParityScenarioCatalog
             "Identical POST returns 200 and PUT 204 with unchanged IDs, ETags, document/mirror stamps and change-query responses.",
             "DescriptorRuntimeScenario.It_preserves_all_stamps_and_change_queries_on_identical_post_and_put",
             "It_preserves_all_stamps_and_change_queries_on_identical_post_and_put",
-            fixtureSuffix: "CompactDescriptorRuntime"
-        ),
-        Api(
-            "Api/DescriptorRuntime/DuplicateWithoutRIMatch",
-            "Equal whole-URI storage without a matching RI retains the write-conflict outcome (HTTP 500 after retries) and leaves the existing representation and stamps intact.",
-            "DescriptorRuntimeScenario.It_rejects_a_duplicate_whole_URI_without_an_RI_match",
-            "It_rejects_a_duplicate_whole_URI_without_an_RI_match",
             fixtureSuffix: "CompactDescriptorRuntime"
         ),
         Api(
@@ -143,7 +143,7 @@ public static partial class ParityScenarioCatalog
         ),
         Api(
             "Api/DescriptorRuntime/ImmutablePutIdentity",
-            "Ordinal PUT rejects changed whole URI, including casing-only changes, with exact 400 problem details and unchanged storage/stamps.",
+            "A PUT whose whole URI is a different descriptor identity under the engine's comparison (not a casing change or component re-split) returns 400 with exact problem details and unchanged storage/stamps.",
             "DescriptorRuntimeScenario.It_rejects_descriptor_identity_changes",
             "It_rejects_descriptor_identity_changes",
             fixtureSuffix: "CompactDescriptorRuntime"
@@ -248,7 +248,7 @@ public static partial class ParityScenarioCatalog
         ),
         Api(
             "Api/CompactDescriptorHistory/ComponentUpdateAndNoOpHistory",
-            "Accepted equal-whole-URI descriptor component POST advances representation stamps without key history; identical POST/PUT preserve metadata and delete snapshots retain final components.",
+            "An equal-whole-URI descriptor component POST or PUT keeps the stored components and is a no-op without stamps, ETag change or key history; delete snapshots retain the stored components.",
             "CompactDescriptorHistoryScenario.It_keeps_descriptor_component_updates_and_no_ops_out_of_delete_and_key_history",
             "It_keeps_descriptor_component_updates_and_no_ops_out_of_delete_and_key_history",
             fixtureSuffix: "DerivativeTrackedChanges_CompactDescriptors"

@@ -387,7 +387,8 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
             WithOwnership(
                 CreatePostRequest(
                     namespacePrefixes: ["uri://ed-fi.org/"],
-                    authorizationStrategies: [OwnershipStrategy(), NamespaceStrategy()]
+                    authorizationStrategies: [OwnershipStrategy(), NamespaceStrategy()],
+                    @namespace: "uri://other.org/SchoolTypeDescriptor"
                 ),
                 creatorOwnershipTokenId: OwnedToken,
                 ownershipTokenIds: [OtherToken]

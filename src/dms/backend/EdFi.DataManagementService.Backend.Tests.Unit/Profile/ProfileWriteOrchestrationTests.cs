@@ -438,7 +438,6 @@ internal static class OrchestrationTestHelpers
             DocumentIdentity: new DocumentIdentity([
                 new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
             ]),
-            ReferentialId: new ReferentialId(Guid.NewGuid()),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],

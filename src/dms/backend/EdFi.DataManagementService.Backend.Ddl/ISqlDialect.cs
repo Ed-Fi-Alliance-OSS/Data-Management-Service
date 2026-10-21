@@ -239,7 +239,7 @@ public interface ISqlDialect
     /// <summary>
     /// Returns the DDL statement to create the UUIDv5 (RFC 4122) helper function in the
     /// specified schema. The function accepts a namespace UUID and a name string and returns
-    /// a deterministic UUID that matches DMS Core's ReferentialIdCalculator output byte-for-byte.
+    /// a deterministic UUIDv5 that the referential identity triggers store as ReferentialId.
     /// </summary>
     /// <param name="schema">The schema to create the function in (typically "dms").</param>
     /// <returns>The complete CREATE FUNCTION statement.</returns>

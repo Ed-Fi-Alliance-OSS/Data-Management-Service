@@ -325,7 +325,6 @@ internal sealed record RelationalWriteSeamFixture(
             DocumentIdentity: new DocumentIdentity([
                 new DocumentIdentityElement(new JsonPath("$.studentUniqueId"), "1000"),
             ]),
-            ReferentialId: new ReferentialId(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
             DocumentReferences: [.. documentReferences],
             DocumentReferenceArrays: [],
             DescriptorReferences: [.. descriptorReferences],

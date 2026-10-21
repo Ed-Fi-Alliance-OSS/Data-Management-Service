@@ -15099,7 +15099,6 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             DocumentIdentity: new DocumentIdentity([
                 new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
             ]),
-            ReferentialId: new ReferentialId(Guid.NewGuid()),
             DocumentReferences: documentReferences ?? [],
             DocumentReferenceArrays: [],
             DescriptorReferences: descriptorReferences ?? [],

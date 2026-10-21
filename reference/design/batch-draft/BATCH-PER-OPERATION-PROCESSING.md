@@ -12,6 +12,13 @@ High‑level goals for 4.3.4
 > See [DMS-1623](https://edfi.atlassian.net/browse/DMS-1623) and
 > [the current strictness contract](../../../docs/DATA-STRICTNESS.md).
 
+> **DMS-1454 supersession:** Natural-key resolution below computes a UUIDv5 `ReferentialId`
+> (`ReferentialIdCalculator`, `DocumentInfo.ReferentialId`) and finds the document by it.
+> DMS-1454 removed Core's referential-ID surface, and no runtime path reads
+> `dms.ReferentialIdentity`. A batch natural-key lookup must use the natural-key lookups described
+> in [natural-key-resolution.md](../backend-redesign/design-docs/natural-key-resolution.md)
+> instead.
+
 - For each operation in the batch, we want:
   - The same sequence of validation / coercion / authorization steps as today.
   - To avoid re-running logging/JWT/schema load per operation (those belong at the batch level).

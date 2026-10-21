@@ -20,7 +20,6 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -2130,7 +2129,10 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         AuthorizationRootChildSeed seed
     )
     {
-        var referentialId = CreateAuthorizationRootChildDocumentInfo(seed).ReferentialId;
+        var referentialId = ReferentialIdTestHelper.ReferentialIdFrom(
+            GetResourceHandle("authz", "AuthorizationRootChildResource").ResourceInfo,
+            CreateAuthorizationRootChildDocumentInfo(seed).DocumentIdentity
+        );
 
         return await Database.ExecuteScalarAsync<long>(
             """
@@ -2138,7 +2140,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             FROM [dms].[ReferentialIdentity]
             WHERE [ReferentialId] = @referentialId;
             """,
-            new SqlParameter("@referentialId", referentialId.Value)
+            new SqlParameter("@referentialId", referentialId)
         );
     }
 
@@ -2195,14 +2197,16 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             "authz",
             RelationshipAuthorizationCrudTestSupport.NamespaceResourceName
         );
-        var referentialId = RelationalDocumentInfoTestHelper
-            .CreateDocumentInfo(
-                RelationalQueryAuthorizationRequestBodies.CreateAuthorizationNamespaceRequestBody(seed),
-                resourceHandle.ResourceInfo,
-                resourceHandle.ResourceSchema,
-                MappingSet
-            )
-            .ReferentialId;
+        var documentInfo = RelationalDocumentInfoTestHelper.CreateDocumentInfo(
+            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationNamespaceRequestBody(seed),
+            resourceHandle.ResourceInfo,
+            resourceHandle.ResourceSchema,
+            MappingSet
+        );
+        var referentialId = ReferentialIdTestHelper.ReferentialIdFrom(
+            resourceHandle.ResourceInfo,
+            documentInfo.DocumentIdentity
+        );
 
         return await Database.ExecuteScalarAsync<long>(
             """
@@ -2210,7 +2214,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             FROM [dms].[ReferentialIdentity]
             WHERE [ReferentialId] = @referentialId;
             """,
-            new SqlParameter("@referentialId", referentialId.Value)
+            new SqlParameter("@referentialId", referentialId)
         );
     }
 
@@ -3293,7 +3297,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
     }
 
     private async Task UpsertReferentialIdentityAsync(
-        ReferentialId referentialId,
+        Guid referentialId,
         long documentId,
         short resourceKeyId
     )
@@ -3322,19 +3326,19 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                 VALUES (@referentialId, @documentId, @resourceKeyId);
             END;
             """,
-            new SqlParameter("@referentialId", referentialId.Value),
+            new SqlParameter("@referentialId", referentialId),
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId)
         );
     }
 
-    private static ReferentialId CreateDescriptorReferentialId(
+    private static Guid CreateDescriptorReferentialId(
         string projectName,
         string resourceName,
         string descriptorUri
     )
     {
-        return ReferentialIdCalculator.ReferentialIdFrom(
+        return ReferentialIdTestHelper.ReferentialIdFrom(
             new BaseResourceInfo(new ProjectName(projectName), new ResourceName(resourceName), true),
             new DocumentIdentity([
                 new DocumentIdentityElement(
@@ -3345,7 +3349,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         );
     }
 
-    private static ReferentialId CreateSchoolReferentialId(int schoolId)
+    private static Guid CreateSchoolReferentialId(int schoolId)
     {
         var schoolIdentity = new DocumentIdentity([
             new DocumentIdentityElement(
@@ -3354,10 +3358,10 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             ),
         ]);
 
-        return ReferentialIdCalculator.ReferentialIdFrom(SchoolResource, schoolIdentity);
+        return ReferentialIdTestHelper.ReferentialIdFrom(SchoolResource, schoolIdentity);
     }
 
-    private static ReferentialId CreateClassPeriodReferentialId(ClassPeriodSeed seed)
+    private static Guid CreateClassPeriodReferentialId(ClassPeriodSeed seed)
     {
         var classPeriodIdentity = new DocumentIdentity([
             new DocumentIdentityElement(new JsonPath("$.classPeriodName"), seed.ClassPeriodName),
@@ -3367,10 +3371,10 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             ),
         ]);
 
-        return ReferentialIdCalculator.ReferentialIdFrom(ClassPeriodResource, classPeriodIdentity);
+        return ReferentialIdTestHelper.ReferentialIdFrom(ClassPeriodResource, classPeriodIdentity);
     }
 
-    private static ReferentialId CreateStudentAcademicRecordReferentialId(StudentAcademicRecordSeed seed) =>
+    private static Guid CreateStudentAcademicRecordReferentialId(StudentAcademicRecordSeed seed) =>
         CreateReferentialId(
             "Ed-Fi",
             "StudentAcademicRecord",
@@ -3383,13 +3387,13 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             ("$.termDescriptor", seed.TermDescriptor.ToLowerInvariant())
         );
 
-    private static ReferentialId CreateReferentialId(
+    private static Guid CreateReferentialId(
         string projectName,
         string resourceName,
         params (string JsonPath, string Value)[] identityElements
     )
     {
-        return ReferentialIdCalculator.ReferentialIdFrom(
+        return ReferentialIdTestHelper.ReferentialIdFrom(
             new BaseResourceInfo(new ProjectName(projectName), new ResourceName(resourceName), false),
             new DocumentIdentity([
                 .. identityElements.Select(static identityElement => new DocumentIdentityElement(

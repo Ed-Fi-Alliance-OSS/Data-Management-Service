@@ -16,7 +16,7 @@ public class WriteResultReferenceFailureContractTests
 {
     [TestFixture]
     [Parallelizable]
-    public class Given_An_UpsertFailureReference_With_Repeated_ReferentialIds_At_Different_Paths
+    public class Given_An_UpsertFailureReference_With_Repeated_Identities_At_Different_Paths
         : WriteResultReferenceFailureContractTests
     {
         private UpsertResult.UpsertFailureReference _result = null!;

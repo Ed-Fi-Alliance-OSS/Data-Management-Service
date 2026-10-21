@@ -246,11 +246,6 @@ internal static partial class DescriptorRuntimeScenario
             CreateDescriptorValues("identity-namespace-change"),
             static descriptor => descriptor with { Namespace = CreateNamespace("identity-namespace-changed") }
         );
-        await AssertDescriptorIdentityChangeRejectedAsync(
-            harness,
-            CreateDescriptorValues("identity-casing-change", codeValue: "MiXeD"),
-            static descriptor => descriptor with { CodeValue = "mixed" }
-        );
     }
 
     private static async Task AssertDescriptorIdentityChangeRejectedAsync(

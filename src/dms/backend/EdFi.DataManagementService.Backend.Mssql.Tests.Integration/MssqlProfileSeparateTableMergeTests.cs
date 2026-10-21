@@ -21,7 +21,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
@@ -135,7 +134,6 @@ internal static class MssqlProfileSeparateTableMergeSupport
         ]);
         return new DocumentInfo(
             DocumentIdentity: identity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(ItemResourceInfo, identity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],
@@ -488,11 +486,11 @@ internal static class MssqlProfileSeparateTableMergeSupport
         var descriptorIdentity = new DocumentIdentity([
             new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri.ToLowerInvariant()),
         ]);
-        var referentialId = ReferentialIdCalculator.ReferentialIdFrom(
+        var referentialId = ReferentialIdTestHelper.ReferentialIdFrom(
             descriptorResourceInfo,
             descriptorIdentity
         );
-        await InsertReferentialIdentityRowAsync(database, referentialId.Value, documentId, resourceKeyId);
+        await InsertReferentialIdentityRowAsync(database, referentialId, documentId, resourceKeyId);
 
         return descriptorId;
     }

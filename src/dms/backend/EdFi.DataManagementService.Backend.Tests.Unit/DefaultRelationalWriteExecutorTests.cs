@@ -130,22 +130,16 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_resolves_references_through_the_attempt_scoped_session_before_flattening_post_requests()
     {
-        var documentReferentialId = new ReferentialId(Guid.NewGuid());
-        var descriptorReferentialId = new ReferentialId(Guid.NewGuid());
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
             documentReferences:
             [
-                RelationalAccessTestData.CreateDocumentReference(documentReferentialId, "$.schoolReference"),
-                RelationalAccessTestData.CreateDocumentReference(
-                    documentReferentialId,
-                    "$.educationOrganizationReference"
-                ),
+                RelationalAccessTestData.CreateDocumentReference("$.schoolReference"),
+                RelationalAccessTestData.CreateDocumentReference("$.educationOrganizationReference"),
             ],
             descriptorReferences:
             [
                 RelationalAccessTestData.CreateDescriptorReference(
-                    descriptorReferentialId,
                     "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
                     "$.schoolTypeDescriptor"
                 ),
@@ -219,7 +213,6 @@ public class Given_Default_Relational_Write_Executor
     public async Task It_short_circuits_descriptor_reference_failures_before_flattening()
     {
         var descriptorReference = RelationalAccessTestData.CreateDescriptorReference(
-            new ReferentialId(Guid.NewGuid()),
             "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
             "$.schoolTypeDescriptor"
         );
@@ -259,14 +252,10 @@ public class Given_Default_Relational_Write_Executor
     public async Task It_short_circuits_descriptor_reference_failures_before_mixed_missing_document_references()
     {
         var descriptorReference = RelationalAccessTestData.CreateDescriptorReference(
-            new ReferentialId(Guid.NewGuid()),
             "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
             "$.schoolTypeDescriptor"
         );
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
             documentReferences: [documentReference],
@@ -775,11 +764,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_short_circuits_non_missing_document_reference_failures_before_flattening()
     {
-        var referentialId = new ReferentialId(Guid.NewGuid());
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            referentialId,
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
             documentReferences: [documentReference]
@@ -813,10 +798,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_defers_missing_document_reference_failures_until_after_no_profile_merge()
     {
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
             documentReferences: [documentReference]
@@ -863,13 +845,7 @@ public class Given_Default_Relational_Write_Executor
         );
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
-            documentReferences:
-            [
-                RelationalAccessTestData.CreateDocumentReference(
-                    new ReferentialId(Guid.NewGuid()),
-                    "$.schoolReference"
-                ),
-            ]
+            documentReferences: [RelationalAccessTestData.CreateDocumentReference("$.schoolReference")]
         ) with
         {
             DeferredCreateOwnershipFailureResult = denial,
@@ -1170,10 +1146,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_returns_deferred_missing_document_reference_failures_before_guarded_no_op_success()
     {
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Put,
             documentReferences: [documentReference]
@@ -1204,10 +1177,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_keeps_profile_missing_document_reference_failures_immediate()
     {
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var writableBody = JsonNode.Parse("""{"name":"Lincoln High"}""")!;
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
@@ -1250,10 +1220,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_returns_proposed_relationship_authorization_failure_before_deferred_missing_reference()
     {
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Put,
             documentReferences: [documentReference]
@@ -1286,10 +1253,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_returns_immutable_identity_failure_before_deferred_missing_reference()
     {
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Put,
             documentReferences: [documentReference],
@@ -1326,10 +1290,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_forces_create_new_post_proposed_relationship_authorization_before_deferred_missing_reference()
     {
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
             documentReferences: [documentReference]
@@ -1378,7 +1339,6 @@ public class Given_Default_Relational_Write_Executor
         _writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor =
             new ThrowingRelationalCommandExecutor(SqlDialect.Pgsql, new StubDbException("namespace AUTH1"));
         var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
             "$.educationOrganizationReference"
         );
         var rootPlan = CreateNamespaceRootPlan();
@@ -1428,7 +1388,6 @@ public class Given_Default_Relational_Write_Executor
     public async Task It_authorizes_stored_relationship_values_for_existing_put_before_reference_resolution()
     {
         var descriptorReference = RelationalAccessTestData.CreateDescriptorReference(
-            new ReferentialId(Guid.NewGuid()),
             "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
             "$.schoolTypeDescriptor"
         );
@@ -1476,10 +1435,7 @@ public class Given_Default_Relational_Write_Executor
     {
         var parameterConfigurator = new RecordingRelationalParameterConfigurator();
         _sut = CreateExecutor(relationalParameterConfigurator: parameterConfigurator);
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Put,
             documentReferences: [documentReference],
@@ -1631,10 +1587,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_returns_stored_relationship_no_claims_for_an_existing_put_without_a_second_observation()
     {
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Put,
             documentReferences: [documentReference]
@@ -1718,10 +1671,7 @@ public class Given_Default_Relational_Write_Executor
     )
     {
         var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             operationKind,
             documentReferences: [documentReference],
@@ -1784,7 +1734,6 @@ public class Given_Default_Relational_Write_Executor
     {
         var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var descriptorReference = RelationalAccessTestData.CreateDescriptorReference(
-            new ReferentialId(Guid.NewGuid()),
             "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
             "$.schoolTypeDescriptor"
         );
@@ -2279,10 +2228,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_returns_if_match_failure_for_put_before_reference_failures_when_the_current_etag_mismatches()
     {
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Put,
             documentReferences: [documentReference],
@@ -2314,10 +2260,7 @@ public class Given_Default_Relational_Write_Executor
     public async Task It_returns_if_match_failure_for_post_as_update_before_reference_failures_when_the_current_etag_mismatches()
     {
         var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
             documentReferences: [documentReference],
@@ -3248,10 +3191,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_maps_known_document_reference_foreign_key_violations_to_reference_failures()
     {
-        var invalidReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var invalidReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
             documentReferences: [invalidReference]
@@ -3306,7 +3246,6 @@ public class Given_Default_Relational_Write_Executor
     public async Task It_maps_known_descriptor_reference_foreign_key_violations_to_reference_failures()
     {
         var invalidReference = RelationalAccessTestData.CreateDescriptorReference(
-            new ReferentialId(Guid.NewGuid()),
             "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
             "$.schoolTypeDescriptor"
         );
@@ -7224,10 +7163,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_returns_stale_put_if_match_before_deferred_missing_reference_when_proposed_authorization_is_required()
     {
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Put,
             documentReferences: [documentReference],
@@ -7501,10 +7437,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_applies_the_create_branch_exactly_as_the_same_single_list_for_a_post_create()
     {
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.studentReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.studentReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
             documentReferences: [documentReference]
@@ -7613,10 +7546,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_selects_create_new_post_relationship_plan_before_reference_resolution()
     {
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.studentReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.studentReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
             documentReferences: [documentReference]

@@ -5,7 +5,6 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
-using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend.Tests.Common;
 
@@ -241,7 +240,7 @@ public sealed class ReferenceResolverIntegrationFixture
         );
     }
 
-    private static ReferentialId CreateReferentialId(string value) => new(Guid.Parse(value));
+    private static Guid CreateReferentialId(string value) => Guid.Parse(value);
 
     private static ConcreteResourceModel CreateConcreteResource(
         ResourceKeyEntry resourceKey,
@@ -403,7 +402,7 @@ public sealed record ReferenceResolverSeedData(
                     .Select(referentialIdentity =>
                         (IReadOnlyList<object?>)
                             [
-                                referentialIdentity.ReferentialId.Value,
+                                referentialIdentity.ReferentialId,
                                 referentialIdentity.DocumentId,
                                 referentialIdentity.ResourceKeyId,
                             ]
@@ -469,7 +468,7 @@ public sealed record ReferenceResolverResourceKeySeed(
 public sealed record ReferenceResolverDocumentSeed(long DocumentId, Guid DocumentUuid, short ResourceKeyId);
 
 public sealed record ReferenceResolverReferentialIdentitySeed(
-    ReferentialId ReferentialId,
+    Guid ReferentialId,
     long DocumentId,
     short ResourceKeyId
 );

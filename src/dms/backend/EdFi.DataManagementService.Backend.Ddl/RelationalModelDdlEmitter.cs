@@ -2130,8 +2130,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append(uuidv5Func);
         writer.Append("('");
         writer.Append(Uuidv5Namespace);
-        // Format intentionally matches ReferentialIdCalculator.ResourceInfoString: {ProjectName}{ResourceName}
-        // with no separator — do not add one without updating the calculator.
+        // The hashed resource prefix is {ProjectName}{ResourceName} with no separator; every
+        // referential identity trigger must use the same format.
         writer.Append("'::uuid, '");
         writer.Append(SqlDialectBase.EscapeSingleQuote(projectName));
         writer.Append(SqlDialectBase.EscapeSingleQuote(resourceName));
@@ -2303,8 +2303,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append(uuidv5Func);
         writer.Append("('");
         writer.Append(Uuidv5Namespace);
-        // Format intentionally matches ReferentialIdCalculator.ResourceInfoString: {ProjectName}{ResourceName}
-        // with no separator — do not add one without updating the calculator.
+        // The hashed resource prefix is {ProjectName}{ResourceName} with no separator; every
+        // referential identity trigger must use the same format.
         writer.Append("', CAST(N'");
         writer.Append(SqlDialectBase.EscapeSingleQuote(projectName));
         writer.Append(SqlDialectBase.EscapeSingleQuote(resourceName));
@@ -3514,10 +3514,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private string Quote(DbTriggerName trigger) => _dialect.QuoteIdentifier(trigger.Value);
 
     /// <summary>
-    /// The UUIDv5 namespace used for referential identity computation.
-    /// Must match <c>ReferentialIdCalculator.EdFiUuidv5Namespace</c> in
-    /// <c>EdFi.DataManagementService.Core</c>. A guard test in the unit test project
-    /// asserts this value to prevent silent divergence.
+    /// The UUIDv5 namespace used for referential identity computation. A guard test in the
+    /// unit test project asserts this value to prevent silent divergence.
     /// </summary>
     internal const string Uuidv5Namespace = "edf1edf1-3df1-3df1-3df1-3df1edf1edf1";
 

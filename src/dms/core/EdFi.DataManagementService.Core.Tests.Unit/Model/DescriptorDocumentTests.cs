@@ -123,13 +123,7 @@ public class DescriptorDocumentTests
         [Test]
         public void It_has_derived_the_document_info()
         {
-            var documentInfo = descriptorDocument!.ToDocumentInfo(
-                new BaseResourceInfo(
-                    ProjectName: new ProjectName("ProjectName"),
-                    ResourceName: new ResourceName("ResourceName"),
-                    IsDescriptor: true
-                )
-            );
+            var documentInfo = descriptorDocument!.ToDocumentInfo();
             documentInfo.DocumentReferences.Should().BeEmpty();
             documentInfo.DescriptorReferences.Should().BeEmpty();
             documentInfo.SuperclassIdentity.Should().BeNull();

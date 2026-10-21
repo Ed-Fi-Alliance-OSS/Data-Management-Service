@@ -1,7 +1,3 @@
-# DMS-1454: Quarantined until descriptor writes stop hashing the request spelling; until then the
-# Background's Schools step re-POSTs EducationOrganizationCategoryDescriptor#school after #School was
-# seeded, misses its referential identity and returns 500.
-@ignore
 Feature: Validation of Natural Key Unification
 
         Background:
