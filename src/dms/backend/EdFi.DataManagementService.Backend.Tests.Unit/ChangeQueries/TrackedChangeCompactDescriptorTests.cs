@@ -93,10 +93,12 @@ public class Given_TrackedChange_Compact_Descriptor_Routing(SqlDialect dialect)
                 .CommandText.Should()
                 .Contain($"c.{Q("ResourceKeyId")} = @ResourceKeyId")
                 .And.Contain($"live.{Q("ResourceKeyId")} = @ResourceKeyId")
-                .And.Contain($"live.{Q("Namespace")} = c.{Q("OldNamespace")}")
-                .And.Contain($"live.{Q("CodeValue")} = c.{Q("OldCodeValue")}")
+                .And.Contain(
+                    $"live.{Q("ResourceKeyId")} = @ResourceKeyId AND {LiveUriFold("live", "c", "OldNamespace", "OldCodeValue")}"
+                )
+                .And.NotContain($"live.{Q("Namespace")} = ")
+                .And.NotContain($"live.{Q("CodeValue")} = ")
                 .And.NotContain("Discriminator")
-                .And.NotContain("LOWER(")
                 .And.NotContain(Q("Uri"))
                 .And.NotContain("JOIN " + Table("dms", "Document"));
             command
@@ -120,14 +122,42 @@ public class Given_TrackedChange_Compact_Descriptor_Routing(SqlDialect dialect)
     }
 
     [Test]
+    public void It_folds_every_lowered_descriptor_uri_under_the_identity_collation()
+    {
+        string[] sqls =
+        [
+            _resourcePlan.Command!.CommandText,
+            .. _descriptorPlans.Select(plan => plan.Command!.CommandText),
+        ];
+        string collationSuffix =
+            dialect is SqlDialect.Pgsql ? " COLLATE \"pg_c_utf8\"" : " COLLATE SQL_Latin1_General_CP1_CI_AS";
+        string loweringFunction = dialect is SqlDialect.Pgsql ? "lower(" : "LOWER(";
+
+        foreach (string sql in sqls)
+        {
+            IReadOnlyList<(string Function, string Argument)> lowerings = LoweringCalls(sql);
+            lowerings.Should().NotBeEmpty();
+            foreach ((string function, string argument) in lowerings)
+            {
+                function.Should().Be(loweringFunction);
+                argument.Should().EndWith(collationSuffix);
+            }
+        }
+    }
+
+    [Test]
     public void It_compares_both_compact_resource_foreign_keys_to_descriptor_ids()
     {
         string sql = _resourcePlan.Command!.CommandText;
         sql.Should()
             .Contain($"live.{Q("Kind_DescriptorId")} = descriptor_0.{Q("DescriptorId")}")
             .And.Contain($"live.{Q("SampleKind_DescriptorId")} = descriptor_1.{Q("DescriptorId")}")
-            .And.Contain($"descriptor_0.{Q("ResourceKeyId")} = @DescriptorResourceKeyId0")
-            .And.Contain($"descriptor_1.{Q("ResourceKeyId")} = @DescriptorResourceKeyId1")
+            .And.Contain(
+                $"descriptor_0.{Q("ResourceKeyId")} = @DescriptorResourceKeyId0 AND {LiveUriFold("descriptor_0", "c", "OldKind_Namespace", "OldKind_CodeValue")}"
+            )
+            .And.Contain(
+                $"descriptor_1.{Q("ResourceKeyId")} = @DescriptorResourceKeyId1 AND {LiveUriFold("descriptor_1", "c", "OldSampleKind_Namespace", "OldSampleKind_CodeValue")}"
+            )
             .And.NotContain($"descriptor_0.{Q("DocumentId")}")
             .And.NotContain($"descriptor_1.{Q("DocumentId")}");
         _resourcePlan
@@ -278,6 +308,44 @@ public class Given_TrackedChange_Compact_Descriptor_Routing(SqlDialect dialect)
     ) => new(new($"{resource.ResourceName}WithAllowedRowsIncludingDeletes", index), index, resource);
 
     private string Q(string name) => SqlIdentifierQuoter.QuoteIdentifier(dialect, name);
+
+    private string LiveUriFold(
+        string descriptorAlias,
+        string trackedAlias,
+        string oldNamespace,
+        string oldCodeValue
+    ) =>
+        dialect is SqlDialect.Pgsql
+            ? $"lower(({descriptorAlias}.{Q("Namespace")} || '#' || {descriptorAlias}.{Q("CodeValue")}) COLLATE \"pg_c_utf8\") = lower(({trackedAlias}.{Q(oldNamespace)} || '#' || {trackedAlias}.{Q(oldCodeValue)}) COLLATE \"pg_c_utf8\")"
+            : $"{descriptorAlias}.{Q("UriLowered")} = LOWER(({trackedAlias}.{Q(oldNamespace)} + N'#' + {trackedAlias}.{Q(oldCodeValue)}) COLLATE SQL_Latin1_General_CP1_CI_AS)";
+
+    /// <summary>
+    /// Every lowering call in <paramref name="sql"/>, in either case, with its full parenthesized argument.
+    /// </summary>
+    private static IReadOnlyList<(string Function, string Argument)> LoweringCalls(string sql)
+    {
+        List<(string, string)> calls = [];
+        int start = sql.IndexOf("lower(", StringComparison.OrdinalIgnoreCase);
+        while (start >= 0)
+        {
+            int argumentStart = start + "lower(".Length;
+            int depth = 1;
+            int index = argumentStart;
+            while (depth > 0)
+            {
+                depth += sql[index] switch
+                {
+                    '(' => 1,
+                    ')' => -1,
+                    _ => 0,
+                };
+                index++;
+            }
+            calls.Add((sql[start..argumentStart], sql[argumentStart..(index - 1)]));
+            start = sql.IndexOf("lower(", argumentStart, StringComparison.OrdinalIgnoreCase);
+        }
+        return calls;
+    }
 
     private string Table(string schema, string name) =>
         SqlIdentifierQuoter.QuoteTableName(dialect, new(new(schema), name));

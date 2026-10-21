@@ -623,8 +623,21 @@ public class Given_TrackedChangeQueryPlanner
         sql.Should().NotContain("live.\"DocumentId\" = c.");
     }
 
-    [Test]
-    public void It_suppresses_recreated_regular_resources_with_descriptor_identity_by_resolved_descriptor_id()
+    [TestCase(
+        SqlDialect.Pgsql,
+        "LEFT JOIN \"dms\".\"Descriptor\" descriptor_0 ON descriptor_0.\"ResourceKeyId\" = @DescriptorResourceKeyId0 AND lower((descriptor_0.\"Namespace\" || '#' || descriptor_0.\"CodeValue\") COLLATE \"pg_c_utf8\") = lower((c.\"OldProgramTypeDescriptor_Namespace\" || '#' || c.\"OldProgramTypeDescriptor_CodeValue\") COLLATE \"pg_c_utf8\")",
+        "LEFT JOIN \"edfi\".\"School\" live ON live.\"ProgramTypeDescriptorId\" = descriptor_0.\"DescriptorId\""
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        "LEFT JOIN [dms].[Descriptor] descriptor_0 ON descriptor_0.[ResourceKeyId] = @DescriptorResourceKeyId0 AND descriptor_0.[UriLowered] = LOWER((c.[OldProgramTypeDescriptor_Namespace] + N'#' + c.[OldProgramTypeDescriptor_CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS)",
+        "LEFT JOIN [edfi].[School] live ON live.[ProgramTypeDescriptorId] = descriptor_0.[DescriptorId]"
+    )]
+    public void It_suppresses_recreated_regular_resources_with_descriptor_identity_by_resolved_descriptor_id(
+        SqlDialect dialect,
+        string expectedDescriptorJoin,
+        string expectedLiveJoin
+    )
     {
         TrackedChangeColumnInfo descriptorNamespaceColumn = ValueColumn(
             "ProgramTypeDescriptor_Namespace",
@@ -674,26 +687,22 @@ public class Given_TrackedChangeQueryPlanner
                 ]
             )
         );
-        var sut = new TrackedChangeQueryPlanner(SqlDialect.Pgsql);
+        var sut = new TrackedChangeQueryPlanner(dialect);
 
         TrackedChangeQueryPlan plan = sut.Plan(request, fields, TrackedChangeAuthorizationSql.None);
 
         plan.Command.Should().NotBeNull();
         string sql = NormalizeSql(plan.Command!.CommandText);
-        sql.Should()
-            .Contain(
-                "LEFT JOIN \"dms\".\"Descriptor\" descriptor_0 ON descriptor_0.\"ResourceKeyId\" = @DescriptorResourceKeyId0 AND descriptor_0.\"Namespace\" = c.\"OldProgramTypeDescriptor_Namespace\" AND descriptor_0.\"CodeValue\" = c.\"OldProgramTypeDescriptor_CodeValue\""
-            );
-        sql.Should()
-            .Contain(
-                "LEFT JOIN \"edfi\".\"School\" live ON live.\"ProgramTypeDescriptorId\" = descriptor_0.\"DescriptorId\""
-            );
+        sql.Should().Contain(expectedDescriptorJoin);
+        sql.Should().Contain(expectedLiveJoin);
         AssertParameter(plan.Command, "@DescriptorResourceKeyId0", (short)17);
-        sql.Should().Contain("live.\"DocumentId\" IS NULL");
+        sql.Should().NotContain("Discriminator");
         sql.Should()
-            .NotContain("live.\"ProgramTypeDescriptorId\" = c.\"OldProgramTypeDescriptor_Namespace\"");
+            .NotContain("descriptor_0.\"Namespace\" = ")
+            .And.NotContain("descriptor_0.[Namespace] = ");
         sql.Should()
-            .NotContain("live.\"ProgramTypeDescriptorId\" = c.\"OldProgramTypeDescriptor_CodeValue\"");
+            .NotContain("descriptor_0.\"CodeValue\" = ")
+            .And.NotContain("descriptor_0.[CodeValue] = ");
     }
 
     [Test]
@@ -860,8 +869,21 @@ public class Given_TrackedChangeQueryPlanner
         AssertParameter(command, "@ResourceKeyId", (short)17);
     }
 
-    [Test]
-    public void It_suppresses_recreated_descriptors_by_resource_key_namespace_and_code_value()
+    [TestCase(
+        SqlDialect.Pgsql,
+        "LEFT JOIN \"dms\".\"Descriptor\" live ON live.\"ResourceKeyId\" = @ResourceKeyId AND lower((live.\"Namespace\" || '#' || live.\"CodeValue\") COLLATE \"pg_c_utf8\") = lower((c.\"OldNamespace\" || '#' || c.\"OldCodeValue\") COLLATE \"pg_c_utf8\")",
+        "live.\"DocumentId\" IS NULL"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        "LEFT JOIN [dms].[Descriptor] live ON live.[ResourceKeyId] = @ResourceKeyId AND live.[UriLowered] = LOWER((c.[OldNamespace] + N'#' + c.[OldCodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS)",
+        "live.[DocumentId] IS NULL"
+    )]
+    public void It_suppresses_recreated_descriptors_by_resource_key_and_lowered_uri(
+        SqlDialect dialect,
+        string expectedLiveJoin,
+        string expectedTombstonePredicate
+    )
     {
         TrackedChangeColumnInfo namespaceColumn = ValueColumn(
             "Namespace",
@@ -893,17 +915,16 @@ public class Given_TrackedChangeQueryPlanner
             resourceInfo: CreateResourceInfo(_programTypeDescriptorResource, isDescriptor: true),
             resourceModel: CreateSharedDescriptorResourceModel()
         );
-        var sut = new TrackedChangeQueryPlanner(SqlDialect.Pgsql);
+        var sut = new TrackedChangeQueryPlanner(dialect);
 
         TrackedChangeQueryPlan plan = sut.Plan(request, fields, TrackedChangeAuthorizationSql.None);
 
         plan.Command.Should().NotBeNull();
         string sql = NormalizeSql(plan.Command!.CommandText);
-        sql.Should()
-            .Contain(
-                "LEFT JOIN \"dms\".\"Descriptor\" live ON live.\"ResourceKeyId\" = @ResourceKeyId AND live.\"Namespace\" = c.\"OldNamespace\" AND live.\"CodeValue\" = c.\"OldCodeValue\""
-            );
-        sql.Should().Contain("live.\"DocumentId\" IS NULL");
+        sql.Should().Contain(expectedLiveJoin);
+        sql.Should().Contain(expectedTombstonePredicate);
+        AssertParameter(plan.Command, "@ResourceKeyId", (short)17);
+        sql.Should().NotContain("Discriminator");
     }
 
     [Test]

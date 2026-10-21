@@ -20,8 +20,6 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
 
     private static readonly DbTableName _descriptorTable = new(new DbSchemaName("dms"), "Descriptor");
     private static readonly DbColumnName _documentIdColumn = new("DocumentId");
-    private static readonly DbColumnName _descriptorNamespaceColumn = new("Namespace");
-    private static readonly DbColumnName _descriptorCodeValueColumn = new("CodeValue");
     private static readonly DbColumnName _descriptorResourceKeyIdColumn = new("ResourceKeyId");
     private static readonly DbColumnName _descriptorIdColumn = new("DescriptorId");
 
@@ -470,13 +468,12 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
             request,
             field.OldColumn
         );
-        // This history consumer compares components under the column collation: the identity text
-        // collation on SQL Server, the database default on PostgreSQL.
+        // A recreated descriptor is the same identity when its lowered whole URI matches the tombstone's
+        // under the write path's fold, so the join seeks UX_Descriptor_UriLowered_ResourceKeyId.
         string descriptorJoinSql =
             $"LEFT JOIN {Quote(_descriptorTable)} {descriptorAlias} ON "
             + $"{descriptorAlias}.{Quote(_descriptorResourceKeyIdColumn)} = {resourceKeyIdParameterName} "
-            + $"AND {descriptorAlias}.{Quote(_descriptorNamespaceColumn)} = c.{Quote(field.OldColumn.OldColumnName)} "
-            + $"AND {descriptorAlias}.{Quote(_descriptorCodeValueColumn)} = c.{Quote(codeValueColumn.OldColumnName)}";
+            + $"AND {BuildLiveDescriptorUriMatch(descriptorAlias, field.OldColumn.OldColumnName, codeValueColumn.OldColumnName)}";
 
         return new DescriptorIdentityJoin(
             descriptorJoinSql,
@@ -511,11 +508,27 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
         joins.Add(
             $"LEFT JOIN {Quote(_descriptorTable)} live ON "
                 + $"live.{Quote(_descriptorResourceKeyIdColumn)} = {ResourceKeyIdParameterName} "
-                + $"AND live.{Quote(_descriptorNamespaceColumn)} = c.{Quote(namespaceColumn.OldColumnName)} "
-                + $"AND live.{Quote(_descriptorCodeValueColumn)} = c.{Quote(codeValueColumn.OldColumnName)}"
+                + $"AND {BuildLiveDescriptorUriMatch("live", namespaceColumn.OldColumnName, codeValueColumn.OldColumnName)}"
         );
         predicates.Add($"live.{Quote(_documentIdColumn)} IS NULL");
     }
+
+    private string BuildLiveDescriptorUriMatch(
+        string descriptorAlias,
+        DbColumnName oldNamespaceColumn,
+        DbColumnName oldCodeValueColumn
+    ) =>
+        NaturalKeyCapturePredicateBuilder.BuildDescriptorUriFoldPredicate(
+            _dialect,
+            DescriptorProbeTarget.SharedDescriptorTable,
+            descriptorAlias,
+            NaturalKeyCapturePredicateBuilder.BuildTrackedDescriptorUri(
+                _dialect,
+                "c",
+                oldNamespaceColumn,
+                oldCodeValueColumn
+            )
+        );
 
     private static DbColumnName ResolveLiveScalarIdentityColumn(
         ConcreteResourceModel resourceModel,
