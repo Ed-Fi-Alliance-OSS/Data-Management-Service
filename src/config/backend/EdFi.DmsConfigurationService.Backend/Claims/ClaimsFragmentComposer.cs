@@ -14,8 +14,8 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DmsConfigurationService.Backend.Claims;
 
 /// <summary>
-/// Service for composing claims from base Claims.json and fragment files
-/// This is a port of the transformation logic from the CmsHierarchy tool
+/// Composes a complete claims document from base Claims.json and claim-set fragments,
+/// applying resource grants to the hierarchy and registering fragment-defined claim sets.
 /// </summary>
 public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IClaimsFragmentComposer
 {
@@ -242,7 +242,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
     }
 
     /// <summary>
-    /// Converts ClaimsHierarchy JSON to transformation model (ported from CmsHierarchy.GetBaseClaimHierarchy)
+    /// Converts hierarchy JSON to mutable models used while applying claim-set fragments.
     /// </summary>
     private static List<TransformationClaim> ConvertToTransformationModel(JsonNode claimsHierarchyNode)
     {
@@ -293,7 +293,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
     }
 
     /// <summary>
-    /// Applies fragment transformation to existing claims (ported from CmsHierarchy.TransformClaims).
+    /// Applies a fragment's parent claims and claim-set grants to the existing hierarchy.
     /// Returns the claim set name the fragment defines, or null when it defines none. A fragment
     /// defines its top-level name (or file name) as a claim set when it has a non-parent resource
     /// claim, because those grants are attached under that name.
@@ -505,7 +505,8 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
         existingClaims.SelectMany(x => SearchRecursive(x, name)).FirstOrDefault();
 
     /// <summary>
-    /// Recursively searches for a claim with specified name (ported from CmsHierarchy.SearchRecursive)
+    /// Recursively finds claims by resource name, matching the final two URI path segments
+    /// case-insensitively when the claim name is an absolute URI.
     /// </summary>
     private static IEnumerable<TransformationClaim> SearchRecursive(
         TransformationClaim claim,
@@ -546,7 +547,8 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
     }
 
     /// <summary>
-    /// Converts plural resource names to singular (ported from CmsHierarchy.PluralToSingular)
+    /// Normalizes fragment resource names for hierarchy lookup by replacing a trailing
+    /// "ies" with "y" or removing a trailing "s".
     /// </summary>
     private static string PluralToSingular(string resourceClaimName)
     {
@@ -627,7 +629,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
         }
     }
 
-    #region Transformation Model Classes (Ported from CmsHierarchy.Model)
+    #region Internal Hierarchy Models and Fragment Input Records
 
     private sealed class TransformationClaim
     {
@@ -665,7 +667,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
         public string? Name { get; set; }
     }
 
-    // Fragment file structure records (reused from CmsHierarchy.Model).
+    // Input records for fragment resource claims, CRUD strategies, and claim-set names.
     // Positional records — the primary constructor is what System.Text.Json calls during
     // deserialization, satisfying analyzers that don't track reflection-based property writes.
     private sealed record ResourceClaim(string? Name = null, bool IsParent = false)
