@@ -2678,7 +2678,7 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "configure dataStore=[`$Dat
             $env:CONFIGURATION_SERVICE_DATABASE_NAME = "ambient_cms"
             try {
                 { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -DatabaseEngine mssql -SeparateConfigDatabase -RestoreTemplate Minimal } |
-                    Should -Throw "The restore target database resolves to 'edfi_configurationservice', the dedicated Configuration Service database the SQL Server separate topology selected by -SeparateConfigDatabase uses. Restore never replaces a separate CMS database."
+                    Should -Throw "The restore target database resolves to 'edfi_configurationservice', the dedicated Configuration Service database the SQL Server separate topology selected by -SeparateConfigDatabase uses. Restore never replaces a separate Configuration Service database."
 
                 # The refusal is the parameter-time check: nothing after it ran - no package work,
                 # candidate, stop proof, Docker command, database-only start, or replacement.
@@ -3649,7 +3649,7 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed ids=[`$(`$DataStoreId
 
                 $thrown = { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -DatabaseEngine $Engine -SeparateConfigDatabase -RestoreTemplate Minimal } |
                     Should -Throw -PassThru
-                $thrown.Exception.Message | Should -BeLike "*cannot reuse CMS data store id=77*differs from the restored target database only in letter case*This check runs after the restore replaced the target database*"
+                $thrown.Exception.Message | Should -BeLike "*cannot reuse Configuration Service data store id=77*differs from the restored target database only in letter case*This check runs after the restore replaced the target database*"
 
                 $log = @(Get-Content -LiteralPath $script:restoreLog)
                 # The replacement already happened: this refusal does not carry scratch validation's

@@ -29,7 +29,7 @@
     plus any listed extensions; the catalog-pinned core-only default applies only when the env
     carries no SCHEMA_PACKAGES). An already-staged standard-mode workspace is reused only while
     its recorded package identity still matches the effective SCHEMA_PACKAGES value. A mismatch
-    stops before package downloads or Docker/CMS side effects with guidance to stop the stack and
+    stops before package downloads or Docker/Configuration Service side effects with guidance to stop the stack and
     remove `eng/docker-compose/.bootstrap`. Guarded whole-workspace replacement exists only in
     restore mode (`-RestoreTemplate`), which regenerates schema, claims, and seed state together.
     Expert `-ApiSchemaPath` workspaces are reused as-is. There is no
@@ -73,7 +73,7 @@
 
 .PARAMETER DataStoreDatabaseName
     Database name forwarded to configure-local-data-store.ps1. CDC requires a dedicated new name,
-    distinct from the database created by infrastructure initialization and the CMS database.
+    distinct from the database created by infrastructure initialization and the Configuration Service database.
 
 .PARAMETER EnableKafkaUI
     Forwarded to `start-published-dms.ps1`.
@@ -115,7 +115,7 @@
 .PARAMETER DatabaseEngine
     Database engine for the whole stack ("postgresql" or "mssql"). Forwarded to
     `start-published-dms.ps1`, which swaps mssql.yml in for postgresql.yml: SQL Server then
-    hosts the DMS datastore, the Configuration Service (CMS SQL Server backend), and the
+    hosts the DMS datastore, the Configuration Service (its SQL Server backend), and the
     self-contained OpenIddict identity stores.
 
 .EXAMPLE
@@ -173,7 +173,7 @@ param(
 
     # Database engine for the whole stack. "mssql" swaps mssql.yml in for postgresql.yml:
     # SQL Server hosts the DMS datastore (relational backend), the Configuration Service
-    # (CMS SQL Server backend), and the self-contained OpenIddict identity stores - no
+    # (its SQL Server backend), and the self-contained OpenIddict identity stores - no
     # PostgreSQL container runs. Forwarded to start-published-dms.ps1. The .env.mssql overlay
     # (DMS_DATASTORE=mssql, CONFIGURATION_SERVICE_DATASTORE=mssql, the MSSQL_* keys, and the SQL Server
     # connection strings) is composed automatically onto -EnvironmentFile, so no
@@ -181,9 +181,9 @@ param(
     [ValidateSet("postgresql", "mssql")]
     [string]$DatabaseEngine = "postgresql",
 
-    # Redirects the CMS (Configuration Service) database to a dedicated edfi_configurationservice
+    # Redirects the Configuration Service database to a dedicated edfi_configurationservice
     # database instead of sharing the DMS datastore database. Forwarded unchanged to
-    # start-published-dms.ps1, where it also brings published-config.yml into the compose set so CMS
+    # start-published-dms.ps1, where it also brings published-config.yml into the compose set so the Configuration Service
     # actually runs to create that database. Also forwarded to both datastore phases, each of which
     # enforces one half of the rule that the DMS datastore may not land in the dedicated
     # Configuration Service database: the configure phase judges a name it is about to register, and

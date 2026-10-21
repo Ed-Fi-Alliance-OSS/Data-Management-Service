@@ -1255,7 +1255,7 @@ function Resolve-SeedTargetDataStores {
         foreach ($explicitId in $DataStoreId) {
             $matchedInstance = $instances | Where-Object { [long]$_.id -eq [long]$explicitId } | Select-Object -First 1
             if ($null -eq $matchedInstance) {
-                throw "Data store $(Format-LogSafeText $explicitId) was not found in CMS for tenant '$(Format-LogSafeText $Tenant)'. Verify the data store id and tenant scope before re-running."
+                throw "Data store $(Format-LogSafeText $explicitId) was not found in the Configuration Service for tenant '$(Format-LogSafeText $Tenant)'. Verify the data store id and tenant scope before re-running."
             }
 
             $routeContexts = @()
@@ -1294,7 +1294,7 @@ function Resolve-SeedTargetDataStores {
             }
             if ($matchedInstances.Count -gt 1) {
                 $ids = ($matchedInstances | ForEach-Object { $_.id }) -join ", "
-                throw "Multiple data stores found with route context schoolYear=$(Format-LogSafeText $year) (data store ids: $(Format-LogSafeText $ids)). Use -DataStoreId to disambiguate, or clean up duplicate CMS state before re-running."
+                throw "Multiple data stores found with route context schoolYear=$(Format-LogSafeText $year) (data store ids: $(Format-LogSafeText $ids)). Use -DataStoreId to disambiguate, or clean up duplicate Configuration Service state before re-running."
             }
             $matchedIds.Add([long]$matchedInstances[0].id)
         }
@@ -1307,7 +1307,7 @@ function Resolve-SeedTargetDataStores {
 
     # No selector; auto-select if exactly one instance.
     if ($instances.Count -eq 0) {
-        throw "No DMS data stores found in CMS. Run configure-local-data-store.ps1 to create data stores, then re-run seed delivery."
+        throw "No DMS data stores found in the Configuration Service. Run configure-local-data-store.ps1 to create data stores, then re-run seed delivery."
     }
 
     if ($instances.Count -gt 1) {
@@ -1824,7 +1824,7 @@ $nsPrefixes = Get-SeedLoaderNamespacePrefixes `
     -AdditionalPrefixes $AdditionalNamespacePrefix
 
 # --- Step 4: CMS admin token ---
-Write-Host "Obtaining CMS admin token..."
+Write-Host "Obtaining a Configuration Service admin token..."
 Add-CmsClient -CmsUrl $cmsUrl
 $cmsToken = Get-CmsToken -CmsUrl $cmsUrl
 
@@ -1832,7 +1832,7 @@ $cmsToken = Get-CmsToken -CmsUrl $cmsUrl
 # Add-Application stores ClaimSetName as a string. A stale Config image without the embedded
 # SeedLoader claim set would accept credential creation, then BulkLoadClient would surface
 # confusing 401/403 noise. Fail fast against the live CMS instead.
-Write-Host "Verifying CMS has the SeedLoader claim set loaded..."
+Write-Host "Verifying the Configuration Service has the SeedLoader claim set loaded..."
 Assert-CmsSeedLoaderClaimSetLoaded -CmsUrl $cmsUrl -AccessToken $cmsToken -Tenant $tenant
 
 # --- Step 5: Instance selector resolution ---

@@ -51,7 +51,7 @@ wait_for_infrastructure() {
   [[ "$interval" =~ ^[0-9]+$ ]] || { echo "ERROR: DMS_STARTUP_POLL_SECONDS must be a non-negative integer." >&2; return 1; }
   deadline=$((SECONDS + timeout))
 
-  echo "Waiting for Keycloak + config services to accept requests..."
+  echo "Waiting for Keycloak and Configuration Service instances to accept requests..."
   while :; do
     st_code="$(curl -s -k --connect-timeout 5 --max-time 10 -o /dev/null -w '%{http_code}' \
       https://localhost/st-config/health || true)"
@@ -70,11 +70,11 @@ wait_for_infrastructure() {
     fi
 
     if [ "$st_code" = "200" ] && [ "$kc_code" = "200" ] && [ "$mt_ready" = true ]; then
-      echo "Keycloak + config services ready."
+      echo "Keycloak and Configuration Service instances ready."
       return 0
     fi
     if [ "$SECONDS" -ge "$deadline" ]; then
-      echo "ERROR: Keycloak/config services were not ready within ${timeout}s" >&2
+      echo "ERROR: Keycloak and Configuration Service instances were not ready within ${timeout}s" >&2
       echo "       (st-config=$st_code, mt-config=$mt_code, keycloak=$kc_code). Check './logs.sh'." >&2
       return 1
     fi

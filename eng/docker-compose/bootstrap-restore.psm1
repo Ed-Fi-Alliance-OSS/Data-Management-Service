@@ -712,7 +712,7 @@ function Assert-RestoreTargetDatabaseNameSafe {
             throw "-SeparateConfigDatabase requires the effective Configuration Service database name (CONFIGURATION_SERVICE_DATABASE_NAME) so the restore target can be proven distinct from it."
         }
         if ($TargetDatabaseName.Trim().Equals($EffectiveConfigDatabaseName.Trim(), [System.StringComparison]::OrdinalIgnoreCase)) {
-            throw "The restore target database resolves to the dedicated Configuration Service database ('$($EffectiveConfigDatabaseName.Trim())') selected by -SeparateConfigDatabase. Restore never replaces a separate CMS database."
+            throw "The restore target database resolves to the dedicated Configuration Service database ('$($EffectiveConfigDatabaseName.Trim())') selected by -SeparateConfigDatabase. Restore never replaces a separate Configuration Service database."
         }
         # The SQL Server separate topology fixes the CMS database at edfi_configurationservice
         # (Assert-MssqlTopologyPhysicalConsistency), and that check runs only after restore. An
@@ -720,7 +720,7 @@ function Assert-RestoreTargetDatabaseNameSafe {
         # from it, so the fixed name is refused whatever that name is.
         if ($DatabaseEngine -eq "mssql" -and
             $TargetDatabaseName.Trim().Equals("edfi_configurationservice", [System.StringComparison]::OrdinalIgnoreCase)) {
-            throw "The restore target database resolves to 'edfi_configurationservice', the dedicated Configuration Service database the SQL Server separate topology selected by -SeparateConfigDatabase uses. Restore never replaces a separate CMS database."
+            throw "The restore target database resolves to 'edfi_configurationservice', the dedicated Configuration Service database the SQL Server separate topology selected by -SeparateConfigDatabase uses. Restore never replaces a separate Configuration Service database."
         }
     }
 }
@@ -1734,7 +1734,7 @@ function Assert-RestoreTargetSafety {
             -Query $sessionQuery `
             -FailureMessage "Live-session check failed for restore target '$TargetDatabaseName'.")
     if (@($sessionRows | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }).Count -gt 0) {
-        throw "Restore target '$TargetDatabaseName' has connected sessions. Stop all clients using this database, including CMS and DMS, before replacing it."
+        throw "Restore target '$TargetDatabaseName' has connected sessions. Stop all clients using this database, including the Configuration Service and DMS, before replacing it."
     }
 
     # 4) D8a live-server engine major: the live major must be >= the manifest's engine major

@@ -37,7 +37,7 @@
 
     Primary (pre-DMS stop) — `-InfraOnly` alone:
         Runs infrastructure startup, instance creation or reuse
-        (`configure-local-data-store.ps1`), optional CMS-only smoke-test credentials,
+        (`configure-local-data-store.ps1`), optional smoke-test credentials for the Configuration Service only,
         schema provisioning (`provision-dms-schema.ps1`), then prints IDE next-step
         guidance and stops. No DMS startup (`-DmsOnly`) runs. Terminal for that invocation.
         Use this to prepare the local stack for IDE-hosted (debugger) DMS launch.
@@ -62,7 +62,7 @@
     plus any listed extensions; the catalog-pinned core-only default applies only when the env
     carries no SCHEMA_PACKAGES). An already-staged standard-mode workspace is reused only while
     its recorded package identity still matches the effective SCHEMA_PACKAGES value. A mismatch
-    stops before package downloads or Docker/CMS side effects with guidance to stop the stack and
+    stops before package downloads or Docker/Configuration Service side effects with guidance to stop the stack and
     remove `eng/docker-compose/.bootstrap`. Guarded whole-workspace replacement exists only in
     restore mode (`-RestoreTemplate`), which regenerates schema, claims, and seed state together.
     Expert `-ApiSchemaPath` workspaces are reused as-is. There is no
@@ -125,7 +125,7 @@
 
 .PARAMETER DataStoreDatabaseName
     Database name forwarded to configure-local-data-store.ps1. CDC requires a dedicated new name,
-    distinct from the database created by infrastructure initialization and the CMS database.
+    distinct from the database created by infrastructure initialization and the Configuration Service database.
 
 .PARAMETER EnableKafkaUI
     Forwarded to `start-local-dms.ps1`.
@@ -299,7 +299,7 @@ param(
 
     # Database engine for the whole stack. "mssql" swaps mssql.yml in for postgresql.yml:
     # SQL Server hosts the DMS datastore (relational backend), the Configuration Service
-    # (CMS SQL Server backend), and the self-contained OpenIddict identity stores — no
+    # (its SQL Server backend), and the self-contained OpenIddict identity stores — no
     # PostgreSQL container runs. Forwarded to start-local-dms.ps1 and
     # configure-local-data-store.ps1. The .env.mssql overlay (DMS_DATASTORE=mssql,
     # CONFIGURATION_SERVICE_DATASTORE=mssql, the MSSQL_* keys, and the SQL Server connection strings) is
@@ -308,7 +308,7 @@ param(
     [ValidateSet("postgresql", "mssql")]
     [string]$DatabaseEngine = "postgresql",
 
-    # Redirects the CMS (Configuration Service) database to a dedicated edfi_configurationservice
+    # Redirects the Configuration Service database to a dedicated edfi_configurationservice
     # database instead of sharing the DMS datastore database. Forwarded unchanged to
     # start-local-dms.ps1 and to both datastore phases, each of which enforces one half of the rule
     # that the DMS datastore may not land in the dedicated Configuration Service database: the

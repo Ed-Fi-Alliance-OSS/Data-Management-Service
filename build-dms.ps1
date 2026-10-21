@@ -1570,7 +1570,7 @@ function E2ETests {
 }
 
 function Wait-ForConfigServiceAndClientRegistration {
-    Write-Host "Waiting for config service and OpenIddict clients to be fully initialized..." -ForegroundColor Cyan
+    Write-Host "Waiting for Configuration Service and OpenIddict clients to be fully initialized..." -ForegroundColor Cyan
     $maxAttempts = 60
     $attempt = 0
     $ready = $false
@@ -1593,11 +1593,11 @@ function Wait-ForConfigServiceAndClientRegistration {
 
             if ($response.access_token) {
                 $ready = $true
-                Write-Host "Config service is ready and clients are registered!" -ForegroundColor Green
+                Write-Host "Configuration Service is ready and clients are registered!" -ForegroundColor Green
             }
         }
         catch {
-            Write-Host "Config service or clients not ready yet. Error: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host "Configuration Service or clients not ready yet. Error: $($_.Exception.Message)" -ForegroundColor Yellow
         }
 
         if (-not $ready) {
@@ -1606,7 +1606,7 @@ function Wait-ForConfigServiceAndClientRegistration {
     }
 
     if (-not $ready) {
-        throw "Config service did not become ready with registered clients within the timeout period"
+        throw "Configuration Service did not become ready with registered clients within the timeout period"
     }
 }
 

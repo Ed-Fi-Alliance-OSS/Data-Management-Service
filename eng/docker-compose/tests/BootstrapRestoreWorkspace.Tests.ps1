@@ -1644,7 +1644,7 @@ Describe "Assert-RestoreTargetSafety" {
 
     It "SQL Server: refuses the separate topology's fixed edfi_configurationservice before any docker or catalog activity, even when the effective CMS name differs" {
         { Assert-RestoreTargetSafety -DatabaseEngine mssql -TargetDatabaseName "EDFI_ConfigurationService" -Manifest $script:mssqlManifest -SeparateConfigDatabase -EffectiveConfigDatabaseName "ambient_cms" } |
-            Should -Throw "*resolves to 'edfi_configurationservice'*Restore never replaces a separate CMS database."
+            Should -Throw "*resolves to 'edfi_configurationservice'*Restore never replaces a separate Configuration Service database."
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly
         Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly
     }

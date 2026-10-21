@@ -106,7 +106,7 @@ function Test-WrapperManifestClaimsStaged {
 
     The wrapper uses this to detect a schema-only manifest — one written by prepare-dms-schema.ps1
     without a following prepare-dms-claims.ps1 — so the staging phase can complete it before any
-    Docker/CMS side effects. Without this, the schema-only manifest passes Assert-WrapperStagedSchemaWorkspace
+    Docker/Configuration Service side effects. Without this, the schema-only manifest passes Assert-WrapperStagedSchemaWorkspace
     (which validates the schema workspace only) and infrastructure starts; start-local-dms.ps1 then
     activates staged claims and runs the claims-ready gate, both of which require the claims/seed
     sections and throw after the stack is already up.
@@ -315,7 +315,7 @@ function Test-WrapperManifestSchemaPackagesCurrent {
 
     A missing, empty, malformed, or unreadable manifest, or one missing schema.selectionMode, is
     reported as "not matching". When a manifest is present, the wrapper then stops before any
-    package download or Docker/CMS side effect with the workspace-removal guidance.
+    package download or Docker/Configuration Service side effect with the workspace-removal guidance.
 
     .PARAMETER ManifestPath
     Path to the staged bootstrap-manifest.json.
@@ -1659,7 +1659,7 @@ function Invoke-BootstrapWrapper {
             Write-Information 'CDC controller durably authorized writer publication. Local authorization is disabled; this is not ACL isolation evidence.' -InformationAction Continue
             Write-Information ("Inspect CDC: api-schema-tools cdc status --settings '" + $cdcHandoff.SettingsPath.Replace("'", "''") + "' --state-path '" + $CdcBindingStatePath.Replace("'", "''") + "' --json") -InformationAction Continue
             if ($InfraOnly) {
-                Write-Information 'Offline preparation is complete. Launch IDE DMS with the DataManagement:DocumentCache target, CMS access and staged schema settings from the supplied CDC settings. Use SchemaTools cdc status with the original state root to inspect continuity.' -InformationAction Continue
+                Write-Information 'Offline preparation is complete. Launch IDE DMS with the DataManagement:DocumentCache target, Configuration Service access and staged schema settings from the supplied CDC settings. Use SchemaTools cdc status with the original state root to inspect continuity.' -InformationAction Continue
                 return
             }
         }
@@ -1716,7 +1716,7 @@ function Invoke-BootstrapWrapper {
                 Write-Information "  bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> $continuationArgument [-LoadSeedData ...]" -InformationAction Continue
                 Write-Information "  Note: -NoDataStore supports exactly one route-unqualified data store. If this run used" -InformationAction Continue
                 Write-Information "  -SchoolYearRange (or created route-qualified data stores), do NOT re-run the wrapper:" -InformationAction Continue
-                Write-Information "  re-supplying -SchoolYearRange tries to create these data stores again, and CMS rejects the repeated names with 400." -InformationAction Continue
+                Write-Information "  re-supplying -SchoolYearRange tries to create these data stores again, and the Configuration Service rejects the repeated names with 400." -InformationAction Continue
                 Write-Information "  Seed the data stores this run created directly once your IDE-hosted DMS is healthy:" -InformationAction Continue
                 Write-Information "    load-dms-seed-data.ps1 -DmsBaseUrl <url> -SchoolYear <years...> [...]" -InformationAction Continue
                 return

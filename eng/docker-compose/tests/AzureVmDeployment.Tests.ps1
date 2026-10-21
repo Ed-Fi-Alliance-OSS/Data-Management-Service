@@ -260,7 +260,7 @@ exit 17
         $output = & bash (Join-Path $script:composeRoot "up.sh") 2>&1
 
         $LASTEXITCODE | Should -Be 0
-        $output | Out-String | Should -Match "Keycloak \+ config services ready"
+        $output | Out-String | Should -Match "Keycloak and Configuration Service instances ready"
         $stop = Select-String -LiteralPath $script:dockerLog -Pattern "stop st-dms mt-dms"
         $infra = Select-String -LiteralPath $script:dockerLog -Pattern "up -d --no-deps postgres keycloak st-config mt-config pgadmin swagger-ui gateway"
         $dms = Select-String -LiteralPath $script:dockerLog -Pattern "up -d st-dms mt-dms"

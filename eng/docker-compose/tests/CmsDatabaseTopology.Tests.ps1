@@ -4728,7 +4728,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
                 & "$script:dockerComposeRoot/start-published-dms.ps1" -DatabaseEngine postgresql -SeparateConfigDatabase -EnvironmentFile $envFile *>$null
             }
 
-            $run.ErrorMessage | Should -BeLike "*CMS database topology mismatch*"
+            $run.ErrorMessage | Should -BeLike "*Configuration Service database topology mismatch*"
             $run.ErrorMessage | Should -BeLike "*POSTGRES_DB_NAME*"
             $run.ErrorMessage |
                 Should -Not -BeLike "*must be provably distinct*" -Because "the initialized-path authority owns this shape, not the registered-transport guard"

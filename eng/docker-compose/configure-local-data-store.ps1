@@ -181,7 +181,7 @@ function Resolve-CmsReadOnlyAccessFromEnv {
     command-boundaries.md Section 3.4, "may include" means "include when actually populated"; a
     default-derived client id alone does not satisfy that contract. The client id/scope/secret
     come from the local environment file (start-local-dms.ps1's provider-specific local
-    identity setup writes them); this helper does not contact CMS.
+    identity setup writes them); this helper does not contact the Configuration Service.
     #>
     param(
         [hashtable]$EnvValues
@@ -260,21 +260,21 @@ function Get-ExistingCompatibleDataStore {
     )
 
     if ($DataStores.Count -eq 0) {
-        throw "-NoDataStore was supplied, but no existing data stores were found in the current tenant scope '$(Format-LogSafeText $Tenant)'. Create one route-unqualified CMS data store, or omit -NoDataStore."
+        throw "-NoDataStore was supplied, but no existing data stores were found in the current tenant scope '$(Format-LogSafeText $Tenant)'. Create one route-unqualified Configuration Service data store, or omit -NoDataStore."
     }
 
     if ($DataStores.Count -gt 1) {
         $listing = ($DataStores | ForEach-Object {
             "id=$(Format-LogSafeText $_.id) name=$(Format-LogSafeText $_.name)"
         }) -join ", "
-        throw "-NoDataStore requires exactly one existing data store in tenant scope '$(Format-LogSafeText $Tenant)'. Found $($DataStores.Count): $listing. Clean up CMS state or run with explicit configuration inputs."
+        throw "-NoDataStore requires exactly one existing data store in tenant scope '$(Format-LogSafeText $Tenant)'. Found $($DataStores.Count): $listing. Clean up Configuration Service state or run with explicit configuration inputs."
     }
 
     $dataStore = $DataStores[0]
     $routeContexts = @(Get-DataStoreContexts -Instance $dataStore)
     if ($routeContexts.Count -gt 0) {
         $contextList = ($routeContexts | ForEach-Object { "$(Format-LogSafeText $_.contextKey)=$(Format-LogSafeText $_.contextValue)" }) -join ", "
-        throw "-NoDataStore found one existing data store, but it is route-qualified ($contextList). -NoDataStore supports exactly one route-unqualified data store; clean up CMS state or use -SchoolYearRange."
+        throw "-NoDataStore found one existing data store, but it is route-qualified ($contextList). -NoDataStore supports exactly one route-unqualified data store; clean up Configuration Service state or use -SchoolYearRange."
     }
 
     return $dataStore
@@ -341,10 +341,10 @@ function Resolve-RestoreSeparateConfigDataStore {
         $PageSize = 500
     )
 
-    $afterRestore = "This check runs after the restore replaced the target database: the target is restored, DMS was not started, and the scratch-validation guarantee that a refused restore leaves the target untouched does not apply. Correct or remove the stale CMS data store registration, then rerun the restore. The stored connection string and the database names are withheld."
+    $afterRestore = "This check runs after the restore replaced the target database: the target is restored, DMS was not started, and the scratch-validation guarantee that a refused restore leaves the target untouched does not apply. Correct or remove the stale Configuration Service data store registration, then rerun the restore. The stored connection string and the database names are withheld."
 
     if ($DataStores.Count -ge $PageSize) {
-        throw "Restore with -SeparateConfigDatabase listed $($DataStores.Count) CMS data stores in tenant scope '$(Format-LogSafeText $Tenant)', the query page size, so it cannot prove which one serves the restored target. $afterRestore"
+        throw "Restore with -SeparateConfigDatabase listed $($DataStores.Count) Configuration Service data stores in tenant scope '$(Format-LogSafeText $Tenant)', the query page size, so it cannot prove which one serves the restored target. $afterRestore"
     }
 
     $expectedProvider = if ($DatabaseEngine -eq "mssql") { "sqlserver" } else { "postgresql" }
@@ -359,7 +359,7 @@ function Resolve-RestoreSeparateConfigDataStore {
 
     $matchingDataStores = [System.Collections.Generic.List[object]]::new()
     foreach ($dataStore in $DataStores) {
-        $storeLabel = "CMS data store id=$(Format-LogSafeText $dataStore.id) (name=$(Format-LogSafeText $dataStore.name))"
+        $storeLabel = "Configuration Service data store id=$(Format-LogSafeText $dataStore.id) (name=$(Format-LogSafeText $dataStore.name))"
         $unreadablePrefix = "Restore with -SeparateConfigDatabase cannot tell whether $storeLabel serves the restored target:"
         $refusalPrefix = "Restore with -SeparateConfigDatabase cannot reuse $storeLabel for the restored target:"
 
@@ -374,7 +374,7 @@ function Resolve-RestoreSeparateConfigDataStore {
         $connectionStringProperty = $dataStore.PSObject.Properties["connectionString"]
         $protectedConnectionString = if ($null -eq $connectionStringProperty) { "" } else { [string]$connectionStringProperty.Value }
         if ([string]::IsNullOrWhiteSpace($protectedConnectionString)) {
-            throw "$unreadablePrefix CMS returned no connection string for it. $afterRestore"
+            throw "$unreadablePrefix the Configuration Service returned no connection string for it. $afterRestore"
         }
 
         # The decryption helper's failures are fixed sentences that carry no key, cipher text, or
@@ -436,7 +436,7 @@ function Resolve-RestoreSeparateConfigDataStore {
         $listing = ($matchingDataStores | ForEach-Object {
                 "id=$(Format-LogSafeText $_.id) name=$(Format-LogSafeText $_.name)"
             }) -join ", "
-        throw "Restore with -SeparateConfigDatabase found $($matchingDataStores.Count) CMS data stores in tenant scope '$(Format-LogSafeText $Tenant)' that serve the restored target ($listing); it reuses only a single route-unqualified data store. $afterRestore"
+        throw "Restore with -SeparateConfigDatabase found $($matchingDataStores.Count) Configuration Service data stores in tenant scope '$(Format-LogSafeText $Tenant)' that serve the restored target ($listing); it reuses only a single route-unqualified data store. $afterRestore"
     }
 
     if ($matchingDataStores.Count -eq 1) {
@@ -522,7 +522,7 @@ function Invoke-ConfigureLocalDataStore {
     $restoreReuse = -not [string]::IsNullOrWhiteSpace($RestoreTargetDatabaseName)
     if ($restoreReuse) {
         if (-not $SeparateConfigDatabase) {
-            throw "-RestoreTargetDatabaseName requires -SeparateConfigDatabase. It is the restore handoff for a separate-topology stack, whose Configuration Service database survives the restore; a shared-topology restore replaces the database that holds the CMS data store."
+            throw "-RestoreTargetDatabaseName requires -SeparateConfigDatabase. It is the restore handoff for a separate-topology stack, whose Configuration Service database survives the restore; a shared-topology restore replaces the database that holds the Configuration Service data store."
         }
         if ($NoDataStore) {
             throw "-RestoreTargetDatabaseName cannot be combined with -NoDataStore. The restore handoff verifies the existing data store against the restored target before reusing it; -NoDataStore selects one without that check."
@@ -658,7 +658,7 @@ function Invoke-ConfigureLocalDataStore {
     # the shared -EnvironmentFile helper so this phase and provision-dms-schema.ps1 agree on
     # the admin client (DMS_BOOTSTRAP_ADMIN_CLIENT_ID / DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET).
     $bootstrapAdmin = Resolve-BootstrapAdminClient -EnvValues $envValues
-    Write-Information "Acquiring CMS bootstrap admin token for data store configuration." -InformationAction Continue
+    Write-Information "Acquiring Configuration Service bootstrap admin token for data store configuration." -InformationAction Continue
     Add-CmsClient `
         -CmsUrl $cmsUrl `
         -ClientId $bootstrapAdmin.ClientId `
@@ -671,7 +671,7 @@ function Invoke-ConfigureLocalDataStore {
         -ClientSecret $bootstrapAdmin.ClientSecret
 
     if ($multiTenancyEnabled -and -not [string]::IsNullOrWhiteSpace($tenant)) {
-        Write-Information "Ensuring local CMS tenant exists: $(Format-LogSafeText $tenant)." -InformationAction Continue
+        Write-Information "Ensuring local Configuration Service tenant exists: $(Format-LogSafeText $tenant)." -InformationAction Continue
         try {
             Add-Tenant -CmsUrl $cmsUrl -AccessToken $configToken -TenantName $tenant | Out-Null
         }
@@ -699,7 +699,7 @@ function Invoke-ConfigureLocalDataStore {
         $reusedDataStore = $restoreSelection.DataStore
         $registrationName = $restoreSelection.RegistrationName
         if ($null -ne $reusedDataStore) {
-            Write-Information "Reusing CMS data store id=$(Format-LogSafeText $reusedDataStore.id): its stored connection string targets the restored database on the composed $DatabaseEngine service." -InformationAction Continue
+            Write-Information "Reusing Configuration Service data store id=$(Format-LogSafeText $reusedDataStore.id): its stored connection string targets the restored database on the composed $DatabaseEngine service." -InformationAction Continue
             if ($AddSmokeTestCredentials) {
                 Import-Module "$PSScriptRoot/../smoke_test/modules/SmokeTest.psm1" -Force
                 Write-Information "Creating smoke test credentials." -InformationAction Continue
@@ -713,11 +713,11 @@ function Invoke-ConfigureLocalDataStore {
                 -CmsReadOnlyAccess $cmsReadOnlyAccess `
                 -SmokeTestCredential $smokeTestCredential
         }
-        Write-Information "No CMS data store exists for the restored target yet; registering one as '$(Format-LogSafeText $registrationName)'." -InformationAction Continue
+        Write-Information "No Configuration Service data store exists for the restored target yet; registering one as '$(Format-LogSafeText $registrationName)'." -InformationAction Continue
     }
 
     if ($NoDataStore) {
-        Write-Information "Selecting existing route-unqualified data store from CMS." -InformationAction Continue
+        Write-Information "Selecting existing route-unqualified data store from the Configuration Service." -InformationAction Continue
         $dataStores = @(Get-DataStore -CmsUrl $cmsUrl -AccessToken $configToken -Tenant $tenant)
         $selectedDataStore = Get-ExistingCompatibleDataStore -DataStores $dataStores -Tenant $tenant
         if ($AddSmokeTestCredentials) {

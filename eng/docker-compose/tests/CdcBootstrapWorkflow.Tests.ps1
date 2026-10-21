@@ -669,7 +669,7 @@ Describe 'CDC local ownership inspection' {
                 ports = @{ '8081/tcp' = @(@{ HostIp = '0.0.0.0'; HostPort = '8081' }) }; networks = @{ dms = @{} }; command = @(); entrypoint = @()
             } | ConvertTo-Json -Depth 10 -Compress
         }
-        { Assert-BootstrapCdcOfflineOwnership -Project 'dms-local' } | Should -Throw '*loopback CMS/database ports*'
+        { Assert-BootstrapCdcOfflineOwnership -Project 'dms-local' } | Should -Throw '*loopback Configuration Service/database ports*'
     }
 }
 
@@ -773,6 +773,11 @@ Export-ModuleMember -Function Get-ComposeResolvedEnvValue
         $script:settings.ConfigurationServiceSettings.BaseUrl = 'http://shared.example:8081'
         $script:settings | ConvertTo-Json -Depth 20 | Set-Content $script:settingsFile
         { Read-BootstrapCdcSettings -Path $script:settingsFile -DatabaseEngine postgresql } | Should -Throw '*explicit DMS settings*'
+    }
+    It 'names the loopback root URL requirement for a Configuration Service base URL with a path' {
+        $script:settings.ConfigurationServiceSettings.BaseUrl = 'http://localhost:8081/api'
+        $script:settings | ConvertTo-Json -Depth 20 | Set-Content $script:settingsFile
+        { Read-BootstrapCdcSettings -Path $script:settingsFile -DatabaseEngine postgresql } | Should -Throw '*Configuration Service at a loopback http root URL*'
     }
     It 'rejects an unsupported qualified-worker endpoint before infrastructure (<field>, <value>)' -ForEach @(
         @{ field = 'ConnectEndpoint'; value = 'http://localhost:8083' },

@@ -430,7 +430,7 @@ with the key entirely absent fails clearly rather than starting the Configuratio
 Invocations that start the Configuration Service validate the result before any container starts: the resolved connection
 string's database, host, and port must agree with the selected topology, and a hand-edited
 `CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING` that disagrees fails fast with a
-`CMS database topology mismatch` error rather than silently starting the Configuration Service against the wrong
+`Configuration Service database topology mismatch` error rather than silently starting the Configuration Service against the wrong
 database. In separate mode the datastore database must also be genuinely distinct from
 `edfi_configurationservice`, so a datastore name (or `-DataStoreDatabaseName`) that would land in it
 is rejected rather than quietly re-sharing the database the switch exists to split.
@@ -552,9 +552,10 @@ Restore works on both database engines (`-DatabaseEngine`) and on both wrappers
 `-NoDataStore`, and `-SchoolYearRange`: one restore invocation replaces exactly one
 route-unqualified physical target. That target is the effective env's `POSTGRES_DB_NAME` or
 `MSSQL_DB_NAME`; an explicit `-DataStoreDatabaseName` must repeat it, and a different name is
-refused before the package is resolved or anything is restored, in either CMS topology. A
-PostgreSQL restore is also refused while `POSTGRES_USE_TMPFS=true`: the database would live in
-container memory and be lost when the stack restarts the database container after the restore.
+refused before the package is resolved or anything is restored, in either Configuration Service
+topology. A PostgreSQL restore is also refused while `POSTGRES_USE_TMPFS=true`: the database would
+live in container memory and be lost when the stack restarts the database container after the
+restore.
 These refusals also happen before anything is restored:
 
 * `-EnableKafkaCdc`: a restore skips the provision phase that produces the CDC provisioning
@@ -619,10 +620,10 @@ $packageDirectory = 'C:\path\to\packages'
    ```
 
 2. Bring up a source stack seeded with the same template kind and a dedicated Configuration
-   Service database. The package build refuses a source database that also holds the CMS
-   `dmscs` schema or the OpenIddict stores, which is where the default shared topology puts
-   them. Add the same `-DatabaseEngine`, `-DataStandardVersion`, and `-EnvironmentFile` you will
-   restore with.
+   Service database. The package build refuses a source database that also holds the
+   Configuration Service `dmscs` schema or the OpenIddict stores, which is where the default
+   shared topology puts them. Add the same `-DatabaseEngine`, `-DataStandardVersion`, and
+   `-EnvironmentFile` you will restore with.
 
    ```powershell
    ./bootstrap-local-dms.ps1 -SeparateConfigDatabase -LoadSeedData -SeedTemplate $kind
@@ -686,11 +687,11 @@ With `-SeparateConfigDatabase` the restore replaces only the DMS datastore; the 
 `edfi_configurationservice` database is never touched, so on a stack that ran before it still holds
 the data stores earlier runs registered - for this target, and for other targets restored by earlier
 explicit invocations (each invocation restores one database). After the restore the wrapper's
-configure phase lists the CMS data stores and decrypts each stored connection string with
-`CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY`. A data store serves the restored target only when
-its engine (provider and connection-string form), its server and port (the composed database
-service, `dms-postgresql:5432` or `dms-mssql,1433`), and its database (exactly the restored
-database) all match; a matching database name alone is not enough. The phase then:
+configure phase lists the Configuration Service data stores and decrypts each stored connection
+string with `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY`. A data store serves the restored target
+only when its engine (provider and connection-string form), its server and port (the composed
+database service, `dms-postgresql:5432` or `dms-mssql,1433`), and its database (exactly the
+restored database) all match; a matching database name alone is not enough. The phase then:
 
 * reuses the one route-unqualified data store that serves the restored target, with its id and
   without changing it;
@@ -708,18 +709,19 @@ keeps its own.
 This check runs **after** the target database was replaced. A refusal here stops before DMS starts,
 but unlike a scratch-validation refusal (next section) it does not leave the target untouched: the
 target already holds the restored package. Correct or remove the stale data store registration in
-CMS, then rerun the restore. The refusal names the data store id and the property that differs; it
-never prints the connection string, its credentials, or the database names.
+the Configuration Service, then rerun the restore. The refusal names the data store id and the
+property that differs; it never prints the connection string, its credentials, or the database
+names.
 
 ### Recovering from a failed scratch validation
 
 When scratch validation refuses a package, the restore drops the scratch and preflight
 databases, stops the database-only slice it started (with the same compose files and env file,
 never `down` and never volumes), removes its candidate workspace and generated env file, and leaves
-the target database and the active `.bootstrap` workspace as they were. CMS and DMS are not
-started. Each cleanup step runs even when another fails, and the error that ended the run stays
-the error; a step that fails is reported as a warning naming what remains. The same cleanup runs
-for any failure after the database-only slice started, including a partial startup.
+the target database and the active `.bootstrap` workspace as they were. The Configuration Service
+and DMS are not started. Each cleanup step runs even when another fails, and the error that ended
+the run stays the error; a step that fails is reported as a warning naming what remains. The same
+cleanup runs for any failure after the database-only slice started, including a partial startup.
 
 If that stop did not complete, the database container keeps running and the next restore attempt
 refuses at its first stop proof. On the local PostgreSQL stack the refusal reads as follows; the

@@ -14,12 +14,12 @@ Import-Module (Join-Path $PSScriptRoot "../../../Dms-Management.psm1")
 function Disable-ReviewCertificateCheck {
     <#
     .SYNOPSIS
-        Skips TLS certificate checks for the CMS calls the given modules make (self-signed gateway cert).
+        Skips TLS certificate checks for the Configuration Service calls the given modules make (self-signed gateway cert).
     .DESCRIPTION
         Invoke-RestMethod/Invoke-WebRequest read -SkipCertificateCheck from the calling module's own
         $PSDefaultParameterValues, not the global one. A module may call into a Dms-Management instance
         that Get-Module no longer lists (Template-Management force-reimports it), so the defaults are set
-        in each given module and in the module behind every CMS helper as that module resolves it.
+        in each given module and in the module behind every Configuration Service helper as that module resolves it.
         Package-Management is left out on purpose: the BulkLoadClient comes from the public package
         feed with no hash check, so TLS is the only thing verifying it.
     #>
@@ -96,7 +96,7 @@ function Get-ReviewVariant {
 function Get-ReviewDeployment {
     <#
     .SYNOPSIS
-        Returns the three deployments with the CMS URL, tenant, and data store name bootstrap.ps1 uses.
+        Returns the three deployments with the Configuration Service URL, tenant, and data store name bootstrap.ps1 uses.
     #>
     [CmdletBinding()]
     [OutputType([object[]])]
@@ -121,7 +121,7 @@ function Add-ReviewVariantSet {
         Creates the review-variant applications in each deployment and returns their credentials.
     .DESCRIPTION
         Re-runnable: a variant whose application already exists is skipped with a warning (its
-        secret cannot be read back; reset it through the CMS if it was lost), and an existing
+        secret cannot be read back; reset it through the Configuration Service if it was lost), and an existing
         vendor is reused because POST /v3/vendors rejects a repeated company. When a call fails
         part-way, the credentials created so far are printed before the error is rethrown.
     #>

@@ -1895,7 +1895,7 @@ CONNECTION_STRING=Server=localhost;Password=a=b;TrustServerCertificate=true
                 { Resolve-SeedTargetDataStores -CmsUrl "http://unused" -AccessToken "unused" -DataStoreId @(11) } |
                     Should -Throw -ExpectedMessage "*route context*schoolYear*"
                 { Resolve-SeedTargetDataStores -CmsUrl "http://unused" -AccessToken "unused" -DataStoreId @(999) } |
-                    Should -Throw -ExpectedMessage "*was not found in CMS*"
+                    Should -Throw -ExpectedMessage "*was not found in the Configuration Service*"
 
                 # Plain instance still resolves
                 $result = Resolve-SeedTargetDataStores -CmsUrl "http://unused" -AccessToken "unused" -DataStoreId @(12)
