@@ -105,7 +105,9 @@ function Invoke-WithTokenContractProxyEnvironment {
     )
 
     $endpointKey = if ($Provider -eq 'keycloak') { 'KEYCLOAK_OAUTH_TOKEN_ENDPOINT' } else { 'SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT' }
+    $hadPreviousEndpoint = Test-Path -LiteralPath "Env:$endpointKey"
     $previousEndpoint = [Environment]::GetEnvironmentVariable($endpointKey)
+    $hadPreviousCorrelationHeader = Test-Path Env:CORRELATION_ID_HEADER
     $previousCorrelationHeader = [Environment]::GetEnvironmentVariable('CORRELATION_ID_HEADER')
     $hadPreviousMarker = Test-Path Env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE
     $previousMarker = $env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE
@@ -128,8 +130,10 @@ function Invoke-WithTokenContractProxyEnvironment {
         & $Action
     }
     finally {
-        [Environment]::SetEnvironmentVariable($endpointKey, $previousEndpoint)
-        [Environment]::SetEnvironmentVariable('CORRELATION_ID_HEADER', $previousCorrelationHeader)
+        if ($hadPreviousEndpoint) { [Environment]::SetEnvironmentVariable($endpointKey, $previousEndpoint) }
+        else { Remove-Item -LiteralPath "Env:$endpointKey" -ErrorAction SilentlyContinue }
+        if ($hadPreviousCorrelationHeader) { $env:CORRELATION_ID_HEADER = $previousCorrelationHeader }
+        else { Remove-Item Env:CORRELATION_ID_HEADER -ErrorAction SilentlyContinue }
         if ($hadPreviousMarker) { $env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE = $previousMarker }
         else { Remove-Item Env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE -ErrorAction SilentlyContinue }
         if ($hadPreviousDmsImage) { $env:DMS_DOCKER_IMAGE = $previousDmsImage }
