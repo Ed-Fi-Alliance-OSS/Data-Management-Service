@@ -1388,6 +1388,34 @@ function Get-DatabaseNameFromConnectionString {
         provider supports, so reading its value as a protected database name compares this guard
         against a database the connection would never target.
 
+    .DESCRIPTION
+        Each Database, DB or Initial Catalog value the parser returns goes through
+        Resolve-ComposeEnvRawValue before it is returned. That conversion trims Unicode whitespace from
+        both ends, removes one pair of surrounding quotes, cuts an unquoted value at ' #', and, unless
+        the value starts with a single quote, turns '$$' into '$' and expands ${NAME} and $NAME
+        references. A returned candidate is therefore the guard's reading of the value, not always the
+        name the provider uses: the pinned Microsoft.Data.SqlClient 6.1.4 and Npgsql 8.0.4 builders
+        were measured to trim an unquoted value and keep a quoted value verbatim, including trailing
+        U+0020, U+3000, TAB and LF and leading U+0020.
+
+        - A value made only of ASCII letters, digits and underscore passes through unchanged, so a
+          name inside the guard's comparison domain is compared as the provider receives it.
+        - A quoted trailing U+0020 or U+3000 is removed. SQL_Latin1_General_CP1_CI_AS treats that
+          name as the same database; PostgreSQL's createdb keeps it as a distinct one.
+        - Removing a quoted trailing TAB or U+00A0, leading whitespace, quotes inside the value or a
+          ' #' suffix, or expanding a defined ${NAME} the provider receives literally, can make the
+          guard reject a name the provider treats as distinct.
+        - A literal ${NAME} with NAME undefined becomes empty, and a '$' that survives a
+          single-quoted value stays in the candidate; the guard fails closed on both.
+        - A candidate still outside the comparison domain, such as one with a full-width letter, is
+          refused by the guard's domain check.
+
+        These transformations do not all reject, and not every provider value outside the comparison
+        domain reaches the domain check. The guard compares the candidate, so a value the conversion
+        maps into the domain is compared and can be accepted: 'edfi$dms' becomes 'edfi' when no
+        variable named dms is set, and 'other #x' becomes 'other'. That is a parsing limitation of
+        this reading, not an equivalence the guard claims.
+
     .PARAMETER ConnectionString
         The connection string as Compose has already resolved it: quotes, inline comments and
         references are settled, and the string is parsed as given. Converting it again would read a

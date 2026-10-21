@@ -291,6 +291,48 @@ BeforeDiscovery {
     }
     $script:domainRefusalRows = @($script:outOfDomainRows | Where-Object { $_.Verdict -eq "Accepted" })
     $script:alreadyRejectedRows = @($script:outOfDomainRows | Where-Object { $_.Verdict -eq "Collision" })
+
+    # Connection-string stages: the raw env value, the value the generic DbConnectionStringBuilder
+    # parses from the Compose-resolved string, the candidate the extractor returns after its
+    # per-value conversion, and the guard's verdict against the E2E database 'edfi_dms'. The pinned
+    # SqlClient 6.1.4 and Npgsql 8.0.4 builders were measured outside CI (the lane has no restored
+    # NuGet cache) to trim an unquoted value and keep a quoted one verbatim, as the generic parse
+    # does in the whitespace rows; for two keywords SqlClient keeps the later Initial Catalog and
+    # Npgsql the later DB. Every row is preservation: the guard gave the same verdict before these
+    # tests existed.
+    $inDomainName = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_"
+    $script:connectionStringStageSpellings = @(
+        @{ Label = "unquoted Database 'edfi_dms' + U+0020"; Raw = "Server=s;Database=edfi_dms ;User Id=sa"; Parsed = @("edfi_dms"); Candidates = @("edfi_dms"); Verdict = "Collision" }
+        @{ Label = "double-quoted Database 'edfi_dms' + U+0020"; Raw = "Server=s;Database=`"edfi_dms `";User Id=sa"; Parsed = @("edfi_dms "); Candidates = @("edfi_dms"); Verdict = "Collision" }
+        @{ Label = "single-quoted Database 'edfi_dms' + U+0020"; Raw = "Server=s;Database='edfi_dms ';User Id=sa"; Parsed = @("edfi_dms "); Candidates = @("edfi_dms"); Verdict = "Collision" }
+        @{ Label = "double-quoted Database 'edfi_dms' + U+3000"; Raw = "Server=s;Database=`"edfi_dms$([char]0x3000)`";User Id=sa"; Parsed = @("edfi_dms$([char]0x3000)"); Candidates = @("edfi_dms"); Verdict = "Collision" }
+        @{ Label = "double-quoted Database 'edfi_dms' + TAB"; Raw = "Server=s;Database=`"edfi_dms`t`";User Id=sa"; Parsed = @("edfi_dms`t"); Candidates = @("edfi_dms"); Verdict = "Collision" }
+        @{ Label = "double-quoted Database 'edfi_dms' + U+00A0"; Raw = "Server=s;Database=`"edfi_dms$([char]0x00A0)`";User Id=sa"; Parsed = @("edfi_dms$([char]0x00A0)"); Candidates = @("edfi_dms"); Verdict = "Collision" }
+        @{ Label = "double-quoted Database U+0020 + 'edfi_dms'"; Raw = "Server=s;Database=`" edfi_dms`";User Id=sa"; Parsed = @(" edfi_dms"); Candidates = @("edfi_dms"); Verdict = "Collision" }
+        @{ Label = "Database with quotes inside the value"; Raw = "Server=s;Database=`"'edfi_dms'`";User Id=sa"; Parsed = @("'edfi_dms'"); Candidates = @("edfi_dms"); Verdict = "Collision" }
+        @{ Label = "Database 'edfi_dms #x' kept by single outer quotes"; Raw = "'Server=s;Database=`"edfi_dms #x`";User Id=sa'"; Parsed = @("edfi_dms #x"); Candidates = @("edfi_dms"); Verdict = "Collision" }
+        @{ Label = "Database literal `${GUARD_STAGE_NAME} with GUARD_STAGE_NAME = 'edfi_dms'"; Raw = "Server=s;Database=`$`${GUARD_STAGE_NAME};User Id=sa"; StageName = "edfi_dms"; Parsed = @("`${GUARD_STAGE_NAME}"); Candidates = @("edfi_dms"); Verdict = "Collision" }
+        @{ Label = "Database literal `${GUARD_STAGE_NAME} with GUARD_STAGE_NAME undefined"; Raw = "Server=s;Database=`$`${GUARD_STAGE_NAME};User Id=sa"; Parsed = @("`${GUARD_STAGE_NAME}"); Candidates = @(""); Verdict = "Undetermined" }
+        @{ Label = "Database with a '`$' a single-quoted value keeps"; Raw = "Server=s;Database=`"'edfi`$`$x'`";User Id=sa"; Parsed = @("'edfi`$x'"); Candidates = @("edfi`$x"); Verdict = "Unresolved" }
+        @{ Label = "Database 'edfi`$dms', a parsing limitation"; Raw = "Server=s;Database=edfi`$`$dms;User Id=sa"; Parsed = @("edfi`$dms"); Candidates = @("edfi"); Verdict = "Accepted" }
+        @{ Label = "Database 'other #x' kept by single outer quotes, a parsing limitation"; Raw = "'Server=s;Database=other #x;User Id=sa'"; Parsed = @("other #x"); Candidates = @("other"); Verdict = "Accepted" }
+        @{ Label = "unquoted Database of every in-domain character"; Raw = "Server=s;Database=$inDomainName;User Id=sa"; Parsed = @($inDomainName); Candidates = @($inDomainName); Verdict = "Accepted" }
+        @{ Label = "double-quoted DB of every in-domain character"; Raw = "Host=h;DB=`"$inDomainName`";Username=u"; Parsed = @($inDomainName); Candidates = @($inDomainName); Verdict = "Accepted" }
+        @{ Label = "single-quoted Initial Catalog of every in-domain character"; Raw = "Server=s;Initial Catalog='$inDomainName';User Id=sa"; Parsed = @($inDomainName); Candidates = @($inDomainName); Verdict = "Accepted" }
+        @{ Label = "double-quoted Database with full-width U+FF45"; Raw = "Server=s;Database=`"$([char]0xFF45)dfi_dms`";User Id=sa"; Parsed = @("$([char]0xFF45)dfi_dms"); Candidates = @("$([char]0xFF45)dfi_dms"); Verdict = "Domain" }
+        @{ Label = "Database 'first' then Initial Catalog 'edfi_dms', which SqlClient uses"; Raw = "Server=s;Database=first;Initial Catalog=edfi_dms;User Id=sa"; Parsed = @("first", "edfi_dms"); Candidates = @("first", "edfi_dms"); Verdict = "Collision" }
+        @{ Label = "Database 'edfi_dms' then DB 'other', which Npgsql uses"; Raw = "Host=h;Database=edfi_dms;DB=other;Username=u"; Parsed = @("edfi_dms", "other"); Candidates = @("edfi_dms", "other"); Verdict = "Collision" }
+    )
+    $script:connectionStringStageRows = foreach ($spelling in $script:connectionStringStageSpellings) {
+        foreach ($key in $script:connectionStringKeys) {
+            $row = $spelling.Clone()
+            if (-not $row.ContainsKey("StageName")) {
+                $row["StageName"] = $null
+            }
+            $row["Key"] = $key
+            $row
+        }
+    }
 }
 
 # Guard-level matrix for Assert-E2EDatabaseIsDedicated. Every row runs through Invoke-IsolatedGuard,
@@ -413,6 +455,39 @@ Describe "Dedicated E2E database guard" {
                 $environmentValues = @{ $Key = $RawValue }
                 $connectionString = Get-ComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name $Key
                 Get-DatabaseNameFromConnectionString -ConnectionString $connectionString -EnvironmentValues $environmentValues
+            }
+            finally {
+                foreach ($savedVariable in $savedVariables) {
+                    Restore-AmbientVariable -Saved $savedVariable
+                }
+            }
+        }
+
+        # Returns the database-name values the generic DbConnectionStringBuilder parses from the
+        # resolved string, in key order, beside the extractor's candidates, with the protected keys
+        # and the row's helper variables isolated from the process environment.
+        function Get-IsolatedConnectionStringStage {
+            param([string]$Key, [hashtable]$EnvironmentValues, [string[]]$HelperVariables = @())
+
+            $savedVariables = foreach ($name in @($script:protectedKeys + $HelperVariables)) {
+                Save-AmbientVariable -Name $name
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+            }
+
+            try {
+                $connectionString = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvironmentValues -Name $Key
+                $connectionStringBuilder = [System.Data.Common.DbConnectionStringBuilder]::new()
+                $connectionStringBuilder.PSBase.ConnectionString = $connectionString
+                [pscustomobject]@{
+                    Parsed = @(
+                        foreach ($builderKey in $connectionStringBuilder.PSBase.Keys) {
+                            if ($builderKey -imatch '^(database|db|initial catalog)$') {
+                                [string]$connectionStringBuilder.PSBase.get_Item($builderKey)
+                            }
+                        }
+                    )
+                    Candidates = @(Get-DatabaseNameFromConnectionString -ConnectionString $connectionString -EnvironmentValues $EnvironmentValues)
+                }
             }
             finally {
                 foreach ($savedVariable in $savedVariables) {
@@ -617,6 +692,34 @@ Describe "Dedicated E2E database guard" {
             (@(Get-IsolatedConnectionStringDatabaseName -Key $Key -RawValue $rawValue) -join "|") | Should -BeExactly "edfi_dms"
             { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = $rawValue } } |
                 Should -Throw -ExpectedMessage (Get-SeparateDiagnostic -Key $Key)
+        }
+    }
+
+    # The parsed value stands for what the provider receives and the candidate is what the guard
+    # compares; asserting both keeps a row from passing on the wrong stage.
+    Context "connection-string keys: parsed value, extractor candidate and verdict" {
+        It "reads <Label> in <Key>" -ForEach $script:connectionStringStageRows {
+            $environmentValues = @{ $Key = $Raw }
+            if ($null -ne $StageName) {
+                $environmentValues["GUARD_STAGE_NAME"] = $StageName
+            }
+
+            $stage = Get-IsolatedConnectionStringStage -Key $Key -EnvironmentValues $environmentValues -HelperVariables @("GUARD_STAGE_NAME")
+
+            $stage.Parsed.Count | Should -Be $Parsed.Count
+            ($stage.Parsed -join "|") | Should -BeExactly ($Parsed -join "|")
+            $stage.Candidates.Count | Should -Be $Candidates.Count
+            ($stage.Candidates -join "|") | Should -BeExactly ($Candidates -join "|")
+
+            $guard = { Invoke-IsolatedGuard -EnvironmentValues $environmentValues -HelperVariables @("GUARD_STAGE_NAME") }
+            switch ($Verdict) {
+                "Collision" { $guard | Should -Throw -ExpectedMessage (Get-SeparateDiagnostic -Key $Key) }
+                "Domain" { $guard | Should -Throw -ExpectedMessage (Get-DomainDiagnostic -Key $Key) }
+                "Undetermined" { $guard | Should -Throw -ExpectedMessage "E2E database safety check could not determine a database name from $Key in '$script:environmentFileLabel'." }
+                "Unresolved" { $guard | Should -Throw -ExpectedMessage "E2E database safety check could not fully resolve the database name from $Key in '$script:environmentFileLabel' (unresolved or cyclic reference)*" }
+                "Accepted" { $guard | Should -Not -Throw }
+                default { throw "Unknown verdict '$Verdict'." }
+            }
         }
     }
 
