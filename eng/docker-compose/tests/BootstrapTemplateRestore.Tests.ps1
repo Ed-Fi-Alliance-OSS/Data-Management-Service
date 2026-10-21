@@ -994,9 +994,9 @@ Describe "Assert-RestoreTargetDatabaseNameSafe" {
 
     It "never allows the separate Configuration Service database as a restore target, case-insensitively" {
         { Assert-RestoreTargetDatabaseNameSafe -DatabaseEngine mssql -TargetDatabaseName "edfi_configurationservice" -SeparateConfigDatabase -EffectiveConfigDatabaseName "edfi_configurationservice" } |
-            Should -Throw "*never replaces a separate CMS database*"
+            Should -Throw "*never replaces a separate Configuration Service database*"
         { Assert-RestoreTargetDatabaseNameSafe -DatabaseEngine mssql -TargetDatabaseName "EDFI_CONFIGURATIONSERVICE" -SeparateConfigDatabase -EffectiveConfigDatabaseName "edfi_configurationservice" } |
-            Should -Throw "*never replaces a separate CMS database*"
+            Should -Throw "*never replaces a separate Configuration Service database*"
         { Assert-RestoreTargetDatabaseNameSafe -DatabaseEngine mssql -TargetDatabaseName "edfi_datamanagementservice" -SeparateConfigDatabase -EffectiveConfigDatabaseName "edfi_configurationservice" } |
             Should -Not -Throw
         { Assert-RestoreTargetDatabaseNameSafe -DatabaseEngine mssql -TargetDatabaseName "edfi_datamanagementservice" -SeparateConfigDatabase } |
@@ -1008,7 +1008,7 @@ Describe "Assert-RestoreTargetDatabaseNameSafe" {
         @{ Target = "EDFI_ConfigurationService" }
     ) {
         { Assert-RestoreTargetDatabaseNameSafe -DatabaseEngine mssql -TargetDatabaseName $Target -SeparateConfigDatabase -EffectiveConfigDatabaseName "ambient_cms" } |
-            Should -Throw "*resolves to 'edfi_configurationservice'*Restore never replaces a separate CMS database."
+            Should -Throw "*resolves to 'edfi_configurationservice'*Restore never replaces a separate Configuration Service database."
         # Shared topology restores into the shared database by design; the fixed name is not
         # refused there.
         { Assert-RestoreTargetDatabaseNameSafe -DatabaseEngine mssql -TargetDatabaseName $Target } | Should -Not -Throw

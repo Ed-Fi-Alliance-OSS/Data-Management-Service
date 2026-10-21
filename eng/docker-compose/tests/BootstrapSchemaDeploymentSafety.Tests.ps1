@@ -5091,23 +5091,23 @@ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey12345678901234567
         }
 
         It "refuses, after the restore and before any registration, when <case> (<engine>)" -ForEach @(
-            @{ Engine = "postgresql"; Case = "CMS holds two data stores serving the target"; Kind = "two"; Expected = "*found 2 CMS data stores*that serve the restored target*it reuses only a single route-unqualified data store*" }
-            @{ Engine = "postgresql"; Case = "the matching data store is route-qualified"; Kind = "routed"; Expected = "*cannot reuse CMS data store id=77*it is route-qualified*" }
-            @{ Engine = "postgresql"; Case = "CMS returns no connection string"; Kind = "missing"; Expected = "*cannot tell whether CMS data store id=77*CMS returned no connection string*" }
-            @{ Engine = "postgresql"; Case = "the stored value is plaintext, not CMS cipher text"; Kind = "plaintext"; Expected = "*could not be read (CMS data store connection string did not contain a database name and was not valid CMS encrypted base64.)*" }
-            @{ Engine = "postgresql"; Case = "it was encrypted under another key"; Kind = "wrongkey"; Expected = "*could not be read (CMS data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY.)*" }
+            @{ Engine = "postgresql"; Case = "CMS holds two data stores serving the target"; Kind = "two"; Expected = "*found 2 Configuration Service data stores*that serve the restored target*it reuses only a single route-unqualified data store*" }
+            @{ Engine = "postgresql"; Case = "the matching data store is route-qualified"; Kind = "routed"; Expected = "*cannot reuse Configuration Service data store id=77*it is route-qualified*" }
+            @{ Engine = "postgresql"; Case = "CMS returns no connection string"; Kind = "missing"; Expected = "*cannot tell whether Configuration Service data store id=77*the Configuration Service returned no connection string*" }
+            @{ Engine = "postgresql"; Case = "the stored value is plaintext, not CMS cipher text"; Kind = "plaintext"; Expected = "*could not be read (Configuration Service data store connection string did not contain a database name and was not valid Configuration Service encrypted base64.)*" }
+            @{ Engine = "postgresql"; Case = "it was encrypted under another key"; Kind = "wrongkey"; Expected = "*could not be read (Configuration Service data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY.)*" }
             @{ Engine = "postgresql"; Case = "its database differs only in case"; Kind = "case"; Expected = "*its database differs from the restored target database only in letter case*" }
             @{ Engine = "postgresql"; Case = "it names two databases"; Kind = "twodatabases"; Expected = "*its connection string names 2 databases*" }
-            @{ Engine = "postgresql"; Case = "the listing reaches the query page size"; Kind = "page"; Expected = "*listed 500 CMS data stores*the query page size*" }
-            @{ Engine = "mssql"; Case = "CMS holds two data stores serving the target"; Kind = "two"; Expected = "*found 2 CMS data stores*that serve the restored target*it reuses only a single route-unqualified data store*" }
-            @{ Engine = "mssql"; Case = "the matching data store is route-qualified"; Kind = "routed"; Expected = "*cannot reuse CMS data store id=77*it is route-qualified*" }
-            @{ Engine = "mssql"; Case = "CMS returns no connection string"; Kind = "missing"; Expected = "*cannot tell whether CMS data store id=77*CMS returned no connection string*" }
-            @{ Engine = "mssql"; Case = "the stored value is plaintext, not CMS cipher text"; Kind = "plaintext"; Expected = "*could not be read (CMS data store connection string did not contain a database name and was not valid CMS encrypted base64.)*" }
-            @{ Engine = "mssql"; Case = "it was encrypted under another key"; Kind = "wrongkey"; Expected = "*could not be read (CMS data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY.)*" }
-            @{ Engine = "mssql"; Case = "it is the other engine's connection string without a provider"; Kind = "otherform"; Expected = "*cannot tell whether CMS data store id=77*its decrypted connection string does not name a mssql server and database*" }
+            @{ Engine = "postgresql"; Case = "the listing reaches the query page size"; Kind = "page"; Expected = "*listed 500 Configuration Service data stores*the query page size*" }
+            @{ Engine = "mssql"; Case = "CMS holds two data stores serving the target"; Kind = "two"; Expected = "*found 2 Configuration Service data stores*that serve the restored target*it reuses only a single route-unqualified data store*" }
+            @{ Engine = "mssql"; Case = "the matching data store is route-qualified"; Kind = "routed"; Expected = "*cannot reuse Configuration Service data store id=77*it is route-qualified*" }
+            @{ Engine = "mssql"; Case = "CMS returns no connection string"; Kind = "missing"; Expected = "*cannot tell whether Configuration Service data store id=77*the Configuration Service returned no connection string*" }
+            @{ Engine = "mssql"; Case = "the stored value is plaintext, not CMS cipher text"; Kind = "plaintext"; Expected = "*could not be read (Configuration Service data store connection string did not contain a database name and was not valid Configuration Service encrypted base64.)*" }
+            @{ Engine = "mssql"; Case = "it was encrypted under another key"; Kind = "wrongkey"; Expected = "*could not be read (Configuration Service data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY.)*" }
+            @{ Engine = "mssql"; Case = "it is the other engine's connection string without a provider"; Kind = "otherform"; Expected = "*cannot tell whether Configuration Service data store id=77*its decrypted connection string does not name a mssql server and database*" }
             @{ Engine = "mssql"; Case = "its database differs only in case"; Kind = "case"; Expected = "*its database differs from the restored target database only in letter case*" }
             @{ Engine = "mssql"; Case = "it names two databases"; Kind = "twodatabases"; Expected = "*its connection string names 2 databases*" }
-            @{ Engine = "mssql"; Case = "the listing reaches the query page size"; Kind = "page"; Expected = "*listed 500 CMS data stores*the query page size*" }
+            @{ Engine = "mssql"; Case = "the listing reaches the query page size"; Kind = "page"; Expected = "*listed 500 Configuration Service data stores*the query page size*" }
         ) {
             $engine = $Engine
             $kind = $Kind
@@ -5191,7 +5191,7 @@ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey12345678901234567
             $thrown = { Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseStoreFactory $factory } | Should -Throw -PassThru
             $message = $thrown.Exception.Message
 
-            $message | Should -BeLike "*cannot tell whether CMS data store id=77 (name=Local Development Data Store) serves the restored target:*"
+            $message | Should -BeLike "*cannot tell whether Configuration Service data store id=77 (name=Local Development Data Store) serves the restored target:*"
             $message | Should -BeLike "*This check runs after the restore replaced the target database*"
             $script:reuseTrace | Should -Not -Contain "Add-DataStore"
             @($script:reuseTrace | Where-Object { $_ -like "Invoke-Api*" }) | Should -BeNullOrEmpty

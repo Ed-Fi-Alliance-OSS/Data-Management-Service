@@ -774,6 +774,11 @@ Export-ModuleMember -Function Get-ComposeResolvedEnvValue
         $script:settings | ConvertTo-Json -Depth 20 | Set-Content $script:settingsFile
         { Read-BootstrapCdcSettings -Path $script:settingsFile -DatabaseEngine postgresql } | Should -Throw '*explicit DMS settings*'
     }
+    It 'names the loopback root URL requirement for a Configuration Service base URL with a path' {
+        $script:settings.ConfigurationServiceSettings.BaseUrl = 'http://localhost:8081/api'
+        $script:settings | ConvertTo-Json -Depth 20 | Set-Content $script:settingsFile
+        { Read-BootstrapCdcSettings -Path $script:settingsFile -DatabaseEngine postgresql } | Should -Throw '*Configuration Service at a loopback http root URL*'
+    }
     It 'rejects an unsupported qualified-worker endpoint before infrastructure (<field>, <value>)' -ForEach @(
         @{ field = 'ConnectEndpoint'; value = 'http://localhost:8083' },
         @{ field = 'WorkerMetricsEndpoint'; value = 'http://localhost:9404/metrics' },

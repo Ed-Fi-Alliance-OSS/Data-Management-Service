@@ -341,10 +341,10 @@ function Resolve-RestoreSeparateConfigDataStore {
         $PageSize = 500
     )
 
-    $afterRestore = "This check runs after the restore replaced the target database: the target is restored, DMS was not started, and the scratch-validation guarantee that a refused restore leaves the target untouched does not apply. Correct or remove the stale CMS data store registration, then rerun the restore. The stored connection string and the database names are withheld."
+    $afterRestore = "This check runs after the restore replaced the target database: the target is restored, DMS was not started, and the scratch-validation guarantee that a refused restore leaves the target untouched does not apply. Correct or remove the stale Configuration Service data store registration, then rerun the restore. The stored connection string and the database names are withheld."
 
     if ($DataStores.Count -ge $PageSize) {
-        throw "Restore with -SeparateConfigDatabase listed $($DataStores.Count) CMS data stores in tenant scope '$(Format-LogSafeText $Tenant)', the query page size, so it cannot prove which one serves the restored target. $afterRestore"
+        throw "Restore with -SeparateConfigDatabase listed $($DataStores.Count) Configuration Service data stores in tenant scope '$(Format-LogSafeText $Tenant)', the query page size, so it cannot prove which one serves the restored target. $afterRestore"
     }
 
     $expectedProvider = if ($DatabaseEngine -eq "mssql") { "sqlserver" } else { "postgresql" }
@@ -359,7 +359,7 @@ function Resolve-RestoreSeparateConfigDataStore {
 
     $matchingDataStores = [System.Collections.Generic.List[object]]::new()
     foreach ($dataStore in $DataStores) {
-        $storeLabel = "CMS data store id=$(Format-LogSafeText $dataStore.id) (name=$(Format-LogSafeText $dataStore.name))"
+        $storeLabel = "Configuration Service data store id=$(Format-LogSafeText $dataStore.id) (name=$(Format-LogSafeText $dataStore.name))"
         $unreadablePrefix = "Restore with -SeparateConfigDatabase cannot tell whether $storeLabel serves the restored target:"
         $refusalPrefix = "Restore with -SeparateConfigDatabase cannot reuse $storeLabel for the restored target:"
 
@@ -374,7 +374,7 @@ function Resolve-RestoreSeparateConfigDataStore {
         $connectionStringProperty = $dataStore.PSObject.Properties["connectionString"]
         $protectedConnectionString = if ($null -eq $connectionStringProperty) { "" } else { [string]$connectionStringProperty.Value }
         if ([string]::IsNullOrWhiteSpace($protectedConnectionString)) {
-            throw "$unreadablePrefix CMS returned no connection string for it. $afterRestore"
+            throw "$unreadablePrefix the Configuration Service returned no connection string for it. $afterRestore"
         }
 
         # The decryption helper's failures are fixed sentences that carry no key, cipher text, or
@@ -436,7 +436,7 @@ function Resolve-RestoreSeparateConfigDataStore {
         $listing = ($matchingDataStores | ForEach-Object {
                 "id=$(Format-LogSafeText $_.id) name=$(Format-LogSafeText $_.name)"
             }) -join ", "
-        throw "Restore with -SeparateConfigDatabase found $($matchingDataStores.Count) CMS data stores in tenant scope '$(Format-LogSafeText $Tenant)' that serve the restored target ($listing); it reuses only a single route-unqualified data store. $afterRestore"
+        throw "Restore with -SeparateConfigDatabase found $($matchingDataStores.Count) Configuration Service data stores in tenant scope '$(Format-LogSafeText $Tenant)' that serve the restored target ($listing); it reuses only a single route-unqualified data store. $afterRestore"
     }
 
     if ($matchingDataStores.Count -eq 1) {
@@ -522,7 +522,7 @@ function Invoke-ConfigureLocalDataStore {
     $restoreReuse = -not [string]::IsNullOrWhiteSpace($RestoreTargetDatabaseName)
     if ($restoreReuse) {
         if (-not $SeparateConfigDatabase) {
-            throw "-RestoreTargetDatabaseName requires -SeparateConfigDatabase. It is the restore handoff for a separate-topology stack, whose Configuration Service database survives the restore; a shared-topology restore replaces the database that holds the CMS data store."
+            throw "-RestoreTargetDatabaseName requires -SeparateConfigDatabase. It is the restore handoff for a separate-topology stack, whose Configuration Service database survives the restore; a shared-topology restore replaces the database that holds the Configuration Service data store."
         }
         if ($NoDataStore) {
             throw "-RestoreTargetDatabaseName cannot be combined with -NoDataStore. The restore handoff verifies the existing data store against the restored target before reusing it; -NoDataStore selects one without that check."
@@ -699,7 +699,7 @@ function Invoke-ConfigureLocalDataStore {
         $reusedDataStore = $restoreSelection.DataStore
         $registrationName = $restoreSelection.RegistrationName
         if ($null -ne $reusedDataStore) {
-            Write-Information "Reusing CMS data store id=$(Format-LogSafeText $reusedDataStore.id): its stored connection string targets the restored database on the composed $DatabaseEngine service." -InformationAction Continue
+            Write-Information "Reusing Configuration Service data store id=$(Format-LogSafeText $reusedDataStore.id): its stored connection string targets the restored database on the composed $DatabaseEngine service." -InformationAction Continue
             if ($AddSmokeTestCredentials) {
                 Import-Module "$PSScriptRoot/../smoke_test/modules/SmokeTest.psm1" -Force
                 Write-Information "Creating smoke test credentials." -InformationAction Continue
@@ -713,7 +713,7 @@ function Invoke-ConfigureLocalDataStore {
                 -CmsReadOnlyAccess $cmsReadOnlyAccess `
                 -SmokeTestCredential $smokeTestCredential
         }
-        Write-Information "No CMS data store exists for the restored target yet; registering one as '$(Format-LogSafeText $registrationName)'." -InformationAction Continue
+        Write-Information "No Configuration Service data store exists for the restored target yet; registering one as '$(Format-LogSafeText $registrationName)'." -InformationAction Continue
     }
 
     if ($NoDataStore) {

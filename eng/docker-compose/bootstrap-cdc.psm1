@@ -30,7 +30,7 @@ function Read-BootstrapCdcSettings {
         # Limit the first local adapter to the route-unqualified default tenant. Provider token
         # conversion and the complete policy contract remain with the CLI.
         $cms = [uri]$settings.ConfigurationServiceSettings.BaseUrl
-        if (-not $cms.IsLoopback -or $cms.Scheme -ne 'http' -or $cms.AbsolutePath -ne '/') { throw 'Configuration Service base URL must be a loopback http root URL.' }
+        if (-not $cms.IsLoopback -or $cms.Scheme -ne 'http' -or $cms.AbsolutePath -ne '/') { throw 'ConfigurationService' }
         # The qualified worker inspector proves an exact published IPv4 loopback endpoint.
         # Reject unsupported aliases before creating a database or retaining an initial workflow.
         foreach ($endpoint in @(@('ConnectEndpoint', '/'), @('WorkerMetricsEndpoint', '/metrics'))) {
@@ -40,7 +40,7 @@ function Read-BootstrapCdcSettings {
         }
         return $settings
     }
-    catch { throw 'CDC requires valid explicit DMS settings with one default-tenant target, local Configuration Service, and explicit http://127.0.0.1 worker/metrics endpoints; environment overrides are not accepted by bootstrap.' }
+    catch { throw 'CDC requires valid explicit DMS settings with one default-tenant target, a local Configuration Service at a loopback http root URL, and explicit http://127.0.0.1 worker/metrics endpoints; environment overrides are not accepted by bootstrap.' }
 }
 
 function Invoke-BootstrapCdcDockerInspection {
