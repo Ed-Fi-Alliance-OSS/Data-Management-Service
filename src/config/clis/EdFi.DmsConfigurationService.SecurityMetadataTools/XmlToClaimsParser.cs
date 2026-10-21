@@ -4,20 +4,20 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Xml.Linq;
-using CmsHierarchy.Model;
-using Action = CmsHierarchy.Model.Action;
+using EdFi.DmsConfigurationService.SecurityMetadataTools.Model;
+using Action = EdFi.DmsConfigurationService.SecurityMetadataTools.Model.Action;
 
-namespace CmsHierarchy;
+namespace EdFi.DmsConfigurationService.SecurityMetadataTools;
 
-public class XmlToClaimsParser
+internal static class XmlToClaimsParser
 {
     public static Claim[] ParseXml(string xmlFilePath)
     {
         XDocument doc = XDocument.Load(xmlFilePath);
-        XElement? claimsRoot = doc.Root?.Element("Claims");
-
-        if (claimsRoot == null)
+        if (doc.Root?.Element("Claims") is not XElement claimsRoot)
+        {
             return [];
+        }
 
         return claimsRoot.Elements("Claim").Select(ParseClaim).ToArray();
     }
@@ -28,10 +28,9 @@ public class XmlToClaimsParser
         {
             ClaimId = int.TryParse(claimElement.Attribute("claimId")?.Value, out var claimId) ? claimId : 0,
             Name = claimElement.Attribute("name")?.Value ?? string.Empty,
-            DefaultAuthorization =
-                claimElement.Element("DefaultAuthorization") != null
-                    ? ParseDefaultAuthorization(claimElement.Element("DefaultAuthorization")!)
-                    : null,
+            DefaultAuthorization = claimElement.Element("DefaultAuthorization") is not null
+                ? ParseDefaultAuthorization(claimElement.Element("DefaultAuthorization")!)
+                : null,
             ClaimSets =
                 claimElement.Element("ClaimSets")?.Elements("ClaimSet").Select(ParseClaimSet).ToList() ?? [],
             Claims = claimElement.Element("Claims")?.Elements("Claim").Select(ParseClaim).ToList(),
