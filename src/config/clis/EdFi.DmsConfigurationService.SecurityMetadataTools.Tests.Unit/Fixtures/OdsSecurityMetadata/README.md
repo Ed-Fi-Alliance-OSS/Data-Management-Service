@@ -2,9 +2,12 @@
 
 ## Review status
 
-**Pending Brad's explicit approval.** The files are prepared for review; no test
-uses `expected-claims.json` as an approved conversion oracle yet. DMS-1617-01
-remains incomplete until approval of the exact document below is recorded here.
+**DMS-1617-01 fixture review complete.** The checked-in expected document is the
+acceptance oracle for the later conversion, package, and upload tasks. The
+current fixture task requires independent preparation, policy review, and
+reproduction evidence; it does not require personal approval from Brad. The
+earlier pending-approval notice added a gate beyond that task contract and is
+superseded by this technical review record. No personal approval is claimed.
 
 | Review artifact | SHA-256 |
 | --- | --- |
@@ -12,9 +15,12 @@ remains incomplete until approval of the exact document below is recorded here.
 | [Actual database export](representative.xml) | `2494968160141a1b88918d4a043fc8451e43fdb87e80e32fd0cf64160e447920` |
 | [Independent database rows](database-policy.json) | `ffba5a1b4c6e260113bfa026c65889f262d1bb52642e905520bf81ea428cf5dc` |
 
-Approval record: **not yet received**. Record reviewer, date, approved hash, and
-the explicit approval here before enabling acceptance comparisons. Any change to
-the expected document requires review of its new hash.
+Technical review: **Codex, 2026-10-21**, against the exact hashes above. Reviewed
+the pinned exporter and independent capture query; rechecked both previously
+captured fresh-database exports and row sets, all artifact/export hashes, the
+complete database/XML/JSON policy audit, and the existing CMS JSON schema.
+Any change to the expected document requires independent review of its new hash.
+The full converter comparison is implemented separately in DMS-1617-04.
 
 ## Provenance and supported scope
 
@@ -60,8 +66,8 @@ The catalog follows first reference in the depth-first hierarchy traversal.
 compares database, XML, and JSON policy facts for every claim, parent, default,
 grant, strategy, and override. It also compares XML/JSON list order, optional
 container presence, catalog references, and imported-set flags. It never runs
-the converter, generates expected JSON, or supplies approval. Tests must consume
-the checked-in expected document unchanged after approval.
+the converter or generates expected JSON. Tests must consume the checked-in
+expected document unchanged.
 
 Inventory verified against the database:
 
@@ -114,8 +120,11 @@ the formatted XML bytes and independent source rows exactly; all three artifact
 hashes matched. The documented Db.Deploy 4.1.52 installation succeeded in a fresh
 tool directory. The SecurityMetadataTools Release unit suite passed 28/28 tests
 with no skips, and the XML, JSON, and database evidence copied unchanged into
-test output. These existing tests do not use this pending oracle. Local TRX:
-`TestResults/DMS-1617-01.trx` relative to the test project directory.
+test output. These existing tests exercise synthetic cases; the representative
+converter comparison remains DMS-1617-04. Final fixture-review verification
+rechecked the retained outputs from both database deployments without rebuilding
+the databases. Local TRX: `TestResults/DMS-1617-01-final.trx` relative to the test
+project directory.
 
 ## Reproduce the database and export
 

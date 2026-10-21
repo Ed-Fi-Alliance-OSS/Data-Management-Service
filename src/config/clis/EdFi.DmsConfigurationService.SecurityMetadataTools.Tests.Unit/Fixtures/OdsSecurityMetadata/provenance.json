@@ -183,5 +183,11 @@
     "overrides": 26,
     "journal": 36
   },
-  "approval": "pending; see README.md"
+  "review": {
+    "status": "complete",
+    "reviewer": "Codex",
+    "reviewedOn": "2026-10-21",
+    "expectedClaimsSha256": "8884f815c595e687d43e8fd1fdd20ef28ada665f90343febf42617bb578e6b43",
+    "basis": "Independent database/XML/JSON policy audit, pinned exporter and capture query review, both retained fresh-database reproduction outputs, artifact/export hashes, and CMS JSON schema validation; see README.md. No personal approval claimed."
+  }
 }

@@ -2,7 +2,7 @@
 """Read-only review aid; never invokes the converter or rewrites the oracle.
 
 Compare policy facts independently extracted from database rows, XML, and JSON.
-Run with Python 3 from any directory. This is fixture review, not acceptance approval.
+Run with Python 3 from any directory. This audits fixtures, not converter output.
 """
 
 import json
