@@ -202,10 +202,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
     [Test]
     public void It_maps_late_document_reference_foreign_key_violations_to_missing_reference_failures()
     {
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.Parse("11111111-2222-3333-4444-555555555555")),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
             documentReferences: [documentReference]

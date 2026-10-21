@@ -14,7 +14,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
@@ -72,14 +71,14 @@ file static class MssqlIfMatchCascadeReferentialIdentityTestSupport
     public static DocumentInfo CreateDocumentInfo(ResourceInfo resourceInfo, JsonNode requestBody) =>
         resourceInfo.ResourceName.Value switch
         {
-            "Student" => CreateStudentDocumentInfo(resourceInfo, requestBody),
-            "ResourceA" => CreateResourceADocumentInfo(resourceInfo, requestBody),
+            "Student" => CreateStudentDocumentInfo(requestBody),
+            "ResourceA" => CreateResourceADocumentInfo(requestBody),
             _ => throw new InvalidOperationException(
                 $"Unsupported resource '{resourceInfo.ResourceName.Value}' for this test fixture."
             ),
         };
 
-    private static DocumentInfo CreateStudentDocumentInfo(ResourceInfo resourceInfo, JsonNode requestBody)
+    private static DocumentInfo CreateStudentDocumentInfo(JsonNode requestBody)
     {
         var studentUniqueId =
             requestBody["studentUniqueId"]?.GetValue<string>()
@@ -91,7 +90,6 @@ file static class MssqlIfMatchCascadeReferentialIdentityTestSupport
 
         return new DocumentInfo(
             DocumentIdentity: identity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(resourceInfo, identity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],
@@ -99,7 +97,7 @@ file static class MssqlIfMatchCascadeReferentialIdentityTestSupport
         );
     }
 
-    private static DocumentInfo CreateResourceADocumentInfo(ResourceInfo resourceInfo, JsonNode requestBody)
+    private static DocumentInfo CreateResourceADocumentInfo(JsonNode requestBody)
     {
         var resourceAId =
             requestBody["resourceAId"]?.GetValue<string>()
@@ -120,7 +118,6 @@ file static class MssqlIfMatchCascadeReferentialIdentityTestSupport
 
         return new DocumentInfo(
             DocumentIdentity: identity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(resourceInfo, identity),
             DocumentReferences:
             [
                 new DocumentReference(

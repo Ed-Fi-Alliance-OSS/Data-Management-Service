@@ -17,7 +17,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -148,7 +147,6 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
 
         return new DocumentInfo(
             DocumentIdentity: identity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, identity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: descriptorReferences,
@@ -473,9 +471,10 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
             """,
             new NpgsqlParameter(
                 "referentialId",
-                ReferentialIdCalculator
-                    .ReferentialIdFrom(descriptorReference.ResourceInfo, descriptorReference.DocumentIdentity)
-                    .Value
+                ReferentialIdTestHelper.ReferentialIdFrom(
+                    descriptorReference.ResourceInfo,
+                    descriptorReference.DocumentIdentity
+                )
             ),
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("resourceKeyId", resourceKeyId)

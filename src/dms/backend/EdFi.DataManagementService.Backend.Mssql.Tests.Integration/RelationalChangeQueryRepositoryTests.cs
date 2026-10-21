@@ -15,7 +15,6 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -988,7 +987,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
     }
 
     private async Task InsertReferentialIdentityAsync(
-        ReferentialId referentialId,
+        Guid referentialId,
         long documentId,
         short resourceKeyId
     )
@@ -1002,19 +1001,19 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
               INSERT ([ReferentialId], [DocumentId], [ResourceKeyId])
               VALUES (@referentialId, @documentId, @resourceKeyId);
             """,
-            new SqlParameter("@referentialId", referentialId.Value),
+            new SqlParameter("@referentialId", referentialId),
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId)
         );
     }
 
-    private static ReferentialId CreateDescriptorReferentialId(
+    private static Guid CreateDescriptorReferentialId(
         string projectName,
         string resourceName,
         string descriptorUri
     )
     {
-        return ReferentialIdCalculator.ReferentialIdFrom(
+        return ReferentialIdTestHelper.ReferentialIdFrom(
             new BaseResourceInfo(new ProjectName(projectName), new ResourceName(resourceName), true),
             new DocumentIdentity([
                 new DocumentIdentityElement(

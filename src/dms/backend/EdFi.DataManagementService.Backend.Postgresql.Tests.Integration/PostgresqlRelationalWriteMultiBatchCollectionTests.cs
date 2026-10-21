@@ -18,7 +18,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -221,7 +220,6 @@ file static class MultiBatchCollectionsIntegrationTestSupport
             ResourceInfo: SchoolResourceInfo,
             DocumentInfo: new DocumentInfo(
                 DocumentIdentity: schoolIdentity,
-                ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
                 DocumentReferences: [],
                 DocumentReferenceArrays: [],
                 DescriptorReferences: [],
@@ -254,7 +252,6 @@ file static class MultiBatchCollectionsIntegrationTestSupport
             ResourceInfo: SchoolResourceInfo,
             DocumentInfo: new DocumentInfo(
                 DocumentIdentity: schoolIdentity,
-                ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
                 DocumentReferences: [],
                 DocumentReferenceArrays: [],
                 DescriptorReferences: [],
@@ -450,7 +447,6 @@ file static class MultiBatchCollectionsIntegrationTestSupport
 
         return new DocumentInfo(
             DocumentIdentity: schoolIdentity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: descriptorReferences,
@@ -571,7 +567,7 @@ file static class MultiBatchCollectionsIntegrationTestSupport
                 INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
                 VALUES (@referentialId, @documentId, @resourceKeyId);
                 """,
-                new NpgsqlParameter("referentialId", referentialId.Value),
+                new NpgsqlParameter("referentialId", referentialId),
                 new NpgsqlParameter("documentId", documentId),
                 new NpgsqlParameter("resourceKeyId", resourceKeyId)
             );
@@ -580,12 +576,8 @@ file static class MultiBatchCollectionsIntegrationTestSupport
         return descriptorId;
     }
 
-    private static ReferentialId CreateDescriptorReferentialId(
-        string projectName,
-        string resourceName,
-        string uri
-    ) =>
-        ReferentialIdCalculator.ReferentialIdFrom(
+    private static Guid CreateDescriptorReferentialId(string projectName, string resourceName, string uri) =>
+        ReferentialIdTestHelper.ReferentialIdFrom(
             new BaseResourceInfo(new ProjectName(projectName), new ResourceName(resourceName), true),
             new DocumentIdentity([
                 new DocumentIdentityElement(

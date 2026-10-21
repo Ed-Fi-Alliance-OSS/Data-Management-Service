@@ -1071,7 +1071,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             reference.Path == new JsonPath("$.sectionReference")
         );
         await InsertReferentialIdentityAsync(
-            ReferentialIdCalculator.ReferentialIdFrom(
+            ReferentialIdTestHelper.ReferentialIdFrom(
                 sectionReference.ResourceInfo,
                 sectionReference.DocumentIdentity
             ),
@@ -1718,7 +1718,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     }
 
     private async Task InsertReferentialIdentityAsync(
-        ReferentialId referentialId,
+        Guid referentialId,
         long documentId,
         short resourceKeyId
     )
@@ -1743,7 +1743,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 _ => throw new InvalidOperationException("Expected ReferentialId to be a Guid."),
             };
 
-            existingReferentialId.Should().Be(referentialId.Value);
+            existingReferentialId.Should().Be(referentialId);
             return;
         }
 
@@ -1752,18 +1752,18 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
             VALUES (@referentialId, @documentId, @resourceKeyId);
             """,
-            new NpgsqlParameter("referentialId", referentialId.Value),
+            new NpgsqlParameter("referentialId", referentialId),
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("resourceKeyId", resourceKeyId)
         );
     }
 
-    private static ReferentialId CreateReferentialId(
+    private static Guid CreateReferentialId(
         (string ProjectName, string ResourceName, bool IsDescriptor) targetResource,
         params (string IdentityJsonPath, string IdentityValue)[] identityElements
     )
     {
-        return ReferentialIdCalculator.ReferentialIdFrom(
+        return ReferentialIdTestHelper.ReferentialIdFrom(
             new BaseResourceInfo(
                 new ProjectName(targetResource.ProjectName),
                 new ResourceName(targetResource.ResourceName),
@@ -1778,7 +1778,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         );
     }
 
-    private static ReferentialId CreateDescriptorReferentialId(
+    private static Guid CreateDescriptorReferentialId(
         string projectName,
         string resourceName,
         string descriptorUri

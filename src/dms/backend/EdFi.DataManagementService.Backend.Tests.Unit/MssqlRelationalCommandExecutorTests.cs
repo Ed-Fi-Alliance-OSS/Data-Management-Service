@@ -8,7 +8,6 @@ using System.Data.Common;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
-using EdFi.DataManagementService.Core.External.Model;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -33,15 +32,15 @@ public class Given_MssqlRelationalCommandExecutor
             ConnectionString: connectionString,
             RouteContext: []
         );
-        var documentReferentialId = new ReferentialId(Guid.NewGuid());
-        var descriptorReferentialId = new ReferentialId(Guid.NewGuid());
+        var documentReferentialId = Guid.NewGuid();
+        var descriptorReferentialId = Guid.NewGuid();
         var connection = new RecordingDbConnection(
             new RecordingDbCommand(
                 CreateReader(
                     CreateLookupTable(
-                        (documentReferentialId.Value, 101L, (short)11, (short)11, null, "$.schoolId=255901"),
+                        (documentReferentialId, 101L, (short)11, (short)11, null, "$.schoolId=255901"),
                         (
-                            descriptorReferentialId.Value,
+                            descriptorReferentialId,
                             202L,
                             (short)12,
                             (short)12,
@@ -76,8 +75,8 @@ public class Given_MssqlRelationalCommandExecutor
             new RelationalCommand(
                 "select * from dms.lookup where referential_id in (@p0, @p1)",
                 [
-                    new RelationalParameter("@p0", documentReferentialId.Value),
-                    new RelationalParameter("@p1", descriptorReferentialId.Value),
+                    new RelationalParameter("@p0", documentReferentialId),
+                    new RelationalParameter("@p1", descriptorReferentialId),
                 ]
             ),
             static async (reader, cancellationToken) =>
@@ -111,18 +110,15 @@ public class Given_MssqlRelationalCommandExecutor
             .Be("select * from dms.lookup where referential_id in (@p0, @p1)");
         connection.Command.Parameters.Should().HaveCount(2);
         connection.Command.Parameters[0].ParameterName.Should().Be("@p0");
-        connection.Command.Parameters[0].Value.Should().Be(documentReferentialId.Value);
+        connection.Command.Parameters[0].Value.Should().Be(documentReferentialId);
         connection.Command.Parameters[1].ParameterName.Should().Be("@p1");
-        connection.Command.Parameters[1].Value.Should().Be(descriptorReferentialId.Value);
+        connection.Command.Parameters[1].Value.Should().Be(descriptorReferentialId);
         connection.Command.ExecuteReaderCallCount.Should().Be(1);
         connection.Command.DisposeCallCount.Should().Be(1);
         connection.DisposeCallCount.Should().Be(1);
         result
             .Should()
-            .Equal(
-                (documentReferentialId.Value, 101L, (int?)null),
-                (descriptorReferentialId.Value, 202L, (int?)17)
-            );
+            .Equal((documentReferentialId, 101L, (int?)null), (descriptorReferentialId, 202L, (int?)17));
     }
 
     [Test]

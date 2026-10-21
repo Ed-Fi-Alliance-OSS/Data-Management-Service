@@ -13,7 +13,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -285,7 +284,6 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
             ResourceInfo: _schoolResourceInfo,
             DocumentInfo: new DocumentInfo(
                 DocumentIdentity: identity,
-                ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(_schoolResourceInfo, identity),
                 DocumentReferences: [],
                 DocumentReferenceArrays: [],
                 DescriptorReferences: [],

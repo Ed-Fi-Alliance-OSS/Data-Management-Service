@@ -13,6 +13,7 @@
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Plans.Tests.Unit" />
     </ItemGroup>
     <ItemGroup>
+        <PackageReference Include="Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic" />
         <PackageReference Include="FluentAssertions" />
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
         <PackageReference Include="NUnit" />

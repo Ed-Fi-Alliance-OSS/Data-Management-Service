@@ -550,7 +550,7 @@ internal static class RelationalAccessTestData
         );
     }
 
-    public static DocumentReference CreateDocumentReference(ReferentialId referentialId, string path) =>
+    public static DocumentReference CreateDocumentReference(string path) =>
         new(
             ResourceInfo: new BaseResourceInfo(
                 ProjectName: new ProjectName("Ed-Fi"),
@@ -563,11 +563,7 @@ internal static class RelationalAccessTestData
             Path: new JsonPath(path)
         );
 
-    public static DescriptorReference CreateDescriptorReference(
-        ReferentialId referentialId,
-        string uri,
-        string path
-    ) =>
+    public static DescriptorReference CreateDescriptorReference(string uri, string path) =>
         new(
             ResourceInfo: new BaseResourceInfo(
                 ProjectName: new ProjectName("Ed-Fi"),
