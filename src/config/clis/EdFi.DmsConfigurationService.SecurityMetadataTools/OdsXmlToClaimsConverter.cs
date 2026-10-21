@@ -5,7 +5,10 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Xml;
 using System.Xml.Linq;
+using EdFi.DmsConfigurationService.Backend.Claims;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DmsConfigurationService.SecurityMetadataTools;
 
@@ -15,22 +18,54 @@ namespace EdFi.DmsConfigurationService.SecurityMetadataTools;
 /// </summary>
 internal static class OdsXmlToClaimsConverter
 {
+    public static JsonObject Convert(string xml)
+    {
+        using StringReader input = new(xml);
+        using XmlReader reader = XmlReader.Create(
+            input,
+            new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null }
+        );
+        XDocument document;
+        try
+        {
+            document = XDocument.Load(reader, LoadOptions.SetLineInfo);
+        }
+        catch (XmlException exception)
+        {
+            throw new InvalidOperationException(
+                $"Invalid security metadata XML at line {exception.LineNumber}, column {exception.LinePosition}: {JsonSerializer.Serialize(exception.Message)}",
+                exception
+            );
+        }
+
+        return Convert(document);
+    }
+
     public static JsonObject Convert(XDocument document)
     {
-        if (
-            document.Root is not XElement root
-            || root.Name != "SecurityMetadata"
-            || root.Element("Claims") is not XElement claims
-        )
-        {
-            throw new InvalidOperationException("Expected a SecurityMetadata root with a Claims element.");
-        }
+        XElement claims = OdsExportValidator.Validate(document);
 
         // One per-document mapping supplies both the catalog and hierarchy references.
         NameMapping names = new();
         JsonArray hierarchy = ConvertClaims(claims, names);
 
-        return new JsonObject { ["claimSets"] = names.Catalog, ["claimsHierarchy"] = hierarchy };
+        JsonObject result = new() { ["claimSets"] = names.Catalog, ["claimsHierarchy"] = hierarchy };
+        IClaimsValidator validator = new ClaimsValidator(NullLogger<ClaimsValidator>.Instance);
+        List<ClaimsValidationFailure> failures = validator.Validate(result);
+        if (failures.Count > 0)
+        {
+            throw new InvalidOperationException(
+                "Converted claims document failed CMS validation: "
+                    + string.Join(
+                        "; ",
+                        failures.Select(failure =>
+                            $"{failure.FailurePath.Value}: {JsonSerializer.Serialize(failure.FailureMessages)}"
+                        )
+                    )
+            );
+        }
+
+        return result;
     }
 
     private static JsonArray ConvertClaims(XElement claims, NameMapping names) =>

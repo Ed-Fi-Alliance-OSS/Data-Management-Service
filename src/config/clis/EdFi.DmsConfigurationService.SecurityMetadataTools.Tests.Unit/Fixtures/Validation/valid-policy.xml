@@ -1,0 +1,31 @@
+<SecurityMetadata>
+    <Claims>
+        <Claim name="parent" claimId="1">
+            <DefaultAuthorization>
+                <Action name="Read">
+                    <AuthorizationStrategies>
+                        <AuthorizationStrategy name="Custom.Default" />
+                    </AuthorizationStrategies>
+                </Action>
+            </DefaultAuthorization>
+            <ClaimSets>
+                <ClaimSet name="Reader">
+                    <Actions>
+                        <Action name="Read">
+                            <AuthorizationStrategyOverrides>
+                                <AuthorizationStrategy name="Custom.Override" />
+                            </AuthorizationStrategyOverrides>
+                        </Action>
+                    </Actions>
+                </ClaimSet>
+            </ClaimSets>
+            <Claims>
+                <Claim name="child">
+                    <DefaultAuthorization />
+                    <ClaimSets />
+                    <Claims />
+                </Claim>
+            </Claims>
+        </Claim>
+    </Claims>
+</SecurityMetadata>

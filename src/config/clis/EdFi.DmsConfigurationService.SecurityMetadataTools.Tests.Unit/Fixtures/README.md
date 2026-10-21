@@ -38,9 +38,26 @@ the checked-in `OdsSecurityMetadata/expected-claims.json` unchanged and compares
 the entire document, including array order, with the converted export. It never
 regenerates the expected document.
 
-DMS-1617-05 adds policy
-completeness/unsupported-content checks (including the script's
-`validationRuleSet` and `validationRuleSetOverride` attributes) and the actual CMS
-validator. The converter remains internal and is not wired into the CLI until
-that validation is available. The examples do not establish broader export-format
-support or operational readiness.
+`OdsXmlToClaimsConverterValidationTests.cs` uses small synthetic files in
+`Validation/` plus focused mutations and XML literals to cover malformed XML,
+missing/empty names, unsupported roots, namespaces, elements, attributes and text,
+duplicate singleton containers, malformed actions, and all three empty-policy
+conditions (no claims, no referenced sets, no claim-set actions). Diagnostics
+include XML paths with escaped names and source line/column when available.
+
+The pinned exporter emits `validationRuleSet` on default actions and
+`validationRuleSetOverride` on claim-set actions. Absent and empty attributes are
+accepted; every nonempty value, including whitespace, is rejected because the CMS
+claims contract cannot represent it. Unknown content is rejected before mapping,
+including policy on hierarchy-only nodes. `claimId` remains recognized metadata.
+
+Every converted document passes the existing backend `ClaimsValidator` and its
+embedded schema before return. `invalid-generated-actions.xml` has one valid grant
+and a second reference with empty actions: it passes export structure and global
+completeness checks but fails the real CMS schema's `minItems`. Tests compare the
+converter's failure path/messages with independent direct CMS validation to ensure
+the final gate cannot be bypassed. Existing positive cases and the representative
+comparison also run through this gate; the schema and acceptance oracle are unchanged.
+
+The converter remains internal; CLI wiring is DMS-1617-06. These examples do not
+establish broader export-format support or runtime strategy compatibility.
