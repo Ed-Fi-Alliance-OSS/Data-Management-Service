@@ -17,8 +17,10 @@ Available out of the box (`CONFIGURATION_SERVICE_CLAIMS_SOURCE=Embedded`). Confi
 The test-only `E2E-*` claim sets are not built in; they exist only in the repository's E2E test
 setup.
 
-Extension claim sets (`SampleExtensionClaims`, `HomographExtensionClaims`) are **not** embedded —
-they ship only as filesystem fragments, so they are available only via **Hybrid** mode (below).
+There are no extension claim sets. `SampleExtensionClaims` and `HomographExtensionClaims` are the
+labels of the repository's Sample and Homograph fragments, which contain only parent entries: they add
+extension resource claims and grant them to existing claim sets such as `EdFiSandbox`, and create no
+claim set. This stack does not mount them.
 
 ## School / district-level access
 
@@ -45,11 +47,11 @@ Two ways:
 
 2. **File-based:** set `CONFIGURATION_SERVICE_CLAIMS_SOURCE=Hybrid` in `.env` and drop custom claim set
    fragments in this directory (mounted into both Configuration Services at `/app/additional-claims`).
-   Each file must be named `*-claimset.json` and hold `{ "name": "<ClaimSetName>",
+   Each file must be named `*-claims.json` and hold `{ "name": "<ClaimSetName>",
    "resourceClaims": [ ... ] }` — see the "A fragment that defines a claim set" example in
    `docs/CLAIMS-LOADING-GUIDE.md`. Its resource claims must not be `"isParent": true`: a fragment
    with only parent entries (like the built-in fragments under
-   `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets/`) attaches
+   `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaims/`) attaches
    grants to existing claim sets and creates no claim set. This is **not** the API
    `export`/`import` shape (which uses `claimSetName`), so start from that example rather than an
    API export. Restart the `*-config` services (or use the management reload).
@@ -60,4 +62,4 @@ Two ways:
 > step 3 exports the API-created ones first and Part C imports them back.
 
 > Keep this directory free of partial/invalid fragments while in Hybrid mode — a malformed
-> claim set can fail Configuration Service startup. Files not named `*-claimset.json` (like this README) are ignored.
+> claim set can fail Configuration Service startup. Files not named `*-claims.json` (like this README) are ignored.

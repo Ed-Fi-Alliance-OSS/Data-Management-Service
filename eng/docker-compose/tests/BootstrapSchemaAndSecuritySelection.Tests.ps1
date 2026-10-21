@@ -50,7 +50,7 @@ Describe "Story 00 bootstrap" {
         Copy-Item -LiteralPath (Join-Path $claimsSourceRoot "Claims") -Destination $claimsTargetRoot -Recurse
         Copy-Item -LiteralPath (Join-Path $claimsSourceRoot "Deploy") -Destination $claimsTargetRoot -Recurse
 
-        # Copy the test-owned E2E claimset fragments that Initialize-E2EClaimsWorkspace stages.
+        # Copy the test-owned E2E claims fragments that Initialize-E2EClaimsWorkspace stages.
         $e2eFragmentsRelativePath = "src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/Fragments"
         $e2eFragmentsTargetRoot = Join-Path $repoRoot $e2eFragmentsRelativePath
         New-Item -ItemType Directory -Path $e2eFragmentsTargetRoot -Force | Out-Null
@@ -70,7 +70,7 @@ Describe "Story 00 bootstrap" {
             PrepareSchemaScript = Join-Path $dockerComposeRoot "prepare-dms-schema.ps1"
             PrepareClaimsScript = Join-Path $dockerComposeRoot "prepare-dms-claims.ps1"
             ManifestModule = Join-Path $dockerComposeRoot "bootstrap-manifest.psm1"
-            DefaultFragmentsRoot = Join-Path $claimsTargetRoot "Deploy/AdditionalClaimsets"
+            DefaultFragmentsRoot = Join-Path $claimsTargetRoot "Deploy/AdditionalClaims"
             E2EFragmentsRoot = $e2eFragmentsTargetRoot
             E2EClaimsWorkspace = [System.IO.Path]::GetFullPath((Join-Path $dockerComposeRoot ".e2e-claims"))
         }
@@ -780,9 +780,9 @@ exit $ExitCode
             $claimFiles = @(Get-ChildItem -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims") -File | ForEach-Object Name)
 
             $manifest.claims.mode | Should -Be "Hybrid"
-            $claimFiles | Should -Contain "004-sample-extension-claimset.json"
-            $claimFiles | Should -Contain "005-homograph-extension-claimset.json"
-            $claimFiles | Should -Not -Contain "001-namespace-claimset.json"
+            $claimFiles | Should -Contain "004-sample-extension-claims.json"
+            $claimFiles | Should -Contain "005-homograph-extension-claims.json"
+            $claimFiles | Should -Not -Contain "001-namespace-claims.json"
             $manifest.seed.extensionNamespacePrefixes | Should -Contain "uri://sample.ed-fi.org"
         }
 
@@ -881,7 +881,7 @@ exit $ExitCode
             $claimFiles = @(Get-ChildItem -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims") -File | ForEach-Object Name)
 
             $manifest.claims.mode | Should -Be "Hybrid"
-            $claimFiles | Should -Contain "004-sample-extension-claimset.json"
+            $claimFiles | Should -Contain "004-sample-extension-claims.json"
             $manifest.seed.extensionNamespacePrefixes | Should -Contain "uri://sample.ed-fi.org"
             @($manifest.claims.expectedVerificationChecks |
                 Where-Object { $_.resourceClaim -eq "http://ed-fi.org/identity/claims/tpdm/evaluation" }).Count |
@@ -900,8 +900,8 @@ exit $ExitCode
             $claimFiles = @(Get-ChildItem -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims") -File | ForEach-Object Name)
 
             $manifest.claims.mode | Should -Be "Hybrid"
-            $claimFiles | Should -Contain "004-sample-extension-claimset.json"
-            $claimFiles | Should -Contain "005-homograph-extension-claimset.json"
+            $claimFiles | Should -Contain "004-sample-extension-claims.json"
+            $claimFiles | Should -Contain "005-homograph-extension-claims.json"
             $manifest.seed.extensionNamespacePrefixes | Should -Contain "uri://sample.ed-fi.org"
             $manifest.seed.extensionNamespacePrefixes | Should -Contain "uri://tpdm.ed-fi.org"
             # Homograph resources stay on the core namespace, so it records no distinct prefix.
@@ -952,12 +952,12 @@ exit $ExitCode
         It "stages caller fragments and records expected verification checks with the fragment's raw resource name" {
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "custom-claims"
-            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "010-tpdm-claimset.json")
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "010-tpdm-claims.json")
 
             Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir
             $manifest = Get-RootManifest
 
-            Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims/010-tpdm-claimset.json") |
+            Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims/010-tpdm-claims.json") |
                 Should -BeTrue
             # Story 00 records the fragment's resource name verbatim. CMS (or a future shared
             # composer helper) owns matching it against the composed hierarchy at startup.
@@ -990,7 +990,7 @@ exit $ExitCode
                 )
             }
             New-Item -ItemType Directory -Path $claimsDir -Force | Out-Null
-            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-parent-explicit-claimset.json") -Encoding utf8
+            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-parent-explicit-claims.json") -Encoding utf8
 
             Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir
             $manifest = Get-RootManifest
@@ -1045,7 +1045,7 @@ exit $ExitCode
                 )
             }
             New-Item -ItemType Directory -Path $claimsDir -Force | Out-Null
-            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-non-parent-explicit-claimset.json") -Encoding utf8
+            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-non-parent-explicit-claims.json") -Encoding utf8
 
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
                 Should -Throw -ExpectedMessage "*non-parent resourceClaims entry with claimSets*"
@@ -1056,12 +1056,12 @@ exit $ExitCode
 
             $badJsonDir = Join-Path $script:repo.RepoRoot "bad-json"
             New-Item -ItemType Directory -Path $badJsonDir -Force | Out-Null
-            "{" | Set-Content -LiteralPath (Join-Path $badJsonDir "010-bad-claimset.json") -Encoding utf8
+            "{" | Set-Content -LiteralPath (Join-Path $badJsonDir "010-bad-claims.json") -Encoding utf8
             { Invoke-PrepareClaim -ClaimsDirectoryPath $badJsonDir } |
                 Should -Throw -ExpectedMessage "*malformed JSON*"
 
             $unknownDir = Join-Path $script:repo.RepoRoot "unknown"
-            New-ExplicitClaimsetFragment -Path (Join-Path $unknownDir "010-unknown-claimset.json") -ClaimSetName "NotAClaimSet"
+            New-ExplicitClaimsetFragment -Path (Join-Path $unknownDir "010-unknown-claims.json") -ClaimSetName "NotAClaimSet"
             { Invoke-PrepareClaim -ClaimsDirectoryPath $unknownDir } |
                 Should -Throw -ExpectedMessage "*unknown effective claim set*"
         }
@@ -1078,7 +1078,7 @@ exit $ExitCode
                 )
             }
             New-Item -ItemType Directory -Path $claimsDir -Force | Out-Null
-            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-parent-claimset.json") -Encoding utf8
+            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-parent-claims.json") -Encoding utf8
 
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
                 Should -Not -Throw
@@ -1087,7 +1087,7 @@ exit $ExitCode
         It "reuses identical claims workspaces and rejects changed fragment sets" {
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "custom-claims"
-            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "010-tpdm-claimset.json")
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "010-tpdm-claims.json")
 
             Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
@@ -1095,7 +1095,7 @@ exit $ExitCode
 
             # Use a distinct resource URI so this assertion exercises the fingerprint-mismatch path.
             New-ExplicitClaimsetFragment `
-                -Path (Join-Path $claimsDir "011-extra-claimset.json") `
+                -Path (Join-Path $claimsDir "011-extra-claims.json") `
                 -ResourceClaim "http://example.org/identity/claims/anotherWidget"
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
                 Should -Throw -ExpectedMessage "*claims fingerprint mismatch*"
@@ -1109,7 +1109,7 @@ exit $ExitCode
                 resourceClaims = @("not-an-object")
             }
             New-Item -ItemType Directory -Path $claimsDir -Force | Out-Null
-            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-bad-resource-claims-claimset.json") -Encoding utf8
+            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-bad-resource-claims-claims.json") -Encoding utf8
 
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
                 Should -Throw -ExpectedMessage "*not a JSON object*"
@@ -1127,7 +1127,7 @@ exit $ExitCode
                 )
             }
             New-Item -ItemType Directory -Path $claimsDir -Force | Out-Null
-            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-parent-missing-name-claimset.json") -Encoding utf8
+            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-parent-missing-name-claims.json") -Encoding utf8
 
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
                 Should -Throw -ExpectedMessage "*missing 'name'*"
@@ -1150,7 +1150,7 @@ exit $ExitCode
                 )
             }
             New-Item -ItemType Directory -Path $claimsDir -Force | Out-Null
-            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-implicit-claimset.json") -Encoding utf8
+            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-implicit-claims.json") -Encoding utf8
 
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
                 Should -Throw -ExpectedMessage "*missing top-level name*"
@@ -1168,10 +1168,58 @@ exit $ExitCode
                 )
             }
             New-Item -ItemType Directory -Path $claimsDir -Force | Out-Null
-            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-implicit-missing-name-claimset.json") -Encoding utf8
+            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-implicit-missing-name-claims.json") -Encoding utf8
 
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
                 Should -Throw -ExpectedMessage "*missing 'name'*"
+        }
+
+        It "ignores and warns about caller files with the retired -claimset.json suffix, as CMS discovery does" {
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
+            $claimsDir = Join-Path $script:repo.RepoRoot "retired-suffix-claims"
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "010-tpdm-claims.json")
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "nested/011-tpdm-claimset.json")
+
+            $warnings = @(& $script:repo.PrepareClaimsScript -ClaimsDirectoryPath $claimsDir 3>&1 |
+                    Where-Object { $_ -is [System.Management.Automation.WarningRecord] })
+
+            @(Get-ChildItem -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims") -File).Name |
+                Should -Be @("010-tpdm-claims.json")
+            $warnings.Count | Should -Be 1
+            $warnings[0].Message | Should -BeLike "*011-tpdm-claimset.json*must end in -claims.json*"
+        }
+
+        It "ignores and warns about caller files whose -claims.json suffix is not lowercase, as CMS discovery on Linux does" {
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
+            $claimsDir = Join-Path $script:repo.RepoRoot "mixed-case-suffix-claims"
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "010-tpdm-claims.json")
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "nested/011-tpdm-Claims.json")
+
+            $warnings = @(& $script:repo.PrepareClaimsScript -ClaimsDirectoryPath $claimsDir 3>&1 |
+                    Where-Object { $_ -is [System.Management.Automation.WarningRecord] })
+
+            @(Get-ChildItem -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims") -File).Name |
+                Should -Be @("010-tpdm-claims.json")
+            $warnings.Count | Should -Be 1
+            $warnings[0].Message | Should -BeLike "*011-tpdm-Claims.json*must end in lowercase -claims.json*"
+        }
+
+        It "warns about retired -claimset.json files before rejecting a directory with no -claims.json files" {
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
+            $claimsDir = Join-Path $script:repo.RepoRoot "retired-suffix-only-claims"
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "010-tpdm-claimset.json")
+
+            $warnings = $null
+            $thrown = $null
+            try {
+                & $script:repo.PrepareClaimsScript -ClaimsDirectoryPath $claimsDir -WarningVariable warnings -WarningAction SilentlyContinue
+            } catch {
+                $thrown = $_
+            }
+
+            "$thrown" | Should -BeLike "*does not contain any*-claims.json files*"
+            @($warnings).Count | Should -Be 1
+            @($warnings)[0].Message | Should -BeLike "*010-tpdm-claimset.json*"
         }
 
         It "discovers caller fragments recursively to match CMS ClaimsFragmentComposer" {
@@ -1180,19 +1228,19 @@ exit $ExitCode
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "nested-claims"
             $nestedDir = Join-Path $claimsDir "subdir"
-            New-ExplicitClaimsetFragment -Path (Join-Path $nestedDir "010-tpdm-claimset.json")
+            New-ExplicitClaimsetFragment -Path (Join-Path $nestedDir "010-tpdm-claims.json")
 
             Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir
 
-            Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims/010-tpdm-claimset.json") |
+            Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims/010-tpdm-claims.json") |
                 Should -BeTrue
         }
 
         It "detects nested filename collisions across subdirectories" {
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "nested-collision"
-            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "a/010-tpdm-claimset.json")
-            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "b/010-tpdm-claimset.json")
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "a/010-tpdm-claims.json")
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "b/010-tpdm-claims.json")
 
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
                 Should -Throw -ExpectedMessage "*filename collision*"
@@ -1212,7 +1260,7 @@ exit $ExitCode
             }
             New-Item -ItemType Directory -Path $claimsDir -Force | Out-Null
             $fragment | ConvertTo-Json -Depth 20 |
-                Set-Content -LiteralPath (Join-Path $claimsDir "010-string-isparent-claimset.json") -Encoding utf8
+                Set-Content -LiteralPath (Join-Path $claimsDir "010-string-isparent-claims.json") -Encoding utf8
 
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
                 Should -Throw -ExpectedMessage "*malformed boolean for 'isParent'*"
@@ -1230,7 +1278,7 @@ exit $ExitCode
             }
             New-Item -ItemType Directory -Path $claimsDir -Force | Out-Null
             $fragment | ConvertTo-Json -Depth 20 |
-                Set-Content -LiteralPath (Join-Path $claimsDir "010-scalar-resourceclaims-claimset.json") -Encoding utf8
+                Set-Content -LiteralPath (Join-Path $claimsDir "010-scalar-resourceclaims-claims.json") -Encoding utf8
 
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
                 Should -Throw -ExpectedMessage "*resourceClaims value that is not a JSON array*"
@@ -1257,7 +1305,7 @@ exit $ExitCode
             }
             New-Item -ItemType Directory -Path $claimsDir -Force | Out-Null
             $fragment | ConvertTo-Json -Depth 20 |
-                Set-Content -LiteralPath (Join-Path $claimsDir "010-scalar-claimsets-claimset.json") -Encoding utf8
+                Set-Content -LiteralPath (Join-Path $claimsDir "010-scalar-claimsets-claims.json") -Encoding utf8
 
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
                 Should -Throw -ExpectedMessage "*claimSets value that is not a JSON array*"
@@ -1284,7 +1332,7 @@ exit $ExitCode
             }
             New-Item -ItemType Directory -Path $claimsDir -Force | Out-Null
             $fragment | ConvertTo-Json -Depth 20 |
-                Set-Content -LiteralPath (Join-Path $claimsDir "010-scalar-actions-claimset.json") -Encoding utf8
+                Set-Content -LiteralPath (Join-Path $claimsDir "010-scalar-actions-claims.json") -Encoding utf8
 
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
                 Should -Throw -ExpectedMessage "*claimSets actions value that is not a JSON array*"
@@ -1296,7 +1344,7 @@ exit $ExitCode
             # the manifest sections; teardown is the required remediation.
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "stale-claims-input"
-            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "010-tpdm-claimset.json")
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "010-tpdm-claims.json")
             Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir
 
             $stagedClaims = Join-Path $script:repo.BootstrapRoot "claims"
@@ -1370,12 +1418,12 @@ exit $ExitCode
     Context "claims staging with -IncludeE2EClaimSets" {
         BeforeEach {
             $script:e2eFragmentFileNames = @(
-                "001-namespace-claimset.json",
-                "002-nofurtherauth-claimset.json",
-                "003-edorgsonly-claimset.json",
-                "003a-edorgsonly-inverted-claimset.json",
-                "003b-edorgsonly-or-inverted-claimset.json",
-                "003c-edorgsonly-mixed-claimset.json"
+                "001-namespace-claims.json",
+                "002-nofurtherauth-claims.json",
+                "003-edorgsonly-claims.json",
+                "003a-edorgsonly-inverted-claims.json",
+                "003b-edorgsonly-or-inverted-claims.json",
+                "003c-edorgsonly-mixed-claims.json"
             )
             $script:e2eProbes = @(
                 "E2E-NameSpaceBasedClaimSet|http://ed-fi.org/identity/claims/ed-fi/survey|Read|False",
@@ -1415,13 +1463,13 @@ exit $ExitCode
             $staged = Invoke-SampleHomographStaging -IncludeE2EClaimSets
 
             $staged.Mode | Should -Be "Hybrid"
-            $staged.Files | Should -Be (@("004-sample-extension-claimset.json", "005-homograph-extension-claimset.json") + $script:e2eFragmentFileNames | Sort-Object)
+            $staged.Files | Should -Be (@("004-sample-extension-claims.json", "005-homograph-extension-claims.json") + $script:e2eFragmentFileNames | Sort-Object)
         }
 
         It "stages nothing extra and records unchanged checks without the switch" {
             $baseline = Invoke-SampleHomographStaging
 
-            $baseline.Files | Should -Be @("004-sample-extension-claimset.json", "005-homograph-extension-claimset.json")
+            $baseline.Files | Should -Be @("004-sample-extension-claims.json", "005-homograph-extension-claims.json")
             @($baseline.Checks | Where-Object { $_ -like "E2E-*" }) | Should -BeNullOrEmpty
         }
 
@@ -1468,18 +1516,18 @@ exit $ExitCode
         It "still rejects a user fragment that names an undeclared claim set when the switch is set" {
             $userClaimsDirectory = Join-Path $script:repo.RepoRoot "user-claims"
             New-ExplicitClaimsetFragment `
-                -Path (Join-Path $userClaimsDirectory "acme-claimset.json") `
+                -Path (Join-Path $userClaimsDirectory "acme-claims.json") `
                 -ClaimSetName "Acme-UndeclaredClaimSet"
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
 
             { & $script:repo.PrepareClaimsScript -ClaimsDirectoryPath $userClaimsDirectory -IncludeE2EClaimSets | Out-Null } |
-                Should -Throw -ExpectedMessage "*acme-claimset.json*uses unknown effective claim set 'Acme-UndeclaredClaimSet'*"
+                Should -Throw -ExpectedMessage "*acme-claims.json*uses unknown effective claim set 'Acme-UndeclaredClaimSet'*"
         }
 
         It "rejects a user fragment that names an E2E claim set without the switch" {
             $userClaimsDirectory = Join-Path $script:repo.RepoRoot "user-claims"
             New-ExplicitClaimsetFragment `
-                -Path (Join-Path $userClaimsDirectory "acme-claimset.json") `
+                -Path (Join-Path $userClaimsDirectory "acme-claims.json") `
                 -ClaimSetName "E2E-NoFurtherAuthRequiredClaimSet"
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
 
@@ -1762,7 +1810,7 @@ exit $ExitCode
             Invoke-BootstrapStartupConfiguration -AddExtensionSecurityMetadata
 
             [System.IO.Path]::GetFullPath($env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE) | Should -Be $script:repo.E2EClaimsWorkspace
-            Test-Path -LiteralPath (Join-Path $script:repo.E2EClaimsWorkspace "001-namespace-claimset.json") |
+            Test-Path -LiteralPath (Join-Path $script:repo.E2EClaimsWorkspace "001-namespace-claims.json") |
                 Should -BeTrue -Because "the mounted directory must already hold the E2E fragments when compose starts CMS"
         }
 
@@ -2141,14 +2189,14 @@ exit 0
             Import-Module $script:repo.ManifestModule -Force
 
             $script:expectedE2EClaimsFiles = @(
-                "001-namespace-claimset.json",
-                "002-nofurtherauth-claimset.json",
-                "003-edorgsonly-claimset.json",
-                "003a-edorgsonly-inverted-claimset.json",
-                "003b-edorgsonly-or-inverted-claimset.json",
-                "003c-edorgsonly-mixed-claimset.json",
-                "004-sample-extension-claimset.json",
-                "005-homograph-extension-claimset.json"
+                "001-namespace-claims.json",
+                "002-nofurtherauth-claims.json",
+                "003-edorgsonly-claims.json",
+                "003a-edorgsonly-inverted-claims.json",
+                "003b-edorgsonly-or-inverted-claims.json",
+                "003c-edorgsonly-mixed-claims.json",
+                "004-sample-extension-claims.json",
+                "005-homograph-extension-claims.json"
             )
         }
 
@@ -2174,29 +2222,32 @@ exit 0
             Test-Path -LiteralPath (Join-Path $workspace "README.md") | Should -BeFalse
         }
 
-        It "removes a stale claimset fragment left by a previous run" {
+        It "removes a stale claims fragment left by a previous run" {
             $workspace = Initialize-E2EClaimsWorkspace
-            $stalePath = Join-Path $workspace "099-stale-claimset.json"
+            $stalePath = Join-Path $workspace "099-stale-claims.json"
             Set-Content -LiteralPath $stalePath -Value "{}"
+            $retiredPath = Join-Path $workspace "001-namespace-claimset.json"
+            Set-Content -LiteralPath $retiredPath -Value "{}"
 
             $null = Initialize-E2EClaimsWorkspace
 
             Test-Path -LiteralPath $stalePath | Should -BeFalse
+            Test-Path -LiteralPath $retiredPath | Should -BeFalse
             @(Get-ChildItem -LiteralPath $workspace -File).Count | Should -Be $script:expectedE2EClaimsFiles.Count
         }
 
         It "throws on a fragment file-name collision between the source directories" {
             Copy-Item `
-                -LiteralPath (Join-Path $script:repo.DefaultFragmentsRoot "004-sample-extension-claimset.json") `
+                -LiteralPath (Join-Path $script:repo.DefaultFragmentsRoot "004-sample-extension-claims.json") `
                 -Destination $script:repo.E2EFragmentsRoot
 
-            { Initialize-E2EClaimsWorkspace } | Should -Throw "*filename collision for '004-sample-extension-claimset.json'*"
+            { Initialize-E2EClaimsWorkspace } | Should -Throw "*filename collision for '004-sample-extension-claims.json'*"
         }
 
         It "throws when the E2E fragment directory is missing instead of staging without the E2E claim sets" {
             Remove-Item -LiteralPath $script:repo.E2EFragmentsRoot -Recurse -Force
 
-            { Initialize-E2EClaimsWorkspace } | Should -Throw "*E2E claimset fragment directory does not exist*"
+            { Initialize-E2EClaimsWorkspace } | Should -Throw "*E2E claims fragment directory does not exist*"
         }
 
         It "reuses the same directory when called again, as the -InfraOnly then -DmsOnly phases do" {
@@ -2206,7 +2257,7 @@ exit 0
             $markerPath = Join-Path $firstWorkspace "directory-identity.marker"
             Set-Content -LiteralPath $markerPath -Value "first-phase"
             $hashesBefore = @{}
-            foreach ($file in Get-ChildItem -LiteralPath $firstWorkspace -Filter "*-claimset.json" -File) {
+            foreach ($file in Get-ChildItem -LiteralPath $firstWorkspace -Filter "*-claims.json" -File) {
                 $hashesBefore[$file.Name] = (Get-FileHash -LiteralPath $file.FullName).Hash
             }
 
@@ -2214,7 +2265,7 @@ exit 0
 
             $secondWorkspace | Should -Be $firstWorkspace
             Get-Content -LiteralPath $markerPath | Should -Be "first-phase"
-            $stagedFiles = @(Get-ChildItem -LiteralPath $secondWorkspace -Filter "*-claimset.json" -File)
+            $stagedFiles = @(Get-ChildItem -LiteralPath $secondWorkspace -Filter "*-claims.json" -File)
             $stagedFiles.Count | Should -Be $script:expectedE2EClaimsFiles.Count
             foreach ($file in $stagedFiles) {
                 (Get-FileHash -LiteralPath $file.FullName).Hash | Should -Be $hashesBefore[$file.Name]
@@ -2225,16 +2276,16 @@ exit 0
             $workspace = Initialize-E2EClaimsWorkspace
             $markerPath = Join-Path $workspace "directory-identity.marker"
             Set-Content -LiteralPath $markerPath -Value "first-phase"
-            $changedSource = Join-Path $script:repo.E2EFragmentsRoot "001-namespace-claimset.json"
+            $changedSource = Join-Path $script:repo.E2EFragmentsRoot "001-namespace-claims.json"
             Set-Content -LiteralPath $changedSource -Value '{ "name": "E2E-NameSpaceBasedClaimSet", "resourceClaims": [] }'
-            $addedSource = Join-Path $script:repo.E2EFragmentsRoot "006-added-claimset.json"
+            $addedSource = Join-Path $script:repo.E2EFragmentsRoot "006-added-claims.json"
             Set-Content -LiteralPath $addedSource -Value '{ "name": "E2E-AddedClaimSet", "resourceClaims": [] }'
 
             $null = Initialize-E2EClaimsWorkspace
 
-            (Get-FileHash -LiteralPath (Join-Path $workspace "001-namespace-claimset.json")).Hash |
+            (Get-FileHash -LiteralPath (Join-Path $workspace "001-namespace-claims.json")).Hash |
                 Should -Be (Get-FileHash -LiteralPath $changedSource).Hash
-            (Get-FileHash -LiteralPath (Join-Path $workspace "006-added-claimset.json")).Hash |
+            (Get-FileHash -LiteralPath (Join-Path $workspace "006-added-claims.json")).Hash |
                 Should -Be (Get-FileHash -LiteralPath $addedSource).Hash
             Get-Content -LiteralPath $markerPath | Should -Be "first-phase"
         }
@@ -2330,7 +2381,7 @@ exit 0
 
         It "passes AddExtensionSecurityMetadata in E2E setup scripts to enable Hybrid claims for extension schemas" {
             # Confirm that both E2E setup wrappers pass -AddExtensionSecurityMetadata to start-local-dms.ps1
-            # so extension claimset fragments (e.g. Sample, Homograph) are loaded in non-bootstrap mode.
+            # so extension claims fragments (e.g. Sample, Homograph) are loaded in non-bootstrap mode.
             foreach ($path in @(
                 (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1"),
                 (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1")

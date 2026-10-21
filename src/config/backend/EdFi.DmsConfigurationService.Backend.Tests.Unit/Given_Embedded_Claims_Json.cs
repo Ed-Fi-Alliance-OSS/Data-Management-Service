@@ -345,7 +345,7 @@ public class Given_Embedded_Claims_Json
         grantedClaimSetNames.Should().NotContain(name => name.StartsWith("E2E-", StringComparison.Ordinal));
     }
 
-    // Every default compose deployment runs Hybrid with the shipped AdditionalClaimsets directory
+    // Every default compose deployment runs Hybrid with the shipped AdditionalClaims directory
     // mounted, so a non-parent fragment there would register its claim set in every deployment
     [TestCase("ds52")]
     [TestCase("ds61")]
@@ -358,13 +358,19 @@ public class Given_Embedded_Claims_Json
             "backend",
             "EdFi.DmsConfigurationService.Backend",
             "Deploy",
-            "AdditionalClaimsets"
+            "AdditionalClaims"
         );
         JsonObject baseClaims = LoadEmbeddedClaims(standardFolder);
+        ClaimsFragmentComposer composer = new(A.Fake<ILogger<ClaimsFragmentComposer>>());
 
-        ClaimsLoadResult result = new ClaimsFragmentComposer(
-            A.Fake<ILogger<ClaimsFragmentComposer>>()
-        ).ComposeClaimsFromFragments(
+        // Without this, a wrong directory path would compose no fragments and pass vacuously
+        composer
+            .DiscoverFragmentFiles(defaultFragmentsPath)
+            .Select(Path.GetFileName)
+            .Should()
+            .Equal("004-sample-extension-claims.json", "005-homograph-extension-claims.json");
+
+        ClaimsLoadResult result = composer.ComposeClaimsFromFragments(
             new ClaimsDocument(baseClaims["claimSets"]!, baseClaims["claimsHierarchy"]!),
             defaultFragmentsPath
         );
