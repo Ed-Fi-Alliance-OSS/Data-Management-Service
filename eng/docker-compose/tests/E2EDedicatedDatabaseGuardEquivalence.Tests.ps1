@@ -703,15 +703,19 @@ Describe "Dedicated E2E database guard" {
             if ($null -ne $StageName) {
                 $environmentValues["GUARD_STAGE_NAME"] = $StageName
             }
+            # The rows reference GUARD_STAGE_NAME, and 'edfi$$dms' reaches the per-value conversion as
+            # 'edfi$dms', which expands a variable named dms; both are cleared from the process
+            # environment for the extraction and the guard run, then restored.
+            $helperVariables = @("GUARD_STAGE_NAME", "dms")
 
-            $stage = Get-IsolatedConnectionStringStage -Key $Key -EnvironmentValues $environmentValues -HelperVariables @("GUARD_STAGE_NAME")
+            $stage = Get-IsolatedConnectionStringStage -Key $Key -EnvironmentValues $environmentValues -HelperVariables $helperVariables
 
             $stage.Parsed.Count | Should -Be $Parsed.Count
             ($stage.Parsed -join "|") | Should -BeExactly ($Parsed -join "|")
             $stage.Candidates.Count | Should -Be $Candidates.Count
             ($stage.Candidates -join "|") | Should -BeExactly ($Candidates -join "|")
 
-            $guard = { Invoke-IsolatedGuard -EnvironmentValues $environmentValues -HelperVariables @("GUARD_STAGE_NAME") }
+            $guard = { Invoke-IsolatedGuard -EnvironmentValues $environmentValues -HelperVariables $helperVariables }
             switch ($Verdict) {
                 "Collision" { $guard | Should -Throw -ExpectedMessage (Get-SeparateDiagnostic -Key $Key) }
                 "Domain" { $guard | Should -Throw -ExpectedMessage (Get-DomainDiagnostic -Key $Key) }
