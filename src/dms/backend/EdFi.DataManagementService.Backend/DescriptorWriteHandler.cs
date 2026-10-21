@@ -223,7 +223,6 @@ internal sealed class DescriptorWriteHandler(
                     request.MappingSet,
                     request.Resource,
                     request.DocumentUuid,
-                    body.Uri,
                     DescriptorPreconditionTargetKind.Post,
                     request.WritePrecondition,
                     writeSession,
@@ -484,7 +483,6 @@ internal sealed class DescriptorWriteHandler(
                         request.MappingSet,
                         request.Resource,
                         request.DocumentUuid,
-                        descriptorUri: null,
                         DescriptorPreconditionTargetKind.Put,
                         request.WritePrecondition,
                         writeSession,
@@ -908,7 +906,6 @@ internal sealed class DescriptorWriteHandler(
                             request.MappingSet,
                             request.Resource,
                             request.DocumentUuid,
-                            descriptorUri: null,
                             DescriptorPreconditionTargetKind.Delete,
                             ifMatch,
                             writeSession,
@@ -1050,7 +1047,6 @@ internal sealed class DescriptorWriteHandler(
         MappingSet mappingSet,
         QualifiedResourceName resource,
         DocumentUuid documentUuid,
-        string? descriptorUri,
         DescriptorPreconditionTargetKind targetKind,
         WritePrecondition precondition,
         IRelationalWriteSession writeSession,
@@ -1078,10 +1074,10 @@ internal sealed class DescriptorWriteHandler(
         switch (targetKind)
         {
             case DescriptorPreconditionTargetKind.Post:
-                if (descriptorUri is null)
+                if (body is null)
                 {
                     throw new InvalidOperationException(
-                        "Descriptor POST requires the request's descriptor URI for target context resolution."
+                        "Descriptor POST requires the request body for target context resolution."
                     );
                 }
 
@@ -1090,7 +1086,7 @@ internal sealed class DescriptorWriteHandler(
                         sessionCommandExecutor,
                         mappingSet,
                         resource,
-                        descriptorUri,
+                        body.Uri,
                         documentUuid,
                         cancellationToken
                     )
