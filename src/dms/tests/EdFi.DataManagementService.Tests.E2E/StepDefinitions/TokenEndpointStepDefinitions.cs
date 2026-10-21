@@ -24,13 +24,13 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
         private const string TokenRequestStartedContextKey = "tokenRequestStartedUnixSeconds";
 
+        private const string TokenRequestCorrelationContextKey = "tokenRequestCorrelation";
+
         private const string CorrelationHeaderName = "X-Correlation-ID";
 
         private const string BasicChallenge = "Basic realm=\"EdFi.DataManagementService\"";
 
         private const string TokenContractCorrelationHeader = "X-DMS-1606-Correlation";
-
-        private const string TokenContractCorrelationValue = "dms1606-token-contract";
 
         [When("a token request is made with content type {string} and body")]
         public async Task WhenATokenRequestIsMadeWithContentTypeAndBody(string contentType, string body)
@@ -89,8 +89,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             {
                 ["body"] = await _apiResponse.TextAsync(),
                 ["challenge"] = ResponseHeaderOrNull("www-authenticate"),
-                ["correlation"] = ResponseHeader("X-Correlation-ID"),
             };
+            string rootCorrelation = ResponseHeader(CorrelationHeaderName);
 
             await SendTokenRequest(
                 "application/x-www-form-urlencoded",
@@ -101,7 +101,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             await AssertTokenError(401, "invalid_client", "Fixture rejected credentials");
             (await _apiResponse.TextAsync()).Should().Be(root["body"]);
             ResponseHeaderOrNull("www-authenticate").Should().Be(root["challenge"]);
-            ResponseHeader("X-Correlation-ID").Should().Be(root["correlation"]);
+            ResponseHeader(CorrelationHeaderName).Should().NotBe(rootCorrelation);
         }
 
         [When(
@@ -210,7 +210,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             string encodedTraceId = ResponseHeader(CorrelationHeaderName);
             encodedTraceId.Should().NotBeNullOrWhiteSpace();
             string traceId = Uri.UnescapeDataString(encodedTraceId);
-            await AssertDmsRequestLogContains(traceId);
+            if (_scenarioContext.TryGetValue(TokenRequestCorrelationContextKey, out string expectedTraceId))
+            {
+                traceId.Should().Be(expectedTraceId);
+            }
+
+            await AssertDmsRequestLogContains(traceId, status);
         }
 
         /// <summary>
@@ -245,7 +250,13 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             if (Environment.GetEnvironmentVariable("DMS_TOKEN_CONTRACT_PROXY_ACTIVE") == "1")
             {
-                headers[TokenContractCorrelationHeader] = TokenContractCorrelationValue;
+                string requestCorrelation = $"dms1606-{Guid.NewGuid():N}";
+                headers[TokenContractCorrelationHeader] = requestCorrelation;
+                _scenarioContext[TokenRequestCorrelationContextKey] = requestCorrelation;
+            }
+            else
+            {
+                _scenarioContext.Remove(TokenRequestCorrelationContextKey);
             }
 
             _scenarioContext[TokenRequestStartedContextKey] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
@@ -283,7 +294,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             return stored;
         }
 
-        private async Task AssertDmsRequestLogContains(string traceId)
+        private async Task AssertDmsRequestLogContains(string traceId, int status)
         {
             _scenarioContext.TryGetValue(TokenRequestStartedContextKey, out long startedAt).Should().BeTrue();
             using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(20));
@@ -312,7 +323,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     await process.WaitForExitAsync(timeout.Token);
                     string logs = await stdout;
                     _ = await stderr;
-                    if (process.ExitCode == 0 && logs.Contains(traceId, StringComparison.Ordinal))
+                    if (process.ExitCode == 0 && TokenRequestLogContains(logs, traceId, status))
                     {
                         return;
                     }
@@ -338,6 +349,45 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             }
 
             Assert.Fail("The token response correlation identifier did not appear in DMS request logs.");
+        }
+
+        internal static bool TokenRequestLogContains(string logs, string traceId, int status)
+        {
+            foreach (string line in logs.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            {
+                try
+                {
+                    using JsonDocument document = JsonDocument.Parse(line);
+                    JsonElement root = document.RootElement;
+                    if (
+                        root.ValueKind is JsonValueKind.Object
+                        && root.TryGetProperty("Properties", out JsonElement properties)
+                        && properties.ValueKind is JsonValueKind.Object
+                        && properties.TryGetProperty("TraceId", out JsonElement loggedTraceId)
+                        && loggedTraceId.ValueKind is JsonValueKind.String
+                        && loggedTraceId.GetString() == traceId
+                        && properties.TryGetProperty("EventName", out JsonElement eventName)
+                        && eventName.ValueKind is JsonValueKind.String
+                        && eventName.GetString() is "HttpRequestCompleted" or "HttpRequestFailed"
+                        && properties.TryGetProperty("Method", out JsonElement method)
+                        && method.ValueKind is JsonValueKind.String
+                        && method.GetString() is "POST"
+                        && properties.TryGetProperty("StatusCode", out JsonElement statusCode)
+                        && statusCode.ValueKind is JsonValueKind.Number
+                        && statusCode.TryGetInt32(out int loggedStatus)
+                        && loggedStatus == status
+                    )
+                    {
+                        return true;
+                    }
+                }
+                catch (JsonException)
+                {
+                    // Docker can interleave non-JSON startup diagnostics with structured request logs.
+                }
+            }
+
+            return false;
         }
 
         private string ResponseHeader(string name) =>

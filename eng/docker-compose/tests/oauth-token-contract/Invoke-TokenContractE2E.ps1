@@ -24,6 +24,7 @@ $composeProject = 'dms-token-contract'
 $derivedRoot = Join-Path $composeRoot '.derived/oauth-token-contract'
 $lockPath = Join-Path $derivedRoot 'active.lock'
 $envModule = Join-Path $composeRoot 'env-utility.psm1'
+$databaseSafetyModule = Join-Path $composeRoot 'database-safety.psm1'
 $schemaModule = Join-Path $composeRoot 'dms-schema-environment.psm1'
 $primaryFailure = $null
 $lockCreated = $false
@@ -52,7 +53,7 @@ function Get-TokenContractUpstreamUri {
     )
 
     $endpointKey = if ($Provider -eq 'keycloak') { 'KEYCLOAK_OAUTH_TOKEN_ENDPOINT' } else { 'SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT' }
-    $uriText = [string] $EnvironmentValues[$endpointKey]
+    $uriText = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvironmentValues -Name $endpointKey
     $parsedUri = $null
     if (-not [Uri]::TryCreate($uriText, [UriKind]::Absolute, [ref]$parsedUri) -or $parsedUri.Scheme -notin @('http', 'https')) {
         throw "The selected provider endpoint '$endpointKey' is missing or not an HTTP URI in the resolved environment."
@@ -99,9 +100,13 @@ function Get-TokenContractBuildArguments {
 function Invoke-WithTokenContractProxyEnvironment {
     param(
         [Parameter(Mandatory)] [scriptblock] $Action,
+        [ValidateSet('self-contained', 'keycloak')] [string] $Provider = 'self-contained',
         [switch] $SkipBuild
     )
 
+    $endpointKey = if ($Provider -eq 'keycloak') { 'KEYCLOAK_OAUTH_TOKEN_ENDPOINT' } else { 'SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT' }
+    $previousEndpoint = [Environment]::GetEnvironmentVariable($endpointKey)
+    $previousCorrelationHeader = [Environment]::GetEnvironmentVariable('CORRELATION_ID_HEADER')
     $hadPreviousMarker = Test-Path Env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE
     $previousMarker = $env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE
     $hadPreviousDmsImage = Test-Path Env:DMS_DOCKER_IMAGE
@@ -109,6 +114,10 @@ function Invoke-WithTokenContractProxyEnvironment {
     $hadPreviousAuthenticationService = Test-Path Env:AppSettings__AuthenticationService
     $previousAuthenticationService = $env:AppSettings__AuthenticationService
     try {
+        # Compose gives shell values precedence over the overlay. Pin these lane-owned settings
+        # only after the original upstream has been captured, and restore them before cleanup.
+        [Environment]::SetEnvironmentVariable($endpointKey, 'http://dms-token-proxy:8080/token')
+        $env:CORRELATION_ID_HEADER = 'X-DMS-1606-Correlation'
         $env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE = '1'
         # Host-run setup/authentication uses the loopback port; DMS uses the Docker-network alias
         # from the endpoint overlay. Environment configuration overrides compiled appsettings.
@@ -119,6 +128,8 @@ function Invoke-WithTokenContractProxyEnvironment {
         & $Action
     }
     finally {
+        [Environment]::SetEnvironmentVariable($endpointKey, $previousEndpoint)
+        [Environment]::SetEnvironmentVariable('CORRELATION_ID_HEADER', $previousCorrelationHeader)
         if ($hadPreviousMarker) { $env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE = $previousMarker }
         else { Remove-Item Env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE -ErrorAction SilentlyContinue }
         if ($hadPreviousDmsImage) { $env:DMS_DOCKER_IMAGE = $previousDmsImage }
@@ -247,6 +258,7 @@ try {
         -PrebuiltOutput:$UsePrebuiltOutput
 
     Import-Module $envModule -Force
+    Import-Module $databaseSafetyModule -Force
     $environmentCandidates = @(
         $EnvironmentFile,
         (Join-Path $repoRoot $EnvironmentFile),
@@ -264,7 +276,8 @@ try {
     $ownedRoot = Join-Path $derivedRoot ([guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $ownedRoot -Force | Out-Null
     $proxyComposeEnvironment = Join-Path $ownedRoot 'proxy.env'
-    [IO.File]::WriteAllText($proxyComposeEnvironment, "TOKEN_PROXY_UPSTREAM_URI=$realUpstreamUri`n", [Text.UTF8Encoding]::new($false))
+    $serializedUpstreamUri = ConvertTo-DotenvSafeEnvValue -Value $realUpstreamUri
+    [IO.File]::WriteAllText($proxyComposeEnvironment, "TOKEN_PROXY_UPSTREAM_URI=$serializedUpstreamUri`n", [Text.UTF8Encoding]::new($false))
 
     docker network inspect dms *> $null
     if ($LASTEXITCODE -ne 0) {
@@ -296,7 +309,7 @@ try {
     [IO.File]::WriteAllLines($rootOverlay, (Get-TokenContractOverlayLines -Provider $IdentityProvider), [Text.UTF8Encoding]::new($false))
     [IO.File]::WriteAllLines($qualifiedOverlay, (Get-TokenContractOverlayLines -Provider $IdentityProvider -Qualified), [Text.UTF8Encoding]::new($false))
 
-    Invoke-WithTokenContractProxyEnvironment -SkipBuild:$SkipDockerBuild -Action {
+    Invoke-WithTokenContractProxyEnvironment -Provider $IdentityProvider -SkipBuild:$SkipDockerBuild -Action {
         $passFailures = [Collections.Generic.List[string]]::new()
         $passes = @(
             @{
@@ -355,7 +368,7 @@ finally {
                 & (Join-Path $composeRoot 'start-local-dms.ps1') -DmsOnly -EnableConfig -EnvironmentFile $originalEnvironmentPath -IdentityProvider $IdentityProvider -DatabaseEngine $DatabaseEngine -AddExtensionSecurityMetadata
             }
             Assert-NativeCommandSucceeded -Operation 'DMS restoration' -ExitCode $LASTEXITCODE
-            $dmsPort = if ([string]::IsNullOrWhiteSpace([string]$environmentValues.DMS_HTTP_PORTS)) { '8080' } else { [string]$environmentValues.DMS_HTTP_PORTS }
+            $dmsPort = Get-ComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name 'DMS_HTTP_PORTS' -DefaultValue '8080'
             $dmsReady = $false
             $restoreDeadline = [DateTimeOffset]::UtcNow.AddSeconds(90)
             while ([DateTimeOffset]::UtcNow -lt $restoreDeadline -and -not $dmsReady) {

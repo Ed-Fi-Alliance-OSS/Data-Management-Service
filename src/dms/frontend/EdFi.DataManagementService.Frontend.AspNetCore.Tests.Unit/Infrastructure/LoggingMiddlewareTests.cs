@@ -184,8 +184,11 @@ public class Given_LoggingMiddleware
         entry.State.ContainKey("DurationMs");
     }
 
-    [Test]
-    public async Task It_propagates_request_cancellation_without_failure_logging_or_error_response()
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_propagates_request_cancellation_without_failure_logging_or_error_response(
+        bool tokenEndpoint
+    )
     {
         using var cancellationSource = new CancellationTokenSource();
         await cancellationSource.CancelAsync();
@@ -194,6 +197,14 @@ public class Given_LoggingMiddleware
         var httpContext = new DefaultHttpContext { RequestAborted = cancellationSource.Token };
         httpContext.Request.Method = "GET";
         httpContext.Request.Path = "/ed-fi/students";
+        if (tokenEndpoint)
+        {
+            httpContext.Request.Method = HttpMethods.Post;
+            httpContext.Request.Path = "/oauth/token";
+            httpContext.SetEndpoint(
+                new Endpoint(null, new EndpointMetadataCollection(TokenEndpointMetadata.Instance), "token")
+            );
+        }
         var responseBody = new MemoryStream();
         httpContext.Response.Body = responseBody;
         var logger = new TestLogger<LoggingMiddleware>();
@@ -505,6 +516,34 @@ public class Given_LoggingMiddleware
         await invoke.Should().ThrowAsync<InvalidOperationException>();
 
         httpContext.Response.StatusCode.Should().Be(StatusCodes.Status418ImATeapot);
+        logger.Entries.Should().ContainSingle(entry => entry.EventId.Name == "HttpRequestFailed");
+    }
+
+    [Test]
+    public async Task It_does_not_write_a_fallback_for_an_exception_after_token_request_cancellation()
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        await cancellationSource.CancelAsync();
+        var httpContext = new DefaultHttpContext { RequestAborted = cancellationSource.Token };
+        httpContext.Request.Method = HttpMethods.Post;
+        httpContext.Request.Path = "/oauth/token";
+        httpContext.SetEndpoint(
+            new Endpoint(null, new EndpointMetadataCollection(TokenEndpointMetadata.Instance), "token")
+        );
+        using var responseBody = new MemoryStream();
+        httpContext.Response.Body = responseBody;
+        var logger = new TestLogger<LoggingMiddleware>();
+        var middleware = new LoggingMiddleware(
+            _ => throw new InvalidOperationException("boom"),
+            AppSettingsWithCorrelationHeader(string.Empty)
+        );
+
+        Func<Task> invoke = () => middleware.Invoke(httpContext, logger);
+        await invoke.Should().ThrowAsync<InvalidOperationException>();
+
+        responseBody.ToArray().Should().BeEmpty();
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        httpContext.Response.Headers.Should().NotContainKey(OAuthErrorResponse.CorrelationHeaderName);
         logger.Entries.Should().ContainSingle(entry => entry.EventId.Name == "HttpRequestFailed");
     }
 
