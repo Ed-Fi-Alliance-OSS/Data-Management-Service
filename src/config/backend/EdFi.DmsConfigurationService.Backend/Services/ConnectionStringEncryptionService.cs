@@ -160,12 +160,22 @@ public class ConnectionStringEncryptionService(IOptions<DatabaseOptions> databas
         return _strictUtf8.GetString(padded, 0, padded.Length - paddingLength);
     }
 
-    private string DecryptLegacy(byte[] encrypted)
+    /// <summary>
+    /// For the re-encryption pass, which must read legacy values whatever
+    /// <see cref="DatabaseOptions.AllowLegacyConnectionStrings"/> is. Decodes strictly, so bytes that
+    /// are not UTF-8 throw <see cref="DecoderFallbackException"/> instead of becoming replacement
+    /// characters that would then be encrypted as if they were the connection string.
+    /// </summary>
+    internal string DecryptLegacyStrictly(byte[] encrypted) => DecryptLegacy(encrypted, _strictUtf8);
+
+    private string DecryptLegacy(byte[] encrypted) => DecryptLegacy(encrypted, Encoding.UTF8);
+
+    private string DecryptLegacy(byte[] encrypted, Encoding encoding)
     {
         using var aes = Aes.Create();
         aes.Key = _legacyKey;
 
-        return Encoding.UTF8.GetString(
+        return encoding.GetString(
             aes.DecryptCbc(
                 encrypted.AsSpan(LegacyIvLength),
                 encrypted.AsSpan(0, LegacyIvLength),

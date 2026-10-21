@@ -750,6 +750,18 @@
           "Microsoft.Extensions.Options": "[10.0.1, )"
         }
       },
+      "edfi.dmsconfigurationservice.backend.installer": {
+        "type": "Project",
+        "dependencies": {
+          "CommandLineParser": "[2.9.1, )",
+          "EdFi.DmsConfigurationService.Backend": "[1.0.0, )",
+          "EdFi.DmsConfigurationService.Backend.Mssql": "[1.0.0, )",
+          "EdFi.DmsConfigurationService.Backend.Postgresql": "[1.0.0, )",
+          "Microsoft.IdentityModel.JsonWebTokens": "[8.12.0, )",
+          "Microsoft.IdentityModel.Protocols": "[8.12.0, )",
+          "System.IdentityModel.Tokens.Jwt": "[8.12.0, )"
+        }
+      },
       "edfi.dmsconfigurationservice.backend.keycloak": {
         "type": "Project",
         "dependencies": {
@@ -865,6 +877,12 @@
           "NUnit3TestAdapter": "[4.6.0, )",
           "System.IdentityModel.Tokens.Jwt": "[8.12.0, )"
         }
+      },
+      "CommandLineParser": {
+        "type": "CentralTransitive",
+        "requested": "[2.9.1, )",
+        "resolved": "2.9.1",
+        "contentHash": "OE0sl1/sQ37bjVsPKKtwQlWDgqaxWgtme3xZz7JssWUzg5JpMIyHgCTY9MVMxOg48fJ1AgGT3tgdH5m/kQ5xhA=="
       },
       "Dapper": {
         "type": "CentralTransitive",
