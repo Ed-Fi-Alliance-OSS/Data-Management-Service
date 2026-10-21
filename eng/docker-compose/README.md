@@ -136,6 +136,17 @@ already brought up infra and the Configuration Service:
 The same E2E provisioning requirement is handled by the `E2ETests` build target
 (`build-dms.ps1` -> `Initialize-E2EDatabase`).
 
+Before any reset, provisioning refuses an E2E database that is not dedicated. It compares the E2E
+name with each protected name: `POSTGRES_DB_NAME`, `MSSQL_DB_NAME`, and every `Database`, `DB` or
+`Initial Catalog` value it reads from `DATABASE_CONNECTION_STRING_ADMIN` and
+`CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING`. The comparison ignores case and trailing spaces,
+ideographic spaces (U+3000), tabs, line feeds, carriage returns and form feeds, so a protected
+`'edfi_dms '` blocks an E2E database named `edfi_dms`. A protected name that still contains anything
+other than ASCII letters, digits or underscore once that trailing whitespace is removed also stops
+provisioning, because the check cannot compare it reliably; keep protected database names to those
+characters. The check reads connection-string values with the env-file rules, which is not always
+the name the provider uses, so it does not catch every unsupported name a provider would accept.
+
 If DMS starts before provisioning has run (or against a database missing
 `dms.EffectiveSchema`), DMS will start successfully but requests to the
 affected data stores return HTTP 503 (Service Unavailable). To recover, stop or
