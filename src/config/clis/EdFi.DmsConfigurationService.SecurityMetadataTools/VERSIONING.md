@@ -73,8 +73,19 @@ not reset it for another app release on the same line.
 
 ## Release preparation and recovery
 
-The normal `cs-` release chain implements the publication gates below. The
-independent dispatch procedure remains pending DMS-1617-13.
+The normal `cs-` release chain and dispatch-only **Pkg EdFi.Api.SecurityMetadataTools**
+workflow implement the publication gates below. In GitHub Actions, choose **Run workflow**,
+select the branch or tag containing the intended committed patch, and set
+`publish_package` (false for a dry run, true for publication). No app release tag
+or version override is required. The workflow pins every checkout to that dispatch
+commit; full history supplies the MinVer source.
+
+Both modes build/install/convert the stable package and generate SBOM and SLSA
+provenance, and check the already-published Secrets prerequisite. Publication
+rechecks the dependency immediately before pushing the exact artifact, then
+promotes it. The read-only prerequisite uses the
+existing contract verifier; it never publishes Secrets. An absent dependency must
+first be published through its own normal release process.
 
 1. Select the source ref containing the intended tool changes and committed
    patch. Verify its app major/minor through the existing MinVer release source
@@ -130,7 +141,7 @@ The remaining integration points are tracked by DMS-1617:
 | [on-config-pullrequest.yml](../../../../.github/workflows/on-config-pullrequest.yml) | Config-relevant PRs, including helper-only changes, run the required `verify-security-metadata-tools` job: version/package Pester tests and a locked pack/install/convert smoke using the checkout's MinVer app version. `Config CI Gate` includes this job. The existing unit and CMS E2E jobs run the CLI tests and unchanged-file upload scenario. No package is published or promoted. |
 | [on-config-merge-or-tag.yml](../../../../.github/workflows/on-config-merge-or-tag.yml) | The `cs-pre` release entry point pins `target_commitish` to the triggering `github.sha`, retaining the version source and committed tool patch when `main` advances. |
 | [on-prerelease.yml](../../../../.github/workflows/on-prerelease.yml) and [on-release.yml](../../../../.github/workflows/on-release.yml) | The `cs-` lane packs and verifies the installed tool after `check-secrets-contract`; publication waits for `publish-package-secrets`. Distinct package, SBOM, provenance and release assets use the calculated tool version and package hash. `Publish-SecurityMetadataToolsPackage` verifies artifact bytes/identity, checks the Local feed view, and refuses duplicate versions before pushing without skip-duplicate. Contract-only dispatch remains unchanged. Final release promotion checks out the release ref with full history, calculates the stable tool version from that source, and passes it explicitly to the existing promotion helper. |
-| `.github/workflows/Pkg EdFi.Api.SecurityMetadataTools.yml` | Planned DMS-1617-13 dispatch-only workflow; the file does not exist yet. It will use the selected ref, `publish_package`, stable calculation, dependency verification, and a separately retryable promotion job as described above. |
+| [Pkg EdFi.Api.SecurityMetadataTools.yml](../../../../.github/workflows/Pkg%20EdFi.Api.SecurityMetadataTools.yml) | Dispatch-only stable build, installed-package verification, SBOM and SLSA provenance on every run. `publish_package=true` enables `publish` after both attestations, with the published Secrets prerequisite and exact-version refusal. The separate `promote` job depends on successful publication and consumes `build`’s retained version. After a successful push and failed promotion, rerun only `promote` in the same run. |
 
 Use these supported package commands from the repository root (the app version
 is illustrative; release callers supply the selected ref's MinVer result):

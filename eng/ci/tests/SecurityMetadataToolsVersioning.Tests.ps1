@@ -597,3 +597,257 @@ Describe 'Security Metadata Tools normal release workflow wiring and source hand
         $step | Should -Not -Match 'Publish-SecurityMetadataToolsPackage'
     }
 }
+
+Describe 'SecurityMetadataTools independent release orchestration' {
+    BeforeAll {
+        $script:repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
+        Import-Module (Join-Path $script:repoRoot 'eng/ci/SecurityMetadataToolsRelease.psm1')
+        Import-Module (Join-Path $script:repoRoot 'package-helpers.psm1')
+        $script:feed = 'https://feed.invalid/_packaging/EdFi/nuget/v3/index.json'
+        $script:password = [Security.SecureString]::new()
+        $script:password.AppendChar('x')
+        $script:secretsVersion = Get-SecretsContractVersion
+        $script:toolVersion = Get-SecurityMetadataToolsVersion -AppVersion '8.1.9-beta.42' -StableRelease
+        $stage = New-Item -ItemType Directory (Join-Path $TestDrive 'tool')
+        Set-Content (Join-Path $stage 'EdFi.Api.SecurityMetadataTools.nuspec') "<package><metadata><id>EdFi.Api.SecurityMetadataTools</id><version>$script:toolVersion</version></metadata></package>"
+        $script:toolPackage = Join-Path $TestDrive 'tool.nupkg'
+        [IO.Compression.ZipFile]::CreateFromDirectory($stage, $script:toolPackage)
+        $script:toolHash = (Get-FileHash $script:toolPackage).Hash
+
+        # Real compiled contract fixtures exercise the existing verifier, including its
+        # metadata, documentation and dependency comparison, without any live feed calls.
+        $library = New-Item -ItemType Directory (Join-Path $TestDrive 'secrets/lib/net10.0')
+        Add-Type -TypeDefinition 'public class IndependentReleaseContract { public void Apply() {} }' `
+            -OutputAssembly (Join-Path $library 'EdFi.DmsConfigurationService.Secrets.dll')
+        Set-Content (Join-Path $library 'EdFi.DmsConfigurationService.Secrets.xml') '<doc><members><member name="M:IndependentReleaseContract.Apply"><summary>Original contract.</summary></member></members></doc>'
+        Set-Content (Join-Path $TestDrive 'secrets/EdFi.Api.Secrets.nuspec') "<package><metadata><id>EdFi.Api.Secrets</id><version>$script:secretsVersion</version></metadata></package>"
+        $script:secretsPackage = Join-Path $TestDrive 'secrets.nupkg'
+        [IO.Compression.ZipFile]::CreateFromDirectory((Join-Path $TestDrive 'secrets'), $script:secretsPackage)
+        Set-Content (Join-Path $library 'EdFi.DmsConfigurationService.Secrets.xml') '<doc><members><member name="M:IndependentReleaseContract.Apply"><summary>Incompatible contract.</summary></member></members></doc>'
+        $script:changedSecretsPackage = Join-Path $TestDrive 'changed-secrets.nupkg'
+        [IO.Compression.ZipFile]::CreateFromDirectory((Join-Path $TestDrive 'secrets'), $script:changedSecretsPackage)
+
+        function Invoke-IndependentPublication {
+            Publish-SecurityMetadataToolsRelease -Version $script:toolVersion -PackageFile $script:toolPackage `
+                -Sha256 $script:toolHash -ServiceIndexUrl $script:feed -ApiKey 'test-only' -FeedAccess $script:feedAccess
+        }
+        function Invoke-IndependentPromotion {
+            Invoke-ContractPromotion -Version $script:toolVersion -PackageName 'EdFi.Api.SecurityMetadataTools' `
+                -PackagesURL 'https://packages.invalid' -Username 'test' -Password $script:password `
+                -ServiceIndexUrl $script:feed -ApiKey 'test-only'
+        }
+    }
+    BeforeEach {
+        $script:published = [Collections.Generic.List[string]]::new()
+        $script:secretsPublished = $true
+        $script:secretsFeedError = $false
+        $script:publishedSecretsPackage = $script:secretsPackage
+        $script:pushExit = 0
+        $script:packExit = 0
+        $script:promotionFails = $false
+        $script:feedAccess = @{
+            ResolvePackageBaseAddress = {
+                if ($script:secretsFeedError) { throw 'Secrets feed unavailable' }
+                'https://feed.invalid/flat2'
+            }
+            GetPublishedVersions = { @{ Found = $script:secretsPublished; Versions = @($script:secretsVersion) } }
+            SavePublishedPackage = {
+                param($BaseAddress, $NormalizedId, $NormalizedVersion, $Destination, $ApiKey)
+                $BaseAddress | Should -BeExactly 'https://feed.invalid/flat2'
+                $NormalizedId | Should -BeExactly 'edfi.api.secrets'
+                $NormalizedVersion | Should -BeExactly $script:secretsVersion
+                $ApiKey | Should -BeExactly 'test-only'
+                Copy-Item $script:publishedSecretsPackage $Destination
+            }
+        }
+        Mock -ModuleName SecurityMetadataToolsRelease pwsh { $global:LASTEXITCODE = 0 }
+        Mock -ModuleName SecurityMetadataToolsRelease Get-FileHash { @{ Hash = $script:toolHash } }
+        Mock -ModuleName SecurityMetadataToolsRelease dotnet {
+            $args[0] | Should -BeExactly 'pack'
+            $output = $args[[Array]::IndexOf($args, '--output') + 1]
+            New-Item -ItemType Directory $output -Force | Out-Null
+            Copy-Item $script:secretsPackage (Join-Path $output "EdFi.Api.Secrets.$script:secretsVersion.nupkg")
+            $global:LASTEXITCODE = $script:packExit
+        }
+        Mock -ModuleName package-helpers dotnet {
+            $args[0..1] | Should -Be @('nuget', 'push')
+            $args[2] | Should -BeExactly $script:toolPackage
+            $global:LASTEXITCODE = $script:pushExit
+            if ($script:pushExit -eq 0) { $script:published.Add($script:toolVersion) }
+        }
+        Mock -ModuleName package-helpers Invoke-RestMethod {
+            if ($Uri -like '*_packaging/*') {
+                $view = if ($Uri -like '*@Release/*') { 'Release' } else { 'Local' }
+                return @{ resources = @(@{ '@id' = "https://feed.invalid/$view/flat2/"; '@type' = 'PackageBaseAddress/3.0.0' }) }
+            }
+            if ($Uri -like '*/Release/flat2/*') { return @{ versions = @() } }
+            if ($Uri -like '*/Local/flat2/*') { return @{ versions = @($script:published) } }
+            throw "Unexpected feed request: $Uri"
+        }
+        Mock -ModuleName package-helpers Invoke-WebRequest {
+            if ($script:promotionFails) { throw 'Promotion unavailable' }
+            return @{ StatusCode = 200 }
+        }
+    }
+
+    It 'builds identical stable versions for dry-run and publication from an app prerelease with no build-phase mutations' {
+        $dryRun = Invoke-SecurityMetadataToolsReleaseBuild -AppVersion '8.1.9-beta.42+source.123'
+        $publication = Invoke-SecurityMetadataToolsReleaseBuild -AppVersion '8.1.9-beta.42+source.123'
+        $dryRun.Version | Should -BeExactly $script:toolVersion
+        $publication.Version | Should -BeExactly $dryRun.Version
+        $publication.Sha256 | Should -BeExactly $dryRun.Sha256
+        Should -Invoke -ModuleName SecurityMetadataToolsRelease pwsh -Times 2 -Exactly -ParameterFilter {
+            $args[-2] -ceq '-AppVersion' -and $args[-1] -ceq $script:toolVersion
+        }
+        Should -Invoke -ModuleName package-helpers dotnet -Times 0 -Exactly
+        Should -Invoke -ModuleName package-helpers Invoke-WebRequest -Times 0 -Exactly
+        Should -Invoke -ModuleName SecurityMetadataToolsRelease dotnet -Times 0 -Exactly
+    }
+
+    It 'uses the shared MinVer source on an untagged implementation branch in stable mode' {
+        # Control only MinVer/tool installation; execute the real source reader and
+        # release build orchestration, without requiring a cs- application release tag.
+        $hadMinVer = [bool] (Get-Command minver -ErrorAction SilentlyContinue)
+        if (-not $hadMinVer) { function global:minver { throw 'MinVer must be mocked in this test.' } }
+        Mock -ModuleName package-helpers minver { '8.1.9-beta.0.42' }
+        Mock -ModuleName package-helpers dotnet { $global:LASTEXITCODE = 0 }
+        $originalOutput = $env:GITHUB_OUTPUT
+        $env:GITHUB_OUTPUT = Join-Path $TestDrive 'branch-versions.txt'
+        $branch = New-Item -ItemType Directory (Join-Path $TestDrive 'implementation-branch')
+        Push-Location $branch
+        try {
+            git init -q -b tool-patch
+            git -c user.name=Test -c user.email=test@example.invalid -c commit.gpgsign=false commit -qm initial --allow-empty
+            git branch --show-current | Should -BeExactly 'tool-patch'
+            @(git tag).Count | Should -Be 0
+            Get-VersionNumber -projectPrefix cs | Out-Null
+            $source = ((Get-Content $env:GITHUB_OUTPUT | Where-Object { $_ -like 'dms-v=*' }) -split '=', 2)[1]
+            (Invoke-SecurityMetadataToolsReleaseBuild -AppVersion $source).Version | Should -BeExactly $script:toolVersion
+            Should -Invoke -ModuleName package-helpers minver -Times 1 -Exactly -ParameterFilter { $args -join ' ' -ceq '-t v' }
+            Should -Invoke -ModuleName package-helpers dotnet -Times 0 -Exactly -ParameterFilter { $args[0] -ceq 'nuget' }
+            Should -Invoke -ModuleName package-helpers Invoke-WebRequest -Times 0 -Exactly
+        }
+        finally {
+            Pop-Location
+            $env:GITHUB_OUTPUT = $originalOutput
+            if (-not $hadMinVer) { Remove-Item Function:/minver }
+        }
+    }
+
+    It 'fails build when installed-package validation fails' {
+        Mock -ModuleName SecurityMetadataToolsRelease pwsh { $global:LASTEXITCODE = 1 }
+        { Invoke-SecurityMetadataToolsReleaseBuild -AppVersion '8.1.9-beta.42' } | Should -Throw '*validation failed*'
+        Should -Invoke -ModuleName SecurityMetadataToolsRelease Get-FileHash -Times 0 -Exactly
+    }
+
+    It 'accepts a matching published Secrets contract, then pushes and promotes exactly the retained tool version' {
+        Invoke-IndependentPublication
+        Invoke-IndependentPromotion | Should -Match 'promoted'
+        Should -Invoke -ModuleName package-helpers dotnet -Times 1 -Exactly
+        Should -Invoke -ModuleName package-helpers Invoke-WebRequest -Times 1 -Exactly -ParameterFilter {
+            $payload = $Body | ConvertFrom-Json
+            $payload.packages[0].id -ceq 'EdFi.Api.SecurityMetadataTools' -and
+            $payload.packages[0].version -ceq $script:toolVersion -and $payload.data.viewId -ceq 'release'
+        }
+    }
+
+    It 'checks the published dependency in a dry run without publishing either package or promoting' {
+        Assert-PublishedSecretsContract -ServiceIndexUrl $script:feed -ApiKey 'test-only' -FeedAccess $script:feedAccess
+        Should -Invoke -ModuleName package-helpers dotnet -Times 0 -Exactly
+        Should -Invoke -ModuleName package-helpers Invoke-WebRequest -Times 0 -Exactly
+    }
+
+    It 'blocks tool publication/promotion for <Failure> Secrets state' -ForEach @(
+        @{ Failure = 'missing'; Error = '*must already be published*' }
+        @{ Failure = 'incompatible'; Error = '*XML documentation differ*' }
+        @{ Failure = 'unreadable'; Error = '*Secrets feed unavailable*' }
+        @{ Failure = 'unbuildable'; Error = '*packing failed*' }
+    ) {
+        switch ($Failure) {
+            missing { $script:secretsPublished = $false }
+            incompatible { $script:publishedSecretsPackage = $script:changedSecretsPackage }
+            unreadable { $script:secretsFeedError = $true }
+            unbuildable { $script:packExit = 1 }
+        }
+        { Invoke-IndependentPublication; Invoke-IndependentPromotion } | Should -Throw $Error
+        Should -Invoke -ModuleName package-helpers dotnet -Times 0 -Exactly
+        Should -Invoke -ModuleName package-helpers Invoke-WebRequest -Times 0 -Exactly
+    }
+
+    It 'rejects a new attempt at the same exact version without promotion' {
+        $script:published.Add($script:toolVersion)
+        { Invoke-IndependentPublication; Invoke-IndependentPromotion } | Should -Throw '*already published*Commit a new*'
+        Should -Invoke -ModuleName package-helpers dotnet -Times 0 -Exactly
+        Should -Invoke -ModuleName package-helpers Invoke-WebRequest -Times 0 -Exactly
+    }
+
+    It 'never promotes when push fails' {
+        $script:pushExit = 1
+        { Invoke-IndependentPublication; Invoke-IndependentPromotion } | Should -Throw '*push failed*'
+        Should -Invoke -ModuleName package-helpers dotnet -Times 1 -Exactly
+        Should -Invoke -ModuleName package-helpers Invoke-WebRequest -Times 0 -Exactly
+    }
+
+    It 'retries only promotion after successful push without rebuilding, rechecking publication or changing the patch' {
+        $build = Invoke-SecurityMetadataToolsReleaseBuild -AppVersion '8.1.9-beta.42'
+        Invoke-IndependentPublication
+        $script:promotionFails = $true
+        { Invoke-IndependentPromotion } | Should -Throw '*Promotion unavailable*'
+        $script:promotionFails = $false
+        Invoke-IndependentPromotion | Should -Match 'promoted'
+        $build.Version | Should -BeExactly $script:toolVersion
+        Get-SecurityMetadataToolsVersion -AppVersion '8.1.9-beta.42' -StableRelease | Should -BeExactly $build.Version
+        Should -Invoke -ModuleName SecurityMetadataToolsRelease pwsh -Times 1 -Exactly
+        Should -Invoke -ModuleName SecurityMetadataToolsRelease dotnet -Times 1 -Exactly
+        Should -Invoke -ModuleName package-helpers dotnet -Times 1 -Exactly
+        Should -Invoke -ModuleName package-helpers Invoke-WebRequest -Times 2 -Exactly -ParameterFilter {
+            ($Body | ConvertFrom-Json).packages[0].version -ceq $build.Version
+        }
+        # One Local lookup for duplicate refusal; one per promotion for existence.
+        Should -Invoke -ModuleName package-helpers Invoke-RestMethod -Times 3 -Exactly -ParameterFilter { $Uri -like '*/Local/flat2/*' }
+        { Invoke-IndependentPublication } | Should -Throw '*already published*'
+        Should -Invoke -ModuleName package-helpers dotnet -Times 1 -Exactly
+    }
+}
+
+Describe 'SecurityMetadataTools independent workflow wiring' {
+    BeforeAll {
+        $script:repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
+        $script:dispatch = Get-Content (Join-Path $script:repoRoot '.github/workflows/Pkg EdFi.Api.SecurityMetadataTools.yml') -Raw
+    }
+    It 'is dispatch-only with a publish switch, pinned selected-ref checkout and full version-source history' {
+        $events = [regex]::Match($script:dispatch, '(?ms)^on:\n(.*?)^permissions:').Value
+        $events | Should -Match 'workflow_dispatch:'
+        $events | Should -Match 'publish_package:'
+        $events | Should -Not -Match 'release:|push:|version:|workflow_call:'
+        $build = [regex]::Match($script:dispatch, '(?ms)^  build:.*?(?=^  [\w-]+:)').Value
+        $build | Should -Match 'ref: \$\{\{ github.sha \}\}'
+        $build | Should -Match 'fetch-depth: 0'
+        $build | Should -Match 'Get-VersionNumber -projectPrefix "cs"'
+        $build | Should -Match 'Invoke-SecurityMetadataToolsReleaseBuild -AppVersion \$env:APP_VERSION'
+        $build | Should -Not -Match 'publish_package|release.tag_name'
+    }
+    It 'always attests the exact artifact and gates publication on both attestations' {
+        $script:dispatch | Should -Match 'needs: \[build, check-secrets-contract, sbom-create-security-metadata-tools, provenance-create-security-metadata-tools\]'
+        $script:dispatch | Should -Match 'base64-subjects: \$\{\{ needs.build.outputs.hash-code \}\}'
+        $script:dispatch | Should -Match 'Get-FileHash.*SHA256.*needs.build.outputs.sha256'
+        $check = [regex]::Match($script:dispatch, '(?ms)^  check-secrets-contract:.*?(?=^  publish:)').Value
+        $check | Should -Match 'Assert-PublishedSecretsContract'
+        $check | Should -Not -Match 'if:|publish_package'
+        $script:dispatch | Should -Match 'sbom-tool generate'
+        $script:dispatch | Should -Match 'provenance-name: edfiApiSecurityMetadataTools.intoto.jsonl'
+    }
+    It 'guards both mutations and retries promotion with only the original build version' {
+        $publish = [regex]::Match($script:dispatch, '(?ms)^  publish:.*?(?=^  promote:)').Value
+        $promote = [regex]::Match($script:dispatch, '(?ms)^  promote:.*').Value
+        $publish | Should -Match 'if: \$\{\{ inputs.publish_package \}\}'
+        $publish | Should -Match 'Publish-SecurityMetadataToolsRelease'
+        $promote | Should -Match 'needs: \[build, publish\]'
+        $promote | Should -Match 'if: \$\{\{ inputs.publish_package \}\}'
+        $promote | Should -Match 'TOOL_VERSION: \$\{\{ needs.build.outputs.tool-version \}\}'
+        $promote | Should -Match 'Invoke-ContractPromotion'
+        $promote | Should -Match '-Version \$env:TOOL_VERSION'
+        $promote | Should -Not -Match 'Publish-SecurityMetadataTools|Get-SecurityMetadataToolsVersion|dotnet pack|ReleaseBuild'
+        $script:dispatch | Should -Not -Match 'on-prerelease.yml|on-release.yml|nuget push.*Secrets'
+    }
+}

@@ -1,0 +1,221 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+name: Pkg EdFi.Api.SecurityMetadataTools
+on:
+  workflow_dispatch:
+    inputs:
+      publish_package:
+        description: Publish the validated stable tool package and promote it to Release
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  SECURITY_METADATA_TOOLS_PACKAGE_NAME: EdFi.Api.SecurityMetadataTools
+  MANIFEST_FILE: manifest.spdx.json
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  build:
+    name: Build and validate stable SecurityMetadataTools
+    runs-on: ubuntu-latest
+    outputs:
+      tool-version: ${{ steps.package.outputs.version }}
+      sha256: ${{ steps.package.outputs.sha256 }}
+      hash-code: ${{ steps.package.outputs.hash-code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The dispatch branch's original commit, including all MinVer source history.
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+      - name: Calculate app version from selected ref
+        id: versions
+        run: |
+          Import-Module ./package-helpers.psm1
+          Get-VersionNumber -projectPrefix "cs"
+      - name: Pack and verify installed stable tool
+        id: package
+        env:
+          APP_VERSION: ${{ steps.versions.outputs.dms-v }}
+        run: |
+          Import-Module ./eng/ci/SecurityMetadataToolsRelease.psm1
+          $package = Invoke-SecurityMetadataToolsReleaseBuild -AppVersion $env:APP_VERSION
+          "version=$($package.Version)" >> $env:GITHUB_OUTPUT
+          "sha256=$($package.Sha256)" >> $env:GITHUB_OUTPUT
+          $subject = "$($package.Sha256)  $([IO.Path]::GetFileName($package.PackageFile))"
+          "hash-code=$([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($subject)))" >> $env:GITHUB_OUTPUT
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: EdFi.Api.SecurityMetadataTools-NuGet
+          path: EdFi.Api.SecurityMetadataTools.${{ steps.package.outputs.version }}.nupkg
+          if-no-files-found: error
+          retention-days: 30
+
+  sbom-create-security-metadata-tools:
+    name: Create SecurityMetadataTools SBOM
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    needs: build
+    permissions:
+      actions: read
+      contents: write
+    outputs:
+      sbom-hash-code: ${{ steps.sbom-hash-code.outputs.sbom-hash-code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Get SecurityMetadataTools Artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.SECURITY_METADATA_TOOLS_PACKAGE_NAME }}-NuGet
+
+      - name: Generate SecurityMetadataTools Software Bill of Materials (SBOM)
+        run: |
+          $packageName = "${{ env.SECURITY_METADATA_TOOLS_PACKAGE_NAME }}"
+          $version = "${{ needs.build.outputs.tool-version }}"
+          $packageFile = "$packageName.$version.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected SecurityMetadataTools package was not found: $packageFile"
+          }
+          if ((Get-FileHash -LiteralPath $packageFile -Algorithm SHA256).Hash -ine "${{ needs.build.outputs.sha256 }}") {
+            throw "SecurityMetadataTools package differs from the build artifact."
+          }
+          (Resolve-Path $packageFile).Path > buildfilelist.txt
+
+          dotnet tool install --global Microsoft.Sbom.DotNetTool
+          if ($LASTEXITCODE -ne 0) { throw "SBOM tool installation failed." }
+
+          sbom-tool generate `
+              -b ./ `
+              -bl ./buildfilelist.txt `
+              -bc "./" `
+              -pn "$packageName" `
+              -pv $version `
+              -nsb https://ed-fi.org `
+              -m ./ `
+              -ps "Ed-Fi Alliance"
+          if ($LASTEXITCODE -ne 0) { throw "SecurityMetadataTools SBOM generation failed." }
+
+          cp _manifest/spdx_2.2/manifest.spdx.* .
+
+      - name: Upload SecurityMetadataTools SBOM
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ env.SECURITY_METADATA_TOOLS_PACKAGE_NAME }}-SBOM
+          path: ${{ env.MANIFEST_FILE }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Generate SecurityMetadataTools hash code for SBOM
+        id: sbom-hash-code
+        shell: bash
+        run: |
+          sbom_hash=$(sha256sum ./${{ env.MANIFEST_FILE }} | awk '{split($0,a); print a[1]}')
+          echo "sbom-hash-code=$sbom_hash" >> "$GITHUB_OUTPUT"
+
+  provenance-create-security-metadata-tools:
+    name: Create SecurityMetadataTools Provenance
+    needs: build
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+    uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
+    with:
+      base64-subjects: ${{ needs.build.outputs.hash-code }}
+      provenance-name: edfiApiSecurityMetadataTools.intoto.jsonl
+      upload-assets: false
+      compile-generator: true
+
+  check-secrets-contract:
+    name: Verify already-published Secrets dependency
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      ARTIFACTS_FEED_URL: ${{ vars.AZURE_ARTIFACTS_FEED_URL }}
+      ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+      - name: Compare selected-ref contract with published dependency (read only)
+        run: |
+          Import-Module ./eng/ci/SecurityMetadataToolsRelease.psm1
+          Assert-PublishedSecretsContract -ServiceIndexUrl $env:ARTIFACTS_FEED_URL -ApiKey $env:ARTIFACTS_API_KEY
+
+  publish:
+    name: Publish exact SecurityMetadataTools artifact
+    needs: [build, check-secrets-contract, sbom-create-security-metadata-tools, provenance-create-security-metadata-tools]
+    if: ${{ inputs.publish_package }}
+    concurrency:
+      group: publish-package-security-metadata-tools
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    env:
+      ARTIFACTS_FEED_URL: ${{ vars.AZURE_ARTIFACTS_FEED_URL }}
+      ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+      TOOL_VERSION: ${{ needs.build.outputs.tool-version }}
+      TOOL_SHA256: ${{ needs.build.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: EdFi.Api.SecurityMetadataTools-NuGet
+      - name: Verify published Secrets dependency and push exact tool version
+        run: |
+          Import-Module ./package-helpers.psm1
+          Import-Module ./eng/ci/SecurityMetadataToolsRelease.psm1
+          InstallCredentialHandler
+          Publish-SecurityMetadataToolsRelease -Version $env:TOOL_VERSION `
+              -PackageFile "EdFi.Api.SecurityMetadataTools.$env:TOOL_VERSION.nupkg" `
+              -Sha256 $env:TOOL_SHA256 -ServiceIndexUrl $env:ARTIFACTS_FEED_URL -ApiKey $env:ARTIFACTS_API_KEY
+
+  promote:
+    name: Promote retained SecurityMetadataTools version to Release
+    # Retry only this failed job in the same run after a successful push.
+    needs: [build, publish]
+    if: ${{ inputs.publish_package }}
+    runs-on: ubuntu-latest
+    env:
+      TOOL_VERSION: ${{ needs.build.outputs.tool-version }}
+      ARTIFACTS_FEED_URL: ${{ vars.AZURE_ARTIFACTS_FEED_URL }}
+      ARTIFACTS_PACKAGES_URL: ${{ vars.ARTIFACTS_PACKAGES_URL }}
+      ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+      ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+      - name: Promote original build version without rebuilding or republishing
+        run: |
+          Import-Module ./package-helpers.psm1
+          Invoke-ContractPromotion -PackagesURL $env:ARTIFACTS_PACKAGES_URL `
+              -Username $env:ARTIFACTS_USERNAME `
+              -Password (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force) `
+              -ServiceIndexUrl $env:ARTIFACTS_FEED_URL -ApiKey $env:ARTIFACTS_API_KEY `
+              -PackageName 'EdFi.Api.SecurityMetadataTools' -Version $env:TOOL_VERSION
