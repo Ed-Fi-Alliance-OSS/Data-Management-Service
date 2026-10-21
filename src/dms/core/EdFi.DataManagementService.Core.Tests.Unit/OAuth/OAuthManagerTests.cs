@@ -1126,6 +1126,20 @@ public class OAuthManagerTests
         }
 
         [Test]
+        public async Task It_preserves_a_recognized_400_when_its_description_has_invalid_unicode()
+        {
+            await Act(
+                null,
+                HttpStatusCode.BadRequest,
+                """{"error":"invalid_request","error_description":"\uD800"}""",
+                GrantType,
+                new TokenRequestCredentials("client", "secret")
+            );
+
+            await AssertOAuthErrorResponse(HttpStatusCode.BadRequest, "invalid_request", ProviderFallback);
+        }
+
+        [Test]
         public async Task It_accepts_the_management_api_token_limit_urn_and_rebuilds_guidance()
         {
             string upstreamBody = CmsFailureResponse
@@ -1813,6 +1827,96 @@ public class OAuthManagerTests
     /// <see cref="ExpectedGatewayDetail"/>.
     /// </summary>
     private const string ExpectedNoFieldsMarker = "(none)";
+
+    [TestFixture("""{"error":"invalid_client","error":"invalid_client"}""")]
+    [TestFixture("""{"error_description":"first","error_description":"second"}""")]
+    [TestFixture("""{"error_description":"Do not relay this","extra":"secret","extra":"secret"}""")]
+    public class Given_An_Upstream_401_With_Duplicate_Root_Members(string upstreamBody)
+    {
+        private HttpResponseMessage _response = default!;
+        private RecordingLogger<OAuthManager> _logger = default!;
+        private JsonObject _body = default!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            (_response, _logger) = await UpstreamResponds(HttpStatusCode.Unauthorized, upstreamBody);
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!.AsObject();
+        }
+
+        [Test]
+        public void It_preserves_the_unauthorized_status() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        [Test]
+        public void It_uses_only_the_fixed_oauth_fallback()
+        {
+            _body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
+            _body["error"]!.GetValue<string>().Should().Be("invalid_client");
+            _body["error_description"]!.GetValue<string>().Should().Be(ExpectedUnauthorizedFallbackDetail);
+            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+        }
+
+        [Test]
+        public void It_delivers_the_dms_challenge_and_correlation()
+        {
+            _response
+                .Headers.WwwAuthenticate.ToString()
+                .Should()
+                .Be("Basic realm=\"EdFi.DataManagementService\"");
+            _response.Headers.GetValues("X-Correlation-ID").Should().Equal(CorrelationId);
+        }
+
+        [Test]
+        public void It_records_only_the_empty_selected_summary()
+        {
+            LogRecord record = DiscardedUnauthorizedDetailRecord(_logger)!;
+            record.Should().NotBeNull();
+            record.Properties["TraceId"].Should().Be(CorrelationId);
+            record.Properties["StandardFields"].Should().Be(ExpectedNoFieldsMarker);
+            record.Properties["OtherFieldNames"].Should().Be(ExpectedNoFieldsMarker);
+            record.Exception.Should().BeNull();
+        }
+
+        [Test]
+        public void It_does_not_misreport_a_transport_failure() =>
+            _logger.Records.Should().NotContain(record => record.Level == LogLevel.Error);
+    }
+
+    [TestFixture("""{"error":"invalid_client","error_description":"\uD800"}""")]
+    [TestFixture("""{"error":"\uDC00"}""")]
+    [TestFixture("""{"\uD800":"withheld"}""")]
+    public class Given_An_Upstream_401_With_Invalid_Unicode(string upstreamBody)
+    {
+        private HttpResponseMessage _response = default!;
+        private RecordingLogger<OAuthManager> _logger = default!;
+
+        [SetUp]
+        public async Task Setup() =>
+            (_response, _logger) = await UpstreamResponds(HttpStatusCode.Unauthorized, upstreamBody);
+
+        [Test]
+        public async Task It_preserves_the_fixed_unauthorized_contract()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            JsonObject body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!.AsObject();
+            body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
+            body["error"]!.GetValue<string>().Should().Be("invalid_client");
+            body["error_description"]!.GetValue<string>().Should().Be(ExpectedUnauthorizedFallbackDetail);
+            _response
+                .Headers.WwwAuthenticate.ToString()
+                .Should()
+                .Be("Basic realm=\"EdFi.DataManagementService\"");
+            _response.Headers.GetValues("X-Correlation-ID").Should().Equal(CorrelationId);
+        }
+
+        [Test]
+        public void It_records_a_safe_fallback_without_a_transport_error()
+        {
+            DiscardedUnauthorizedDetailRecord(_logger).Should().NotBeNull();
+            _logger.Records.Should().NotContain(record => record.Level == LogLevel.Error);
+        }
+    }
 
     /// <summary>
     /// The marker the fallback event uses for a standard field that arrived as a JSON object or
@@ -3470,6 +3574,15 @@ public class OAuthManagerTests
         private static IEnumerable<TestCaseData> DeviatingBodies()
         {
             yield return new TestCaseData("not json at all").SetName("Unparseable body");
+            yield return new TestCaseData("""{"type":"\uD800"}""").SetName(
+                "Invalid Unicode type retains generic 429"
+            );
+            yield return new TestCaseData(
+                """{"type":"urn:ed-fi:management-api:security:authentication:too-many-tokens","status":429,"errors":["\uD800"]}"""
+            ).SetName("Invalid Unicode limit message retains generic 429");
+            yield return new TestCaseData("""{"error":"slow_down","extra":1,"extra":2}""").SetName(
+                "Duplicate root names retain generic 429"
+            );
             yield return new TestCaseData("\"a bare string\"").SetName("Body is not a JSON object");
             yield return new TestCaseData("null").SetName("Body is the JSON literal null");
             yield return new TestCaseData(BodyOfType("urn:ed-fi:api:too-many-requests")).SetName(

@@ -28,23 +28,21 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
     /// that can reach the endpoint. The upstream identity service's own response body must
     /// therefore never appear in it: its wording, error taxonomy, internal hostnames, realm names
     /// and any stack trace it carries are all disclosure, and its length is bounded only by what
-    /// the upstream chooses to send. The body's <c>correlationId</c> is the supported way to
-    /// reach the detail - it appears verbatim on the log entry that does record the upstream
-    /// content, which is what FR-LOG-6 guarantees.
+    /// the upstream chooses to send. Decode the <c>X-Correlation-ID</c> response header once
+    /// to find the normalized trace value on the corresponding log entry.
     /// </remarks>
     private const string GatewayErrorDetail = OAuthErrorResponse.GatewayDescription;
 
     /// <summary>
-    /// The client-facing <c>detail</c> of a 401 whose upstream body carried no usable
+    /// The client-facing description of a 401 whose upstream body carried no usable
     /// <c>error_description</c>.
     /// </summary>
     /// <remarks>
     /// Same disclosure argument as <see cref="GatewayErrorDetail"/>. The parsed OAuth
-    /// <c>error</c> and <c>error_description</c> are passed through when present, being part of
-    /// the OAuth 2.0 error contract the client is entitled to, while an arbitrary body that
-    /// merely failed to contain them is not. What this replaces is summarized on the log under
+    /// description is passed through only when usable; the error is always invalid_client.
+    /// What this replaces is summarized on the log under
     /// <see cref="DiscardedUnauthorizedDetailTemplate"/> rather than dropped, so the response's
-    /// <c>correlationId</c> still reaches it - see <c>SummarizeUpstreamFieldsForLogging</c> for
+    /// decoded <c>X-Correlation-ID</c> still reaches it - see <c>SummarizeUpstreamFieldsForLogging</c> for
     /// what that summary keeps and what it deliberately does not.
     /// </remarks>
     private const string UnauthorizedFallbackDetail = OAuthErrorResponse.UnauthorizedFallbackDescription;
@@ -86,10 +84,9 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
     /// </summary>
     /// <remarks>
     /// Ordinal, because JSON member names are case-sensitive and RFC 6749 spells these lowercase.
-    /// <c>error</c> costs nothing at all to log, since it is already forwarded to the client as
-    /// the problem-details <c>title</c> (<see cref="Response.FailureResponse.ForUnauthorized"/>).
+    /// <c>error</c> is eligible for scalar summary even when the wire code is normalized.
     /// <c>error_description</c> reaches this summary only when its value was not a usable string
-    /// - a JSON object or array, reported as malformed, or a JSON null - because a well-formed one
+    /// - including invalid decoded characters, a JSON object or array, or a JSON null - because a usable one
     /// is precisely what suppresses this event. <c>error_uri</c> is never logged by value; see
     /// <see cref="ErrorUriFieldName"/>.
     ///
@@ -162,9 +159,8 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
     /// The <c>type</c> a Configuration Service token-limit rejection carries. The Configuration
     /// Service uses the Management API's <c>urn:ed-fi:management-api</c> prefix; an earlier
     /// Configuration Service used <c>urn:ed-fi:api</c>. Both are matched exactly, so a DMS
-    /// deployed beside either version still recognizes the rejection. Neither value is DMS's own
-    /// response type, which <see cref="Response.FailureResponse.ForTooManyTokens"/> sets
-    /// independently.
+    /// deployed beside either version still recognizes the rejection. DMS returns an OAuth error
+    /// rather than forwarding either problem type.
     /// </summary>
     private const string LegacyTooManyTokensType = "urn:ed-fi:api:security:authentication:too-many-tokens";
 
@@ -185,9 +181,8 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
 
     private const string TokenLimitMessageSuffix = "). Access tokens should be reused until they expire.";
 
-    // The two client-authentication rejections carry the RFC 6749 section 5.2 error code the
-    // Ed-Fi ODS/API answers with as the problem-details title, in the same 401 shape the upstream
-    // rejection uses. Neither description echoes anything the caller sent.
+    // RFC 6749 section 5.2 codes for local authentication and request failures. The corresponding
+    // fixed descriptions never echo anything the caller sent.
     private const string InvalidClientError = "invalid_client";
 
     private const string InvalidRequestError = "invalid_request";
@@ -332,7 +327,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         }
 
         // The static form, because a caller can bind a JSON null into this parameter, and a null
-        // grant type is unsupported rather than a fault.
+        // grant type is missing rather than a fault.
         if (string.IsNullOrEmpty(grantType))
         {
             return OAuthErrorResponse.Create(
@@ -490,7 +485,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             JsonObject? obj = JsonObjectOrNull(body);
             string? error = GetStringOrNull(obj?["error"]);
 
-            if (error is null || !IsRecognizedTokenError(error))
+            if (obj is null || error is null || !IsRecognizedTokenError(error))
             {
                 logger.LogWarning(
                     "Error from upstream identity service - {TraceId} - {Content}",
@@ -505,14 +500,12 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                 );
             }
 
-            string? suppliedDescription = GetStringOrNull(obj?["error_description"]);
+            string? suppliedDescription = GetStringOrNull(obj["error_description"]);
             bool hasUsableDescription =
                 suppliedDescription is not null && IsUsableOAuthDescription(suppliedDescription);
             if (!hasUsableDescription)
             {
-                (string standardFields, string otherFieldNames) = obj is null
-                    ? (NoUpstreamFieldsMarker, NoUpstreamFieldsMarker)
-                    : SummarizeUpstreamFieldsForLogging(obj);
+                (string standardFields, string otherFieldNames) = SummarizeUpstreamFieldsForLogging(obj);
                 logger.LogInformation(
                     DiscardedProviderDescriptionTemplate,
                     traceId.Value,
@@ -536,12 +529,12 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
 
         // Answers an upstream 429. /oauth/token is what the Discovery document advertises, so
         // without this arm a client that hit its token limit would fall through to the 502 branch
-        // and receive no status, no type and no reuse guidance.
+        // and receive neither the correct status nor reuse guidance.
         //
         // The upstream body is evidence, never content: the limit is parsed out of it and the
         // message is rebuilt here, so nothing the upstream authored reaches the caller. Relaying
         // its `errors` strings verbatim would reopen the same unauthenticated disclosure that
-        // GenerateUnauthorizedResponse's comment above was written to close.
+        // provider-401 fallback is designed to close.
         static async Task<HttpResponseMessage> GenerateTooManyTokensResponse(
             ILogger logger,
             TraceId traceId,
@@ -584,7 +577,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
 
             // Rebuilt from a DMS-side template and the parsed integer alone, so the limit survives
             // while not one character of upstream-authored text reaches the response body. The
-            // correlationId is DMS's own trace id, as on every other branch.
+            // correlation header encodes DMS's own trace id, as on every other error branch.
             string message =
                 TokenLimitMessagePrefix
                 + limit.Value.ToString(CultureInfo.InvariantCulture)
@@ -640,7 +633,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
 
             // TryGetValue<string> succeeds only for a JSON string, so a number or a nested object
             // in the errors array is rejected rather than stringified.
-            if (errors[0] is not JsonValue entry || !entry.TryGetValue(out string? message))
+            if (GetStringOrNull(errors[0]) is not string message)
             {
                 return null;
             }
@@ -669,15 +662,33 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             return limit;
         }
 
-        // The body as a JSON object, or null when it is unparseable or any other JSON value.
+        // The body as a usable root object, or null for malformed/non-object/duplicate-member bodies.
         static JsonObject? JsonObjectOrNull(string body)
         {
             try
             {
-                return JsonNode.Parse(body) as JsonObject;
+                if (JsonNode.Parse(body) is not JsonObject obj)
+                {
+                    return null;
+                }
+
+                // JsonObject materializes its property dictionary lazily. Force that work inside
+                // this guard so duplicate root names cannot escape later field lookup or summary
+                // enumeration and change a status-driven 401/429 into a transport-style 502.
+                _ = obj.Count;
+                return obj;
             }
             catch (JsonException)
             {
+                return null;
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
+            catch (InvalidOperationException)
+            {
+                // Decoding an escaped, unpaired surrogate in a property name is also lazy.
                 return null;
             }
         }
@@ -787,8 +798,18 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         // subtree, which for an upstream error body is arbitrary payload - nested credentials
         // included - and neither a log sink nor a client response may receive it. Callers turn
         // the null into whatever their own safe default is.
-        static string? ScalarValueOrNull(JsonNode? value) =>
-            value is JsonValue scalar ? scalar.ToString() : null;
+        static string? ScalarValueOrNull(JsonNode? value)
+        {
+            try
+            {
+                return value is JsonValue scalar ? scalar.ToString() : null;
+            }
+            catch (InvalidOperationException)
+            {
+                // Invalid Unicode escapes cannot be decoded even though the JSON parsed.
+                return null;
+            }
+        }
     }
 
     private static bool IsRecognizedTokenError(string error) =>
@@ -818,6 +839,16 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         return true;
     }
 
-    private static string? GetStringOrNull(JsonNode? value) =>
-        value is JsonValue jsonValue && jsonValue.TryGetValue(out string? text) ? text : null;
+    private static string? GetStringOrNull(JsonNode? value)
+    {
+        try
+        {
+            return value is JsonValue jsonValue && jsonValue.TryGetValue(out string? text) ? text : null;
+        }
+        catch (InvalidOperationException)
+        {
+            // String decoding is lazy too; unusable Unicode needs the same safe fallback.
+            return null;
+        }
+    }
 }

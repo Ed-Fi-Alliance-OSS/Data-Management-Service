@@ -10,7 +10,6 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.OAuth;
-using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using FakeItEasy;
@@ -533,51 +532,6 @@ public class TokenEndpointModuleTests
         }
     }
 
-    /// <summary>
-    /// Sends a token request through the real endpoint with <see cref="IOAuthManager"/> faked to
-    /// return a canned response for delivery through the token endpoint.
-    /// </summary>
-    private static HttpResponseMessage SendThroughProxy(HttpStatusCode statusCode, JsonNode problemDetails)
-    {
-        var oAuthManager = A.Fake<IOAuthManager>();
-        A.CallTo(() =>
-                oAuthManager.GetAccessTokenAsync(
-                    A<IHttpClientWrapper>.Ignored,
-                    A<string>.Ignored,
-                    A<string>.Ignored,
-                    A<TokenRequestCredentials>.Ignored,
-                    A<string>.Ignored,
-                    A<TraceId>.Ignored
-                )
-            )
-            .Returns(
-                new HttpResponseMessage(statusCode)
-                {
-                    Content = new StringContent(
-                        problemDetails.ToString(),
-                        Encoding.UTF8,
-                        "application/problem+json"
-                    ),
-                }
-            );
-
-        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(collection =>
-            {
-                TestMockHelper.AddEssentialMocks(collection);
-                collection.AddTransient(_ => oAuthManager);
-            });
-        });
-        using var client = factory.CreateClient();
-
-        return client
-            .SendAsync(ProxyRequest("""{"grant_type":"client_credentials"}""", "application/json"))
-            .GetAwaiter()
-            .GetResult();
-    }
-
     [TestFixture]
     public class Given_An_Upstream_Token_Limit_Rejection : TokenEndpointModuleTests
     {
@@ -587,14 +541,10 @@ public class TokenEndpointModuleTests
         [SetUp]
         public void SetUp()
         {
-            _response = SendThroughProxy(
+            (_response, _) = SendThroughRealManager(
+                ProxyRequest("grant_type=client_credentials", "application/x-www-form-urlencoded"),
                 HttpStatusCode.TooManyRequests,
-                FailureResponse.ForTooManyTokens(
-                    new TraceId("token-limit-trace"),
-                    [
-                        "Too many access tokens have been requested (limit is 5). Access tokens should be reused until they expire.",
-                    ]
-                )
+                """{"type":"urn:ed-fi:management-api:security:authentication:too-many-tokens","status":429,"errors":["Too many access tokens have been requested (limit is 5). Access tokens should be reused until they expire."]}"""
             );
             _body = JsonNode.Parse(_response.Content.ReadAsStringAsync().GetAwaiter().GetResult())!;
         }
@@ -612,18 +562,28 @@ public class TokenEndpointModuleTests
         }
 
         [Test]
-        public void It_keeps_the_problem_json_media_type()
+        public void It_delivers_the_oauth_json_media_type()
         {
-            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
         }
 
         [Test]
-        public void It_passes_the_problem_details_body_through()
+        public void It_delivers_the_oauth_error_body()
         {
-            _body["type"]!
+            _body
+                .AsObject()
+                .Select(member => member.Key)
+                .Should()
+                .BeEquivalentTo("error", "error_description");
+            _body["error"]!.GetValue<string>().Should().Be("temporarily_unavailable");
+            _body["error_description"]!
                 .GetValue<string>()
                 .Should()
-                .Be("urn:ed-fi:api:security:authentication:too-many-tokens");
+                .Be(
+                    "Too many access tokens have been requested (limit is 5). Access tokens should be reused until they expire."
+                );
+            _response.Headers.WwwAuthenticate.Should().BeEmpty();
+            _response.Headers.GetValues("X-Correlation-ID").Should().ContainSingle();
         }
     }
 
@@ -1025,9 +985,9 @@ public class TokenEndpointModuleTests
     private sealed record UpstreamCall(string? Authorization, string Body);
 
     /// <summary>
-    /// Records every upstream token request and answers each with an empty 200.
+    /// Records every upstream token request and returns the selected provider response.
     /// </summary>
-    private sealed class RecordingUpstreamHandler : HttpMessageHandler
+    private sealed class RecordingUpstreamHandler(HttpStatusCode statusCode, string body) : HttpMessageHandler
     {
         public List<UpstreamCall> Calls { get; } = [];
 
@@ -1044,9 +1004,9 @@ public class TokenEndpointModuleTests
                         : await request.Content.ReadAsStringAsync(cancellationToken)
                 )
             );
-            return new HttpResponseMessage(HttpStatusCode.OK)
+            return new HttpResponseMessage(statusCode)
             {
-                Content = new StringContent("{}", Encoding.UTF8, "application/json"),
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
             };
         }
     }
@@ -1057,10 +1017,12 @@ public class TokenEndpointModuleTests
     /// whole chain forwards upstream.
     /// </summary>
     private static (HttpResponseMessage Response, List<UpstreamCall> UpstreamCalls) SendThroughRealManager(
-        HttpRequestMessage request
+        HttpRequestMessage request,
+        HttpStatusCode upstreamStatus = HttpStatusCode.OK,
+        string upstreamBody = "{}"
     )
     {
-        RecordingUpstreamHandler handler = new();
+        RecordingUpstreamHandler handler = new(upstreamStatus, upstreamBody);
         var httpClientFactory = A.Fake<IHttpClientFactory>();
         A.CallTo(() => httpClientFactory.CreateClient(A<string>.Ignored))
             .ReturnsLazily(() => new HttpClient(handler, disposeHandler: false));
@@ -1123,6 +1085,101 @@ public class TokenEndpointModuleTests
         response.Headers.WwwAuthenticate.ToString().Should().Be(OAuthErrorResponse.BasicChallenge);
         response.Headers.GetValues(OAuthErrorResponse.CorrelationHeaderName).Should().Equal("a%2Fb%2Bc");
         response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+    }
+
+    [TestCase(HttpStatusCode.Unauthorized, true, 401)]
+    [TestCase(HttpStatusCode.Unauthorized, false, 401)]
+    [TestCase(HttpStatusCode.BadRequest, true, 401)]
+    [TestCase(HttpStatusCode.BadRequest, false, 400)]
+    public async Task It_delivers_provider_invalid_client_using_the_original_caller_mechanism(
+        HttpStatusCode providerStatus,
+        bool useBasic,
+        int expectedStatus
+    )
+    {
+        using var request = ProxyRequest(
+            useBasic
+                ? "grant_type=client_credentials"
+                : "grant_type=client_credentials&client_id=client&client_secret=secret",
+            "application/x-www-form-urlencoded"
+        );
+        request.Headers.Remove("Authorization");
+        if (useBasic)
+        {
+            request.Headers.Add("Authorization", "Basic Y2xpZW50OnNlY3JldA==");
+        }
+        (HttpResponseMessage response, _) = SendThroughRealManager(
+            request,
+            providerStatus,
+            """{"error":"invalid_client","error_description":"Provider rejected credentials"}"""
+        );
+        using (response)
+        {
+            ((int)response.StatusCode).Should().Be(expectedStatus);
+            response
+                .Headers.WwwAuthenticate.ToString()
+                .Should()
+                .Be(expectedStatus == 401 ? "Basic realm=\"EdFi.DataManagementService\"" : string.Empty);
+            response.Headers.GetValues("X-Correlation-ID").Should().ContainSingle();
+            response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+            JsonObject body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject();
+            body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
+            body["error"]!.GetValue<string>().Should().Be("invalid_client");
+            body["error_description"]!.GetValue<string>().Should().Be("Provider rejected credentials");
+        }
+    }
+
+    private static IEnumerable<TestCaseData> TokenCorrelationIds()
+    {
+        yield return new TestCaseData("percent%plus+slash/ñ", "percent%plus+slash/ñ");
+        // Attribute arguments are encoded in metadata; construct the invalid UTF-16 at runtime.
+        yield return new TestCaseData("before" + (char)0xd800 + "after", "beforeafter");
+        yield return new TestCaseData("emoji-\ud83d\ude00", "emoji-\ud83d\ude00");
+    }
+
+    [TestCaseSource(nameof(TokenCorrelationIds))]
+    public async Task It_encodes_the_ingested_correlation_id_and_matches_the_request_log(
+        string suppliedId,
+        string expectedNormalizedId
+    )
+    {
+        using CorrelationIdRecordingLoggerProvider recorder = new();
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureLogging(logging => logging.AddProvider(recorder));
+            builder.ConfigureAppConfiguration(
+                (_, configuration) =>
+                    configuration.AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["AppSettings:CorrelationIdHeader"] = "x-token-trace",
+                        }
+                    )
+            );
+            builder.ConfigureServices(services =>
+            {
+                TestMockHelper.AddEssentialMocks(services);
+                services.AddTransient<IOAuthManager, OAuthManager>();
+            });
+        });
+        using var client = factory.CreateClient();
+        using var request = ProxyRequest(
+            "grant_type=client_credentials",
+            "application/x-www-form-urlencoded"
+        );
+        request.Headers.Remove("Authorization");
+        // TestServer delivers these values directly to the real ingestion boundary; this also
+        // covers invalid UTF-16 normalization without constructing an invalid TraceId ourselves.
+        request.Headers.TryAddWithoutValidation("x-token-trace", suppliedId);
+
+        using var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        string encodedId = response.Headers.GetValues("X-Correlation-ID").Should().ContainSingle().Which;
+        encodedId.Should().Be(Uri.EscapeDataString(expectedNormalizedId));
+        Uri.UnescapeDataString(encodedId).Should().Be(expectedNormalizedId);
+        recorder.LoggedTraceIds.Should().Equal(expectedNormalizedId);
     }
 
     /// <summary>
@@ -1281,8 +1338,8 @@ public class TokenEndpointModuleTests
     }
 
     /// <summary>
-    /// With no header, an empty <c>client_secret</c> leaves a partial pair and two empty fields
-    /// leave no credentials, and both get the same <c>401 invalid_request</c> from form and JSON.
+    /// With no header, an empty <c>client_secret</c> leaves a partial pair (400 invalid_request).
+    /// Two empty fields leave no credentials (401 invalid_client), for both form and JSON.
     /// </summary>
     [TestFixture(
         "grant_type=client_credentials&client_id=my-client&client_secret=",
@@ -1603,9 +1660,10 @@ public class TokenEndpointModuleTests
         [SetUp]
         public void SetUp()
         {
-            _response = SendThroughProxy(
-                HttpStatusCode.ServiceUnavailable,
-                FailureResponse.ForServiceUnavailable(new TraceId("lock-contention-trace"))
+            (_response, _) = SendThroughRealManager(
+                ProxyRequest("grant_type=client_credentials", "application/x-www-form-urlencoded"),
+                HttpStatusCode.Conflict,
+                "withheld-contention-body"
             );
             _body = JsonNode.Parse(_response.Content.ReadAsStringAsync().GetAwaiter().GetResult())!;
         }
@@ -1623,15 +1681,26 @@ public class TokenEndpointModuleTests
         }
 
         [Test]
-        public void It_keeps_the_problem_json_media_type()
+        public void It_delivers_the_oauth_json_media_type()
         {
-            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
         }
 
         [Test]
-        public void It_passes_the_problem_details_body_through()
+        public void It_delivers_the_oauth_error_body()
         {
-            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:service-unavailable");
+            _body
+                .AsObject()
+                .Select(member => member.Key)
+                .Should()
+                .BeEquivalentTo("error", "error_description");
+            _body["error"]!.GetValue<string>().Should().Be("temporarily_unavailable");
+            _body["error_description"]!
+                .GetValue<string>()
+                .Should()
+                .Be("The service is temporarily unable to handle the request. Retry the request later.");
+            _response.Headers.WwwAuthenticate.Should().BeEmpty();
+            _response.Headers.GetValues("X-Correlation-ID").Should().ContainSingle();
         }
     }
 }

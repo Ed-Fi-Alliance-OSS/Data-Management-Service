@@ -974,10 +974,17 @@ function RunE2E {
     # Instance management tests require special setup (route qualifiers, additional databases)
     # and should be run separately using the instance management test scripts
     # DMS-1606 provider fixtures need a dedicated proxy + endpoint overlay. Keep them out of ordinary
-    # unfiltered local runs; the token-contract launcher selects them explicitly after starting it.
+    # local runs, including explicit full-suite filters. The launcher sets the marker only while
+    # the proxy and endpoint overlay are active, and selects root/qualified cases explicitly.
     $effectiveTestFilter = $TestFilter
-    if ([string]::IsNullOrWhiteSpace($effectiveTestFilter)) {
-        $effectiveTestFilter = '(Category!=@TokenContractProxy)&(Category!=@TokenContractQualified)'
+    if ($env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE -ne '1') {
+        $fixtureExclusions = '(Category!=@TokenContractProxy)&(Category!=@TokenContractQualified)'
+        $effectiveTestFilter = if ([string]::IsNullOrWhiteSpace($TestFilter)) {
+            $fixtureExclusions
+        }
+        else {
+            "($TestFilter)&$fixtureExclusions"
+        }
     }
 
     Invoke-WithE2EIdentityEnvironment -EnvironmentFile $E2ETestSettings.EnvironmentFile -IdentityProvider $IdentityProvider -Action {

@@ -170,12 +170,12 @@ Feature: Client credentials at the token endpoint
       Then the token error is 401 "invalid_client" with provider-supplied description
       And the token response body matches the one stored as "wrong Basic secret"
 
-  Rule: A null grant type is unsupported, not a server error
+  Rule: Missing and unsupported grant types have distinct OAuth errors
 
     @DMS-1604
     @DMS-1606
     @e2e-ci-shard-1
-    Scenario: 11 A JSON body with a null grant_type is rejected as an unsupported grant type
+    Scenario: 11 A JSON body with a null grant_type is rejected as a missing grant type
       When a token request is made with content type "application/json" and body
         """
         {
@@ -185,6 +185,15 @@ Feature: Client credentials at the token endpoint
         }
         """
       Then the token error is 400 "invalid_request" with description "The grant_type request parameter must be supplied"
+
+    @DMS-1606
+    @e2e-ci-shard-1
+    Scenario: 33 A present unsupported grant type is rejected
+      When a token request is made with content type "application/x-www-form-urlencoded" and body
+        """
+        grant_type=password&client_id={clientId}&client_secret={clientSecret}
+        """
+      Then the token error is 400 "unsupported_grant_type" with description "Unsupported grant type"
 
   Rule: Token endpoint parsing and request limits keep OAuth error responses
 

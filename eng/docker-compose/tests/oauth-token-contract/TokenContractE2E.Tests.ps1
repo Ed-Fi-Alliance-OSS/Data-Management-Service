@@ -200,7 +200,7 @@ Describe 'DMS-1606 token contract E2E launcher' {
             Should -Throw '*did not contain required scenario*'
     }
 
-    It 'excludes proxy fixtures from an ordinary unfiltered E2E run and preserves explicit filters' {
+    It 'excludes fixture cases from ordinary filters and preserves dedicated lane selections' {
         function Invoke-WithE2EIdentityEnvironment {
             param([string] $EnvironmentFile, [string] $IdentityProvider, [scriptblock] $Action)
             & $Action
@@ -219,11 +219,33 @@ Describe 'DMS-1606 token contract E2E launcher' {
         }
 
         $settings = [pscustomobject]@{ EnvironmentFile = '/repo/.env.e2e'; TestResultSuffix = 'e2e' }
-        RunE2E -TestFilter '' -E2ETestSettings $settings -IdentityProvider self-contained
-        $script:capturedE2EFilter | Should -Be '(Category!=@TokenContractProxy)&(Category!=@TokenContractQualified)'
+        $hadMarker = Test-Path Env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE
+        $previousMarker = $env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE
+        try {
+            Remove-Item Env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE -ErrorAction SilentlyContinue
+            $exclusions = '(Category!=@TokenContractProxy)&(Category!=@TokenContractQualified)'
+            foreach ($filter in @('', '(Category=@e2e-ci-shard-1)',
+                '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@MssqlOnly)',
+                '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@PostgresqlOnly)',
+                '(Category=@DMS-1606)|(Category=@e2e-ci-shard-1)')) {
+                RunE2E -TestFilter $filter -E2ETestSettings $settings -IdentityProvider self-contained
+                $expected = if ([string]::IsNullOrWhiteSpace($filter)) { $exclusions } else { "($filter)&$exclusions" }
+                $script:capturedE2EFilter | Should -Be $expected
+            }
 
-        RunE2E -TestFilter '(Category=@e2e-ci-shard-1)' -E2ETestSettings $settings -IdentityProvider self-contained
-        $script:capturedE2EFilter | Should -Be '(Category=@e2e-ci-shard-1)'
+            $env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE = '1'
+            foreach ($engine in @('postgresql', 'mssql')) {
+                foreach ($qualified in @($false, $true)) {
+                    $filter = Get-TokenContractTestFilter -Engine $engine -Qualified:$qualified
+                    RunE2E -TestFilter $filter -E2ETestSettings $settings -IdentityProvider self-contained
+                    $script:capturedE2EFilter | Should -Be $filter
+                }
+            }
+        }
+        finally {
+            if ($hadMarker) { $env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE = $previousMarker }
+            else { Remove-Item Env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE -ErrorAction SilentlyContinue }
+        }
     }
 
     It 'keeps host-run authentication on the proxy loopback port only during the dedicated lane' {
