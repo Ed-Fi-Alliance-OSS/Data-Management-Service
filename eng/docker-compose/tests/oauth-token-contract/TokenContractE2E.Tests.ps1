@@ -20,6 +20,7 @@ BeforeAll {
         'Invoke-WithTokenContractProxyEnvironment',
         'Assert-TokenContractTrx',
         'Assert-NativeCommandSucceeded',
+        'Stop-TokenContractDmsIfPresent',
         'Build-TokenContractE2ETestAssembly'
     )) {
         $functionAst = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $functionName }, $true) | Select-Object -First 1
@@ -185,12 +186,13 @@ Describe 'DMS-1606 token contract E2E launcher' {
         @{ Provider = 'keycloak'; Key = 'KEYCLOAK_OAUTH_TOKEN_ENDPOINT' }
     ) {
         param($Provider, $Key)
+        $selectedProvider = $Provider
         [Environment]::SetEnvironmentVariable($Key, '')
         $env:CORRELATION_ID_HEADER = ''
 
         foreach ($fail in @($false, $true)) {
             $invoke = {
-                Invoke-WithTokenContractProxyEnvironment -Provider $Provider -SkipBuild -Action {
+                Invoke-WithTokenContractProxyEnvironment -Provider $selectedProvider -SkipBuild -Action {
                     [Environment]::GetEnvironmentVariable($Key) | Should -Be 'http://dms-token-proxy:8080/token'
                     $env:CORRELATION_ID_HEADER | Should -Be 'X-DMS-1606-Correlation'
                     if ($fail) { throw 'fixture failure' }
@@ -204,6 +206,26 @@ Describe 'DMS-1606 token contract E2E launcher' {
             Test-Path Env:CORRELATION_ID_HEADER | Should -BeTrue
             $env:CORRELATION_ID_HEADER | Should -BeExactly ''
         }
+    }
+
+    It 'stops an existing DMS container only when ShouldProcess permits it' -TestCases @(
+        @{ InspectExit = 1; StopExit = 0; WhatIf = $false; Expected = 'NotPresent'; Commands = @('inspect') },
+        @{ InspectExit = 0; StopExit = 0; WhatIf = $false; Expected = 'Stopped'; Commands = @('inspect', 'stop') },
+        @{ InspectExit = 0; StopExit = 1; WhatIf = $false; Expected = 'Failed'; Commands = @('inspect', 'stop') },
+        @{ InspectExit = 0; StopExit = 0; WhatIf = $true; Expected = 'Skipped'; Commands = @('inspect') }
+    ) {
+        param($InspectExit, $StopExit, $WhatIf, $Expected, $Commands)
+        $script:dockerCommands = @()
+        $script:inspectExitCode = $InspectExit
+        $script:stopExitCode = $StopExit
+        function docker {
+            $script:dockerCommands += $args[0]
+            $args[1] | Should -Be 'ed-fi-api'
+            $global:LASTEXITCODE = if ($args[0] -eq 'inspect') { $script:inspectExitCode } else { $script:stopExitCode }
+        }
+
+        Stop-TokenContractDmsIfPresent -WhatIf:$WhatIf -Confirm:$false | Should -Be $Expected
+        $script:dockerCommands | Should -Be $Commands
     }
 
     It 'binds the build script parameters by name and forwards requested switches' {
