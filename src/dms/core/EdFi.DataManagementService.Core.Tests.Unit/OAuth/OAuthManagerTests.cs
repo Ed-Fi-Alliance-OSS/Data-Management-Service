@@ -962,26 +962,6 @@ public class OAuthManagerTests
             await AssertOAuthErrorResponse(expectedStatus, expectedError, expectedDescription);
             A.CallTo(() => _httpClient.SendAsync(A<HttpRequestMessage>._)).MustNotHaveHappened();
         }
-
-        [TestCase(2049, 8)]
-        [TestCase(8, 2049)]
-        public async Task It_rejects_either_over_cap_body_credential(int clientIdLength, int secretLength)
-        {
-            await Act(
-                null,
-                HttpStatusCode.OK,
-                "{}",
-                "client_credentials",
-                new TokenRequestCredentials(new string('i', clientIdLength), new string('s', secretLength))
-            );
-
-            await AssertOAuthErrorResponse(
-                HttpStatusCode.BadRequest,
-                "invalid_request",
-                ExpectedOversizedBodyCredentialDetail
-            );
-            A.CallTo(() => _httpClient.SendAsync(A<HttpRequestMessage>._)).MustNotHaveHappened();
-        }
     }
 
     /// <summary>
@@ -1483,34 +1463,26 @@ public class OAuthManagerTests
         }
 
         [Test]
-        public void Then_It_Responds_With_BadRequest()
+        public async Task It_returns_the_exact_oauth_contract_and_states_the_cap()
         {
-            _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            await AssertOAuthErrorResponse(
+                HttpStatusCode.BadRequest,
+                "invalid_request",
+                ExpectedOversizedBodyCredentialDetail
+            );
         }
 
         [Test]
-        public void Then_The_Response_ContentType_Is_Problem_JSON()
-        {
-            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
-        }
-
-        [Test]
-        public async Task Then_The_Response_Content_States_The_Cap()
-        {
-            (await ResponseDetail()).Should().Be(ExpectedOversizedBodyCredentialDetail);
-        }
-
-        [Test]
-        public async Task Then_The_Response_Does_Not_Echo_Either_Value()
+        public async Task It_does_not_echo_either_value()
         {
             string content = await _response.Content.ReadAsStringAsync();
             content.Should().NotContain(_clientId).And.NotContain(_clientSecret);
         }
 
         [Test]
-        public void Then_Nothing_Is_Sent_Upstream()
+        public void It_does_not_send_upstream()
         {
-            _upstreamRequest.Should().BeNull();
+            A.CallTo(() => _httpClient.SendAsync(A<HttpRequestMessage>._)).MustNotHaveHappened();
         }
     }
 
@@ -1837,13 +1809,18 @@ public class OAuthManagerTests
     /// </summary>
     private const string ExpectedNoFieldsMarker = "(none)";
 
-    [TestFixture(HttpStatusCode.Unauthorized, false)]
-    [TestFixture(HttpStatusCode.TooManyRequests, false)]
-    [TestFixture(HttpStatusCode.Unauthorized, true)]
-    [TestFixture(HttpStatusCode.TooManyRequests, true)]
+    [TestFixture(HttpStatusCode.Unauthorized, false, "not-a-real-charset")]
+    [TestFixture(HttpStatusCode.TooManyRequests, false, "not-a-real-charset")]
+    [TestFixture(HttpStatusCode.Unauthorized, true, "not-a-real-charset")]
+    [TestFixture(HttpStatusCode.TooManyRequests, true, "not-a-real-charset")]
+    [TestFixture(HttpStatusCode.Unauthorized, false, "utf-7")]
+    [TestFixture(HttpStatusCode.TooManyRequests, false, "utf-7")]
+    [TestFixture(HttpStatusCode.Unauthorized, true, "utf-7")]
+    [TestFixture(HttpStatusCode.TooManyRequests, true, "utf-7")]
     public class Given_An_Upstream_Error_With_Unsupported_Charset(
         HttpStatusCode upstreamStatus,
-        bool interruptedBody
+        bool interruptedBody,
+        string charset
     )
     {
         private HttpResponseMessage _response = default!;
@@ -1856,7 +1833,9 @@ public class OAuthManagerTests
             HttpContent content = interruptedBody
                 ? new InterruptedProviderContent()
                 : new ByteArrayContent(Encoding.UTF8.GetBytes("provider-content-sentinel"));
-            content.Headers.ContentType = new("application/json") { CharSet = "not-a-real-charset" };
+            // UTF-7 is recognized but disabled by default in .NET, producing NotSupportedException
+            // instead of the ArgumentException used for an unknown encoding name.
+            content.Headers.ContentType = new("application/json") { CharSet = charset };
             (_response, _logger) = await UpstreamResponds(upstreamStatus, content);
             _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!.AsObject();
         }
