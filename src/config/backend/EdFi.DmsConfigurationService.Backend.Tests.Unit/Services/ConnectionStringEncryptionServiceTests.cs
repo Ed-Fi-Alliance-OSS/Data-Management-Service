@@ -3,7 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.Services;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.TestHelpers;
 using FluentAssertions;
 using Microsoft.Extensions.Options;
 
@@ -12,6 +14,36 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.Services;
 [TestFixture]
 public class ConnectionStringEncryptionServiceTests
 {
+    /// <summary>
+    /// ASCII "EdFi.CS.Envelope" followed by version 1, written out rather than taken from the
+    /// production constants so a change to the format fails here.
+    /// </summary>
+    private static readonly byte[] ExpectedEnvelopeHeader =
+    [
+        0x45,
+        0x64,
+        0x46,
+        0x69,
+        0x2E,
+        0x43,
+        0x53,
+        0x2E,
+        0x45,
+        0x6E,
+        0x76,
+        0x65,
+        0x6C,
+        0x6F,
+        0x70,
+        0x65,
+        0x01,
+    ];
+
+    private const int NonceOffset = 17;
+    private const int NonceLength = 12;
+    private const int TagOffset = 29;
+    private const int CipherTextOffset = 45;
+
     private ConnectionStringEncryptionService _service = null!;
     private readonly IOptions<DatabaseOptions> _databaseOptions = Options.Create(
         new DatabaseOptions
@@ -26,6 +58,13 @@ public class ConnectionStringEncryptionServiceTests
     {
         _service = new ConnectionStringEncryptionService(_databaseOptions);
     }
+
+    private static ConnectionStringEncryptionService ServiceWithKey(string encryptionKey) =>
+        new(
+            Options.Create(
+                new DatabaseOptions { DatabaseConnection = "Server=test;", EncryptionKey = encryptionKey }
+            )
+        );
 
     [TestFixture]
     public class Given_valid_connection_string : ConnectionStringEncryptionServiceTests
@@ -45,14 +84,31 @@ public class ConnectionStringEncryptionServiceTests
         }
 
         [Test]
-        public void It_should_produce_different_encrypted_values_for_same_input()
+        public void It_writes_the_version_1_envelope_header()
         {
-            var encrypted1 = _service.Encrypt(TestConnectionString);
-            var encrypted2 = _service.Encrypt(TestConnectionString);
+            byte[] encrypted = _service.Encrypt(TestConnectionString)!;
 
-            encrypted1.Should().NotBeNull();
-            encrypted2.Should().NotBeNull();
-            encrypted1.Should().NotBeEquivalentTo(encrypted2);
+            encrypted[..ExpectedEnvelopeHeader.Length].Should().Equal(ExpectedEnvelopeHeader);
+        }
+
+        /// <summary>
+        /// 60 bytes of UTF-8 pad to 64, behind 45 bytes of header, nonce and tag.
+        /// </summary>
+        [Test]
+        public void It_pads_the_cipher_text_to_whole_blocks_after_the_overhead() =>
+            _service.Encrypt(TestConnectionString)!.Length.Should().Be(CipherTextOffset + 64);
+
+        [Test]
+        public void It_uses_a_fresh_nonce_for_each_encryption()
+        {
+            byte[] encrypted1 = _service.Encrypt(TestConnectionString)!;
+            byte[] encrypted2 = _service.Encrypt(TestConnectionString)!;
+
+            encrypted1
+                .AsSpan(NonceOffset, NonceLength)
+                .ToArray()
+                .Should()
+                .NotEqual(encrypted2.AsSpan(NonceOffset, NonceLength).ToArray());
 
             _service.Decrypt(encrypted1).Should().Be(TestConnectionString);
             _service.Decrypt(encrypted2).Should().Be(TestConnectionString);
@@ -96,7 +152,7 @@ public class ConnectionStringEncryptionServiceTests
     }
 
     /// <summary>
-    /// Only the first 32 characters of the configured text reach the AES key, so two values sharing a
+    /// Only the first 32 characters of the configured text reach either key, so two values sharing a
     /// 32-character prefix are the same key spelled differently. DatabaseOptionsValidator rejects the
     /// former shipped default by comparing that prefix rather than the whole string, which is only sound
     /// while this holds, so it is pinned here next to the derivation that owns it.
@@ -107,13 +163,6 @@ public class ConnectionStringEncryptionServiceTests
         private const string SignificantPrefix = "Fk3pQ8sT2vW9xZ4bC6dE1gH5jL7mN0rY";
 
         private const string TestConnectionString = "Server=localhost;Database=TestDb;";
-
-        private static ConnectionStringEncryptionService ServiceWithKey(string encryptionKey) =>
-            new(
-                Options.Create(
-                    new DatabaseOptions { DatabaseConnection = "Server=test;", EncryptionKey = encryptionKey }
-                )
-            );
 
         [Test]
         public void It_is_a_32_character_prefix() => SignificantPrefix.Length.Should().Be(32);
@@ -148,12 +197,233 @@ public class ConnectionStringEncryptionServiceTests
         [TestCase(
             "Data Source=server;Initial Catalog=database;Integrated Security=True;MultipleActiveResultSets=True;"
         )]
+        [TestCase("host=localhost;password=Pässwörd€😀;database=edfi")]
         public void It_should_correctly_round_trip_various_connection_strings(string connectionString)
         {
             var encrypted = _service.Encrypt(connectionString);
             var decrypted = _service.Decrypt(encrypted);
 
             decrypted.Should().Be(connectionString);
+        }
+
+        /// <summary>
+        /// Either side of each block boundary: a whole block of plain text takes a whole block of
+        /// padding, so 16 bytes encrypt to two blocks and 15 to one.
+        /// </summary>
+        [TestCase(1, 1)]
+        [TestCase(15, 1)]
+        [TestCase(16, 2)]
+        [TestCase(17, 2)]
+        [TestCase(31, 2)]
+        [TestCase(32, 3)]
+        [TestCase(33, 3)]
+        public void It_round_trips_at_block_boundaries(int plainTextLength, int expectedBlocks)
+        {
+            string connectionString = new('a', plainTextLength);
+
+            byte[] encrypted = _service.Encrypt(connectionString)!;
+
+            encrypted.Length.Should().Be(CipherTextOffset + (16 * expectedBlocks));
+            _service.Decrypt(encrypted).Should().Be(connectionString);
+        }
+
+        /// <summary>
+        /// "€" is three UTF-8 bytes, so 5 of them are 15 bytes and 6 are 18: the padding has to be
+        /// measured in bytes, not characters.
+        /// </summary>
+        [TestCase(5, 1)]
+        [TestCase(6, 2)]
+        public void It_pads_by_utf8_byte_count(int euroSigns, int expectedBlocks)
+        {
+            string connectionString = new('€', euroSigns);
+
+            byte[] encrypted = _service.Encrypt(connectionString)!;
+
+            encrypted.Length.Should().Be(CipherTextOffset + (16 * expectedBlocks));
+            _service.Decrypt(encrypted).Should().Be(connectionString);
+        }
+    }
+
+    /// <summary>
+    /// The shared vectors: generated once outside this service, so passing shows interoperability with
+    /// the format rather than agreement with itself.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_interoperability_vectors
+    {
+        private ConnectionStringEncryptionVectors _vectors = null!;
+        private ConnectionStringEncryptionService _service = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _vectors = ConnectionStringEncryptionVectors.Load();
+            _service = ServiceWithKey(_vectors.KeyText);
+        }
+
+        [Test]
+        public void It_decrypts_the_version_1_envelope() =>
+            _service.Decrypt(Convert.FromBase64String(_vectors.EnvelopeV1)).Should().Be(_vectors.PlainText);
+
+        [Test]
+        public void It_decrypts_the_block_aligned_version_1_envelope() =>
+            _service
+                .Decrypt(Convert.FromBase64String(_vectors.BlockAlignedEnvelopeV1))
+                .Should()
+                .Be(_vectors.BlockAlignedPlainText);
+
+        [Test]
+        public void It_decrypts_the_legacy_cbc_value() =>
+            _service.Decrypt(Convert.FromBase64String(_vectors.LegacyCbc)).Should().Be(_vectors.PlainText);
+
+        [Test]
+        public void It_decrypts_both_forms_under_a_suffixed_key()
+        {
+            var suffixed = ServiceWithKey(_vectors.KeyText + "_ignored_suffix");
+
+            suffixed.Decrypt(Convert.FromBase64String(_vectors.EnvelopeV1)).Should().Be(_vectors.PlainText);
+            suffixed.Decrypt(Convert.FromBase64String(_vectors.LegacyCbc)).Should().Be(_vectors.PlainText);
+        }
+
+        /// <summary>
+        /// The upgrade path: whatever a legacy value decrypts to is written back as an envelope.
+        /// </summary>
+        [Test]
+        public void It_rewrites_a_legacy_value_as_an_envelope()
+        {
+            string plainText = _service.Decrypt(Convert.FromBase64String(_vectors.LegacyCbc))!;
+
+            byte[] rewritten = _service.Encrypt(plainText)!;
+
+            rewritten[..ExpectedEnvelopeHeader.Length].Should().Equal(ExpectedEnvelopeHeader);
+            _service.Decrypt(rewritten).Should().Be(_vectors.PlainText);
+        }
+    }
+
+    /// <summary>
+    /// Every change to an envelope has to be rejected, never decrypted under the legacy path and never
+    /// returned as different text.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_corrupted_envelope
+    {
+        private ConnectionStringEncryptionVectors _vectors = null!;
+        private ConnectionStringEncryptionService _service = null!;
+        private byte[] _envelope = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _vectors = ConnectionStringEncryptionVectors.Load();
+            _service = ServiceWithKey(_vectors.KeyText);
+            _envelope = Convert.FromBase64String(_vectors.EnvelopeV1);
+        }
+
+        private byte[] WithByteFlipped(int index)
+        {
+            byte[] corrupted = (byte[])_envelope.Clone();
+            corrupted[index] ^= 0x01;
+            return corrupted;
+        }
+
+        /// <summary>
+        /// The altered marker no longer identifies the envelope, but the length class still does, so
+        /// the value stays on the envelope path instead of reaching CBC.
+        /// </summary>
+        [Test]
+        public void It_rejects_a_change_to_any_marker_byte([Range(0, 15)] int index)
+        {
+            var act = () => _service.Decrypt(WithByteFlipped(index));
+
+            act.Should().Throw<CryptographicException>().WithMessage("*envelope is not recognized*");
+        }
+
+        [TestCase((byte)0x00)]
+        [TestCase((byte)0x02)]
+        public void It_rejects_an_unsupported_version(byte version)
+        {
+            byte[] corrupted = (byte[])_envelope.Clone();
+            corrupted[16] = version;
+
+            var act = () => _service.Decrypt(corrupted);
+
+            act.Should().Throw<CryptographicException>().WithMessage("*unsupported format version*");
+        }
+
+        [TestCase(NonceOffset, TestName = "It_fails_authentication_for_a_changed_nonce")]
+        [TestCase(TagOffset, TestName = "It_fails_authentication_for_a_changed_tag")]
+        [TestCase(CipherTextOffset, TestName = "It_fails_authentication_for_changed_cipher_text")]
+        public void It_fails_authentication(int index)
+        {
+            var act = () => _service.Decrypt(WithByteFlipped(index));
+
+            act.Should().ThrowExactly<AuthenticationTagMismatchException>();
+        }
+
+        [Test]
+        public void It_fails_authentication_for_an_appended_block()
+        {
+            var act = () => _service.Decrypt([.. _envelope, .. new byte[16]]);
+
+            act.Should().ThrowExactly<AuthenticationTagMismatchException>();
+        }
+
+        [Test]
+        public void It_rejects_a_truncated_envelope()
+        {
+            var act = () => _service.Decrypt(_envelope[..^1]);
+
+            act.Should().Throw<CryptographicException>().WithMessage("*envelope is malformed*");
+        }
+
+        [Test]
+        public void It_rejects_an_envelope_without_cipher_text()
+        {
+            var act = () => _service.Decrypt(_envelope[..CipherTextOffset]);
+
+            act.Should().Throw<CryptographicException>().WithMessage("*envelope is malformed*");
+        }
+
+        [Test]
+        public void It_fails_authentication_under_a_different_key()
+        {
+            var act = () => ServiceWithKey("Rk3pQ8sT2vW9xZ4bC6dE1gH5jL7mN0rY").Decrypt(_envelope);
+
+            act.Should().ThrowExactly<AuthenticationTagMismatchException>();
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_value_in_neither_form : ConnectionStringEncryptionServiceTests
+    {
+        [TestCase(16)]
+        [TestCase(33)]
+        [TestCase(47)]
+        public void It_rejects_the_length(int byteCount)
+        {
+            var act = () => _service.Decrypt(new byte[byteCount]);
+
+            act.Should().Throw<CryptographicException>().WithMessage("*invalid length*");
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_legacy_value_under_a_different_key
+    {
+        /// <summary>
+        /// CBC has no integrity check, so a wrong key is caught only when the padding comes out wrong.
+        /// For this fixed vector and key it does, every time.
+        /// </summary>
+        [Test]
+        public void It_is_rejected()
+        {
+            var vectors = ConnectionStringEncryptionVectors.Load();
+
+            var act = () =>
+                ServiceWithKey("Rk3pQ8sT2vW9xZ4bC6dE1gH5jL7mN0rY")
+                    .Decrypt(Convert.FromBase64String(vectors.LegacyCbc));
+
+            act.Should().Throw<CryptographicException>();
         }
     }
 }

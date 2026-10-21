@@ -366,7 +366,7 @@ public class DataStoreTests : DatabaseTest
         }
 
         /// <summary>
-        /// Same plaintext, but a different key and a fresh random IV: the stored bytes must change.
+        /// Same plaintext, but a different key and a fresh random nonce: the stored bytes must change.
         /// </summary>
         [Test]
         public void It_replaces_the_stored_cipher_text() =>
