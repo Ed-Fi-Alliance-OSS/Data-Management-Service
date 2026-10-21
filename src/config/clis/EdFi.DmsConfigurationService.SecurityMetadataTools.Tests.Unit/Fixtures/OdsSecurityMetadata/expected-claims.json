@@ -1,0 +1,3935 @@
+{
+  "claimSets": [
+    {
+      "claimSetName": "SISVendor",
+      "isSystemReserved": false
+    },
+    {
+      "claimSetName": "EdFiSandbox",
+      "isSystemReserved": false
+    },
+    {
+      "claimSetName": "AssessmentVendor",
+      "isSystemReserved": false
+    },
+    {
+      "claimSetName": "DistrictHostedSISVendor",
+      "isSystemReserved": false
+    },
+    {
+      "claimSetName": "BootstrapDescriptorsandEdOrgs",
+      "isSystemReserved": false
+    },
+    {
+      "claimSetName": "ABConnect",
+      "isSystemReserved": false
+    },
+    {
+      "claimSetName": "RosterVendor",
+      "isSystemReserved": false
+    },
+    {
+      "claimSetName": "AssessmentRead",
+      "isSystemReserved": false
+    },
+    {
+      "claimSetName": "EdFiAPIPublisherWriter",
+      "isSystemReserved": false
+    },
+    {
+      "claimSetName": "EducationPreparationProgram",
+      "isSystemReserved": false
+    },
+    {
+      "claimSetName": "EdFiAPIPublisherReader",
+      "isSystemReserved": false
+    },
+    {
+      "claimSetName": "FinanceVendor",
+      "isSystemReserved": false
+    }
+  ],
+  "claimsHierarchy": [
+    {
+      "name": "http://ed-fi.org/identity/claims/domains/edFiTypes",
+      "defaultAuthorization": {
+        "actions": [
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
+          }
+        ]
+      },
+      "claimSets": [
+        {
+          "name": "SISVendor",
+          "actions": [
+            {
+              "name": "Read"
+            }
+          ]
+        },
+        {
+          "name": "EdFiSandbox",
+          "actions": [
+            {
+              "name": "Read"
+            }
+          ]
+        },
+        {
+          "name": "AssessmentVendor",
+          "actions": [
+            {
+              "name": "Read"
+            }
+          ]
+        },
+        {
+          "name": "DistrictHostedSISVendor",
+          "actions": [
+            {
+              "name": "Read"
+            }
+          ]
+        }
+      ],
+      "claims": [
+        {
+          "name": "http://ed-fi.org/identity/claims/schoolYearType"
+        }
+      ]
+    },
+    {
+      "name": "http://ed-fi.org/identity/claims/domains/systemDescriptors",
+      "defaultAuthorization": {
+        "actions": [
+          {
+            "name": "Create",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          },
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
+          },
+          {
+            "name": "Update",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          },
+          {
+            "name": "Delete",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          }
+        ]
+      },
+      "claimSets": [
+        {
+          "name": "SISVendor",
+          "actions": [
+            {
+              "name": "Read"
+            }
+          ]
+        },
+        {
+          "name": "EdFiSandbox",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        },
+        {
+          "name": "AssessmentVendor",
+          "actions": [
+            {
+              "name": "Read"
+            }
+          ]
+        },
+        {
+          "name": "BootstrapDescriptorsandEdOrgs",
+          "actions": [
+            {
+              "name": "Create",
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "NoFurtherAuthorizationRequired"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "DistrictHostedSISVendor",
+          "actions": [
+            {
+              "name": "Read"
+            }
+          ]
+        }
+      ],
+      "claims": [
+        {
+          "name": "http://ed-fi.org/identity/claims/absenceEventCategoryDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/academicHonorCategoryDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/academicSubjectDescriptor",
+          "claimSets": [
+            {
+              "name": "AssessmentVendor",
+              "actions": [
+                {
+                  "name": "Create"
+                },
+                {
+                  "name": "Read"
+                },
+                {
+                  "name": "Update"
+                },
+                {
+                  "name": "Delete"
+                }
+              ]
+            },
+            {
+              "name": "ABConnect",
+              "actions": [
+                {
+                  "name": "Create"
+                },
+                {
+                  "name": "Read"
+                },
+                {
+                  "name": "Update"
+                },
+                {
+                  "name": "Delete"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/accountTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/achievementCategoryDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/additionalCreditTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/addressTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/administrationEnvironmentDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/administrativeFundingControlDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/ancestryEthnicOriginDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/assessmentCategoryDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/assessmentIdentificationSystemDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/assessmentItemCategoryDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/assessmentItemResultDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/assignmentLateStatusDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/attemptStatusDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/attendanceEventCategoryDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/barrierToInternetAccessInResidenceDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/behaviorDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/busRouteDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/calendarEventDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/calendarTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/careerPathwayDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/charterApprovalAgencyTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/charterStatusDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/citizenshipStatusDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/classroomPositionDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/cohortScopeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/cohortTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/cohortYearTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/competencyLevelDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/contactTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/contentClassDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/continuationOfServicesReasonDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/costRateDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/countryDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/courseAttemptResultDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/courseDefinedByDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/courseGPAApplicabilityDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/courseIdentificationSystemDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/courseLevelCharacteristicDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/courseRepeatCodeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/credentialFieldDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/credentialTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/creditCategoryDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/creditTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/crisisTypeDescriptor",
+          "defaultAuthorization": {
+            "actions": [
+              {
+                "name": "Create",
+                "authorizationStrategies": [
+                  {
+                    "name": "NamespaceBased"
+                  }
+                ]
+              },
+              {
+                "name": "Read",
+                "authorizationStrategies": [
+                  {
+                    "name": "NamespaceBased"
+                  }
+                ]
+              },
+              {
+                "name": "Update",
+                "authorizationStrategies": [
+                  {
+                    "name": "NamespaceBased"
+                  }
+                ]
+              },
+              {
+                "name": "Delete",
+                "authorizationStrategies": [
+                  {
+                    "name": "NamespaceBased"
+                  }
+                ]
+              },
+              {
+                "name": "ReadChanges",
+                "authorizationStrategies": [
+                  {
+                    "name": "NamespaceBased"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/cteProgramServiceDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/curriculumUsedDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/deliveryMethodDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/diagnosisDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/diplomaLevelDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/diplomaTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/disabilityDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/disabilityDesignationDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/disabilityDeterminationSourceTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/disciplineActionLengthDifferenceReasonDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/disciplineDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/disciplineIncidentParticipationCodeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/displacedStudentStatusDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/educationalEnvironmentDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/educationOrganizationAssociationTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/educationOrganizationCategoryDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/educationOrganizationIdentificationSystemDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/educationPlanDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/electronicMailTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/eligibilityDelayReasonDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/eligibilityEvaluationTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/employmentStatusDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/enrollmentTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/entryGradeLevelReasonDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/entryTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/evaluationDelayReasonDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/eventCircumstanceDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/exitWithdrawTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/financialCollectionDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/gradebookEntryTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/gradeLevelDescriptor",
+          "claimSets": [
+            {
+              "name": "ABConnect",
+              "actions": [
+                {
+                  "name": "Create"
+                },
+                {
+                  "name": "Read"
+                },
+                {
+                  "name": "Update"
+                },
+                {
+                  "name": "Delete"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/gradePointAverageTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/gradeTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/gradingPeriodDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/graduationPlanTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/gunFreeSchoolsActReportingStatusDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/homelessPrimaryNighttimeResidenceDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/homelessProgramServiceDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/ideaPartDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/identificationDocumentUseDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/immunizationTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/incidentLocationDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/indicatorDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/indicatorGroupDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/indicatorLevelDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/institutionTelephoneNumberTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/interactivityStyleDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/internetAccessDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/internetAccessTypeInResidenceDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/internetPerformanceInResidenceDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/interventionClassDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/interventionEffectivenessRatingDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/languageDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/languageInstructionProgramServiceDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/languageUseDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/learningStandardCategoryDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/learningStandardEquivalenceStrengthDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/learningStandardScopeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/levelOfEducationDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/licenseStatusDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/licenseTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/limitedEnglishProficiencyDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/localeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/localEducationAgencyCategoryDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/magnetSpecialProgramEmphasisSchoolDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/mediumOfInstructionDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/methodCreditEarnedDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/migrantEducationProgramServiceDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/modelEntityDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/monitoredDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/neglectedOrDelinquentProgramDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/neglectedOrDelinquentProgramServiceDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/networkPurposeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/nonMedicalImmunizationExemptionDescriptor",
+          "defaultAuthorization": {
+            "actions": [
+              {
+                "name": "Create",
+                "authorizationStrategies": [
+                  {
+                    "name": "NamespaceBased"
+                  }
+                ]
+              },
+              {
+                "name": "Read",
+                "authorizationStrategies": [
+                  {
+                    "name": "NamespaceBased"
+                  }
+                ]
+              },
+              {
+                "name": "Update",
+                "authorizationStrategies": [
+                  {
+                    "name": "NamespaceBased"
+                  }
+                ]
+              },
+              {
+                "name": "Delete",
+                "authorizationStrategies": [
+                  {
+                    "name": "NamespaceBased"
+                  }
+                ]
+              },
+              {
+                "name": "ReadChanges",
+                "authorizationStrategies": [
+                  {
+                    "name": "NamespaceBased"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/operationalStatusDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/otherNameTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/participationDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/participationStatusDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/performanceBaseConversionDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/personalInformationVerificationDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/platformTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/populationServedDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/postingResultDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/postSecondaryEventCategoryDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/postSecondaryInstitutionLevelDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/primaryLearningDeviceAccessDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/primaryLearningDeviceAwayFromSchoolDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/primaryLearningDeviceProviderDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/proficiencyDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/programAssignmentDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/programCharacteristicDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/programEvaluationPeriodDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/programEvaluationTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/programSponsorDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/programTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/progressDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/progressLevelDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/providerCategoryDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/providerProfitabilityDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/providerStatusDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/publicationStatusDescriptor",
+          "claimSets": [
+            {
+              "name": "ABConnect",
+              "actions": [
+                {
+                  "name": "Create"
+                },
+                {
+                  "name": "Read"
+                },
+                {
+                  "name": "Update"
+                },
+                {
+                  "name": "Delete"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/questionFormDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/raceDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/ratingLevelDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/reasonExitedDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/recognitionTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/relationDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/repeatIdentifierDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/reporterDescriptionDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/reportingTagDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/residencyStatusDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/responseIndicatorDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/responsibilityDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/restraintEventReasonDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/resultDatatypeTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/retestIndicatorDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/schoolCategoryDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/schoolChoiceBasisDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/schoolChoiceImplementStatusDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/schoolFoodServiceProgramServiceDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/schoolTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/sectionCharacteristicDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/sectionTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/separationDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/separationReasonDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/serviceDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/sexDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/sourceSystemDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/specialEducationExitReasonDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/specialEducationProgramServiceDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/specialEducationSettingDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/staffClassificationDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/staffIdentificationSystemDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/staffLeaveEventCategoryDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/stateAbbreviationDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentCharacteristicDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentIdentificationSystemDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentParticipationCodeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/submissionStatusDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/supporterMilitaryConnectionDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/surveyCategoryDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/surveyLevelDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/teachingCredentialBasisDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/teachingCredentialDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/technicalSkillsAssessmentDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/telephoneNumberTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/termDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/titleIPartAParticipantDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/titleIPartAProgramServiceDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/titleIPartASchoolDesignationDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/transportationPublicExpenseEligibilityTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/transportationTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/travelDayofWeekDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/travelDirectionDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/tribalAffiliationDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/visaDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/weaponDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/imunizationTypeDescriptor",
+          "defaultAuthorization": {
+            "actions": [
+              {
+                "name": "Create",
+                "authorizationStrategies": [
+                  {
+                    "name": "NamespaceBased"
+                  }
+                ]
+              },
+              {
+                "name": "Read",
+                "authorizationStrategies": [
+                  {
+                    "name": "NamespaceBased"
+                  }
+                ]
+              },
+              {
+                "name": "Update",
+                "authorizationStrategies": [
+                  {
+                    "name": "NamespaceBased"
+                  }
+                ]
+              },
+              {
+                "name": "Delete",
+                "authorizationStrategies": [
+                  {
+                    "name": "NamespaceBased"
+                  }
+                ]
+              },
+              {
+                "name": "ReadChanges",
+                "authorizationStrategies": [
+                  {
+                    "name": "NamespaceBased"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/Section504DisabilityDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/DualCreditTypeDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/DualCreditInstitutionDescriptor"
+        }
+      ]
+    },
+    {
+      "name": "http://ed-fi.org/identity/claims/domains/managedDescriptors",
+      "defaultAuthorization": {
+        "actions": [
+          {
+            "name": "Create",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          },
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
+          },
+          {
+            "name": "Update",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          },
+          {
+            "name": "Delete",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          }
+        ]
+      },
+      "claimSets": [
+        {
+          "name": "SISVendor",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        },
+        {
+          "name": "EdFiSandbox",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        },
+        {
+          "name": "AssessmentVendor",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        },
+        {
+          "name": "BootstrapDescriptorsandEdOrgs",
+          "actions": [
+            {
+              "name": "Create",
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "NoFurtherAuthorizationRequired"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "DistrictHostedSISVendor",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        }
+      ],
+      "claims": [
+        {
+          "name": "http://ed-fi.org/identity/claims/reasonNotTestedDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/accommodationDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/assessmentPeriodDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/assessmentReportingMethodDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/performanceLevelDescriptor",
+          "claimSets": [
+            {
+              "name": "AssessmentVendor",
+              "actions": [
+                {
+                  "name": "Create"
+                },
+                {
+                  "name": "Read"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "http://ed-fi.org/identity/claims/domains/educationOrganizations",
+      "defaultAuthorization": {
+        "actions": [
+          {
+            "name": "Create",
+            "authorizationStrategies": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
+          },
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
+          },
+          {
+            "name": "Update",
+            "authorizationStrategies": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
+          },
+          {
+            "name": "Delete",
+            "authorizationStrategies": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
+          }
+        ]
+      },
+      "claimSets": [
+        {
+          "name": "SISVendor",
+          "actions": [
+            {
+              "name": "Read"
+            }
+          ]
+        },
+        {
+          "name": "EdFiSandbox",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        },
+        {
+          "name": "RosterVendor",
+          "actions": [
+            {
+              "name": "Read"
+            }
+          ]
+        },
+        {
+          "name": "BootstrapDescriptorsandEdOrgs",
+          "actions": [
+            {
+              "name": "Create",
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "NoFurtherAuthorizationRequired"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "DistrictHostedSISVendor",
+          "actions": [
+            {
+              "name": "Read"
+            }
+          ]
+        }
+      ],
+      "claims": [
+        {
+          "name": "http://ed-fi.org/identity/claims/communityOrganization",
+          "claimSets": [
+            {
+              "name": "BootstrapDescriptorsandEdOrgs",
+              "actions": [
+                {
+                  "name": "Create",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "NoFurtherAuthorizationRequired"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/communityProvider",
+          "claimSets": [
+            {
+              "name": "BootstrapDescriptorsandEdOrgs",
+              "actions": [
+                {
+                  "name": "Create",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "NoFurtherAuthorizationRequired"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/educationOrganizationNetwork",
+          "claimSets": [
+            {
+              "name": "BootstrapDescriptorsandEdOrgs",
+              "actions": [
+                {
+                  "name": "Create",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "NoFurtherAuthorizationRequired"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/educationServiceCenter",
+          "claimSets": [
+            {
+              "name": "BootstrapDescriptorsandEdOrgs",
+              "actions": [
+                {
+                  "name": "Create",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "NoFurtherAuthorizationRequired"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/localEducationAgency",
+          "claimSets": [
+            {
+              "name": "BootstrapDescriptorsandEdOrgs",
+              "actions": [
+                {
+                  "name": "Create",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "NoFurtherAuthorizationRequired"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "DistrictHostedSISVendor",
+              "actions": [
+                {
+                  "name": "Read"
+                },
+                {
+                  "name": "Update"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/organizationDepartment",
+          "defaultAuthorization": {
+            "actions": [
+              {
+                "name": "Create",
+                "authorizationStrategies": [
+                  {
+                    "name": "RelationshipsWithEdOrgsAndPeople"
+                  }
+                ]
+              },
+              {
+                "name": "Read",
+                "authorizationStrategies": [
+                  {
+                    "name": "RelationshipsWithEdOrgsAndPeople"
+                  }
+                ]
+              },
+              {
+                "name": "Update",
+                "authorizationStrategies": [
+                  {
+                    "name": "RelationshipsWithEdOrgsAndPeople"
+                  }
+                ]
+              },
+              {
+                "name": "Delete",
+                "authorizationStrategies": [
+                  {
+                    "name": "RelationshipsWithEdOrgsAndPeople"
+                  }
+                ]
+              }
+            ]
+          },
+          "claimSets": [
+            {
+              "name": "DistrictHostedSISVendor",
+              "actions": [
+                {
+                  "name": "Create"
+                },
+                {
+                  "name": "Read"
+                },
+                {
+                  "name": "Update"
+                },
+                {
+                  "name": "Delete"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/postSecondaryInstitution",
+          "claimSets": [
+            {
+              "name": "BootstrapDescriptorsandEdOrgs",
+              "actions": [
+                {
+                  "name": "Create",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "NoFurtherAuthorizationRequired"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/school",
+          "claimSets": [
+            {
+              "name": "BootstrapDescriptorsandEdOrgs",
+              "actions": [
+                {
+                  "name": "Create",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "NoFurtherAuthorizationRequired"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "DistrictHostedSISVendor",
+              "actions": [
+                {
+                  "name": "Create"
+                },
+                {
+                  "name": "Read"
+                },
+                {
+                  "name": "Update"
+                },
+                {
+                  "name": "Delete"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/stateEducationAgency",
+          "claimSets": [
+            {
+              "name": "BootstrapDescriptorsandEdOrgs",
+              "actions": [
+                {
+                  "name": "Create",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "NoFurtherAuthorizationRequired"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "http://ed-fi.org/identity/claims/domains/people",
+      "defaultAuthorization": {
+        "actions": [
+          {
+            "name": "Create",
+            "authorizationStrategies": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
+          },
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "RelationshipsWithEdOrgsAndPeople"
+              }
+            ]
+          },
+          {
+            "name": "Update",
+            "authorizationStrategies": [
+              {
+                "name": "RelationshipsWithEdOrgsAndPeople"
+              }
+            ]
+          },
+          {
+            "name": "Delete",
+            "authorizationStrategies": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
+          }
+        ]
+      },
+      "claimSets": [
+        {
+          "name": "SISVendor",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        },
+        {
+          "name": "EdFiSandbox",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        },
+        {
+          "name": "DistrictHostedSISVendor",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        }
+      ],
+      "claims": [
+        {
+          "name": "http://ed-fi.org/identity/claims/contact"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/staff",
+          "claimSets": [
+            {
+              "name": "RosterVendor",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/student",
+          "claimSets": [
+            {
+              "name": "RosterVendor",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            },
+            {
+              "name": "AssessmentVendor",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            },
+            {
+              "name": "AssessmentRead",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "http://ed-fi.org/identity/claims/domains/relationshipBasedData",
+      "defaultAuthorization": {
+        "actions": [
+          {
+            "name": "Create",
+            "authorizationStrategies": [
+              {
+                "name": "RelationshipsWithEdOrgsAndPeople"
+              }
+            ]
+          },
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "RelationshipsWithEdOrgsAndPeople"
+              }
+            ]
+          },
+          {
+            "name": "Update",
+            "authorizationStrategies": [
+              {
+                "name": "RelationshipsWithEdOrgsAndPeople"
+              }
+            ]
+          },
+          {
+            "name": "Delete",
+            "authorizationStrategies": [
+              {
+                "name": "RelationshipsWithEdOrgsAndPeople"
+              }
+            ]
+          }
+        ]
+      },
+      "claimSets": [
+        {
+          "name": "SISVendor",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        },
+        {
+          "name": "EdFiSandbox",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        },
+        {
+          "name": "AssessmentVendor",
+          "actions": [
+            {
+              "name": "Read"
+            }
+          ]
+        },
+        {
+          "name": "DistrictHostedSISVendor",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        }
+      ],
+      "claims": [
+        {
+          "name": "http://ed-fi.org/identity/claims/academicWeek"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/accountabilityRating",
+          "claimSets": [
+            {
+              "name": "BootstrapDescriptorsandEdOrgs",
+              "actions": [
+                {
+                  "name": "Create",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "NoFurtherAuthorizationRequired"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/bellSchedule"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/calendar"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/calendarDate"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/classPeriod",
+          "claimSets": [
+            {
+              "name": "RosterVendor",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            },
+            {
+              "name": "BootstrapDescriptorsandEdOrgs",
+              "actions": [
+                {
+                  "name": "Create",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "NoFurtherAuthorizationRequired"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/cohort"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/communityProviderLicense",
+          "claimSets": [
+            {
+              "name": "EdFiSandbox",
+              "actions": [
+                {
+                  "name": "Create"
+                },
+                {
+                  "name": "Read"
+                },
+                {
+                  "name": "Update"
+                },
+                {
+                  "name": "Delete"
+                }
+              ]
+            },
+            {
+              "name": "BootstrapDescriptorsandEdOrgs",
+              "actions": [
+                {
+                  "name": "Create",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "NoFurtherAuthorizationRequired"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/competencyObjective"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/course",
+          "defaultAuthorization": {
+            "actions": [
+              {
+                "name": "Read",
+                "authorizationStrategies": [
+                  {
+                    "name": "RelationshipsWithEdOrgsAndPeople"
+                  },
+                  {
+                    "name": "RelationshipsWithEdOrgsAndPeopleInverted"
+                  }
+                ]
+              }
+            ]
+          },
+          "claimSets": [
+            {
+              "name": "RosterVendor",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            },
+            {
+              "name": "BootstrapDescriptorsandEdOrgs",
+              "actions": [
+                {
+                  "name": "Create",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "NoFurtherAuthorizationRequired"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/courseOffering",
+          "claimSets": [
+            {
+              "name": "RosterVendor",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/courseTranscript"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/descriptorMapping",
+          "defaultAuthorization": {
+            "actions": [
+              {
+                "name": "Create",
+                "authorizationStrategies": [
+                  {
+                    "name": "NamespaceBased"
+                  }
+                ]
+              },
+              {
+                "name": "Read",
+                "authorizationStrategies": [
+                  {
+                    "name": "NamespaceBased"
+                  }
+                ]
+              },
+              {
+                "name": "Update",
+                "authorizationStrategies": [
+                  {
+                    "name": "NamespaceBased"
+                  }
+                ]
+              },
+              {
+                "name": "Delete",
+                "authorizationStrategies": [
+                  {
+                    "name": "NamespaceBased"
+                  }
+                ]
+              },
+              {
+                "name": "ReadChanges",
+                "authorizationStrategies": [
+                  {
+                    "name": "NamespaceBased"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/disciplineAction"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/disciplineIncident"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/educationOrganizationInterventionPrescriptionAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/educationOrganizationNetworkAssociation",
+          "claimSets": [
+            {
+              "name": "BootstrapDescriptorsandEdOrgs",
+              "actions": [
+                {
+                  "name": "Create",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "NoFurtherAuthorizationRequired"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/educationOrganizationPeerAssociation",
+          "claimSets": [
+            {
+              "name": "BootstrapDescriptorsandEdOrgs",
+              "actions": [
+                {
+                  "name": "Create",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "NoFurtherAuthorizationRequired"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/evaluationRubricDimension"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/feederSchoolAssociation",
+          "claimSets": [
+            {
+              "name": "BootstrapDescriptorsandEdOrgs",
+              "actions": [
+                {
+                  "name": "Create",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "NoFurtherAuthorizationRequired"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/grade"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/gradebookEntry",
+          "defaultAuthorization": {
+            "actions": [
+              {
+                "name": "Create",
+                "authorizationStrategies": [
+                  {
+                    "name": "NamespaceBased"
+                  }
+                ]
+              },
+              {
+                "name": "Read",
+                "authorizationStrategies": [
+                  {
+                    "name": "NamespaceBased"
+                  }
+                ]
+              },
+              {
+                "name": "Update",
+                "authorizationStrategies": [
+                  {
+                    "name": "NamespaceBased"
+                  }
+                ]
+              },
+              {
+                "name": "Delete",
+                "authorizationStrategies": [
+                  {
+                    "name": "NamespaceBased"
+                  }
+                ]
+              },
+              {
+                "name": "ReadChanges",
+                "authorizationStrategies": [
+                  {
+                    "name": "NamespaceBased"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/gradingPeriod"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/graduationPlan"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/intervention"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/interventionPrescription"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/interventionStudy"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/location",
+          "claimSets": [
+            {
+              "name": "RosterVendor",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            },
+            {
+              "name": "BootstrapDescriptorsandEdOrgs",
+              "actions": [
+                {
+                  "name": "Create",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "NoFurtherAuthorizationRequired"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/openStaffPosition"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/person",
+          "defaultAuthorization": {
+            "actions": [
+              {
+                "name": "Create",
+                "authorizationStrategies": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Read",
+                "authorizationStrategies": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Update",
+                "authorizationStrategies": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Delete",
+                "authorizationStrategies": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/postSecondaryEvent"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/program",
+          "defaultAuthorization": {
+            "actions": [
+              {
+                "name": "Read",
+                "authorizationStrategies": [
+                  {
+                    "name": "RelationshipsWithEdOrgsAndPeople"
+                  },
+                  {
+                    "name": "RelationshipsWithEdOrgsAndPeopleInverted"
+                  }
+                ]
+              }
+            ]
+          },
+          "claimSets": [
+            {
+              "name": "BootstrapDescriptorsandEdOrgs",
+              "actions": [
+                {
+                  "name": "Create",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "NoFurtherAuthorizationRequired"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/programEvaluation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/programEvaluationElement"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/programEvaluationObjective"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/reportCard"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/restraintEvent"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/section",
+          "claimSets": [
+            {
+              "name": "RosterVendor",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/sectionAttendanceTakenEvent"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/session",
+          "claimSets": [
+            {
+              "name": "RosterVendor",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/staffAbsenceEvent"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/staffCohortAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/staffDisciplineIncidentAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/staffEducationOrganizationContactAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/staffLeave"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/staffProgramAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/staffSchoolAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/staffSectionAssociation",
+          "claimSets": [
+            {
+              "name": "RosterVendor",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentAcademicRecord"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentAssessmentEducationOrganizationAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentCohortAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentCompetencyObjective"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentCTEProgramAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentDisciplineIncidentBehaviorAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentDisciplineIncidentNonOffenderAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentEducationOrganizationAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentEducationOrganizationResponsibilityAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentGradebookEntry"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentHomelessProgramAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentInterventionAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentInterventionAttendanceEvent"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentLanguageInstructionProgramAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentMigrantEducationProgramAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentNeglectedOrDelinquentProgramAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentProgramAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentProgramAttendanceEvent"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentProgramEvaluation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentSchoolAttendanceEvent"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentSchoolFoodServiceProgramAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentSectionAssociation",
+          "claimSets": [
+            {
+              "name": "RosterVendor",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentSectionAttendanceEvent"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentSpecialEducationProgramAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentSpecialEducationProgramEligibilityAssociation",
+          "defaultAuthorization": {
+            "actions": [
+              {
+                "name": "Create",
+                "authorizationStrategies": [
+                  {
+                    "name": "RelationshipsWithEdOrgsAndPeople"
+                  },
+                  {
+                    "name": "RelationshipsWithStudentsOnlyThroughResponsibility"
+                  }
+                ]
+              },
+              {
+                "name": "Read",
+                "authorizationStrategies": [
+                  {
+                    "name": "RelationshipsWithEdOrgsAndPeople"
+                  },
+                  {
+                    "name": "RelationshipsWithStudentsOnlyThroughResponsibility"
+                  }
+                ]
+              },
+              {
+                "name": "Update",
+                "authorizationStrategies": [
+                  {
+                    "name": "RelationshipsWithEdOrgsAndPeople"
+                  },
+                  {
+                    "name": "RelationshipsWithStudentsOnlyThroughResponsibility"
+                  }
+                ]
+              },
+              {
+                "name": "Delete",
+                "authorizationStrategies": [
+                  {
+                    "name": "RelationshipsWithEdOrgsAndPeople"
+                  },
+                  {
+                    "name": "RelationshipsWithStudentsOnlyThroughResponsibility"
+                  }
+                ]
+              },
+              {
+                "name": "ReadChanges",
+                "authorizationStrategies": [
+                  {
+                    "name": "RelationshipsWithEdOrgsAndPeopleIncludingDeletes"
+                  },
+                  {
+                    "name": "RelationshipsWithStudentsOnlyThroughResponsibilityIncludingDeletes"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentTitleIPartAProgramAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentTransportation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/surveyCourseAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/surveyProgramAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/surveyResponseEducationOrganizationTargetAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/surveyResponseStaffTargetAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/surveySectionAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/surveySectionResponseEducationOrganizationTargetAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/surveySectionResponseStaffTargetAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentSection504ProgramAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentEducationOrganizationAssessmentAccommodation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentEducationOrganizationAssessmentAccommodationGeneralAccommodation"
+        }
+      ]
+    },
+    {
+      "name": "http://ed-fi.org/identity/claims/domains/assessmentMetadata",
+      "defaultAuthorization": {
+        "actions": [
+          {
+            "name": "Create",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          },
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          },
+          {
+            "name": "Update",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          },
+          {
+            "name": "Delete",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          }
+        ]
+      },
+      "claimSets": [
+        {
+          "name": "SISVendor",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        },
+        {
+          "name": "EdFiSandbox",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        },
+        {
+          "name": "AssessmentVendor",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        },
+        {
+          "name": "AssessmentRead",
+          "actions": [
+            {
+              "name": "Read"
+            }
+          ]
+        },
+        {
+          "name": "DistrictHostedSISVendor",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        }
+      ],
+      "claims": [
+        {
+          "name": "http://ed-fi.org/identity/claims/assessment"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/assessmentItem"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/assessmentScoreRangeLearningStandard"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/objectiveAssessment"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentAssessment"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/assessmentAdministration"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/assessmentAdministrationAssessmentAdminstrationPeriod"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/assessmentAdministrationAssessmentBatteryPart"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/assessmentBatteryPart"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/assessmentBatteryPartObjectiveAssessment"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/assessmentAdministrationParticipation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/assessmentAdministrationParticipationAdministrationPointOfContact"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentAssessmentRegistration"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentAssessmentRegistrationAssessmentAccommodation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentAssessmentRegistrationAssessmentCustomization"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentAssessmentRegistrationBatteryPartAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentAssessmentRegistrationBatteryPartAssociationAccommodation"
+        }
+      ]
+    },
+    {
+      "name": "http://ed-fi.org/identity/claims/services/identity",
+      "defaultAuthorization": {
+        "actions": [
+          {
+            "name": "Create",
+            "authorizationStrategies": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
+          },
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
+          },
+          {
+            "name": "Update",
+            "authorizationStrategies": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
+          }
+        ]
+      },
+      "claimSets": [
+        {
+          "name": "EdFiSandbox",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "http://ed-fi.org/identity/claims/domains/educationStandards",
+      "defaultAuthorization": {
+        "actions": [
+          {
+            "name": "Create",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          },
+          {
+            "name": "Read",
+            "authorizationStrategies": []
+          },
+          {
+            "name": "Update",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          },
+          {
+            "name": "Delete",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          }
+        ]
+      },
+      "claimSets": [
+        {
+          "name": "SISVendor",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        },
+        {
+          "name": "EdFiSandbox",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        },
+        {
+          "name": "DistrictHostedSISVendor",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        },
+        {
+          "name": "ABConnect",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        }
+      ],
+      "claims": [
+        {
+          "name": "http://ed-fi.org/identity/claims/credential",
+          "defaultAuthorization": {
+            "actions": [
+              {
+                "name": "Create",
+                "authorizationStrategies": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Read",
+                "authorizationStrategies": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Update",
+                "authorizationStrategies": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Delete",
+                "authorizationStrategies": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/learningStandard",
+          "claimSets": [
+            {
+              "name": "AssessmentVendor",
+              "actions": [
+                {
+                  "name": "Create"
+                },
+                {
+                  "name": "Read"
+                },
+                {
+                  "name": "Update"
+                },
+                {
+                  "name": "Delete"
+                }
+              ]
+            },
+            {
+              "name": "AssessmentRead",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            },
+            {
+              "name": "BootstrapDescriptorsandEdOrgs",
+              "actions": [
+                {
+                  "name": "Create",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "NoFurtherAuthorizationRequired"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/learningStandardEquivalenceAssociation",
+          "claimSets": [
+            {
+              "name": "BootstrapDescriptorsandEdOrgs",
+              "actions": [
+                {
+                  "name": "Create",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "NoFurtherAuthorizationRequired"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "http://ed-fi.org/identity/claims/domains/primaryRelationships",
+      "defaultAuthorization": {
+        "actions": [
+          {
+            "name": "Create",
+            "authorizationStrategies": [
+              {
+                "name": "RelationshipsWithEdOrgsOnly"
+              }
+            ]
+          },
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "RelationshipsWithEdOrgsAndPeople"
+              }
+            ]
+          },
+          {
+            "name": "Update",
+            "authorizationStrategies": [
+              {
+                "name": "RelationshipsWithEdOrgsAndPeople"
+              }
+            ]
+          },
+          {
+            "name": "Delete",
+            "authorizationStrategies": [
+              {
+                "name": "RelationshipsWithEdOrgsAndPeople"
+              }
+            ]
+          }
+        ]
+      },
+      "claimSets": [
+        {
+          "name": "SISVendor",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        },
+        {
+          "name": "EdFiSandbox",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        },
+        {
+          "name": "DistrictHostedSISVendor",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        }
+      ],
+      "claims": [
+        {
+          "name": "http://ed-fi.org/identity/claims/studentContactAssociation",
+          "defaultAuthorization": {
+            "actions": [
+              {
+                "name": "Create",
+                "authorizationStrategies": [
+                  {
+                    "name": "RelationshipsWithStudentsOnly"
+                  }
+                ]
+              },
+              {
+                "name": "Read",
+                "authorizationStrategies": [
+                  {
+                    "name": "RelationshipsWithStudentsOnly"
+                  }
+                ]
+              },
+              {
+                "name": "Update",
+                "authorizationStrategies": [
+                  {
+                    "name": "RelationshipsWithStudentsOnly"
+                  }
+                ]
+              },
+              {
+                "name": "Delete",
+                "authorizationStrategies": [
+                  {
+                    "name": "RelationshipsWithStudentsOnly"
+                  }
+                ]
+              },
+              {
+                "name": "ReadChanges",
+                "authorizationStrategies": [
+                  {
+                    "name": "RelationshipsWithStudentsOnlyIncludingDeletes"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/staffEducationOrganizationAssignmentAssociation",
+          "claimSets": [
+            {
+              "name": "RosterVendor",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/staffEducationOrganizationEmploymentAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/studentSchoolAssociation",
+          "claimSets": [
+            {
+              "name": "RosterVendor",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "http://ed-fi.org/identity/claims/domains/surveyDomain",
+      "defaultAuthorization": {
+        "actions": [
+          {
+            "name": "Create",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          },
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          },
+          {
+            "name": "Update",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          },
+          {
+            "name": "Delete",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          },
+          {
+            "name": "ReadChanges",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          }
+        ]
+      },
+      "claimSets": [
+        {
+          "name": "EdFiSandbox",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            },
+            {
+              "name": "ReadChanges"
+            }
+          ]
+        },
+        {
+          "name": "EdFiAPIPublisherWriter",
+          "actions": [
+            {
+              "name": "Create",
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "NoFurtherAuthorizationRequired"
+                }
+              ]
+            },
+            {
+              "name": "Read",
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "NoFurtherAuthorizationRequired"
+                }
+              ]
+            },
+            {
+              "name": "Update",
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "NoFurtherAuthorizationRequired"
+                }
+              ]
+            },
+            {
+              "name": "Delete",
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "NoFurtherAuthorizationRequired"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "EducationPreparationProgram",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        }
+      ],
+      "claims": [
+        {
+          "name": "http://ed-fi.org/identity/claims/survey"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/surveyQuestion"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/surveyQuestionResponse"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/surveyResponse"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/surveySection"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/surveySectionResponse"
+        }
+      ]
+    },
+    {
+      "name": "http://ed-fi.org/identity/claims/educationContent",
+      "defaultAuthorization": {
+        "actions": [
+          {
+            "name": "Create",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          },
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          },
+          {
+            "name": "Update",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          },
+          {
+            "name": "Delete",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          }
+        ]
+      },
+      "claimSets": [
+        {
+          "name": "SISVendor",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        },
+        {
+          "name": "EdFiSandbox",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        },
+        {
+          "name": "DistrictHostedSISVendor",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "http://ed-fi.org/identity/claims/domains/finance",
+      "claimSets": [
+        {
+          "name": "EdFiSandbox",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            },
+            {
+              "name": "ReadChanges"
+            }
+          ]
+        },
+        {
+          "name": "EdFiAPIPublisherReader",
+          "actions": [
+            {
+              "name": "Read"
+            },
+            {
+              "name": "ReadChanges"
+            }
+          ]
+        },
+        {
+          "name": "EdFiAPIPublisherWriter",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        }
+      ],
+      "claims": [
+        {
+          "name": "http://ed-fi.org/identity/claims/domains/finance/dimensions",
+          "defaultAuthorization": {
+            "actions": [
+              {
+                "name": "Create",
+                "authorizationStrategies": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Read",
+                "authorizationStrategies": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Update",
+                "authorizationStrategies": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Delete",
+                "authorizationStrategies": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "ReadChanges",
+                "authorizationStrategies": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              }
+            ]
+          },
+          "claimSets": [
+            {
+              "name": "FinanceVendor",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            }
+          ],
+          "claims": [
+            {
+              "name": "http://ed-fi.org/identity/claims/ed-fi/fundDimension"
+            },
+            {
+              "name": "http://ed-fi.org/identity/claims/ed-fi/programDimension"
+            },
+            {
+              "name": "http://ed-fi.org/identity/claims/ed-fi/functionDimension"
+            },
+            {
+              "name": "http://ed-fi.org/identity/claims/ed-fi/objectDimension"
+            },
+            {
+              "name": "http://ed-fi.org/identity/claims/ed-fi/projectDimension"
+            },
+            {
+              "name": "http://ed-fi.org/identity/claims/ed-fi/operationalUnitDimension"
+            },
+            {
+              "name": "http://ed-fi.org/identity/claims/ed-fi/sourceDimension"
+            },
+            {
+              "name": "http://ed-fi.org/identity/claims/ed-fi/balanceSheetDimension"
+            }
+          ]
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/domains/finance/locals",
+          "defaultAuthorization": {
+            "actions": [
+              {
+                "name": "Create",
+                "authorizationStrategies": [
+                  {
+                    "name": "RelationshipsWithEdOrgsAndPeople"
+                  }
+                ]
+              },
+              {
+                "name": "Read",
+                "authorizationStrategies": [
+                  {
+                    "name": "RelationshipsWithEdOrgsAndPeople"
+                  }
+                ]
+              },
+              {
+                "name": "Update",
+                "authorizationStrategies": [
+                  {
+                    "name": "RelationshipsWithEdOrgsAndPeople"
+                  }
+                ]
+              },
+              {
+                "name": "Delete",
+                "authorizationStrategies": [
+                  {
+                    "name": "RelationshipsWithEdOrgsAndPeople"
+                  }
+                ]
+              },
+              {
+                "name": "ReadChanges",
+                "authorizationStrategies": [
+                  {
+                    "name": "RelationshipsWithEdOrgsAndPeople"
+                  }
+                ]
+              }
+            ]
+          },
+          "claimSets": [
+            {
+              "name": "FinanceVendor",
+              "actions": [
+                {
+                  "name": "Create"
+                },
+                {
+                  "name": "Read"
+                },
+                {
+                  "name": "Update"
+                },
+                {
+                  "name": "Delete"
+                }
+              ]
+            }
+          ],
+          "claims": [
+            {
+              "name": "http://ed-fi.org/identity/claims/ed-fi/chartOfAccount",
+              "defaultAuthorization": {
+                "actions": [
+                  {
+                    "name": "Read",
+                    "authorizationStrategies": [
+                      {
+                        "name": "RelationshipsWithEdOrgsAndPeople"
+                      },
+                      {
+                        "name": "RelationshipsWithEdOrgsAndPeopleInverted"
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "http://ed-fi.org/identity/claims/ed-fi/localAccount"
+            },
+            {
+              "name": "http://ed-fi.org/identity/claims/ed-fi/localBudget"
+            },
+            {
+              "name": "http://ed-fi.org/identity/claims/ed-fi/localActual"
+            },
+            {
+              "name": "http://ed-fi.org/identity/claims/ed-fi/localEncumbrance"
+            },
+            {
+              "name": "http://ed-fi.org/identity/claims/ed-fi/localContractedStaff"
+            },
+            {
+              "name": "http://ed-fi.org/identity/claims/ed-fi/localPayroll"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "http://ed-fi.org/identity/claims/ed-fi/crisisEvent",
+      "defaultAuthorization": {
+        "actions": [
+          {
+            "name": "Create",
+            "authorizationStrategies": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
+          },
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
+          },
+          {
+            "name": "Update",
+            "authorizationStrategies": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
+          },
+          {
+            "name": "Delete",
+            "authorizationStrategies": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
+          },
+          {
+            "name": "ReadChanges",
+            "authorizationStrategies": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
+          }
+        ]
+      },
+      "claimSets": [
+        {
+          "name": "SISVendor",
+          "actions": [
+            {
+              "name": "Read"
+            },
+            {
+              "name": "ReadChanges"
+            }
+          ]
+        },
+        {
+          "name": "EdFiSandbox",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            },
+            {
+              "name": "ReadChanges"
+            }
+          ]
+        },
+        {
+          "name": "BootstrapDescriptorsandEdOrgs",
+          "actions": [
+            {
+              "name": "Create"
+            }
+          ]
+        },
+        {
+          "name": "EdFiAPIPublisherReader",
+          "actions": [
+            {
+              "name": "Read"
+            },
+            {
+              "name": "ReadChanges"
+            }
+          ]
+        },
+        {
+          "name": "EdFiAPIPublisherWriter",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "http://ed-fi.org/identity/claims/ed-fi/studentHealth",
+      "defaultAuthorization": {
+        "actions": [
+          {
+            "name": "Create",
+            "authorizationStrategies": [
+              {
+                "name": "RelationshipsWithEdOrgsAndPeople"
+              }
+            ]
+          },
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "RelationshipsWithEdOrgsAndPeople"
+              }
+            ]
+          },
+          {
+            "name": "Update",
+            "authorizationStrategies": [
+              {
+                "name": "RelationshipsWithEdOrgsAndPeople"
+              }
+            ]
+          },
+          {
+            "name": "Delete",
+            "authorizationStrategies": [
+              {
+                "name": "RelationshipsWithEdOrgsAndPeople"
+              }
+            ]
+          },
+          {
+            "name": "ReadChanges",
+            "authorizationStrategies": [
+              {
+                "name": "RelationshipsWithEdOrgsAndPeople"
+              }
+            ]
+          }
+        ]
+      },
+      "claimSets": [
+        {
+          "name": "EdFiSandbox",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            },
+            {
+              "name": "ReadChanges"
+            }
+          ]
+        },
+        {
+          "name": "EdFiAPIPublisherReader",
+          "actions": [
+            {
+              "name": "Read"
+            },
+            {
+              "name": "ReadChanges"
+            }
+          ]
+        },
+        {
+          "name": "EdFiAPIPublisherWriter",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "https://purl.imsglobal.org/spec/or/v1p2/scope",
+      "defaultAuthorization": {
+        "actions": [
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "RelationshipsWithEdOrgsAndPeople"
+              }
+            ]
+          }
+        ]
+      },
+      "claims": [
+        {
+          "name": "https://purl.imsglobal.org/spec/or/v1p2/scope/roster-core",
+          "claimSets": [
+            {
+              "name": "EdFiSandbox",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            },
+            {
+              "name": "RosterVendor",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            },
+            {
+              "name": "AssessmentVendor",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            },
+            {
+              "name": "AssessmentRead",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "https://purl.imsglobal.org/spec/or/v1p2/scope/roster",
+          "claimSets": [
+            {
+              "name": "EdFiSandbox",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            },
+            {
+              "name": "RosterVendor",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            },
+            {
+              "name": "AssessmentVendor",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            },
+            {
+              "name": "AssessmentRead",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "https://purl.imsglobal.org/spec/or/v1p2/scope/roster-demographics",
+          "claimSets": [
+            {
+              "name": "EdFiSandbox",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            },
+            {
+              "name": "RosterVendor",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            },
+            {
+              "name": "AssessmentVendor",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            },
+            {
+              "name": "AssessmentRead",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "https://purl.imsglobal.org/spec/or/v1p2/scope/resource",
+          "claimSets": [
+            {
+              "name": "EdFiSandbox",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            },
+            {
+              "name": "RosterVendor",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            },
+            {
+              "name": "AssessmentVendor",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            },
+            {
+              "name": "AssessmentRead",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "https://purl.imsglobal.org/spec/or/v1p2/scope/gradebook",
+          "claimSets": [
+            {
+              "name": "EdFiSandbox",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            },
+            {
+              "name": "RosterVendor",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            },
+            {
+              "name": "AssessmentVendor",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            },
+            {
+              "name": "AssessmentRead",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

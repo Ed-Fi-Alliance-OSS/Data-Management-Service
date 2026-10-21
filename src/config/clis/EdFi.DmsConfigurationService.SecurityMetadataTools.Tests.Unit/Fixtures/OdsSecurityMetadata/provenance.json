@@ -1,0 +1,187 @@
+{
+  "capturedOn": "2026-10-21",
+  "odsApiVersion": "7.3.2",
+  "dataStandardVersion": "5.2.0",
+  "odsRevision": "e489317ea77f245aff99d57374165c238848f9a0",
+  "implementationRevision": "8b5ccf9b2f64dce214db0e364eada267822af4d7",
+  "exportRevision": "5bca6615e1ce06b84a87e8512cfbe69a1249dd9a",
+  "exportPath": "SecurityMetadata/Export/MsSql/Security-Metadata-to-XML.sql",
+  "exportSha256": "d393ce40b111f0d15414074495fa4e2d51e2d36ac0da1ea88198f106fd58e894",
+  "deploymentPackage": {
+    "id": "EdFi.Suite3.Db.Deploy",
+    "version": "4.1.52",
+    "reportedVersion": "1.0.0-4.1.52+52163274854a56022f8fdbee135932439639cab2"
+  },
+  "database": {
+    "name": "EdFi_Security",
+    "productVersion": "17.0.4085.5",
+    "productLevel": "RTM-CU8-GDR",
+    "edition": "Enterprise Developer Edition (64-bit)",
+    "image": "mcr.microsoft.com/mssql/server@sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a",
+    "optionalFeatures": [],
+    "extensions": []
+  },
+  "executedScripts": [
+    {
+      "path": "Artifacts/MsSql/Structure/Security/0010-Tables.sql",
+      "sha256": "ba252e3b3dd76728f06451d22ef7808559fb6c7f972c70ad1321db3f4c0cc318"
+    },
+    {
+      "path": "Artifacts/MsSql/Structure/Security/0020-ForeignKeys.sql",
+      "sha256": "eaf815fd28114c12ca394e9b2c7052162706c5f64540b2c6bda2a7dcf5c69711"
+    },
+    {
+      "path": "Artifacts/MsSql/Structure/Security/0030-Indexes.sql",
+      "sha256": "63acdf9d35c9c2e7136a2e254760e191de9245730968a60c9adc7c785a44e78e"
+    },
+    {
+      "path": "Artifacts/MsSql/Structure/Security/0040-Tables-MultipleAuthStrats.sql",
+      "sha256": "f11364ff945c9d1afd757ada874f0d23a8bf63811b5d6d1e53f95f2b0ccf1903"
+    },
+    {
+      "path": "Artifacts/MsSql/Structure/Security/0050-AddUniqueConstraintResourceClaimsClaimName.sql",
+      "sha256": "6f86ded0bd044b5c2a8ae1b68173a7bab0a6549480ef76de59c2a74855212013"
+    },
+    {
+      "path": "Artifacts/MsSql/Structure/Security/0060-AlterClaimsetTable.sql",
+      "sha256": "b2f77af4ff59e0faf26cec4948a81e77fedf36e49165f68b80b20d5a25e91e8f"
+    },
+    {
+      "path": "Artifacts/MsSql/Structure/Security/0070-RemoveUnusedApplicationTableAndRemoveDisplayNameResourceName.sql",
+      "sha256": "eb0a22c0198191b255d21245292c7a33628db44f6c4d27b2230c8674e98f0180"
+    },
+    {
+      "path": "Artifacts/MsSql/Structure/Security/0080-Alter-Claimsets-Add-Unique-Constraint-ClaimsetName.sql",
+      "sha256": "a9fd2f5d514797d76d88357ccfb6a57e47eb1e2b4ace2995637cbca83740867c"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/0001-ResourceClaimMetadata.sql",
+      "sha256": "4839621fb494066925b3f66a14b737f205749755b37902cb1ba7ffb76f0eb234"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/0002-ResourceClaimMetadata.sql",
+      "sha256": "e044f02f0e28afdf4671aa0a853a16f0701a38168e9f10b8ec781017a51c3060"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/1090-ManagedReasonNotTestedDescriptor.sql",
+      "sha256": "863d25e407bc3b8baf1ca2c7e24a25d89160cafb77616a5eaca6bde950efcefb"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/2000-AdminApp-ClaimSets.sql",
+      "sha256": "1b0f84381aa315ec67d0c6afc7987a1ef03a03353a2ef41bab16215e8125e352"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/2000-AdminApp-ClaimSets_UpgradePath.sql",
+      "sha256": "8fc795e8ea3ae349e6dc5c068c564f74a53209907b307867731f985683df5772"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/2020-MigrateDataForMultipleAuthStrategies.sql",
+      "sha256": "fe484170c7f69e6f03ba41b5e69c5c4003760cd5f12cf71fc61156ff26973062"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/2030-Clean-up-ReadChanges-from-AB-Connect-Claim-Set.sql",
+      "sha256": "f0e95d0f7a41c0b0f4bfdf2d0b2af92c3a09071161a8d8a1f2ca8b0b7fb36674"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/2030-DropSingleAuthStrategyTables.sql",
+      "sha256": "c0ab5b7e115cb3bc17826b4f71b7342de64a761309dddc112c37cf2108701ee6"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/2050-UpdateClaimSetReadOnlyAndInternalUseOnlyColum.sql",
+      "sha256": "9d348dea7ae4d80bdeca0886288f39d8afaa15d3352f84a0f58ea29229e805dc"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/2060-OwnershipBased-claims-for-People.sql",
+      "sha256": "36fc80a2967799be882b6502ae4806b3e9f37e3ca1b27f9f03383afb848da9b9"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/2070-DataStandard4.0a-ResourceClaimMetadata.sql",
+      "sha256": "493f7899c6339dc4b1cff23deaf37c584acedbdc4dd3ebd3849e328fe7de0292"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/2070-Namespace-auth-for-GradebookEntry.sql",
+      "sha256": "36105abbe83e62a0b349a15bb3ac2a0845574faf79af2b4b3d491fd7761abff8"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/2080-Finance-domain-security-metadata.sql",
+      "sha256": "17016dd5e9e5c0e744afbaed74c3c17857b0a2a86c31985ae9fada2a8479d518"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/2090-RemoveOwnershipBasedTestClaimSet.sql",
+      "sha256": "476cbdbc434cd4149edcfc47757c101a1e4229d4178e663302199b28dcce629b"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/2100-UpdateClaimSetInternalUseOnlyColum.sql",
+      "sha256": "53b1fbc8b13cb6617e4469ace7a7f75359fc385f3adf63ae31b9b6f6b0ad72f8"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/2120-Add-Auth-Stratgies-Inverted-EdOrg-Hierarchy.sql",
+      "sha256": "0eadce7b4b689b8c41c83da2e2569e815e3240e46d15bfc7787b8e13a8113e52"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/2130-Reference-data-also-use-inverted-EdOrgHierarchy-for-Read.sql",
+      "sha256": "909a46b075866fe45fcdbc66fce690dcc53959a0b968cda620fe6d11ce85dd63"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/2140-Update-identities-claim-name.sql",
+      "sha256": "45387a9ebd941bf603d9cb21f93cd15f3125f87b6fd74e23977a72b68e212eeb"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/2145-Add-RelationshipsWithStudentsOnlyThroughResponsibilityIncludingDeletes-strategy.sql",
+      "sha256": "b608c3175342f667f8907812a88d956d04e95950d9abc621f08925d2b0b94b04"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/2150-StudentSpecialEducationProgramEligibilityAssociation-multiple-auth-strat.sql",
+      "sha256": "a80ffa1170febe715b8b0f7106529c63cb75ea65be977f2b9b6ce7371d061bc1"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/2160-StudentContactAssociation-authorized-on-StudentOnly.sql",
+      "sha256": "9ff7944f34f4518d51b442c9894a40bc43d045362615d1307d6106f8c5c967ad"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/2170-CrisisEvent-security-metadata.sql",
+      "sha256": "b5edcac4af72d03f7663c540780f4b55c395ee83dc218f0c4affe6e377ca05a3"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/2180-Immunization-Security-Metadata.sql",
+      "sha256": "f99036250053094b32e40c31b5f266210037514ce85786667bcd07d1f096268f"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/2190-StudentContactAssociation-ClaimName-Update.sql",
+      "sha256": "e4e046bc554fe3a98749b417f0e1dd91fb8871062c0984228fda25f98f09b94f"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/2200-AssessmentRegistration-security-metadata.sql",
+      "sha256": "07347f5ee67d4f7f6bafd6dbfc0b3e8c3b5f6b4fab3845cad3127712959db479"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/2300-Remove-AdminApp-ClaimSets.sql",
+      "sha256": "cc1db3041ab08fc22a04fae2ab7e5e8312ee89c4aa564f7d87ffd116e7d51ea4"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/2600-Set-ParentResourceClaimId-Null-SurveyDomain.sql",
+      "sha256": "19efdb9bf14dc9024b7a20ce5f0a4e5f2a8a0dfaca864fa86471413d2980c206"
+    },
+    {
+      "path": "Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Data/Security/2700-Add-OneRoster-security-metadata.sql",
+      "sha256": "7fa109a514043f8223a53d89903bd90d8b12058098c57328aec9e78f31babe41"
+    }
+  ],
+  "artifacts": {
+    "representative.xml": "2494968160141a1b88918d4a043fc8451e43fdb87e80e32fd0cf64160e447920",
+    "database-policy.json": "ffba5a1b4c6e260113bfa026c65889f262d1bb52642e905520bf81ea428cf5dc",
+    "expected-claims.json": "8884f815c595e687d43e8fd1fdd20ef28ada665f90343febf42617bb578e6b43"
+  },
+  "counts": {
+    "claims": 379,
+    "claimSets": 12,
+    "actions": 5,
+    "strategies": 13,
+    "defaults": 116,
+    "defaultStrategies": 123,
+    "grants": 266,
+    "overrides": 26,
+    "journal": 36
+  },
+  "approval": "pending; see README.md"
+}
