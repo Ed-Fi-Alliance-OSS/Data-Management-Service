@@ -5,9 +5,9 @@ Ed-Fi API Configuration Service claims documents.
 
 ## Development status
 
-Conversion, CMS schema validation, and output writing are implemented. Package
-release integration and upload acceptance coverage remain under development in
-DMS-1617; this tool has not yet been released.
+Conversion, CMS schema validation, output writing, upload acceptance coverage,
+and local package build/installation checks are implemented. Release automation
+remains under development in DMS-1617; this tool has not yet been released.
 
 ```sh
 security-metadata-tools --help

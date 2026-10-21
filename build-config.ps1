@@ -21,7 +21,7 @@
         * IntegrationTest: executes NUnit test in projects named `*.IntegrationTests`,
           which connect to a database.
         * BuildAndPublish: build and publish with `dotnet publish`
-        * Package: builds pre-release and release NuGet packages for the Dms API application.
+        * Package: packs the Configuration Service application or Security Metadata Tools.
         * Push: uploads a NuGet package to the NuGet feed.
         * DockerBuild: builds a Docker image from source code
         * DockerRun: runs the Docker image that was built from source code
@@ -58,7 +58,7 @@ param(
     # When non-empty, forwarded to MSBuild as /p:AssemblyVersion and /p:FileVersion by the Compile
     # and PublishApi steps. DockerBuild deliberately ignores it (see src/config/Dockerfile), and the
     # EdFi.Api.Secrets contract keeps its own declared version either way.
-    # Derived from $DmsCSVersion by the CI pipeline for prerelease builds.
+    # Derived from $DmsCSVersion when omitted; CI can supply its own normalized value.
     [string]
     $DmsCSAssemblyVersion = "",
 
@@ -93,6 +93,11 @@ param(
     [string]
     $PackageFile,
 
+    # Package and implicit Push artifact selection. App packaging remains the default.
+    [string]
+    [ValidateSet("ConfigurationService", "SecurityMetadataTools")]
+    $PackageTarget = "ConfigurationService",
+
     # Only required with local builds and testing.
     [switch]
     $IsLocalBuild,
@@ -120,6 +125,8 @@ $defaultSolution = "$solutionRoot/EdFi.DmsConfigurationService.sln"
 $applicationRoot = "$solutionRoot/frontend"
 $projectName = "EdFi.DmsConfigurationService.Frontend.AspNetCore"
 $packageName = "EdFi.Api.ConfigurationService"
+$securityMetadataToolsProject = "$solutionRoot/clis/EdFi.DmsConfigurationService.SecurityMetadataTools/EdFi.DmsConfigurationService.SecurityMetadataTools.csproj"
+$securityMetadataToolsPackageName = "EdFi.Api.SecurityMetadataTools"
 $testResults = "$PSScriptRoot/TestResults"
 #Coverage
 $thresholdCoverage = 58
@@ -129,6 +136,7 @@ $targetDir = "coveragereport"
 $maintainers = "Ed-Fi Alliance, LLC and contributors"
 
 Import-Module -Name "$PSScriptRoot/eng/build-helpers.psm1" -Force
+Import-Module -Name "$PSScriptRoot/package-helpers.psm1"
 
 function DotNetClean {
     Invoke-Execute { dotnet clean $defaultSolution -c $Configuration --nologo -v minimal }
@@ -184,10 +192,16 @@ function Compile {
             $versionArgs += "/p:InformationalVersion=$DmsCSVersion"
             $versionArgs += "/p:VersionPrefix=$DmsCSVersion"
         }
-        if (-not [string]::IsNullOrEmpty($DmsCSAssemblyVersion))
+        $assemblyVersion = $DmsCSAssemblyVersion
+        if ([string]::IsNullOrEmpty($assemblyVersion) -and -not [string]::IsNullOrEmpty($DmsCSVersion)) {
+            # Plugin test projects derive assembly versions from VersionPrefix; a prerelease
+            # label is not a valid assembly version. Support callers supplying only semver.
+            $assemblyVersion = Convert-ToAssemblyVersion -Version ($DmsCSVersion -split '\+', 2)[0]
+        }
+        if (-not [string]::IsNullOrEmpty($assemblyVersion))
         {
-            $versionArgs += "/p:AssemblyVersion=$DmsCSAssemblyVersion"
-            $versionArgs += "/p:FileVersion=$DmsCSAssemblyVersion"
+            $versionArgs += "/p:AssemblyVersion=$assemblyVersion"
+            $versionArgs += "/p:FileVersion=$assemblyVersion"
         }
 
         dotnet build $defaultSolution -c $Configuration --nologo --no-restore @versionArgs
@@ -205,10 +219,16 @@ function PublishApi {
             $versionArgs += "/p:InformationalVersion=$DmsCSVersion"
             $versionArgs += "/p:VersionPrefix=$DmsCSVersion"
         }
-        if (-not [string]::IsNullOrEmpty($DmsCSAssemblyVersion))
+        $assemblyVersion = $DmsCSAssemblyVersion
+        if ([string]::IsNullOrEmpty($assemblyVersion) -and -not [string]::IsNullOrEmpty($DmsCSVersion)) {
+            # Plugin test projects derive assembly versions from VersionPrefix; a prerelease
+            # label is not a valid assembly version. Support callers supplying only semver.
+            $assemblyVersion = Convert-ToAssemblyVersion -Version ($DmsCSVersion -split '\+', 2)[0]
+        }
+        if (-not [string]::IsNullOrEmpty($assemblyVersion))
         {
-            $versionArgs += "/p:AssemblyVersion=$DmsCSAssemblyVersion"
-            $versionArgs += "/p:FileVersion=$DmsCSAssemblyVersion"
+            $versionArgs += "/p:AssemblyVersion=$assemblyVersion"
+            $versionArgs += "/p:FileVersion=$assemblyVersion"
         }
 
         # --no-restore: reuse the restore from Invoke-Build (which honors -LockedMode) instead of
@@ -416,7 +436,7 @@ function RunNuGetPack {
         /p:NoWarn=NU5100
 }
 
-function BuildPackage {
+function BuildConfigurationServicePackage {
     $mainPath = "$applicationRoot/$projectName"
     $projectPath = "$mainPath/$projectName.csproj"
     $nugetSpecPath = "$mainPath/publish/$projectName.nuspec"
@@ -424,10 +444,54 @@ function BuildPackage {
     RunNuGetPack -ProjectPath $projectPath -PackageVersion $DmsCSVersion $nugetSpecPath
 }
 
+function CompileSecurityMetadataTools {
+    $toolVersion = Get-SecurityMetadataToolsVersion -AppVersion $DmsCSVersion -ProjectPath $securityMetadataToolsProject
+    Invoke-Execute {
+        # A prior solution build stamps the app version. Rebuild with the calculated tool
+        # version before packing so --version agrees with the nuspec. Secrets owns its
+        # versions through TreatAsLocalProperty and keeps them across this project graph.
+        dotnet build $securityMetadataToolsProject -c $Configuration --no-restore --nologo `
+            "-p:Version=$toolVersion" "-p:InformationalVersion=$toolVersion" "-p:VersionPrefix=$toolVersion"
+    }
+}
+
+function BuildSecurityMetadataToolsPackage {
+    $toolVersion = Get-SecurityMetadataToolsVersion -AppVersion $DmsCSVersion -ProjectPath $securityMetadataToolsProject
+    # NuGet omits SemVer build metadata from the package filename and identity.
+    $packageVersion = ($toolVersion -split '\+', 2)[0]
+    $expectedPackagePath = "$PSScriptRoot/$securityMetadataToolsPackageName.$packageVersion.nupkg"
+    if (Test-Path -LiteralPath $expectedPackagePath) {
+        Remove-Item -LiteralPath $expectedPackagePath -ErrorAction Stop
+    }
+
+    Invoke-Execute {
+        $restoreArgs = @()
+        if ($LockedMode) { $restoreArgs += "--locked-mode" }
+        dotnet restore $securityMetadataToolsProject @restoreArgs
+    }
+    CompileSecurityMetadataTools
+    Invoke-Execute {
+        dotnet pack $securityMetadataToolsProject -c $Configuration --no-build --no-restore `
+            --output $PSScriptRoot "-p:PackageVersion=$toolVersion"
+    }
+    if (-not (Test-Path -LiteralPath $expectedPackagePath -PathType Leaf)) {
+        throw "Expected SecurityMetadataTools package was not created: $expectedPackagePath"
+    }
+}
+
+function BuildPackage {
+    switch ($PackageTarget) {
+        ConfigurationService { BuildConfigurationServicePackage }
+        SecurityMetadataTools { BuildSecurityMetadataToolsPackage }
+        default { throw "Unknown package target: $PackageTarget" }
+    }
+}
+
 function Invoke-Build {
     Invoke-Step { DotNetClean }
     Invoke-Step { Restore }
     Invoke-Step { Compile }
+    Invoke-Step { CompileSecurityMetadataTools }
 }
 
 function Invoke-SetAssemblyInfo {
@@ -488,7 +552,14 @@ function PushPackage {
         }
 
         if (-not $PackageFile) {
-            $PackageFile = "$PSScriptRoot/$packageName.$DmsCSVersion.nupkg"
+            if ($PackageTarget -eq "SecurityMetadataTools") {
+                $toolVersion = Get-SecurityMetadataToolsVersion -AppVersion $DmsCSVersion -ProjectPath $securityMetadataToolsProject
+                $packageVersion = ($toolVersion -split '\+', 2)[0]
+                $PackageFile = "$PSScriptRoot/$securityMetadataToolsPackageName.$packageVersion.nupkg"
+            }
+            else {
+                $PackageFile = "$PSScriptRoot/$packageName.$DmsCSVersion.nupkg"
+            }
         }
 
         if ($DryRun) {

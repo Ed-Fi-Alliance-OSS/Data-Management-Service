@@ -82,7 +82,7 @@ does not mean these publication paths are available yet.
    build, package verification, and publication. A moving default branch must not
    replace the selected release source.
 2. Run the applicable unit, versioning, package installation/conversion, and
-   upload checks. The planned tool dependency on the CMS validator bundles the
+   upload checks. The tool dependency on the CMS validator bundles the
    independently versioned Secrets contract: preserve its declared assembly
    version. The normal lane must pass its contract check/publication gates; an
    independent tool release must verify a matching already-published Secrets
@@ -126,13 +126,27 @@ The remaining integration points are tracked by DMS-1617:
 
 | Entry point | Current status and intended integration |
 | --- | --- |
-| [build-config.ps1](../../../../build-config.ps1) | Existing `Build -Configuration Release -DmsCSVersion <app-version> -LockedMode` builds the solution with the app version. `Package` currently packages the Configuration Service application. DMS-1617-10 will add `-PackageTarget SecurityMetadataTools` and rebuild/pack the tool at its calculated version; that option is not available yet. |
+| [build-config.ps1](../../../../build-config.ps1) | `Build -Configuration Release -DmsCSVersion <app-version> -LockedMode` builds the solution, then builds the tool at its calculated version. `Package -PackageTarget SecurityMetadataTools` restores, rebuilds, and packs only the tool; `-LockedMode` enforces its lock graph. The default `ConfigurationService` package target retains the app nuspec/publish path. Implicit `Push` selects the exact artifact for its target; release publication gates remain pending below. |
 | [on-config-merge-or-tag.yml](../../../../.github/workflows/on-config-merge-or-tag.yml) | Existing `cs-pre` release entry point. DMS-1617-12 must retain the triggering source SHA in release creation; the current payload still targets `main`. |
 | [on-prerelease.yml](../../../../.github/workflows/on-prerelease.yml) and [on-release.yml](../../../../.github/workflows/on-release.yml) | Existing app release workflows. DMS-1617-12 will add the tool's normal `cs-` package chain and exact-version promotion. No tool publication/promotion jobs are wired yet. |
 | `.github/workflows/Pkg EdFi.Api.SecurityMetadataTools.yml` | Planned DMS-1617-13 dispatch-only workflow; the file does not exist yet. It will use the selected ref, `publish_package`, stable calculation, dependency verification, and a separately retryable promotion job as described above. |
 
-Direct project builds/packs and the current solution build do not yet apply the
-shared tool calculation. Their version output is development scaffolding, not
-evidence of the intended release version. Update this status and the concrete
-commands when each integration lands; keep the detailed policy here rather than
-duplicating it in workflows.
+Use these supported package commands from the repository root (the app version
+is illustrative; release callers supply the selected ref's MinVer result):
+
+```powershell
+./build-config.ps1 Package -Configuration Release -DmsCSVersion '8.1.9-alpha.0.42' -PackageTarget SecurityMetadataTools -LockedMode
+./eng/verification/Test-SecurityMetadataToolsPackage.ps1 -AppVersion '8.1.9-alpha.0.42'
+```
+
+The reusable smoke action always restores in locked mode, freshly packs the exact
+tool version, inspects metadata, README, command settings, bundled CMS schema and
+Secrets contract versions, and installs from a temporary local-only feed into a
+fresh tool directory and NuGet cache. It compares installed conversion output with
+the reviewed expected document and reports the package path and SHA-256. It leaves
+the nupkg in the repository root and removes disposable installation files. It
+does not push or promote anything.
+
+Direct `dotnet` project/solution builds do not apply the shared calculation; use
+`build-config.ps1` for versioned builds and packages. No separate tool version
+override is supported. Update workflow status as the remaining integrations land.
