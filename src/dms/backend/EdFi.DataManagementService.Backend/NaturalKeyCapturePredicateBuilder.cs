@@ -209,15 +209,12 @@ internal sealed class NaturalKeyCapturePredicateBuilder
 
         var descriptorProbe = _mappingSet.DescriptorProbeTarget;
         var alias = "x" + (++_descriptorAliasCount).ToString(CultureInfo.InvariantCulture);
-        var parameterName = AddParameter(uri);
-        var foldPredicate = _dialect switch
-        {
-            SqlDialect.Pgsql => $"lower(({Column(alias, descriptorProbe.NamespaceColumn.Value)} || '#' || "
-                + $"{Column(alias, descriptorProbe.CodeValueColumn.Value)}) COLLATE {PostgresqlFoldCollation}) "
-                + $"= lower({parameterName} COLLATE {PostgresqlFoldCollation})",
-            _ => $"{Column(alias, DescriptorProbeTarget.MssqlUriLoweredColumn)} "
-                + $"= LOWER({parameterName} COLLATE {MssqlIdentityCollation})",
-        };
+        var foldPredicate = BuildDescriptorUriFoldPredicate(
+            _dialect,
+            descriptorProbe,
+            alias,
+            AddParameter(uri)
+        );
         var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(_mappingSet, descriptorResource);
 
         return Subselect(
@@ -254,13 +251,48 @@ internal sealed class NaturalKeyCapturePredicateBuilder
                     + $"'{identityJsonPath}'."
             );
 
+    /// <summary>
+    /// Compares the descriptor row aliased <paramref name="alias"/> to a whole-URI parameter, folding the
+    /// parameter exactly as <c>UX_Descriptor_UriLowered_ResourceKeyId</c> folds the stored URI: PostgreSQL
+    /// lowers both sides under <see cref="DescriptorProbeTarget.PostgresqlUriFoldCollation"/>, matching the
+    /// expression index; SQL Server compares the indexed <see cref="DescriptorProbeTarget.MssqlUriLoweredColumn"/>
+    /// to the parameter collated under the identity collation inside <c>LOWER</c>. Every descriptor probe uses
+    /// this one predicate, so no request can miss a probe yet violate the index.
+    /// </summary>
+    internal static string BuildDescriptorUriFoldPredicate(
+        SqlDialect dialect,
+        DescriptorProbeTarget descriptorProbe,
+        string alias,
+        string parameterName
+    )
+    {
+        string Column(string column) => $"{alias}.{QuoteIdentifier(dialect, column)}";
+
+        return dialect switch
+        {
+            SqlDialect.Pgsql => $"lower(({Column(descriptorProbe.NamespaceColumn.Value)} || '#' || "
+                + $"{Column(descriptorProbe.CodeValueColumn.Value)}) COLLATE {PostgresqlFoldCollation}) "
+                + $"= lower({parameterName} COLLATE {PostgresqlFoldCollation})",
+            SqlDialect.Mssql => $"{Column(DescriptorProbeTarget.MssqlUriLoweredColumn)} "
+                + $"= LOWER({parameterName} COLLATE {MssqlIdentityCollation})",
+            _ => throw new NotSupportedException(
+                $"Relational descriptor URI probe does not support SQL dialect '{dialect}'."
+            ),
+        };
+    }
+
+    internal static string QuoteIdentifier(SqlDialect dialect, string identifier) =>
+        dialect switch
+        {
+            SqlDialect.Pgsql => "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"",
+            SqlDialect.Mssql => "[" + identifier.Replace("]", "]]", StringComparison.Ordinal) + "]",
+            _ => throw new NotSupportedException($"Relational SQL does not support SQL dialect '{dialect}'."),
+        };
+
     private static string PostgresqlFoldCollation =>
         "\"" + DescriptorProbeTarget.PostgresqlUriFoldCollation + "\"";
 
-    private string Quote(string identifier) =>
-        _dialect == SqlDialect.Mssql
-            ? "[" + identifier.Replace("]", "]]", StringComparison.Ordinal) + "]"
-            : "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
+    private string Quote(string identifier) => QuoteIdentifier(_dialect, identifier);
 
     private string QuoteTable(DbTableName table) => $"{Quote(table.Schema.Value)}.{Quote(table.Name)}";
 

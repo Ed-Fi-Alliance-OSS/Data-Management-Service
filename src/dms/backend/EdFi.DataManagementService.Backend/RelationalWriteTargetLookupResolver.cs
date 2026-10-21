@@ -79,10 +79,6 @@ internal static class RelationalWriteTargetLookupSupport
     private const string DocumentUuidParameterName = "@documentUuid";
     private const string DescriptorUriParameterName = "@descriptorUri";
 
-    private static readonly string MssqlIdentityCollation =
-        IdentityEqualityContract.SqlServer.IdentityTextCollation
-        ?? throw new InvalidOperationException("The SQL Server identity text collation is not defined.");
-
     /// <summary>
     /// Builds the POST target predicate over the aliased <c>dms.Document</c> row <c>d</c> from the
     /// resource's own natural key: one scalar <c>=</c> subselect reads the root table's
@@ -177,14 +173,11 @@ internal static class RelationalWriteTargetLookupSupport
         CancellationToken cancellationToken = default
     )
     {
-        ArgumentNullException.ThrowIfNull(commandExecutor);
-        ArgumentNullException.ThrowIfNull(mappingSet);
-        ArgumentNullException.ThrowIfNull(descriptorUri);
-
-        var existingDocument = await ExecuteLookupAsync(
+        var existingDocument = await ProbeDescriptorAsync(
             commandExecutor,
-            BuildDescriptorTargetProbeCommand(mappingSet, resource, descriptorUri),
-            $"descriptor resource '{RelationalWriteSupport.FormatResource(resource)}' and the request's descriptor URI",
+            mappingSet,
+            resource,
+            descriptorUri,
             cancellationToken
         );
 
@@ -195,6 +188,50 @@ internal static class RelationalWriteTargetLookupSupport
                 existingDocument.DocumentUuid,
                 existingDocument.ObservedContentVersion
             );
+    }
+
+    /// <summary>
+    /// Runs the same descriptor identity probe as <see cref="ResolveDescriptorForPostAsync"/> and returns the
+    /// owning <c>DocumentId</c> of the descriptor the database identifies with <paramref name="descriptorUri"/>,
+    /// or <see langword="null"/> when none does. The descriptor PUT identity guard uses it for its verdict.
+    /// </summary>
+    public static async Task<long?> TryResolveDescriptorDocumentIdAsync(
+        IRelationalCommandExecutor commandExecutor,
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        string descriptorUri,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var existingDocument = await ProbeDescriptorAsync(
+            commandExecutor,
+            mappingSet,
+            resource,
+            descriptorUri,
+            cancellationToken
+        );
+
+        return existingDocument?.DocumentId;
+    }
+
+    private static Task<ResolvedExistingDocument?> ProbeDescriptorAsync(
+        IRelationalCommandExecutor commandExecutor,
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        string descriptorUri,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(commandExecutor);
+        ArgumentNullException.ThrowIfNull(mappingSet);
+        ArgumentNullException.ThrowIfNull(descriptorUri);
+
+        return ExecuteLookupAsync(
+            commandExecutor,
+            BuildDescriptorTargetProbeCommand(mappingSet, resource, descriptorUri),
+            $"descriptor resource '{RelationalWriteSupport.FormatResource(resource)}' and the request's descriptor URI",
+            cancellationToken
+        );
     }
 
     public static async Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
@@ -309,10 +346,9 @@ internal static class RelationalWriteTargetLookupSupport
 
     /// <summary>
     /// Builds the descriptor identity probe over <c>dms.Descriptor</c> joined to its owning
-    /// <c>dms.Document</c>. PostgreSQL folds both sides under <see cref="DescriptorProbeTarget.PostgresqlUriFoldCollation"/>,
-    /// matching the expression index; SQL Server compares the indexed
-    /// <see cref="DescriptorProbeTarget.MssqlUriLoweredColumn"/> to the parameter collated under the identity
-    /// collation inside <c>LOWER</c>. The resource key is a compile-time literal, as in the capture predicate.
+    /// <c>dms.Document</c>, with the capture predicate's URI fold
+    /// (<see cref="NaturalKeyCapturePredicateBuilder.BuildDescriptorUriFoldPredicate"/>). The resource key is a
+    /// compile-time literal, as in the capture predicate.
     /// </summary>
     private static RelationalCommand BuildDescriptorTargetProbeCommand(
         MappingSet mappingSet,
@@ -327,25 +363,15 @@ internal static class RelationalWriteTargetLookupSupport
             .ToString(CultureInfo.InvariantCulture);
 
         string Quote(string identifier) =>
-            dialect switch
-            {
-                SqlDialect.Pgsql => "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"",
-                SqlDialect.Mssql => "[" + identifier.Replace("]", "]]", StringComparison.Ordinal) + "]",
-                _ => throw new NotSupportedException(
-                    $"Relational descriptor POST target probe does not support SQL dialect '{dialect}'."
-                ),
-            };
+            NaturalKeyCapturePredicateBuilder.QuoteIdentifier(dialect, identifier);
         string Column(string alias, DbColumnName column) => $"{alias}.{Quote(column.Value)}";
 
-        var uriPredicate = dialect switch
-        {
-            SqlDialect.Pgsql =>
-                $"lower(({Column("descriptor", probe.NamespaceColumn)} || '#' || {Column("descriptor", probe.CodeValueColumn)}) "
-                    + $"COLLATE {Quote(DescriptorProbeTarget.PostgresqlUriFoldCollation)}) "
-                    + $"= lower({DescriptorUriParameterName} COLLATE {Quote(DescriptorProbeTarget.PostgresqlUriFoldCollation)})",
-            _ => $"descriptor.{Quote(DescriptorProbeTarget.MssqlUriLoweredColumn)} "
-                + $"= LOWER({DescriptorUriParameterName} COLLATE {MssqlIdentityCollation})",
-        };
+        var uriPredicate = NaturalKeyCapturePredicateBuilder.BuildDescriptorUriFoldPredicate(
+            dialect,
+            probe,
+            "descriptor",
+            DescriptorUriParameterName
+        );
 
         return new RelationalCommand(
             $"""

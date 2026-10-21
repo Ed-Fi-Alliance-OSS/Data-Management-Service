@@ -4489,20 +4489,17 @@ internal sealed class DescriptorWriteHandler(
             return bound;
         }
 
-        var probe = await RelationalWriteTargetLookupSupport
-            .ResolveDescriptorForPostAsync(
+        var probedDocumentId = await RelationalWriteTargetLookupSupport
+            .TryResolveDescriptorDocumentIdAsync(
                 sessionCommandExecutor,
                 mappingSet,
                 resource,
                 body.Uri,
-                new DocumentUuid(Guid.Empty),
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        return
-            probe is RelationalWriteTargetLookupResult.ExistingDocument existing
-            && existing.DocumentId == lockedDocumentId
+        return probedDocumentId == lockedDocumentId
             ? bound
             : new BoundDescriptorBody(body, IdentityChanged: true);
     }
