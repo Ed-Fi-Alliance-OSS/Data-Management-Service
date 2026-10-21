@@ -19,3 +19,9 @@ The conversion command requires `--input <xml>` and `--output <json>`.
 `--force` requests replacement of an existing destination after successful
 conversion and validation. These options establish the command contract; the
 conversion handler will be implemented in subsequent tasks.
+
+## Maintainer versioning
+
+See [VERSIONING.md](VERSIONING.md) for the committed tool patch, shared version
+calculation, release preparation and recovery policy, and current build/workflow
+implementation status.

@@ -1,3 +1,17 @@
+## Security Metadata Tools Versioning
+
+`EdFi.Api.SecurityMetadataTools` takes major/minor from the existing
+`Get-VersionNumber` / MinVer app release source and patch from the tool project's
+committed `SecurityMetadataToolsPatchVersion`, through
+`Get-SecurityMetadataToolsVersion` in the repository-root `package-helpers.psm1`.
+Start a new major/minor line at patch `0`; commit an increment for each subsequent
+stable tool publication, including normal app releases after independent tool
+patches. Prerelease calculations do not consume a patch. Follow the single
+[versioning policy](clis/EdFi.DmsConfigurationService.SecurityMetadataTools/VERSIONING.md)
+for selected refs, dry runs, duplicate-version refusal, exact-version promotion,
+and promotion recovery. Keep its implementation status current as build and
+release integration lands.
+
 ## Authorization Model
 
 Configuration Service has no fallback authorization policy: any plain `MapGet`/`MapPost` endpoint is
