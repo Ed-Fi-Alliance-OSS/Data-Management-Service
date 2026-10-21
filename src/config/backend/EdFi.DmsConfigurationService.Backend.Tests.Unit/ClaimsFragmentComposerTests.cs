@@ -1011,7 +1011,7 @@ public class ClaimsFragmentComposerTests
             _result = ComposeWithFragments(
                 EmbeddedBaseDocument("ds61"),
                 (
-                    "grants-claimset.json",
+                    "grants-claims.json",
                     GrantFragment(
                         ClaimSetName,
                         "ed-fi/studentPathMilestoneStatus",
@@ -1067,7 +1067,7 @@ public class ClaimsFragmentComposerTests
         {
             _result = ComposeWithFragments(
                 EmbeddedBaseDocument(standardFolder),
-                ("grants-claimset.json", GrantFragment(ClaimSetName, "domains/systemDescriptors"))
+                ("grants-claims.json", GrantFragment(ClaimSetName, "domains/systemDescriptors"))
             );
         }
 
@@ -1103,7 +1103,7 @@ public class ClaimsFragmentComposerTests
             _result = ComposeWithFragments(
                 EmbeddedBaseDocument(standardFolder),
                 (
-                    "grants-claimset.json",
+                    "grants-claims.json",
                     GrantFragment(
                         ClaimSetName,
                         "ed-fi/schools",
@@ -1182,7 +1182,7 @@ public class ClaimsFragmentComposerTests
 
             _result = ComposeWithFragments(
                 baseDocument,
-                ("grants-claimset.json", GrantFragment(ClaimSetName, "ed-fi/statistics"))
+                ("grants-claims.json", GrantFragment(ClaimSetName, "ed-fi/statistics"))
             );
         }
 
@@ -1215,7 +1215,7 @@ public class ClaimsFragmentComposerTests
     public class Given_a_fragment_with_a_grant_entry_that_matches_no_claim(string standardFolder)
         : ClaimsFragmentComposerTests
     {
-        private const string FragmentFile = "partly-unmatched-claimset.json";
+        private const string FragmentFile = "partly-unmatched-claims.json";
         private const string ClaimSetName = "Partly-Unmatched";
         private const string UnmatchedEntry = "ed-fi/notARealResources";
         private ClaimsLoadResult _result = null!;
@@ -1308,7 +1308,7 @@ public class ClaimsFragmentComposerTests
                   ]
                 }
                 """;
-            _result = ComposeWithFragments(BaseDocument(), ("strategy-listing-claimset.json", fragment));
+            _result = ComposeWithFragments(BaseDocument(), ("strategy-listing-claims.json", fragment));
         }
 
         private static JsonObject ActionNamed(JsonNode? actions, string actionName) =>
