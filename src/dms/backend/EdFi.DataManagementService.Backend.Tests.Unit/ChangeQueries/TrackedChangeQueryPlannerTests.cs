@@ -1057,11 +1057,8 @@ public class Given_TrackedChangeQueryPlanner
         );
 
         const string customViewPredicate =
-            "EXISTS (SELECT 1 FROM \"dms\".\"Descriptor\" d WHERE d.\"ResourceKeyId\" = @CustomViewDescriptorResourceKeyId0 AND d.\"DocumentId\" IN (SELECT \"DocumentId\" FROM \"auth\".\"SchoolTypeDescriptorWithX\"))";
-        var authSql = new TrackedChangeAuthorizationSql(
-            [customViewPredicate],
-            [new RelationalParameter("@CustomViewDescriptorResourceKeyId0", (short)23)]
-        );
+            "EXISTS (SELECT 1 FROM \"dms\".\"Descriptor\" d WHERE d.\"ResourceKeyId\" = 23 AND d.\"DocumentId\" IN (SELECT \"DocumentId\" FROM \"auth\".\"SchoolTypeDescriptorWithX\"))";
+        var authSql = new TrackedChangeAuthorizationSql([customViewPredicate], []);
 
         var sut = new TrackedChangeQueryPlanner(SqlDialect.Pgsql);
         TrackedChangeQueryPlan plan = sut.Plan(request, fields, authSql);
@@ -1080,9 +1077,6 @@ public class Given_TrackedChangeQueryPlanner
         maxVersionIndex.Should().BeGreaterThan(tombstoneIndex);
         customViewIndex.Should().BeGreaterThan(maxVersionIndex);
         liveJoinIndex.Should().BeGreaterThan(customViewIndex);
-        plan.Command!.Parameters.Select(p => p.Name)
-            .Should()
-            .EndWith(["@CustomViewDescriptorResourceKeyId0"]);
     }
 
     [Test]

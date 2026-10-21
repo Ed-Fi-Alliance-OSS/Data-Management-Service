@@ -481,8 +481,8 @@ public class TrackedChangeAuthorizationSqlEmitterTests
 
 /// <summary>
 /// DMS-1193 Task 47: custom view-based checks render as AND predicates correlated on the tracked-change
-/// alias, reading only <c>Old*</c> columns and the <c>DocumentId</c> system column, and bind no claim
-/// parameters — only descriptor discriminator values where a descriptor identity part is involved.
+/// alias, reading only <c>Old*</c> columns and the <c>DocumentId</c> system column, and bind no parameters:
+/// descriptor resource keys are compiled literals, and descriptor identity parts compare lowered whole URIs.
 /// </summary>
 [TestFixture]
 [Parallelizable]
@@ -630,12 +630,22 @@ public class Given_TrackedChangeAuthorizationSqlEmitter_CustomViews
         result.Parameters.Should().BeEmpty();
     }
 
-    [Test]
-    public void It_joins_a_descriptor_key_pair_through_dms_descriptor_and_binds_its_discriminator_parameters()
+    [TestCase(
+        SqlDialect.Pgsql,
+        "EXISTS (SELECT 1 FROM \"edfi\".\"GradingPeriod\" b LEFT JOIN \"dms\".\"Descriptor\" d0 ON d0.\"ResourceKeyId\" = 17 AND lower((d0.\"Namespace\" || '#' || d0.\"CodeValue\") COLLATE \"pg_c_utf8\") = lower((c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace\" || '#' || c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue\") COLLATE \"pg_c_utf8\") WHERE b.\"GradingPeriodName\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodName\" AND b.\"SchoolId\" = c.\"OldSchoolId_Unified\" AND b.\"SchoolYear\" = c.\"OldSchoolYear_Unified\" AND b.\"GradingPeriodDescriptor_DescriptorId\" = d0.\"DescriptorId\" AND b.\"DocumentId\" IN (SELECT \"DocumentId\" FROM \"auth\".\"GradingPeriodWithX\"))"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        "EXISTS (SELECT 1 FROM [edfi].[GradingPeriod] b LEFT JOIN [dms].[Descriptor] d0 ON d0.[ResourceKeyId] = 17 AND d0.[UriLowered] = LOWER((c.[OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] + N'#' + c.[OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS) WHERE b.[GradingPeriodName] = c.[OldGradingPeriodGradingPeriod_GradingPeriodName] AND b.[SchoolId] = c.[OldSchoolId_Unified] AND b.[SchoolYear] = c.[OldSchoolYear_Unified] AND b.[GradingPeriodDescriptor_DescriptorId] = d0.[DescriptorId] AND b.[DocumentId] IN (SELECT [DocumentId] FROM [auth].[GradingPeriodWithX]))"
+    )]
+    public void It_joins_a_descriptor_key_pair_through_dms_descriptor_and_renders_its_resource_key_as_a_literal(
+        SqlDialect dialect,
+        string expectedPredicate
+    )
     {
         // Grade -> GradingPeriod: the basis stores GradingPeriodDescriptor as a *_DescriptorId FK while the
-        // Grade tombstone stores its old Namespace/CodeValue, so the seek resolves the descriptor row under
-        // the same qualified resource-key routing as recreated-row suppression.
+        // Grade tombstone stores its old Namespace/CodeValue, so the seek resolves the descriptor row by its
+        // lowered URI under the same qualified resource-key routing as recreated-row suppression.
         var plan = CustomViewOnlyPlan(
             CustomView(
                 "GradingPeriodWithX",
@@ -663,32 +673,32 @@ public class Given_TrackedChangeAuthorizationSqlEmitter_CustomViews
             )
         );
 
-        var result = Emit(plan, SqlDialect.Pgsql);
+        var result = Emit(plan, dialect);
 
+        result.Predicates.Should().Equal(expectedPredicate);
+        result.Parameters.Should().BeEmpty();
         result
-            .Predicates.Should()
-            .Equal(
-                "EXISTS (SELECT 1 FROM \"edfi\".\"GradingPeriod\" b"
-                    + " LEFT JOIN \"dms\".\"Descriptor\" d0 ON d0.\"ResourceKeyId\" = @CustomViewDescriptorResourceKeyId0"
-                    + " AND d0.\"Namespace\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace\""
-                    + " AND d0.\"CodeValue\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue\""
-                    + " WHERE b.\"GradingPeriodName\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodName\""
-                    + " AND b.\"SchoolId\" = c.\"OldSchoolId_Unified\""
-                    + " AND b.\"SchoolYear\" = c.\"OldSchoolYear_Unified\""
-                    + " AND b.\"GradingPeriodDescriptor_DescriptorId\" = d0.\"DescriptorId\""
-                    + " AND b.\"DocumentId\" IN (SELECT \"DocumentId\" FROM \"auth\".\"GradingPeriodWithX\"))"
-            );
-        result
-            .Parameters.Select(parameter => (parameter.Name, parameter.Value))
+            .Predicates[0]
             .Should()
-            .Equal(("@CustomViewDescriptorResourceKeyId0", (short)17));
+            .NotContain("Discriminator")
+            .And.NotContain("@CustomViewDescriptorResourceKeyId");
     }
 
-    [Test]
-    public void It_compares_old_namespace_and_code_value_directly_on_a_descriptor_probe_arm()
+    [TestCase(
+        SqlDialect.Pgsql,
+        "EXISTS (SELECT 1 FROM (SELECT b.\"DocumentId\" AS \"DocumentId\" FROM \"edfi\".\"GradingPeriod\" b LEFT JOIN \"dms\".\"Descriptor\" d0 ON d0.\"ResourceKeyId\" = 17 AND lower((d0.\"Namespace\" || '#' || d0.\"CodeValue\") COLLATE \"pg_c_utf8\") = lower((c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace\" || '#' || c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue\") COLLATE \"pg_c_utf8\") WHERE b.\"GradingPeriodName\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodName\" AND b.\"GradingPeriodDescriptor_DescriptorId\" = d0.\"DescriptorId\" UNION SELECT t.\"DocumentId\" FROM \"tracked_changes_edfi\".\"GradingPeriod\" t WHERE t.\"OldGradingPeriodName\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodName\" AND lower((t.\"OldGradingPeriodDescriptor_Namespace\" || '#' || t.\"OldGradingPeriodDescriptor_CodeValue\") COLLATE \"pg_c_utf8\") = lower((c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace\" || '#' || c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue\") COLLATE \"pg_c_utf8\")) basis WHERE basis.\"DocumentId\" IN (SELECT \"DocumentId\" FROM \"auth\".\"GradingPeriodWithXIncludingDeletes\"))"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        "EXISTS (SELECT 1 FROM (SELECT b.[DocumentId] AS [DocumentId] FROM [edfi].[GradingPeriod] b LEFT JOIN [dms].[Descriptor] d0 ON d0.[ResourceKeyId] = 17 AND d0.[UriLowered] = LOWER((c.[OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] + N'#' + c.[OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS) WHERE b.[GradingPeriodName] = c.[OldGradingPeriodGradingPeriod_GradingPeriodName] AND b.[GradingPeriodDescriptor_DescriptorId] = d0.[DescriptorId] UNION SELECT t.[DocumentId] FROM [tracked_changes_edfi].[GradingPeriod] t WHERE t.[OldGradingPeriodName] = c.[OldGradingPeriodGradingPeriod_GradingPeriodName] AND LOWER((t.[OldGradingPeriodDescriptor_Namespace] + N'#' + t.[OldGradingPeriodDescriptor_CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS) = LOWER((c.[OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] + N'#' + c.[OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS)) basis WHERE basis.[DocumentId] IN (SELECT [DocumentId] FROM [auth].[GradingPeriodWithXIncludingDeletes]))"
+    )]
+    public void It_folds_old_descriptor_uris_on_both_sides_of_a_descriptor_probe_arm(
+        SqlDialect dialect,
+        string expectedPredicate
+    )
     {
         // Both tombstones store the descriptor's old Namespace/CodeValue, so the probe arm needs no
-        // dms.Descriptor join and binds no parameters of its own.
+        // dms.Descriptor join: it compares the two lowered whole URIs under the same fold.
         var plan = CustomViewOnlyPlan(
             CustomView(
                 "GradingPeriodWithXIncludingDeletes",
@@ -731,25 +741,19 @@ public class Given_TrackedChangeAuthorizationSqlEmitter_CustomViews
             )
         );
 
-        var result = Emit(plan, SqlDialect.Pgsql);
+        var result = Emit(plan, dialect);
 
+        result.Predicates.Should().Equal(expectedPredicate);
+        result.Parameters.Should().BeEmpty();
+        // The fold applies to the concatenated URI, never to each component separately.
         result
-            .Predicates.Should()
-            .Equal(
-                "EXISTS (SELECT 1 FROM ("
-                    + "SELECT b.\"DocumentId\" AS \"DocumentId\" FROM \"edfi\".\"GradingPeriod\" b"
-                    + " LEFT JOIN \"dms\".\"Descriptor\" d0 ON d0.\"ResourceKeyId\" = @CustomViewDescriptorResourceKeyId0"
-                    + " AND d0.\"Namespace\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace\""
-                    + " AND d0.\"CodeValue\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue\""
-                    + " WHERE b.\"GradingPeriodName\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodName\""
-                    + " AND b.\"GradingPeriodDescriptor_DescriptorId\" = d0.\"DescriptorId\""
-                    + " UNION SELECT t.\"DocumentId\" FROM \"tracked_changes_edfi\".\"GradingPeriod\" t"
-                    + " WHERE t.\"OldGradingPeriodName\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodName\""
-                    + " AND t.\"OldGradingPeriodDescriptor_Namespace\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace\""
-                    + " AND t.\"OldGradingPeriodDescriptor_CodeValue\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue\""
-                    + ") basis WHERE basis.\"DocumentId\" IN (SELECT \"DocumentId\" FROM \"auth\".\"GradingPeriodWithXIncludingDeletes\"))"
-            );
-        result.Parameters.Should().HaveCount(1);
+            .Predicates[0]
+            .Should()
+            .NotContain("lower(t.")
+            .And.NotContain("LOWER(t.")
+            .And.NotContain("lower(c.")
+            .And.NotContain("LOWER(c.")
+            .And.NotContain("Discriminator");
     }
 
     [Test]
@@ -799,19 +803,11 @@ public class Given_TrackedChangeAuthorizationSqlEmitter_CustomViews
 
     [TestCase(
         SqlDialect.Pgsql,
-        "EXISTS (SELECT 1 FROM \"dms\".\"Descriptor\" d"
-            + " WHERE d.\"ResourceKeyId\" = @CustomViewDescriptorResourceKeyId0"
-            + " AND d.\"Namespace\" = c.\"OldGradeTypeDescriptor_Namespace\""
-            + " AND d.\"CodeValue\" = c.\"OldGradeTypeDescriptor_CodeValue\""
-            + " AND d.\"DocumentId\" IN (SELECT \"DocumentId\" FROM \"auth\".\"GradeTypeDescriptorWithX\"))"
+        "EXISTS (SELECT 1 FROM \"dms\".\"Descriptor\" d WHERE d.\"ResourceKeyId\" = 23 AND lower((d.\"Namespace\" || '#' || d.\"CodeValue\") COLLATE \"pg_c_utf8\") = lower((c.\"OldGradeTypeDescriptor_Namespace\" || '#' || c.\"OldGradeTypeDescriptor_CodeValue\") COLLATE \"pg_c_utf8\") AND d.\"DocumentId\" IN (SELECT \"DocumentId\" FROM \"auth\".\"GradeTypeDescriptorWithX\"))"
     )]
     [TestCase(
         SqlDialect.Mssql,
-        "EXISTS (SELECT 1 FROM [dms].[Descriptor] d"
-            + " WHERE d.[ResourceKeyId] = @CustomViewDescriptorResourceKeyId0"
-            + " AND d.[Namespace] = c.[OldGradeTypeDescriptor_Namespace]"
-            + " AND d.[CodeValue] = c.[OldGradeTypeDescriptor_CodeValue]"
-            + " AND d.[DocumentId] IN (SELECT [DocumentId] FROM [auth].[GradeTypeDescriptorWithX]))"
+        "EXISTS (SELECT 1 FROM [dms].[Descriptor] d WHERE d.[ResourceKeyId] = 23 AND d.[UriLowered] = LOWER((c.[OldGradeTypeDescriptor_Namespace] + N'#' + c.[OldGradeTypeDescriptor_CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS) AND d.[DocumentId] IN (SELECT [DocumentId] FROM [auth].[GradeTypeDescriptorWithX]))"
     )]
     public void It_seeks_a_descriptor_basis_in_dms_descriptor_under_its_resource_key(
         SqlDialect dialect,
@@ -836,14 +832,21 @@ public class Given_TrackedChangeAuthorizationSqlEmitter_CustomViews
         var result = Emit(plan, dialect);
 
         result.Predicates.Should().Equal(expectedPredicate);
-        result
-            .Parameters.Select(parameter => (parameter.Name, parameter.Value))
-            .Should()
-            .Equal(("@CustomViewDescriptorResourceKeyId0", (short)23));
+        result.Parameters.Should().BeEmpty();
     }
 
-    [Test]
-    public void It_unions_the_descriptor_seek_with_the_shared_descriptor_tombstone_arm_for_a_suffixed_view()
+    [TestCase(
+        SqlDialect.Pgsql,
+        "EXISTS (SELECT 1 FROM (SELECT d.\"DocumentId\" AS \"DocumentId\" FROM \"dms\".\"Descriptor\" d WHERE d.\"ResourceKeyId\" = 17 AND lower((d.\"Namespace\" || '#' || d.\"CodeValue\") COLLATE \"pg_c_utf8\") = lower((c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace\" || '#' || c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue\") COLLATE \"pg_c_utf8\") UNION SELECT t.\"DocumentId\" FROM \"tracked_changes_edfi\".\"Descriptor\" t WHERE t.\"ResourceKeyId\" = 17 AND lower((t.\"OldNamespace\" || '#' || t.\"OldCodeValue\") COLLATE \"pg_c_utf8\") = lower((c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace\" || '#' || c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue\") COLLATE \"pg_c_utf8\")) basis WHERE basis.\"DocumentId\" IN (SELECT \"DocumentId\" FROM \"auth\".\"GradingPeriodDescriptorWithXIncludingDeletes\"))"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        "EXISTS (SELECT 1 FROM (SELECT d.[DocumentId] AS [DocumentId] FROM [dms].[Descriptor] d WHERE d.[ResourceKeyId] = 17 AND d.[UriLowered] = LOWER((c.[OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] + N'#' + c.[OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS) UNION SELECT t.[DocumentId] FROM [tracked_changes_edfi].[Descriptor] t WHERE t.[ResourceKeyId] = 17 AND LOWER((t.[OldNamespace] + N'#' + t.[OldCodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS) = LOWER((c.[OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] + N'#' + c.[OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS)) basis WHERE basis.[DocumentId] IN (SELECT [DocumentId] FROM [auth].[GradingPeriodDescriptorWithXIncludingDeletes]))"
+    )]
+    public void It_unions_the_descriptor_seek_with_the_shared_descriptor_tombstone_arm_for_a_suffixed_view(
+        SqlDialect dialect,
+        string expectedPredicate
+    )
     {
         var plan = CustomViewOnlyPlan(
             CustomView(
@@ -866,30 +869,14 @@ public class Given_TrackedChangeAuthorizationSqlEmitter_CustomViews
             )
         );
 
-        var result = Emit(plan, SqlDialect.Pgsql);
+        var result = Emit(plan, dialect);
 
-        result
-            .Predicates.Should()
-            .Equal(
-                "EXISTS (SELECT 1 FROM ("
-                    + "SELECT d.\"DocumentId\" AS \"DocumentId\" FROM \"dms\".\"Descriptor\" d"
-                    + " WHERE d.\"ResourceKeyId\" = @CustomViewDescriptorResourceKeyId0"
-                    + " AND d.\"Namespace\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace\""
-                    + " AND d.\"CodeValue\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue\""
-                    + " UNION SELECT t.\"DocumentId\" FROM \"tracked_changes_edfi\".\"Descriptor\" t"
-                    + " WHERE t.\"ResourceKeyId\" = @CustomViewDescriptorResourceKeyId0"
-                    + " AND t.\"OldNamespace\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace\""
-                    + " AND t.\"OldCodeValue\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue\""
-                    + ") basis WHERE basis.\"DocumentId\" IN (SELECT \"DocumentId\" FROM \"auth\".\"GradingPeriodDescriptorWithXIncludingDeletes\"))"
-            );
-        result
-            .Parameters.Select(parameter => (parameter.Name, parameter.Value))
-            .Should()
-            .Equal(("@CustomViewDescriptorResourceKeyId0", (short)17));
+        result.Predicates.Should().Equal(expectedPredicate);
+        result.Parameters.Should().BeEmpty();
     }
 
     [Test]
-    public void It_numbers_descriptor_resource_key_parameters_across_the_custom_views_of_one_plan()
+    public void It_renders_each_custom_view_descriptor_resource_key_as_its_own_literal()
     {
         var plan = CustomViewOnlyPlan(
             CustomView(
@@ -929,12 +916,47 @@ public class Given_TrackedChangeAuthorizationSqlEmitter_CustomViews
         var result = Emit(plan, SqlDialect.Pgsql);
 
         result.Predicates.Should().HaveCount(2);
-        result.Predicates[0].Should().Contain("@CustomViewDescriptorResourceKeyId0");
-        result.Predicates[1].Should().Contain("@CustomViewDescriptorResourceKeyId1");
-        result
-            .Parameters.Select(parameter => parameter.Name)
+        result.Predicates[0].Should().Contain("d.\"ResourceKeyId\" = 23 AND").And.NotContain("= 17 AND");
+        result.Predicates[1].Should().Contain("d0.\"ResourceKeyId\" = 17 AND").And.NotContain("= 23 AND");
+        result.Parameters.Should().BeEmpty();
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_keeps_a_null_old_descriptor_component_from_matching(SqlDialect dialect)
+    {
+        // A null old Namespace or CodeValue (a nullable securable first hop) must null the whole URI so the
+        // fold never matches. CONCAT, COALESCE or ISNULL would turn it into a partial URI that could match.
+        var plan = CustomViewOnlyPlan(
+            CustomView(
+                "GradingPeriodDescriptorWithXIncludingDeletes",
+                0,
+                _gradingPeriodDescriptor,
+                new ReadChangesCustomViewBasis.DescriptorSeek(
+                    _gradingPeriodDescriptor,
+                    17,
+                    Col("OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace"),
+                    Col("OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue"),
+                    new ReadChangesCustomViewDescriptorProbeArm(
+                        new DbTableName(_tracked, "Descriptor"),
+                        _documentId,
+                        Col("ResourceKeyId"),
+                        Col("OldNamespace"),
+                        Col("OldCodeValue")
+                    )
+                )
+            )
+        );
+        string concatenation = dialect is SqlDialect.Pgsql ? " || '#' || " : " + N'#' + ";
+
+        string predicate = Emit(plan, dialect).Predicates.Single();
+
+        predicate.Should().Contain(concatenation);
+        predicate
             .Should()
-            .Equal("@CustomViewDescriptorResourceKeyId0", "@CustomViewDescriptorResourceKeyId1");
+            .NotContainEquivalentOf("CONCAT(")
+            .And.NotContainEquivalentOf("COALESCE(")
+            .And.NotContainEquivalentOf("ISNULL(");
     }
 
     [Test]

@@ -167,9 +167,7 @@ public class Given_TrackedChange_Compact_Descriptor_Routing(SqlDialect dialect)
                 ("@Limit", 25L),
                 ("@Offset", 0L),
                 ("@DescriptorResourceKeyId0", (short)101),
-                ("@DescriptorResourceKeyId1", (short)202),
-                ("@CustomViewDescriptorResourceKeyId0", (short)101),
-                ("@CustomViewDescriptorResourceKeyId1", (short)202)
+                ("@DescriptorResourceKeyId1", (short)202)
             );
     }
 
@@ -177,8 +175,10 @@ public class Given_TrackedChange_Compact_Descriptor_Routing(SqlDialect dialect)
     public void It_authorizes_deleted_bases_from_type_qualified_history_document_ids()
     {
         _customViewSql.Predicates.Should().HaveCount(2);
+        _customViewSql.Parameters.Should().BeEmpty();
         for (var index = 0; index < _customViewSql.Predicates.Count; index++)
         {
+            string trackedPrefix = index == 0 ? "OldKind" : "OldSampleKind";
             _customViewSql
                 .Predicates[index]
                 .Should()
@@ -186,10 +186,11 @@ public class Given_TrackedChange_Compact_Descriptor_Routing(SqlDialect dialect)
                 .And.Contain(
                     $"UNION SELECT t.{Q("DocumentId")} FROM {Table("tracked_changes_edfi", "Descriptor")} t"
                 )
-                .And.Contain($"t.{Q("ResourceKeyId")} = @CustomViewDescriptorResourceKeyId{index}")
+                .And.Contain($"d.{Q("ResourceKeyId")} = {(index == 0 ? 101 : 202)} AND")
                 .And.Contain(
-                    $"t.{Q("OldNamespace")} = c.{Q(index == 0 ? "OldKind_Namespace" : "OldSampleKind_Namespace")}"
+                    $"t.{Q("ResourceKeyId")} = {(index == 0 ? 101 : 202)} AND {TombstoneUriFold(trackedPrefix)}"
                 )
+                .And.NotContain("@CustomViewDescriptorResourceKeyId")
                 .And.Contain($"basis.{Q("DocumentId")} IN (SELECT {Q("DocumentId")} FROM")
                 .And.NotContain(Q("DescriptorId"))
                 .And.NotContain("JOIN " + Table("dms", "Document"));
@@ -318,6 +319,11 @@ public class Given_TrackedChange_Compact_Descriptor_Routing(SqlDialect dialect)
         dialect is SqlDialect.Pgsql
             ? $"lower(({descriptorAlias}.{Q("Namespace")} || '#' || {descriptorAlias}.{Q("CodeValue")}) COLLATE \"pg_c_utf8\") = lower(({trackedAlias}.{Q(oldNamespace)} || '#' || {trackedAlias}.{Q(oldCodeValue)}) COLLATE \"pg_c_utf8\")"
             : $"{descriptorAlias}.{Q("UriLowered")} = LOWER(({trackedAlias}.{Q(oldNamespace)} + N'#' + {trackedAlias}.{Q(oldCodeValue)}) COLLATE SQL_Latin1_General_CP1_CI_AS)";
+
+    private string TombstoneUriFold(string trackedPrefix) =>
+        dialect is SqlDialect.Pgsql
+            ? $"lower((t.{Q("OldNamespace")} || '#' || t.{Q("OldCodeValue")}) COLLATE \"pg_c_utf8\") = lower((c.{Q(trackedPrefix + "_Namespace")} || '#' || c.{Q(trackedPrefix + "_CodeValue")}) COLLATE \"pg_c_utf8\")"
+            : $"LOWER((t.{Q("OldNamespace")} + N'#' + t.{Q("OldCodeValue")}) COLLATE SQL_Latin1_General_CP1_CI_AS) = LOWER((c.{Q(trackedPrefix + "_Namespace")} + N'#' + c.{Q(trackedPrefix + "_CodeValue")}) COLLATE SQL_Latin1_General_CP1_CI_AS)";
 
     /// <summary>
     /// Every lowering call in <paramref name="sql"/>, in either case, with its full parenthesized argument.

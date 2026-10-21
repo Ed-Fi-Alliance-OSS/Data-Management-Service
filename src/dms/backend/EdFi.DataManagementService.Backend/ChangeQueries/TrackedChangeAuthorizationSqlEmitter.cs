@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
@@ -31,15 +32,8 @@ internal static class TrackedChangeAuthorizationSqlEmitter
     // authorization strategy"); the tracked-change side always names its system column the same way.
     private static readonly DbColumnName _documentIdColumn = new("DocumentId");
     private static readonly DbColumnName _descriptorIdColumn = new("DescriptorId");
-    private static readonly DbTableName _descriptorTable = new(new DbSchemaName("dms"), "Descriptor");
-    private static readonly DbColumnName _descriptorNamespaceColumn = new("Namespace");
-    private static readonly DbColumnName _descriptorCodeValueColumn = new("CodeValue");
-    private static readonly DbColumnName _descriptorResourceKeyIdColumn = new("ResourceKeyId");
-
-    // Distinct from TrackedChangeQueryPlanner's @DescriptorResourceKeyId{n} names, which the deletes query
-    // binds for its recreated-row suppression join in the same command.
-    private const string CustomViewDescriptorResourceKeyIdParameterPrefix =
-        "@CustomViewDescriptorResourceKeyId";
+    private static readonly DescriptorProbeTarget _descriptorProbe =
+        DescriptorProbeTarget.SharedDescriptorTable;
 
     private const string BasisAlias = "b";
     private const string ProbeAlias = "t";
@@ -90,14 +84,11 @@ internal static class TrackedChangeAuthorizationSqlEmitter
             parameters.AddRange(BuildClaimParameters(claimParameterization, parameterConfigurator));
         }
 
-        // Custom views are AND filters in CMS order (the plan already orders them). Descriptor resource-key
-        // parameters are numbered across the whole plan so two checks never bind the same name.
-        var descriptorParameterIndex = 0;
+        // Custom views are AND filters in CMS order (the plan already orders them). They bind no parameters:
+        // descriptor resource keys are compiled literals.
         foreach (ReadChangesCustomViewCheckSpec check in plan.CustomViewChecks)
         {
-            predicates.Add(
-                BuildCustomViewPredicate(dialect, alias, check, parameters, ref descriptorParameterIndex)
-            );
+            predicates.Add(BuildCustomViewPredicate(dialect, alias, check));
         }
 
         return new TrackedChangeAuthorizationSql(predicates, parameters);
@@ -106,9 +97,7 @@ internal static class TrackedChangeAuthorizationSqlEmitter
     private static string BuildCustomViewPredicate(
         SqlDialect dialect,
         string alias,
-        ReadChangesCustomViewCheckSpec check,
-        List<RelationalParameter> parameters,
-        ref int descriptorParameterIndex
+        ReadChangesCustomViewCheckSpec check
     )
     {
         return check.Basis switch
@@ -122,17 +111,13 @@ internal static class TrackedChangeAuthorizationSqlEmitter
                 dialect,
                 alias,
                 check.View,
-                seek,
-                parameters,
-                ref descriptorParameterIndex
+                seek
             ),
             ReadChangesCustomViewBasis.DescriptorSeek seek => BuildDescriptorSeekPredicate(
                 dialect,
                 alias,
                 check.View,
-                seek,
-                parameters,
-                ref descriptorParameterIndex
+                seek
             ),
             _ => throw new InvalidOperationException(
                 $"Unsupported ReadChanges custom-view basis '{check.Basis.GetType().Name}' for strategy "
@@ -151,9 +136,7 @@ internal static class TrackedChangeAuthorizationSqlEmitter
         SqlDialect dialect,
         string alias,
         DbTableName view,
-        ReadChangesCustomViewBasis.LiveSeek seek,
-        List<RelationalParameter> parameters,
-        ref int descriptorParameterIndex
+        ReadChangesCustomViewBasis.LiveSeek seek
     )
     {
         List<string> liveJoins = [];
@@ -168,22 +151,14 @@ internal static class TrackedChangeAuthorizationSqlEmitter
         {
             ReadChangesCustomViewDescriptorKeyPair pair = seek.DescriptorKeyPairs[i];
             string descriptorAlias = $"{DescriptorAlias}{i}";
-            string resourceKeyIdParameter = BindDescriptorResourceKeyId(
-                pair.DescriptorResourceKeyId,
-                parameters,
-                ref descriptorParameterIndex
-            );
 
             liveJoins.Add(
-                $"LEFT JOIN {Quote(dialect, _descriptorTable)} {descriptorAlias} ON "
-                    + BuildDescriptorMatch(
+                $"LEFT JOIN {Quote(dialect, _descriptorProbe.DescriptorTable)} {descriptorAlias} ON "
+                    + BuildLiveDescriptorMatch(
                         dialect,
                         alias,
                         descriptorAlias,
-                        _descriptorResourceKeyIdColumn,
-                        _descriptorNamespaceColumn,
-                        _descriptorCodeValueColumn,
-                        resourceKeyIdParameter,
+                        pair.DescriptorResourceKeyId,
                         pair.TrackedOldNamespaceColumn,
                         pair.TrackedOldCodeValueColumn
                     )
@@ -227,12 +202,15 @@ internal static class TrackedChangeAuthorizationSqlEmitter
             .. arm.KeyPairs.Select(pair =>
                 $"{ProbeAlias}.{Quote(dialect, pair.BasisColumn)} = {alias}.{Quote(dialect, pair.TrackedOldColumn)}"
             ),
-            .. arm.DescriptorKeyPairs.SelectMany(pair =>
-                new[]
-                {
-                    $"{ProbeAlias}.{Quote(dialect, pair.BasisOldNamespaceColumn)} = {alias}.{Quote(dialect, pair.TrackedOldNamespaceColumn)}",
-                    $"{ProbeAlias}.{Quote(dialect, pair.BasisOldCodeValueColumn)} = {alias}.{Quote(dialect, pair.TrackedOldCodeValueColumn)}",
-                }
+            .. arm.DescriptorKeyPairs.Select(pair =>
+                BuildTombstoneDescriptorMatch(
+                    dialect,
+                    pair.BasisOldNamespaceColumn,
+                    pair.BasisOldCodeValueColumn,
+                    alias,
+                    pair.TrackedOldNamespaceColumn,
+                    pair.TrackedOldCodeValueColumn
+                )
             ),
         ];
 
@@ -248,36 +226,27 @@ internal static class TrackedChangeAuthorizationSqlEmitter
     }
 
     /// <summary>
-    /// Descriptor basis: descriptors share <c>dms.Descriptor</c>, so the tombstone's old Namespace/CodeValue
-    /// seek that table under the basis descriptor's resource key; the optional probe arm reads the shared
-    /// descriptor tracked-change table under the same resource-key parameter.
+    /// Descriptor basis: descriptors share <c>dms.Descriptor</c>, so the tombstone's old lowered URI seeks
+    /// that table under the basis descriptor's resource key; the optional probe arm reads the shared
+    /// descriptor tracked-change table, routed by the same resource key, and compares the lowered URIs of
+    /// both tracked-change rows.
     /// </summary>
     private static string BuildDescriptorSeekPredicate(
         SqlDialect dialect,
         string alias,
         DbTableName view,
-        ReadChangesCustomViewBasis.DescriptorSeek seek,
-        List<RelationalParameter> parameters,
-        ref int descriptorParameterIndex
+        ReadChangesCustomViewBasis.DescriptorSeek seek
     )
     {
-        string resourceKeyIdParameter = BindDescriptorResourceKeyId(
-            seek.DescriptorResourceKeyId,
-            parameters,
-            ref descriptorParameterIndex
-        );
-        string liveMatch = BuildDescriptorMatch(
+        string liveMatch = BuildLiveDescriptorMatch(
             dialect,
             alias,
             DescriptorAlias,
-            _descriptorResourceKeyIdColumn,
-            _descriptorNamespaceColumn,
-            _descriptorCodeValueColumn,
-            resourceKeyIdParameter,
+            seek.DescriptorResourceKeyId,
             seek.TrackedOldNamespaceColumn,
             seek.TrackedOldCodeValueColumn
         );
-        string liveFrom = $"{Quote(dialect, _descriptorTable)} {DescriptorAlias}";
+        string liveFrom = $"{Quote(dialect, _descriptorProbe.DescriptorTable)} {DescriptorAlias}";
         string descriptorDocumentId = $"{DescriptorAlias}.{Quote(dialect, _documentIdColumn)}";
 
         if (seek.ProbeArm is not { } probeArm)
@@ -285,17 +254,17 @@ internal static class TrackedChangeAuthorizationSqlEmitter
             return $"EXISTS (SELECT 1 FROM {liveFrom} WHERE {liveMatch} AND {BuildViewMembership(dialect, view, descriptorDocumentId)})";
         }
 
-        string probeMatch = BuildDescriptorMatch(
-            dialect,
-            alias,
-            ProbeAlias,
-            probeArm.ResourceKeyIdColumn,
-            probeArm.OldNamespaceColumn,
-            probeArm.OldCodeValueColumn,
-            resourceKeyIdParameter,
-            seek.TrackedOldNamespaceColumn,
-            seek.TrackedOldCodeValueColumn
-        );
+        string probeMatch =
+            $"{ProbeAlias}.{Quote(dialect, probeArm.ResourceKeyIdColumn)} = {ResourceKeyIdLiteral(seek.DescriptorResourceKeyId)}"
+            + " AND "
+            + BuildTombstoneDescriptorMatch(
+                dialect,
+                probeArm.OldNamespaceColumn,
+                probeArm.OldCodeValueColumn,
+                alias,
+                seek.TrackedOldNamespaceColumn,
+                seek.TrackedOldCodeValueColumn
+            );
 
         return BuildUnionMembership(
             dialect,
@@ -307,34 +276,63 @@ internal static class TrackedChangeAuthorizationSqlEmitter
         );
     }
 
-    // Preserve this consumer's component-wise database comparisons; no URI normalization is applied.
-    private static string BuildDescriptorMatch(
+    /// <summary>
+    /// Seeks a live descriptor by its compiled resource key and by the tombstone's old <c>namespace#codeValue</c>
+    /// lowered under the write path's fold, so the probe uses <c>UX_Descriptor_UriLowered_ResourceKeyId</c>.
+    /// </summary>
+    private static string BuildLiveDescriptorMatch(
         SqlDialect dialect,
         string alias,
         string descriptorAlias,
-        DbColumnName resourceKeyIdColumn,
-        DbColumnName namespaceColumn,
-        DbColumnName codeValueColumn,
-        string resourceKeyIdParameter,
+        short descriptorResourceKeyId,
         DbColumnName trackedOldNamespaceColumn,
         DbColumnName trackedOldCodeValueColumn
     ) =>
-        $"{descriptorAlias}.{Quote(dialect, resourceKeyIdColumn)} = {resourceKeyIdParameter}"
-        + $" AND {descriptorAlias}.{Quote(dialect, namespaceColumn)} = {alias}.{Quote(dialect, trackedOldNamespaceColumn)}"
-        + $" AND {descriptorAlias}.{Quote(dialect, codeValueColumn)} = {alias}.{Quote(dialect, trackedOldCodeValueColumn)}";
+        $"{descriptorAlias}.{Quote(dialect, _descriptorProbe.ResourceKeyIdColumn)} = {ResourceKeyIdLiteral(descriptorResourceKeyId)}"
+        + " AND "
+        + NaturalKeyCapturePredicateBuilder.BuildDescriptorUriFoldPredicate(
+            dialect,
+            _descriptorProbe,
+            descriptorAlias,
+            NaturalKeyCapturePredicateBuilder.BuildTrackedDescriptorUri(
+                dialect,
+                alias,
+                trackedOldNamespaceColumn,
+                trackedOldCodeValueColumn
+            )
+        );
 
-    private static string BindDescriptorResourceKeyId(
-        short resourceKeyId,
-        List<RelationalParameter> parameters,
-        ref int descriptorParameterIndex
-    )
-    {
-        string parameterName =
-            $"{CustomViewDescriptorResourceKeyIdParameterPrefix}{descriptorParameterIndex}";
-        descriptorParameterIndex++;
-        parameters.Add(new RelationalParameter(parameterName, resourceKeyId));
-        return parameterName;
-    }
+    /// <summary>
+    /// Compares the basis tombstone's old descriptor URI to the subject tombstone's, both lowered under the
+    /// same per-engine fold as the live probe. Neither side is a live descriptor row, so no index applies.
+    /// </summary>
+    private static string BuildTombstoneDescriptorMatch(
+        SqlDialect dialect,
+        DbColumnName probeOldNamespaceColumn,
+        DbColumnName probeOldCodeValueColumn,
+        string alias,
+        DbColumnName trackedOldNamespaceColumn,
+        DbColumnName trackedOldCodeValueColumn
+    ) =>
+        NaturalKeyCapturePredicateBuilder.BuildTrackedDescriptorUriFoldPredicate(
+            dialect,
+            NaturalKeyCapturePredicateBuilder.BuildTrackedDescriptorUri(
+                dialect,
+                ProbeAlias,
+                probeOldNamespaceColumn,
+                probeOldCodeValueColumn
+            ),
+            NaturalKeyCapturePredicateBuilder.BuildTrackedDescriptorUri(
+                dialect,
+                alias,
+                trackedOldNamespaceColumn,
+                trackedOldCodeValueColumn
+            )
+        );
+
+    // The resource key comes from the compiled mapping set, never from the request.
+    private static string ResourceKeyIdLiteral(short resourceKeyId) =>
+        resourceKeyId.ToString(CultureInfo.InvariantCulture);
 
     private static string BuildUnionMembership(
         SqlDialect dialect,
