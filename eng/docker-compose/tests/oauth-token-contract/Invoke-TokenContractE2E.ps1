@@ -34,7 +34,7 @@ $proxyLaunchAttempted = $false
 $e2eAttempted = $false
 $usableDmsWasStarted = $false
 
-function Get-TokenContractOverlayLines {
+function Get-TokenContractOverlayLine {
     param(
         [ValidateSet('self-contained', 'keycloak')] [string] $Provider,
         [switch] $Qualified
@@ -72,7 +72,7 @@ function Get-TokenContractTestFilter {
     return "(Category=@DMS-1606)&(Category!=@TokenContractQualified)&$engineExclusion"
 }
 
-function Get-TokenContractBuildArguments {
+function Get-TokenContractBuildArgument {
     param(
         [Parameter(Mandatory)] [string] $Provider,
         [Parameter(Mandatory)] [string] $Engine,
@@ -209,7 +209,7 @@ function Invoke-TokenContractPass {
     New-Item -ItemType Directory -Path $resultsDirectory -Force | Out-Null
     $trxPath = Join-Path $resultsDirectory 'EdFi.DataManagementService.Tests.E2E.filtered.trx'
     Remove-Item -LiteralPath $trxPath -Force -ErrorAction SilentlyContinue
-    $buildParameters = Get-TokenContractBuildArguments `
+    $buildParameters = Get-TokenContractBuildArgument `
         -Provider $IdentityProvider `
         -Engine $DatabaseEngine `
         -EnvironmentPath $originalEnvironmentPath `
@@ -306,8 +306,8 @@ try {
 
     $rootOverlay = Join-Path $ownedRoot 'root.overlay.env'
     $qualifiedOverlay = Join-Path $ownedRoot 'qualified.overlay.env'
-    [IO.File]::WriteAllLines($rootOverlay, (Get-TokenContractOverlayLines -Provider $IdentityProvider), [Text.UTF8Encoding]::new($false))
-    [IO.File]::WriteAllLines($qualifiedOverlay, (Get-TokenContractOverlayLines -Provider $IdentityProvider -Qualified), [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllLines($rootOverlay, (Get-TokenContractOverlayLine -Provider $IdentityProvider), [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllLines($qualifiedOverlay, (Get-TokenContractOverlayLine -Provider $IdentityProvider -Qualified), [Text.UTF8Encoding]::new($false))
 
     Invoke-WithTokenContractProxyEnvironment -Provider $IdentityProvider -SkipBuild:$SkipDockerBuild -Action {
         $passFailures = [Collections.Generic.List[string]]::new()

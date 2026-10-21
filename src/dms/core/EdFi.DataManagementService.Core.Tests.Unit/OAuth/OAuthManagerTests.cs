@@ -1847,23 +1847,43 @@ public class OAuthManagerTests
         [Test]
         public void It_returns_the_exact_safe_oauth_contract()
         {
+            string expectedError;
+            if (interruptedBody)
+            {
+                expectedError = "server_error";
+            }
+            else if (upstreamStatus is HttpStatusCode.Unauthorized)
+            {
+                expectedError = "invalid_client";
+            }
+            else
+            {
+                expectedError = "temporarily_unavailable";
+            }
+
+            string expectedDescription;
+            if (interruptedBody)
+            {
+                expectedDescription = ExpectedGatewayDetail;
+            }
+            else if (upstreamStatus is HttpStatusCode.Unauthorized)
+            {
+                expectedDescription = ExpectedUnauthorizedFallbackDetail;
+            }
+            else
+            {
+                expectedDescription = "The number of allowed requests has been exceeded. Retry the request later.";
+            }
+
             _body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
             _body["error"]!
                 .GetValue<string>()
                 .Should()
-                .Be(
-                    interruptedBody ? "server_error"
-                    : upstreamStatus is HttpStatusCode.Unauthorized ? "invalid_client"
-                    : "temporarily_unavailable"
-                );
+                .Be(expectedError);
             _body["error_description"]!
                 .GetValue<string>()
                 .Should()
-                .Be(
-                    interruptedBody ? ExpectedGatewayDetail
-                    : upstreamStatus is HttpStatusCode.Unauthorized ? ExpectedUnauthorizedFallbackDetail
-                    : "The number of allowed requests has been exceeded. Retry the request later."
-                );
+                .Be(expectedDescription);
             _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
             _response.Headers.GetValues("X-Correlation-ID").Should().Equal(CorrelationId);
             _response
