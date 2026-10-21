@@ -75,7 +75,7 @@ Any run can be narrowed with `-TestFilter 'Category=@<tag>'`. Common tags:
 | `Category=@TokenContractProxy` | DMS-1606 provider-response fixtures; run only through the dedicated proxy launcher below. |
 | `Category=@TokenContractQualified` | DMS-1606 root and qualified token-route controls; run only through the dedicated proxy launcher below. |
 
-Ordinary unfiltered `E2ETest` runs exclude `@TokenContractProxy` and
+Ordinary `E2ETest` runs, including runs with explicit filters, exclude `@TokenContractProxy` and
 `@TokenContractQualified`. These scenarios intentionally fail with launcher guidance if selected
 without their test-only proxy, and they are excluded from the ordinary CI shards.
 
@@ -173,6 +173,10 @@ coverage is owned by separate DMS-1289 workflows and is not part of these lanes.
 `build-dms.ps1 E2ETest` is the supported path. For interactive debugging you can prepare only
 the stack and then run `dotnet test` yourself, but the test process configuration must align
 with the running, provisioned stack.
+
+For ordinary direct runs, include `(Category!=@TokenContractProxy)&(Category!=@TokenContractQualified)`
+in `--filter`, combined with the engine exclusions above. Direct `dotnet test` does not apply the
+build script's fixture exclusions. Use the dedicated launcher for provider-fixture scenarios.
 
 The setup wrapper starts infra + Configuration Service, configures the E2E data store,
 provisions the E2E database, and starts DMS:
