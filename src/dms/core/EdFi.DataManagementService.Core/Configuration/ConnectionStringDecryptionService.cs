@@ -9,13 +9,52 @@ using System.Text;
 namespace EdFi.DataManagementService.Core.Configuration;
 
 /// <summary>
-/// Decrypts AES-encrypted connection strings produced by the CMS
-/// <c>ConnectionStringEncryptionService</c>. The stored format is IV (16 bytes)
-/// prepended to the AES-CBC ciphertext, Base64-encoded for transport.
+/// Decrypts connection strings produced by the CMS <c>ConnectionStringEncryptionService</c>, Base64-encoded
+/// for transport. Two stored forms exist, and this must stay in step with the CMS
+/// <c>ConnectionStringCipherText</c> that defines them:
+/// <list type="bullet">
+/// <item>Envelope (written by current CMS): marker "EdFi.CS.Envelope" (16) || version 1 (1) || nonce (12)
+/// || tag (16) || AES-256-GCM cipher text of the PKCS7-padded UTF-8 text, with marker and version as
+/// associated data. The key is HKDF-SHA256 over the key material below. Every envelope is 13 bytes past
+/// a 16-byte block multiple.</item>
+/// <item>Legacy: IV (16) || AES-CBC/PKCS7 cipher text, keyed by the key material directly; always a
+/// whole number of blocks.</item>
+/// </list>
+/// The key material is the first 32 characters of the configured key, padded with '0'.
 /// </summary>
 public class ConnectionStringDecryptionService(string encryptionKey) : IConnectionStringDecryptionService
 {
-    private readonly byte[] _key = Encoding.UTF8.GetBytes(encryptionKey.PadRight(32, '0')[..32]);
+    private const int BlockLength = 16;
+    private const int EnvelopeHeaderLength = 17;
+    private const int EnvelopeNonceLength = 12;
+    private const int EnvelopeTagLength = 16;
+    private const int EnvelopeOverhead = EnvelopeHeaderLength + EnvelopeNonceLength + EnvelopeTagLength;
+    private const int MinimumEnvelopeLength = EnvelopeOverhead + BlockLength;
+    private const byte EnvelopeVersion = 1;
+    private const int LegacyIvLength = 16;
+    private const int MinimumLegacyLength = LegacyIvLength + BlockLength;
+
+    private static ReadOnlySpan<byte> EnvelopeMarker => "EdFi.CS.Envelope"u8;
+
+    private static readonly byte[] _envelopeKeyInfo = "EdFi.ConnectionString.AES-256-GCM.v1"u8.ToArray();
+
+    private static readonly UTF8Encoding _strictUtf8 = new(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true
+    );
+
+    private readonly byte[] _legacyKey = KeyMaterial(encryptionKey);
+
+    private readonly byte[] _envelopeKey = HKDF.DeriveKey(
+        HashAlgorithmName.SHA256,
+        KeyMaterial(encryptionKey),
+        outputLength: 32,
+        salt: [],
+        info: _envelopeKeyInfo
+    );
+
+    private static byte[] KeyMaterial(string encryptionKey) =>
+        Encoding.UTF8.GetBytes(encryptionKey.PadRight(32, '0')[..32]);
 
     public string? DecryptFromBase64(string? base64EncodedCipherText)
     {
@@ -41,32 +80,111 @@ public class ConnectionStringDecryptionService(string encryptionKey) : IConnecti
             );
         }
 
-        const int ivLength = 16;
-        // Must have at least ivLength + 1 bytes: full IV plus some ciphertext.
-        if (encryptedBytes.Length <= ivLength)
+        // Envelope first, and never a legacy attempt after it: a value with an altered marker keeps
+        // the envelope length class, so it is rejected here rather than decrypted as legacy.
+        if (
+            encryptedBytes.Length % BlockLength == EnvelopeOverhead % BlockLength
+            || encryptedBytes.AsSpan().StartsWith(EnvelopeMarker)
+        )
+        {
+            return DecryptEnvelope(encryptedBytes);
+        }
+
+        if (encryptedBytes.Length >= MinimumLegacyLength && encryptedBytes.Length % BlockLength == 0)
+        {
+            return DecryptLegacy(encryptedBytes);
+        }
+
+        throw new InvalidOperationException(
+            $"Encrypted connection string has an invalid length ({encryptedBytes.Length} bytes); "
+                + "it is neither a CMS connection string envelope nor legacy AES-CBC cipher text."
+        );
+    }
+
+    private string DecryptEnvelope(byte[] envelope)
+    {
+        if (
+            envelope.Length < MinimumEnvelopeLength
+            || envelope.Length % BlockLength != EnvelopeOverhead % BlockLength
+        )
         {
             throw new InvalidOperationException(
-                $"Encrypted connection string is too short ({encryptedBytes.Length} bytes); "
-                    + $"expected at least {ivLength + 1} bytes (IV + ciphertext)."
+                $"Encrypted connection string envelope is malformed ({envelope.Length} bytes)."
             );
         }
 
+        ReadOnlySpan<byte> header = envelope.AsSpan(0, EnvelopeHeaderLength);
+
+        if (!header.StartsWith(EnvelopeMarker))
+        {
+            throw new InvalidOperationException("Encrypted connection string envelope is not recognized.");
+        }
+
+        if (header[^1] != EnvelopeVersion)
+        {
+            throw new InvalidOperationException(
+                $"Encrypted connection string envelope has unsupported format version {header[^1]}. "
+                    + "Verify that this DMS version supports the connection strings the CMS writes."
+            );
+        }
+
+        ReadOnlySpan<byte> nonce = envelope.AsSpan(EnvelopeHeaderLength, EnvelopeNonceLength);
+        ReadOnlySpan<byte> tag = envelope.AsSpan(
+            EnvelopeHeaderLength + EnvelopeNonceLength,
+            EnvelopeTagLength
+        );
+        ReadOnlySpan<byte> cipherText = envelope.AsSpan(EnvelopeOverhead);
+        byte[] padded = new byte[cipherText.Length];
+
+        try
+        {
+            // Rejects any change to the header, nonce, tag or cipher text, or the wrong key. Nothing
+            // is read from the plain text before this passes.
+            using var aesGcm = new AesGcm(_envelopeKey, EnvelopeTagLength);
+            aesGcm.Decrypt(nonce, cipherText, tag, padded, header);
+        }
+        catch (AuthenticationTagMismatchException ex)
+        {
+            throw new InvalidOperationException(
+                "Failed to decrypt the connection string: it failed authentication. "
+                    + "Verify that CMS and DMS are configured with the same EncryptionKey.",
+                ex
+            );
+        }
+
+        int paddingLength = padded[^1];
+
+        if (
+            paddingLength is < 1 or > BlockLength
+            || padded.AsSpan(padded.Length - paddingLength).ContainsAnyExcept((byte)paddingLength)
+        )
+        {
+            throw new InvalidOperationException("Decrypted connection string has invalid padding.");
+        }
+
+        try
+        {
+            return _strictUtf8.GetString(padded, 0, padded.Length - paddingLength);
+        }
+        catch (DecoderFallbackException ex)
+        {
+            throw new InvalidOperationException("Decrypted connection string is not valid UTF-8.", ex);
+        }
+    }
+
+    private string DecryptLegacy(byte[] encrypted)
+    {
         using var aes = Aes.Create();
-        aes.Key = _key;
+        aes.Key = _legacyKey;
 
-        var iv = new byte[ivLength];
-        var cipherText = new byte[encryptedBytes.Length - ivLength];
-
-        Buffer.BlockCopy(encryptedBytes, 0, iv, 0, ivLength);
-        Buffer.BlockCopy(encryptedBytes, ivLength, cipherText, 0, cipherText.Length);
-
-        aes.IV = iv;
-
-        using var decryptor = aes.CreateDecryptor();
         byte[] plainTextBytes;
         try
         {
-            plainTextBytes = decryptor.TransformFinalBlock(cipherText, 0, cipherText.Length);
+            plainTextBytes = aes.DecryptCbc(
+                encrypted.AsSpan(LegacyIvLength),
+                encrypted.AsSpan(0, LegacyIvLength),
+                PaddingMode.PKCS7
+            );
         }
         catch (CryptographicException ex)
         {

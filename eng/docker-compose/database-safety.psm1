@@ -1264,14 +1264,21 @@ function Get-EndpointFromResolvedConnectionString {
 function ConvertFrom-CmsEncryptedConnectionString {
     <#
     .SYNOPSIS
-        Decrypts a data store connection string as a Configuration Service response carries it: the Base64 of a 16-byte
-        IV followed by AES-CBC/PKCS7 cipher text, under CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY (the same key
-        the Configuration Service encrypts with) padded with '0' and cut to 32 characters.
+        Decrypts a data store connection string as a Configuration Service response carries it, in either stored form
+        (ConnectionStringCipherText in the Configuration Service describes both):
+        - envelope: "EdFi.CS.Envelope" (16 bytes), version 1 (1), nonce (12), tag (16), then AES-256-GCM
+          cipher text of the PKCS7-padded UTF-8 text, with marker and version as associated data, under a
+          key derived by HKDF-SHA256 from the key material;
+        - legacy: a 16-byte IV followed by AES-CBC/PKCS7 cipher text under the key material itself.
+        The key material is CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY (the same key the Configuration Service encrypts
+        with) padded with '0' and cut to 32 characters, as UTF-8.
     .DESCRIPTION
         Shared by the provisioning phase, which hands the decrypted target to SchemaTools, and by the
         configure phase's restore reuse check, which compares it with the restored target. Every
         failure is one of the fixed messages below; none carries the key, the cipher text, or the
-        decrypted text.
+        decrypted text. An envelope is 13 bytes past a 16-byte block multiple and legacy cipher text is
+        a whole number of blocks, so a value with that length class or the marker is held to the
+        envelope rules and never retried as legacy. Requires PowerShell 7.4 or later (.NET 8 AesGcm).
     #>
     param(
         [string]
@@ -1293,20 +1300,78 @@ function ConvertFrom-CmsEncryptedConnectionString {
         throw "Configuration Service data store connection string did not contain a database name and was not valid Configuration Service encrypted base64."
     }
 
-    if ($encryptedBytes.Length -le 16) {
+    $keyText = $encryptionKey.PadRight(32, "0").Substring(0, 32)
+    $keyBytes = [System.Text.Encoding]::UTF8.GetBytes($keyText)
+    $length = $encryptedBytes.Length
+    $hasMarker = $length -ge 16 -and [Convert]::ToHexString($encryptedBytes, 0, 16) -eq "456446692E43532E456E76656C6F7065"
+
+    if (($length % 16) -eq 13 -or $hasMarker) {
+        if ($length -lt 61 -or ($length % 16) -ne 13) {
+            throw "Configuration Service data store encrypted connection string payload is invalid."
+        }
+        if (-not $hasMarker) {
+            throw "Configuration Service data store encrypted connection string envelope is not recognized."
+        }
+        if ($encryptedBytes[16] -ne 1) {
+            throw "Configuration Service data store encrypted connection string uses an unsupported envelope format version."
+        }
+
+        $header = [byte[]]::new(17)
+        $nonce = [byte[]]::new(12)
+        $tag = [byte[]]::new(16)
+        $cipherText = [byte[]]::new($length - 45)
+        [Array]::Copy($encryptedBytes, 0, $header, 0, 17)
+        [Array]::Copy($encryptedBytes, 17, $nonce, 0, 12)
+        [Array]::Copy($encryptedBytes, 29, $tag, 0, 16)
+        [Array]::Copy($encryptedBytes, 45, $cipherText, 0, $cipherText.Length)
+        $padded = [byte[]]::new($cipherText.Length)
+
+        $envelopeKey = [System.Security.Cryptography.HKDF]::DeriveKey(
+            [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+            $keyBytes,
+            32,
+            [byte[]]::new(0),
+            [System.Text.Encoding]::ASCII.GetBytes("EdFi.ConnectionString.AES-256-GCM.v1"))
+        $aesGcm = [System.Security.Cryptography.AesGcm]::new($envelopeKey, 16)
+        try {
+            # Authentication comes first: nothing is read from the plain text unless it passes.
+            $aesGcm.Decrypt($nonce, $cipherText, $tag, $padded, $header)
+        }
+        catch {
+            throw "Configuration Service data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY."
+        }
+        finally {
+            $aesGcm.Dispose()
+        }
+
+        $paddingLength = [int]$padded[$padded.Length - 1]
+        $paddingValid = $paddingLength -ge 1 -and $paddingLength -le 16
+        for ($index = $padded.Length - $paddingLength; $paddingValid -and $index -lt $padded.Length; $index++) {
+            $paddingValid = $padded[$index] -eq $paddingLength
+        }
+        if (-not $paddingValid) {
+            throw "Configuration Service data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY."
+        }
+        try {
+            return [System.Text.UTF8Encoding]::new($false, $true).GetString($padded, 0, $padded.Length - $paddingLength)
+        }
+        catch {
+            throw "Configuration Service data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY."
+        }
+    }
+
+    if ($length -lt 32 -or ($length % 16) -ne 0) {
         throw "Configuration Service data store encrypted connection string payload is invalid."
     }
 
-    $keyText = $encryptionKey.PadRight(32, "0").Substring(0, 32)
-    $keyBytes = [System.Text.Encoding]::UTF8.GetBytes($keyText)
     $iv = [byte[]]::new(16)
     [Array]::Copy($encryptedBytes, 0, $iv, 0, 16)
 
-    $cipherText = [byte[]]::new($encryptedBytes.Length - 16)
+    $cipherText = [byte[]]::new($length - 16)
     [Array]::Copy($encryptedBytes, 16, $cipherText, 0, $cipherText.Length)
 
     $aes = [System.Security.Cryptography.Aes]::Create()
-    # CMS encrypts connection strings with AES-CBC / PKCS7; set explicitly rather than relying on .NET defaults.
+    # Legacy CMS values are AES-CBC / PKCS7; set explicitly rather than relying on .NET defaults.
     $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
     $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
     try {

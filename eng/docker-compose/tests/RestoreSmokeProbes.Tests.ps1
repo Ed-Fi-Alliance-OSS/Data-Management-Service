@@ -1847,9 +1847,10 @@ Describe "Get-RestoreSmokeSourceRevision" {
 }
 
 BeforeDiscovery {
-    # Independent compatibility fixtures for the data store connection strings CMS returns: each
+    # Independent compatibility fixtures for the legacy AES-CBC data store connection strings CMS
+    # returned before connection string envelopes, and still returns for rows not rewritten since: each
     # CipherText is the Base64 a CMS response carries, produced by the CMS's own
-    # ConnectionStringEncryptionService (random IV, src/config backend) through a throwaway console
+    # ConnectionStringEncryptionService of that time (random IV, src/config backend) through a throwaway console
     # that references the CMS backend project - not by this file's encryptor - so encryption and the
     # probe's decryption cannot share one unnoticed mistake. Key "long" is the test key below (longer
     # than 32 characters, so CMS keeps its first 32); "short" is padded with '0'. Padding is the
@@ -1922,6 +1923,13 @@ Describe "Served-data API probe" {
                 $aes.Dispose()
             }
             return [System.Convert]::ToBase64String([byte[]]($InitializationVector + $cipherText))
+        }
+
+        # The fixed vectors CMS, DMS and this probe all have to read, generated independently of each
+        # reader. They live with the CMS tests that own the format.
+        function script:Get-TestConnectionStringEncryptionVectors {
+            $path = Join-Path $PSScriptRoot "../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/connection-string-encryption-vectors.json"
+            return Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
         }
 
         function script:Resolve-TestDataStoreKey {
@@ -2120,9 +2128,9 @@ Describe "Served-data API probe" {
         It "does not select a data store whose connection string is <case>, and names no secret" -ForEach @(
             @{ Case = "plaintext (no fallback)"; Value = "plaintext"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string is not CMS Base64 cipher text" }
             @{ Case = "not Base64"; Value = "not-base64"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string is not CMS Base64 cipher text" }
-            @{ Case = "the Base64 of an unencrypted connection string"; Value = "base64-plaintext"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string cipher text is truncated or malformed (103 bytes; expected a 16-byte IV and whole 16-byte AES blocks)" }
-            @{ Case = "truncated mid-block"; Value = "truncated"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string cipher text is truncated or malformed (123 bytes; expected a 16-byte IV and whole 16-byte AES blocks)" }
-            @{ Case = "an IV without cipher text"; Value = "iv-only"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string cipher text is truncated or malformed (16 bytes; expected a 16-byte IV and whole 16-byte AES blocks)" }
+            @{ Case = "the Base64 of an unencrypted connection string"; Value = "base64-plaintext"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string cipher text is truncated or malformed (103 bytes; expected a CMS connection string envelope, or a 16-byte IV and whole 16-byte AES blocks)" }
+            @{ Case = "truncated mid-block"; Value = "truncated"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string cipher text is truncated or malformed (123 bytes; expected a CMS connection string envelope, or a 16-byte IV and whole 16-byte AES blocks)" }
+            @{ Case = "an IV without cipher text"; Value = "iv-only"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string cipher text is truncated or malformed (16 bytes; expected a CMS connection string envelope, or a 16-byte IV and whole 16-byte AES blocks)" }
             @{ Case = "missing its final block"; Value = "final-block-dropped"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY" }
             @{ Case = "encrypted under another key"; Value = "wrong-key"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY" }
         ) {
@@ -2153,6 +2161,74 @@ Describe "Served-data API probe" {
                 $failure.Contains($secret) | Should -BeFalse
             }
             $failure | Should -Not -Match '(?i)padding|cryptograph|exception|base-64 string'
+        }
+
+        It "decrypts the shared interoperability vector <vector>" -ForEach @(
+            @{ Vector = "envelopeV1"; PlainTextField = "plainText" }
+            @{ Vector = "blockAlignedEnvelopeV1"; PlainTextField = "blockAlignedPlainText" }
+            @{ Vector = "legacyCbc"; PlainTextField = "plainText" }
+        ) {
+            $vectors = Get-TestConnectionStringEncryptionVectors
+            $keyBytes = Get-RestoreSmokeDataStoreAesKey -EncryptionKey $vectors.keyText
+
+            $result = ConvertFrom-RestoreSmokeDataStoreCipherText -CipherText $vectors.$Vector -Key $keyBytes
+
+            $result.Reason | Should -BeNullOrEmpty
+            $result.PlainText | Should -BeExactly $vectors.$PlainTextField
+        }
+
+        It "decrypts the shared envelope vector with any key that shares its first 32 characters" {
+            $vectors = Get-TestConnectionStringEncryptionVectors
+            $keyBytes = Get-RestoreSmokeDataStoreAesKey -EncryptionKey ($vectors.keyText + "-ignored-suffix")
+
+            (ConvertFrom-RestoreSmokeDataStoreCipherText -CipherText $vectors.envelopeV1 -Key $keyBytes).PlainText | Should -BeExactly $vectors.plainText
+        }
+
+        # Each change keeps the envelope on the envelope path: a changed marker byte keeps the length
+        # class, so it is refused there rather than decrypted as legacy CBC.
+        It "refuses the shared envelope vector with <case>" -ForEach (
+            @(0..15 | ForEach-Object { @{ Case = "marker byte $_ changed"; Index = $_; Value = $null; Reason = "its connection string cipher text is not a recognized CMS connection string envelope" } }) + @(
+                @{ Case = "version 0"; Index = 16; Value = 0; Reason = "its connection string cipher text uses an unsupported CMS connection string envelope version" }
+                @{ Case = "version 2"; Index = 16; Value = 2; Reason = "its connection string cipher text uses an unsupported CMS connection string envelope version" }
+                @{ Case = "a changed nonce"; Index = 17; Value = $null; Reason = "its connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY" }
+                @{ Case = "a changed tag"; Index = 29; Value = $null; Reason = "its connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY" }
+                @{ Case = "changed cipher text"; Index = 45; Value = $null; Reason = "its connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY" }
+            )
+        ) {
+            $vectors = Get-TestConnectionStringEncryptionVectors
+            $keyBytes = Get-RestoreSmokeDataStoreAesKey -EncryptionKey $vectors.keyText
+            $payload = [System.Convert]::FromBase64String($vectors.envelopeV1)
+            $payload[$Index] = if ($null -eq $Value) { $payload[$Index] -bxor 1 } else { $Value }
+
+            $result = ConvertFrom-RestoreSmokeDataStoreCipherText -CipherText ([System.Convert]::ToBase64String($payload)) -Key $keyBytes
+
+            $result.PlainText | Should -BeNullOrEmpty
+            $result.Reason | Should -BeExactly $Reason
+        }
+
+        It "refuses the shared envelope vector <case>" -ForEach @(
+            @{ Case = "truncated by one byte"; Length = -1 }
+            @{ Case = "without cipher text"; Length = 45 }
+        ) {
+            $vectors = Get-TestConnectionStringEncryptionVectors
+            $keyBytes = Get-RestoreSmokeDataStoreAesKey -EncryptionKey $vectors.keyText
+            $payload = [System.Convert]::FromBase64String($vectors.envelopeV1)
+            $kept = if ($Length -lt 0) { $payload.Length + $Length } else { $Length }
+
+            $result = ConvertFrom-RestoreSmokeDataStoreCipherText -CipherText ([System.Convert]::ToBase64String([byte[]]$payload[0..($kept - 1)])) -Key $keyBytes
+
+            $result.PlainText | Should -BeNullOrEmpty
+            $result.Reason | Should -BeExactly "its connection string cipher text is truncated or malformed ($kept bytes; expected a CMS connection string envelope, or a 16-byte IV and whole 16-byte AES blocks)"
+        }
+
+        It "refuses the shared envelope vector under another key" {
+            $vectors = Get-TestConnectionStringEncryptionVectors
+            $keyBytes = Get-RestoreSmokeDataStoreAesKey -EncryptionKey $script:dataStoreKey
+
+            $result = ConvertFrom-RestoreSmokeDataStoreCipherText -CipherText $vectors.envelopeV1 -Key $keyBytes
+
+            $result.PlainText | Should -BeNullOrEmpty
+            $result.Reason | Should -BeExactly "its connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY"
         }
 
         It "selects the data store from the CMS's own <engine> cipher text and records no secret (<name>)" -ForEach $script:cmsCipherFixtures {

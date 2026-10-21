@@ -467,21 +467,61 @@ These settings configure how the DMS API connects to the Configuration Service t
 > its `ConfigurationServiceSettings:EncryptionKey` is non-empty, so it must be
 > given the same value the Configuration Service accepted.
 >
-> The AES-256 key is derived from the UTF-8 bytes of the configured text,
-> right-padded with `0` to 32 characters and then truncated to the first 32
-> characters (see Configuration Service `ConnectionStringEncryptionService`, DMS
-> `ConnectionStringDecryptionService`, and `provision-dms-schema.ps1`). That
-> derivation is unchanged, so its consequences still apply wherever the startup
-> rules are not enforced — a DMS configured on its own, or one reading connection
-> strings written by a Configuration Service that predates this validation:
+> The key material is the UTF-8 bytes of the configured text, right-padded with
+> `0` to 32 characters and then truncated to the first 32 characters (see
+> Configuration Service `ConnectionStringEncryptionService`, DMS
+> `ConnectionStringDecryptionService`, and `provision-dms-schema.ps1`). Every
+> reader and writer uses that same material, so its consequences still apply
+> wherever the startup rules are not enforced — a DMS configured on its own, or
+> one reading connection strings written by a Configuration Service that predates
+> this validation:
 > - Only the first 32 characters are significant; any characters beyond 32 are ignored.
 > - Values shorter than 32 characters are zero-padded, which weakens the key. A
 >   weak value that both sides share still decrypts successfully, with no warning.
 > - Multi-byte (non-ASCII) characters within the first 32 push the UTF-8 length
->   past 32 bytes and break AES key initialization.
+>   past 32 bytes. Legacy AES-CBC values (below) cannot be read with such a key,
+>   because their AES key must be exactly 32 bytes.
 >
 > Required by the Configuration Service, and therefore the value to use
 > everywhere: a 32-character ASCII string.
+>
+> **Stored format.** The Configuration Service encrypts each connection string as a
+> versioned envelope: the 16-byte marker `EdFi.CS.Envelope`, a version byte (`1`),
+> a random 12-byte nonce, a 16-byte authentication tag, and the AES-256-GCM cipher
+> text of the UTF-8 connection string padded to whole 16-byte blocks. The marker
+> and version are authenticated with the cipher text. A value recognized as an
+> envelope, by its marker or by its length, is validated and authenticated before
+> any plain text is returned: an invalid marker, version or length is rejected,
+> and a changed nonce, tag or cipher text, or a different key, fails
+> authentication. It is never retried as legacy. The AES-GCM key is derived
+> from the key material with HKDF-SHA256. HKDF gives the envelope its own key,
+> separate from the legacy one; it adds no entropy, so the strength of the key is
+> still that of the configured value.
+>
+> Connection strings stored by earlier releases use the legacy format: a 16-byte
+> IV followed by AES-CBC cipher text, keyed by the key material directly. The
+> Configuration Service, DMS and the setup scripts still read it. A legacy value is
+> upgraded to an envelope when its connection string is next replaced, by a create
+> or an update that supplies a connection string. An update that omits the
+> connection string keeps the stored value as it is, so a legacy value stays
+> legacy until it is re-submitted. There is no bulk migration; to upgrade every
+> value, re-submit each data store and data store derivative connection string as
+> described under **Changing the encryption key** below, without changing the key.
+>
+> Legacy values have no integrity protection. While they remain readable, anyone
+> who can write the data store tables can alter a legacy value, or replace an
+> envelope with a legacy-format value (for example, an older one from a backup, or
+> an envelope cut down to a legacy length), and readers cannot detect it. Only
+> values that are read as envelopes are authenticated. An envelope is
+> also not bound to its row, so swapping two valid envelopes between rows goes
+> undetected.
+>
+> **Upgrading.** Earlier releases of DMS, `provision-dms-schema.ps1` and
+> `configure-local-data-store.ps1` read only the legacy format, and fail on any
+> connection string this release of the Configuration Service writes. Upgrade
+> the Configuration Service, DMS and the setup scripts together; do not run a
+> newer Configuration Service with an older DMS. The setup scripts' decryption
+> requires PowerShell 7.4 or later.
 >
 > **Changing the encryption key.** Connection strings already stored by the
 > Configuration Service were encrypted with the previous key and are not
@@ -493,10 +533,10 @@ These settings configure how the DMS API connects to the Configuration Service t
 > - A data store still under the previous key fails every data store read that
 >   includes it, the collection as well as the single row, with an HTTP 500 whose
 >   log entry says the stored connection string could not be decrypted. DMS
->   therefore cannot load that tenant's data stores. The stored format is not
->   authenticated, so about one value in 256 decrypts under the wrong key into
->   unreadable text instead of failing; that read succeeds, and returns a
->   connection string DMS cannot use.
+>   therefore cannot load that tenant's data stores. An envelope under the wrong
+>   key always fails authentication. A legacy value is not authenticated, so
+>   about one in 256 decrypts under the wrong key into unreadable text instead of
+>   failing; that read succeeds, and returns a connection string DMS cannot use.
 > - A derivative still under the previous key fails the data store derivative
 >   reads the same way. Read as part of its data store, it is returned with a null
 >   connection string, which DMS treats as not configured, and the data store and

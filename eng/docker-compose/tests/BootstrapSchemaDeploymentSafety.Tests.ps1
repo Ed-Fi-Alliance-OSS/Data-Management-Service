@@ -184,6 +184,13 @@ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey12345678901234567
                 Set-Content -LiteralPath (Join-Path $bootstrapRoot "bootstrap-manifest.json") -Encoding utf8
         }
 
+        # The fixed vectors CMS, DMS and the provisioning reader all have to read, generated
+        # independently of each reader. They live with the CMS tests that own the format.
+        function script:Get-TestConnectionStringEncryptionVectors {
+            $path = Join-Path $script:sourceRepoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/connection-string-encryption-vectors.json"
+            return Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+        }
+
         function script:New-CmsEncryptedConnectionString {
             param(
                 [string]$PlainText,
@@ -809,15 +816,85 @@ exit $ExitCode
                 Should -Throw -ExpectedMessage "*payload is invalid*"
         }
 
+        It "rejects an encrypted connection string payload whose length fits neither CMS form" {
+            . $script:repo.ProvisionScript
+
+            $envValues = @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = "TestEncryptionKey123456789012345678901234567890" }
+            # 33 bytes is neither whole AES blocks (legacy) nor 13 bytes past them (envelope).
+            $misshapen = [Convert]::ToBase64String([byte[]]::new(33))
+            { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $misshapen -EnvValues $envValues } |
+                Should -Throw -ExpectedMessage "CMS data store encrypted connection string payload is invalid."
+        }
+
         It "rejects an encrypted connection string that cannot be decrypted with the configured key" {
             . $script:repo.ProvisionScript
 
             $envValues = @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = "TestEncryptionKey123456789012345678901234567890" }
-            # 16-byte IV plus a 17-byte ciphertext is not a whole AES block, so PKCS7 decryption
-            # fails deterministically rather than relying on a wrong-key padding collision.
-            $undecryptable = [Convert]::ToBase64String([byte[]]::new(33))
+            # Legacy CMS cipher text under a different key: the padding check fails for this fixed value.
+            $undecryptable = New-CmsEncryptedConnectionString -PlainText "host=localhost;database=encrypted_db;" -EncryptionKey "Rk3pQ8sT2vW9xZ4bC6dE1gH5jL7mN0rY" -InitializationVector ([byte[]](0..15))
             { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $undecryptable -EnvValues $envValues } |
                 Should -Throw -ExpectedMessage "*could not be decrypted*"
+        }
+
+        It "decrypts the shared interoperability vector <vector>" -ForEach @(
+            @{ Vector = "envelopeV1"; PlainTextField = "plainText" }
+            @{ Vector = "blockAlignedEnvelopeV1"; PlainTextField = "blockAlignedPlainText" }
+            @{ Vector = "legacyCbc"; PlainTextField = "plainText" }
+        ) {
+            . $script:repo.ProvisionScript
+            $vectors = Get-TestConnectionStringEncryptionVectors
+
+            ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $vectors.$Vector -EnvValues @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = $vectors.keyText } |
+                Should -BeExactly $vectors.$PlainTextField
+        }
+
+        It "decrypts the shared envelope vector with any key that shares its first 32 characters" {
+            . $script:repo.ProvisionScript
+            $vectors = Get-TestConnectionStringEncryptionVectors
+
+            ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $vectors.envelopeV1 -EnvValues @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = $vectors.keyText + "-ignored-suffix" } |
+                Should -BeExactly $vectors.plainText
+        }
+
+        # Each change keeps the envelope on the envelope path: a changed marker byte keeps the length
+        # class, so it is refused there rather than decrypted as legacy CBC.
+        It "rejects the shared envelope vector with <case>" -ForEach (
+            @(0..15 | ForEach-Object { @{ Case = "marker byte $_ changed"; Index = $_; Value = $null; Expected = "CMS data store encrypted connection string envelope is not recognized." } }) + @(
+                @{ Case = "version 0"; Index = 16; Value = 0; Expected = "CMS data store encrypted connection string uses an unsupported envelope format version." }
+                @{ Case = "version 2"; Index = 16; Value = 2; Expected = "CMS data store encrypted connection string uses an unsupported envelope format version." }
+                @{ Case = "a changed nonce"; Index = 17; Value = $null; Expected = "CMS data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY." }
+                @{ Case = "a changed tag"; Index = 29; Value = $null; Expected = "CMS data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY." }
+                @{ Case = "changed cipher text"; Index = 45; Value = $null; Expected = "CMS data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY." }
+            )
+        ) {
+            . $script:repo.ProvisionScript
+            $vectors = Get-TestConnectionStringEncryptionVectors
+            $payload = [Convert]::FromBase64String($vectors.envelopeV1)
+            $payload[$Index] = if ($null -eq $Value) { $payload[$Index] -bxor 1 } else { $Value }
+
+            { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString ([Convert]::ToBase64String($payload)) -EnvValues @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = $vectors.keyText } } |
+                Should -Throw -ExpectedMessage $Expected
+        }
+
+        It "rejects the shared envelope vector <case>" -ForEach @(
+            @{ Case = "truncated by one byte"; Length = -1 }
+            @{ Case = "without cipher text"; Length = 45 }
+        ) {
+            . $script:repo.ProvisionScript
+            $vectors = Get-TestConnectionStringEncryptionVectors
+            $payload = [Convert]::FromBase64String($vectors.envelopeV1)
+            $kept = if ($Length -lt 0) { $payload.Length + $Length } else { $Length }
+
+            { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString ([Convert]::ToBase64String([byte[]]$payload[0..($kept - 1)])) -EnvValues @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = $vectors.keyText } } |
+                Should -Throw -ExpectedMessage "CMS data store encrypted connection string payload is invalid."
+        }
+
+        It "rejects the shared envelope vector under another key" {
+            . $script:repo.ProvisionScript
+            $vectors = Get-TestConnectionStringEncryptionVectors
+
+            { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $vectors.envelopeV1 -EnvValues @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = "Rk3pQ8sT2vW9xZ4bC6dE1gH5jL7mN0rY" } } |
+                Should -Throw -ExpectedMessage "CMS data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY."
         }
 
         It "fails fast when CMS instance results reach the query page size" {

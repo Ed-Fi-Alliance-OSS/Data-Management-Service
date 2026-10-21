@@ -1651,10 +1651,12 @@ function Reset-RestoreSmokeApiSession {
 function Get-RestoreSmokeDataStoreAesKey {
     <#
     .SYNOPSIS
-    The AES key CMS derives from CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY, exactly as
+    The key material CMS takes from CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY, exactly as
     ConnectionStringEncryptionService does: the key string padded with '0' to 32 characters, cut to
-    its first 32, then UTF-8 encoded. Throws for a blank key, or for one whose first 32 characters
-    do not encode to 32 bytes (CMS cannot use such a key either). Messages never carry the key.
+    its first 32, then UTF-8 encoded. It is the AES key of legacy values and the HKDF input for
+    envelopes. Throws for a blank key, or for one whose first 32 characters do not encode to 32
+    bytes (legacy AES needs exactly 32, and the CMS validator rejects such a key). Messages never
+    carry the key.
     #>
     param(
         [Parameter(Mandatory)]
@@ -1675,11 +1677,16 @@ function Get-RestoreSmokeDataStoreAesKey {
 function ConvertFrom-RestoreSmokeDataStoreCipherText {
     <#
     .SYNOPSIS
-    Decrypts one connection string as a CMS data store response carries it: Base64 of a 16-byte IV
-    followed by AES-CBC/PKCS7 cipher text (ConnectionStringEncryptionService.Decrypt). Returns
-    PlainText, or a Reason when the value is not Base64, is too short or not whole AES blocks, does not
-    decrypt under the key, or does not decrypt to UTF-8 text. Plaintext input is rejected, never parsed
-    as a fallback. A Reason never carries the key, the value, its plaintext, or exception text.
+    Decrypts one connection string as a CMS data store response carries it, in either stored form
+    (ConnectionStringCipherText in the CMS describes both): an envelope ("EdFi.CS.Envelope", version 1,
+    12-byte nonce, 16-byte tag, then AES-256-GCM cipher text of the PKCS7-padded text, under a key
+    HKDF-SHA256 derives from -Key), or a legacy 16-byte IV followed by AES-CBC/PKCS7 cipher text under
+    -Key itself. -Key is the key material Get-RestoreSmokeDataStoreAesKey returns. Returns PlainText,
+    or a Reason when the value is not Base64, has a length neither form can have, is an envelope with
+    an unrecognized marker or unsupported version, does not decrypt (or authenticate) under the key, or
+    does not decrypt to UTF-8 text. A value with the envelope length class or marker is never retried
+    as legacy. Plaintext input is rejected, never parsed as a fallback. A Reason never carries the
+    key, the value, its plaintext, or exception text. Requires PowerShell 7.4 or later (.NET 8 AesGcm).
     #>
     param(
         [AllowNull()]
@@ -1699,34 +1706,96 @@ function ConvertFrom-RestoreSmokeDataStoreCipherText {
         $result.Reason = "its connection string is not CMS Base64 cipher text"
         return $result
     }
-    if ($payload.Length -lt 32 -or ($payload.Length % 16) -ne 0) {
-        $result.Reason = "its connection string cipher text is truncated or malformed ($($payload.Length) bytes; expected a 16-byte IV and whole 16-byte AES blocks)"
-        return $result
-    }
 
-    $iv = [byte[]]::new(16)
-    [System.Array]::Copy($payload, 0, $iv, 0, 16)
+    $malformedReason = "its connection string cipher text is truncated or malformed ($($payload.Length) bytes; expected a CMS connection string envelope, or a 16-byte IV and whole 16-byte AES blocks)"
+    $undecryptableReason = "its connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY"
+    $hasMarker = $payload.Length -ge 16 -and [System.Convert]::ToHexString($payload, 0, 16) -eq "456446692E43532E456E76656C6F7065"
     $plainTextBytes = $null
-    $aes = [System.Security.Cryptography.Aes]::Create()
-    try {
-        $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
-        $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
-        $aes.Key = $Key
-        $aes.IV = $iv
-        $decryptor = $aes.CreateDecryptor()
+
+    if (($payload.Length % 16) -eq 13 -or $hasMarker) {
+        if ($payload.Length -lt 61 -or ($payload.Length % 16) -ne 13) {
+            $result.Reason = $malformedReason
+            return $result
+        }
+        if (-not $hasMarker) {
+            $result.Reason = "its connection string cipher text is not a recognized CMS connection string envelope"
+            return $result
+        }
+        if ($payload[16] -ne 1) {
+            $result.Reason = "its connection string cipher text uses an unsupported CMS connection string envelope version"
+            return $result
+        }
+
+        $header = [byte[]]::new(17)
+        $nonce = [byte[]]::new(12)
+        $tag = [byte[]]::new(16)
+        $sealed = [byte[]]::new($payload.Length - 45)
+        [System.Array]::Copy($payload, 0, $header, 0, 17)
+        [System.Array]::Copy($payload, 17, $nonce, 0, 12)
+        [System.Array]::Copy($payload, 29, $tag, 0, 16)
+        [System.Array]::Copy($payload, 45, $sealed, 0, $sealed.Length)
+        $padded = [byte[]]::new($sealed.Length)
+
+        $envelopeKey = [System.Security.Cryptography.HKDF]::DeriveKey(
+            [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+            $Key,
+            32,
+            [byte[]]::new(0),
+            [System.Text.Encoding]::ASCII.GetBytes("EdFi.ConnectionString.AES-256-GCM.v1"))
+        $aesGcm = [System.Security.Cryptography.AesGcm]::new($envelopeKey, 16)
         try {
-            $plainTextBytes = $decryptor.TransformFinalBlock($payload, 16, $payload.Length - 16)
+            # Authentication comes first: nothing is read from the plain text unless it passes.
+            $aesGcm.Decrypt($nonce, $sealed, $tag, $padded, $header)
+        }
+        catch {
+            $result.Reason = $undecryptableReason
+            return $result
         }
         finally {
-            $decryptor.Dispose()
+            $aesGcm.Dispose()
         }
+
+        $paddingLength = [int]$padded[$padded.Length - 1]
+        $paddingValid = $paddingLength -ge 1 -and $paddingLength -le 16
+        for ($index = $padded.Length - $paddingLength; $paddingValid -and $index -lt $padded.Length; $index++) {
+            $paddingValid = $padded[$index] -eq $paddingLength
+        }
+        if (-not $paddingValid) {
+            $result.Reason = $undecryptableReason
+            return $result
+        }
+        $plainTextBytes = [byte[]]::new($padded.Length - $paddingLength)
+        [System.Array]::Copy($padded, 0, $plainTextBytes, 0, $plainTextBytes.Length)
     }
-    catch {
-        $result.Reason = "its connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY"
-        return $result
-    }
-    finally {
-        $aes.Dispose()
+    else {
+        if ($payload.Length -lt 32 -or ($payload.Length % 16) -ne 0) {
+            $result.Reason = $malformedReason
+            return $result
+        }
+
+        $iv = [byte[]]::new(16)
+        [System.Array]::Copy($payload, 0, $iv, 0, 16)
+        $aes = [System.Security.Cryptography.Aes]::Create()
+        try {
+            $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
+            $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
+            $aes.Key = $Key
+            $aes.IV = $iv
+            $decryptor = $aes.CreateDecryptor()
+            try {
+                $plainTextBytes = $decryptor.TransformFinalBlock($payload, 16, $payload.Length - 16)
+            }
+            finally {
+                $decryptor.Dispose()
+            }
+        }
+        catch {
+            $result.Reason = $undecryptableReason
+            return $result
+        }
+        finally {
+            $aes.Dispose()
+        }
     }
 
     try {

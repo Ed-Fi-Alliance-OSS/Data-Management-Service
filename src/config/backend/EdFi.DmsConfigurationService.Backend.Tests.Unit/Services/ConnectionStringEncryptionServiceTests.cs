@@ -301,8 +301,9 @@ public class ConnectionStringEncryptionServiceTests
     }
 
     /// <summary>
-    /// Every change to an envelope has to be rejected, never decrypted under the legacy path and never
-    /// returned as different text.
+    /// Header, body and length corruptions of a valid envelope: each has to be rejected, never
+    /// decrypted under the legacy path and never returned as different text. Substitution with a
+    /// legacy-shaped value is outside what the format can detect.
     /// </summary>
     [TestFixture]
     public class Given_a_corrupted_envelope

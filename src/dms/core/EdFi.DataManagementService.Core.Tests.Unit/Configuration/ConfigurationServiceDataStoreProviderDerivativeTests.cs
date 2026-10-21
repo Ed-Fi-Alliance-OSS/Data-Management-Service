@@ -56,7 +56,8 @@ public class ConfigurationServiceDataStoreProviderDerivativeTests
     }
 
     /// <summary>
-    /// Mirrors the CMS ConnectionStringEncryptionService.Encrypt() method exactly.
+    /// Produces the legacy AES-CBC form the CMS wrote before connection string envelopes, which DMS
+    /// still reads.
     /// </summary>
     private static string EncryptToBase64(string plainText, string encryptionKey)
     {
