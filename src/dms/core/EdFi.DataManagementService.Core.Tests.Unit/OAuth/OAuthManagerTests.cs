@@ -1780,13 +1780,22 @@ public class OAuthManagerTests
     private static async Task<(
         HttpResponseMessage Response,
         RecordingLogger<OAuthManager> Logger
-    )> UpstreamResponds(HttpStatusCode upstreamStatus, string upstreamBody)
+    )> UpstreamResponds(HttpStatusCode upstreamStatus, string upstreamBody) =>
+        await UpstreamResponds(
+            upstreamStatus,
+            new StringContent(upstreamBody, Encoding.UTF8, "application/json")
+        );
+
+    private static async Task<(
+        HttpResponseMessage Response,
+        RecordingLogger<OAuthManager> Logger
+    )> UpstreamResponds(HttpStatusCode upstreamStatus, HttpContent upstreamContent)
     {
         var logger = new RecordingLogger<OAuthManager>();
 
         var upstreamResponse = A.Fake<HttpResponseMessage>();
         upstreamResponse.StatusCode = upstreamStatus;
-        upstreamResponse.Content = new StringContent(upstreamBody, Encoding.UTF8, "application/json");
+        upstreamResponse.Content = upstreamContent;
 
         var httpClient = A.Fake<IHttpClientWrapper>();
         A.CallTo(() => httpClient.SendAsync(A<HttpRequestMessage>._)).ReturnsLazily(() => upstreamResponse);
@@ -1827,6 +1836,104 @@ public class OAuthManagerTests
     /// <see cref="ExpectedGatewayDetail"/>.
     /// </summary>
     private const string ExpectedNoFieldsMarker = "(none)";
+
+    [TestFixture(HttpStatusCode.Unauthorized, false)]
+    [TestFixture(HttpStatusCode.TooManyRequests, false)]
+    [TestFixture(HttpStatusCode.Unauthorized, true)]
+    [TestFixture(HttpStatusCode.TooManyRequests, true)]
+    public class Given_An_Upstream_Error_With_Unsupported_Charset(
+        HttpStatusCode upstreamStatus,
+        bool interruptedBody
+    )
+    {
+        private HttpResponseMessage _response = default!;
+        private RecordingLogger<OAuthManager> _logger = default!;
+        private JsonObject _body = default!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            HttpContent content = interruptedBody
+                ? new InterruptedProviderContent()
+                : new ByteArrayContent(Encoding.UTF8.GetBytes("provider-content-sentinel"));
+            content.Headers.ContentType = new("application/json") { CharSet = "not-a-real-charset" };
+            (_response, _logger) = await UpstreamResponds(upstreamStatus, content);
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!.AsObject();
+        }
+
+        [Test]
+        public void It_preserves_the_status_only_when_the_body_was_received() =>
+            _response.StatusCode.Should().Be(interruptedBody ? HttpStatusCode.BadGateway : upstreamStatus);
+
+        [Test]
+        public void It_returns_the_exact_safe_oauth_contract()
+        {
+            _body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
+            _body["error"]!
+                .GetValue<string>()
+                .Should()
+                .Be(
+                    interruptedBody ? "server_error"
+                    : upstreamStatus is HttpStatusCode.Unauthorized ? "invalid_client"
+                    : "temporarily_unavailable"
+                );
+            _body["error_description"]!
+                .GetValue<string>()
+                .Should()
+                .Be(
+                    interruptedBody ? ExpectedGatewayDetail
+                    : upstreamStatus is HttpStatusCode.Unauthorized ? ExpectedUnauthorizedFallbackDetail
+                    : "The number of allowed requests has been exceeded. Retry the request later."
+                );
+            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+            _response.Headers.GetValues("X-Correlation-ID").Should().Equal(CorrelationId);
+            _response
+                .Headers.WwwAuthenticate.ToString()
+                .Should()
+                .Be(
+                    !interruptedBody && upstreamStatus is HttpStatusCode.Unauthorized
+                        ? "Basic realm=\"EdFi.DataManagementService\""
+                        : string.Empty
+                );
+        }
+
+        [Test]
+        public void It_distinguishes_unusable_content_from_a_transport_failure()
+        {
+            if (interruptedBody)
+            {
+                _logger.Records.Should().ContainSingle(record => record.Level == LogLevel.Error);
+                _logger
+                    .Records.Should()
+                    .NotContain(record => record.Properties.ContainsKey("StandardFields"));
+                return;
+            }
+
+            LogRecord summary = _logger.Records.Single(record =>
+                record.Properties.ContainsKey("StandardFields")
+            );
+            summary
+                .Level.Should()
+                .Be(upstreamStatus is HttpStatusCode.Unauthorized ? LogLevel.Information : LogLevel.Warning);
+            summary.Properties["TraceId"].Should().Be(CorrelationId);
+            summary.Properties["StandardFields"].Should().Be(ExpectedNoFieldsMarker);
+            summary.Properties["OtherFieldNames"].Should().Be(ExpectedNoFieldsMarker);
+            summary.Exception.Should().BeNull();
+            _logger.Records.Should().NotContain(record => record.Level == LogLevel.Error);
+        }
+    }
+
+    private sealed class InterruptedProviderContent : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            Task.FromException(new IOException("Provider body read interrupted"));
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+    }
 
     [TestFixture("""{"error":"invalid_client","error":"invalid_client"}""")]
     [TestFixture("""{"error_description":"first","error_description":"second"}""")]

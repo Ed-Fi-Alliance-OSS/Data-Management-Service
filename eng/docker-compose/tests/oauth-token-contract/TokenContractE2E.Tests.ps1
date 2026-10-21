@@ -4,6 +4,7 @@
 # See the LICENSE and NOTICES files in the project root for more information.
 
 BeforeAll {
+    Import-Module (Join-Path $PSScriptRoot '../../database-safety.psm1') -Force
     $script:launcherPath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'Invoke-TokenContractE2E.ps1'))
     $script:launcherText = Get-Content $script:launcherPath -Raw
     $parseErrors = $null
@@ -41,6 +42,20 @@ BeforeAll {
 }
 
 Describe 'DMS-1606 token contract E2E launcher' {
+    BeforeEach {
+        $script:previousProviderEnvironment = @{}
+        foreach ($key in @('SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT', 'KEYCLOAK_OAUTH_TOKEN_ENDPOINT', 'CMS_TOKEN_URL', 'CORRELATION_ID_HEADER')) {
+            $script:previousProviderEnvironment[$key] = [Environment]::GetEnvironmentVariable($key)
+            [Environment]::SetEnvironmentVariable($key, $null)
+        }
+    }
+
+    AfterEach {
+        foreach ($key in $script:previousProviderEnvironment.Keys) {
+            [Environment]::SetEnvironmentVariable($key, $script:previousProviderEnvironment[$key])
+        }
+    }
+
     It 'is present and exposes the planned provider, engine, environment, and build switches' {
         Test-Path $script:launcherPath | Should -BeTrue
         $script:launcherText | Should -Match 'IdentityProvider'
@@ -95,6 +110,69 @@ Describe 'DMS-1606 token contract E2E launcher' {
         (Get-TokenContractTestFilter -Engine mssql) | Should -Be '(Category=@DMS-1606)&(Category!=@TokenContractQualified)&(Category!=@PostgresqlOnly)'
         (Get-TokenContractTestFilter -Engine postgresql -Qualified) | Should -Be '(Category=@TokenContractQualified)&(Category!=@MssqlOnly)'
         (Get-TokenContractTestFilter -Engine mssql -Qualified) | Should -Be '(Category=@TokenContractQualified)&(Category!=@PostgresqlOnly)'
+    }
+
+    It 'resolves supported Compose endpoint values before validating them' -TestCases @(
+        @{ Raw = '"http://ed-fi-api-config:8081/connect/token"' },
+        @{ Raw = "'http://ed-fi-api-config:8081/connect/token'" },
+        @{ Raw = 'http://ed-fi-api-config:8081/connect/token # provider endpoint' },
+        @{ Raw = '${CMS_TOKEN_URL}' },
+        @{ Raw = '"${CMS_TOKEN_URL}" # provider endpoint' }
+    ) {
+        param($Raw)
+        $values = @{
+            CMS_TOKEN_URL = 'http://ed-fi-api-config:8081/connect/token'
+            SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT = $Raw
+        }
+        Get-TokenContractUpstreamUri -Provider self-contained -EnvironmentValues $values |
+            Should -Be 'http://ed-fi-api-config:8081/connect/token'
+    }
+
+    It 'honors ambient precedence for both the endpoint and its references' {
+        $values = @{
+            CMS_TOKEN_URL = 'http://file-provider/token'
+            SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT = '${CMS_TOKEN_URL}'
+        }
+        $env:CMS_TOKEN_URL = 'http://ambient-reference/token'
+        Get-TokenContractUpstreamUri -Provider self-contained -EnvironmentValues $values |
+            Should -Be 'http://ambient-reference/token'
+        $env:SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT = 'http://ambient-endpoint/token'
+        Get-TokenContractUpstreamUri -Provider self-contained -EnvironmentValues $values |
+            Should -Be 'http://ambient-endpoint/token'
+    }
+
+    It 'scopes the selected endpoint and correlation override and restores them on failure' -TestCases @(
+        @{ Provider = 'self-contained'; Key = 'SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT'; OtherKey = 'KEYCLOAK_OAUTH_TOKEN_ENDPOINT' },
+        @{ Provider = 'keycloak'; Key = 'KEYCLOAK_OAUTH_TOKEN_ENDPOINT'; OtherKey = 'SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT' }
+    ) {
+        param($Provider, $Key, $OtherKey)
+        foreach ($hadPreviousValues in @($false, $true)) {
+            if ($hadPreviousValues) {
+                [Environment]::SetEnvironmentVariable($Key, 'http://original-provider/token')
+                $env:CORRELATION_ID_HEADER = 'Original-Correlation'
+            }
+            [Environment]::SetEnvironmentVariable($OtherKey, 'http://unselected-provider/token')
+            foreach ($fail in @($false, $true)) {
+                $invoke = {
+                    Invoke-WithTokenContractProxyEnvironment -Provider $Provider -SkipBuild -Action {
+                        [Environment]::GetEnvironmentVariable($Key) | Should -Be 'http://dms-token-proxy:8080/token'
+                        [Environment]::GetEnvironmentVariable($OtherKey) | Should -Be 'http://unselected-provider/token'
+                        $env:CORRELATION_ID_HEADER | Should -Be 'X-DMS-1606-Correlation'
+                        if ($fail) { throw 'fixture failure' }
+                    }
+                }
+                if ($fail) { $invoke | Should -Throw '*fixture failure*' }
+                else { & $invoke }
+                if ($hadPreviousValues) {
+                    [Environment]::GetEnvironmentVariable($Key) | Should -Be 'http://original-provider/token'
+                    $env:CORRELATION_ID_HEADER | Should -Be 'Original-Correlation'
+                }
+                else {
+                    [Environment]::GetEnvironmentVariable($Key) | Should -BeNullOrEmpty
+                    Test-Path Env:CORRELATION_ID_HEADER | Should -BeFalse
+                }
+            }
+        }
     }
 
     It 'binds the build script parameters by name and forwards requested switches' {

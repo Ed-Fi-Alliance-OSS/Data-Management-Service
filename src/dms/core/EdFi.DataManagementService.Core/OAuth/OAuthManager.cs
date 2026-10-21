@@ -447,7 +447,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             HttpResponseMessage response
         )
         {
-            string body = await response.Content.ReadAsStringAsync();
+            string body = await ReadStatusClassifiedBody(response.Content);
             JsonObject? obj = JsonObjectOrNull(body);
             string? description = GetStringOrNull(obj?["error_description"]);
             bool hasUsableDescription = description is not null && IsUsableOAuthDescription(description);
@@ -541,7 +541,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             HttpResponseMessage response
         )
         {
-            string body = await response.Content.ReadAsStringAsync();
+            string body = await ReadStatusClassifiedBody(response.Content);
             int? limit = TokenLimitFromUpstreamBody(body);
 
             if (limit is null)
@@ -606,6 +606,23 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                 message,
                 traceId
             );
+        }
+
+        static async Task<string> ReadStatusClassifiedBody(HttpContent content)
+        {
+            // Complete I/O outside the decoding guard: an interrupted body remains a gateway
+            // failure, even if its declared charset is also unsupported.
+            await content.LoadIntoBufferAsync();
+            try
+            {
+                return await content.ReadAsStringAsync();
+            }
+            catch (InvalidOperationException ex) when (ex.InnerException is ArgumentException)
+            {
+                // HttpContent wraps an unsupported charset this way. Treat the received body
+                // as unusable so the 401/429 branch still emits its safe fallback and summary.
+                return string.Empty;
+            }
         }
 
         // The limit carried by a canonical token-limit body, or null when the body deviates from

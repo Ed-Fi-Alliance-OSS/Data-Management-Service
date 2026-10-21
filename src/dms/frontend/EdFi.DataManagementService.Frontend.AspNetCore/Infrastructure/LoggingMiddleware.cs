@@ -223,7 +223,7 @@ public class LoggingMiddleware
                         );
                     }
                 }
-                else if (!response.HasStarted)
+                else if (!response.HasStarted && !IsTokenEndpoint(context))
                 {
                     try
                     {
