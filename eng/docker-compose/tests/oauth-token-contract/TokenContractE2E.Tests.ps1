@@ -46,13 +46,16 @@ Describe 'DMS-1606 token contract E2E launcher' {
         $script:previousProviderEnvironment = @{}
         foreach ($key in @('SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT', 'KEYCLOAK_OAUTH_TOKEN_ENDPOINT', 'CMS_TOKEN_URL', 'CORRELATION_ID_HEADER')) {
             $script:previousProviderEnvironment[$key] = [Environment]::GetEnvironmentVariable($key)
-            [Environment]::SetEnvironmentVariable($key, $null)
+            Remove-Item -LiteralPath "Env:$key" -ErrorAction SilentlyContinue
         }
     }
 
     AfterEach {
         foreach ($key in $script:previousProviderEnvironment.Keys) {
-            [Environment]::SetEnvironmentVariable($key, $script:previousProviderEnvironment[$key])
+            if ($null -ne $script:previousProviderEnvironment[$key]) {
+                [Environment]::SetEnvironmentVariable($key, $script:previousProviderEnvironment[$key])
+            }
+            else { Remove-Item -LiteralPath "Env:$key" -ErrorAction SilentlyContinue }
         }
     }
 
@@ -170,9 +173,36 @@ Describe 'DMS-1606 token contract E2E launcher' {
                 }
                 else {
                     [Environment]::GetEnvironmentVariable($Key) | Should -BeNullOrEmpty
+                    Test-Path -LiteralPath "Env:$Key" | Should -BeFalse
                     Test-Path Env:CORRELATION_ID_HEADER | Should -BeFalse
                 }
             }
+        }
+    }
+
+    It 'preserves explicitly empty endpoint and correlation environment values' -TestCases @(
+        @{ Provider = 'self-contained'; Key = 'SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT' },
+        @{ Provider = 'keycloak'; Key = 'KEYCLOAK_OAUTH_TOKEN_ENDPOINT' }
+    ) {
+        param($Provider, $Key)
+        [Environment]::SetEnvironmentVariable($Key, '')
+        $env:CORRELATION_ID_HEADER = ''
+
+        foreach ($fail in @($false, $true)) {
+            $invoke = {
+                Invoke-WithTokenContractProxyEnvironment -Provider $Provider -SkipBuild -Action {
+                    [Environment]::GetEnvironmentVariable($Key) | Should -Be 'http://dms-token-proxy:8080/token'
+                    $env:CORRELATION_ID_HEADER | Should -Be 'X-DMS-1606-Correlation'
+                    if ($fail) { throw 'fixture failure' }
+                }
+            }
+            if ($fail) { $invoke | Should -Throw '*fixture failure*' }
+            else { & $invoke }
+
+            Test-Path -LiteralPath "Env:$Key" | Should -BeTrue
+            [Environment]::GetEnvironmentVariable($Key) | Should -BeExactly ''
+            Test-Path Env:CORRELATION_ID_HEADER | Should -BeTrue
+            $env:CORRELATION_ID_HEADER | Should -BeExactly ''
         }
     }
 
