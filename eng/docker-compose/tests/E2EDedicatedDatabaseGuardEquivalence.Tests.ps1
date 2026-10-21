@@ -15,6 +15,11 @@
 # matrix keeps them in the context named for what -ieq misses, so they fail if either the comparer or
 # the guard's use of it is reduced to -ieq. Every other guard context is preservation. Characters are
 # written as code points; no literal non-ASCII text.
+#
+# Comparison-domain rows are classified by the verdict the guard gave before the domain check existed,
+# measured per key kind: a spelling it accepted is a regression row whose only rejection is the domain
+# refusal; a spelling -ieq already rejected is a preservation row that accepts either the collision or
+# the domain diagnostic for its key.
 
 Describe "Dedicated E2E database name comparer" {
     BeforeAll {
@@ -135,8 +140,11 @@ Describe "Dedicated E2E database name comparer" {
                 }, $true)
         }
 
-        It "does not export the comparer" {
-            Get-Command -Module database-safety -Name Test-E2EDatabaseNameCollidesWithProtectedName -ErrorAction SilentlyContinue |
+        It "does not export <Name>" -ForEach @(
+            @{ Name = "Test-E2EDatabaseNameCollidesWithProtectedName" }
+            @{ Name = "Test-E2EGuardComparisonDomain" }
+        ) {
+            Get-Command -Module database-safety -Name $Name -ErrorAction SilentlyContinue |
                 Should -BeNullOrEmpty
         }
 
@@ -156,6 +164,57 @@ Describe "Dedicated E2E database name comparer" {
                 ($null -ne $trimCall.Arguments -and $trimCall.Arguments.Count -gt 0) | Should -BeTrue -Because "'$($trimCall.Extent.Text)' must name the characters it removes"
             }
         }
+    }
+}
+
+# The domain predicate removes nothing, so these rows reach it directly; through the guard a trailing
+# LF or U+0020 would already be gone.
+Describe "Dedicated E2E guard comparison domain" {
+    BeforeAll {
+        Import-Module (Join-Path ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))) "database-safety.psm1") -Force
+
+        function Test-ComparisonDomain {
+            param([AllowEmptyString()] [string]$DatabaseName)
+
+            InModuleScope database-safety -Parameters @{ Name = $DatabaseName } {
+                param($Name)
+                Test-E2EGuardComparisonDomain -DatabaseName $Name
+            }
+        }
+    }
+
+    It "accepts '<DatabaseName>'" -ForEach @(
+        @{ DatabaseName = "edfi_dms" }
+        @{ DatabaseName = "EDFI_DMS" }
+        @{ DatabaseName = "Az09_zA" }
+        @{ DatabaseName = "_" }
+    ) {
+        Test-ComparisonDomain -DatabaseName $DatabaseName | Should -BeTrue
+    }
+
+    It "refuses <Label>" -ForEach @(
+        @{ Label = "an empty name"; DatabaseName = "" }
+        @{ Label = "'edfi_dms' + LF, which a '`$'-anchored pattern admits"; DatabaseName = "edfi_dms`n" }
+        @{ Label = "'edfi' + LF + 'dms'"; DatabaseName = "edfi`ndms" }
+        @{ Label = "'edfi_dms' + LF + 'x'"; DatabaseName = "edfi_dms`nx" }
+        @{ Label = "'edfi_dms' + U+0020"; DatabaseName = "edfi_dms " }
+        @{ Label = "U+0020 + 'edfi_dms'"; DatabaseName = " edfi_dms" }
+    ) {
+        Test-ComparisonDomain -DatabaseName $DatabaseName | Should -BeFalse
+    }
+
+    # The code points on either side of each range, and characters a case-insensitive or culture-aware
+    # match would place inside it.
+    It "refuses 'edfi' + U+<CodePoint> + 'dms'" -ForEach @(
+        foreach ($codePoint in @(0x002F, 0x003A, 0x0040, 0x005B, 0x0060, 0x007B, 0x002D, 0x002E, 0x0020, 0x007F, 0x0001, 0x00A0, 0x200B, 0x200D, 0x2060, 0xFEFF, 0x212A, 0x0130, 0x0131, 0xFF45, 0xFB01)) {
+            @{ CodePoint = $codePoint.ToString("X4"); Character = [string][char]$codePoint }
+        }
+    ) {
+        Test-ComparisonDomain -DatabaseName "edfi$($Character)dms" | Should -BeFalse
+    }
+
+    It "refuses 'edfi_dms' + U+1F600, a surrogate pair" {
+        Test-ComparisonDomain -DatabaseName "edfi_dms$([char]::ConvertFromUtf32(0x1F600))" | Should -BeFalse
     }
 }
 
@@ -201,6 +260,37 @@ BeforeDiscovery {
             }
         }
     }
+
+    # Spellings outside the comparison domain, with the verdict the guard gave each before the domain
+    # check, measured separately for direct keys (a double-quoted value) and connection-string keys (a
+    # provider-quoted Database). The extractor's secondary conversion trims the connection-string
+    # candidate, so a trailing U+00A0 or a leading U+0020 already collides there.
+    $script:outOfDomainSpellings = @(
+        @{ Label = "full-width U+FF45 for the first letter"; Name = "$([char]0xFF45)dfi_dms"; Direct = "Accepted"; ConnectionString = "Accepted" }
+        @{ Label = "edfi_dms + U+1F600"; Name = "edfi_dms$([char]::ConvertFromUtf32(0x1F600))"; Direct = "Accepted"; ConnectionString = "Accepted" }
+        @{ Label = "edfi_dms + U+00A0"; Name = "edfi_dms$([char]0x00A0)"; Direct = "Accepted"; ConnectionString = "Collision" }
+        @{ Label = "U+0020 + edfi_dms"; Name = " edfi_dms"; Direct = "Accepted"; ConnectionString = "Collision" }
+        @{ Label = "edfi-dms"; Name = "edfi-dms"; Direct = "Accepted"; ConnectionString = "Accepted" }
+        @{ Label = "edfi.dms"; Name = "edfi.dms"; Direct = "Accepted"; ConnectionString = "Accepted" }
+        @{ Label = "edfi + U+0020 + dms"; Name = "edfi dms"; Direct = "Accepted"; ConnectionString = "Accepted" }
+        @{ Label = "ed + U+FB01 + _dms"; Name = "ed$([char]0xFB01)_dms"; Direct = "Collision"; ConnectionString = "Collision" }
+        @{ Label = "edfi + U+200D + _dms"; Name = "edfi$([char]0x200D)_dms"; Direct = "Collision"; ConnectionString = "Collision" }
+        @{ Label = "edfi + U+2060 + _dms"; Name = "edfi$([char]0x2060)_dms"; Direct = "Collision"; ConnectionString = "Collision" }
+        @{ Label = "edfi + U+FEFF + _dms"; Name = "edfi$([char]0xFEFF)_dms"; Direct = "Collision"; ConnectionString = "Collision" }
+        @{ Label = "edfi + U+0001 + _dms"; Name = "edfi$([char]0x0001)_dms"; Direct = "Collision"; ConnectionString = "Collision" }
+        @{ Label = "edfi_dms + U+200B"; Name = "edfi_dms$([char]0x200B)"; Direct = "Collision"; ConnectionString = "Collision" }
+    )
+
+    $script:outOfDomainRows = foreach ($spelling in $script:outOfDomainSpellings) {
+        foreach ($key in $script:directDatabaseNameKeys) {
+            @{ Key = $key; Label = $spelling.Label; Value = "`"$($spelling.Name)`""; Verdict = $spelling.Direct }
+        }
+        foreach ($key in $script:connectionStringKeys) {
+            @{ Key = $key; Label = $spelling.Label; Value = "Server=s;Database=`"$($spelling.Name)`";User Id=sa"; Verdict = $spelling.ConnectionString }
+        }
+    }
+    $script:domainRefusalRows = @($script:outOfDomainRows | Where-Object { $_.Verdict -eq "Accepted" })
+    $script:alreadyRejectedRows = @($script:outOfDomainRows | Where-Object { $_.Verdict -eq "Collision" })
 }
 
 # Guard-level matrix for Assert-E2EDatabaseIsDedicated. Every row runs through Invoke-IsolatedGuard,
@@ -280,6 +370,33 @@ Describe "Dedicated E2E database guard" {
         function Get-SeparateDiagnostic {
             param([string]$Key, [string]$E2EDatabaseName = "edfi_dms")
             "E2E database '$E2EDatabaseName' in '$script:environmentFileLabel' must stay separate from $Key."
+        }
+
+        function Get-CollisionDiagnostic {
+            param([string]$Key)
+            if ($Key -in @("POSTGRES_DB_NAME", "MSSQL_DB_NAME")) {
+                Get-DedicatedDiagnostic -Key $Key
+            }
+            else {
+                Get-SeparateDiagnostic -Key $Key
+            }
+        }
+
+        function Get-DomainDiagnostic {
+            param([string]$Key)
+            $source = if ($Key -in @("POSTGRES_DB_NAME", "MSSQL_DB_NAME")) { $Key } else { "the database name from $Key" }
+            "E2E database safety check cannot prove $source in '$script:environmentFileLabel' dedicated: after trailing whitespace is removed it contains characters outside the guard's supported comparison domain (ASCII letters, digits, underscore); refusing a destructive reset. The value is withheld."
+        }
+
+        function Get-GuardRejectionMessage {
+            param([hashtable]$EnvironmentValues)
+            try {
+                Invoke-IsolatedGuard -EnvironmentValues $EnvironmentValues
+            }
+            catch {
+                return $_.Exception.Message
+            }
+            throw "The guard accepted a configuration it must reject."
         }
     }
 
@@ -450,6 +567,66 @@ Describe "Dedicated E2E database guard" {
         ) {
             { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = "Server=s;Database=`"edfi_dms_admin $([char]0x3000)`";User Id=sa" } } |
                 Should -Not -Throw
+        }
+    }
+
+    Context "comparison domain: candidates the guard accepted before the domain check" {
+        It "refuses <Key> = <Label> with the domain diagnostic" -ForEach $script:domainRefusalRows {
+            { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = $Value } } |
+                Should -Throw -ExpectedMessage (Get-DomainDiagnostic -Key $Key)
+        }
+
+        It "withholds the refused <Key> value from the domain diagnostic" -ForEach @(
+            @{ Key = "POSTGRES_DB_NAME"; Value = "edfi-zqmarker" }
+            @{ Key = "MSSQL_DB_NAME"; Value = "edfi-zqmarker" }
+            @{ Key = "DATABASE_CONNECTION_STRING_ADMIN"; Value = "Server=s;Database=edfi-zqmarker;User Id=sa" }
+            @{ Key = "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"; Value = "Server=s;Database=edfi-zqmarker;User Id=sa" }
+        ) {
+            $message = Get-GuardRejectionMessage -EnvironmentValues @{ $Key = $Value }
+
+            $message | Should -Be (Get-DomainDiagnostic -Key $Key)
+            $message | Should -Not -Match "zqmarker"
+        }
+    }
+
+    Context "comparison domain: verdicts the guard already gives" {
+        It "rejects <Key> = <Label> with the collision or the domain diagnostic" -ForEach $script:alreadyRejectedRows {
+            Get-GuardRejectionMessage -EnvironmentValues @{ $Key = $Value } |
+                Should -BeIn @((Get-CollisionDiagnostic -Key $Key), (Get-DomainDiagnostic -Key $Key))
+        }
+
+        # The domain check runs only after every key's collision check, so these configurations keep
+        # the collision diagnostic although a candidate checked earlier is outside the domain.
+        It "reports the MSSQL_DB_NAME collision although POSTGRES_DB_NAME, checked first, is outside the domain" {
+            { Invoke-IsolatedGuard -EnvironmentValues @{ POSTGRES_DB_NAME = "edfi-other"; MSSQL_DB_NAME = "EDFI_DMS" } } |
+                Should -Throw -ExpectedMessage (Get-DedicatedDiagnostic -Key "MSSQL_DB_NAME")
+        }
+
+        It "reports the <Key> collision although POSTGRES_DB_NAME is outside the domain" -ForEach @(
+            @{ Key = "DATABASE_CONNECTION_STRING_ADMIN" }
+            @{ Key = "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" }
+        ) {
+            { Invoke-IsolatedGuard -EnvironmentValues @{ POSTGRES_DB_NAME = "edfi-other"; $Key = "Server=s;Database=edfi_dms;User Id=sa" } } |
+                Should -Throw -ExpectedMessage (Get-SeparateDiagnostic -Key $Key)
+        }
+
+        It "reports the <Key> Initial Catalog collision although its Database is outside the domain" -ForEach @(
+            @{ Key = "DATABASE_CONNECTION_STRING_ADMIN" }
+            @{ Key = "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" }
+        ) {
+            { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = "Server=s;Database=edfi-other;Initial Catalog=edfi_dms;User Id=sa" } } |
+                Should -Throw -ExpectedMessage (Get-SeparateDiagnostic -Key $Key)
+        }
+
+        It "accepts <Key> naming the in-domain distinct database '<Name>'" -ForEach @(
+            foreach ($name in @("edfi_dms_other", "EDFI_ODS_2")) {
+                @{ Key = "POSTGRES_DB_NAME"; Name = $name; Value = $name }
+                @{ Key = "MSSQL_DB_NAME"; Name = $name; Value = "`"$name`"" }
+                @{ Key = "DATABASE_CONNECTION_STRING_ADMIN"; Name = $name; Value = "Server=s;Database=$name;User Id=sa" }
+                @{ Key = "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"; Name = $name; Value = "Host=h;DB='$name';Username=u" }
+            }
+        ) {
+            { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = $Value } } | Should -Not -Throw
         }
     }
 

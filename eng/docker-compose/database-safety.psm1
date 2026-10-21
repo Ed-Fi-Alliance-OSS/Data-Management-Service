@@ -1450,6 +1450,7 @@ function Get-DatabaseNameFromConnectionString {
 $script:SqlServerTrailingPaddingCharacters = [char[]]@(0x0020, 0x3000)
 # PostgreSQL 16's lexer ends an unquoted identifier at U+0020, TAB, LF, CR and FF.
 $script:PostgresUnquotedTrailingWhitespaceCharacters = [char[]]@(0x0020, 0x0009, 0x000A, 0x000D, 0x000C)
+$script:E2EGuardTrailingCharacters = [char[]]($script:SqlServerTrailingPaddingCharacters + $script:PostgresUnquotedTrailingWhitespaceCharacters)
 
 function Test-E2EDatabaseNameCollidesWithProtectedName {
     <#
@@ -1474,16 +1475,48 @@ function Test-E2EDatabaseNameCollidesWithProtectedName {
         [Parameter(Mandatory)] [AllowEmptyString()] [string]$ProtectedDatabaseName
     )
 
-    $trailingCharacters = [char[]]($script:SqlServerTrailingPaddingCharacters + $script:PostgresUnquotedTrailingWhitespaceCharacters)
-
-    $normalizedProtectedName = $ProtectedDatabaseName.TrimEnd($trailingCharacters)
+    $normalizedProtectedName = $ProtectedDatabaseName.TrimEnd($script:E2EGuardTrailingCharacters)
     if ($normalizedProtectedName.Length -eq 0) {
         return $false
     }
 
     # Assert-SafeDatabaseName lets an E2E name carry one trailing LF (its '$' anchor matches before a
     # final newline), so the E2E side is trimmed with the same set.
-    return $E2EDatabaseName.TrimEnd($trailingCharacters) -ieq $normalizedProtectedName
+    return $E2EDatabaseName.TrimEnd($script:E2EGuardTrailingCharacters) -ieq $normalizedProtectedName
+}
+
+function Test-E2EGuardComparisonDomain {
+    <#
+    .SYNOPSIS
+        Returns true when a name is non-empty and made only of ASCII letters, digits and underscore,
+        the domain in which the dedicated-E2E guard's comparison is complete.
+
+    .DESCRIPTION
+        Each character is tested by code point against explicit ranges, with no regex anchor, culture
+        or case folding, so a trailing LF, the Kelvin sign or a full-width letter is outside the
+        domain. Nothing is removed here: the guard passes a name whose trailing characters the
+        comparer's sets have already removed.
+    #>
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string]$DatabaseName
+    )
+
+    if ($DatabaseName.Length -eq 0) {
+        return $false
+    }
+
+    foreach ($character in $DatabaseName.ToCharArray()) {
+        $codePoint = [int]$character
+        $isInDomain = ($codePoint -ge 0x41 -and $codePoint -le 0x5A) -or
+            ($codePoint -ge 0x61 -and $codePoint -le 0x7A) -or
+            ($codePoint -ge 0x30 -and $codePoint -le 0x39) -or
+            $codePoint -eq 0x5F
+        if (-not $isInDomain) {
+            return $false
+        }
+    }
+
+    return $true
 }
 
 function Assert-E2EDatabaseIsDedicated {
@@ -1518,6 +1551,8 @@ function Assert-E2EDatabaseIsDedicated {
     # letters, digits and underscore. A false positive costs a rename; a false negative drops shared
     # state. The guard fails closed: a protected key that is configured (in the file or the ambient
     # environment) but cannot be resolved throws rather than silently skipping the collision check.
+    $comparisonDomainCandidates = [System.Collections.Generic.List[object]]::new()
+
     foreach ($databaseNameKey in @("POSTGRES_DB_NAME", "MSSQL_DB_NAME")) {
         if (-not (Test-ProtectedKeyConfigured -EnvironmentValues $EnvironmentValues -Name $databaseNameKey)) {
             continue
@@ -1536,6 +1571,8 @@ function Assert-E2EDatabaseIsDedicated {
         if (Test-E2EDatabaseNameCollidesWithProtectedName -E2EDatabaseName $E2EDatabaseName -ProtectedDatabaseName $protectedDatabaseName) {
             throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must be dedicated and cannot match $databaseNameKey."
         }
+
+        $comparisonDomainCandidates.Add([pscustomobject]@{ Source = $databaseNameKey; DatabaseName = $protectedDatabaseName })
     }
 
     foreach ($connectionStringKey in @(
@@ -1577,6 +1614,26 @@ function Assert-E2EDatabaseIsDedicated {
             if (Test-E2EDatabaseNameCollidesWithProtectedName -E2EDatabaseName $E2EDatabaseName -ProtectedDatabaseName $connectionStringDatabaseName) {
                 throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must stay separate from $connectionStringKey."
             }
+
+            $comparisonDomainCandidates.Add([pscustomobject]@{ Source = "the database name from $connectionStringKey"; DatabaseName = $connectionStringDatabaseName })
+        }
+    }
+
+    # A protected name the comparer cannot fully model is refused rather than compared. Once the
+    # comparer's trailing characters are removed, every candidate must be made only of ASCII letters,
+    # digits and underscore. MssqlCollationParity.Tests.ps1 measures that, on the pinned
+    # SQL_Latin1_General_CP1_CI_AS collation, printable ASCII has no equal pair other than the 26 case
+    # pairs, no zero-weight character and no expansion, so two names in that domain are the same
+    # database there only when they differ by case, which -ieq covers. Outside it, forms such as
+    # full-width letters and trailing emoji compare equal there although -ieq calls them distinct.
+    # Other collations and servers are unmeasured. This runs after every key's collision check, so a
+    # configuration rejected as a collision keeps that diagnostic. Compatibility cost: a protected
+    # name with punctuation, leading or embedded whitespace, or any non-ASCII character blocks E2E
+    # provisioning. The refused value is withheld from the message.
+    foreach ($candidate in $comparisonDomainCandidates) {
+        $normalizedCandidate = $candidate.DatabaseName.TrimEnd($script:E2EGuardTrailingCharacters)
+        if (-not (Test-E2EGuardComparisonDomain -DatabaseName $normalizedCandidate)) {
+            throw "E2E database safety check cannot prove $($candidate.Source) in '$EnvironmentFilePath' dedicated: after trailing whitespace is removed it contains characters outside the guard's supported comparison domain (ASCII letters, digits, underscore); refusing a destructive reset. The value is withheld."
         }
     }
 }
