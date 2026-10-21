@@ -30,7 +30,8 @@
     carries no SCHEMA_PACKAGES). An already-staged standard-mode workspace is reused only while
     its recorded package identity still matches the effective SCHEMA_PACKAGES value. A mismatch
     stops before package downloads or Docker/CMS side effects with guidance to stop the stack and
-    remove `eng/docker-compose/.bootstrap`; guarded automatic replacement belongs to DMS-1271.
+    remove `eng/docker-compose/.bootstrap`. Guarded whole-workspace replacement exists only in
+    restore mode (`-RestoreTemplate`), which regenerates schema, claims, and seed state together.
     Expert `-ApiSchemaPath` workspaces are reused as-is. There is no
     `-Extensions` parameter; custom or unpublished schema sets are staged via expert
     `-ApiSchemaPath` before invoking the wrapper. All staging is delegated to
@@ -94,6 +95,22 @@
     Multi-instance school-year range (e.g. "2024-2025"). Forwarded to
     `start-published-dms.ps1`; when seed loading is requested, every year in the range is
     also passed to the seed phase via `-SchoolYear`.
+
+.PARAMETER RestoreTemplate
+    Restore mode. Restores the DMS datastore from a trusted database-template package of this
+    kind (Minimal or Populated) before services start, instead of provisioning an empty schema.
+    Mutually exclusive with -NoDataStore and -SchoolYearRange. Combining -LoadSeedData opts
+    into the explicit supplemental seed and requires its own -SeedTemplate or -SeedDataPath.
+    Refused with -EnableKafkaCdc (a restore skips the provision phase that produces the CDC
+    provisioning receipt) and, on PostgreSQL only, while POSTGRES_USE_TMPFS=true (the restored
+    database would live in container memory and be lost when the database container restarts
+    after the restore).
+
+.PARAMETER PackageDirectory
+    Restore mode. Explicit local package source: a directory holding exactly one matching
+    template .nupkg and its sibling attestation document. Requires -RestoreTemplate. Without
+    it, restore mode resolves the package from the configured NuGet feed using
+    DATABASE_TEMPLATE_PACKAGE / DATABASE_TEMPLATE_NUGET_VERSION.
 
 .PARAMETER DatabaseEngine
     Database engine for the whole stack ("postgresql" or "mssql"). Forwarded to
@@ -182,7 +199,14 @@ param(
     # custom -EnvironmentFile. Distinct from start-published-dms.ps1 -DataStandardVersion, whose
     # shared .env.ds<NN> overlays carry the E2E/SDK surfaces (Sample/Homograph test extensions).
     [ValidateSet("5.2", "6.1")]
-    [string]$DataStandardVersion = "5.2"
+    [string]$DataStandardVersion = "5.2",
+
+    # Restore mode; see .PARAMETER RestoreTemplate / .PARAMETER PackageDirectory above.
+    # Forwarded to Invoke-BootstrapWrapper, which owns every restore-mode preflight.
+    [ValidateSet("Minimal", "Populated")]
+    [string]$RestoreTemplate,
+
+    [string]$PackageDirectory
 )
 
 $ErrorActionPreference = "Stop"
@@ -205,6 +229,11 @@ trap {
 }
 
 if ($v -and -not $d) { throw '-v requires -d.' }
+# Teardown is destructive and a restore request beside it is ambiguous: refuse before any
+# teardown or retained-CDC lifecycle dispatch.
+if ($d -and ($PSBoundParameters.ContainsKey('RestoreTemplate') -or $PSBoundParameters.ContainsKey('PackageDirectory'))) {
+    throw '-d cannot be combined with -RestoreTemplate or -PackageDirectory. Run teardown and restore as separate invocations.'
+}
 if ((-not $EnableKafkaCdc -or $d) -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot '.cdc-deployments/dms-published.json'))) {
     Import-Module (Join-Path $PSScriptRoot 'cdc-lifecycle.psm1')
     $lifecycleArgs = @{} + $PSBoundParameters

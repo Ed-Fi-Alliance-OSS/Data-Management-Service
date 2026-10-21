@@ -161,6 +161,8 @@ Describe "verify-template-restore.ps1 dms.Document shape checks" -ForEach $scrip
             Import-Module (Join-Path $script:templatesDir "Template-Management.psm1") -Force
             Import-Module (Join-Path $script:templatesDir "../Dms-Management.psm1") -Force
             Import-Module (Join-Path $script:templatesDir "Template-Schema.psm1") -Force
+            Import-Module (Join-Path $script:templatesDir "Template-RestoreCore.psm1") -Force
+            Import-Module (Join-Path $script:templatesDir "Template-RestoreTrust.psm1") -Force
         }
         finally {
             Pop-Location
@@ -180,6 +182,19 @@ Describe "verify-template-restore.ps1 dms.Document shape checks" -ForEach $scrip
         Mock Get-TemplateSchemaAssertionSql { 'catalog assertions' }
         Mock Get-UserSchemaNames { @('dms', 'edfi') }
         Mock Restore-TemplatePackage { $callLog.Add('Restore-TemplatePackage'); 'Fake.nupkg' }
+        # The packaged restore manifest is verified against the restored database before the
+        # API probe; its own contract and ordering are pinned in Template-Schema.Tests.ps1.
+        Mock Get-ChildItem -ParameterFilter { $Filter -eq '*.nupkg' } { [pscustomobject]@{ Name = 'Fake.nupkg'; FullName = 'Fake.nupkg' } }
+        Mock Get-ChildItem -ParameterFilter { $Path -like '*template-manifest-verify-*' } { [pscustomobject]@{ Name = 'entry'; FullName = 'entry' } }
+        Mock Copy-Item {}
+        Mock Expand-Archive {}
+        Mock Read-RestoreManifest {
+            [pscustomobject]@{ templateKind = 'Minimal'; databaseEngine = $engine; artifactFileName = 'dump'; artifactSha256 = 'sha'; projects = @('ed-fi') }
+        }
+        Mock Get-FileSha256Hex { 'sha' }
+        Mock Get-TemplateSourceCatalogFacts { [pscustomobject]@{ FullInventory = @(); DatabaseLevelObjects = @() } }
+        Mock Assert-DmsOnlyInventory { [pscustomobject]@{ ProjectSchemaNames = @('ed-fi') } }
+        Mock Assert-RestoreManifestMatchesDatabase {}
         # Serves the Invoke-*Scalar count queries and `docker restart`.
         Mock docker { $global:LASTEXITCODE = 0; '1' }
         Mock Get-CmsToken { $callLog.Add('Get-CmsToken'); 'cms-token' }
@@ -196,7 +211,7 @@ Describe "verify-template-restore.ps1 dms.Document shape checks" -ForEach $scrip
         It "(f1) a source shape failure stops the script before the restore" {
             Mock Assert-DocumentTableShape { throw "dms.Document in $DatabaseEngine database '$DatabaseName' still carries CreatedAt." } -ParameterFilter { $DatabaseName -eq 'src_db' }
 
-            { & $script:verifyScript -SourceDatabaseName src_db -PackageDirectory $TestDrive -ExpectedModelManifestPath $manifest -DatabaseEngine $engine } |
+            { & $script:verifyScript -SourceDatabaseName src_db -PackageDirectory $TestDrive -ExpectedTemplateKind Minimal -ExpectedModelManifestPath $manifest -DatabaseEngine $engine } |
                 Should -Throw "*database 'src_db' still carries CreatedAt*"
 
             Should -Invoke Assert-DocumentTableShape -Times 1 -Exactly -ParameterFilter { $DatabaseName -eq 'src_db' -and $DatabaseEngine -eq $engine }
@@ -207,7 +222,7 @@ Describe "verify-template-restore.ps1 dms.Document shape checks" -ForEach $scrip
         It "(f2) a restored shape failure stops the script before the API probe" {
             Mock Assert-DocumentTableShape { throw "dms.Document in $DatabaseEngine database '$DatabaseName' still carries CreatedAt." } -ParameterFilter { $DatabaseName -eq 'template_restore_verification' }
 
-            { & $script:verifyScript -SourceDatabaseName src_db -PackageDirectory $TestDrive -ExpectedModelManifestPath $manifest -DatabaseEngine $engine } |
+            { & $script:verifyScript -SourceDatabaseName src_db -PackageDirectory $TestDrive -ExpectedTemplateKind Minimal -ExpectedModelManifestPath $manifest -DatabaseEngine $engine } |
                 Should -Throw "*database 'template_restore_verification' still carries CreatedAt*"
 
             Should -Invoke Restore-TemplatePackage -Times 1 -Exactly
@@ -217,7 +232,7 @@ Describe "verify-template-restore.ps1 dms.Document shape checks" -ForEach $scrip
         }
 
         It "(f3) checks the source before the restore and the restored database before the API probe" {
-            { & $script:verifyScript -SourceDatabaseName src_db -PackageDirectory $TestDrive -ExpectedModelManifestPath $manifest -DatabaseEngine $engine } |
+            { & $script:verifyScript -SourceDatabaseName src_db -PackageDirectory $TestDrive -ExpectedTemplateKind Minimal -ExpectedModelManifestPath $manifest -DatabaseEngine $engine } |
                 Should -Not -Throw
 
             ($callLog -join ' > ') | Should -Be (@(

@@ -115,7 +115,7 @@ feature detection from the inspected package may replace it.
   Both kinds contain the full generated physical schema. Use fresh databases provisioned from
   the changed DDL, the existing template workflows, and current supported engine versions. Cover
   every supported template Data Standard and its configured core/extension schema set; this does
-  not require the PostgreSQL upgrade or DMS-1271's future bootstrap-restore implementation.
+  not require the PostgreSQL upgrade or DMS-1271's bootstrap `-RestoreTemplate` workflow.
 - Extend `eng/DatabaseTemplates/verify-template-restore.ps1` with provider-catalog assertions
   before the API probes. In both the source and restored databases, require `dms.Document` to
   exist, `ContentLastModifiedAt` to be absent, `ContentVersion` to remain, and the expected

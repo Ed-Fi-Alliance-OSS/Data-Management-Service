@@ -253,6 +253,11 @@ Describe "Assert-TemplateWorkflowInputs" {
             "eng/docker-compose/.env.template*",
             "eng/docker-compose/bootstrap-claims-gate.psm1",
             "eng/docker-compose/bootstrap-manifest.psm1",
+            # Template-Management.psm1 imports bootstrap-restore.psm1, which imports the other
+            # two, so a change to any of them must rebuild every template package.
+            "eng/docker-compose/bootstrap-package-resolver.psm1",
+            "eng/docker-compose/bootstrap-restore.psm1",
+            "eng/docker-compose/bootstrap-schema-tool.psm1",
             "eng/docker-compose/env-utility.psm1",
             "eng/docker-compose/local-config.yml",
             "eng/docker-compose/local-dms.yml",

@@ -57,6 +57,23 @@ on:
         # Consumed only on the release-promotion path (env.ARTIFACTS_USERNAME); restore uses the PAT
         # alone. Optional so non-publishing callers and forks without the secret do not hard-fail.
         required: false
+      TEMPLATE_ATTESTATION_PRIVATE_KEY:
+        # PKCS#8 ECDSA P-256 private key (PEM) for the 'edfi-alliance-ci' trust-policy
+        # producer. Optional: without it the build is UNATTESTED (loud notice) and restore
+        # consumers refuse the published package (fail-closed). Callers pass it by name. It must
+        # exist ONLY as a secret of the 'template-attestation-signing' environment, never as a
+        # repository or organization secret, because the ref check in this workflow is not a
+        # security boundary: a ref name such as refs/tags/v* does not show that its commit was
+        # reviewed. GitHub releases an environment secret only after the environment's
+        # protection rules pass, so an administrator configures that environment, before
+        # installing the key, with required reviewers (self-review prevented), deployment refs
+        # limited to main and the release tag pattern, and an enforced tag ruleset that lets
+        # only authorized release maintainers create, update, or delete release tags; reviewers
+        # approve a signing deployment only after verifying that its commit is approved.
+        # Generate with eng/DatabaseTemplates/new-template-dev-trust.ps1 -Purpose CI; the
+        # matching public key belongs in eng/docker-compose/template-trust-policy.json via a
+        # reviewed commit.
+        required: false
     outputs:
       hash-code:
         description: "Hash code of the built package"
@@ -84,6 +101,10 @@ jobs:
   build-template:
     name: Build Minimal Template Package
     if: ${{ github.event_name != 'release' }}
+    # The template is generated, verified, and packed here, on a runner that never holds the
+    # signing key: this job has no environment, so the CI key (an environment secret of
+    # 'template-attestation-signing') is unreachable. sign-template-package attests the
+    # packed bytes afterwards on a fresh runner.
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -91,6 +112,8 @@ jobs:
     outputs:
       hash-code: ${{ steps.hash-code.outputs.hash-code }}
       dms-version: ${{ steps.versions.outputs.dms-v }}
+      package-version: ${{ steps.package-identity.outputs.package-version }}
+      package-sha256: ${{ steps.package-identity.outputs.package-sha256 }}
     steps:
       - name: Checkout the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -241,9 +264,21 @@ jobs:
             throw "DMS did not become ready within the timeout period"
           }
 
+      # Generation and packing run without signing credentials; the next step attests the
+      # completed package.
       - name: Generate Minimal Template package
         run: |
           Import-Module ./Template-Management.psm1 -Force
+
+          # The producer compares the source database with the DDL of the schema files it was
+          # provisioned from, so resolve the same SCHEMA_PACKAGES set the provision step used.
+          Import-Module ../schema-package-utility.psm1 -Force
+          $schemaFiles = @(Resolve-SchemaFilesFromEnvironmentFile `
+                  -EnvironmentFilePath '../docker-compose/${{ inputs.environment_file }}' `
+                  -Configuration Release `
+                  -RepoRoot '${{ github.workspace }}' `
+                  -SchemaDirectory (Join-Path $env:RUNNER_TEMP 'template-source-schema') `
+                  -DownloaderDotnetRunArgs @('--no-launch-profile'))
 
           # Generate unique application name for this run
           $uniqueAppName = "Demo application ${{ github.run_id }}"
@@ -262,8 +297,27 @@ jobs:
                   -DataStoreDatabaseName $env:RELATIONAL_DB_NAME `
                   -DataStoreId $env:RELATIONAL_DATA_STORE_ID `
                   -DumpAllUserSchemas `
-                  -DatabaseEngine '${{ inputs.database_engine }}'
+                  -DatabaseEngine '${{ inputs.database_engine }}' `
+                  -SchemaFilePath $schemaFiles
         working-directory: eng/DatabaseTemplates/
+
+      # Signing never runs in this job. The job-level gate on sign-template-package decides
+      # whether the packed template is attested; this step only says loudly when it will not
+      # be, because restore consumers refuse an unattested package (fail-closed).
+      - name: Report template signing plan
+        env:
+          SIGNING_ELIGIBLE: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+          SIGNING_ENABLED: ${{ vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED == 'true' }}
+        run: |
+          if ($env:SIGNING_ELIGIBLE -ne 'true') {
+            Write-Host "::notice title=Unattested template build::Only main and v*.*.* tag runs (never pull requests) sign template packages; this template package will be UNATTESTED and restore consumers will refuse it (fail-closed)."
+          }
+          elseif ($env:SIGNING_ENABLED -ne 'true') {
+            Write-Host "::notice title=Unattested template build::The TEMPLATE_ATTESTATION_SIGNING_ENABLED repository variable is not 'true', so signing is skipped; this template package will be UNATTESTED and restore consumers will refuse it (fail-closed)."
+          }
+          else {
+            Write-Host "sign-template-package attests this template package after the build, on a separate runner."
+          }
 
       # A loader that exits 0 does not guarantee it wrote anything: gate on descriptor content
       # here, before the package is uploaded or published, so an empty bulk load cannot slip
@@ -322,7 +376,7 @@ jobs:
           # Validate the full implementation baseline and retain the exact SQL used by both gates.
           ./Assert-TemplateSchema.ps1 -ExpectedModelManifestPath $modelManifest -DatabaseEngine '${{ inputs.database_engine }}' -RenderSql |
             Set-Content (Join-Path $evidenceDirectory 'catalog-assertions.sql')
-          $packages = @(Get-ChildItem -LiteralPath . -Filter '*.nupkg')
+          $packages = @(Get-ChildItem -LiteralPath . -Filter '*.nupkg' | Where-Object { $_.Name -notlike '*.Attestation.*' })
           if ($packages.Count -ne 1) { throw "Expected exactly one template package for this leg." }
           $engineContainer = if ($dialect -eq 'mssql') { 'dms-mssql' } else { 'dms-postgresql' }
           $engineImage = & docker inspect $engineContainer --format '{{.Config.Image}} {{.Image}}'
@@ -347,6 +401,7 @@ jobs:
           $verifyParams = @{
             SourceDatabaseName = $env:RELATIONAL_DB_NAME
             DatabaseEngine = '${{ inputs.database_engine }}'
+            ExpectedTemplateKind = 'Minimal'
             ExpectedModelManifestPath = $modelManifest
           }
           Start-Transcript -Path (Join-Path $evidenceDirectory 'verification.log')
@@ -404,12 +459,26 @@ jobs:
           "hash-code=$(sha256sum *.nupkg | base64 -w0)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
         working-directory: eng/DatabaseTemplates/
 
+      # The signing job attests only these bytes: it compares the downloaded package with this
+      # hash before and after signing.
+      - name: Record template package identity
+        id: package-identity
+        run: |
+          $packages = @(Get-ChildItem -LiteralPath . -Filter '*.nupkg')
+          if ($packages.Count -ne 1) {
+            throw "Expected exactly one template package to hand to signing; found $($packages.Count)."
+          }
+          "package-version=$('${{ steps.versions.outputs.dms-semver }}' -replace 'dms-v', '')" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "package-sha256=$((Get-FileHash -LiteralPath $packages[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+        working-directory: eng/DatabaseTemplates/
+
       - name: Upload Minimal Template Package as Artifact
         if: success()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: "${{ inputs.package_name }}-NuGet"
-          path: ${{ github.workspace }}/eng/DatabaseTemplates/*.nupkg
+          path: |
+            ${{ github.workspace }}/eng/DatabaseTemplates/*.nupkg
           if-no-files-found: error
           retention-days: 30
 
@@ -484,13 +553,193 @@ jobs:
       # TODO: remove this after this issue is resolved: https://github.com/slsa-framework/slsa-github-generator/issues/876
       compile-generator: true
 
+  # Signing is requested only for main pushes and dispatches and v*.*.* tag refs, never for
+  # pull_request, and only while the non-secret repository variable
+  # TEMPLATE_ATTESTATION_SIGNING_ENABLED is 'true'. The variable is a configuration gate, not a
+  # trust decision: an intentionally unsigned run skips this job entirely instead of waiting for
+  # an environment approval, and a run that cannot sign fails here rather than publishing
+  # unattested. Matching a ref name is not enough to authorize signing either. The boundary is
+  # the environment's protection rules (required reviewers without self-review,
+  # deployment-ref restrictions, an enforced release-tag ruleset, and reviewer verification that
+  # the commit is approved), which GitHub checks before releasing the secret and which pull
+  # request code cannot edit. Approval applies to this whole job, so it runs on a fresh runner
+  # that only downloads the packed template and attests those exact bytes: it runs no template
+  # build, database artifact, dependency restore, or package packing.
+  sign-template-package:
+    name: Sign Minimal Template Package
+    needs: build-template
+    if: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED == 'true' }}
+    environment: template-attestation-signing
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Get Minimal Template Package Artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.package_name }}-NuGet
+          path: eng/DatabaseTemplates/
+
+      # The key file lands under RUNNER_TEMP, is created owner-only (0600) before any key byte
+      # is written, and is removed in finally whether signing succeeds or fails. The package is
+      # hashed against build-template's record before signing and again after it, and the
+      # attestation must bind that same hash, so the signed bytes are the built bytes.
+      - name: Attest template package
+        id: attestation-signer
+        env:
+          TEMPLATE_ATTESTATION_PRIVATE_KEY: ${{ secrets.TEMPLATE_ATTESTATION_PRIVATE_KEY }}
+          EXPECTED_PACKAGE_SHA256: ${{ needs.build-template.outputs.package-sha256 }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TEMPLATE_ATTESTATION_PRIVATE_KEY)) {
+            throw "TEMPLATE_ATTESTATION_SIGNING_ENABLED is 'true' but TEMPLATE_ATTESTATION_PRIVATE_KEY is not configured in the 'template-attestation-signing' environment; refusing to continue without signing. Install the key, or clear the variable for unattested builds."
+          }
+
+          Import-Module ./Template-Management.psm1 -Force
+          $config = Get-TemplatePackageConfig -ConfigFilePath './MinimalTemplateSettings.psd1' -StandardVersion '${{ inputs.standard_version }}' -DatabaseEngine '${{ inputs.database_engine }}'
+          $packageVersion = '${{ needs.build-template.outputs.package-version }}'
+          $packageFileName = "$($config.Id).$packageVersion.nupkg"
+
+          $packages = @(Get-ChildItem -LiteralPath . -Filter '*.nupkg')
+          if ($packages.Count -ne 1 -or $packages[0].Name -cne $packageFileName) {
+            throw "Expected exactly the template package '$packageFileName' from build-template; found: $(@($packages.Name) -join ', ')."
+          }
+          $packageSha256 = (Get-FileHash -LiteralPath $packages[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($packageSha256 -cne $env:EXPECTED_PACKAGE_SHA256) {
+            throw "The downloaded template package does not match the bytes build-template packed; refusing to sign it."
+          }
+
+          $signerKeyPath = Join-Path $env:RUNNER_TEMP "template-attestation-signer.pem"
+          try {
+            # CreateNew with an owner-only mode: the file is 0600 from creation, before any key
+            # byte is written, and a file already at that path is refused.
+            $keyFileOptions = [System.IO.FileStreamOptions]@{
+              Mode   = [System.IO.FileMode]::CreateNew
+              Access = [System.IO.FileAccess]::Write
+            }
+            $keyFileOptions.UnixCreateMode = [System.IO.UnixFileMode]'UserRead, UserWrite'
+            $keyFile = [System.IO.FileStream]::new($signerKeyPath, $keyFileOptions)
+            try {
+              $keyBytes = [System.Text.UTF8Encoding]::new($false).GetBytes($env:TEMPLATE_ATTESTATION_PRIVATE_KEY)
+              $keyFile.Write($keyBytes, 0, $keyBytes.Length)
+            }
+            finally {
+              $keyFile.Dispose()
+            }
+
+            $attestationPath = Write-TemplatePackageAttestation `
+                    -Config $config `
+                    -PackageVersion $packageVersion `
+                    -BackupDirectory './' `
+                    -AttestationSignerKeyPath $signerKeyPath `
+                    -AttestationProducer 'edfi-alliance-ci'
+          }
+          finally {
+            if (Test-Path -LiteralPath $signerKeyPath) {
+              Remove-Item -LiteralPath $signerKeyPath -Force
+            }
+          }
+
+          if ((Get-FileHash -LiteralPath $packages[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant() -cne $packageSha256) {
+            throw "The template package changed while it was attested; refusing to hand on the attestation."
+          }
+          $attestation = Get-Content -LiteralPath $attestationPath -Raw | ConvertFrom-Json
+          $payload = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String([string]$attestation.payloadB64)) | ConvertFrom-Json
+          if ([string]$payload.packageSha256 -cne $packageSha256) {
+            throw "The attestation does not bind the template package bytes build-template packed."
+          }
+        working-directory: eng/DatabaseTemplates/
+
+      # Backstop for a runner that stops the signing step before its finally runs.
+      - name: Remove attestation signing key
+        if: always()
+        run: |
+          $signerKeyPath = Join-Path $env:RUNNER_TEMP "template-attestation-signer.pem"
+          if (Test-Path -LiteralPath $signerKeyPath) {
+            Remove-Item -LiteralPath $signerKeyPath -Force
+          }
+
+      - name: Upload template attestation document
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: "${{ inputs.package_name }}-AttestationDocument"
+          path: ${{ github.workspace }}/eng/DatabaseTemplates/*.nupkg.attestation.json
+          if-no-files-found: error
+          retention-days: 30
+
+  # The companion attestation package runs dotnet restore and dotnet pack, so it is built on its
+  # own runner, which never receives the signing key, from the signed attestation document.
+  build-attestation-companion:
+    name: Build Minimal Template Attestation Companion
+    needs:
+      - build-template
+      - sign-template-package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Get template attestation document
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.package_name }}-AttestationDocument
+          path: eng/DatabaseTemplates/
+
+      - name: Build attestation companion package
+        run: |
+          Import-Module ./Template-Management.psm1 -Force
+          $config = Get-TemplatePackageConfig -ConfigFilePath './MinimalTemplateSettings.psd1' -StandardVersion '${{ inputs.standard_version }}' -DatabaseEngine '${{ inputs.database_engine }}'
+          $packageVersion = '${{ needs.build-template.outputs.package-version }}'
+          $attestationPath = Join-Path (Resolve-Path -LiteralPath .).ProviderPath "$($config.Id).$packageVersion.nupkg.attestation.json"
+          Build-TemplateAttestationCompanionPackage `
+                  -Config $config `
+                  -PackageVersion $packageVersion `
+                  -BackupDirectory './' `
+                  -AttestationPath $attestationPath | Out-Null
+        working-directory: eng/DatabaseTemplates/
+
+      - name: Upload attestation companion package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: "${{ inputs.package_name }}-Attestation"
+          path: |
+            ${{ github.workspace }}/eng/DatabaseTemplates/*.nupkg
+            ${{ github.workspace }}/eng/DatabaseTemplates/*.nupkg.attestation.json
+          if-no-files-found: error
+          retention-days: 30
+
   publish-template-package:
     name: Publish Minimal Template Package
-    if: ${{ inputs.publish_package }}
+    # A signed run publishes only after signing and its companion succeed, so the template
+    # never reaches the feed without the matching companion. An intentionally unsigned run
+    # (sign-template-package skipped by its gate) publishes unattested as before. A failed or
+    # cancelled signing or companion job publishes nothing.
+    if: ${{ !cancelled() && inputs.publish_package && needs.build-template.result == 'success' && needs.generate-package-sbom.result == 'success' && needs.generate-package-provenance.result == 'success' && ((needs.sign-template-package.result == 'skipped' && needs.build-attestation-companion.result == 'skipped') || (needs.sign-template-package.result == 'success' && needs.build-attestation-companion.result == 'success')) }}
     needs:
       - build-template
       - generate-package-sbom
       - generate-package-provenance
+      - sign-template-package
+      - build-attestation-companion
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -504,6 +753,12 @@ jobs:
         with:
           name: ${{ inputs.package_name }}-NuGet
 
+      - name: Get Minimal Template Attestation Artifact
+        if: ${{ needs.build-attestation-companion.result == 'success' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.package_name }}-Attestation
+
       - name: Install-credential-handler
         run: |
           Import-Module ./package-helpers.psm1
@@ -511,15 +766,71 @@ jobs:
 
       - name: Push Minimal Template Package to Azure
         run: |
-          $artifact = (Get-ChildItem -Name -Include *.nupkg)
-          $arguments = @{
-            EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+          $allPackages = @(Get-ChildItem -Name -Include *.nupkg)
+          $companionPackages = @($allPackages | Where-Object { $_ -like "*.Attestation.*" })
+          $templatePackages = @($allPackages | Where-Object { $_ -notlike "*.Attestation.*" })
+          $attestationDocuments = @(Get-ChildItem -Name -Include *.nupkg.attestation.json)
+
+          # Publication coupling: a signed template must never publish without its companion
+          # attestation package. Companions publish FIRST, so the template cannot land on the
+          # feed unless its companion already has; any push failure fails this step.
+          if ($attestationDocuments.Count -gt 0 -and $companionPackages.Count -eq 0) {
+            throw "Attested build artifact carries an attestation document but no companion attestation package; refusing to publish a signed template without its companion."
+          }
+          if ($companionPackages.Count -gt 0 -and $attestationDocuments.Count -eq 0) {
+            throw "Build artifact carries a companion attestation package but no attestation document; refusing to publish an inconsistent artifact."
           }
 
-          $artifact | ForEach-Object {
-              $arguments.PackageFile = $_
-              ./build-dms.ps1 Push @arguments
+          # Duplicate coupling: a rebuild of the same version has different bytes, and
+          # --skip-duplicate would keep a companion left by an earlier partial publication and
+          # pair it with this run's template. With a companion, every package the feed already
+          # holds at this version must be this run's exact bytes, checked before any push; those
+          # are not pushed again, the rest push without --skip-duplicate so a racing push fails.
+          # Unattested Minimal publication keeps its historical behavior (build-dms.ps1 Push,
+          # which never passed --skip-duplicate): pushing a version the feed holds fails.
+          $packagesOnFeed = @()
+          $duplicateHandling = @()
+          if ($companionPackages.Count -gt 0) {
+            $duplicateHandling = @()
+            $feedHeaders = @{ Authorization = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(":$env:ARTIFACTS_API_KEY")) }
+            $packageBaseAddress = @((Invoke-RestMethod -Uri $env:ARTIFACTS_FEED_URL -Headers $feedHeaders).resources |
+                Where-Object { $_.'@type' -like 'PackageBaseAddress/3.0.0*' } | ForEach-Object { $_.'@id' })[0]
+            if ([string]::IsNullOrWhiteSpace($packageBaseAddress)) {
+              throw "The feed's service index advertises no PackageBaseAddress/3.0.0 resource; cannot check for packages already published at this version."
+            }
+            foreach ($package in @($companionPackages) + @($templatePackages)) {
+              $packageId = if ($package -like "*.Attestation.*") { "${{ inputs.package_name }}.Attestation" } else { "${{ inputs.package_name }}" }
+              if (-not $package.StartsWith("$packageId.", [StringComparison]::OrdinalIgnoreCase)) {
+                throw "Package file '$package' is not named for package id '$packageId'."
+              }
+              $lowerId = $packageId.ToLowerInvariant()
+              $lowerVersion = $package.Substring($packageId.Length + 1, $package.Length - $packageId.Length - 7).ToLowerInvariant()
+              $feedCopy = Join-Path $env:RUNNER_TEMP "feed-copy-$lowerId.$lowerVersion.nupkg"
+              $response = Invoke-WebRequest -Uri "$packageBaseAddress$lowerId/$lowerVersion/$lowerId.$lowerVersion.nupkg" -Headers $feedHeaders -OutFile $feedCopy -SkipHttpErrorCheck -PassThru
+              if ($response.StatusCode -eq 404) {
+                continue
+              }
+              if ($response.StatusCode -ne 200) {
+                throw "Checking the feed for $packageId $lowerVersion failed with HTTP $($response.StatusCode)."
+              }
+              if ((Get-FileHash -LiteralPath $feedCopy -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash) {
+                throw "The feed already holds $packageId $lowerVersion with different bytes than this run's package; refusing to publish, because the template and its companion attestation must come from the same build."
+              }
+              $packagesOnFeed += $package
+            }
+          }
+
+          @($companionPackages) + @($templatePackages) | ForEach-Object {
+              if ($packagesOnFeed -contains $_) {
+                Write-Host "$_ is already on the feed with identical bytes; not pushing it again."
+                return
+              }
+              Write-Host "Pushing $_ to ${{ env.ARTIFACTS_FEED_URL }}"
+              $global:LASTEXITCODE = 0
+              dotnet nuget push $_ --api-key "${{ env.ARTIFACTS_API_KEY }}" --source "${{ env.ARTIFACTS_FEED_URL }}" @duplicateHandling
+              if ($LASTEXITCODE -ne 0) {
+                throw "Package push failed for '$_' with exit code $LASTEXITCODE."
+              }
            }
 
   promote-azure-package:
@@ -535,16 +846,41 @@ jobs:
 
       - name: Promote Minimal Template Azure Package
         run: |
+          Import-Module ./package-helpers.psm1
+
+          $releaseVersion = "${{ github.ref_name }}" -replace "v", ""
+          $companionPackageName = "${{ inputs.package_name }}.Attestation"
+          $credential = New-Object -TypeName PSCredential -ArgumentList "${{ env.ARTIFACTS_USERNAME }}", (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
+
+          # Promotion coupling mirrors publication: when the companion attestation package
+          # exists at this version (attested-era release), it promotes FIRST so the template
+          # cannot reach the release view without it. A 404 means an unattested-era release:
+          # the template still promotes and restore consumers refuse it (fail-closed). Any
+          # other probe outcome is fatal rather than guessed at.
+          $probeUri = "${{ env.ARTIFACTS_PACKAGES_URL }}/nuget/packages/$companionPackageName/versions/${releaseVersion}?api-version=5.0-preview.1"
+          $probeResponse = Invoke-WebRequest -Uri $probeUri -Method Get -Credential $credential -SkipHttpErrorCheck
+          $promoteCompanion = $probeResponse.StatusCode -eq 200
+          if (-not $promoteCompanion -and $probeResponse.StatusCode -ne 404) {
+            throw "Companion attestation package probe failed with HTTP $($probeResponse.StatusCode) for $companionPackageName@$releaseVersion."
+          }
+          if (-not $promoteCompanion) {
+            Write-Host "::notice title=Unattested-era release::Companion attestation package $companionPackageName@$releaseVersion is not on the feed; promoting the template package only. Restore consumers refuse unattested packages (fail-closed)."
+          }
+
           $arguments = @{
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
             Username    = "${{ env.ARTIFACTS_USERNAME }}"
             ViewId      = "release"
             ReleaseRef  = "${{ github.ref_name }}"
             Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
-            PackageName = "${{ inputs.package_name }}"
           }
 
-          Import-Module ./package-helpers.psm1
+          if ($promoteCompanion) {
+            $arguments.PackageName = $companionPackageName
+            Invoke-Promote @arguments
+          }
+
+          $arguments.PackageName = "${{ inputs.package_name }}"
           Invoke-Promote @arguments
 
   attach-sbom-and-provenance-to-release:
