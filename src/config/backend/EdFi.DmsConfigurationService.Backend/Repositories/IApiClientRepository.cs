@@ -101,6 +101,12 @@ public record ApiClientUuidSyncResult
     public record FailureStaleState() : ApiClientUuidSyncResult();
 
     /// <summary>
+    /// The target row matched the expected UUID, but another row already references the new UUID;
+    /// nothing was written, and the provider client behind the new UUID belongs to that other row.
+    /// </summary>
+    public record FailureNewUuidInUse() : ApiClientUuidSyncResult();
+
+    /// <summary>
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : ApiClientUuidSyncResult();
@@ -146,6 +152,17 @@ public record ApiClientInsertResult
     /// Another API client of the same application already has this name; nothing was written
     /// </summary>
     public record FailureDuplicateName() : ApiClientInsertResult();
+
+    /// <summary>
+    /// Another API client, under any application or tenant, already has this client key; nothing was written
+    /// </summary>
+    public record FailureDuplicateClientId() : ApiClientInsertResult();
+
+    /// <summary>
+    /// Another API client, under any application or tenant, already references this identity-provider
+    /// client UUID; nothing was written
+    /// </summary>
+    public record FailureDuplicateClientUuid() : ApiClientInsertResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught
@@ -214,6 +231,12 @@ public record ApiClientUpdateResult
     /// Another API client of the same application already has this name; nothing was written
     /// </summary>
     public record FailureDuplicateName() : ApiClientUpdateResult();
+
+    /// <summary>
+    /// The identity-provider client UUID the update would store is already referenced by another API
+    /// client; nothing was written
+    /// </summary>
+    public record FailureDuplicateClientUuid() : ApiClientUpdateResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught

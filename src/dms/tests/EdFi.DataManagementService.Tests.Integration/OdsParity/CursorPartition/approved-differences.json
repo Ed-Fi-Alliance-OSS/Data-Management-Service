@@ -4,7 +4,7 @@
     {
       "id": "reject-limit-with-cursor-parameters",
       "bullet": 1,
-      "summary": "Reject limit whenever cursor parameters are present, including when pageSize is also present.",
+      "summary": "Reject limit whenever pageToken is present, including when pageSize is also present. Without pageToken, limit pages traditionally and pageSize is ignored, as in ODS.",
       "executable": true
     },
     {
@@ -88,7 +88,7 @@
     {
       "id": "openapi-publishes-runtime-page-size-bounds",
       "bullet": 15,
-      "summary": "Publish the runtime MaximumPageSize as both the default and the maximum for limit and pageSize, replacing the authoritative fixture's hardcoded values.",
+      "summary": "Publish the runtime MaximumPageSize as the maximum for limit and pageSize, and publish no default for either, replacing the authoritative fixture's hardcoded values.",
       "executable": true
     },
     {

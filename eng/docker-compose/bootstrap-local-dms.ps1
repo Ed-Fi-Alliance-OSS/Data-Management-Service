@@ -197,7 +197,7 @@
     Stop the local DMS stack, delete data volumes, and remove the .bootstrap workspace.
 
 .EXAMPLE
-    pwsh ./prepare-dms-schema.ps1 -EnvironmentFile ./.env.bootstrap.ds52 -SchemaToolPath $schemaToolExe
+    pwsh ./prepare-dms-schema.ps1 -EnvironmentFile ./.env.bootstrap.ds52
     pwsh ./prepare-dms-claims.ps1
     pwsh ./bootstrap-local-dms.ps1
     Standard-mode manual prepare flow. Stage the same default DS 5.2 core + TPDM package set the
@@ -205,7 +205,7 @@
     inspect or validate the staged workspace before starting infrastructure.
 
 .EXAMPLE
-    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath $schemaToolExe
+    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema
     pwsh ./prepare-dms-claims.ps1
     pwsh ./bootstrap-local-dms.ps1
     Expert mode (filesystem). Stage a local ApiSchema directory (which may include TPDM
@@ -214,7 +214,7 @@
     core, Sample, Homograph, and TPDM are all handled without it.
 
 .EXAMPLE
-    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath $schemaToolExe
+    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema
     pwsh ./prepare-dms-claims.ps1
     pwsh ./bootstrap-local-dms.ps1 -LoadSeedData -SeedDataPath ./my-seed-xml/
     Expert mode with seed loading. Prepare the bootstrap manifest, then start the stack and

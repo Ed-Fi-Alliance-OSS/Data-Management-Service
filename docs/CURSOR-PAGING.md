@@ -113,9 +113,11 @@ curl -G "http://localhost:8080/data/ed-fi/students" \
 ```
 
 > [!IMPORTANT]
-> Do not combine `pageToken` or `pageSize` with `limit` or `offset`. A request
-> that mixes the two paging styles is rejected. Once you are walking with
-> `pageToken`, use `pageSize` where you would have used `limit`.
+> Do not combine `pageToken` with `limit` or `offset`. A request that mixes the
+> two paging styles is rejected. Once you are walking with `pageToken`, use
+> `pageSize` where you would have used `limit`. Without `pageToken`, a `pageSize`
+> sent beside `limit` is ignored and the request pages by `limit`, as in the
+> ODS/API; a `pageSize` sent without either is rejected.
 
 ### 3. Repeat until the header is absent
 
@@ -366,7 +368,7 @@ do not rely on cursor paging to provide one.
 | Parameter | Rules |
 | --- | --- |
 | `pageToken` | Optional. An opaque token from a `Next-Page-Token` header or a `/partitions` response. Cannot be combined with `offset` or `limit`. An undecodable value is rejected, as is a token whose request resolves a different walk order than the one it was issued under — which the change-version window and the data source both feed — see `maxChangeVersion` below, which states where that rejection applies. |
-| `pageSize` | Optional, and valid **only** alongside `pageToken`. An integer from `0` to the deployment's configured `MaximumPageSize`. Sending it without `pageToken` is rejected. |
+| `pageSize` | Optional, and used **only** alongside `pageToken`. An integer from `0` to the deployment's configured `MaximumPageSize`. Without `pageToken` it is ignored, value unchecked, when `limit` is also sent, and rejected otherwise. |
 | `limit`, `offset` | Traditional paging. Rejected alongside `pageToken`. |
 | `totalCount` | `totalCount=true` is rejected alongside a valid `pageToken`. Cursor paging does not report a total. |
 | `minChangeVersion`, `maxChangeVersion` | Allowed, including on the request that starts a walk. Both must be repeated unchanged on every request of the walk. On current data, adding or removing `maxChangeVersion` mid-walk is rejected with the invalid-token message, because a bounded window is walked in a different order than an unbounded request; restart the walk instead. A walk served from a snapshot is not rejected on that change while the window keeps at least one bound, because a min-only window and a bounded one are both walked in change-version order there: an added ceiling is honored, and a dropped one is honored too — the token does not carry the ceiling the walk started under, so the walk runs on past it to the end of the range the token names, which for a walk started from an ordinary request is the newest version in the copy. Adding a ceiling to a walk that carried no window at all, and dropping it from a walk that carried `maxChangeVersion` alone, are still rejected on a snapshot. On a snapshot `minChangeVersion` falls under that same rule, which it never does on current data: adding it to a walk that carried no window, and dropping it from a walk that carried `minChangeVersion` alone, are the two changes that cross the same boundary from the other side, and both are rejected with the invalid-token message. Where the data store has a `Snapshot` derivative configured, a walk carrying `minChangeVersion` without `maxChangeVersion` must also keep asking for the same data source: adding or dropping `Use-Snapshot: true` mid-walk is rejected the same way. Where it has none, `Use-Snapshot: true` is answered `404` with `Snapshot not found.` before any paging validation runs, so no invalid-token response arises. Every other walk is walked in the same order on either source and is not rejected on that change, but should still repeat the same `Use-Snapshot` choice so it keeps reading the database it started on. |
@@ -421,7 +423,7 @@ deployment actually enforces rather than a shipped constant.
 
 | Setting | Effect | Initial value |
 | --- | --- | --- |
-| `AppSettings:MaximumPageSize` | Upper bound for `pageSize` and `limit`, and the page size applied when neither is given. Published as both the `default` and the `maximum` of those two parameters | `500` |
+| `AppSettings:MaximumPageSize` | Upper bound for `pageSize` and `limit`, and the page size applied when neither is given. Published as the `maximum` of `limit` and `pageSize`. Neither publishes a `default`, because `pageSize` is used only with `pageToken` (ignored beside `limit`, rejected without either) and `limit` is rejected with `pageToken` | `500` |
 | `AppSettings:DefaultPartitionCount` | Partition count used when `/partitions` omits `number`. Published as the `default` of `numberOfPartitions`; the accepted `1`..`200` range is fixed and not configurable | `10` |
 
 See [Configuration](./CONFIGURATION.md) for the full settings reference.

@@ -133,7 +133,7 @@ internal class TenantResolutionMiddlewareTests
             string expectedCorrelationId
         )
         {
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request");
             body["title"]!.GetValue<string>().Should().Be("Bad Request");
             body["detail"]!.GetValue<string>().Should().Be(expectedDetail);
             body["status"]!.GetValue<int>().Should().Be(400);
@@ -146,7 +146,7 @@ internal class TenantResolutionMiddlewareTests
 
         private static void AssertInternalServerErrorBody(JsonObject body, string expectedCorrelationId)
         {
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:internal-server-error");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:internal-server-error");
             body["title"]!.GetValue<string>().Should().Be("Internal Server Error");
             body["detail"]!.GetValue<string>().Should().BeEmpty();
             body["status"]!.GetValue<int>().Should().Be(500);

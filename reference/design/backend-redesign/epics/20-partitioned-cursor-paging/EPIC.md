@@ -70,7 +70,9 @@ The ODS 7.3.2 implementation is a behavioral reference where the guide is not pr
 
 The documented API contract is normative when the guide/OpenAPI and incidental ODS
 implementation permissiveness disagree. In particular, DMS will reject `limit` or `offset` in a
-cursor request even though ODS 7.3.2 accidentally accepts `limit` when `pageSize` is also present.
+cursor request, one carrying `pageToken`, even though ODS 7.3.2 accepts `limit` there when
+`pageSize` is also present. Without `pageToken`, DMS matches ODS: `limit` pages traditionally and a
+`pageSize` beside it is ignored, so clients that send both parameters, as ODS clients may, work.
 
 Emitting `Next-Page-Token` on an ordinary `limit`/`offset` response extends the published Ed-Fi
 surface, because the client guide does not describe the header for traditional responses and the
@@ -107,7 +109,7 @@ ODS, which range-checks `number` before it constructs its query parameters and t
 decodes a supplied `pageToken`.
 
 `X` denotes any successfully decoded page token. Every expected DMS failure below returns HTTP 400
-with exactly the listed message.
+with exactly the listed message; `?pageSize=5&limit=10` is not a failure.
 
 | Request | Expected DMS message | Matches ODS 7.3.2? |
 | --- | --- | --- |
@@ -117,7 +119,7 @@ with exactly the listed message.
 | `?pageSize=` | `PageToken is required when pageSize is specified.` | No. ODS model-binds the blank value to `null`, treats the parameter as absent, and returns HTTP 200; this is an approved stricter DMS rejection. |
 | `?pageToken=!!!&offset=5` | `The page token provided was invalid.` | Yes. |
 | `?pageToken=!!!&limit=10` | `The page token provided was invalid.` | Yes. |
-| `?pageSize=5&limit=10` | `PageToken is required when pageSize is specified.` | No. ODS returns HTTP 200; this is an approved stricter DMS rejection. |
+| `?pageSize=5&limit=10` | None: HTTP 200, paged by `limit`, with `pageSize` ignored. | Yes. ODS also returns HTTP 200 from its limit/offset branch. |
 | `?pageSize=5&totalCount=true` | `PageToken is required when pageSize is specified.` | Yes. ODS returns the same message from its limit/offset branch. |
 | `?pageSize=5&offset=3&totalCount=true` | `Use limit instead of pageSize when using limit/offset paging.` | Yes. |
 | `?pageToken=X&pageSize=-1` | `PageSize must be a value between 0 and {MaximumPageSize}.` | Yes. |
@@ -289,7 +291,8 @@ and the never-record list are owned by
 
 The approved intentional ODS differences are:
 
-- reject `limit` whenever cursor parameters are present, including when `pageSize` is also present;
+- reject `limit` whenever `pageToken` is present, including when `pageSize` is also present. Without
+  `pageToken`, `limit` pages traditionally and `pageSize` is ignored, as in ODS;
 - reject `totalCount=true` when a valid `pageToken` is present during parameter validation, with
   DMS's `The totalCount parameter cannot be set to true when using cursor paging with pageToken.`
   text. ODS 7.3.2 also rejects that combination with HTTP 400, but only after its repository builds
@@ -372,9 +375,18 @@ The approved intentional ODS differences are:
   rather than ODS's `Limit must be a value between 0 and {N}.`;
 - use DMS's configured `MaximumPageSize`, initially `500`, as the value applied when `limit` or
   `pageSize` is omitted, where Ed-Fi's published default is `25`;
-- publish that same runtime `MaximumPageSize` as both the default and maximum for `limit` and
-  `pageSize`, replacing the authoritative fixture's hardcoded `limit` default of `25` with maximum
-  `500` and its `pageSize` default of `25` with no maximum. ODS's runtime maximum for both
+- publish that same runtime `MaximumPageSize` as the maximum for `limit` and `pageSize`, and
+  publish no default for either, replacing the authoritative fixture's
+  hardcoded `limit` default of `25` with maximum `500` and its `pageSize` default of `25` with no
+  maximum. ODS 7.3.2 publishes that `pageSize` default
+  ([`OpenApiMetadataParametersFactory`](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/v7.3.2/Application/EdFi.Ods.Features/OpenApiMetadata/Factories/OpenApiMetadataParametersFactory.cs)) but, like DMS, rejects `pageSize` without `pageToken` unless
+  `limit` is also sent and ignores it beside `limit`, so a client that sends the advertised default
+  without `limit` fails, and one that sends it beside `limit` gains nothing; DMS omits it, and an
+  omitted `pageSize` on a cursor request still uses `MaximumPageSize` at runtime. DMS likewise omits
+  the `limit` default, because DMS always rejects `limit` with `pageToken`, so a client that sends
+  an advertised `limit` default on a cursor request would fail. ODS 7.3.2 rejects `limit` with
+  `pageToken` only when `pageSize` is absent and accepts all three together (the first approved
+  difference above). An omitted `limit` still uses `MaximumPageSize`. ODS's runtime maximum for both
   parameters is likewise a configurable setting already defaulting to `500`, so this difference is
   confined to published metadata rather than runtime enforcement;
 - publish the runtime `DefaultPartitionCount` as the OpenAPI `numberOfPartitions` default, which

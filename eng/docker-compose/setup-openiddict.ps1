@@ -652,10 +652,14 @@ function Invoke-MssqlParameterizedQuery {
         $connection.Open()
         $command = $connection.CreateCommand()
         $command.CommandText = $Sql
+        # Longer than the command's 30 s sp_getapplock wait, so a lock timeout returns its own error
+        # rather than the default 30 s client timeout cancelling the batch first.
+        $command.CommandTimeout = 60
 
         Add-MssqlOpenIddictKeyParameters -Command $command -Parameters $Parameters
 
-        $command.ExecuteNonQuery()
+        # The key-initialization command reports its outcome as a single scalar.
+        return $command.ExecuteScalar()
     }
     finally {
         if ($command -is [System.IDisposable]) { $command.Dispose() }
@@ -791,6 +795,86 @@ function Invoke-PostgresGuardedDatabaseCreate {
     }
 }
 
+function Invoke-PostgresOpenIddictKeyScript {
+    <#
+    .SYNOPSIS
+        Runs one PostgreSQL signing-key initialization script and returns the state it reports.
+    .DESCRIPTION
+        The script carries the encryption key, and on the creation path private-key material, as COPY
+        data, so it travels on psql's stdin rather than as a -c argument, is never echoed, and runs with
+        VERBOSITY=sqlstate so a failure prints only its SQLSTATE. ON_ERROR_STOP is required, not
+        cosmetic: it stops psql before the data line if the COPY is rejected, which would otherwise be
+        sent as a statement. A failure message names that SQLSTATE and nothing else from the captured
+        output. VERBOSITY governs only what psql shows here; keeping the values out of statement text
+        and the server log is the script's own job (see Join-OpenIddictKeyInitializationScript).
+        -X skips psqlrc startup files, which could otherwise print after the state row (\timing) or
+        override the settings above.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Script
+    )
+
+    $effectiveConnectionString = Get-EffectiveConnectionString -ConnectionString $script:ConnectionString -DbType $script:DbType -DbHost $script:DbHost -DbPort $script:DbPort -DbName $script:DbName -DbUser $script:DbUser
+    $connection = Get-ConnectionStringValue -ConnectionString $effectiveConnectionString -DbType $script:DbType
+    $psqlArgs = @("-X", "-v", "ON_ERROR_STOP=1", "-v", "VERBOSITY=sqlstate", "-q", "-tA", "-U", $connection.User, "-d", $connection.Database, "-f", "-")
+
+    if (-not [string]::IsNullOrEmpty($script:PostgresContainerName)) {
+        $output = $Script | & docker exec -i $script:PostgresContainerName psql @psqlArgs 2>&1
+    }
+    else {
+        $hostArgs = @("-h", $connection.Host)
+        if ($connection.Port) { $hostArgs += @("-p", $connection.Port) }
+        $output = $Script | & psql @hostArgs @psqlArgs 2>&1
+    }
+
+    if ($LASTEXITCODE -ne 0) {
+        $sqlState = @($output | ForEach-Object { [regex]::Match([string]$_, 'ERROR:\s+([0-9A-Z]{5})\s*$') } |
+                Where-Object { $_.Success } | ForEach-Object { $_.Groups[1].Value }) -join ", "
+        throw "psql failed while initializing the OpenIddict signing key (exit $LASTEXITCODE, SQLSTATE: $(if ($sqlState) { $sqlState } else { 'none reported' })). The statement and its output are withheld."
+    }
+
+    # The state is the script's last stdout row. 2>&1 merges psql's stderr in as ErrorRecords, in no
+    # guaranteed order, so diagnostics are excluded rather than allowed to replace the state.
+    return (@($output | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } |
+            ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ }) | Select-Object -Last 1)
+}
+
+function Complete-OpenIddictKeyInitialization {
+    <#
+    .SYNOPSIS
+        Reports a signing-key initialization state, or fails without naming any value.
+    #>
+    param(
+        [AllowNull()]
+        [string]$State
+    )
+
+    switch ($State) {
+        "created" { Write-Host "OpenIddict signing key: created the initial active key" }
+        "active-ok" { Write-Host "OpenIddict signing key: reusing the existing active key" }
+        "active-undecryptable" {
+            throw "The newest active OpenIddict signing key cannot be decrypted with the configured encryption key; no signing key was changed. Restore the encryption key this signing key was created with; replacing the signing key is an explicit operation, not part of startup (see eng/docker-compose/README.md)."
+        }
+        "active-unverified" {
+            throw "The newest active OpenIddict signing key could not be checked: the database rejected the decryption check for a reason other than the encryption key (for example, pgcrypto permissions); no signing key was changed. Fix the database access; neither the signing key nor the encryption key is shown to be wrong."
+        }
+        "canceled" {
+            throw "OpenIddict signing-key initialization was canceled in the database (for example, by statement_timeout or a cancel request); no signing key was changed."
+        }
+        # PostgreSQL only: lock_not_available, raised when the creation phase's bounded lock wait ends.
+        "database-error 55P03" {
+            throw "OpenIddict signing-key initialization timed out waiting for a database lock (SQLSTATE 55P03), most likely the initialization lock held by another -InitDb run; no signing key was changed. Neither the signing key nor the encryption key is shown to be wrong; rerun once the other initialization has finished."
+        }
+        # PostgreSQL only: the initialization script caught a failure outside the decryption check.
+        # Only a SQLSTATE-shaped code is echoed; the statement and the server's error text are withheld.
+        { $_ -cmatch '^database-error [0-9A-Z]{5}$' } {
+            throw "The database rejected OpenIddict signing-key initialization while reading, locking or creating the signing key (SQLSTATE $($_.Substring(15))); no signing key was changed. Neither the signing key nor the encryption key is shown to be wrong; check the database user's access to the ""dmscs"".""OpenIddictKey"" table."
+        }
+        default { throw "OpenIddict signing-key initialization returned an unexpected result; no further key change was attempted." }
+    }
+}
+
 # Main logic
 function Invoke-InitDbScripts {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Function runs a sequence of database initialization scripts.')]
@@ -842,12 +926,13 @@ BEGIN
 END;
 '@
 
-        # Generate and output OpenIddictKey insert SQL
-        Write-Host "Generating OpenIddictKey insert statement..."
+        # A rerun preserves the existing signing key so a running DMS can validate newly issued tokens
+        # without waiting for its cached signing keys to refresh.
+        Write-Host "Ensuring an active OpenIddict signing key..."
         $encryptionKey = Resolve-EnvValue $EncryptionKey
-        $keyInsertCommand = New-OpenIddictKeyInsertCommand -EncryptionKey $encryptionKey -DbType $DbType
-        Write-Host "Insert public and private keys into dmscs.OpenIddictKey"
-        Invoke-MssqlParameterizedQuery -Sql $keyInsertCommand.Sql -Parameters $keyInsertCommand.Parameters
+        $keyInitializationCommand = New-OpenIddictKeyInitializationCommand -EncryptionKey $encryptionKey
+        $keyState = Invoke-MssqlParameterizedQuery -Sql $keyInitializationCommand.Sql -Parameters $keyInitializationCommand.Parameters
+        Complete-OpenIddictKeyInitialization -State $keyState
         Write-Host "Database initialization scripts completed."
         return
     }
@@ -905,12 +990,17 @@ END$$;
     Invoke-DbQuery @'
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 '@
-    # Generate and output OpenIddictKey insert SQL
-    Write-Host "Generating OpenIddictKey insert statement..."
+    # A rerun preserves the existing signing key so a running DMS can validate newly issued tokens
+    # without waiting for its cached signing keys to refresh. The state check carries no key material;
+    # a candidate key pair is generated only after it finds no active key, and a concurrent
+    # initializer that wins the lock first leaves that candidate unused.
+    Write-Host "Ensuring an active OpenIddict signing key..."
     $encryptionKey = Resolve-EnvValue $script:EncryptionKey
-    $keyInsertSql = New-OpenIddictKeyInsertSql -EncryptionKey $encryptionKey
-    Write-Host "Insert public and private keys into ""dmscs"".""OpenIddictKey"""
-    Invoke-DbQuery $keyInsertSql
+    $keyState = Invoke-PostgresOpenIddictKeyScript -Script (New-OpenIddictKeyStateCheckSql -EncryptionKey $encryptionKey)
+    if ($keyState -eq "none") {
+        $keyState = Invoke-PostgresOpenIddictKeyScript -Script (New-OpenIddictKeyInitializationSql -EncryptionKey $encryptionKey)
+    }
+    Complete-OpenIddictKeyInitialization -State $keyState
     Write-Host "Database initialization scripts completed."
 }
 

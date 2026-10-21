@@ -1058,8 +1058,8 @@ function Write-DmsSchemaContainerEnvironment {
     Write-Output "DMS container schema environment:"
     foreach ($key in @(
             "AppSettings__Datastore",
-            "AppSettings__UseApiSchemaPath",
-            "AppSettings__ApiSchemaPath",
+            "AppSettings__ApiSchema__UseCustomPath",
+            "AppSettings__ApiSchema__Path",
             "SCHEMA_PACKAGES"
         )) {
         if ($EnvironmentValues.ContainsKey($key)) {

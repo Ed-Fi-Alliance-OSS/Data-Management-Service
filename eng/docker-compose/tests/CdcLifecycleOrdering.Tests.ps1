@@ -15,6 +15,9 @@ Describe 'Managed CDC deployment lifecycle ordering' {
         New-Item -ItemType Directory $script:root | Out-Null
         Copy-Item (Join-Path $PSScriptRoot '../cdc-lifecycle.psm1') $script:root
         Copy-Item (Join-Path $PSScriptRoot '../*.psm1') $script:root
+        Copy-Item (Join-Path $PSScriptRoot '../cdc-worker-diagnostics.ps1') $script:root
+        New-Item -ItemType Directory -Force (Join-Path $TestDrive 'ci') | Out-Null
+        Copy-Item (Join-Path $PSScriptRoot '../../ci/cdc-runbook-diagnostics.ps1') (Join-Path $TestDrive 'ci')
         Copy-Item (Join-Path $PSScriptRoot '../*.yml') $script:root
         Copy-Item (Join-Path $PSScriptRoot '../../schema-package-utility.psm1') $TestDrive
         @'
@@ -1424,10 +1427,9 @@ Describe 'SchemaTools lifecycle result boundary' {
         $script:root = Join-Path $TestDrive 'native'
         New-Item -ItemType Directory $script:root | Out-Null
         Copy-Item (Join-Path $PSScriptRoot '../cdc-lifecycle.psm1') $script:root
-        @'
-function Resolve-DmsSchemaTool { return Join-Path $PSScriptRoot 'tool.ps1' }
-Export-ModuleMember -Function Resolve-DmsSchemaTool
-'@ | Set-Content (Join-Path $script:root 'bootstrap-schema-tool.psm1')
+        foreach ($name in @('bootstrap-schema-tool.psm1', 'bootstrap-manifest.psm1')) {
+            Copy-Item (Join-Path $PSScriptRoot "../$name") $script:root
+        }
         @'
 param([Parameter(ValueFromRemainingArguments)][string[]]$Arguments)
 $Arguments | ConvertTo-Json | Set-Content (Join-Path $PSScriptRoot 'arguments.json')
@@ -1443,6 +1445,9 @@ exit ([int](Get-Content (Join-Path $PSScriptRoot 'exit-code')))
         }
     }
     BeforeEach {
+        $script:oldSchemaToolPath = $env:DMS_SCHEMA_TOOL_PATH
+        $env:DMS_SCHEMA_TOOL_PATH = Join-Path $script:root 'tool.ps1'
+        Remove-Item (Join-Path $script:root 'arguments.json') -ErrorAction SilentlyContinue
         $script:entry = @{ SettingsPath = '/original/settings'; StatePath = '/custom/state'; Generation = 7; InstanceKey = 'instance'; DeploymentKey = 'deployment'; DataStoreId = '42'; ConnectorName = '' }
         $script:result = @{
             operation = 'stop'; succeeded = $true; exitCode = 0
@@ -1452,7 +1457,22 @@ exit ([int](Get-Content (Join-Path $PSScriptRoot 'exit-code')))
         '0' | Set-Content (Join-Path $script:root 'exit-code')
         Save-TestResult
     }
-    AfterAll { Remove-Module cdc-lifecycle -Force }
+    AfterEach { $env:DMS_SCHEMA_TOOL_PATH = $script:oldSchemaToolPath }
+    AfterAll {
+        Get-Module -All | Where-Object { $_.Path -and $_.Path.StartsWith($script:root + [IO.Path]::DirectorySeparatorChar) } | Remove-Module -Force
+    }
+    It 'It_DMS1283_rejects_an_invalid_override_before_<operation>_despite_a_cached_tool' -ForEach @(
+        @{ operation = 'stop' }, @{ operation = 'start' }, @{ operation = 'start-worker' }, @{ operation = 'retire' }
+    ) {
+        $cache = Join-Path $script:root '.bootstrap/tools/api-schema-tools'
+        New-Item -ItemType Directory $cache -Force | Out-Null
+        $executableName = if ($IsWindows) { 'api-schema-tools.exe' } else { 'api-schema-tools' }
+        'cache sentinel' | Set-Content (Join-Path $cache $executableName)
+        $env:DMS_SCHEMA_TOOL_PATH = Join-Path $script:root 'missing-tool.ps1'
+
+        { Invoke-TestCommand $operation } | Should -Throw '*configured api-schema-tools executable was not found*'
+        Test-Path (Join-Path $script:root 'arguments.json') | Should -BeFalse
+    }
     It 'requires the structured verified target shutdown and retains original command inputs' {
         Invoke-TestCommand
         $script:entry.ConnectorName | Should -Be 'bound-connector'

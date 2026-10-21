@@ -123,8 +123,8 @@ rule it governs.
 | --- | --- |
 | `Next-Page-Token` response header | Included whenever regular-resource or descriptor GET-many page selection produces a non-null `HighestSelectedAnchor`, including on a `limit`/`offset` response that can begin a cursor walk and when concurrent deletes leave the hydrated response body empty. The token is anchored on whichever column page selection ordered by — resolved from the change-version window and the data store serving the request, per [change-queries.md](change-queries.md#page-selection-ordering) — and names that anchor in its marker, so ordering is never a reason to withhold a continuation. See "Consistency Under Writes" below. Absent when page selection is skipped or selects no keys, and at `Int64.MaxValue` where advancing would overflow. |
 | `pageToken` | Selects the next inclusive anchor range, in the units its marker names. It is opaque to clients and is normally copied from `Next-Page-Token` or from a `/partitions` response. |
-| `pageSize` | Optional, and permitted only when `pageToken` is present; integer `0..MaximumPageSize`. When omitted, the configured `MaximumPageSize` applies — initially `500`, matching the existing default GET-many size. |
-| `limit`, `offset` | Remain supported for traditional paging. When `limit` is omitted, the configured `MaximumPageSize` applies. Neither parameter may be combined with `pageToken` or `pageSize`, including when its value is zero. |
+| `pageSize` | Optional, and used only when `pageToken` is present; integer `0..MaximumPageSize`. When omitted, the configured `MaximumPageSize` applies — initially `500`, matching the existing default GET-many size. Without `pageToken`, it is ignored, unvalidated, when `limit` is present, matching ODS/API 7.3.2, and rejected otherwise. |
+| `limit`, `offset` | Remain supported for traditional paging. When `limit` is omitted, the configured `MaximumPageSize` applies. Neither parameter may be combined with `pageToken`, including when its value is zero. Without `pageToken`, `limit` may be combined with `pageSize`, which is then ignored; `offset` may not be combined with `pageSize` unless `limit` is also present. |
 | `totalCount` | Remains supported for traditional paging. When `pageToken` is present and valid, `totalCount=true` is invalid; an explicitly supplied `totalCount=false` is allowed. Clients wanting a count may issue `?totalCount=true&limit=0` separately before starting a cursor walk. |
 | filters | Resource-property filters and `minChangeVersion`/`maxChangeVersion` compose with the cursor range. Clients MUST repeat the same filters on every request; the token stores none of them. The one exception is the anchor: because a token's bounds are meaningless in the wrong units, the token carries an ordering marker and a request whose change-version window resolves a different anchor than the marker names is rejected — see "Cursor Token Contract" below. |
 
@@ -183,8 +183,9 @@ last value in request order. Collapsing case variants MUST NOT throw.
 
 ### Cursor validation and ProblemDetails
 
-The presence of either `pageToken` or `pageSize` — including a blank or malformed value — selects
-the cursor validation path. Both that path and traditional `limit`/`offset`/`totalCount` parsing
+The presence of `pageToken`, or of `pageSize` without `limit` — including a blank or malformed
+value — selects the cursor validation path. A request with `pageSize` and `limit` but no `pageToken`
+takes traditional parsing instead and ignores `pageSize`; see phase 2 below. Both that path and traditional `limit`/`offset`/`totalCount` parsing
 answer a parameter fault with the parameter-validation ProblemDetails shell; the traditional
 failures retain their existing messages, which predate this design.
 
@@ -201,7 +202,8 @@ a request with several problems.
 Query-key *presence* — including a blank, malformed, or zero value — is what controls phase
 selection and the relationship/conflict rules through phase 2, before any general syntax or range
 parsing. A client that sent `pageSize=` meant to send a page size; it should be told that
-`pageToken` is missing, not that the parameter it typed was ignored.
+`pageToken` is missing, not that the parameter it typed was ignored. The one exception is `pageSize`
+beside `limit` without `pageToken`, which is ignored whatever its value; see phase 2.
 
 **Phase 0 — token decode**
 
@@ -227,10 +229,18 @@ All rules in this phase require `pageToken` to be present and valid:
 
 **Phase 2 — required relationships**
 
-These rules apply when `pageToken` is absent:
+These rules apply when `pageToken` is absent and `pageSize` is present without `limit`:
 
-4. `pageSize` and `offset` present, with no `limit`: `Use limit instead of pageSize when using limit/offset paging.`
-5. `pageSize` present: `PageToken is required when pageSize is specified.`
+4. `offset` present: `Use limit instead of pageSize when using limit/offset paging.`
+5. otherwise: `PageToken is required when pageSize is specified.`
+
+A request with `pageSize` and `limit` but no `pageToken` is not a cursor request. It pages
+traditionally under its `limit`, `offset`, and `totalCount`, which are validated with their existing
+messages, and `pageSize` is ignored without being range-checked. This matches ODS/API 7.3.2, whose
+[`QueryParametersValidator`](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/v7.3.2/Application/EdFi.Ods.Common/Models/Queries/QueryParametersValidator.cs)
+rejects `pageSize` on its limit/offset path only when `limit` is absent, and keeps clients that
+send `limit` and `pageSize` together working — clients written against the ODS/API, generated
+clients that send ODS-published defaults, and a Swagger UI user who fills in both fields.
 
 **Phase 3 — syntax and range**
 
@@ -274,7 +284,7 @@ cardinality — a client cannot infer from the response shape how many messages 
 #### Worked precedence examples
 
 `X` denotes any successfully decoded page token. Each request below returns HTTP 400 with exactly
-the listed message.
+the listed message, except `?pageSize=5&limit=10`, which pages traditionally and returns HTTP 200.
 
 | Request | Expected message |
 | --- | --- |
@@ -284,7 +294,7 @@ the listed message.
 | `?pageSize=` | `PageToken is required when pageSize is specified.` |
 | `?pageToken=!!!&offset=5` | `The page token provided was invalid.` |
 | `?pageToken=!!!&limit=10` | `The page token provided was invalid.` |
-| `?pageSize=5&limit=10` | `PageToken is required when pageSize is specified.` |
+| `?pageSize=5&limit=10` | None: HTTP 200, paged by `limit`, with `pageSize` ignored. |
 | `?pageSize=5&totalCount=true` | `PageToken is required when pageSize is specified.` |
 | `?pageSize=5&offset=3&totalCount=true` | `Use limit instead of pageSize when using limit/offset paging.` |
 | `?pageToken=X&pageSize=-1` | `PageSize must be a value between 0 and {MaximumPageSize}.` |
@@ -294,7 +304,7 @@ the listed message.
 
 Note the `?pageToken=X&limit=10&pageSize=5` row: a phase-1 conflict rejects the request even though
 its cursor parameters are individually well formed and would otherwise have returned a page.
-Sending `limit` alongside `pageSize` is a paging-mode mistake, and it is reported ahead of any
+Sending `limit` alongside `pageToken` is a paging-mode mistake, and it is reported ahead of any
 phase-3 range check on `pageSize` so that a request carrying both mistakes is answered with the mode
 error rather than a range message pointing at the wrong parameter.
 
@@ -849,12 +859,31 @@ published path DMS does not serve fails at runtime, which is worse than the path
 Do not augment item-by-id, change-query, discovery, or management paths, and do not introduce
 composite paths.
 
-Publish the runtime `MaximumPageSize`, initially `500`, as both the default and the maximum for the
-existing `limit` parameter and the new `pageSize` parameter. This replaces the authoritative
-fixture's published `limit` default of `25` with fixed maximum `500`, and its `pageSize` default of
-`25` with no maximum, using the runtime value consistently across assembled DMS documents. Publish
+Publish the runtime `MaximumPageSize`, initially `500`, as the maximum for the existing `limit`
+parameter and for the new `pageSize` parameter. Publish no `limit` or `pageSize` default, and remove
+the ones the base document carries. This replaces the authoritative fixture's
+published `limit` default of `25` with fixed maximum `500`, and its `pageSize` default of `25` with
+no maximum, using the runtime value consistently across assembled DMS documents. Publish
 `DefaultPartitionCount` as the `numberOfPartitions` default. Published metadata that disagrees with
 runtime enforcement is a defect regardless of which value is more conservative.
+
+`pageSize` has no published default because `pageSize` is used only with `pageToken`: without one it
+is ignored beside `limit` and rejected without it. Swagger UI and many generated clients send a
+parameter's advertised default, so a published default would make every collection GET they issue
+without `limit` fail with `PageToken is required when pageSize is specified.`, and beside `limit` it
+would have no effect. An omitted `pageSize` on a cursor request still uses `MaximumPageSize` at
+runtime; only the published default is omitted. Ed-Fi ODS 7.3.2 publishes a `pageSize` default of
+`25`
+([`OpenApiMetadataParametersFactory`](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/v7.3.2/Application/EdFi.Ods.Features/OpenApiMetadata/Factories/OpenApiMetadataParametersFactory.cs)),
+and its [`QueryParametersValidator`](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/v7.3.2/Application/EdFi.Ods.Common/Models/Queries/QueryParametersValidator.cs) applies the same rule — `pageSize` ignored beside `limit`,
+rejected without it — so DMS deliberately does not copy that default. The `pageSize` description
+states that rule and where a first token comes from: a `Next-Page-Token` response header or the
+`/partitions` operation.
+
+`limit` has no published default for the mirror-image reason: `limit` is valid only without
+`pageToken`. A published `limit` default, which Swagger UI prefills, would make every cursor request
+such a client issues fail with `Use pageSize instead of limit when using cursor paging with
+pageToken.` An omitted `limit` still uses `MaximumPageSize` at runtime.
 
 **Profile filtering.** Profile OpenAPI filtering MUST explicitly associate `/partitions` with its
 base collection, because the partition response carries no resource schema from which the current
@@ -1108,7 +1137,10 @@ identifiers. Decoded bounds are candidate identifiers by another name.
    away for indexes that no observed deficiency justifies.
 5. **OpenAPI defaults conflict.** The authoritative OpenAPI paging defaults and fixed `limit`
    maximum conflict with runtime behavior. Assembled documents must expose `MaximumPageSize`
-   consistently as both default and maximum across resource and descriptor specifications.
+   consistently as the `limit` and `pageSize` maximum across resource and descriptor
+   specifications, and must not publish a `pageSize` default, which clients would send without the
+   `pageToken` it requires and which is rejected wherever `limit` is not also sent, or a `limit`
+   default, which clients would send alongside a `pageToken` that forbids it.
 6. **Profile association.** `/partitions` has no resource-schema response from which the current
    profile filter can infer ownership; explicit base-path association is mandatory, or partition
    paths will leak into or vanish from profile documents unpredictably.

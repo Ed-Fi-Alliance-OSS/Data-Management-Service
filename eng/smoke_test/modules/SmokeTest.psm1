@@ -144,7 +144,9 @@ function Get-SmokeTestCredential {
         Write-Host "Obtaining configuration service token..."
         $configToken = Get-CmsToken -CmsUrl $ConfigServiceUrl -ClientId $SysAdminId -ClientSecret $SysAdminSecret
 
-        # Step 3: Get available data stores
+        # Step 3: Get available data stores. When this helper selects the store, all of its route
+        # contexts are returned too, whatever their key, since the caller does not know them.
+        $routeContexts = @()
         if ($DataStoreIds.Count -gt 0) {
             $dataStoreIds = [long[]]@($DataStoreIds)
             Write-Host "Using supplied data store IDs: $($dataStoreIds -join ', ')"
@@ -156,6 +158,11 @@ function Get-SmokeTestCredential {
             if ($dataStores -and $dataStores.Count -gt 0) {
                 $dataStoreIds = @($dataStores[0].id)
                 Write-Host "Found data store with ID: $($dataStoreIds[0])"
+                $routeContexts = @(
+                    $dataStores[0].dataStoreContexts |
+                        Where-Object { $null -ne $_ } |
+                        ForEach-Object { [pscustomobject]@{ DataStoreId = [long]$dataStoreIds[0]; ContextKey = [string]$_.contextKey; ContextValue = [string]$_.contextValue } }
+                )
             }
             else {
                 Write-Warning "No data stores found. Application will be created without data store association."
@@ -180,6 +187,17 @@ function Get-SmokeTestCredential {
         Write-Host "Creating application..."
         $credentials = Add-Application -CmsUrl $ConfigServiceUrl -ApplicationName $ApplicationName -ClaimSetName $ClaimSetName -VendorId $vendorId -AccessToken $configToken -EducationOrganizationIds $EducationOrganizationIds -DataStoreIds $dataStoreIds -Tenant $Tenant
 
+        # The Configuration Service returns the secret only in this response, so a missing or
+        # unprintable value can never be recovered later. Fail here instead of returning it, and
+        # name only the field: the response content is never echoed. The application may already
+        # exist by now, so the message says to remove it before a retry.
+        foreach ($field in @("Key", "Secret")) {
+            $value = $credentials.$field
+            if ($value -isnot [string] -or [string]::IsNullOrWhiteSpace($value) -or $value -match '\p{Cc}') {
+                throw "The Configuration Service application response did not contain a usable $field; the response content is withheld. The application may already have been created: inspect it in the Configuration Service and remove it before retrying, because a second application with the same name is rejected."
+            }
+        }
+
         $key = $credentials.Key
         $secret = $credentials.Secret
 
@@ -190,12 +208,157 @@ function Get-SmokeTestCredential {
             Secret = $secret
             VendorId = $vendorId
             ApplicationName = $ApplicationName
+            RouteContexts = $routeContexts
         }
     }
     catch {
         Write-Error "Failed to create smoke test credentials: $($_.Exception.Message)"
         throw
     }
+}
+
+function Get-SmokeTestCredentialSummary {
+    <#
+    .SYNOPSIS
+    Builds the operator-facing summary lines for a smoke-test credential: the key and secret the
+    Configuration Service returned once, and how to run Invoke-NonDestructiveApiTests.ps1 with them.
+    Returns strings only; it writes nothing to the host or the diagnostic streams, so the caller
+    decides where the summary goes.
+
+    Every value in the copyable command is a single-quoted literal (generated secrets can contain
+    '$'), escaped for every quote character PowerShell accepts. A tenant-only target gets base and
+    token URLs instead of a command, because that smoke run is not validated; data-store route
+    contexts, school year included, are listed without URLs, because the route they select depends
+    on the target DMS's route qualifier configuration.
+    #>
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param (
+        # A null credential reaches the field check below, so it fails with the same value-free
+        # message as any other unusable credential.
+        [Parameter(Mandatory = $True)]
+        [AllowNull()]
+        $Credential,
+
+        # Base URL of the DMS the smoke tests target; omitted when it is not known yet (an
+        # IDE-hosted DMS that has not started).
+        [string]
+        $DmsBaseUrl = "",
+
+        [string]
+        $Tenant = "",
+
+        # Route contexts from the configure result (DataStoreId, ContextKey, ContextValue).
+        [object[]]
+        $RouteContexts = @(),
+
+        [switch]
+        $SelfContainedIdentity,
+
+        # The run failed after the credential was created; the stack is not ready for smoke tests.
+        [switch]
+        $Incomplete
+    )
+
+    $values = @{}
+    foreach ($field in @("Key", "Secret", "ApplicationName")) {
+        $value = if ($Credential -is [System.Collections.IDictionary]) {
+            $Credential[$field]
+        }
+        elseif ($null -ne $Credential -and $null -ne $Credential.PSObject.Properties[$field]) {
+            $Credential.PSObject.Properties[$field].Value
+        }
+
+        if ($value -isnot [string] -or [string]::IsNullOrWhiteSpace($value) -or $value -match '\p{Cc}') {
+            throw "The smoke-test credential summary requires a usable $field; the value is withheld."
+        }
+        $values[$field] = $value
+    }
+
+    if ($DmsBaseUrl -match '\p{Cc}') {
+        throw "The smoke-test credential summary requires a DMS base URL without control characters."
+    }
+
+    $baseUrl = if ([string]::IsNullOrWhiteSpace($DmsBaseUrl)) { "<dms-base-url>" } else { $DmsBaseUrl.TrimEnd('/') }
+
+    $lines = [System.Collections.Generic.List[string]]::new()
+    if ($Incomplete) {
+        $lines.Add("--- Smoke test credentials (created before the failure; the stack is NOT ready) ---")
+    }
+    else {
+        $lines.Add("--- Smoke test credentials ---")
+    }
+    $lines.Add("Application: $($values.ApplicationName)")
+    $lines.Add("Key:         $($values.Key)")
+    $lines.Add("Secret:      $($values.Secret)")
+    $lines.Add("The Configuration Service returns this secret only once. These bootstrap scripts do not write it to logs or files; your terminal, transcripts, or host logging may still retain it. Store it now.")
+
+    if ($Incomplete) {
+        $lines.Add("Fix the failure; CMS will reject a second '$($values.ApplicationName)' for this vendor (see README).")
+        return $lines.ToArray()
+    }
+
+    # The tenant and route contexts come from configuration and Configuration Service records, which
+    # may hold line breaks or terminal control sequences. They are printed with those characters
+    # escaped (\u001B), and never composed into a URL, so they cannot rewrite or hide the lines above.
+    $unsafeDisplayCharacters = '[\p{Cc}\p{Zl}\p{Zp}]'
+    $display = { param([string]$Text) [regex]::Replace($Text, $unsafeDisplayCharacters, { param($match) '\u{0:X4}' -f [int][char]$match.Value }) }
+
+    $contexts = @($RouteContexts | Where-Object { $null -ne $_ })
+    $unsafeRouting = (-not [string]::IsNullOrWhiteSpace($Tenant) -and $Tenant -match $unsafeDisplayCharacters) -or
+        @($contexts | Where-Object { "$($_.DataStoreId)$($_.ContextKey)$($_.ContextValue)" -match $unsafeDisplayCharacters }).Count -gt 0
+    if (-not [string]::IsNullOrWhiteSpace($Tenant) -or $contexts.Count -gt 0) {
+        $tenantBaseUrl = $baseUrl
+        if (-not [string]::IsNullOrWhiteSpace($Tenant)) {
+            $lines.Add("Tenant:      $(& $display $Tenant)")
+            $tenantBaseUrl = "$baseUrl/$Tenant"
+        }
+
+        if ($unsafeRouting) {
+            foreach ($store in @($contexts | Group-Object -Property DataStoreId)) {
+                $pairs = @($store.Group | ForEach-Object { "$(& $display $_.ContextKey)=$(& $display $_.ContextValue)" }) -join ", "
+                $lines.Add("Data store $(& $display $store.Name) route contexts: $pairs")
+            }
+            $lines.Add("No DMS base or token URL is printed: the tenant or a route context contains control or line-break characters, shown escaped above. Correct the Configuration Service tenant or data-store contexts.")
+        }
+        elseif ($contexts.Count -eq 0) {
+            $lines.Add("DMS base:    $tenantBaseUrl")
+            $lines.Add("Token URL:   $tenantBaseUrl/oauth/token")
+        }
+        else {
+            # Route contexts, school year included, are listed and never composed into a URL: whether
+            # and in what order they qualify the route is the target DMS's
+            # AppSettings:RouteQualifierSegments, which the Configuration Service records do not establish.
+            foreach ($store in @($contexts | Group-Object -Property DataStoreId)) {
+                $pairs = @($store.Group | ForEach-Object { "$($_.ContextKey)=$($_.ContextValue)" }) -join ", "
+                $lines.Add("Data store $($store.Name) route contexts: $pairs")
+            }
+            $lines.Add("No DMS base or token URL is printed for these contexts: the route depends on the target DMS configuration (AppSettings:RouteQualifierSegments, ROUTE_QUALIFIER_SEGMENTS in Compose). When it lists these keys, the DMS base is $tenantBaseUrl followed by the context values in that order, and the token URL is that base plus /oauth/token.")
+        }
+        $lines.Add("Tenant- or route-qualified smoke runs have not been validated with the smoke console; pass the matching DMS base as -BaseUrl and the token URL as -OAuthUrl.")
+    }
+    else {
+        # Invoke-NonDestructiveApiTests.ps1 imports its modules relative to the current directory,
+        # so the command must run from eng/smoke_test, the parent of this module's folder.
+        $smokeTestDirectory = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        $quote = { param([string]$Text) "'" + [System.Management.Automation.Language.CodeGeneration]::EscapeSingleQuotedStringContent($Text) + "'" }
+
+        $lines.Add("Run the non-destructive API smoke tests:")
+        $lines.Add("  Set-Location -LiteralPath $(& $quote $smokeTestDirectory)")
+        $lines.Add("  ./Invoke-NonDestructiveApiTests.ps1 -BaseUrl $(& $quote $baseUrl) -OAuthUrl $(& $quote "$baseUrl/oauth/token") -Key $(& $quote $values.Key) -Secret $(& $quote $values.Secret)")
+    }
+
+    # Shared by the command and the qualified URL lines: both carry the placeholder when the DMS URL
+    # is not known yet.
+    if ($baseUrl -eq "<dms-base-url>" -and -not $unsafeRouting) {
+        $lines.Add("Replace <dms-base-url> with the IDE-hosted DMS URL once it is healthy.")
+    }
+
+    if ($SelfContainedIdentity) {
+        $lines.Add("Self-contained identity: set CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1 before starting the stack (see eng/smoke_test/SMOKETEST.md); the default limit stops the smoke run.")
+    }
+
+    return $lines.ToArray()
 }
 
 Set-Alias -Name Get-SmokeTestCredentials -Value Get-SmokeTestCredential

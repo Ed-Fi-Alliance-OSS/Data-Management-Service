@@ -47,6 +47,11 @@ function ReadValuesFromEnvFile { param($EnvironmentFile)
     }
     return $values
 }
+function Get-ComposeResolvedEnvValue { param($EnvironmentValues, $Name, $DefaultValue = '')
+    if ($EnvironmentValues.ContainsKey($Name)) { return $EnvironmentValues[$Name] }
+    return $DefaultValue
+}
+function Resolve-DockerLocalDmsBaseUrl { param($EnvValues) return 'http://localhost:8080' }
 Export-ModuleMember -Function *
 '@ | Set-Content (Join-Path $script:sandbox 'env-utility.psm1')
 
@@ -76,7 +81,8 @@ function New-BootstrapCdcHandoff { param($Settings, $StatePath, $EnvironmentFile
     foreach ($path in @($settingsPath, $dmsPath)) { [IO.File]::SetUnixFileMode($path, [IO.UnixFileMode]384) }
     return [pscustomobject]@{ IdentityProvider = $IdentityProvider; Settings = $Settings; DmsComposePath = $dmsPath; SettingsPath = $settingsPath; EnvironmentFile = $EnvironmentFile; InputSettingsHash = 'fixture-input'; DatabaseNameHash = 'fixture-database' }
 }
-function Invoke-BootstrapCdcEnable { param($Handoff, $Receipt, $SelectedDataStoreIds, $StatePath)
+function Invoke-BootstrapCdcEnable { param($Handoff, $Receipt, $SelectedDataStoreIds, $StatePath, $ToolPath)
+    Set-Content (Join-Path $PSScriptRoot 'selected-tool') $ToolPath
     Add-Content (Join-Path $PSScriptRoot 'calls') "cdc:$($SelectedDataStoreIds -join ','):$($Receipt.CreationReceipt.Outcome):$StatePath"
     if (Test-Path (Join-Path $PSScriptRoot 'model-kafka')) {
         bootstrap-cdc-controller\Invoke-BootstrapCdcEnable -Handoff $Handoff -Receipt $Receipt -SelectedDataStoreIds $SelectedDataStoreIds -StatePath $StatePath
@@ -199,11 +205,15 @@ if ($InfraOnly -and -not $SuppressWriterGuidance) { Write-Information 'early wri
 '@
         foreach ($name in @('start-local-dms.ps1', 'start-published-dms.ps1')) { $start | Set-Content (Join-Path $script:sandbox $name) }
         @'
-param($EnvironmentFile, $DatabaseEngine, [switch]$SeparateConfigDatabase, $DataStoreDatabaseName, [switch]$NoDataStore)
+param($EnvironmentFile, $DatabaseEngine, [switch]$SeparateConfigDatabase, $DataStoreDatabaseName, [switch]$NoDataStore, [switch]$AddSmokeTestCredentials)
 Add-Content (Join-Path $PSScriptRoot 'calls') "configure:$DatabaseEngine`:$DataStoreDatabaseName"
 if (Test-Path (Join-Path $PSScriptRoot 'configure-failure')) { throw 'Configure failed' }
 $id = if (Test-Path (Join-Path $PSScriptRoot 'mismatch')) { 43 } else { 42 }
-return [pscustomobject]@{ SelectedDataStoreIds = @($id); HasRouteQualifiedDataStores = $false }
+$result = [pscustomobject]@{ SelectedDataStoreIds = @($id); HasRouteQualifiedDataStores = $false; Tenant = ''; RouteContexts = @() }
+if ($AddSmokeTestCredentials) {
+    $result | Add-Member -NotePropertyName SmokeTestCredential -NotePropertyValue ([pscustomobject][ordered]@{ Key = 'SYNTH-KEY-1292'; Secret = 'SYNTH$SECRET-1292'; ApplicationName = 'Smoke Test Application' })
+}
+return $result
 '@ | Set-Content (Join-Path $script:sandbox 'configure-local-data-store.ps1')
         @'
 param($EnvironmentFile, $DataStoreId, $DatabaseEngine, [switch]$SeparateConfigDatabase, $CdcBindingStatePath,
@@ -223,7 +233,7 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
 '@ | Set-Content (Join-Path $script:sandbox 'load-dms-seed-data.ps1')
     }
     BeforeEach {
-        foreach ($name in @('calls', 'identities', 'model-kafka', 'resources', 'effects', 'ui', 'selected-files', 'configure-failure', 'provision-failure', 'real-lifecycle', 'fail', 'cancel', 'writer', 'reuse', 'mismatch', 'retained.json', '.cdc-deployments')) {
+        foreach ($name in @('calls', 'identities', 'selected-tool', 'model-kafka', 'resources', 'effects', 'ui', 'selected-files', 'configure-failure', 'provision-failure', 'real-lifecycle', 'fail', 'cancel', 'writer', 'reuse', 'mismatch', 'retained.json', '.cdc-deployments')) {
             Remove-Item (Join-Path $script:sandbox $name) -Recurse -Force -ErrorAction SilentlyContinue
         }
         Get-Module -All | Where-Object { $_.Path -and $_.Path.StartsWith($script:sandbox + [IO.Path]::DirectorySeparatorChar) } | Remove-Module -Force
@@ -334,7 +344,13 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
         @{ wrapper = 'local'; provider = 'postgresql' }, @{ wrapper = 'local'; provider = 'mssql' },
         @{ wrapper = 'published'; provider = 'postgresql' }, @{ wrapper = 'published'; provider = 'mssql' }
     ) {
-        & (Join-Path $script:sandbox "bootstrap-$wrapper-dms.ps1") @script:arguments -DatabaseEngine $provider
+        $oldToolPath = $env:DMS_SCHEMA_TOOL_PATH
+        try {
+            $env:DMS_SCHEMA_TOOL_PATH = Join-Path $TestDrive 'external api-schema-tools.ps1'
+            & (Join-Path $script:sandbox "bootstrap-$wrapper-dms.ps1") @script:arguments -DatabaseEngine $provider
+            Get-Content (Join-Path $script:sandbox 'selected-tool') | Should -Be $env:DMS_SCHEMA_TOOL_PATH
+        }
+        finally { $env:DMS_SCHEMA_TOOL_PATH = $oldToolPath }
         $calls = @(Get-Content (Join-Path $script:sandbox 'calls'))
         $calls.Count | Should -Be 6
         $calls[0] | Should -Be "infra:$provider`:False:False:True:"
@@ -468,6 +484,56 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
         $script:arguments.Remove('LoadSeedData')
         & (Join-Path $script:sandbox 'bootstrap-local-dms.ps1') @script:arguments -InfraOnly
         @(Get-Content (Join-Path $script:sandbox 'calls')).Count | Should -Be 4
+    }
+
+    Context 'smoke-test credential delivery (DMS-1292)' {
+        BeforeAll {
+            # The wrapper imports the real smoke-test module from ../smoke_test/modules beside its own
+            # directory, and that module imports ../../Dms-Management.psm1.
+            $script:smokeStageRoot = Split-Path -Parent $script:sandbox
+            New-Item -ItemType Directory (Join-Path $script:smokeStageRoot 'smoke_test/modules') -Force | Out-Null
+            Copy-Item (Join-Path $script:composeRoot '../smoke_test/modules/SmokeTest.psm1') (Join-Path $script:smokeStageRoot 'smoke_test/modules')
+            Copy-Item (Join-Path $script:composeRoot '../Dms-Management.psm1') $script:smokeStageRoot
+        }
+        AfterAll {
+            Get-Module SmokeTest, Dms-Management -All | Where-Object {
+                $_.Path -and $_.Path.StartsWith($script:smokeStageRoot + [IO.Path]::DirectorySeparatorChar)
+            } | Remove-Module -Force
+        }
+
+        It 'prints the summary at the CDC InfraOnly return' {
+            $script:arguments.Remove('LoadSeedData')
+            $output = @(& (Join-Path $script:sandbox 'bootstrap-local-dms.ps1') @script:arguments -InfraOnly -AddSmokeTestCredentials)
+
+            @(Get-Content (Join-Path $script:sandbox 'calls')).Count | Should -Be 4
+            $strings = @($output | Where-Object { $_ -is [string] })
+            @($strings | Where-Object { $_ -like '--- Smoke test credentials*' }) | Should -Be @('--- Smoke test credentials ---')
+            $strings | Should -Contain 'Key:         SYNTH-KEY-1292'
+            $strings | Should -Contain 'Secret:      SYNTH$SECRET-1292'
+            $strings | Should -Contain "  ./Invoke-NonDestructiveApiTests.ps1 -BaseUrl '<dms-base-url>' -OAuthUrl '<dms-base-url>/oauth/token' -Key 'SYNTH-KEY-1292' -Secret 'SYNTH`$SECRET-1292'"
+            $strings[-2] | Should -BeLike 'Self-contained identity:*'
+            $strings[-1] | Should -BeLike 'IDE-hosted DMS: the target above assumes it runs with AppSettings:MultiTenancy=false,*'
+        }
+
+        It 'prints the incomplete summary and keeps the original error when provisioning fails' {
+            '' | Set-Content (Join-Path $script:sandbox 'provision-failure')
+            $collected = [System.Collections.Generic.List[object]]::new()
+            $caught = $null
+            try {
+                & (Join-Path $script:sandbox 'bootstrap-local-dms.ps1') @script:arguments -AddSmokeTestCredentials | ForEach-Object { $collected.Add($_) }
+            }
+            catch {
+                $caught = $_
+            }
+
+            $caught | Should -Not -BeNullOrEmpty
+            $caught.Exception.Message | Should -BeExactly 'Provision failed'
+            @(Get-Content (Join-Path $script:sandbox 'calls') | Where-Object { $_ -match '^(cdc|dms|seed):' }).Count | Should -Be 0
+            $strings = @($collected | Where-Object { $_ -is [string] })
+            @($strings | Where-Object { $_ -like '--- Smoke test credentials*' }) | Should -Be @('--- Smoke test credentials (created before the failure; the stack is NOT ready) ---')
+            $strings | Should -Contain 'Secret:      SYNTH$SECRET-1292'
+            ($caught | Out-String) | Should -Not -Match 'SYNTH'
+        }
     }
 
     It 'rejects <flag> before infrastructure' -ForEach @(
@@ -740,7 +806,7 @@ Export-ModuleMember -Function Get-ComposeResolvedEnvValue
         $compose.services.dms.environment.ConfigurationServiceSettings__BaseUrl | Should -Be 'http://ed-fi-api-config-service:8081'
         $compose.services.dms.environment.ConfigurationServiceSettings__ClientSecret | Should -Be 'private-$$secret'
         $compose.services.dms.environment.AppSettings__Datastore | Should -Be $provider
-        $compose.services.dms.environment.AppSettings__ApiSchemaPath | Should -Be '/app/ApiSchema'
+        $compose.services.dms.environment.AppSettings__ApiSchema__Path | Should -Be '/app/ApiSchema'
         (Get-Content $handoff.DmsComposePath -Raw) | Should -Not -Match 'private-connection|SetupConnectionString'
         [int][IO.File]::GetUnixFileMode($handoff.SettingsPath) | Should -Be 384
         [int][IO.File]::GetUnixFileMode($handoff.DmsComposePath) | Should -Be 384

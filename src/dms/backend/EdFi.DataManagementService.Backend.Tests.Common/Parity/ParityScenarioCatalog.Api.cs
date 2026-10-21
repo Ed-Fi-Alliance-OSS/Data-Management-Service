@@ -17,6 +17,19 @@ public static partial class ParityScenarioCatalog
     internal static readonly ImmutableArray<ParityScenario> ApiScenarios =
     [
         Api(
+            "Api/CrudRoundTrip/PutBodyId",
+            "PUT uses the URL ID for absent, null, matching, different and empty GUID body IDs; rejects malformed IDs without changing either seeded resource.",
+            "PutBodyIdScenario.It_uses_the_url_id_for_student_puts",
+            "It_uses_the_url_id_for_student_puts"
+        ),
+        Api(
+            "Api/DescriptorRuntime/PutBodyId",
+            "Descriptor PUT uses the URL ID and validates supplied body IDs before normalization.",
+            "PutBodyIdScenario.It_uses_the_url_id_for_descriptor_puts",
+            "It_uses_the_url_id_for_descriptor_puts",
+            fixtureSuffix: "DescriptorRuntime"
+        ),
+        Api(
             "Api/CrudRoundTrip/CreatesAndReadsAStudent",
             "POST create then GET-by-id round-trips the resource and emits an ETag; one row persists.",
             "CrudRoundTripScenario.It_creates_and_reads_a_student",

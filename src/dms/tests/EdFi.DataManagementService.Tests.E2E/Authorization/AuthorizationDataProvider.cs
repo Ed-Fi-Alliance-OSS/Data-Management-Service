@@ -54,6 +54,12 @@ public static class AuthorizationDataProvider
     private static ClientCredentials _clientCredentials = null!;
 
     /// <summary>
+    /// The client credentials from the most recent call to CreateClientCredentials(), for the
+    /// scenarios that build their own token requests.
+    /// </summary>
+    internal static ClientCredentials CurrentClientCredentials => _clientCredentials;
+
+    /// <summary>
     /// HTTP client configured to communicate with the Configuration Management Service (CMS).
     /// Used for vendor and application registration operations.
     /// </summary>

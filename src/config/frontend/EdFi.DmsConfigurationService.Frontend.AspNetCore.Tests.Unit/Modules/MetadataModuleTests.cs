@@ -5,6 +5,8 @@
 
 using System.Collections.Generic;
 using System.Net;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
 using FakeItEasy;
@@ -449,7 +451,7 @@ public class MetadataModuleTests
     public async Task MetadataSpecifications_Declares_Tenancy_As_Anonymous()
     {
         // Arrange
-        // DMS-1508: GET /tenancy is anonymous. MetadataModule adds a document-wide OAuth requirement,
+        // DMS-1508: GET /tenancy is anonymous. The document carries a document-wide OAuth requirement,
         // so without an empty operation-level security array the operation would inherit it.
         await using var factory = CreateFactory();
         using var client = factory.CreateClient();
@@ -609,6 +611,164 @@ public class MetadataModuleTests
         }
     }
 
+    /// <summary>
+    /// /metadata/specifications is the generated /openapi/v1.json document plus reusable components, so
+    /// its security description must be the generated one: a token URL built from the request base
+    /// (never the identity provider authority), the scopes, the root requirement and the anonymous
+    /// overrides.
+    /// </summary>
+    [TestFixture]
+    public class Given_An_Identity_Authority_On_A_Different_Host_And_A_PathBase
+    {
+        private const string Authority = "https://idp.example.org/realms/other";
+        private const string SchemeName = "oauth2_client_credentials";
+
+        private JsonDocument _metadata = null!;
+        private JsonDocument _openApi = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await using var factory = CreateFactory(pathBase: "/config", identityAuthority: Authority);
+            using var client = factory.CreateClient();
+
+            var metadataResponse = await client.GetAsync("/config/metadata/specifications");
+            metadataResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            _metadata = JsonDocument.Parse(await metadataResponse.Content.ReadAsStringAsync());
+
+            var openApiResponse = await client.GetAsync("/config/openapi/v1.json");
+            openApiResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            _openApi = JsonDocument.Parse(await openApiResponse.Content.ReadAsStringAsync());
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _metadata.Dispose();
+            _openApi.Dispose();
+        }
+
+        private static JsonElement ClientCredentialsFlow(JsonDocument document) =>
+            document
+                .RootElement.GetProperty("components")
+                .GetProperty("securitySchemes")
+                .GetProperty(SchemeName)
+                .GetProperty("flows")
+                .GetProperty("clientCredentials");
+
+        private static string[] OperationsWithEmptySecurity(JsonDocument document) =>
+            [
+                .. document
+                    .RootElement.GetProperty("paths")
+                    .EnumerateObject()
+                    .SelectMany(path =>
+                        path.Value.EnumerateObject()
+                            .Where(operation =>
+                                HttpMethodNames.Contains(operation.Name)
+                                && operation.Value.TryGetProperty("security", out var security)
+                                && security.ValueKind == JsonValueKind.Array
+                                && security.GetArrayLength() == 0
+                            )
+                            .Select(operation => $"{operation.Name.ToUpperInvariant()} {path.Name}")
+                    )
+                    .Order(),
+            ];
+
+        [Test]
+        public void It_builds_the_token_url_from_the_server_url()
+        {
+            var serverUrl = _metadata.RootElement.GetProperty("servers")[0].GetProperty("url").GetString();
+
+            ClientCredentialsFlow(_metadata)
+                .GetProperty("tokenUrl")
+                .GetString()
+                .Should()
+                .Be(serverUrl + "/connect/token");
+        }
+
+        [Test]
+        public void It_does_not_derive_the_token_url_from_the_authority()
+        {
+            var tokenUrl = ClientCredentialsFlow(_metadata).GetProperty("tokenUrl").GetString();
+
+            tokenUrl.Should().NotStartWith(Authority);
+            tokenUrl.Should().Be("http://localhost/config/connect/token");
+        }
+
+        [Test]
+        public void It_declares_the_same_scheme_as_the_openapi_document()
+        {
+            var metadataScheme = _metadata
+                .RootElement.GetProperty("components")
+                .GetProperty("securitySchemes")
+                .GetProperty(SchemeName);
+            var openApiScheme = _openApi
+                .RootElement.GetProperty("components")
+                .GetProperty("securitySchemes")
+                .GetProperty(SchemeName);
+
+            // The endpoint re-serializes with indentation, so compare structure rather than raw text.
+            JsonNode
+                .DeepEquals(
+                    JsonNode.Parse(metadataScheme.GetRawText()),
+                    JsonNode.Parse(openApiScheme.GetRawText())
+                )
+                .Should()
+                .BeTrue("the scheme must be the generated one, not an overwritten copy");
+        }
+
+        [Test]
+        public void It_declares_the_same_scope_keys_as_the_openapi_document()
+        {
+            var openApiScopes = ClientCredentialsFlow(_openApi)
+                .GetProperty("scopes")
+                .EnumerateObject()
+                .Select(scope => scope.Name)
+                .ToArray();
+
+            openApiScopes.Should().NotBeEmpty();
+            ClientCredentialsFlow(_metadata)
+                .GetProperty("scopes")
+                .EnumerateObject()
+                .Select(scope => scope.Name)
+                .Should()
+                .BeEquivalentTo(openApiScopes);
+        }
+
+        [Test]
+        public void It_declares_the_same_root_requirement_as_the_openapi_document()
+        {
+            var openApiSecurity = _openApi.RootElement.GetProperty("security");
+
+            openApiSecurity.GetArrayLength().Should().Be(1);
+            JsonNode
+                .DeepEquals(
+                    JsonNode.Parse(_metadata.RootElement.GetProperty("security").GetRawText()),
+                    JsonNode.Parse(openApiSecurity.GetRawText())
+                )
+                .Should()
+                .BeTrue();
+        }
+
+        [Test]
+        public void It_declares_the_same_anonymous_operations_as_the_openapi_document()
+        {
+            var openApiAnonymous = OperationsWithEmptySecurity(_openApi);
+
+            openApiAnonymous.Should().NotBeEmpty();
+            OperationsWithEmptySecurity(_metadata).Should().Equal(openApiAnonymous);
+        }
+
+        [Test]
+        public void It_declares_the_token_endpoint_and_the_service_root_as_anonymous()
+        {
+            var anonymous = OperationsWithEmptySecurity(_metadata);
+
+            anonymous.Should().Contain("POST /connect/token/{contextPath}");
+            anonymous.Should().Contain("GET /");
+        }
+    }
+
     [TestFixture]
     public class Given_MultiTenancy_Is_Enabled_And_An_OpenApi_Discovery_Request_Without_A_Tenant_Header
     {
@@ -683,23 +843,31 @@ public class MetadataModuleTests
         bool multiTenancy = false,
         string? pathBase = null,
         ITenantRepository? tenantRepository = null,
-        ICollection<Uri?>? recordedRequestUris = null
+        ICollection<Uri?>? recordedRequestUris = null,
+        string? identityAuthority = null
     )
     {
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
             builder.ConfigureAppConfiguration(configuration =>
-                configuration.AddInMemoryCollection(
-                    new Dictionary<string, string?>
-                    {
-                        ["AppSettings:MultiTenancy"] = multiTenancy.ToString(),
-                        // Left null by default so the existing cases keep exercising the no-path-base
-                        // shape; Program only calls UsePathBase when this carries a value.
-                        ["AppSettings:PathBase"] = pathBase,
-                    }
-                )
-            );
+            {
+                var settings = new Dictionary<string, string?>
+                {
+                    ["AppSettings:MultiTenancy"] = multiTenancy.ToString(),
+                    // Left null by default so the existing cases keep exercising the no-path-base
+                    // shape; Program only calls UsePathBase when this carries a value.
+                    ["AppSettings:PathBase"] = pathBase,
+                };
+
+                // Only set when given: a null Authority makes the app fail to start.
+                if (identityAuthority is not null)
+                {
+                    settings["IdentitySettings:Authority"] = identityAuthority;
+                }
+
+                configuration.AddInMemoryCollection(settings);
+            });
             builder.ConfigureServices(services =>
             {
                 if (recordedRequestUris is null)

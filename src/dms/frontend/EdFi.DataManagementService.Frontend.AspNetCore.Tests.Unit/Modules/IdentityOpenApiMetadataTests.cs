@@ -320,7 +320,7 @@ public class IdentityOpenApiMetadataTests
                         new Dictionary<string, string?>
                         {
                             ["AppSettings:AuthenticationService"] = AuthenticationService,
-                            ["AppSettings:EnableIdentityManagement"] = "true",
+                            ["DataManagement:IdentityManagement:Enabled"] = "true",
                         }
                     );
 

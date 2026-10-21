@@ -29,6 +29,40 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 /// </summary>
 public class IdentityHandlerRequestValidationTests
 {
+    [TestFixture]
+    public class Given_Malformed_Json_After_A_Duplicate
+    {
+        private CountingIdentityService _provider = new();
+        private RequestInfo _requestInfo = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _provider = new CountingIdentityService();
+            _requestInfo = CreateRequestInfo(
+                IdentityOperation.Search,
+                _provider,
+                """[{"x":1,"x":2},]""",
+                "application/json"
+            );
+            await RunJsonBodyChain(_requestInfo);
+        }
+
+        [Test]
+        public void It_returns_bad_request() => _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+
+        [Test]
+        public void It_reports_malformed_json_before_a_duplicate() =>
+            _requestInfo.FrontendResponse.Body!["validationErrors"]!
+                .AsObject()
+                .Select(error => error.Key)
+                .Should()
+                .Equal("$.");
+
+        [Test]
+        public void It_does_not_invoke_the_provider() => _provider.InvocationCount.Should().Be(0);
+    }
+
     /// <summary>
     /// Counts every operation call, so a rejected request that reaches the provider anyway is caught
     /// even though its returned outcome would otherwise look unremarkable.
@@ -152,9 +186,13 @@ public class IdentityHandlerRequestValidationTests
             NullLogger<ValidateContentTypeMiddleware>.Instance,
             ContentTypePolicy.BaselineJsonOnly
         );
-        var parseBody = new ParseBodyMiddleware(NullLogger<ParseBodyMiddleware>.Instance);
+        var parseBody = new ParseBodyMiddleware(
+            NullLogger<ParseBodyMiddleware>.Instance,
+            _errorContentType: "application/problem+json"
+        );
         var duplicateProperties = new DuplicatePropertiesMiddleware(
-            NullLogger<DuplicatePropertiesMiddleware>.Instance
+            NullLogger<DuplicatePropertiesMiddleware>.Instance,
+            errorContentType: "application/problem+json"
         );
         var handler = CreateHandler();
 

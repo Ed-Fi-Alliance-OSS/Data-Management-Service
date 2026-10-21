@@ -20,9 +20,16 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [Parallelizable]
 public class ParseBodyMiddlewareTests
 {
+    private const string ProblemJson = "application/problem+json";
+
     internal static IPipelineStep Middleware()
     {
         return new ParseBodyMiddleware(NullLogger.Instance);
+    }
+
+    internal static IPipelineStep ProblemJsonMiddleware()
+    {
+        return new ParseBodyMiddleware(NullLogger.Instance, _errorContentType: ProblemJson);
     }
 
     [TestFixture]
@@ -57,6 +64,12 @@ public class ParseBodyMiddlewareTests
         public void It_returns_status_400()
         {
             _requestInfo?.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_returns_application_json()
+        {
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/json");
         }
 
         [Test]
@@ -104,6 +117,12 @@ public class ParseBodyMiddlewareTests
         }
 
         [Test]
+        public void It_returns_application_json()
+        {
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/json");
+        }
+
+        [Test]
         public void It_returns_error_message_body()
         {
             _requestInfo
@@ -139,6 +158,12 @@ public class ParseBodyMiddlewareTests
         public void It_returns_status_400()
         {
             _requestInfo?.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_returns_application_json()
+        {
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/json");
         }
 
         [Test]
@@ -183,6 +208,12 @@ public class ParseBodyMiddlewareTests
         public void It_returns_status_400()
         {
             _requestInfo?.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_returns_application_json()
+        {
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/json");
         }
 
         [Test]
@@ -276,6 +307,12 @@ public class ParseBodyMiddlewareTests
         }
 
         [Test]
+        public void It_returns_application_json()
+        {
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/json");
+        }
+
+        [Test]
         public void It_returns_data_validation_error_message_body()
         {
             _requestInfo
@@ -352,6 +389,153 @@ public class ParseBodyMiddlewareTests
 
             await act.Should().ThrowAsync<InvalidOperationException>().WithMessage(DownstreamMessage);
             requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    /// <summary>
+    /// The identity JSON-body pipeline configures application/problem+json, the media type its
+    /// OpenAPI document declares for a 400. Every rejection path then answers in that media type,
+    /// with the status and the body a default-configured instance produces for the same request:
+    /// only the media type differs. The frontend-parse-error and null-body cases are the paths the
+    /// production frontend takes; the other three are reachable through the Core request contract.
+    /// </summary>
+    [TestFixture("frontend-parse-error")]
+    [TestFixture("core-parse-error")]
+    [TestFixture("null-body")]
+    [TestFixture("empty-body")]
+    [TestFixture("whitespace-body")]
+    [Parallelizable]
+    public class Given_The_Problem_Json_Option_And_A_Rejected_Body(string rejection)
+        : ParseBodyMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private RequestInfo _defaultRequestInfo = No.RequestInfo();
+        private bool _nextWasCalled;
+
+        private FrontendRequest Request() =>
+            rejection switch
+            {
+                "frontend-parse-error" => RequestWith(
+                    body: null,
+                    bodyParseErrorMessage: "'n' is invalid after a value."
+                ),
+                "core-parse-error" => RequestWith("""{ "id":"value" "name":"firstname"}"""),
+                "null-body" => RequestWith(body: null),
+                "empty-body" => RequestWith(""),
+                "whitespace-body" => RequestWith(" \r\n\t "),
+                _ => throw new ArgumentOutOfRangeException(nameof(rejection), rejection, null),
+            };
+
+        private static FrontendRequest RequestWith(string? body, string? bodyParseErrorMessage = null) =>
+            new(
+                Path: "identities",
+                Body: body,
+                Form: null,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: [],
+                BodyParseErrorMessage: bodyParseErrorMessage
+            );
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = new(Request(), RequestMethod.POST, No.ServiceProvider);
+            await ProblemJsonMiddleware()
+                .Execute(
+                    _requestInfo,
+                    () =>
+                    {
+                        _nextWasCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+
+            _defaultRequestInfo = new(Request(), RequestMethod.POST, No.ServiceProvider);
+            await Middleware().Execute(_defaultRequestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_returns_status_400()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_returns_application_problem_json()
+        {
+            _requestInfo.FrontendResponse.ContentType.Should().Be(ProblemJson);
+        }
+
+        [Test]
+        public void It_returns_the_body_a_default_instance_returns()
+        {
+            _defaultRequestInfo.FrontendResponse.Body.Should().NotBeNull();
+            _requestInfo
+                .FrontendResponse.Body!.ToJsonString()
+                .Should()
+                .Be(_defaultRequestInfo.FrontendResponse.Body!.ToJsonString());
+        }
+
+        [Test]
+        public void It_does_not_continue_the_pipeline()
+        {
+            _nextWasCalled.Should().BeFalse();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Problem_Json_Option_And_A_Preparsed_Body : ParseBodyMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private JsonNode _parsedBody = new JsonObject();
+        private bool _nextWasCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _parsedBody = JsonNode.Parse("""{"LastSurname":"Rivera"}""")!;
+
+            var frontEndRequest = new FrontendRequest(
+                Path: "identities",
+                Body: null,
+                Form: null,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: [],
+                ParsedBody: _parsedBody
+            );
+            _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider);
+            await ProblemJsonMiddleware()
+                .Execute(
+                    _requestInfo,
+                    () =>
+                    {
+                        _nextWasCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+        }
+
+        [Test]
+        public void It_sets_the_parsed_body()
+        {
+            _requestInfo.ParsedBody.Should().BeSameAs(_parsedBody);
+        }
+
+        [Test]
+        public void It_continues_the_pipeline()
+        {
+            _nextWasCalled.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_does_not_set_an_error_response()
+        {
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 }

@@ -167,14 +167,12 @@ A reload advances a per-key generation, so a fetch that started before the reloa
   Other replicas keep their entries, and so does another spelling of the same tenant on that
   replica (`north` after a reload for `North`), until each entry expires.
   Draining or restarting every replica clears all cached variants.
-- Requires `AppSettings:EnableManagementEndpoints: true` to map the DMS claimset management
-  route surface.
+- Requires `AppSettings:ManagementEndpoints:Enabled: true` to map the DMS claimset management
+  route surface. This one switch controls both the reload and view operations.
 - Requires a valid `AppSettings:ManagementEndpoints:RequiredRole`; the endpoints are not mapped
   without one, and callers must present a bearer token carrying that role under
   `JwtAuthentication:RoleClaimType`.
-- Requires `AppSettings:EnableClaimsetReload: true` for the reload and view operations to execute
-  after authorization; when it is `false` they answer a `404` with no body. See
-  [Configuration](./CONFIGURATION.md#appsettings).
+- See [Configuration](./CONFIGURATION.md#appsettings).
 - In multi-tenant mode the unscoped `/management/reload-claimsets` answers `404`; the reload route is
   `/management/{tenant}/reload-claimsets`.
 - Identity Management relies on this cache for its claim checks, so a claim-action removal can stay
@@ -639,12 +637,11 @@ Re-prime cache with new schemas
 Used by: ClaimSets (via `/management/reload-claimsets` endpoint)
 
 Administrators can trigger cache invalidation through management endpoints.
-The DMS claimset management routes are mapped only when `AppSettings:EnableManagementEndpoints` is
-`true`. They are additionally mapped only when `AppSettings:ManagementEndpoints:RequiredRole` holds a
+The DMS claimset management routes are mapped only when `AppSettings:ManagementEndpoints:Enabled`
+is `true`. They are additionally mapped only when `AppSettings:ManagementEndpoints:RequiredRole` holds a
 valid role token, and every request must present a bearer token carrying that role under
 `JwtAuthentication:RoleClaimType`; requests without one receive `401`, and tokens lacking the
-role receive `403`. `AppSettings:EnableClaimsetReload` is checked after authorization by the
-reload and view operations.
+role receive `403`.
 
 ### 4. Lifetime-Based (Application Shutdown)
 
@@ -705,9 +702,8 @@ schemas on-demand only when first requested.
     "AutomaticRefreshIntervalHours": 24
   },
   "AppSettings": {
-    "EnableManagementEndpoints": false,
-    "EnableClaimsetReload": false,
     "ManagementEndpoints": {
+      "Enabled": false,
       "RequiredRole": ""
     }
   }

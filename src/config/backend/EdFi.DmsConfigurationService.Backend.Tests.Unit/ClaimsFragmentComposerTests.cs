@@ -3,9 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Reflection;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.Backend.Claims.Models;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.TestHelpers;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -454,6 +456,83 @@ public class ClaimsFragmentComposerTests
             .SingleOrDefault(claimSet => claimSet["name"]?.GetValue<string>() == claimSetName);
     }
 
+    private const string ClaimUriPrefix = "http://ed-fi.org/identity/claims/";
+
+    // The shipped claims for a standard, loaded from the embedded Claims.json resource
+    private static ClaimsDocument EmbeddedBaseDocument(string standardFolder)
+    {
+        Assembly assembly = typeof(ClaimsProvider).Assembly;
+        string resourceName = $"{assembly.GetName().Name}.Claims.Standards.{standardFolder}.Claims.json";
+
+        using Stream stream =
+            assembly.GetManifestResourceStream(resourceName)
+            ?? throw new InvalidOperationException($"Could not load embedded resource '{resourceName}'.");
+        using StreamReader reader = new(stream);
+
+        JsonObject claims = (
+            JsonNode.Parse(reader.ReadToEnd())
+            ?? throw new InvalidOperationException("Embedded Claims.json parsed to null.")
+        ).AsObject();
+
+        return new ClaimsDocument(claims["claimSets"]!, claims["claimsHierarchy"]!);
+    }
+
+    // A fragment with one non-parent entry per name, each granting Read on that resource claim
+    private static string GrantFragment(string claimSetName, params string[] resourceClaimNames) =>
+        $$"""
+            {
+              "name": "{{claimSetName}}",
+              "resourceClaims": [
+                {{string.Join(
+                ",",
+                resourceClaimNames.Select(name =>
+                    $$"""
+                    {
+                      "name": "{{name}}",
+                      "authorizationStrategyOverridesForCRUD": [
+                        {
+                          "actionName": "Read",
+                          "authorizationStrategies": [{ "name": "NoFurtherAuthorizationRequired" }]
+                        }
+                      ]
+                    }
+                    """
+                )
+            )}}
+              ]
+            }
+            """;
+
+    // The claimSets entry for the claim set on the hierarchy node with the full claim URI, at any depth
+    private static JsonObject? GrantOn(ClaimsLoadResult result, string claimUri, string claimSetName)
+    {
+        static JsonObject? Find(JsonNode? nodes, string claimUri)
+        {
+            foreach (JsonObject node in nodes?.AsArray().OfType<JsonObject>() ?? [])
+            {
+                if (node["name"]?.GetValue<string>() == claimUri)
+                {
+                    return node;
+                }
+
+                if (Find(node["claims"], claimUri) is { } descendant)
+                {
+                    return descendant;
+                }
+            }
+
+            return null;
+        }
+
+        return Find(result.Nodes!.ClaimsHierarchyNode, claimUri)
+            ?["claimSets"]?.AsArray()
+            .OfType<JsonObject>()
+            .SingleOrDefault(claimSet => claimSet["name"]?.GetValue<string>() == claimSetName);
+    }
+
+    private static string[] ReadActionNames(JsonObject grant) =>
+        [.. grant["actions"]!.AsArray().Select(action => action!["name"]!.GetValue<string>())];
+
     [TestFixture]
     public class Given_a_non_parent_fragment_with_an_undeclared_name : ClaimsFragmentComposerTests
     {
@@ -492,10 +571,12 @@ public class ClaimsFragmentComposerTests
         [Test]
         public void It_attaches_the_grant_under_the_registered_name()
         {
-            JsonObject? grant = GrantOnAcademicWeek(_result, "Fragment-Defined");
+            JsonObject grant = GrantOnAcademicWeek(_result, "Fragment-Defined")
+                .Should()
+                .BeOfType<JsonObject>()
+                .Which;
 
-            grant.Should().NotBeNull();
-            grant!["actions"]!
+            grant["actions"]!
                 .AsArray()
                 .Select(action => action!["name"]!.GetValue<string>())
                 .Should()
@@ -849,6 +930,395 @@ public class ClaimsFragmentComposerTests
         public void It_returns_a_claim_sets_node_distinct_from_the_base()
         {
             _result.Nodes!.ClaimSetsNode.Should().NotBeSameAs(_baseDocument.ClaimSetsNode);
+        }
+    }
+
+    [TestFixture]
+    public class Given_grant_entries_named_by_DS61_claims_that_end_in_s : ClaimsFragmentComposerTests
+    {
+        private const string ClaimSetName = "Ds61-Claims-Ending-In-S";
+        private ClaimsLoadResult _result = null!;
+
+        [SetUp]
+        public void Arrange_and_act()
+        {
+            _result = ComposeWithFragments(
+                EmbeddedBaseDocument("ds61"),
+                (
+                    "grants-claimset.json",
+                    GrantFragment(
+                        ClaimSetName,
+                        "ed-fi/studentPathMilestoneStatus",
+                        "ed-fi/candidateDemographics"
+                    )
+                )
+            );
+        }
+
+        [Test]
+        public void It_grants_the_claim_set_on_studentPathMilestoneStatus()
+        {
+            JsonObject grant = GrantOn(
+                    _result,
+                    ClaimUriPrefix + "ed-fi/studentPathMilestoneStatus",
+                    ClaimSetName
+                )
+                .Should()
+                .BeOfType<JsonObject>()
+                .Which;
+
+            ReadActionNames(grant).Should().Equal("Read");
+        }
+
+        [Test]
+        public void It_grants_the_claim_set_on_candidateDemographics()
+        {
+            JsonObject grant = GrantOn(_result, ClaimUriPrefix + "ed-fi/candidateDemographics", ClaimSetName)
+                .Should()
+                .BeOfType<JsonObject>()
+                .Which;
+
+            ReadActionNames(grant).Should().Equal("Read");
+        }
+
+        [Test]
+        public void It_logs_no_unmatched_grant_warning()
+        {
+            _logger.VerifyNoLog(LogLevel.Warning, "matches no resource claim");
+        }
+    }
+
+    [TestFixture("ds52")]
+    [TestFixture("ds61")]
+    public class Given_a_grant_entry_naming_a_domain_that_ends_in_s(string standardFolder)
+        : ClaimsFragmentComposerTests
+    {
+        private const string ClaimSetName = "Domain-Ending-In-S";
+        private ClaimsLoadResult _result = null!;
+
+        [SetUp]
+        public void Arrange_and_act()
+        {
+            _result = ComposeWithFragments(
+                EmbeddedBaseDocument(standardFolder),
+                ("grants-claimset.json", GrantFragment(ClaimSetName, "domains/systemDescriptors"))
+            );
+        }
+
+        [Test]
+        public void It_grants_the_claim_set_on_the_systemDescriptors_domain()
+        {
+            JsonObject grant = GrantOn(_result, ClaimUriPrefix + "domains/systemDescriptors", ClaimSetName)
+                .Should()
+                .BeOfType<JsonObject>()
+                .Which;
+
+            ReadActionNames(grant).Should().Equal("Read");
+        }
+
+        [Test]
+        public void It_logs_no_unmatched_grant_warning()
+        {
+            _logger.VerifyNoLog(LogLevel.Warning, "matches no resource claim");
+        }
+    }
+
+    [TestFixture("ds52")]
+    [TestFixture("ds61")]
+    public class Given_grant_entries_named_by_plural_API_paths(string standardFolder)
+        : ClaimsFragmentComposerTests
+    {
+        private const string ClaimSetName = "Plural-Api-Paths";
+        private ClaimsLoadResult _result = null!;
+
+        [SetUp]
+        public void Arrange_and_act()
+        {
+            _result = ComposeWithFragments(
+                EmbeddedBaseDocument(standardFolder),
+                (
+                    "grants-claimset.json",
+                    GrantFragment(
+                        ClaimSetName,
+                        "ed-fi/schools",
+                        "ed-fi/academicWeeks",
+                        "ed-fi/localEducationAgencies"
+                    )
+                )
+            );
+        }
+
+        [Test]
+        public void It_grants_the_claim_set_on_school()
+        {
+            JsonObject grant = GrantOn(_result, ClaimUriPrefix + "ed-fi/school", ClaimSetName)
+                .Should()
+                .BeOfType<JsonObject>()
+                .Which;
+
+            ReadActionNames(grant).Should().Equal("Read");
+        }
+
+        [Test]
+        public void It_grants_the_claim_set_on_academicWeek()
+        {
+            JsonObject grant = GrantOn(_result, ClaimUriPrefix + "ed-fi/academicWeek", ClaimSetName)
+                .Should()
+                .BeOfType<JsonObject>()
+                .Which;
+
+            ReadActionNames(grant).Should().Equal("Read");
+        }
+
+        [Test]
+        public void It_grants_the_claim_set_on_localEducationAgency()
+        {
+            JsonObject grant = GrantOn(_result, ClaimUriPrefix + "ed-fi/localEducationAgency", ClaimSetName)
+                .Should()
+                .BeOfType<JsonObject>()
+                .Which;
+
+            ReadActionNames(grant).Should().Equal("Read");
+        }
+
+        [Test]
+        public void It_logs_no_unmatched_grant_warning()
+        {
+            _logger.VerifyNoLog(LogLevel.Warning, "matches no resource claim");
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_grant_entry_whose_name_and_singular_form_are_both_claims
+        : ClaimsFragmentComposerTests
+    {
+        private const string ClaimSetName = "Exact-Before-Singular";
+        private const string StatisticsClaim = ClaimUriPrefix + "ed-fi/statistics";
+        private const string StatisticClaim = ClaimUriPrefix + "ed-fi/statistic";
+        private ClaimsLoadResult _result = null!;
+
+        [SetUp]
+        public void Arrange_and_act()
+        {
+            ClaimsDocument baseDocument = new(
+                JsonNode.Parse("""[{ "claimSetName": "Base", "isSystemReserved": true }]""")!,
+                JsonNode.Parse(
+                    $$"""
+                    [
+                      {
+                        "name": "http://ed-fi.org/identity/claims/domains/relationshipBasedData",
+                        "claims": [{ "name": "{{StatisticClaim}}" }, { "name": "{{StatisticsClaim}}" }]
+                      }
+                    ]
+                    """
+                )!
+            );
+
+            _result = ComposeWithFragments(
+                baseDocument,
+                ("grants-claimset.json", GrantFragment(ClaimSetName, "ed-fi/statistics"))
+            );
+        }
+
+        [Test]
+        public void It_grants_the_claim_set_on_the_exact_name()
+        {
+            JsonObject grant = GrantOn(_result, StatisticsClaim, ClaimSetName)
+                .Should()
+                .BeOfType<JsonObject>()
+                .Which;
+
+            ReadActionNames(grant).Should().Equal("Read");
+        }
+
+        [Test]
+        public void It_does_not_grant_the_claim_set_on_the_singular_form()
+        {
+            GrantOn(_result, StatisticClaim, ClaimSetName).Should().BeNull();
+        }
+
+        [Test]
+        public void It_logs_no_unmatched_grant_warning()
+        {
+            _logger.VerifyNoLog(LogLevel.Warning, "matches no resource claim");
+        }
+    }
+
+    [TestFixture("ds52")]
+    [TestFixture("ds61")]
+    public class Given_a_fragment_with_a_grant_entry_that_matches_no_claim(string standardFolder)
+        : ClaimsFragmentComposerTests
+    {
+        private const string FragmentFile = "partly-unmatched-claimset.json";
+        private const string ClaimSetName = "Partly-Unmatched";
+        private const string UnmatchedEntry = "ed-fi/notARealResources";
+        private ClaimsLoadResult _result = null!;
+
+        [SetUp]
+        public void Arrange_and_act()
+        {
+            _result = ComposeWithFragments(
+                EmbeddedBaseDocument(standardFolder),
+                (FragmentFile, GrantFragment(ClaimSetName, "ed-fi/academicWeeks", UnmatchedEntry))
+            );
+        }
+
+        [Test]
+        public void It_returns_no_failures()
+        {
+            _result.Failures.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_still_applies_the_matching_entry()
+        {
+            JsonObject grant = GrantOn(_result, ClaimUriPrefix + "ed-fi/academicWeek", ClaimSetName)
+                .Should()
+                .BeOfType<JsonObject>()
+                .Which;
+
+            ReadActionNames(grant).Should().Equal("Read");
+        }
+
+        [Test]
+        public void It_still_registers_the_claim_set()
+        {
+            ClaimSetsNamed(_result, ClaimSetName).Should().ContainSingle();
+        }
+
+        [Test]
+        public void It_logs_one_warning_naming_the_fragment_claim_set_and_entry()
+        {
+            List<string> warnings =
+            [
+                .. _logger
+                    .LoggedEntries()
+                    .Where(entry =>
+                        entry.Level == LogLevel.Warning && entry.Message.Contains("matches no resource claim")
+                    )
+                    .Select(entry => entry.Message),
+            ];
+
+            warnings.Should().ContainSingle();
+            warnings[0].Should().Contain(FragmentFile);
+            warnings[0].Should().Contain(ClaimSetName);
+            warnings[0].Should().Contain(UnmatchedEntry);
+        }
+    }
+
+    [TestFixture]
+    public class Given_actions_with_and_without_authorization_strategies : ClaimsFragmentComposerTests
+    {
+        private const string ClaimSetName = "Strategy-Listing";
+        private const string NewDomainClaim = ClaimUriPrefix + "domains/strategyListing";
+        private ClaimsLoadResult _result = null!;
+
+        [SetUp]
+        public void Arrange_and_act()
+        {
+            const string Actions = """
+                [
+                  { "actionName": "Read" },
+                  { "actionName": "Update", "authorizationStrategies": [] },
+                  {
+                    "actionName": "Create",
+                    "authorizationStrategies": [{ "name": "NoFurtherAuthorizationRequired" }]
+                  }
+                ]
+                """;
+            string fragment = $$"""
+                {
+                  "name": "{{ClaimSetName}}",
+                  "resourceClaims": [
+                    {
+                      "isParent": true,
+                      "name": "{{NewDomainClaim}}",
+                      "_defaultAuthorizationStrategiesForCrud": {{Actions}}
+                    },
+                    {
+                      "name": "ed-fi/academicWeeks",
+                      "authorizationStrategyOverridesForCRUD": {{Actions}}
+                    }
+                  ]
+                }
+                """;
+            _result = ComposeWithFragments(BaseDocument(), ("strategy-listing-claimset.json", fragment));
+        }
+
+        private static JsonObject ActionNamed(JsonNode? actions, string actionName) =>
+            actions
+                .Should()
+                .BeOfType<JsonArray>()
+                .Which.OfType<JsonObject>()
+                .Single(action => action["name"]?.GetValue<string>() == actionName);
+
+        private static string[] StrategyNames(JsonObject action, string propertyName) =>
+            [.. action[propertyName]!.AsArray().Select(strategy => strategy!["name"]!.GetValue<string>())];
+
+        private JsonObject GrantAction(string actionName) =>
+            ActionNamed(
+                GrantOn(_result, AcademicWeekClaim, ClaimSetName).Should().BeOfType<JsonObject>().Which[
+                    "actions"
+                ],
+                actionName
+            );
+
+        private JsonObject DefaultAction(string actionName) =>
+            ActionNamed(
+                _result
+                    .Nodes!.ClaimsHierarchyNode.AsArray()
+                    .OfType<JsonObject>()
+                    .Single(claim => claim["name"]?.GetValue<string>() == NewDomainClaim)[
+                        "defaultAuthorization"
+                    ]
+                    ?["actions"],
+                actionName
+            );
+
+        [Test]
+        public void It_returns_no_failures()
+        {
+            _result.Failures.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_omits_the_overrides_of_a_grant_action_that_lists_no_strategies()
+        {
+            GrantAction("Read").ContainsKey("authorizationStrategyOverrides").Should().BeFalse();
+        }
+
+        [Test]
+        public void It_omits_the_overrides_of_a_grant_action_that_lists_an_empty_strategy_array()
+        {
+            GrantAction("Update").ContainsKey("authorizationStrategyOverrides").Should().BeFalse();
+        }
+
+        [Test]
+        public void It_keeps_the_overrides_of_a_grant_action_that_lists_strategies()
+        {
+            StrategyNames(GrantAction("Create"), "authorizationStrategyOverrides")
+                .Should()
+                .Equal("NoFurtherAuthorizationRequired");
+        }
+
+        [Test]
+        public void It_omits_the_strategies_of_a_default_action_that_lists_none()
+        {
+            DefaultAction("Read").ContainsKey("authorizationStrategies").Should().BeFalse();
+        }
+
+        [Test]
+        public void It_omits_the_strategies_of_a_default_action_that_lists_an_empty_array()
+        {
+            DefaultAction("Update").ContainsKey("authorizationStrategies").Should().BeFalse();
+        }
+
+        [Test]
+        public void It_keeps_the_strategies_of_a_default_action_that_lists_some()
+        {
+            StrategyNames(DefaultAction("Create"), "authorizationStrategies")
+                .Should()
+                .Equal("NoFurtherAuthorizationRequired");
         }
     }
 }

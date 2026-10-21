@@ -979,7 +979,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 updateResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -996,7 +996,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 deleteResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -1016,7 +1016,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 resetResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -1311,7 +1311,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 insertResponse,
                 HttpStatusCode.Conflict,
-                "urn:ed-fi:api:conflict:unresolved-reference",
+                "urn:ed-fi:management-api:conflict:unresolved-reference",
                 "Unresolved Reference",
                 "Application with ID 1 not found."
             );
@@ -1355,7 +1355,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 insertResponse,
                 HttpStatusCode.Conflict,
-                "urn:ed-fi:api:conflict:unresolved-reference",
+                "urn:ed-fi:management-api:conflict:unresolved-reference",
                 "Unresolved Reference",
                 "Data store does not exist."
             );
@@ -1411,7 +1411,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 updateResponse,
                 HttpStatusCode.NotFound,
-                "urn:ed-fi:api:not-found",
+                "urn:ed-fi:management-api:not-found",
                 "Not Found",
                 "ApiClient with ID 1 not found."
             );
@@ -1462,7 +1462,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 updateResponse,
                 HttpStatusCode.Conflict,
-                "urn:ed-fi:api:conflict:unresolved-reference",
+                "urn:ed-fi:management-api:conflict:unresolved-reference",
                 "Unresolved Reference",
                 "Application with ID 1 not found."
             );
@@ -1512,7 +1512,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 updateResponse,
                 HttpStatusCode.Conflict,
-                "urn:ed-fi:api:conflict:unresolved-reference",
+                "urn:ed-fi:management-api:conflict:unresolved-reference",
                 "Unresolved Reference",
                 "Data store does not exist."
             );
@@ -1588,7 +1588,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 insertResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -1619,7 +1619,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 updateResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -1695,7 +1695,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 insertResponse,
                 HttpStatusCode.Conflict,
-                "urn:ed-fi:api:conflict:unresolved-reference",
+                "urn:ed-fi:management-api:conflict:unresolved-reference",
                 "Unresolved Reference",
                 "Application with ID 999 not found."
             );
@@ -1729,7 +1729,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 updateResponse,
                 HttpStatusCode.Conflict,
-                "urn:ed-fi:api:conflict:unresolved-reference",
+                "urn:ed-fi:management-api:conflict:unresolved-reference",
                 "Unresolved Reference",
                 "Application with ID 999 not found."
             );
@@ -1763,7 +1763,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 insertResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -1799,7 +1799,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 updateResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -1888,7 +1888,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 insertResponse,
                 HttpStatusCode.Conflict,
-                "urn:ed-fi:api:conflict:unresolved-reference",
+                "urn:ed-fi:management-api:conflict:unresolved-reference",
                 "Unresolved Reference",
                 "The following DataStoreIds were not found in database: 999, 888"
             );
@@ -1922,7 +1922,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 updateResponse,
                 HttpStatusCode.Conflict,
-                "urn:ed-fi:api:conflict:unresolved-reference",
+                "urn:ed-fi:management-api:conflict:unresolved-reference",
                 "Unresolved Reference",
                 "The following DataStoreIds were not found in database: 999, 888"
             );
@@ -2113,7 +2113,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 updateResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -2191,7 +2191,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 resetResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -2451,7 +2451,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _updateResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -2527,7 +2527,7 @@ public class ApiClientModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -2732,7 +2732,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _deleteResponse,
                 HttpStatusCode.NotFound,
-                "urn:ed-fi:api:not-found",
+                "urn:ed-fi:management-api:not-found",
                 "Not Found",
                 "ApiClient not found"
             );
@@ -2768,7 +2768,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _deleteResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -2815,7 +2815,7 @@ public class ApiClientModuleTests
                 """
                 {
                   "detail": "The request could not be processed. See 'errors' for details.",
-                  "type": "urn:ed-fi:api:bad-gateway",
+                  "type": "urn:ed-fi:management-api:bad-gateway",
                   "title": "Bad Gateway",
                   "status": 502,
                   "correlationId": "{correlationId}",
@@ -2853,7 +2853,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _deleteResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -2887,7 +2887,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _deleteResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -2920,7 +2920,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _deleteResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -2948,7 +2948,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _deleteResponse,
                 HttpStatusCode.NotFound,
-                "urn:ed-fi:api:not-found",
+                "urn:ed-fi:management-api:not-found",
                 "Not Found",
                 "ApiClient not found"
             );
@@ -3023,7 +3023,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _deleteResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -3067,7 +3067,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _deleteResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -3102,7 +3102,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _deleteResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -3140,7 +3140,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _deleteResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -3222,7 +3222,7 @@ public class ApiClientModuleTests
             """
             {
               "detail": "Unable to process the request due to a concurrent modification. Retry the request.",
-              "type": "urn:ed-fi:api:conflict",
+              "type": "urn:ed-fi:management-api:conflict",
               "title": "Conflict",
               "status": 409,
               "correlationId": "{correlationId}",
@@ -3243,6 +3243,11 @@ public class ApiClientModuleTests
         public void SetUpUpdateDefaults()
         {
             _existingUuid = Guid.NewGuid();
+
+            // A replacement UUID the provider reports is unreferenced unless a fixture says
+            // otherwise, so compensation against it stays legitimate by default.
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
+                .Returns(new ApiClientUuidReferenceResult.None());
 
             A.CallTo(() => _apiClientRepository.GetApiClientById(A<int>.Ignored))
                 .Returns(
@@ -3317,9 +3322,12 @@ public class ApiClientModuleTests
         [TearDown]
         public void TearDownResponse() => _updateResponse?.Dispose();
 
-        protected async Task ActUpdateAsync(int applicationId = 1)
+        protected async Task ActUpdateAsync(
+            int applicationId = 1,
+            Action<IServiceCollection>? configureServices = null
+        )
         {
-            using var client = SetUpClient();
+            using var client = SetUpClient(configureServices: configureServices);
             _updateResponse = await client.PutAsync(
                 "/v3/apiClients/1",
                 new StringContent(
@@ -4202,6 +4210,11 @@ public class ApiClientModuleTests
 
         [Test]
         public void It_deletes_no_provider_client() => _deletedClientIds.Should().BeEmpty();
+
+        [Test]
+        public void It_runs_no_ownership_check_for_the_unchanged_uuid() =>
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
+                .MustNotHaveHappened();
     }
 
     [TestFixture]
@@ -4277,6 +4290,65 @@ public class ApiClientModuleTests
 
         [Test]
         public void It_deletes_nothing() => _deletedClientIds.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// The provider rollback reported a UUID that another ApiClient row already holds, so the
+    /// guarded synchronization refused it. That provider client belongs to the other row: nothing
+    /// is deleted, no reference check runs, the inconsistency is reported at Error, and the
+    /// request ends in a sanitized server error with the aggregate lock released.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_failed_api_client_update_whose_rollback_uuid_is_held_by_another_client
+        : CompensationSyncTestBase
+    {
+        private RecordingLockManager _recordingLockManager = null!;
+        private TestLogger<ApiClientModule> _moduleLogger = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            // The fixture instance, and so its fakes, outlives each test, so the recorded calls
+            // below must cover only this test's request.
+            Fake.ClearRecordedCalls(_apiClientRepository);
+            _recordingLockManager = new RecordingLockManager();
+            _lockManager = _recordingLockManager;
+            _moduleLogger = new TestLogger<ApiClientModule>();
+
+            ArrangeSyncResult(new ApiClientUuidSyncResult.FailureNewUuidInUse());
+
+            await ActUpdateAsync(configureServices: collection =>
+                collection.AddSingleton<ILogger<ApiClientModule>>(_moduleLogger)
+            );
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, _rollbackUuid.ToString());
+
+        [Test]
+        public void It_deletes_nothing() => _deletedClientIds.Should().BeEmpty();
+
+        [Test]
+        public void It_runs_no_reference_check_for_the_rollback_uuid() =>
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(_rollbackUuid))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_reports_the_held_rollback_uuid_at_error() =>
+            _moduleLogger
+                .Entries.Where(entry => entry.Level == LogLevel.Error)
+                .Select(entry => $"{entry.State}")
+                .Should()
+                .ContainSingle(entry =>
+                    entry.Contains("already held by another API client")
+                    && entry.Contains("nothing was deleted")
+                    && entry.Contains(_rollbackUuid.ToString())
+                );
+
+        [Test]
+        public void It_releases_every_lock() =>
+            _recordingLockManager.Handles.Should().OnlyContain(handle => handle.Disposed);
     }
 
     [TestFixture]
@@ -5065,7 +5137,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _response,
                 HttpStatusCode.NotFound,
-                "urn:ed-fi:api:not-found",
+                "urn:ed-fi:management-api:not-found",
                 "Not Found",
                 $"ApiClient with ID {MissingApiClientId} not found."
             );
@@ -5105,7 +5177,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 response,
                 HttpStatusCode.NotFound,
-                "urn:ed-fi:api:not-found",
+                "urn:ed-fi:management-api:not-found",
                 "Not Found",
                 "ApiClient not found"
             );
@@ -5169,7 +5241,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _response,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -5208,7 +5280,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _response,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -5468,7 +5540,7 @@ public class ApiClientModuleTests
                 """
                 {
                   "detail": "The request could not be processed. See 'errors' for details.",
-                  "type": "urn:ed-fi:api:bad-gateway",
+                  "type": "urn:ed-fi:management-api:bad-gateway",
                   "title": "Bad Gateway",
                   "status": 502,
                   "correlationId": "{correlationId}",
@@ -5508,7 +5580,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _insertResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -5629,7 +5701,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _insertResponse,
                 HttpStatusCode.Conflict,
-                "urn:ed-fi:api:conflict:unresolved-reference",
+                "urn:ed-fi:management-api:conflict:unresolved-reference",
                 "Unresolved Reference",
                 "Application with ID 1 not found."
             );
@@ -5669,7 +5741,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _insertResponse,
                 HttpStatusCode.InternalServerError,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -5746,7 +5818,7 @@ public class ApiClientModuleTests
             await AssertContract(
                 _insertResponse,
                 HttpStatusCode.Conflict,
-                "urn:ed-fi:api:conflict:unresolved-reference",
+                "urn:ed-fi:management-api:conflict:unresolved-reference",
                 "Unresolved Reference",
                 "Data store does not exist."
             );
@@ -5819,7 +5891,7 @@ public class ApiClientModuleTests
             """
             {
               "detail": "Data validation failed. See 'validationErrors' for details.",
-              "type": "urn:ed-fi:api:bad-request:data",
+              "type": "urn:ed-fi:management-api:bad-request:data",
               "title": "Data Validation Failed",
               "status": 400,
               "correlationId": "{correlationId}",
@@ -5954,7 +6026,8 @@ public class ApiClientModuleTests
 
     /// <summary>
     /// The name check passed, then a concurrent insert took the name before this row was written:
-    /// the unique constraint rejects it and the provisioned client is cleaned up.
+    /// the unique constraint rejects it, and the provisioned client is cleaned up once the
+    /// reference check proves no row holds its UUID.
     /// </summary>
     [TestFixture]
     public class Given_an_api_client_insert_with_a_duplicate_name : InsertWorkflowTestBase
@@ -5974,8 +6047,486 @@ public class ApiClientModuleTests
         public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
 
         [Test]
+        public void It_checks_the_created_uuid_for_references_before_deleting() =>
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(_createdClientUuid))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
         public void It_deletes_the_provisioned_client_exactly_once() =>
             _deletedClientUuids.Should().Equal(_createdClientUuid.ToString());
+    }
+
+    /// <summary>
+    /// Shared arrangement for the insert's identifier-conflict arms: the database rejects the row
+    /// under one of the two identifier constraints, and the fixture decides what the UUID
+    /// reference check reports. Every fixture asserts the exact sanitized 409 body, the absence of
+    /// credentials, and whether the provisioned provider client was deleted.
+    /// </summary>
+    public abstract class IdentifierConflictInsertTestBase : InsertWorkflowTestBase
+    {
+        protected const string DuplicateClientIdDetail =
+            "The generated client key is already in use. Retry the request.";
+
+        protected const string DuplicateClientUuidDetail =
+            "The identity provider client is already associated with another API client.";
+
+        protected const string LeftInPlaceMarker = "Could not prove provider client";
+
+        protected void ArrangeReferenceCheck(ApiClientUuidReferenceResult result) =>
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored)).Returns(result);
+
+        protected async Task AssertIdentifierConflictContract(string detail)
+        {
+            await AssertContract(
+                _insertResponse,
+                HttpStatusCode.Conflict,
+                "urn:ed-fi:management-api:conflict",
+                "Conflict",
+                detail
+            );
+            string responseBody = await _insertResponse.Content.ReadAsStringAsync();
+            responseBody.Should().NotContain(_createdClientUuid.ToString());
+            responseBody.Should().NotContain(_createdClientId);
+        }
+
+        protected void AssertReferenceCheckedOnceForTheCreatedUuid() =>
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(_createdClientUuid))
+                .MustHaveHappenedOnceExactly();
+
+        protected void AssertLeftInPlace(string outcome)
+        {
+            LoggedAt(LogLevel.Error)
+                .Should()
+                .ContainSingle(entry =>
+                    entry.Contains(LeftInPlaceMarker)
+                    && entry.Contains(_createdClientUuid.ToString())
+                    && entry.Contains(_createdClientId)
+                    && entry.Contains(outcome)
+                    && entry.Contains("left in place")
+                );
+            AssertNoRawCharactersLogged();
+        }
+    }
+
+    /// <summary>
+    /// The generated key collided and no row holds the provisioned client's UUID, so the client is
+    /// deleted exactly once and the caller is told to retry.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_insert_whose_generated_key_is_already_in_use
+        : IdentifierConflictInsertTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureDuplicateClientId());
+            ArrangeReferenceCheck(new ApiClientUuidReferenceResult.None());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_duplicate_key_conflict_contract() =>
+            await AssertIdentifierConflictContract(DuplicateClientIdDetail);
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_checks_the_created_uuid_for_references_before_deleting() =>
+            AssertReferenceCheckedOnceForTheCreatedUuid();
+
+        [Test]
+        public void It_deletes_the_provisioned_client_exactly_once() =>
+            _deletedClientUuids.Should().Equal(_createdClientUuid.ToString());
+
+        [Test]
+        public void It_records_the_collision_as_a_warning_with_the_client_id() =>
+            LoggedAt(LogLevel.Warning)
+                .Should()
+                .Contain(entry => entry.Contains("already in use") && entry.Contains(_createdClientId));
+
+        [Test]
+        public void It_logs_nothing_at_error() => LoggedAt(LogLevel.Error).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// The both-identifier arrangement: the database reports the key collision, and the reference
+    /// check finds another row already holding the provisioned client's UUID. The client is in
+    /// use, so it stays, and the key conflict is still what the caller is told.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_insert_whose_generated_key_collides_and_whose_uuid_is_referenced
+        : IdentifierConflictInsertTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureDuplicateClientId());
+            ArrangeReferenceCheck(new ApiClientUuidReferenceResult.Referenced());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_duplicate_key_conflict_contract() =>
+            await AssertIdentifierConflictContract(DuplicateClientIdDetail);
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_checks_the_created_uuid_for_references() =>
+            AssertReferenceCheckedOnceForTheCreatedUuid();
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_reports_the_client_left_in_place() =>
+            AssertLeftInPlace(nameof(ApiClientUuidReferenceResult.Referenced));
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_insert_whose_generated_key_collides_and_whose_reference_check_fails
+        : IdentifierConflictInsertTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_REFERENCE_CHECK_UNKNOWN_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureDuplicateClientId());
+            ArrangeReferenceCheck(new ApiClientUuidReferenceResult.FailureUnknown(Sentinel + RawSuffix));
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_duplicate_key_conflict_contract()
+        {
+            await AssertIdentifierConflictContract(DuplicateClientIdDetail);
+            (await _insertResponse.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+        }
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_reports_the_client_left_in_place_with_the_sanitized_failure() =>
+            AssertLeftInPlace(
+                $"{nameof(ApiClientUuidReferenceResult.FailureUnknown)}: {Sentinel}{SanitizedSuffix}"
+            );
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_insert_whose_generated_key_collides_and_whose_reference_check_is_unrecognized
+        : IdentifierConflictInsertTestBase
+    {
+        private sealed record UnrecognizedReferenceResult : ApiClientUuidReferenceResult;
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureDuplicateClientId());
+            ArrangeReferenceCheck(new UnrecognizedReferenceResult());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_duplicate_key_conflict_contract() =>
+            await AssertIdentifierConflictContract(DuplicateClientIdDetail);
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_reports_the_client_left_in_place_naming_the_outcome() =>
+            AssertLeftInPlace(nameof(UnrecognizedReferenceResult));
+    }
+
+    /// <summary>
+    /// A reference check that throws must not reach the global handler: the 409 stands, nothing is
+    /// deleted, and the thrown check is reported by its exception type alone. The exception's
+    /// message is never sanitized, so attaching it would log whatever text it carries; the
+    /// sentinel therefore carries the raw suffix and must appear nowhere in the log in either form.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_insert_whose_generated_key_collides_and_whose_reference_check_throws
+        : IdentifierConflictInsertTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_REFERENCE_CHECK_THROWN_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureDuplicateClientId());
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
+                .Throws(new InvalidOperationException(Sentinel + RawSuffix));
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_duplicate_key_conflict_contract()
+        {
+            await AssertIdentifierConflictContract(DuplicateClientIdDetail);
+            (await _insertResponse.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+        }
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_reports_the_thrown_check_by_type_only() =>
+            AssertLeftInPlace(nameof(InvalidOperationException));
+
+        [Test]
+        public void It_attaches_no_exception_to_any_log_entry() =>
+            _moduleLogger.Entries.Should().AllSatisfy(entry => entry.Exception.Should().BeNull());
+
+        [Test]
+        public void It_logs_the_exception_message_in_neither_form() =>
+            _moduleLogger
+                .Entries.Select(entry => $"{entry.State}")
+                .Should()
+                .OnlyContain(message => !message.Contains(Sentinel));
+    }
+
+    /// <summary>
+    /// The reference check clears the deletion, and the deletion itself then fails. The existing
+    /// cleanup helper reports the client as possibly remaining; the caller's 409 is unchanged.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_insert_whose_generated_key_collides_and_whose_cleanup_throws
+        : IdentifierConflictInsertTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_KEY_CLEANUP_THROWN_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureDuplicateClientId());
+            ArrangeReferenceCheck(new ApiClientUuidReferenceResult.None());
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>.Ignored))
+                .Invokes(call => _deletedClientUuids.Add(call.GetArgument<string>(0)!))
+                .Throws(new InvalidOperationException(Sentinel));
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_keeps_the_duplicate_key_conflict_contract()
+        {
+            await AssertIdentifierConflictContract(DuplicateClientIdDetail);
+            (await _insertResponse.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+        }
+
+        [Test]
+        public void It_attempted_the_deletion() =>
+            _deletedClientUuids.Should().Equal(_createdClientUuid.ToString());
+
+        [Test]
+        public void It_reports_the_thrown_cleanup_as_unconfirmed() =>
+            AssertCleanupReportedAsUnconfirmed(nameof(InvalidOperationException));
+    }
+
+    /// <summary>
+    /// The row violated both the name and the UUID constraint and the engine reported the name
+    /// one, so the duplicate-name result hides that another row holds the UUID the provider
+    /// reported. That client is in use, so it stays, and the caller still gets the name failure.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_insert_with_a_duplicate_name_whose_uuid_is_referenced
+        : IdentifierConflictInsertTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureDuplicateName());
+            ArrangeReferenceCheck(new ApiClientUuidReferenceResult.Referenced());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_data_validation_contract() =>
+            await AssertDuplicateApiClientNameContract(_insertResponse);
+
+        [Test]
+        public void It_checks_the_created_uuid_for_references() =>
+            AssertReferenceCheckedOnceForTheCreatedUuid();
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_reports_the_client_left_in_place() =>
+            AssertLeftInPlace(nameof(ApiClientUuidReferenceResult.Referenced));
+    }
+
+    /// <summary>
+    /// The application was not found, so no row was written and no constraint judged the reported
+    /// UUID. Another row holds it, so the client stays and the unresolved reference still answers.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_insert_for_a_missing_application_whose_uuid_is_referenced
+        : IdentifierConflictInsertTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureApplicationNotFound());
+            ArrangeReferenceCheck(new ApiClientUuidReferenceResult.Referenced());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public void It_keeps_the_unresolved_reference_conflict() =>
+            _insertResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_reports_the_client_left_in_place() =>
+            AssertLeftInPlace(nameof(ApiClientUuidReferenceResult.Referenced));
+    }
+
+    /// <summary>
+    /// An unclassified insert failure says nothing about the reported UUID. Another row holds it,
+    /// so the client stays and the server error still answers.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_insert_failing_unknown_whose_uuid_is_referenced
+        : IdentifierConflictInsertTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureUnknown("insert failed"));
+            ArrangeReferenceCheck(new ApiClientUuidReferenceResult.Referenced());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public void It_keeps_the_internal_server_error() =>
+            _insertResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_reports_the_client_left_in_place() =>
+            AssertLeftInPlace(nameof(ApiClientUuidReferenceResult.Referenced));
+    }
+
+    /// <summary>
+    /// Another row already references the UUID the provider reported for this request's client.
+    /// The client is provably in use, so no reference check and no deletion are attempted.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_insert_whose_provider_client_is_already_associated
+        : IdentifierConflictInsertTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureDuplicateClientUuid());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_duplicate_uuid_conflict_contract() =>
+            await AssertIdentifierConflictContract(DuplicateClientUuidDetail);
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_runs_no_reference_check() =>
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_reports_the_client_left_in_place_at_error()
+        {
+            LoggedAt(LogLevel.Error)
+                .Should()
+                .ContainSingle(entry =>
+                    entry.Contains("already associated with another API client")
+                    && entry.Contains(_createdClientUuid.ToString())
+                    && entry.Contains(_createdClientId)
+                    && entry.Contains("left in place")
+                );
+            AssertNoRawCharactersLogged();
+        }
+    }
+
+    /// <summary>
+    /// The identity provider refused the generated key as already registered and created nothing,
+    /// so the caller is told to retry with the same 409 the database collision produces, and no
+    /// row, reference check, or deletion follows. Fails against the implementation whose create
+    /// switch let the variant fall through to the 500 default.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_insert_whose_provider_reports_the_generated_key_already_registered
+        : IdentifierConflictInsertTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeProviderCreate(new ClientCreateResult.FailureDuplicateClientId());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_duplicate_key_conflict_contract() =>
+            await AssertIdentifierConflictContract(DuplicateClientIdDetail);
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_persists_no_api_client() => AssertNoDatabaseInsert();
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_runs_no_reference_check() =>
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_records_the_conflict_as_a_warning_with_the_client_id()
+        {
+            LoggedAt(LogLevel.Warning)
+                .Should()
+                .ContainSingle(entry =>
+                    entry.Contains("already registered at the identity provider")
+                    && entry.Contains("no client was created")
+                    && entry.Contains(_createdClientId)
+                );
+            AssertNoRawCharactersLogged();
+        }
+
+        [Test]
+        public void It_logs_nothing_at_error() => LoggedAt(LogLevel.Error).Should().BeEmpty();
     }
 
     /// <summary>
@@ -6223,5 +6774,289 @@ public class ApiClientModuleTests
         [Test]
         public async Task It_returns_a_sanitized_internal_server_error() =>
             await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
+    }
+
+    /// <summary>
+    /// The provider reported a replacement UUID that another ApiClient row already holds, so the
+    /// repository refused the update (D-7). Compensating would call UpdateClientAsync against that
+    /// UUID and mutate the other client's provider object, so after exactly one provider call the
+    /// module attempts no rollback, synchronization, reference check, deletion or outcome
+    /// resolution; it reports the inconsistency at Error and answers a sanitized server error.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_update_whose_provider_uuid_is_held_by_another_client
+        : CompensationSyncTestBase
+    {
+        private RecordingLockManager _recordingLockManager = null!;
+        private TestLogger<ApiClientModule> _moduleLogger = null!;
+        private List<string> _providerUpdateUuids = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            // The fixture instance, and so its fakes, outlives each test, so the recorded calls
+            // below must cover only this test's request.
+            Fake.ClearRecordedCalls(_apiClientRepository);
+            _recordingLockManager = new RecordingLockManager();
+            _lockManager = _recordingLockManager;
+            _moduleLogger = new TestLogger<ApiClientModule>();
+            _providerUpdateUuids = [];
+
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Invokes(call => _providerUpdateUuids.Add(call.GetArgument<string>(0)!))
+                .ReturnsNextFromSequence(
+                    new ClientUpdateResult.Success(_updatedUuid),
+                    new ClientUpdateResult.Success(_rollbackUuid)
+                );
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Returns(new ApiClientUpdateResult.FailureDuplicateClientUuid());
+
+            await ActUpdateAsync(configureServices: collection =>
+                collection.AddSingleton<ILogger<ApiClientModule>>(_moduleLogger)
+            );
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, _updatedUuid.ToString());
+
+        [Test]
+        public void It_updates_the_provider_once_and_never_rolls_it_back() =>
+            _providerUpdateUuids.Should().Equal(_existingUuid.ToString());
+
+        [Test]
+        public void It_synchronizes_no_uuid() =>
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(A<int>.Ignored, A<Guid>.Ignored, A<Guid>.Ignored)
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_runs_no_reference_check() =>
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_deletes_no_provider_client() => _deletedClientIds.Should().BeEmpty();
+
+        [Test]
+        public void It_does_not_resolve_the_outcome() =>
+            A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<int>.Ignored))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_reports_the_held_uuid_at_error_without_compensation() =>
+            _moduleLogger
+                .Entries.Where(entry => entry.Level == LogLevel.Error)
+                .Select(entry => $"{entry.State}")
+                .Should()
+                .ContainSingle(entry =>
+                    entry.Contains("already held by another API client")
+                    && entry.Contains("no compensation attempted")
+                    && entry.Contains(_updatedUuid.ToString())
+                );
+
+        [Test]
+        public void It_releases_every_lock() =>
+            _recordingLockManager.Handles.Should().OnlyContain(handle => handle.Disposed);
+    }
+
+    /// <summary>
+    /// The update violated both the name and the UUID constraint and the engine reported the name
+    /// one, so the repository answered FailureDuplicateName while the provider had reported a
+    /// replacement UUID that another ApiClient row holds. Compensating against that UUID would
+    /// mutate the other client's provider object, so the ownership check refuses it: no rollback,
+    /// synchronization, deletion or outcome resolution, the inconsistency reported at Error, and a
+    /// sanitized server error instead of the duplicate-name contract.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_update_with_a_duplicate_name_whose_provider_uuid_is_held_by_another_client
+        : CompensationSyncTestBase
+    {
+        private RecordingLockManager _recordingLockManager = null!;
+        private TestLogger<ApiClientModule> _moduleLogger = null!;
+        private List<string> _providerUpdateUuids = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            // The fixture instance, and so its fakes, outlives each test, so the recorded calls
+            // below must cover only this test's request.
+            Fake.ClearRecordedCalls(_apiClientRepository);
+            _recordingLockManager = new RecordingLockManager();
+            _lockManager = _recordingLockManager;
+            _moduleLogger = new TestLogger<ApiClientModule>();
+            _providerUpdateUuids = [];
+
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Invokes(call => _providerUpdateUuids.Add(call.GetArgument<string>(0)!))
+                .ReturnsNextFromSequence(
+                    new ClientUpdateResult.Success(_updatedUuid),
+                    new ClientUpdateResult.Success(_rollbackUuid)
+                );
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Returns(new ApiClientUpdateResult.FailureDuplicateName());
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(_updatedUuid))
+                .Returns(new ApiClientUuidReferenceResult.Referenced());
+            ArrangeSyncResult(new ApiClientUuidSyncResult.Success());
+
+            await ActUpdateAsync(configureServices: collection =>
+                collection.AddSingleton<ILogger<ApiClientModule>>(_moduleLogger)
+            );
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, _updatedUuid.ToString());
+
+        [Test]
+        public void It_checks_ownership_of_the_reported_uuid_once() =>
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(_updatedUuid))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_updates_the_provider_once_and_never_rolls_it_back() =>
+            _providerUpdateUuids.Should().Equal(_existingUuid.ToString());
+
+        [Test]
+        public void It_synchronizes_no_uuid() =>
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(A<int>.Ignored, A<Guid>.Ignored, A<Guid>.Ignored)
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_deletes_no_provider_client() => _deletedClientIds.Should().BeEmpty();
+
+        [Test]
+        public void It_does_not_resolve_the_outcome() =>
+            A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<int>.Ignored))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_reports_the_held_uuid_at_error_without_compensation() =>
+            _moduleLogger
+                .Entries.Where(entry => entry.Level == LogLevel.Error)
+                .Select(entry => $"{entry.State}")
+                .Should()
+                .ContainSingle(entry =>
+                    entry.Contains("already held by another API client")
+                    && entry.Contains("no compensation attempted")
+                    && entry.Contains(_updatedUuid.ToString())
+                );
+
+        [Test]
+        public void It_releases_every_lock() =>
+            _recordingLockManager.Handles.Should().OnlyContain(handle => handle.Disposed);
+    }
+
+    /// <summary>
+    /// Same misleading name failure, but the ownership check of the replacement UUID throws. An
+    /// unknown ownership outcome never authorizes compensation: nothing is rolled back,
+    /// synchronized or deleted, the thrown check is reported by exception type only, and the
+    /// request ends in a sanitized server error.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_update_with_a_duplicate_name_whose_ownership_check_throws
+        : CompensationSyncTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_OWNERSHIP_CHECK_THROWN_must_not_leak";
+        private TestLogger<ApiClientModule> _moduleLogger = null!;
+        private List<string> _providerUpdateUuids = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            Fake.ClearRecordedCalls(_apiClientRepository);
+            _moduleLogger = new TestLogger<ApiClientModule>();
+            _providerUpdateUuids = [];
+
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Invokes(call => _providerUpdateUuids.Add(call.GetArgument<string>(0)!))
+                .ReturnsNextFromSequence(
+                    new ClientUpdateResult.Success(_updatedUuid),
+                    new ClientUpdateResult.Success(_rollbackUuid)
+                );
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Returns(new ApiClientUpdateResult.FailureDuplicateName());
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(_updatedUuid))
+                .Throws(new InvalidOperationException(Sentinel));
+            ArrangeSyncResult(new ApiClientUuidSyncResult.Success());
+
+            await ActUpdateAsync(configureServices: collection =>
+                collection.AddSingleton<ILogger<ApiClientModule>>(_moduleLogger)
+            );
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
+
+        [Test]
+        public void It_updates_the_provider_once_and_never_rolls_it_back() =>
+            _providerUpdateUuids.Should().Equal(_existingUuid.ToString());
+
+        [Test]
+        public void It_synchronizes_no_uuid() =>
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(A<int>.Ignored, A<Guid>.Ignored, A<Guid>.Ignored)
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_deletes_no_provider_client() => _deletedClientIds.Should().BeEmpty();
+
+        [Test]
+        public void It_reports_the_thrown_check_by_type_only() =>
+            _moduleLogger
+                .Entries.Where(entry => entry.Level == LogLevel.Error)
+                .Select(entry => $"{entry.State}")
+                .Should()
+                .ContainSingle(entry =>
+                    entry.Contains(nameof(InvalidOperationException))
+                    && entry.Contains("no compensation attempted")
+                    && entry.Contains(_updatedUuid.ToString())
+                );
+
+        [Test]
+        public void It_attaches_no_exception_to_any_log_entry() =>
+            _moduleLogger.Entries.Should().AllSatisfy(entry => entry.Exception.Should().BeNull());
+
+        [Test]
+        public void It_logs_the_exception_message_nowhere() =>
+            _moduleLogger
+                .Entries.Select(entry => $"{entry.State}")
+                .Should()
+                .OnlyContain(message => !message.Contains(Sentinel));
     }
 }

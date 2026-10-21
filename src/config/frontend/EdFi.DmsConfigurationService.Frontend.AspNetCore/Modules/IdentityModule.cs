@@ -119,6 +119,12 @@ public class IdentityModule : IEndpointModule
                                     failureIdentityProvider.IdentityProviderError.FailureMessage,
                                     httpContext.TraceIdentifier
                                 ),
+                            // The uniqueness precheck above is not atomic: a client registered
+                            // between it and the creation reaches the provider, which refuses the
+                            // key. That is the condition the precheck reports, so it is answered
+                            // with the same validation failure rather than the insert endpoints'
+                            // 409 (DMS-1529 D-5).
+                            ClientCreateResult.FailureDuplicateClientId => throw DuplicateClientId(),
                             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
                         };
                     }
@@ -131,16 +137,7 @@ public class IdentityModule : IEndpointModule
                 );
                 if (clientExists)
                 {
-                    var validationFailures = new List<ValidationFailure>
-                    {
-                        new()
-                        {
-                            PropertyName = "ClientId",
-                            ErrorMessage =
-                                "Client with the same Client Id already exists. Please provide different Client Id.",
-                        },
-                    };
-                    throw new ValidationException(validationFailures);
+                    throw DuplicateClientId();
                 }
                 return true;
             }
@@ -148,6 +145,20 @@ public class IdentityModule : IEndpointModule
 
         return FailureResults.Authorization(httpContext.TraceIdentifier, ["Registration is disabled."]);
     }
+
+    /// <summary>
+    /// The registration endpoint's duplicate-client answer, shared by the uniqueness precheck and
+    /// the provider-detected conflict so both paths produce the same 400 body.
+    /// </summary>
+    private static ValidationException DuplicateClientId() =>
+        new([
+            new ValidationFailure
+            {
+                PropertyName = "ClientId",
+                ErrorMessage =
+                    "Client with the same Client Id already exists. Please provide different Client Id.",
+            },
+        ]);
 
     private const string BasicAuthScheme = "basic ";
 
@@ -215,15 +226,10 @@ public class IdentityModule : IEndpointModule
     private static async Task<IResult> GetClientAccessToken(
         TokenRequest.Validator validator,
         [FromServices] ITokenManager tokenManager,
-        [FromServices] IConfiguration configuration,
         [FromServices] ILogger<IdentityModule> logger,
         HttpContext httpContext
     )
     {
-        var identityProvider =
-            configuration.GetValue<string>("AppSettings:IdentityProvider")?.ToLowerInvariant()
-            ?? "self-contained";
-
         // Manually read form data to handle empty form bodies in .NET 10
         // (Minimal API [FromForm] binding returns 400 with empty body before handler is invoked)
         string clientId = string.Empty;
@@ -231,13 +237,10 @@ public class IdentityModule : IEndpointModule
         string grantType = string.Empty;
         string scope = string.Empty;
 
-        // For self-contained mode, support HTTP Basic authentication
-        if (string.Equals(identityProvider, "self-contained", StringComparison.OrdinalIgnoreCase))
-        {
-            TryParseBasicAuthCredentials(httpContext, logger, out clientId, out clientSecret);
-        }
+        // Support HTTP Basic authentication in every identity provider mode
+        TryParseBasicAuthCredentials(httpContext, logger, out clientId, out clientSecret);
 
-        // Read form data for all parameters (and as fallback for credentials in self-contained mode)
+        // Read form data for all parameters (and for any credential the Basic header did not supply)
         if (httpContext.Request.HasFormContentType)
         {
             var form = await httpContext.Request.ReadFormAsync();
@@ -287,12 +290,19 @@ public class IdentityModule : IEndpointModule
             );
         }
 
-        var tokenResult = await tokenManager.GetAccessTokenAsync([
-            new KeyValuePair<string, string>("client_id", model.client_id),
-            new KeyValuePair<string, string>("client_secret", model.client_secret),
-            new KeyValuePair<string, string>("grant_type", model.grant_type),
-            new KeyValuePair<string, string>("scope", model.scope),
-        ]);
+        // RFC 6749 section 3.2: a parameter sent without a value is treated as omitted
+        List<KeyValuePair<string, string>> tokenRequestParameters =
+        [
+            new("client_id", model.client_id),
+            new("client_secret", model.client_secret),
+            new("grant_type", model.grant_type),
+        ];
+        if (!string.IsNullOrEmpty(model.scope))
+        {
+            tokenRequestParameters.Add(new("scope", model.scope));
+        }
+
+        var tokenResult = await tokenManager.GetAccessTokenAsync(tokenRequestParameters);
 
         return tokenResult switch
         {
@@ -324,6 +334,10 @@ public class IdentityModule : IEndpointModule
                     ),
                     Forbidden forbidden => FailureResults.Forbidden(
                         forbidden.FailureMessage,
+                        httpContext.TraceIdentifier
+                    ),
+                    InvalidScope invalidScope => FailureResults.InvalidScope(
+                        invalidScope.FailureMessage,
                         httpContext.TraceIdentifier
                     ),
                     _ => FailureResults.BadGateway(

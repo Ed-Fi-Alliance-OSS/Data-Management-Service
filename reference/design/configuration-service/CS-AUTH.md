@@ -23,7 +23,7 @@ role defined in `IdentitySettings:ConfigServiceRole`.
 The CMS exposes standard OAuth 2.0 endpoints:
 
 | Endpoint | Purpose | Caller authentication |
-|---|---|---|
+| --- | --- | --- |
 | `POST /connect/token` | Issue an access token (client credentials grant only) | Anonymous (client credentials in the request) |
 | `POST /connect/introspect` | Introspect a token (RFC 7662) | Anonymous |
 | `POST /connect/revoke` | Revoke a token (RFC 7009) | Client credentials (HTTP Basic or form body, exactly one of them) [^revoke] |
@@ -34,8 +34,25 @@ and not a bearer access token. Both identity provider modes enforce it and both 
 `self-contained` in the CMS token store, `keycloak` by delegating to Keycloak. See
 [Token revocation](#token-revocation).
 
-In `self-contained` mode, `/connect/token` also accepts credentials via HTTP
-Basic authentication in addition to the form body.
+`/connect/token` accepts client credentials as HTTP Basic or as form fields in both identity provider modes, with Basic taking precedence.
+Each value a parsed Basic header supplies wins, and a form field only fills a value Basic left empty, such as the empty secret in `Basic base64("id:")`.
+A malformed Basic value falls back to the form fields.
+A request that carries both Basic and form credentials is not rejected at `/connect/token`, unlike `/connect/revoke`.
+
+An omitted or empty `scope` is treated as absent, as RFC 6749 section 3.2 requires, so CMS does not forward a `scope` parameter.
+Keycloak then issues the client's default client scopes.
+The `self-contained` provider issues the scopes registered for the client.
+
+Under Keycloak, a requested scope that Keycloak rejects answers `400` with `type` `urn:ed-fi:management-api:bad-request` and `errors` of `["invalid_scope. <description>"]`, for example `invalid_scope. Invalid scopes: edfi_admin_api/readonly_access`.
+It used to answer `502`.
+Other Keycloak failures keep their previous answers: a failed connection, a 5xx or any other `400` error code answers `502`, and a name-resolution failure or a timeout answers `500`.
+The `self-contained` provider does not reject an ungranted scope: it issues the requested scopes the client holds, and the client's registered scopes when it holds none of them.
+
+Both `/openapi/v1.json` and `/metadata/specifications` declare an `oauth2_client_credentials` scheme whose `tokenUrl` is the document's own server URL (request scheme, host and path base) followed by `/connect/token`.
+The token URL follows the address the document was requested on, as the server URL and the DMS OpenAPI token URL do; the discovery document instead builds its endpoints from `IdentitySettings:Authority`, because services fetch it to validate tokens.
+The scheme lists the scopes `edfi_admin_api/full_access`, `edfi_admin_api/readonly_access` and `edfi_admin_api/authMetadata_readonly_access`.
+Operations that need no token (`/connect/*`, `GET /`, `GET /tenancy`, `GET /health` and discovery) declare an empty `security` array.
+A stock Swagger UI can therefore authorize against the Configuration Service in both modes.
 
 ## Token revocation
 
@@ -102,9 +119,9 @@ each part as a form value:
   id or the secret is empty, or when anything other than one or more spaces separates
   `Basic` from the value.
 
-`/connect/token` keeps its lenient parser, which uses `Uri.UnescapeDataString` and falls back to
-form fields when the Basic value cannot be decoded. For a secret sent without encoding, the two
-parsers agree or differ as follows:
+`/connect/token` keeps its lenient parser in both identity provider modes; it uses
+`Uri.UnescapeDataString` and falls back to form fields when the Basic value cannot be decoded.
+For a secret sent without encoding, the two parsers agree or differ as follows:
 
 - **A literal `+`.** `/connect/token` keeps it; revocation decodes it to a space, compares a
   different secret and answers `401 invalid_client`.
@@ -134,7 +151,7 @@ never echoes provider text:
 ```
 
 | Condition | Response |
-|---|---|
+| --- | --- |
 | Authenticated owner, supported live token | `200`, empty; token revoked |
 | Authenticated caller; unknown, invalid, expired, already revoked, or another client's token | `200`, empty; nothing changes |
 | Not a form body, malformed form, duplicated parameter or `Authorization` header, mixed mechanisms, missing or empty `token` | `400 invalid_request` |
@@ -211,7 +228,7 @@ the Keycloak Admin REST API (`GET /admin/realms/{realm}/clients?clientId=...`) a
 only on affirmative evidence:
 
 | Admin read outcome | Result |
-|---|---|
+| --- | --- |
 | Exactly one client whose `clientId` matches ordinally, `publicClient` explicitly `false`, `bearerOnly` absent or `false` | delegate |
 | No ordinal match | `invalid_client` |
 | The match is public, or bearer-only | `invalid_client` |
@@ -229,7 +246,7 @@ See [KEYCLOAK-SETUP.md](../../../eng/docker-compose/KEYCLOAK-SETUP.md#token-revo
 ### Supported token types and their effects
 
 | Token | `self-contained` | `keycloak` |
-|---|---|---|
+| --- | --- | --- |
 | Access token (JWT) | Supported; the only type CMS issues. Located by its verified `jti` | Supported. Verified end to end on Keycloak 26.1.4 |
 | Refresh token | Not issued | Supported by Keycloak's endpoint. Issued for `client_credentials` only when the client attribute `client_credentials.use_refresh_token` is `true`. Characterized directly against Keycloak (26.1.4 and 26.7.5), not through a CMS end-to-end scenario |
 | Offline token | Not issued | Revocable at Keycloak per its source. **Untested**: needs `offline_access` and a user flow, outside this ticket's verification |
@@ -287,7 +304,7 @@ Revocation changes the provider's state immediately, but not every consumer cons
 state:
 
 | Consumer | `self-contained` token | `keycloak` token |
-|---|---|---|
+| --- | --- | --- |
 | CMS protected endpoints | Rejected on the next request (per-request status check by `jti`) | **Accepted until `exp` + 5 minutes** (default JWT bearer clock skew): CMS validates Keycloak tokens locally and does not introspect |
 | DMS resource API | **Accepted until `exp` + `JwtAuthentication:ClockSkewSeconds`** (default 30 s): DMS self-inspects and does not consult token status | Same as the `self-contained` column |
 | Provider introspection | `active:false` immediately | `active:false` immediately (subject to the `aud` rule above) |
@@ -807,10 +824,10 @@ There are two supported orders:
      - *Healthy key store, with traffic.* The last load that read the old rows completes
        within one load timeout of the insert. Its cooldown ends one cooldown later. The
        first new-key request after that starts a reload, which completes within one load
-       timeout. New-key tokens are therefore accepted from at most load timeout + cooldown
-       + load timeout after the insert: **50 s** at the defaults. This assumes a new-key
-       request reaches the instance once the cooldown has ended. Without one, `T_prop`
-       applies.
+       timeout. New-key tokens are therefore accepted from at most load timeout +
+       cooldown + load timeout after the insert: **50 s** at the defaults. This assumes a
+       new-key request reaches the instance once the cooldown has ended. Without one,
+       `T_prop` applies.
      - *Key store failing.* The key arrives with the first successful load after the store
        recovers, within the conditional recovery bounds above (*R* + 82 s at the defaults
        with no load in flight at recovery, *R* + 92 s with one).
@@ -923,7 +940,7 @@ connection-capacity note in
 Authorization is scope-based. Three scopes are defined:
 
 | Scope | Description |
-|---|---|
+| --- | --- |
 | `edfi_admin_api/full_access` | Full access to all CMS API endpoints |
 | `edfi_admin_api/readonly_access` | Read-only access to all CMS API endpoints |
 | `edfi_admin_api/authMetadata_readonly_access` | Read access to the `MapLimitedAccess` endpoints below: every Configuration Service read a single-tenant DMS makes. A multi-tenant DMS also reads `GET /v3/tenants/`, which is `MapSecuredGet`, so it needs `readonly_access` |
@@ -933,13 +950,13 @@ Authorization is scope-based. Three scopes are defined:
 Scope requirements are applied per HTTP method via extension helpers:
 
 | Helper | Allowed scopes | Used for |
-|---|---|---|
+| --- | --- | --- |
 | `MapSecuredGet` | `full_access` or `readonly_access` | All other GET endpoints |
 | `MapSecuredPost` | `full_access` only | All POST endpoints |
 | `MapSecuredPut` | `full_access` only | All PUT endpoints |
 | `MapSecuredDelete` | `full_access` only | All DELETE endpoints |
 | `MapLimitedAccess` | Any of the three scopes | Exactly these GET routes: `/v3/authorizationMetadata`, `/v3/claimSets/`, `/v3/apiClients/`, `/v3/apiClients/{id}`, `/v3/dataStores/`, `/v3/dataStores/{id}`, `/v3/dataStoreContexts/`, `/v3/dataStoreContexts/{id}`, `/v3/dataStoreDerivatives/`, `/v3/dataStoreDerivatives/{id}`, `/v3/applications/{id}`, `/v3/profiles/`, `/v3/profiles/{id}` |
-| `MapPublic` | Anonymous | Health, JWKS, discovery endpoints |
+| `MapPublic` | Anonymous | Tenancy |
 
 ## Roles
 

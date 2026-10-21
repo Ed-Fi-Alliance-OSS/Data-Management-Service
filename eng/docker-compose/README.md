@@ -111,8 +111,10 @@ infrastructure starts:
 ./bootstrap-local-dms.ps1 -Rebuild
 ```
 
-Because `-d -v` removes `.bootstrap/`, republish `api-schema-tools` as described under
-[Standard mode](#standard-mode-package-backed) before the next bootstrap.
+Because `-d -v` removes `.bootstrap/`, the next bootstrap reuses an eligible tool from the build
+output directories or publishes it from source. The .NET 10 SDK is required when publishing is
+needed. Clear or update `DMS_SCHEMA_TOOL_PATH` if it points into the deleted workspace; an
+explicit path fails closed rather than triggering automatic publishing.
 
 By default, authentication uses the Self-Contained (OpenIddict) identity provider. The environment and startup scripts are pre-configured for Self-Contained mode, and Keycloak is not required unless explicitly selected.
 
@@ -297,11 +299,70 @@ in your `.env` before starting or recreating the stack: the Smoke Test Utility r
 a new token for each resource GET and otherwise exceeds the default limit of 15.
 Restore the configured limit and recreate the stack after the smoke run.
 
-After the stack is up, run the smoke tests the same way as for PostgreSQL:
+After the stack is up, run the smoke tests the same way as for PostgreSQL. The script imports its
+modules relative to the current directory, so run it from `eng/smoke_test`. For `$key` and `$secret`, see
+[Smoke-test credentials](#smoke-test-credentials--addsmoketestcredentials).
 
 ```pwsh
-../smoke_test/Invoke-NonDestructiveApiTests.ps1 -BaseUrl "http://localhost:8080" -Key $key -Secret $secret
+cd ../smoke_test
+./Invoke-NonDestructiveApiTests.ps1 -BaseUrl "http://localhost:8080" -Key $key -Secret $secret
 ```
+
+## Smoke-test credentials (`-AddSmokeTestCredentials`)
+
+`-AddSmokeTestCredentials` creates a "Smoke Test Application" (vendor "Smoke Test Vendor", claim set
+`EdFiSandbox`) in the Configuration Service for `eng/smoke_test/Invoke-NonDestructiveApiTests.ps1`. The
+Configuration Service returns the application's secret **only once**, in its create response, so each
+entry point hands it to you in exactly one place.
+
+* **`bootstrap-local-dms.ps1` / `bootstrap-published-dms.ps1`:**
+  * The wrapper prints a smoke-test credential summary as its **last** output, on every run shape: Docker-hosted, `-LoadSeedData`, `-InfraOnly`, `-InfraOnly -DmsBaseUrl`, and `-EnableKafkaCdc`.
+  * If a later phase fails after the credential was created, it prints the summary under a "created before the failure; the stack is NOT ready" header, then reports the original error. This covers phases that fail with an error. It does not cover **Ctrl+C**: PowerShell stops the pipeline and discards output written while stopping, so an interrupted run prints no summary. If you interrupt a run after its configure phase, the application may exist with no copy of its secret. Remove the "Smoke Test Application" before you run with the flag again.
+* **`configure-local-data-store.ps1`:** the structured result gains a `SmokeTestCredential` property (`Key`, `Secret`, `ApplicationName`). Capture it, because the secret is not shown anywhere else:
+
+  ```pwsh
+  $configure = ./configure-local-data-store.ps1 -AddSmokeTestCredentials -EnvironmentFile ./.env.ide
+  $configure.SmokeTestCredential.Key
+  $configure.SmokeTestCredential.Secret
+  ```
+
+  Running it without capturing the result prints the whole object, secret included. Treat the result as sensitive: do not log or persist it.
+* **`start-published-dms.ps1`** (direct full start, a transitional flag):
+  * creates the application after it registers the data stores, for those data stores and the configured tenant (with `-NoDataStore`, for the first existing data store in that tenant);
+  * then prints the summary.
+  * It does **not** provision the DMS schema. Use it against an already-provisioned database, or use `bootstrap-published-dms.ps1`.
+  * With self-contained identity, running `start-published-dms.ps1` again against an already-running provisioned stack keeps the existing active OpenIddict signing key: `setup-openiddict.ps1 -InitDb` creates a key only when none is active. The running DMS therefore accepts newly issued tokens without a restart. For an encryption-key mismatch, see [Signing key on rerun](#signing-key-on-rerun--initdb). Keep the delivered key/secret; do not rerun `-AddSmokeTestCredentials`, because CMS rejects a duplicate Smoke Test Application.
+
+For a completed run with a single route-unqualified data store and no tenant route, the summary includes a
+copyable command. Every value is a
+single-quoted PowerShell literal, so characters such as `$` in a generated secret stay literal:
+
+```text
+--- Smoke test credentials ---
+Application: Smoke Test Application
+Key:         <key>
+Secret:      <secret>
+The Configuration Service returns this secret only once. These bootstrap scripts do not write it to logs or files; your terminal, transcripts, or host logging may still retain it. Store it now.
+Run the non-destructive API smoke tests:
+  Set-Location -LiteralPath '<repo>\eng\smoke_test'
+  ./Invoke-NonDestructiveApiTests.ps1 -BaseUrl 'http://localhost:8080' -OAuthUrl 'http://localhost:8080/oauth/token' -Key '<key>' -Secret '<secret>'
+```
+
+* **DMS URL not known yet** (`-InfraOnly` without `-DmsBaseUrl`): the command uses a `<dms-base-url>` placeholder for you to replace once the IDE-hosted DMS is healthy.
+* **IDE-hosted DMS** (`-InfraOnly`, with or without `-DmsBaseUrl`): whether the summary adds a tenant segment follows `DMS_MULTI_TENANCY` from the env file, but the IDE-hosted DMS reads its own `AppSettings:MultiTenancy` (default `false`). The summary states the value it assumes; set the IDE configuration to match.
+* **Tenant routes:** the summary lists the tenant-qualified DMS base and token URLs instead of a command. DMS serves tenant routes only with `DMS_MULTI_TENANCY=true`; a `DMS_CONFIGURATION_SERVICE_TENANT` used only by the Configuration Service does not qualify the URLs. Smoke runs against qualified routes have not been validated with the Smoke Test Utility.
+* **Data stores with route contexts** (school-year data stores from `-SchoolYearRange`, or a `-NoDataStore` direct start that selects a data store qualified by `schoolYear`, `districtId` or several contexts): the summary lists each data store's contexts as `key=value`, with no command or URL. Whether and in what order those values appear in the route depends on the target DMS's `ROUTE_QUALIFIER_SEGMENTS` (`AppSettings:RouteQualifierSegments`), which the Configuration Service records do not establish.
+* **Self-contained identity:** the summary also reminds you that `CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1` must be set **before the stack starts** (see above and `eng/smoke_test/SMOKETEST.md`).
+
+> [!IMPORTANT]
+> Pass `-AddSmokeTestCredentials` only once per Configuration Service. The application name is unique
+> per vendor, so a later run with the flag against the same Configuration Service fails, even after an
+> earlier run failed. That includes a `-NoDataStore` follow-up wrapper run. Omit the flag on follow-up runs,
+> or remove the existing "Smoke Test Application" first.
+
+The flag is not honored by `start-local-dms.ps1` (which has no such parameter), by
+`start-published-dms.ps1 -InfraOnly`, or by the retained-CDC lifecycle and CDC retry paths of the
+wrappers.
 
 ## Configuration Service database topology
 
@@ -736,27 +797,34 @@ developers. It is driven by the effective env file's `SCHEMA_PACKAGES` value - c
 listed extension packages (the DS 5.2 default stages core + TPDM); custom or unpublished schema
 sets use Expert mode below.
 
-> **Requirement - `api-schema-tools` tool:** `prepare-dms-schema.ps1` needs the in-repo `api-schema-tools`
-> CLI published as a native executable. Publish it before running the prepare command. The step is
-> safe to re-run and is required again after a branch switch changes the tool or after `-d -v`
-> removes the `.bootstrap/` workspace.
+> **Requirement - .NET 10 SDK:** When no eligible `api-schema-tools` executable is available,
+> `prepare-dms-schema.ps1` automatically publishes the in-repo CLI as a native executable. This
+> adds publish time on the first run. After changing the tool or its dependencies, including by
+> switching branches, refresh the cached tool with the command below or delete
+> `.bootstrap/tools/api-schema-tools` so the next bootstrap can resolve it again. The cache takes
+> precedence over build output, so building the solution alone does not refresh it. Teardown with
+> `-d -v` also clears the cache.
 
 ```pwsh
-# 1. Publish the api-schema-tools tool (required on a clean checkout)
+# Optional: manually refresh the cached api-schema-tools executable
 $schemaToolProject = "../../src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj"
 $schemaToolOutput  = ".bootstrap/tools/api-schema-tools"
 dotnet publish $schemaToolProject -c Release -p:UseAppHost=true -o $schemaToolOutput
-
-# 2. Point to the platform-appropriate executable
-$schemaToolExe = if ($IsWindows) { "$schemaToolOutput/api-schema-tools.exe" } else { "$schemaToolOutput/api-schema-tools" }
 ```
+
+To use an executable outside the discovered locations, set `DMS_SCHEMA_TOOL_PATH` (or pass
+`-SchemaToolPath` to `prepare-dms-schema.ps1`). Explicit paths take precedence and must exist;
+an invalid override fails without automatic publishing. Clear the environment override with
+`Remove-Item Env:DMS_SCHEMA_TOOL_PATH` to restore automatic resolution.
+Use the environment override when preparation and provisioning must use the same external tool;
+`-SchemaToolPath` selects the tool only for the prepare phase.
 
 Standard mode (omit `-ApiSchemaPath`) stages the packages listed by the env file's
 `SCHEMA_PACKAGES` value; invoked without `-EnvironmentFile` (as below) it falls back to the
 catalog-pinned core-only default. There is no `-Extensions` parameter.
 
 ```pwsh
-./prepare-dms-schema.ps1 -SchemaToolPath $schemaToolExe
+./prepare-dms-schema.ps1
 ./prepare-dms-claims.ps1
 ./bootstrap-local-dms.ps1
 ```
@@ -776,10 +844,12 @@ staged for TPDM). Only extensions that are **not** bootstrap-mapped (a custom ex
 supply) require an additional `-ClaimsDirectoryPath` argument to `prepare-dms-claims.ps1`.
 
 **Wrapper shorthand:** `bootstrap-local-dms.ps1` stages standard mode from the effective
-`SCHEMA_PACKAGES` in-line (when no workspace is staged, or when the staged workspace's recorded
-package identity no longer matches) and then starts the stack. It auto-discovers the
-`api-schema-tools` executable published to `.bootstrap/tools/api-schema-tools` in step 1 (or set
-`DMS_SCHEMA_TOOL_PATH` to point elsewhere).
+`SCHEMA_PACKAGES` in-line when no workspace is staged, then starts the stack. If an existing
+standard workspace has a different recorded package identity, the wrapper fails fast before
+package downloads or Docker/CMS side effects; stop the stack and remove `.bootstrap/` before
+retrying. Expert filesystem workspaces are reused as staged. The wrapper resolves the schema tool
+from eligible existing executables or publishes it from source when needed. Set
+`DMS_SCHEMA_TOOL_PATH` to select an explicit executable.
 
 ```pwsh
 ./bootstrap-local-dms.ps1
@@ -808,7 +878,7 @@ that already contains them.
 # -ClaimsDirectoryPath is only needed for a non-bootstrap-mapped (custom) extension. Core plus the
 # built-in extensions (Sample, Homograph, TPDM) need no fragment argument: Sample and Homograph
 # stage claim fragments, while TPDM's claims ship in the embedded DS 5.2 set (no fragment staged).
-./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath $schemaToolExe
+./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema
 ./prepare-dms-claims.ps1 [-ClaimsDirectoryPath <directory-with-custom-extension-claimset-fragment>]
 ./bootstrap-local-dms.ps1
 ```
@@ -940,8 +1010,8 @@ The artifact includes:
 | `ConfigurationServiceSettings:ClientSecret` | `<local-cms-readonly-secret>` (replace with the `CMSReadOnlyAccess` client secret; local-dev default `ValidClientSecret1234567890!Abcd`) |
 | `ConfigurationServiceSettings:Scope` | `edfi_admin_api/readonly_access` |
 | `ConfigurationServiceSettings:EncryptionKey` | `<dms-config-database-encryption-key>` (replace with value of `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` from `.env`; `.env.example` default `secret!_32_chars_xxxxxxxxxxxxxxx`) |
-| `AppSettings:UseApiSchemaPath` | `true` (use staged bootstrap workspace schema; see activation note below) |
-| `AppSettings:ApiSchemaPath` | `<repo-root>/eng/docker-compose/.bootstrap/ApiSchema` (replace `<repo-root>` with your absolute path) |
+| `AppSettings:ApiSchema:UseCustomPath` | `true` (use staged bootstrap workspace schema; see activation note below) |
+| `AppSettings:ApiSchema:Path` | `<repo-root>/eng/docker-compose/.bootstrap/ApiSchema` (replace `<repo-root>` with your absolute path) |
 | `AppSettings:AuthenticationService` | `http://localhost:8081/connect/token` |
 | `JwtAuthentication:Authority` | `http://localhost:8081` (must exactly match the self-contained Configuration Service issuer configured in `.env.ide`) |
 | `JwtAuthentication:MetadataAddress` | `http://localhost:8081/.well-known/openid-configuration` (must share the advertised JWKS origin) |
@@ -979,8 +1049,8 @@ command; a containerized DMS cannot reach the Configuration Service through its 
 `ConfigurationServiceSettings:BaseUrl` and `AppSettings:AuthenticationService` on `localhost:8081`
 for their separate host-side calls.
 
-> **Activation note:** `AppSettings:UseApiSchemaPath` and `AppSettings:ApiSchemaPath` point at
-> the staged bootstrap workspace. With `UseApiSchemaPath=true`, DMS reads discovery/specification
+> **Activation note:** `AppSettings:ApiSchema:UseCustomPath` and `AppSettings:ApiSchema:Path`
+> point at the staged bootstrap workspace. With `ApiSchema:UseCustomPath=true`, DMS reads discovery/specification
 > JSON and XSD content from the staged workspace via the bootstrap asset manifest, with no
 > schema assemblies loaded on this path.
 
@@ -996,7 +1066,8 @@ cd eng/docker-compose
 
 The wrapper prints IDE next-step guidance (staged schema path and, when `DMS_CONFIGURATION_SERVICE_CLIENT_*`
 keys are set in the env file, `CMSReadOnlyAccess` client id and scope — never the secret value)
-after provisioning completes.
+after provisioning completes. With `-AddSmokeTestCredentials`, it ends with the
+[smoke-test credential summary](#smoke-test-credentials--addsmoketestcredentials).
 
 ### Two IDE workflow shapes
 
@@ -1023,6 +1094,8 @@ wait passes.
 > so the configure phase reuses the existing data store; without it, the configure phase registers
 > the same name again and the Configuration Service rejects it with 400:
 > `./bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> -NoDataStore -EnvironmentFile ./.env.ide [-LoadSeedData ...]`
+> Do not repeat `-AddSmokeTestCredentials` on that follow-up run: the Configuration Service rejects a
+> second "Smoke Test Application" for the same vendor.
 >
 > `-NoDataStore` supports exactly one existing route-unqualified data store. If the earlier run
 > used `-SchoolYearRange` (or otherwise created route-qualified data stores), do **not** re-run the
@@ -1052,10 +1125,11 @@ the health wait, then start DMS in the IDE between phases:
 
 ```pwsh
 cd eng/docker-compose
-./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath ...
+./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema
 ./prepare-dms-claims.ps1
 ./start-local-dms.ps1 -InfraOnly -IdentityProvider self-contained -EnvironmentFile ./.env.ide
-./configure-local-data-store.ps1 -AddSmokeTestCredentials -EnvironmentFile ./.env.ide
+$configure = ./configure-local-data-store.ps1 -AddSmokeTestCredentials -EnvironmentFile ./.env.ide
+$configure.SmokeTestCredential  # Key, Secret, ApplicationName - returned only once; store them now
 ./provision-dms-schema.ps1 -EnvironmentFile ./.env.ide
 # Start DMS in your IDE now.
 ./start-local-dms.ps1 -InfraOnly -DmsBaseUrl "http://localhost:5198" -EnvironmentFile ./.env.ide  # post-provision health wait only
@@ -1556,6 +1630,27 @@ $parameters = @{
 * `NewClientSecret` is always the literal secret, even when it begins with `ENV:`. Use `NewClientSecretEnvironmentVariable` (naming the variable, in place of `NewClientSecret`) only when the secret must be read from that process's environment instead of the argument list.
 * Both switches can be used together or separately as needed.
 
+#### Signing key on rerun (`-InitDb`)
+
+With self-contained identity, `start-local-dms.ps1`, `start-local-config.ps1` and
+`start-published-dms.ps1` run `-InitDb` on every start, not only the first. So do the bootstrap
+wrappers, which call them.
+
+* An existing active signing key is kept. `-InitDb` creates a key only when none is active.
+* If the newest active key cannot be decrypted with the configured
+  `CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY`, `-InitDb` stops with an error and changes no
+  key. This happens, for example, after that value is changed in `.env` while the database is
+  kept, and the stack does not finish starting.
+  * To recover, restore the encryption key that the signing key was created with.
+  * Starting again with the mismatched value fails the same way, because startup never rotates
+    the key.
+* Replacing the signing key is an explicit operation, not something startup repairs. For a
+  disposable local stack, the simplest way is to remove it with its volumes (`-d -v`) and start
+  again.
+* On PostgreSQL, the database can reject the check itself, for example because of pgcrypto
+  permissions. `-InitDb` then reports that the key could not be checked and changes nothing; this
+  does not show that either key is wrong.
+
 ### Expired token cleanup (self-contained identity)
 
 The self-contained (OpenIddict) identity provider runs a background sweep that deletes expired
@@ -1567,7 +1662,7 @@ equivalent setting, because Keycloak owns its own token housekeeping.
 | `CONFIGURATION_SERVICE_IDENTITY_TOKEN_CLEANUP_ENABLED` | `true` | Enables the expired-token cleanup sweep. |
 | `CONFIGURATION_SERVICE_IDENTITY_TOKEN_CLEANUP_INTERVAL_MINUTES` | `30` | Interval, in minutes, between cleanup sweeps. |
 
-These map to `IdentitySettings__TokenCleanupEnabled` and
-`IdentitySettings__TokenCleanupIntervalMinutes` in `local-config.yml` and `published-config.yml`.
+These map to `IdentitySettings__TokenCleanup__Enabled` and
+`IdentitySettings__TokenCleanup__IntervalMinutes` in `local-config.yml` and `published-config.yml`.
 The interval accepts values from 1 to 71,582 minutes; a value outside that range is logged as a
 warning and falls back to the 30-minute default.

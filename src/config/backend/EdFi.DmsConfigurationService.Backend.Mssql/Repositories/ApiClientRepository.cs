@@ -73,6 +73,8 @@ public class ApiClientRepository(
     }
 
     private const string DuplicateNameConstraint = "UX_ApiClient_ApplicationId_Name";
+    private const string DuplicateClientIdConstraint = "UX_ApiClient_ClientId";
+    private const string DuplicateClientUuidConstraint = "UX_ApiClient_ClientUuid";
 
     public async Task<ApiClientInsertResult> InsertApiClient(
         ApiClientInsertCommand command,
@@ -158,6 +160,36 @@ public class ApiClientRepository(
             logger.LogWarning(ex, "API client name must be unique within the application");
             await transaction.RollbackAsync();
             return new ApiClientInsertResult.FailureDuplicateName();
+        }
+        catch (SqlException ex) when (ex.IsUniqueViolation(DuplicateClientIdConstraint))
+        {
+            // The SQL Server message names the conflicting key ("The duplicate key value is ..."),
+            // so only fixed text, the error number and the matched constraint are logged, never the
+            // exception or its message.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - deliberately omitted, see comment above
+            logger.LogWarning(
+                "API client key is already in use ({ErrorNumber}, {ConstraintName})",
+                ex.Number,
+                DuplicateClientIdConstraint
+            );
+#pragma warning restore S6667
+            await transaction.RollbackAsync();
+            return new ApiClientInsertResult.FailureDuplicateClientId();
+        }
+        catch (SqlException ex) when (ex.IsUniqueViolation(DuplicateClientUuidConstraint))
+        {
+            // The SQL Server message names the conflicting UUID ("The duplicate key value is ..."),
+            // so only fixed text, the error number and the matched constraint are logged, never the
+            // exception or its message.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - deliberately omitted, see comment above
+            logger.LogWarning(
+                "Identity provider client is already associated with another API client ({ErrorNumber}, {ConstraintName})",
+                ex.Number,
+                DuplicateClientUuidConstraint
+            );
+#pragma warning restore S6667
+            await transaction.RollbackAsync();
+            return new ApiClientInsertResult.FailureDuplicateClientUuid();
         }
         catch (Exception ex)
         {
@@ -471,6 +503,21 @@ public class ApiClientRepository(
             await RollbackSafelyAsync(transaction);
             return new ApiClientUpdateResult.FailureDuplicateName();
         }
+        catch (SqlException ex) when (ex.IsUniqueViolation(DuplicateClientUuidConstraint))
+        {
+            // The SQL Server message names the conflicting UUID ("The duplicate key value is ..."),
+            // so only fixed text, the error number and the matched constraint are logged, never the
+            // exception or its message.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - deliberately omitted, see comment above
+            logger.LogWarning(
+                "Identity provider client is already associated with another API client ({ErrorNumber}, {ConstraintName})",
+                ex.Number,
+                DuplicateClientUuidConstraint
+            );
+#pragma warning restore S6667
+            await RollbackSafelyAsync(transaction);
+            return new ApiClientUpdateResult.FailureDuplicateClientUuid();
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Update ApiClient failure");
@@ -653,6 +700,21 @@ public class ApiClientRepository(
 
             await transaction.CommitAsync();
             return new ApiClientUuidSyncResult.Success();
+        }
+        catch (SqlException ex) when (ex.IsUniqueViolation(DuplicateClientUuidConstraint))
+        {
+            // The SQL Server message names the conflicting UUID ("The duplicate key value is ..."),
+            // so only fixed text, the error number and the matched constraint are logged, never the
+            // exception or its message.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - deliberately omitted, see comment above
+            logger.LogWarning(
+                "The new identity provider client UUID is already referenced by another API client; nothing was written ({ErrorNumber}, {ConstraintName})",
+                ex.Number,
+                DuplicateClientUuidConstraint
+            );
+#pragma warning restore S6667
+            await RollbackSafelyAsync(transaction);
+            return new ApiClientUuidSyncResult.FailureNewUuidInUse();
         }
         catch (Exception ex)
         {

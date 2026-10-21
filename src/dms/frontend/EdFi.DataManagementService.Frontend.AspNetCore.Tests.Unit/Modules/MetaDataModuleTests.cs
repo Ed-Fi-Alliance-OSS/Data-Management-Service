@@ -1929,8 +1929,7 @@ public class Given_file_mode_missing_discovery_spec_route
         var appSettings = Options.Create(
             new CoreAppSettings
             {
-                ApiSchemaPath = _workspaceRoot,
-                UseApiSchemaPath = true,
+                ApiSchema = new() { UseCustomPath = true, Path = _workspaceRoot },
                 AllowIdentityUpdateOverrides = string.Empty,
             }
         );

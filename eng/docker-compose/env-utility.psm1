@@ -474,9 +474,12 @@ $script:RenamedLegacyVariables = [System.Collections.Generic.Dictionary[string, 
     'SECRETS_E2E_CMS_CLIENT_SECRET'            = 'SECRETS_E2E_CONFIGURATION_SERVICE_CLIENT_SECRET'
 }.GetEnumerator() | ForEach-Object { $script:RenamedLegacyVariables[$_.Key] = $_.Value }
 
-# Names nothing has read for at least one release; they have no replacement.
+# Names that are no longer read and have no replacement. DMS_ENABLE_CLAIMSET_RELOAD is listed because
+# AppSettings:ManagementEndpoints:Enabled now also controls claimset reload and view, so a .env that
+# keeps it at false no longer keeps those operations off.
 $script:RemovedLegacyVariables = [System.Collections.Generic.HashSet[string]]::new(
     [string[]]@(
+        'DMS_ENABLE_CLAIMSET_RELOAD',
         'DMS_CONFIG_USE_EMBEDDED_BASE_CLAIMS',
         'DMS_CONFIG_CLAIMS_PATH',
         'DMS_CONFIG_USE_CLAIMS_PATH',
@@ -815,6 +818,8 @@ function Resolve-DockerLocalDmsBaseUrl {
     <#
     .SYNOPSIS
         Returns the Docker-local DMS base URL derived from the supplied env-file values.
+        DMS_HTTP_PORTS is read as Compose interpolates it into the published port mapping, so a
+        value set in the shell wins over the env file.
     .PARAMETER EnvValues
         Hashtable returned by ReadValuesFromEnvFile.
     #>
@@ -822,11 +827,8 @@ function Resolve-DockerLocalDmsBaseUrl {
         [hashtable]$EnvValues
     )
 
-    $port = $EnvValues['DMS_HTTP_PORTS']
-    if (-not [string]::IsNullOrWhiteSpace($port)) {
-        return "http://localhost:$port"
-    }
-    return "http://localhost:8080"
+    $port = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvValues -Name "DMS_HTTP_PORTS" -DefaultValue "8080"
+    return "http://localhost:$port"
 }
 
 function Resolve-DmsRouteUrl {

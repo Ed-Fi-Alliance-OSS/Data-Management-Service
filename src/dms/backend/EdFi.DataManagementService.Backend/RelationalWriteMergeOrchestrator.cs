@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Profile;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend;
@@ -80,9 +81,21 @@ internal sealed class RelationalWriteMergeOrchestrator(
             )
         );
 
-        return _noProfileMergeSynthesizer.Synthesize(
+        var mergeResult = _noProfileMergeSynthesizer.Synthesize(
             new RelationalWriteNoProfileMergeRequest(request.WritePlan, flattenedWriteSet, currentState)
         );
+
+        if (!allowMissingDocumentReferencesForPrecedence)
+        {
+            return mergeResult;
+        }
+
+        return mergeResult with
+        {
+            DeferredMissingDocumentReferencePaths = resolvedReferences
+                .MissingDocumentReferences.Select(static failure => failure.Path.Value)
+                .ToHashSet(StringComparer.Ordinal),
+        };
     }
 
     private RelationalWriteMergeBoundary ResolveProfileMerge(

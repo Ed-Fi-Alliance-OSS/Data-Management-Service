@@ -198,6 +198,83 @@ public class MetadataStepDefinitions(PlaywrightContext playwrightContext, Scenar
         }
     }
 
+    [Then("the OpenAPI specification token URL should equal the configured base URL followed by {string}")]
+    public async Task ThenTheOpenApiTokenUrlShouldEqualTheConfiguredBaseUrlFollowedBy(string suffix)
+    {
+        JsonNode responseJson = await ParseLastResponseAsync();
+
+        string expected = _playwrightContext.ApiUrl.TrimEnd('/') + suffix;
+        GetTokenUrl(responseJson)
+            .Should()
+            .Be(expected, "the token URL must be the public address the tests reach the service at");
+    }
+
+    [Then("the OpenAPI specification token URL should equal the first server URL followed by {string}")]
+    public async Task ThenTheOpenApiTokenUrlShouldEqualTheFirstServerUrlFollowedBy(string suffix)
+    {
+        JsonNode responseJson = await ParseLastResponseAsync();
+
+        string? serverUrl = responseJson["servers"]?[0]?["url"]?.GetValue<string>();
+        serverUrl.Should().NotBeNullOrEmpty("OpenAPI spec should declare a first server URL");
+
+        GetTokenUrl(responseJson)
+            .Should()
+            .Be(serverUrl!.TrimEnd('/') + suffix, "the token URL must be derived from the first server URL");
+    }
+
+    [Then("the OpenAPI specification OAuth scopes should be exactly")]
+    public async Task ThenTheOpenApiOAuthScopesShouldBeExactly(Table table)
+    {
+        JsonNode responseJson = await ParseLastResponseAsync();
+
+        JsonNode? scopes = responseJson["components"]
+            ?["securitySchemes"]
+            ?[OAuthSchemeName]
+            ?["flows"]
+            ?["clientCredentials"]
+            ?["scopes"];
+        scopes.Should().NotBeNull($"'{OAuthSchemeName}' should define client credentials scopes");
+
+        scopes!
+            .AsObject()
+            .Select(property => property.Key)
+            .Should()
+            .BeEquivalentTo(table.Rows.Select(row => row["Scope"]).ToList());
+    }
+
+    [Then("the OpenAPI specification field {string} should be an empty array")]
+    public async Task ThenTheOpenApiFieldShouldBeAnEmptyArray(string field)
+    {
+        JsonNode responseJson = await ParseLastResponseAsync();
+
+        JsonNode? currentNode = responseJson;
+        foreach (var part in field.Split('.'))
+        {
+            currentNode.Should().NotBeNull($"Field path '{field}' should exist");
+            currentNode = currentNode![part];
+        }
+
+        currentNode.Should().NotBeNull($"Field '{field}' should be present, not omitted");
+        currentNode.Should().BeOfType<JsonArray>($"Field '{field}' should be a JSON array");
+        currentNode!.AsArray().Should().BeEmpty($"Field '{field}' should be an empty array");
+    }
+
+    [Then("the OpenAPI specification should have tags and none should end with {string}")]
+    public async Task ThenTheOpenApiTagsShouldNotEndWith(string suffix)
+    {
+        JsonNode responseJson = await ParseLastResponseAsync();
+
+        JsonNode? tags = responseJson["tags"];
+        tags.Should().BeOfType<JsonArray>("OpenAPI spec should have a 'tags' array");
+
+        List<string> names = tags!
+            .AsArray()
+            .Select(tag => tag?["name"]?.GetValue<string>() ?? string.Empty)
+            .ToList();
+        names.Should().NotBeEmpty("an empty tag list would pass the suffix check vacuously");
+        names.Should().NotContain(name => name.EndsWith(suffix, StringComparison.Ordinal));
+    }
+
     [Given("a GET request is made to {string}")]
     public async Task GivenAGetRequestIsMadeTo(string url)
     {
@@ -277,6 +354,23 @@ public class MetadataStepDefinitions(PlaywrightContext playwrightContext, Scenar
             .Should()
             .BeTrue($"Field '{fieldName}' value '{fieldValue}' should match pattern '{pattern}'");
     }
+
+    private const string OAuthSchemeName = "oauth2_client_credentials";
+
+    private static string GetTokenUrl(JsonNode responseJson)
+    {
+        string? tokenUrl = responseJson["components"]
+            ?["securitySchemes"]?[OAuthSchemeName]?["flows"]?["clientCredentials"]?[
+                "tokenUrl"
+            ]?.GetValue<string>();
+        tokenUrl
+            .Should()
+            .NotBeNullOrEmpty($"'{OAuthSchemeName}' should define a client credentials tokenUrl");
+        return tokenUrl!;
+    }
+
+    private async Task<JsonNode> ParseLastResponseAsync() =>
+        JsonNode.Parse(await GetLastApiResponse().TextAsync())!;
 
     private Microsoft.Playwright.IAPIResponse GetLastApiResponse()
     {

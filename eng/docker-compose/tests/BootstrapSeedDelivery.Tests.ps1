@@ -1714,6 +1714,30 @@ CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
             }
         }
 
+        It "derives the Docker-local DMS URL from DMS_HTTP_PORTS as Compose resolves it (<Case>)" -ForEach @(
+            @{ Case = "ambient value over a different env-file value"; FileLines = @("DMS_HTTP_PORTS=8888"); Ambient = "19090"; Expected = "http://localhost:19090" }
+            @{ Case = "quoted env-file value"; FileLines = @('DMS_HTTP_PORTS="18181"'); Ambient = $null; Expected = "http://localhost:18181" }
+            @{ Case = "interpolated env-file value"; FileLines = @("DMS_PORT_SOURCE=18282", 'DMS_HTTP_PORTS=${DMS_PORT_SOURCE}'); Ambient = $null; Expected = "http://localhost:18282" }
+            @{ Case = "absent from the env file"; FileLines = @("CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=9999"); Ambient = $null; Expected = "http://localhost:8080" }
+        ) {
+            $envFile = Join-Path ([System.IO.Path]::GetTempPath()) "test-$([Guid]::NewGuid().ToString('N')).env"
+            $FileLines | Set-Content -LiteralPath $envFile -Encoding utf8
+            $savedAmbient = [Environment]::GetEnvironmentVariable("DMS_HTTP_PORTS")
+
+            try {
+                # A $null passed to SetEnvironmentVariable leaves the variable defined as ""; remove it instead.
+                if ($null -eq $Ambient) { Remove-Item -Path Env:DMS_HTTP_PORTS -ErrorAction SilentlyContinue }
+                else { Set-Item -Path Env:DMS_HTTP_PORTS -Value $Ambient }
+
+                Resolve-DockerLocalDmsBaseUrl -EnvValues (ReadValuesFromEnvFile -EnvironmentFile $envFile) | Should -BeExactly $Expected
+            }
+            finally {
+                if ($null -eq $savedAmbient) { Remove-Item -Path Env:DMS_HTTP_PORTS -ErrorAction SilentlyContinue }
+                else { Set-Item -Path Env:DMS_HTTP_PORTS -Value $savedAmbient }
+                Remove-Item -LiteralPath $envFile -Force -ErrorAction SilentlyContinue
+            }
+        }
+
         It "ReadValuesFromEnvFile preserves values containing equals signs" {
             $envFile = Join-Path ([System.IO.Path]::GetTempPath()) "test-$([Guid]::NewGuid().ToString('N')).env"
             @"
@@ -3681,8 +3705,8 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
     # Both halves of the exact-ownership invariant, proven AFTER Invoke-Pester returns: owned
     # staged instances are gone, and caller-owned modules beneath LOOKALIKE-named directories -
     # one per namespace this file stages under - survive untouched. The children exclude this
-    # tag, so there is no recursion; launches go through [Environment]::ProcessPath, never a
-    # literal executable name.
+    # tag, so there is no recursion. Resolve the pwsh application explicitly: when PowerShell
+    # runs as a .NET tool, [Environment]::ProcessPath points to dotnet instead of pwsh.
 
     BeforeAll {
         $script:ownershipChildWork = Join-Path ([System.IO.Path]::GetTempPath()) "dms-seed-ownership-child-$([Guid]::NewGuid().ToString('N'))"
@@ -3733,7 +3757,7 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
             "}"
         ) -join "`n" | Set-Content -LiteralPath $childScript
 
-        $childState = (& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
+        $childState = (& ((Get-Command pwsh -CommandType Application | Select-Object -First 1).Source) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
         # Execution proof first: both family probes must have RUN and PASSED - discovery counts
         # prove nothing, and probes that never reached their staged imports make survival vacuous.
         $childState.Failed | Should -Be 0 -Because "both staged-import probes must complete cleanly around the caller's modules"
@@ -3776,7 +3800,7 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
             "} | ConvertTo-Json -Compress"
         ) -join "`n" | Set-Content -LiteralPath $childScript
 
-        $childState = (& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
+        $childState = (& ((Get-Command pwsh -CommandType Application | Select-Object -First 1).Source) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
         # Execution proof first: the residue check is meaningful only if both family probes
         # really ran and passed - a run that never imported staged modules has nothing to clean.
         $childState.Failed | Should -Be 0 -Because "both staged-import probes must complete cleanly"

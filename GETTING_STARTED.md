@@ -91,9 +91,13 @@ cd Data-Management-Service/eng/docker-compose
 cp .env.example .env
 ```
 
-On a clean checkout, publish the schema tool to the location the bootstrap
-auto-discovers. Repeat this after switching branches when the tool may have
-changed:
+The bootstrap automatically publishes the schema tool from source when it
+cannot find an eligible executable, then reuses it on later runs. This first
+startup can take longer while the .NET 10 SDK publishes the tool. After changing
+the tool or switching to a branch that changes it or its dependencies, refresh
+the cached tool with the following command, or delete its cache directory so the
+next bootstrap can resolve it again. Building the solution alone does not
+refresh the cache, which takes precedence over build output:
 
 ```powershell
 $schemaToolProject = "../../src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj"
@@ -109,8 +113,8 @@ Start the complete local environment with the bootstrap wrapper:
 
 The wrapper stages the schema and claims workspaces, starts the infrastructure,
 configures the data store, provisions its schema, and then starts DMS. Application
-images build inside containers; the host SDK is used only for the schema tool
-published above. Startup may take around a minute.
+images build inside containers. Startup may take around a minute, with additional
+time for the first schema tool publish when no eligible executable is available.
 
 Existing local images are reused by default, and stopping the stack (even with
 `-d -v`) does not remove them. After updating your checkout, rebuild them before
@@ -162,9 +166,13 @@ grant_type=client_credentials
 ```
 
 The DMS token proxy accepts the client credentials through the `Authorization`
-header, not as form fields. The example uses Rest Client syntax, which
-Base64-encodes `<client-id>:<client-secret>` before sending; other HTTP clients
-must send the standard Base64-encoded Basic value, for example with
+header, as shown. Like the ODS/API, it also accepts `client_id` and
+`client_secret` in a form or JSON body instead, but not combined with a Basic
+header; see the
+[ADR](./reference/adr-oauth-token-client-credentials-DMS-1604.md). The example
+uses Rest Client syntax, which Base64-encodes `<client-id>:<client-secret>`
+before sending; other HTTP clients must send the standard Base64-encoded Basic
+value, for example with
 `curl -u <client-id>:<client-secret>`. Calling the Configuration Service `/connect/token`
 endpoint directly is a separate endpoint contract; see the working examples in
 [getting-started.http](./getting-started.http).
@@ -278,5 +286,8 @@ with, such as `-DatabaseEngine`, so the command stops the same services.
 ./bootstrap-local-dms.ps1 -d -v
 ```
 
-Before the next bootstrap, repeat the schema-tool publish step from the setup
-section because `-d -v` removes its `.bootstrap/tools/api-schema-tools` output.
+Because `-d -v` also clears the cached schema tool, the next bootstrap reuses an
+eligible executable from build output or publishes it automatically. Publishing
+requires the host .NET 10 SDK. If you set `DMS_SCHEMA_TOOL_PATH` to a deleted
+executable, clear or update that override before restarting; explicit paths fail
+closed rather than triggering automatic publishing.

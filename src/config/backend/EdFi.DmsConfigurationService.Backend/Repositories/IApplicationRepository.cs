@@ -109,6 +109,18 @@ public record ApplicationInsertResult
     public record FailureDuplicateApplication(string ApplicationName) : ApplicationInsertResult();
 
     /// <summary>
+    /// Another API client, under any application or tenant, already has the initial client's key; the
+    /// whole aggregate was rolled back
+    /// </summary>
+    public record FailureDuplicateClientId() : ApplicationInsertResult();
+
+    /// <summary>
+    /// Another API client, under any application or tenant, already references the initial client's
+    /// identity-provider UUID; the whole aggregate was rolled back
+    /// </summary>
+    public record FailureDuplicateClientUuid() : ApplicationInsertResult();
+
+    /// <summary>
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : ApplicationInsertResult();
@@ -172,6 +184,12 @@ public record ApplicationUpdateResult
     /// Application name already exists for the vendor
     /// </summary>
     public record FailureDuplicateApplication(string ApplicationName) : ApplicationUpdateResult();
+
+    /// <summary>
+    /// The identity-provider client UUID the update would store is already referenced by another API
+    /// client; nothing was written
+    /// </summary>
+    public record FailureDuplicateClientUuid() : ApplicationUpdateResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught

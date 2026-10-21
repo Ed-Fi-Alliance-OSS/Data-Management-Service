@@ -66,6 +66,12 @@ public sealed class Given_TheIdentityFixtureDoesNotAdvertiseSearch
             "identities/search",
             """[{ "LastSurname": "Rivera" }]"""
         );
+        _answers["duplicate-search"] = await SendAsync(
+            client,
+            HttpMethod.Post,
+            "identities/search",
+            """[{"LastSurname":"a"},{"BirthLocation":{"City":"x","City":"y"}}]"""
+        );
         _answers["results"] = await SendAsync(
             client,
             HttpMethod.Get,
@@ -109,11 +115,12 @@ public sealed class Given_TheIdentityFixtureDoesNotAdvertiseSearch
         }
     }
 
-    [Test]
-    public void It_answers_search_with_operation_not_supported()
+    [TestCase("search")]
+    [TestCase("duplicate-search")]
+    public void It_answers_search_with_operation_not_supported(string scenario)
     {
-        _answers["search"].Status.Should().Be(HttpStatusCode.NotFound);
-        _answers["search"].Body!["type"]!
+        _answers[scenario].Status.Should().Be(HttpStatusCode.NotFound);
+        _answers[scenario].Body!["type"]!
             .GetValue<string>()
             .Should()
             .Be(IdentityFailureResponse.OperationNotSupportedType);

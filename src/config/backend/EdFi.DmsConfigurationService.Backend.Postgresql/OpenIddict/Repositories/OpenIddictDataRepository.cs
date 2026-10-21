@@ -128,7 +128,13 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositorie
             await connection.ExecuteAsync(sql, new { Id = roleId, Name = roleName }, transaction);
         }
 
-        public async Task InsertApplicationAsync(
+        /// <summary>
+        /// The unique constraint on <c>OpenIddictApplication.ClientId</c> (0012). It is the only
+        /// violation this insert reports as an outcome.
+        /// </summary>
+        private const string DuplicateClientIdConstraint = "UX_OpenIddictApplication_ClientId";
+
+        public async Task<OpenIddictApplicationInsertOutcome> InsertApplicationAsync(
             Guid id,
             string clientId,
             string clientSecret,
@@ -147,21 +153,36 @@ INSERT INTO ""dmscs"".""OpenIddictApplication""
     (""Id"", ""ClientId"", ""ClientSecret"", ""DisplayName"", ""Permissions"", ""Requirements"", ""Type"", ""CreatedAt"", ""ProtocolMappers"")
 VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements, @Type, CURRENT_TIMESTAMP, @ProtocolMappers::jsonb)";
 
-            await connection.ExecuteAsync(
-                sql,
-                new
-                {
-                    Id = id,
-                    ClientId = clientId,
-                    ClientSecret = clientSecret,
-                    DisplayName = displayName,
-                    Permissions = permissions,
-                    Requirements = requirements,
-                    Type = type,
-                    ProtocolMappers = protocolMappers,
-                },
-                transaction
-            );
+            try
+            {
+                await connection.ExecuteAsync(
+                    sql,
+                    new
+                    {
+                        Id = id,
+                        ClientId = clientId,
+                        ClientSecret = clientSecret,
+                        DisplayName = displayName,
+                        Permissions = permissions,
+                        Requirements = requirements,
+                        Type = type,
+                        ProtocolMappers = protocolMappers,
+                    },
+                    transaction
+                );
+
+                return OpenIddictApplicationInsertOutcome.Inserted;
+            }
+            catch (PostgresException ex)
+                when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                    && ex.ConstraintName == DuplicateClientIdConstraint
+                )
+            {
+                // Only the client-key constraint is classified. The transaction is now aborted on
+                // this engine; rolling it back is the caller's decision, which also discards any
+                // row it wrote earlier in the same attempt.
+                return OpenIddictApplicationInsertOutcome.DuplicateClientId;
+            }
         }
 
         public async Task<Guid?> FindScopeIdByNameAsync(

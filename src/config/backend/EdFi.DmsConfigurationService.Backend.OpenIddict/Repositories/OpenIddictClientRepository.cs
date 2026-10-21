@@ -4,11 +4,13 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.Secrets;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using static EdFi.DmsConfigurationService.DataModel.LoggingUtility;
 
 namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
 {
@@ -185,18 +187,34 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
                 var requirementsArray = Array.Empty<string>();
                 var protocolMappersJson = JsonSerializer.Serialize(protocolMappers);
 
-                await dataRepository.InsertApplicationAsync(
-                    clientUuid,
-                    clientId,
-                    hashedClientSecret,
-                    displayName,
-                    permissions,
-                    requirementsArray,
-                    "confidential",
-                    protocolMappersJson,
-                    connection,
-                    transaction
-                );
+                OpenIddictApplicationInsertOutcome insertOutcome =
+                    await dataRepository.InsertApplicationAsync(
+                        clientUuid,
+                        clientId,
+                        hashedClientSecret,
+                        displayName,
+                        permissions,
+                        requirementsArray,
+                        "confidential",
+                        protocolMappersJson,
+                        connection,
+                        transaction
+                    );
+
+                if (insertOutcome == OpenIddictApplicationInsertOutcome.DuplicateClientId)
+                {
+                    // The provider already holds a client under this key and nothing for this
+                    // request was persisted: the rollback discards the role created above, if any,
+                    // and no scope or client-role row has been written yet. There is nothing to
+                    // compensate. Role and scope uniqueness violations are not classified here.
+                    // They throw and remain unknown failures below.
+                    transaction.Rollback();
+                    logger.LogWarning(
+                        "The client key {ClientId} is already registered at the identity provider; no client was created",
+                        SanitizeForLog(clientId)
+                    );
+                    return new ClientCreateResult.FailureDuplicateClientId();
+                }
 
                 // 3. Insert scopes and join records if scope is not null
                 if (!string.IsNullOrWhiteSpace(scope))

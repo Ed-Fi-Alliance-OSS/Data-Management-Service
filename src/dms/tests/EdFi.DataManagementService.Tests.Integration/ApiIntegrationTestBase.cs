@@ -354,8 +354,8 @@ public abstract class ApiIntegrationTestBase
             // UseSetting writes into the host's IConfiguration before AddServices() runs,
             // so options bound during service registration (e.g. AppSettings:Datastore) observe the harness-owned values without relying on
             // process environment variables or file-based appsettings.
-            builder.UseSetting("AppSettings:UseApiSchemaPath", "true");
-            builder.UseSetting("AppSettings:ApiSchemaPath", fixtureContext.ApiSchemaDirectory);
+            builder.UseSetting("AppSettings:ApiSchema:UseCustomPath", "true");
+            builder.UseSetting("AppSettings:ApiSchema:Path", fixtureContext.ApiSchemaDirectory);
             builder.UseSetting("AppSettings:StartupStatusFilePath", startupStatusFilePath);
             builder.UseSetting("AppSettings:Datastore", Datastore);
             builder.UseSetting("AppSettings:AllowIdentityUpdateOverrides", AllowIdentityUpdateOverrides);

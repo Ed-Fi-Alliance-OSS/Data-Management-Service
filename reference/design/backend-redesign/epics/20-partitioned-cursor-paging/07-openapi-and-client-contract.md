@@ -37,8 +37,10 @@ core, extension, descriptor, and profile OpenAPI documents without per-resource 
   when DMS-1387 activates the runtime route, with partition-specific summaries/descriptions and
   `application/json` token responses.
 - Append `Partitions` to the exact base collection `operationId`, preserving extension prefixes.
-- Publish runtime `MaximumPageSize` as both the default and maximum for `limit` and `pageSize`;
-  publish the runtime partition-count default.
+- Publish runtime `MaximumPageSize` as the maximum for `limit` and `pageSize`; publish no default
+  for either, because `pageSize` is used only with `pageToken` (ignored beside `limit` and rejected
+  without it), `limit` is rejected with `pageToken`, and clients send an advertised default; publish
+  the runtime partition-count default.
 - Copy only eligible resource/change-version filters, security, tags, and domain metadata.
 - Associate profile partition paths explicitly with readable base resources without rewriting the
   token response to a profile media type.

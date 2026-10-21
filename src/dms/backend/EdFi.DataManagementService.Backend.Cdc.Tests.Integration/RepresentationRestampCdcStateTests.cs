@@ -879,8 +879,8 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
                 new Dictionary<string, string?>
                 {
                     ["AppSettings:Datastore"] = _providerOperations.AppSettingsDatastore,
-                    ["AppSettings:UseApiSchemaPath"] = "true",
-                    ["AppSettings:ApiSchemaPath"] = DocumentCacheAdminCliFixture.Shared.ApiSchemaDirectory,
+                    ["AppSettings:ApiSchema:UseCustomPath"] = "true",
+                    ["AppSettings:ApiSchema:Path"] = DocumentCacheAdminCliFixture.Shared.ApiSchemaDirectory,
                 }
             )
             .Build();

@@ -175,6 +175,7 @@ Feature: Resources "Update" Operation validations
 
         @API-190 @PUT
         @e2e-ci-shard-1
+        @DMS-1623-PutBodyId
         Scenario: 07 Put an empty JSON body (Resource)
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -197,9 +198,6 @@ Feature: Resources "Update" Operation validations
                         ],
                         "$.namespace": [
                             "namespace is required."
-                        ],
-                        "$.id": [
-                            "id is required."
                         ]
                     },
                     "errors": []
@@ -208,34 +206,32 @@ Feature: Resources "Update" Operation validations
 
         @API-191 @PUT
         @e2e-ci-shard-1
-        Scenario: 08 Update a document with mismatch between URL and id (Resource)
+        @DMS-1623-PutBodyId
+        Scenario: 08 Update a document using the URL id when the body id differs (Resource)
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
                   """
                   {
                     "id": "00000000-0000-4000-a000-000000000000",
-                    "contentIdentifier": "Testing should not be modified",
+                    "contentIdentifier": "Testing",
+                    "shortDescription": "Updated using URL id",
                     "namespace": "Testing"
                   }
                   """
-             Then it should respond with 400
-              And the response body is
+             Then it should respond with 204
+              And the record can be retrieved with a GET request
                   """
                   {
-                    "detail": "The request could not be processed. See 'errors' for details.",
-                    "type": "urn:ed-fi:api:bad-request",
-                    "title": "Bad Request",
-                    "status": 400,
-                    "correlationId": null,
-                    "validationErrors": {},
-                    "errors": [
-                        "Request body id must match the id in the url."
-                    ]
+                    "id": "{id}",
+                    "contentIdentifier": "Testing",
+                    "shortDescription": "Updated using URL id",
+                    "namespace": "Testing"
                   }
                   """
 
         @API-192 @PUT
         @e2e-ci-shard-1
+        @DMS-1623-PutBodyId
         Scenario: 09 Update a document with a blank id (Resource)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -249,21 +245,24 @@ Feature: Resources "Update" Operation validations
              Then it should respond with 400
               And the response body is
                   """
-                   {
-                     "detail": "The request could not be processed. See 'errors' for details.",
-                     "type": "urn:ed-fi:api:bad-request",
-                     "title": "Bad Request",
-                     "status": 400,
-                     "correlationId": null,
-                     "validationErrors": {},
-                     "errors": [
-                         "Request body id must match the id in the url."
-                     ]
-                   }
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null,
+                    "validationErrors": {
+                        "$.id": [
+                            "id must be omitted, null, or a valid GUID string."
+                        ]
+                    },
+                    "errors": []
+                  }
                   """
 
         @API-193 @PUT
         @e2e-ci-shard-1
+        @DMS-1623-PutBodyId
         Scenario: 10 Update a document with an invalid id format (Resource)
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -278,15 +277,17 @@ Feature: Resources "Update" Operation validations
               And the response body is
                   """
                   {
-                    "detail": "The request could not be processed. See 'errors' for details.",
-                    "type": "urn:ed-fi:api:bad-request",
-                    "title": "Bad Request",
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null,
-                    "validationErrors": {},
-                    "errors": [
-                        "Request body id must match the id in the url."
-                    ]
+                    "validationErrors": {
+                        "$.id": [
+                            "id must be omitted, null, or a valid GUID string."
+                        ]
+                    },
+                    "errors": []
                   }
                   """
 
@@ -1162,3 +1163,59 @@ Feature: Resources "Update" Operation validations
              Then it should respond with 204
              When a GET request is made to "/ed-fi/educationContents/{id}"
              Then the lastModifiedDate has not changed
+
+        @DMS-1594 @e2e-ci-shard-1
+        Scenario: 24 Put a duplicate property in a later array element
+             When a PUT request is made to "/ed-fi/educationContents/{id}" with
+                  """
+                  {
+                    "id": "{id}",
+                    "contentIdentifier": "Testing",
+                    "namespace": "Testing",
+                    "shortDescription": "Testing",
+                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                    "learningResourceMetadataURI": "Testing",
+                    "items": [{"a":1,"b":2},{"x":1,"x":2}]
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null,
+                    "validationErrors": {
+                      "$.items[1].x": ["An item with the same key has already been added."]
+                    },
+                    "errors": []
+                  }
+                  """
+
+        @DMS-1623-PutBodyId @PUT
+        @e2e-ci-shard-1 @MssqlRepresentative
+        Scenario: 25 Update an existing resource with the body id omitted
+             When a PUT request is made to "/ed-fi/educationContents/{id}" with
+                  """
+                  {
+                    "contentIdentifier": "Testing",
+                    "namespace": "Testing",
+                    "shortDescription": "Updated without a body id",
+                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                    "learningResourceMetadataURI": "Testing"
+                  }
+                  """
+             Then it should respond with 204
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": "{id}",
+                    "contentIdentifier": "Testing",
+                    "namespace": "Testing",
+                    "shortDescription": "Updated without a body id",
+                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                    "learningResourceMetadataURI": "Testing"
+                  }
+                  """

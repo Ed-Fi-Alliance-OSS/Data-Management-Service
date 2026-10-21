@@ -43,6 +43,8 @@ public class Given_The_Parity_Scenario_Catalog
 
     private static readonly string[] ExpectedApiIds =
     [
+        "Api/CrudRoundTrip/PutBodyId",
+        "Api/DescriptorRuntime/PutBodyId",
         "Api/CrudRoundTrip/CreatesAndReadsAStudent",
         "Api/CrudRoundTrip/UpdatesAStudentViaPut",
         "Api/CrudRoundTrip/UpsertsAStudentViaPost",

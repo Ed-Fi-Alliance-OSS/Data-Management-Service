@@ -527,6 +527,175 @@ public class OpenIddictServiceCollectionExtensionsTests
     }
 
     [TestFixture]
+    public class Given_no_token_cleanup_settings_are_configured
+    {
+        private IdentityOptions _options = null!;
+
+        [SetUp]
+        public void Setup() => _options = BindIdentityOptions([]);
+
+        [Test]
+        public void It_defaults_the_sweep_to_enabled() => _options.TokenCleanup.Enabled.Should().BeTrue();
+
+        [Test]
+        public void It_defaults_the_interval_to_30_minutes() =>
+            _options.TokenCleanup.IntervalMinutes.Should().Be(30);
+    }
+
+    [TestFixture]
+    public class Given_token_cleanup_settings_are_configured
+    {
+        private IdentityOptions _options = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _options = BindIdentityOptions(
+                new Dictionary<string, string?>
+                {
+                    ["IdentitySettings:TokenCleanup:Enabled"] = "false",
+                    ["IdentitySettings:TokenCleanup:IntervalMinutes"] = "45",
+                }
+            );
+
+        [Test]
+        public void It_binds_the_enabled_switch() => _options.TokenCleanup.Enabled.Should().BeFalse();
+
+        [Test]
+        public void It_binds_the_interval() => _options.TokenCleanup.IntervalMinutes.Should().Be(45);
+    }
+
+    /// <summary>
+    /// The flat keys were replaced by the IdentitySettings:TokenCleanup section with no aliases.
+    /// </summary>
+    [TestFixture]
+    public class Given_only_the_removed_flat_token_cleanup_keys_are_configured
+    {
+        private IdentityOptions _options = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _options = BindIdentityOptions(
+                new Dictionary<string, string?>
+                {
+                    ["IdentitySettings:TokenCleanupEnabled"] = "false",
+                    ["IdentitySettings:TokenCleanupIntervalMinutes"] = "45",
+                }
+            );
+
+        [Test]
+        public void It_leaves_the_sweep_enabled() => _options.TokenCleanup.Enabled.Should().BeTrue();
+
+        [Test]
+        public void It_leaves_the_interval_at_the_default() =>
+            _options.TokenCleanup.IntervalMinutes.Should().Be(30);
+    }
+
+    /// <summary>
+    /// Runs the real cleanup service on options that came through the binder, so the bound switch
+    /// and interval are proven to reach the sweep rather than stopping at the options object.
+    /// </summary>
+    private static TokenCleanupService CreateBoundCleanupService(
+        Dictionary<string, string?> settings,
+        IOpenIddictTokenRepository tokenRepository,
+        TimeProvider timeProvider
+    ) =>
+        new(
+            BuildProvider(settings).GetRequiredService<IOptions<IdentityOptions>>(),
+            NullLogger<TokenCleanupService>.Instance,
+            tokenRepository,
+            timeProvider
+        );
+
+    [TestFixture]
+    public class Given_token_cleanup_is_disabled_through_configuration
+    {
+        private IOpenIddictTokenRepository _tokenRepository = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+            using TokenCleanupService service = CreateBoundCleanupService(
+                new Dictionary<string, string?> { ["IdentitySettings:TokenCleanup:Enabled"] = "false" },
+                _tokenRepository,
+                new FakeTimeProvider()
+            );
+
+            // ExecuteAsync runs on the thread pool, so stopping straight after StartAsync could
+            // cancel it before it runs. Waiting for it to finish proves the disabled path returned.
+            // An enabled sweep would wait on its timer and time out here instead.
+            await service.StartAsync(CancellationToken.None);
+            await service.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(10));
+            await service.StopAsync(CancellationToken.None);
+        }
+
+        [Test]
+        public void It_never_sweeps() =>
+            A.CallTo(() => _tokenRepository.DeleteExpiredTokensAsync(A<DateTimeOffset>._))
+                .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// Delegates to a <see cref="FakeTimeProvider"/> and records the period of every timer the
+    /// service asks for, so the configured interval is observed directly rather than inferred from
+    /// when sweeps happen to run.
+    /// </summary>
+    private sealed class TimerPeriodRecordingTimeProvider : TimeProvider
+    {
+        private readonly FakeTimeProvider _inner = new();
+
+        public TaskCompletionSource<TimeSpan> TimerPeriod { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override DateTimeOffset GetUtcNow() => _inner.GetUtcNow();
+
+        public override long GetTimestamp() => _inner.GetTimestamp();
+
+        public override long TimestampFrequency => _inner.TimestampFrequency;
+
+        public override TimeZoneInfo LocalTimeZone => _inner.LocalTimeZone;
+
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period
+        )
+        {
+            TimerPeriod.TrySetResult(period);
+            return _inner.CreateTimer(callback, state, dueTime, period);
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_non_default_token_cleanup_interval_is_configured
+    {
+        private TimeSpan _timerPeriod;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            IOpenIddictTokenRepository tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+            A.CallTo(() => tokenRepository.DeleteExpiredTokensAsync(A<DateTimeOffset>._)).Returns(0);
+
+            TimerPeriodRecordingTimeProvider timeProvider = new();
+            using TokenCleanupService service = CreateBoundCleanupService(
+                new Dictionary<string, string?> { ["IdentitySettings:TokenCleanup:IntervalMinutes"] = "45" },
+                tokenRepository,
+                timeProvider
+            );
+
+            await service.StartAsync(CancellationToken.None);
+            _timerPeriod = await timeProvider.TimerPeriod.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            await service.StopAsync(CancellationToken.None);
+        }
+
+        [Test]
+        public void It_runs_the_sweep_timer_at_the_configured_interval() =>
+            _timerPeriod.Should().Be(TimeSpan.FromMinutes(45));
+    }
+
+    [TestFixture]
     public class Given_no_client_secret_hashing_iterations_is_configured
     {
         private IdentityOptions _options = null!;

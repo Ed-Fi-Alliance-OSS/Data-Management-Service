@@ -45,7 +45,8 @@
 
 .PARAMETER SchemaToolPath
     Path to the api-schema-tools native executable. Defaults to the DMS_SCHEMA_TOOL_PATH environment
-    variable. Build the tool once before running this script on a clean checkout:
+    variable. If no eligible executable is available, the script publishes the in-repository tool
+    from source using the .NET 10 SDK. A manual publish can refresh the cached executable:
         dotnet publish ../../src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj \
             -c Release -p:UseAppHost=true -o .bootstrap/tools/api-schema-tools
 
@@ -57,18 +58,19 @@
     from the same SCHEMA_PACKAGES value at startup. Ignored in expert (-ApiSchemaPath) mode.
 
 .EXAMPLE
-    pwsh ./prepare-dms-schema.ps1 -SchemaToolPath $schemaToolExe
+    pwsh ./prepare-dms-schema.ps1
     Direct standard mode, catalog core-only fallback. Resolves EdFi.DataStandard52.ApiSchema from
-    the Ed-Fi package feed and stages it into the bootstrap workspace.
+    the Ed-Fi package feed and stages it into the bootstrap workspace. The schema tool is resolved
+    from available executables or published from source when necessary.
 
 .EXAMPLE
-    pwsh ./prepare-dms-schema.ps1 -EnvironmentFile ../docker-compose/.env.e2e -SchemaToolPath $schemaToolExe
+    pwsh ./prepare-dms-schema.ps1 -EnvironmentFile ../docker-compose/.env.e2e
     Standard mode, driven by SCHEMA_PACKAGES. Resolves and stages every package listed in the env
     file's SCHEMA_PACKAGES value (core plus any extensions) so the staged workspace matches the
     package set the DMS container entrypoint downloads for that same env file.
 
 .EXAMPLE
-    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath $schemaToolExe
+    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema
     Expert mode. Stages ApiSchema*.json files from a local directory.
     ../../src/dms/EdFi.DataStandard52.ApiSchema is the conventional git-ignored local materialization
     directory (absent on a fresh checkout - populate it with the DS 5.2 core plus any extension

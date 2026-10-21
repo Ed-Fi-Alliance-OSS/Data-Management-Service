@@ -145,14 +145,16 @@ initial client's. To act on that client, read it with
    grant_type=client_credentials&client_id=<key>&client_secret=<secret>&scope=<claim set name>
    ```
 
-   Supply the scope explicitly: the token endpoint always forwards a `scope`
-   parameter, so omitting it sends an empty scope, which the self-contained
-   provider ignores but Keycloak rejects with `invalid_scope`.
+   The scope may be omitted: the token endpoint then forwards no `scope`, and
+   the client receives its default scopes (its default client scopes under
+   Keycloak, its registered scopes under the self-contained provider). Under
+   Keycloak, a scope the client is not granted answers `400` with
+   `invalid_scope`.
 8. **Delete a client** — `DELETE /v3/apiClients/{numeric id}`, after which
    both `GET /v3/apiClients/{numeric id}` and `GET /v3/apiClients/{key}` report
    `404`.
 
-What the resulting token can *do* is governed by the DMS identity surface under `/identity/v2/identities`, which DMS maps only when `AppSettings:EnableIdentityManagement` is `true` (see [Configuration](./CONFIGURATION.md)).
+What the resulting token can *do* is governed by the DMS identity surface under `/identity/v2/identities`, which DMS maps only when `DataManagement:IdentityManagement:Enabled` is `true` (see [Configuration](./CONFIGURATION.md)).
 With the surface enabled, the token reaches the identity operations its claim set grants, and it grants no resource access.
 Those operations run only when an identity provider plugin is registered; without one, an otherwise authorized request answers `404` with `urn:ed-fi:api:identities:operation-not-supported`.
 This section documents only how to provision such a client in the Configuration Service and confirm its credentials work.

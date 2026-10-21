@@ -51,4 +51,8 @@ public sealed class Given_Mssql_DescriptorRuntime : MssqlApiIntegrationTestBase
     [Test]
     public Task It_requires_descriptor_reference_resolution_before_resource_write() =>
         DescriptorRuntimeScenario.It_requires_descriptor_reference_resolution_before_resource_write(Harness);
+
+    [Test]
+    public Task It_uses_the_url_id_for_descriptor_puts() =>
+        PutBodyIdScenario.It_uses_the_url_id_for_descriptor_puts(Harness);
 }

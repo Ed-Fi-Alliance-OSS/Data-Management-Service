@@ -69,8 +69,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
             foreach (string fragmentFile in fragmentFiles)
             {
                 logger.LogInformation("Applying fragment: {FragmentFile}", fragmentFile);
-                string? definedClaimSetName = ApplyFragmentTransformation(fragmentFile, baseClaims);
-                if (definedClaimSetName is not null)
+                if (ApplyFragmentTransformation(fragmentFile, baseClaims) is string definedClaimSetName)
                 {
                     // An invalid name is not registered, but the composition continues: failing it
                     // would make Hybrid mode fall back to the base claims and drop every fragment
@@ -111,7 +110,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
             );
 
             // Ensure both nodes are not null
-            if (transformedHierarchy == null)
+            if (transformedHierarchy is null)
             {
                 transformedHierarchy = JsonNode.Parse("[]")!;
             }
@@ -235,11 +234,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
     private static List<TransformationClaim> ConvertToTransformationModel(JsonNode claimsHierarchyNode)
     {
         string hierarchyJson = claimsHierarchyNode.ToJsonString();
-        List<TransformationClaim>? claims = JsonSerializer.Deserialize<List<TransformationClaim>>(
-            hierarchyJson,
-            _jsonOptions
-        );
-        return claims ?? [];
+        return JsonSerializer.Deserialize<List<TransformationClaim>>(hierarchyJson, _jsonOptions) ?? [];
     }
 
     /// <summary>
@@ -296,18 +291,16 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
     )
     {
         string jsonData = File.ReadAllText(fragmentFilePath);
-        ClaimSetResourceClaims? claimSetData = JsonSerializer.Deserialize<ClaimSetResourceClaims>(
-            jsonData,
-            _jsonOptions
-        );
-        string claimSetName = claimSetData?.Name ?? Path.GetFileNameWithoutExtension(fragmentFilePath);
-
-        if (claimSetData?.ResourceClaims == null)
+        if (
+            JsonSerializer.Deserialize<ClaimSetResourceClaims>(jsonData, _jsonOptions)
+            is not { ResourceClaims: not null } claimSetData
+        )
         {
             logger.LogWarning("Fragment file {FilePath} has no resource claims", fragmentFilePath);
             return null;
         }
 
+        string claimSetName = claimSetData.Name ?? Path.GetFileNameWithoutExtension(fragmentFilePath);
         bool definesClaimSet = false;
         foreach (ResourceClaim resourceClaim in claimSetData.ResourceClaims)
         {
@@ -317,7 +310,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
             }
             else
             {
-                ApplyChildResourceClaim(resourceClaim, existingClaims, claimSetName);
+                ApplyChildResourceClaim(fragmentFilePath, resourceClaim, existingClaims, claimSetName);
                 definesClaimSet = true;
             }
         }
@@ -333,11 +326,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
         List<TransformationClaim> existingClaims
     )
     {
-        TransformationClaim? existingClaim = existingClaims
-            .SelectMany(x => SearchRecursive(x, resourceClaim.Name!))
-            .FirstOrDefault();
-
-        if (existingClaim != null)
+        if (FindClaim(existingClaims, resourceClaim.Name!) is TransformationClaim existingClaim)
         {
             // Add additional child claims
             List<TransformationClaim> childClaims = resourceClaim
@@ -401,30 +390,22 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
                             ? new TransformationDefaultAuthorization
                             {
                                 Actions = resourceClaim
-                                    .DefaultAuthorizationStrategiesForCRUD.Where(x => x != null)
-                                    .Select(x =>
+                                    .DefaultAuthorizationStrategiesForCRUD.OfType<ClaimSetResourceClaimActionAuthStrategies>()
+                                    .Select(x => new TransformationAction
                                     {
-                                        List<TransformationAuthorizationStrategy>? authStrategies = null;
-                                        if (
-                                            x!.AuthorizationStrategies != null
+                                        Name = x.ActionName,
+                                        AuthorizationStrategies =
+                                            x.AuthorizationStrategies is not null
                                             && x.AuthorizationStrategies.Any()
-                                        )
-                                        {
-                                            authStrategies = x
-                                                .AuthorizationStrategies.Select(
-                                                    auth => new TransformationAuthorizationStrategy
-                                                    {
-                                                        Name = auth.Name,
-                                                    }
-                                                )
-                                                .ToList();
-                                        }
-
-                                        return new TransformationAction
-                                        {
-                                            Name = x.ActionName,
-                                            AuthorizationStrategies = authStrategies,
-                                        };
+                                                ? x
+                                                    .AuthorizationStrategies.Select(
+                                                        auth => new TransformationAuthorizationStrategy
+                                                        {
+                                                            Name = auth.Name,
+                                                        }
+                                                    )
+                                                    .ToList()
+                                                : null,
                                     })
                                     .ToList(),
                             }
@@ -435,55 +416,50 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
     }
 
     /// <summary>
-    /// Applies child resource claim transformation
+    /// Applies child resource claim transformation. The grant name is resolved exactly as written
+    /// first, and only when no claim has that name is its singular form tried. When neither matches,
+    /// a warning is logged and the entry is skipped.
     /// </summary>
     private void ApplyChildResourceClaim(
+        string fragmentFilePath,
         ResourceClaim resourceClaim,
         List<TransformationClaim> existingClaims,
         string claimSetName
     )
     {
-        string singularName = PluralToSingular(resourceClaim.Name!);
-        TransformationClaim? existingClaim = existingClaims
-            .SelectMany(x => SearchRecursive(x, singularName))
-            .FirstOrDefault();
-
-        if (existingClaim != null)
+        string name = resourceClaim.Name!;
+        if (FindGrantClaim(existingClaims, name) is not TransformationClaim existingClaim)
+        {
+            logger.LogWarning(
+                "Fragment {FragmentFile} grants claim set {ClaimSetName} access to {ResourceClaimName}, which matches no resource claim by that name or its singular form; the entry is skipped",
+                fragmentFilePath,
+                claimSetName,
+                name
+            );
+        }
+        else
         {
             List<TransformationClaimSetAction> actions = new List<TransformationClaimSetAction>();
-            List<ClaimSetResourceClaimActionAuthStrategies?> actionsAndAuthStrategies =
-                resourceClaim.AuthorizationStrategyOverridesForCRUD;
-
-            if (actionsAndAuthStrategies != null)
+            foreach (
+                ClaimSetResourceClaimActionAuthStrategies actionAuthStrategy in resourceClaim.AuthorizationStrategyOverridesForCRUD?.OfType<ClaimSetResourceClaimActionAuthStrategies>()
+                    ?? []
+            )
             {
-                foreach (
-                    ClaimSetResourceClaimActionAuthStrategies? actionAuthStrategy in actionsAndAuthStrategies.Where(
-                        x => x != null
-                    )
-                )
-                {
-                    List<TransformationAuthorizationStrategy>? authOverrides = null;
-                    if (
-                        actionAuthStrategy!.AuthorizationStrategies != null
-                        && actionAuthStrategy.AuthorizationStrategies.Any()
-                    )
+                actions.Add(
+                    new TransformationClaimSetAction
                     {
-                        authOverrides = actionAuthStrategy
-                            .AuthorizationStrategies.Select(auth => new TransformationAuthorizationStrategy
-                            {
-                                Name = auth.Name,
-                            })
-                            .ToList();
+                        Name = actionAuthStrategy.ActionName!,
+                        AuthorizationStrategyOverrides =
+                            actionAuthStrategy.AuthorizationStrategies is not null
+                            && actionAuthStrategy.AuthorizationStrategies.Any()
+                                ? actionAuthStrategy
+                                    .AuthorizationStrategies.Select(
+                                        auth => new TransformationAuthorizationStrategy { Name = auth.Name }
+                                    )
+                                    .ToList()
+                                : null,
                     }
-
-                    actions.Add(
-                        new TransformationClaimSetAction
-                        {
-                            Name = actionAuthStrategy.ActionName!,
-                            AuthorizationStrategyOverrides = authOverrides,
-                        }
-                    );
-                }
+                );
             }
 
             // Only create ClaimSets array and add claimSet if there are actions to include
@@ -504,6 +480,17 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
         }
     }
 
+    // Exact name first; the singular form only when no claim has the exact name
+    private static TransformationClaim? FindGrantClaim(List<TransformationClaim> existingClaims, string name)
+    {
+        string singularName = PluralToSingular(name);
+        return FindClaim(existingClaims, name)
+            ?? (singularName == name ? null : FindClaim(existingClaims, singularName));
+    }
+
+    private static TransformationClaim? FindClaim(List<TransformationClaim> existingClaims, string name) =>
+        existingClaims.SelectMany(x => SearchRecursive(x, name)).FirstOrDefault();
+
     /// <summary>
     /// Recursively searches for a claim with specified name (ported from CmsHierarchy.SearchRecursive)
     /// </summary>
@@ -517,7 +504,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
             yield return claim;
         }
 
-        if (claim.Claims != null)
+        if (claim.Claims is not null)
         {
             foreach (TransformationClaim child in claim.Claims)
             {
@@ -589,13 +576,13 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
             }
 
             // If DefaultAuthorization has no actions, remove it entirely
-            if (claim.DefaultAuthorization?.Actions == null)
+            if (claim.DefaultAuthorization?.Actions is null)
             {
                 claim.DefaultAuthorization = null;
             }
 
             // Clean nested claims recursively
-            if (claim.Claims != null)
+            if (claim.Claims is not null)
             {
                 CleanupEmptyCollections(claim.Claims);
                 if (claim.Claims.Count == 0)
@@ -605,7 +592,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
             }
 
             // Clean claim set actions
-            if (claim.ClaimSets != null)
+            if (claim.ClaimSets is not null)
             {
                 foreach (TransformationClaimSet claimSet in claim.ClaimSets)
                 {
@@ -616,7 +603,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
                 }
 
                 // Remove claim sets that have no actions (violates schema requirements)
-                claim.ClaimSets.RemoveAll(cs => cs.Actions == null);
+                claim.ClaimSets.RemoveAll(cs => cs.Actions is null);
 
                 // If no claim sets remain, set to null
                 if (claim.ClaimSets.Count == 0)

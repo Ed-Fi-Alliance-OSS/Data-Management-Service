@@ -83,6 +83,19 @@ internal static class CursorPagingOpenApiAugmenter
         "The number of evenly distributed partitions to provide for client-side parallel processing. If "
         + "unspecified, the configured default number of partitions for this deployment is used.";
 
+    /// <summary>
+    /// Replaces whatever the base document says about pageSize. The request pipeline ignores pageSize
+    /// beside limit without pageToken and rejects it without either, so the description says so, and
+    /// says where a first token comes from rather than leaving a client to discover the requirement
+    /// from a rejected request.
+    /// </summary>
+    private const string PageSizeDescription =
+        "The maximum number of items to retrieve in the page. For use with pageToken (cursor paging) "
+        + "only. Without pageToken, pageSize is ignored when limit is supplied and the request is rejected "
+        + "otherwise. A first page token comes from the Next-Page-Token response header of this operation "
+        + "or from the partitions operation of this resource. If unspecified on a cursor paging request, "
+        + "the maximum page size is used.";
+
     private const string NextPageTokenHeaderDescription =
         "An opaque token that retrieves the next page of results when supplied as the pageToken parameter "
         + "of this operation. Present only when a further page may exist.";
@@ -108,11 +121,6 @@ internal static class CursorPagingOpenApiAugmenter
     /// </summary>
     private static readonly FrozenDictionary<string, string> _requiredParameterComponentNames =
         BuildRequiredParameterComponentNames();
-
-    /// <summary>
-    /// The parameter components whose published default and maximum are the runtime maximum page size.
-    /// </summary>
-    private static readonly string[] _pageSizeBoundedComponents = [LimitComponent, PageSizeComponent];
 
     /// <summary>
     /// The only referenced filters the partitions operation carries over from its collection GET. An
@@ -561,17 +569,31 @@ internal static class CursorPagingOpenApiAugmenter
     /// partition-count range the partition request validator measures a request against. Publishing a
     /// separately authored bound would let the served contract disagree with what the pipeline accepts.
     /// </summary>
+    /// <remarks>
+    /// Neither limit nor pageSize publishes a default, and any inherited one is removed. Clients and
+    /// Swagger UI send an advertised default, and the pipeline accepts each of the two only on the
+    /// paging path it belongs to: it rejects limit with pageToken, and pageSize without pageToken
+    /// unless limit is also supplied, in which case pageSize is ignored. A published pageSize default
+    /// would make every collection GET such a client issues without limit fail, and a published limit
+    /// default would make every cursor request it issues fail. An omitted limit or pageSize still uses
+    /// the maximum page size at runtime.
+    /// </remarks>
     private static void PublishRuntimePagingValues(
         JsonObject componentParameters,
         OpenApiPagingSettings pagingSettings
     )
     {
-        foreach (string componentName in _pageSizeBoundedComponents)
-        {
-            JsonObject schema = ComponentSchema(componentParameters, componentName);
-            schema["default"] = pagingSettings.MaximumPageSize;
-            schema["maximum"] = pagingSettings.MaximumPageSize;
-        }
+        JsonObject limitSchema = ComponentSchema(componentParameters, LimitComponent);
+        limitSchema.Remove("default");
+        limitSchema["maximum"] = pagingSettings.MaximumPageSize;
+
+        JsonObject pageSizeSchema = ComponentSchema(componentParameters, PageSizeComponent);
+        pageSizeSchema.Remove("default");
+        pageSizeSchema["maximum"] = pagingSettings.MaximumPageSize;
+
+        RequireObject(componentParameters[PageSizeComponent], $"{ParametersPath}.{PageSizeComponent}")[
+            "description"
+        ] = PageSizeDescription;
 
         JsonObject partitionCountSchema = ComponentSchema(componentParameters, NumberOfPartitionsComponent);
         partitionCountSchema["default"] = pagingSettings.DefaultPartitionCount;

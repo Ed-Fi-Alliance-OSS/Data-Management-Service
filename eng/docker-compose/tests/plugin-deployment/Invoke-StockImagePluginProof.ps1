@@ -1340,9 +1340,9 @@ function Invoke-ProofScenario {
 # The client this proof posts with, and the one data store it is bound to.
 #
 # Created here rather than read from disk. configure-local-data-store.ps1's
-# -AddSmokeTestCredentials calls Get-SmokeTestCredential and pipes the result to Out-Null: the key
-# and secret are RETURNED to the caller and never written to a file, so there is nothing on disk for
-# this harness to read. Calling the same module directly is how a caller obtains them.
+# -AddSmokeTestCredentials returns the key and secret only in its structured result and never writes
+# them to a file, so there is nothing on disk for this harness to read. Calling the same module
+# directly is how this harness obtains them.
 #
 # The data store is chosen, not taken. Get-SmokeTestCredential with no -DataStoreIds falls back to
 # the first store the Configuration Service lists, which in a stack holding more than one binds the

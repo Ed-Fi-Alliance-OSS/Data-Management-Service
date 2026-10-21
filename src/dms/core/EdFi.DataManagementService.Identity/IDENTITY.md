@@ -50,7 +50,7 @@ You write two things: a class that implements `IIdentityService`, and a plugin t
 The Data Management Service owns the HTTP surface.
 It maps the five routes, authenticates the caller, checks the tenant, authorizes the identity service claim, validates the request body's shape, and turns what your provider returns into the HTTP response.
 A plugin maps no identity endpoints and cannot add or change one.
-The `AppSettings:EnableIdentityManagement` setting, off by default, decides whether the host maps the routes at all, as [CONFIGURATION.md](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/docs/CONFIGURATION.md) describes.
+The `DataManagement:IdentityManagement:Enabled` setting, off by default, decides whether the host maps the routes at all, as [CONFIGURATION.md](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/docs/CONFIGURATION.md) describes.
 
 The plugin is a small class.
 This is the complete plugin of the sample provider below:
@@ -827,7 +827,7 @@ Switch on the problem `type` and, where two share one, on `detail`.
 | The provider reported `NotFound`: no matching identity or job, a mismatched or expired job, an unknown or unauthorized namespace | `urn:ed-fi:api:identities:not-found` | `The specified data could not be found.` |
 | The provider does not advertise the requested operation | `urn:ed-fi:api:identities:operation-not-supported` | `The identity provider does not support this operation.` |
 | The request's tenant does not exist (multi-tenant hosts, after authentication) | `urn:ed-fi:api:not-found` | `The specified tenant could not be found.` |
-| Identity management is switched off (`AppSettings:EnableIdentityManagement` is `false`), so no identity route exists | `urn:ed-fi:api:not-found` | `The specified data could not be found.` |
+| Identity management is switched off (`DataManagement:IdentityManagement:Enabled` is `false`), so no identity route exists | `urn:ed-fi:api:not-found` | `The specified data could not be found.` |
 
 The tenant-not-found and the feature-off responses share the general `urn:ed-fi:api:not-found` type, so `detail` is what separates them.
 The `Cache-Control: no-store` header does not separate them, because the host adds it to every non-successful response, the catch-all `404` included.
@@ -862,7 +862,7 @@ That `type`, rather than the status code, is the portable terminal signal: a cli
 ### The other statuses a client can see
 
 The host produces these without calling your provider, and a client sees them whatever the provider does.
-Every one of them is `application/problem+json`, except the `400` for a malformed or empty body or a duplicate property, which DMS sends as `application/json` with the same problem body.
+Every one of them is `application/problem+json`.
 
 | Status | Cause |
 | --- | --- |
@@ -1029,7 +1029,7 @@ DMS never retries a call on this interface and imposes no timeout of its own on 
 
 ## Validating your payloads
 
-The Data Management Service serves the OpenAPI document for the identity API at `/metadata/identity/v2/swagger.json`, when `AppSettings:EnableIdentityManagement` is on.
+The Data Management Service serves the OpenAPI document for the identity API at `/metadata/identity/v2/swagger.json`, when `DataManagement:IdentityManagement:Enabled` is on.
 It is the artifact to validate your own request and response payloads against.
 It defines `IdentityCreateRequest`, `IdentitySearchRequest`, `IdentityResponse` and `IdentitySearchResponse`, with their complete and incomplete forms, and each problem type, and it states its contract version in `x-edfi-identity-contract-version`.
 It also pins example `400` bodies, for a create failure keyed by `$.FirstName`, a search item failure keyed by `$[2].FirstName`, a pathless error, and two messages under one key, and your `InvalidProperties` errors should project to bodies of those shapes.
@@ -1043,7 +1043,7 @@ You validate against the served document with your own tooling.
 
 A client that runs in a browser and follows the asynchronous flow must read the `Location` header of a `202` and of an incomplete results poll.
 A browser exposes a response header to a cross-origin script only if the server lists it, so DMS exposes `Location` through CORS for that reason.
-It exposes it only to the single origin configured as `Cors:SwaggerUIOrigin`, which defaults to `http://localhost:8082`, and only when `AppSettings:EnableIdentityManagement` is on.
+It exposes it only to the single origin configured as `Cors:SwaggerUIOrigin`, which defaults to `http://localhost:8082`, and only when `DataManagement:IdentityManagement:Enabled` is on.
 A browser client served from any other origin cannot read the header, so deploy such a client at the configured origin, or change that setting.
 Clients that are not browsers are not affected.
 

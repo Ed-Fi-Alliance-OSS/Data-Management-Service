@@ -77,7 +77,7 @@ Feature: Token validation
                   """
                     {
                       "detail": "The request could not be processed. See 'errors' for details.",
-                      "type": "urn:ed-fi:api:security:authentication",
+                      "type": "urn:ed-fi:management-api:security:authentication",
                       "title": "Authentication Failed",
                       "status": 401,
                       "validationErrors": {},
@@ -87,7 +87,6 @@ Feature: Token validation
                     }
                   """
 
-        @SelfContainedOnly
         Scenario: 04 CMS-minted secret authenticates via raw HTTP Basic auth
              When a POST request is made to "/v3/vendors" with
                   """
@@ -176,3 +175,38 @@ Feature: Token validation
              When a token is requested with the credentials captured as "additionalClient" and scope "ClaimSet05Role"
              Then it should respond with 200
               And the token carries the configured client role claim
+
+        # Swagger UI sends the client credentials only in the Basic header and puts grant_type and
+        # scope in the form. Both identity providers accept it.
+        Scenario: 06 The system client authenticates via HTTP Basic auth with grant_type and scope in the form
+             When a token is requested using HTTP Basic auth with the system credentials and scope "edfi_admin_api/full_access"
+             Then it should respond with 200
+              And the response body has a non-empty access_token
+
+        # Keycloak rejects a scope the client does not hold; the identity provider's reason reaches
+        # the caller as a 400 instead of a bad-gateway failure.
+        @KeycloakOnly
+        Scenario: 07 A scope the client does not hold is rejected as a bad request
+            Given client "DmsConfigurationService" credentials with "edfi_admin_api/readonly_access" scope
+             Then it should respond with 400
+              And the response body is
+                  """
+                    {
+                      "detail": "The request could not be processed. See 'errors' for details.",
+                      "type": "urn:ed-fi:management-api:bad-request",
+                      "title": "Bad Request",
+                      "status": 400,
+                      "validationErrors": {},
+                      "errors": [
+                        "invalid_scope. Invalid scopes: edfi_admin_api/readonly_access"
+                      ]
+                    }
+                  """
+
+        Scenario: 08 A token requested without a scope authorizes the system client
+             When a token is requested without a scope using the system credentials
+             Then it should respond with 200
+              And the response body has a non-empty access_token
+            Given token received
+             When a GET request is made to "/v3/vendors"
+             Then it should respond with 200

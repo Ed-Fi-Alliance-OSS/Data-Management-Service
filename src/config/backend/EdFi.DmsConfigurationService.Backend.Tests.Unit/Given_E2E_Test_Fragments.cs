@@ -11,6 +11,7 @@ using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.Backend.Claims.Models;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.TestHelpers;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using FakeItEasy;
@@ -184,6 +185,22 @@ public class Given_E2E_Test_Fragments(string standardFolder)
     }
 
     [Test]
+    public void It_composes_the_E2E_fragments_without_unmatched_grant_warnings()
+    {
+        List<string> warnings =
+        [
+            .. _composerLogger
+                .LoggedEntries()
+                .Where(entry =>
+                    entry.Level == LogLevel.Warning && entry.Message.Contains("matches no resource claim")
+                )
+                .Select(entry => entry.Message),
+        ];
+
+        warnings.Should().BeEmpty("composing the E2E fragments must not leave grant entries unmatched");
+    }
+
+    [Test]
     public void It_registers_the_E2E_claim_sets_as_system_reserved()
     {
         List<JsonObject> e2eClaimSets =
@@ -263,6 +280,8 @@ public class Given_E2E_Test_Fragments(string standardFolder)
 
     private sealed record ReadinessCheck(string ClaimSetName, string ResourceClaim, string Action);
 
+    private ILogger<ClaimsFragmentComposer> _composerLogger = null!;
+
     private ClaimsDocument Compose(string defaultFragmentsPath, string e2eFragmentsPath)
     {
         // Stage both fragment directories into one, as the E2E claims workspace does
@@ -281,9 +300,8 @@ public class Given_E2E_Test_Fragments(string standardFolder)
             }
 
             JsonObject baseClaims = LoadEmbeddedClaims();
-            ClaimsLoadResult result = new ClaimsFragmentComposer(
-                A.Fake<ILogger<ClaimsFragmentComposer>>()
-            ).ComposeClaimsFromFragments(
+            _composerLogger = A.Fake<ILogger<ClaimsFragmentComposer>>();
+            ClaimsLoadResult result = new ClaimsFragmentComposer(_composerLogger).ComposeClaimsFromFragments(
                 new ClaimsDocument(baseClaims["claimSets"]!, baseClaims["claimsHierarchy"]!),
                 stagedPath
             );
