@@ -113,28 +113,62 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration
                 var vendorFromDb = ((VendorGetResult.Success)getByIdResult).VendorResponse;
                 vendorFromDb.NamespacePrefixes.Split(',').Should().BeEquivalentTo("FakePrefix1", LongPrefix);
             }
+        }
 
-            [Test]
-            public async Task It_stores_a_different_255_character_prefix_on_update()
+        [TestFixture]
+        public class Given_a_vendor_whose_255_character_namespace_prefix_is_updated : VendorTests
+        {
+            private static readonly string LongPrefix = BuildPrefix('a');
+            private static readonly string ChangedLongPrefix = BuildPrefix('b');
+            private VendorUpdateResult _updateResult = null!;
+            private VendorGetResult _getResult = null!;
+
+            private static string BuildPrefix(char last) =>
+                string.Concat("uri://vendor.example.org/".PadRight(254, 'x'), last);
+
+            [SetUp]
+            public async Task Setup()
             {
-                var updateResult = await _repository.UpdateVendor(
+                LongPrefix.Length.Should().Be(255);
+                ChangedLongPrefix.Length.Should().Be(255);
+                ChangedLongPrefix.Should().NotBe(LongPrefix);
+
+                var insertResult = await _repository.InsertVendor(
+                    new VendorInsertCommand
+                    {
+                        Company = "Long Prefix Company",
+                        ContactEmailAddress = "test@test.com",
+                        ContactName = "Fake Name",
+                        NamespacePrefixes = $"FakePrefix1,{LongPrefix}",
+                    }
+                );
+                insertResult.Should().BeOfType<VendorInsertResult.Success>();
+                int id = ((VendorInsertResult.Success)insertResult).Id;
+
+                _updateResult = await _repository.UpdateVendor(
                     new VendorUpdateCommand
                     {
-                        Id = _id,
+                        Id = id,
                         Company = "Long Prefix Company",
                         ContactEmailAddress = "test@test.com",
                         ContactName = "Fake Name",
                         NamespacePrefixes = $"FakePrefix1,{ChangedLongPrefix}",
                     }
                 );
-                updateResult.Should().BeOfType<VendorUpdateResult.Success>();
 
-                var getByIdResult = await _repository.GetVendor(_id);
-                getByIdResult.Should().BeOfType<VendorGetResult.Success>();
+                _getResult = await _repository.GetVendor(id);
+            }
 
-                var vendorFromDb = ((VendorGetResult.Success)getByIdResult).VendorResponse;
-                vendorFromDb
-                    .NamespacePrefixes.Split(',')
+            [Test]
+            public void It_updates_successfully() =>
+                _updateResult.Should().BeOfType<VendorUpdateResult.Success>();
+
+            [Test]
+            public void It_returns_the_updated_prefix()
+            {
+                _getResult.Should().BeOfType<VendorGetResult.Success>();
+                ((VendorGetResult.Success)_getResult)
+                    .VendorResponse.NamespacePrefixes.Split(',')
                     .Should()
                     .BeEquivalentTo("FakePrefix1", ChangedLongPrefix);
             }

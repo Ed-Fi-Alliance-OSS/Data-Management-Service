@@ -7,22 +7,29 @@
 -- ODS/API, the ODS Admin API and the Ed-Fi API namespace columns.
 --
 -- Every database, new or existing, runs this script; 0001_Create_Vendor_Table still creates the
--- column at 128. The guard only widens: a column an operator already widened past 255 is left
--- alone, never shrunk.
+-- column at 128. The guard widens only an nvarchar column shorter than 255 characters, so a
+-- column an operator already widened or changed to another type is left alone.
 --
--- The change is in place. SQL Server widens an NVARCHAR column without dropping or recreating the
--- primary key (VendorId, NamespacePrefix), and the column is restated NOT NULL because ALTER COLUMN
--- would otherwise make it nullable. ALTER COLUMN without COLLATE takes the database default
--- collation, so a column created under a different collation would change; the deploy creates
--- every column under the database default, so none does. No row can fail the change, because every
--- stored value already fits the narrower column.
-IF EXISTS (
-    SELECT 1
-    FROM sys.columns
-    WHERE object_id = OBJECT_ID(N'dmscs.VendorNamespacePrefix')
-      AND name = N'NamespacePrefix'
-      AND max_length < 510
-)
+-- The statement restates the column's current collation. ALTER COLUMN without COLLATE applies the
+-- database default, and SQL Server refuses to change the collation of a column the primary key
+-- (VendorId, NamespacePrefix) depends on (errors 5074 and 4922), so a column whose collation
+-- differs from the database default would otherwise block the upgrade. The collation name comes
+-- from sys.columns, not from input. With it restated, SQL Server widens the column in place and
+-- keeps the primary key. The statement also restates NOT NULL. No row can fail the change,
+-- because every stored value already fits the narrower column.
+DECLARE @collation SYSNAME;
+
+SELECT @collation = c.collation_name
+FROM sys.columns c
+WHERE c.object_id = OBJECT_ID(N'dmscs.VendorNamespacePrefix')
+  AND c.name = N'NamespacePrefix'
+  AND TYPE_NAME(c.user_type_id) = N'nvarchar'
+  AND c.max_length BETWEEN 1 AND 509;
+
+IF @collation IS NOT NULL
 BEGIN
-    ALTER TABLE dmscs.VendorNamespacePrefix ALTER COLUMN NamespacePrefix NVARCHAR(255) NOT NULL;
+    DECLARE @widen NVARCHAR(MAX) =
+        N'ALTER TABLE dmscs.VendorNamespacePrefix ALTER COLUMN NamespacePrefix NVARCHAR(255) COLLATE '
+        + @collation + N' NOT NULL;';
+    EXEC sys.sp_executesql @widen;
 END;

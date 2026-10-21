@@ -4,12 +4,11 @@ CMS accepts empty or omitted `namespacePrefixes` when creating a vendor with
 `POST /v3/vendors` or updating one with `PUT /v3/vendors/{id}`. Explicit JSON null,
 whitespace, and delimiter-only values normalize to an empty string. Supplied prefixes
 are trimmed and empty entries removed; each effective prefix must still be at most
-128 characters. GET represents a vendor without prefixes with `namespacePrefixes: ""`.
+128 characters (DMS-1626 later raised this to 255). GET represents a vendor without
+prefixes with `namespacePrefixes: ""`.
 Omitting the field on PUT clears all existing prefixes and re-applies the empty namespace
 claim to the vendor's existing clients. Prefix changes affect newly issued tokens;
 previously issued tokens retain their claims until expiry.
-
-Note (2026-10-20): DMS-1626 later raised the per-prefix limit to 255 characters.
 
 A no-prefix vendor may have applications using claim sets that contain NamespaceBased
 authorization. For newly provisioned clients and clients whose vendor prefixes are updated,

@@ -89,7 +89,7 @@ public class VendorUpdateCommandTests
         {
             Id = 1,
             Company = "ValidCompany",
-            ContactName = new string('a', 256),
+            ContactName = new string('a', 129),
             ContactEmailAddress = "valid@example.com",
             NamespacePrefixes = "prefix1,prefix2",
         };

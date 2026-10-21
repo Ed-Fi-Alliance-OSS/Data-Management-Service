@@ -81,6 +81,16 @@ public abstract class VendorNamespacePrefixWideningUpgradeFixture
             """
         );
 
+    /// <summary>Replaces the column definition, dropping and re-adding the primary key around it.</summary>
+    protected static Task ReshapeColumnAsync(SqlConnection connection, string columnDefinition) =>
+        connection.ExecuteAsync(
+            $"""
+            ALTER TABLE dmscs.VendorNamespacePrefix DROP CONSTRAINT PK_VendorNamespacePrefix;
+            ALTER TABLE dmscs.VendorNamespacePrefix ALTER COLUMN NamespacePrefix {columnDefinition};
+            ALTER TABLE dmscs.VendorNamespacePrefix ADD CONSTRAINT PK_VendorNamespacePrefix PRIMARY KEY (VendorId, NamespacePrefix);
+            """
+        );
+
     protected static async Task<int> InsertVendorAsync(SqlConnection connection) =>
         await connection.ExecuteScalarAsync<int>(
             "INSERT INTO dmscs.Vendor (Company) OUTPUT INSERTED.Id VALUES (@Company);",
@@ -109,6 +119,7 @@ public class Given_a_database_deployed_through_0036_with_a_128_character_prefix
     private bool _constraintIsPrimaryKey;
     private string[] _prefixesAfterUpgrade = [];
     private string[] _journalAfterRepeatDeploy = [];
+    private ColumnShape _columnAfterScriptRerun = null!;
     private Exception? _insert255Failure;
     private SqlException? _insert256Failure;
 
@@ -161,6 +172,19 @@ public class Given_a_database_deployed_through_0036_with_a_128_character_prefix
 
         Redeploy().Should().BeOfType<DatabaseDeployResult.DatabaseDeploySuccess>();
         _journalAfterRepeatDeploy = await JournalAsync();
+
+        await connection.ExecuteAsync(EmbeddedWideningScript());
+        _columnAfterScriptRerun = await ColumnShapeAsync(connection);
+    }
+
+    private static string EmbeddedWideningScript()
+    {
+        using Stream stream =
+            typeof(Deploy.DatabaseDeploy).Assembly.GetManifestResourceStream(
+                JobUpgradeTestDatabase.NamespacePrefixWideningScriptName
+            ) ?? throw new InvalidOperationException("The widening script is not embedded.");
+        using StreamReader reader = new(stream);
+        return reader.ReadToEnd();
     }
 
     private async Task<Exception?> TryInsertAsync(SqlConnection connection, string prefix)
@@ -224,6 +248,10 @@ public class Given_a_database_deployed_through_0036_with_a_128_character_prefix
     [Test]
     public void It_adds_no_journal_rows_on_a_repeat_deploy() =>
         _journalAfterRepeatDeploy.Should().Equal(JournalAfterUpgrade);
+
+    [Test]
+    public void It_leaves_the_column_unchanged_when_the_script_runs_again() =>
+        _columnAfterScriptRerun.Should().Be(ColumnAfterUpgrade);
 }
 
 [TestFixture]
@@ -242,4 +270,79 @@ public class Given_a_column_already_wider_than_255 : VendorNamespacePrefixWideni
 
     [Test]
     public void It_does_not_shrink_the_column() => ColumnAfterUpgrade.MaxLengthBytes.Should().Be(600);
+}
+
+[TestFixture]
+[Category(Category)]
+[Category("MssqlIntegration")]
+public class Given_a_column_with_a_non_default_collation : VendorNamespacePrefixWideningUpgradeFixture
+{
+    private string[] _primaryKeyColumns = [];
+
+    protected override Task SeedAsync(SqlConnection connection) =>
+        ReshapeColumnAsync(connection, "NVARCHAR(128) COLLATE Latin1_General_CS_AS NOT NULL");
+
+    protected override async Task AfterUpgradeAsync(SqlConnection connection) =>
+        _primaryKeyColumns = (
+            await connection.QueryAsync<string>(
+                """
+                SELECT column_row.name
+                FROM sys.indexes index_row
+                JOIN sys.index_columns index_column
+                    ON index_column.object_id = index_row.object_id AND index_column.index_id = index_row.index_id
+                JOIN sys.columns column_row
+                    ON column_row.object_id = index_column.object_id AND column_row.column_id = index_column.column_id
+                WHERE index_row.object_id = OBJECT_ID(N'dmscs.VendorNamespacePrefix')
+                  AND index_row.name = N'PK_VendorNamespacePrefix'
+                  AND index_column.is_included_column = 0
+                ORDER BY index_column.key_ordinal;
+                """
+            )
+        ).ToArray();
+
+    [Test]
+    public void It_upgrades_successfully() =>
+        UpgradeResult.Should().BeOfType<DatabaseDeployResult.DatabaseDeploySuccess>();
+
+    [Test]
+    public void It_widens_the_column_to_255() => ColumnAfterUpgrade.MaxLengthBytes.Should().Be(510);
+
+    [Test]
+    public void It_keeps_the_Latin1_General_CS_AS_collation() =>
+        ColumnAfterUpgrade.Collation.Should().Be("Latin1_General_CS_AS");
+
+    [Test]
+    public void It_keeps_the_composite_primary_key_in_order() =>
+        _primaryKeyColumns.Should().Equal("VendorId", "NamespacePrefix");
+}
+
+[TestFixture]
+[Category(Category)]
+[Category("MssqlIntegration")]
+public class Given_a_column_an_operator_changed_to_varchar : VendorNamespacePrefixWideningUpgradeFixture
+{
+    private string? _typeName;
+
+    protected override Task SeedAsync(SqlConnection connection) =>
+        ReshapeColumnAsync(connection, "VARCHAR(300) NOT NULL");
+
+    protected override async Task AfterUpgradeAsync(SqlConnection connection) =>
+        _typeName = await connection.ExecuteScalarAsync<string>(
+            """
+            SELECT TYPE_NAME(user_type_id)
+            FROM sys.columns
+            WHERE object_id = OBJECT_ID(N'dmscs.VendorNamespacePrefix') AND name = N'NamespacePrefix';
+            """
+        );
+
+    [Test]
+    public void It_upgrades_successfully() =>
+        UpgradeResult.Should().BeOfType<DatabaseDeployResult.DatabaseDeploySuccess>();
+
+    [Test]
+    public void It_leaves_the_column_as_varchar_300()
+    {
+        _typeName.Should().Be("varchar");
+        ColumnAfterUpgrade.MaxLengthBytes.Should().Be(300);
+    }
 }

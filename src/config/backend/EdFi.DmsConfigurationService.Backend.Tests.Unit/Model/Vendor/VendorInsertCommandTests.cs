@@ -105,7 +105,7 @@ public class VendorInsertCommandTests
         var command = new VendorInsertCommand
         {
             Company = "ValidCompany",
-            ContactName = new string('a', 256),
+            ContactName = new string('a', 129),
             ContactEmailAddress = "valid@example.com",
             NamespacePrefixes = "prefix1,prefix2",
         };

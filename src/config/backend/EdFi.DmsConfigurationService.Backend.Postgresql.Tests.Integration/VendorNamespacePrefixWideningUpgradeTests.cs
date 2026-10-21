@@ -26,6 +26,7 @@ public abstract class VendorNamespacePrefixWideningUpgradeFixture
     protected DatabaseDeployResult UpgradeResult { get; private set; } = null!;
     protected string[] JournalBeforeUpgrade { get; private set; } = [];
     protected string[] JournalAfterUpgrade { get; private set; } = [];
+    protected string ColumnTypeBeforeUpgrade { get; private set; } = "";
     protected string ColumnTypeAfterUpgrade { get; private set; } = "";
 
     [OneTimeSetUp]
@@ -38,6 +39,9 @@ public abstract class VendorNamespacePrefixWideningUpgradeFixture
         await connection.OpenAsync();
 
         await SeedAsync(connection);
+        ColumnTypeBeforeUpgrade = await ColumnTypeAsync(connection);
+
+        await BeforeUpgradeAsync(connection);
 
         UpgradeResult = _database.Deploy(JobUpgradeTestDatabase.NamespacePrefixWideningScript);
 
@@ -51,6 +55,8 @@ public abstract class VendorNamespacePrefixWideningUpgradeFixture
     public Task OneTimeTeardown() => _database.DropAsync();
 
     protected virtual Task SeedAsync(NpgsqlConnection connection) => Task.CompletedTask;
+
+    protected virtual Task BeforeUpgradeAsync(NpgsqlConnection connection) => Task.CompletedTask;
 
     protected virtual Task AfterUpgradeAsync(NpgsqlConnection connection) => Task.CompletedTask;
 
@@ -68,6 +74,22 @@ public abstract class VendorNamespacePrefixWideningUpgradeFixture
               AND attribute.attname = 'NamespacePrefix';
             """
         ) ?? "";
+
+    protected static async Task<string> ColumnCollationAsync(NpgsqlConnection connection) =>
+        await connection.ExecuteScalarAsync<string>(
+            """
+            SELECT collation_row.collname
+            FROM pg_attribute attribute
+            JOIN pg_collation collation_row ON collation_row.oid = attribute.attcollation
+            WHERE attribute.attrelid = '"dmscs"."VendorNamespacePrefix"'::regclass
+              AND attribute.attname = 'NamespacePrefix';
+            """
+        ) ?? "";
+
+    protected static async Task<long> PrimaryKeyFilenodeAsync(NpgsqlConnection connection) =>
+        await connection.ExecuteScalarAsync<long>(
+            """SELECT pg_relation_filenode('"dmscs"."PK_VendorNamespacePrefix"'::regclass)::bigint;"""
+        );
 
     protected static async Task<int> InsertVendorAsync(NpgsqlConnection connection) =>
         await connection.ExecuteScalarAsync<int>(
@@ -162,6 +184,10 @@ public class Given_a_database_deployed_through_0036_with_a_128_character_prefix
     }
 
     [Test]
+    public void It_starts_with_a_128_character_column() =>
+        ColumnTypeBeforeUpgrade.Should().Be("character varying(128)");
+
+    [Test]
     public void It_upgrades_successfully() =>
         UpgradeResult.Should().BeOfType<DatabaseDeployResult.DatabaseDeploySuccess>();
 
@@ -216,4 +242,59 @@ public class Given_a_column_already_wider_than_255 : VendorNamespacePrefixWideni
     [Test]
     public void It_does_not_shrink_the_column() =>
         ColumnTypeAfterUpgrade.Should().Be("character varying(300)");
+}
+
+[TestFixture]
+[Category(Category)]
+public class Given_a_column_with_a_non_default_collation : VendorNamespacePrefixWideningUpgradeFixture
+{
+    private long _primaryKeyFilenodeBefore;
+    private long _primaryKeyFilenodeAfter;
+    private string _collationAfterUpgrade = "";
+
+    protected override async Task SeedAsync(NpgsqlConnection connection) =>
+        await connection.ExecuteAsync(
+            """ALTER TABLE "dmscs"."VendorNamespacePrefix" ALTER COLUMN "NamespacePrefix" TYPE VARCHAR(128) COLLATE "C";"""
+        );
+
+    protected override async Task BeforeUpgradeAsync(NpgsqlConnection connection) =>
+        _primaryKeyFilenodeBefore = await PrimaryKeyFilenodeAsync(connection);
+
+    protected override async Task AfterUpgradeAsync(NpgsqlConnection connection)
+    {
+        _collationAfterUpgrade = await ColumnCollationAsync(connection);
+        _primaryKeyFilenodeAfter = await PrimaryKeyFilenodeAsync(connection);
+    }
+
+    [Test]
+    public void It_upgrades_successfully() =>
+        UpgradeResult.Should().BeOfType<DatabaseDeployResult.DatabaseDeploySuccess>();
+
+    [Test]
+    public void It_widens_the_column_to_255() => ColumnTypeAfterUpgrade.Should().Be("character varying(255)");
+
+    [Test]
+    public void It_keeps_the_C_collation() => _collationAfterUpgrade.Should().Be("C");
+
+    [Test]
+    public void It_does_not_rebuild_the_primary_key() =>
+        _primaryKeyFilenodeAfter.Should().Be(_primaryKeyFilenodeBefore);
+}
+
+[TestFixture]
+[Category(Category)]
+public class Given_a_column_an_operator_changed_to_another_type : VendorNamespacePrefixWideningUpgradeFixture
+{
+    protected override async Task SeedAsync(NpgsqlConnection connection) =>
+        await connection.ExecuteAsync(
+            """ALTER TABLE "dmscs"."VendorNamespacePrefix" ALTER COLUMN "NamespacePrefix" TYPE CHARACTER(100);"""
+        );
+
+    [Test]
+    public void It_upgrades_successfully() =>
+        UpgradeResult.Should().BeOfType<DatabaseDeployResult.DatabaseDeploySuccess>();
+
+    [Test]
+    public void It_leaves_the_column_as_character_100() =>
+        ColumnTypeAfterUpgrade.Should().Be("character(100)");
 }
