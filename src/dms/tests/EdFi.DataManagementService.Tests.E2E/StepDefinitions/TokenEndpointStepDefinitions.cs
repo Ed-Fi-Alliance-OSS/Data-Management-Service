@@ -38,6 +38,16 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             await SendTokenRequest(contentType, body, authorization: null);
         }
 
+        [When("a token request is made with {int} repeated grant_type form parameters")]
+        public async Task WhenATokenRequestIsMadeWithRepeatedGrantTypeFormParameters(int count)
+        {
+            await SendTokenRequest(
+                "application/x-www-form-urlencoded",
+                string.Join('&', Enumerable.Repeat("grant_type=client_credentials", count)),
+                authorization: null
+            );
+        }
+
         [When("a token request is made with a Basic Authorization header, content type {string} and body")]
         public async Task WhenATokenRequestIsMadeWithABasicAuthorizationHeader(
             string contentType,

@@ -208,6 +208,26 @@ Feature: Client credentials at the token endpoint
 
     @DMS-1606
     @e2e-ci-shard-1
+    Scenario: 34 Invalid form decoding is rejected with a safe request description
+      When a token request is made with content type "application/x-www-form-urlencoded" and body
+        """
+        grant_type=client_credentials&client_id=%00&client_secret=withheld-form-secret
+        """
+      Then the token error is 400 "invalid_request" with description "The token request body must be valid form data"
+
+    @DMS-1606
+    @e2e-ci-shard-1
+    Scenario Outline: 35 Repeated form parameters stay client errors across the parser count limit
+      When a token request is made with <count> repeated grant_type form parameters
+      Then the token error is 400 "invalid_request" with description "<description>"
+
+      Examples:
+        | count | description                                    |
+        | 1024  | A request parameter was included more than once |
+        | 1025  | The token request body must be valid form data  |
+
+    @DMS-1606
+    @e2e-ci-shard-1
     Scenario: 15 Malformed JSON is rejected with a safe request description
       When a token request is made with content type "application/json" and body
         """

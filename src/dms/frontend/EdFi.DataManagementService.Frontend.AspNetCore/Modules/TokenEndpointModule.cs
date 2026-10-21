@@ -61,7 +61,22 @@ public class TokenEndpointModule : IEndpointModule
         TokenRequest tokenRequest = new();
         if (httpContext.Request.HasFormContentType)
         {
-            var form = await httpContext.Request.ReadFormAsync();
+            IFormCollection form;
+            try
+            {
+                form = await httpContext.Request.ReadFormAsync();
+            }
+            catch (InvalidDataException)
+            {
+                // Invalid decoding and form limits are request errors. The parser's exception
+                // can contain caller input, so neither return nor log its message.
+                await WriteBadRequest(
+                    httpContext,
+                    appSettings,
+                    "The token request body must be valid form data"
+                );
+                return;
+            }
 
             // RFC 6749 section 3.2: request parameters must not be included more than once.
             if (Array.Exists(_singleValuedFormParameters, name => form[name].Count > 1))
