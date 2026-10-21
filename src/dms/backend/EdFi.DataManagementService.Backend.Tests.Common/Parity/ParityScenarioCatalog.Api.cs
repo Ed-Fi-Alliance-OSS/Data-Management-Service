@@ -100,6 +100,13 @@ public static partial class ParityScenarioCatalog
             fixtureSuffix: "CompactDescriptorRuntime"
         ),
         Api(
+            "Api/DescriptorRuntime/StoredWinsCaseVariantPost",
+            "An authorized POST that differs from the stored descriptor only in casing keeps the stored casing: alone it is a no-op with the same ETag, and with a descriptive change it updates with the stored identity, retained IDs and advanced stamps.",
+            "DescriptorRuntimeScenario.It_keeps_the_stored_casing_for_a_case_variant_post",
+            "It_keeps_the_stored_casing_for_a_case_variant_post",
+            fixtureSuffix: "CompactDescriptorRuntime"
+        ),
+        Api(
             "Api/DescriptorRuntime/EqualIdentityPut",
             "A PUT whose components reconstruct the stored whole URI, or differ from it only in casing, keeps the stored identity and returns 204 with unchanged stamps and ETag.",
             "DescriptorRuntimeScenario.It_keeps_the_stored_identity_for_an_equal_identity_put",

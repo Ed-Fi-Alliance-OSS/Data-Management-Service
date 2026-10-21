@@ -677,6 +677,62 @@ public class Given_Descriptor_Write_Preconditions
     }
 
     [Test]
+    public async Task It_returns_precondition_failed_before_immutable_identity_for_a_put_under_a_stale_if_match()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
+        };
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
+        // The ordinally different URI is probed after the lock; the probe finds no descriptor with it.
+        sessionFactory.Session.Executor.ResultSets.Enqueue([InMemoryRelationalResultSet.Create()]);
+        var sut = CreateSut(targetLookupService, sessionFactory);
+        var request = new DescriptorWriteRequest(
+            CreateMappingSet(SqlDialect.Pgsql),
+            _descriptorResource,
+            JsonNode.Parse(
+                """
+                {
+                  "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                  "codeValue": "Alternative",
+                  "shortDescription": "Alternative",
+                  "description": "Alternative",
+                  "effectiveBeginDate": "2024-01-01"
+                }
+                """
+            )!,
+            documentUuid,
+            new TraceId("descriptor-put-immutable-stale-if-match")
+        )
+        {
+            WritePrecondition = new WritePrecondition.IfMatch("\"stale-etag\""),
+        };
+
+        var result = await sut.HandlePutAsync(request);
+
+        // The identity verdict is computed before the ETag compare, but 412 must still win over the
+        // immutable-identity 400 (403 > 412 > 400).
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.Concurrency);
+        sessionFactory.CreateAsyncCallCount.Should().Be(1);
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+        sessionFactory.Session.DisposeCallCount.Should().Be(1);
+        sessionFactory
+            .Session.Executor.Commands.Should()
+            .NotContain(command =>
+                command.CommandText.Contains("UPDATE dms.\"Descriptor\"", StringComparison.Ordinal)
+            );
+    }
+
+    [Test]
     public async Task It_returns_precondition_failed_for_descriptor_delete_when_if_match_mismatches()
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));

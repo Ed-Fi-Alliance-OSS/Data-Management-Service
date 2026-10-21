@@ -56,6 +56,7 @@ public class Given_The_Parity_Scenario_Catalog
         "Api/ProfileRootOnlyMerge/PreservesHiddenFieldOnProfiledPut",
         "Api/ProfileRootOnlyMerge/RejectsWriteAgainstReadOnlyProfile",
         "Api/DescriptorRuntime/StoredWinsPostIdentity",
+        "Api/DescriptorRuntime/StoredWinsCaseVariantPost",
         "Api/DescriptorRuntime/EqualIdentityPut",
         "Api/DescriptorRuntime/IdenticalPostAndPutNoOps",
         "Api/DescriptorRuntime/QualifiedTypeIsolation",
