@@ -73,8 +73,8 @@ not reset it for another app release on the same line.
 
 ## Release preparation and recovery
 
-The following procedure is the policy for the pending release automation; it
-does not mean these publication paths are available yet.
+The normal `cs-` release chain implements the publication gates below. The
+independent dispatch procedure remains pending DMS-1617-13.
 
 1. Select the source ref containing the intended tool changes and committed
    patch. Verify its app major/minor through the existing MinVer release source
@@ -126,10 +126,10 @@ The remaining integration points are tracked by DMS-1617:
 
 | Entry point | Current status and intended integration |
 | --- | --- |
-| [build-config.ps1](../../../../build-config.ps1) | `Build -Configuration Release -DmsCSVersion <app-version> -LockedMode` builds the solution, then builds the tool at its calculated version. `Package -PackageTarget SecurityMetadataTools` restores, rebuilds, and packs only the tool; `-LockedMode` enforces its lock graph. The default `ConfigurationService` package target retains the app nuspec/publish path. Implicit `Push` selects the exact artifact for its target; release publication gates remain pending below. |
+| [build-config.ps1](../../../../build-config.ps1) | `Build -Configuration Release -DmsCSVersion <app-version> -LockedMode` builds the solution, then builds the tool at its calculated version. `Package -PackageTarget SecurityMetadataTools` restores, rebuilds, and packs only the tool; `-LockedMode` enforces its lock graph. The default `ConfigurationService` package target retains the app nuspec/publish path. Implicit `Push` selects the exact artifact for its target; normal release publication uses the gates below. |
 | [on-config-pullrequest.yml](../../../../.github/workflows/on-config-pullrequest.yml) | Config-relevant PRs, including helper-only changes, run the required `verify-security-metadata-tools` job: version/package Pester tests and a locked pack/install/convert smoke using the checkout's MinVer app version. `Config CI Gate` includes this job. The existing unit and CMS E2E jobs run the CLI tests and unchanged-file upload scenario. No package is published or promoted. |
-| [on-config-merge-or-tag.yml](../../../../.github/workflows/on-config-merge-or-tag.yml) | Existing `cs-pre` release entry point. DMS-1617-12 must retain the triggering source SHA in release creation; the current payload still targets `main`. |
-| [on-prerelease.yml](../../../../.github/workflows/on-prerelease.yml) and [on-release.yml](../../../../.github/workflows/on-release.yml) | Existing app release workflows. DMS-1617-12 will add the tool's normal `cs-` package chain and exact-version promotion. No tool publication/promotion jobs are wired yet. |
+| [on-config-merge-or-tag.yml](../../../../.github/workflows/on-config-merge-or-tag.yml) | The `cs-pre` release entry point pins `target_commitish` to the triggering `github.sha`, retaining the version source and committed tool patch when `main` advances. |
+| [on-prerelease.yml](../../../../.github/workflows/on-prerelease.yml) and [on-release.yml](../../../../.github/workflows/on-release.yml) | The `cs-` lane packs and verifies the installed tool after `check-secrets-contract`; publication waits for `publish-package-secrets`. Distinct package, SBOM, provenance and release assets use the calculated tool version and package hash. `Publish-SecurityMetadataToolsPackage` verifies artifact bytes/identity, checks the Local feed view, and refuses duplicate versions before pushing without skip-duplicate. Contract-only dispatch remains unchanged. Final release promotion checks out the release ref with full history, calculates the stable tool version from that source, and passes it explicitly to the existing promotion helper. |
 | `.github/workflows/Pkg EdFi.Api.SecurityMetadataTools.yml` | Planned DMS-1617-13 dispatch-only workflow; the file does not exist yet. It will use the selected ref, `publish_package`, stable calculation, dependency verification, and a separately retryable promotion job as described above. |
 
 Use these supported package commands from the repository root (the app version

@@ -320,3 +320,280 @@ Describe "Security Metadata Tools build and package routing (DMS-1617)" {
         $script:buildAst.ParamBlock.Parameters.Name.VariablePath.UserPath | Should -Not -Contain "ToolVersion"
     }
 }
+
+Describe "Security Metadata Tools release publication and promotion (DMS-1617)" {
+    BeforeAll {
+        $script:repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
+        Import-Module (Join-Path $script:repoRoot "package-helpers.psm1")
+        $script:feed = 'https://feed.invalid/_packaging/EdFi/nuget/v3/index.json'
+        $script:packageName = 'EdFi.Api.SecurityMetadataTools'
+        $script:password = [Security.SecureString]::new()
+        $script:password.AppendChar('x')
+
+        function New-ReleasePackage {
+            [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Writes only a disposable package in Pester TestDrive.')]
+            param([string] $Version, [string] $Id = 'EdFi.Api.SecurityMetadataTools')
+            $directory = New-Item -ItemType Directory (Join-Path $TestDrive ([guid]::NewGuid()))
+            Set-Content (Join-Path $directory "$script:packageName.nuspec") "<package><metadata><id>$Id</id><version>$Version</version></metadata></package>"
+            $path = "$directory.nupkg"
+            [IO.Compression.ZipFile]::CreateFromDirectory($directory, $path)
+            return $path
+        }
+
+        function Invoke-TestPublication {
+            Publish-SecurityMetadataToolsPackage -Version $script:version -PackageFile $script:packageFile `
+                -Sha256 $script:hash -ServiceIndexUrl $script:feed -ApiKey 'test-only'
+        }
+
+        function Invoke-TestPromotion {
+            Invoke-ContractPromotion -PackagesURL 'https://packages.invalid' -Username 'test' `
+                -Password $script:password `
+                -ServiceIndexUrl $script:feed -ApiKey 'test-only' -PackageName $script:packageName -Version $script:version
+        }
+    }
+
+    BeforeEach {
+        $script:version = '8.1.2'
+        $script:packageFile = New-ReleasePackage $script:version
+        $script:hash = (Get-FileHash $script:packageFile).Hash
+        $script:published = [Collections.Generic.List[string]]::new()
+        $script:published.Add('8.1.1')
+        $script:released = @()
+        $script:pushExit = 0
+        $script:pushes = [Collections.Generic.List[object]]::new()
+        Mock -ModuleName package-helpers dotnet {
+            $script:pushes.Add(@($args))
+            $global:LASTEXITCODE = $script:pushExit
+            if ($script:pushExit -eq 0) { $script:published.Add($script:version) }
+        }
+        Mock -ModuleName package-helpers Invoke-RestMethod {
+            if ($Uri -like '*_packaging/*') {
+                $view = if ($Uri -like '*@Release/*') { 'Release' } else { 'Local' }
+                return @{ resources = @(@{ '@id' = "https://feed.invalid/$view/flat2/"; '@type' = 'PackageBaseAddress/3.0.0' }) }
+            }
+            if ($Uri -like '*/Release/flat2/*') { return @{ versions = $script:released } }
+            if ($Uri -like '*/Local/flat2/*') { return @{ versions = @($script:published) } }
+            throw "Unexpected feed request: $Uri"
+        }
+        Mock -ModuleName package-helpers Invoke-WebRequest { return @{ StatusCode = 200 } }
+    }
+
+    It 'refuses unchanged patch 1 after independent 8.1.1, then publishes and promotes committed patch 2 for app 8.1.9' {
+        $project = Join-Path $TestDrive 'release-source.csproj'
+        Set-Content $project '<Project><PropertyGroup><SecurityMetadataToolsPatchVersion>1</SecurityMetadataToolsPatchVersion></PropertyGroup></Project>'
+        $script:version = Get-SecurityMetadataToolsVersion -AppVersion '8.1.9' -ProjectPath $project
+        $script:packageFile = New-ReleasePackage $script:version
+        $script:hash = (Get-FileHash $script:packageFile).Hash
+        { Invoke-TestPublication } | Should -Throw '*already published*Commit a new SecurityMetadataToolsPatchVersion*'
+        $script:pushes.Count | Should -Be 0
+        Should -Invoke -ModuleName package-helpers Invoke-WebRequest -Times 0 -Exactly
+
+        Set-Content $project '<Project><PropertyGroup><SecurityMetadataToolsPatchVersion>2</SecurityMetadataToolsPatchVersion></PropertyGroup></Project>'
+        $script:version = Get-SecurityMetadataToolsVersion -AppVersion '8.1.9' -ProjectPath $project
+        $script:version | Should -BeExactly '8.1.2'
+        $script:packageFile = New-ReleasePackage $script:version
+        $script:hash = (Get-FileHash $script:packageFile).Hash
+        Invoke-TestPublication
+        Invoke-TestPromotion | Should -BeExactly 'EdFi.Api.SecurityMetadataTools 8.1.2 promoted to the Release view.'
+        $script:pushes.Count | Should -Be 1
+        $script:pushes[0] | Should -Be @('nuget', 'push', $script:packageFile, '--api-key', 'test-only', '--source', $script:feed)
+        Should -Invoke -ModuleName package-helpers Invoke-WebRequest -Times 1 -Exactly -ParameterFilter {
+            $payload = $Body | ConvertFrom-Json
+            $payload.packages[0].id -ceq 'EdFi.Api.SecurityMetadataTools' -and
+            $payload.packages[0].version -ceq '8.1.2' -and $payload.data.viewId -ceq 'release'
+        }
+    }
+
+    It 'rejects an equivalent already-published version including metadata differences' {
+        $script:published.Add('8.1.2+original')
+        { Invoke-TestPublication } | Should -Throw '*already published*'
+        $script:pushes.Count | Should -Be 0
+    }
+
+    It 'publishes when a reachable service index reports package-index 404' {
+        Mock -ModuleName package-helpers Invoke-RestMethod {
+            if ($Uri -like '*_packaging/*') {
+                return @{ resources = @(@{ '@id' = 'https://feed.invalid/flat2/'; '@type' = 'PackageBaseAddress/3.0.0' }) }
+            }
+            $response = [Net.Http.HttpResponseMessage]::new([Net.HttpStatusCode]::NotFound)
+            throw [Microsoft.PowerShell.Commands.HttpResponseException]::new('404', $response)
+        }
+        Invoke-TestPublication
+        $script:pushes.Count | Should -Be 1
+    }
+
+    It 'does not push or promote when the feed <Failure>' -ForEach @(
+        @{ Failure = 'is unavailable' }, @{ Failure = 'is malformed' }
+    ) {
+        if ($Failure -eq 'is unavailable') {
+            Mock -ModuleName package-helpers Invoke-RestMethod { throw 'feed unavailable' }
+        }
+        else {
+            Mock -ModuleName package-helpers Invoke-RestMethod { return @{ error = 'not a service index' } }
+        }
+        { Invoke-TestPublication; Invoke-TestPromotion } | Should -Throw
+        $script:pushes.Count | Should -Be 0
+        Should -Invoke -ModuleName package-helpers Invoke-WebRequest -Times 0 -Exactly
+    }
+
+    It 'does not promote after a failed push (including a duplicate race)' {
+        $script:pushExit = 1
+        { Invoke-TestPublication; Invoke-TestPromotion } | Should -Throw '*push failed*'
+        $script:pushes.Count | Should -Be 1
+        $script:pushes[0] | Should -Not -Contain '--skip-duplicate'
+        Should -Invoke -ModuleName package-helpers Invoke-WebRequest -Times 0 -Exactly
+    }
+
+    It 'refuses altered bytes before consulting the feed' {
+        Add-Content $script:packageFile 'changed'
+        { Invoke-TestPublication } | Should -Throw '*hash differs*'
+        Should -Invoke -ModuleName package-helpers Invoke-RestMethod -Times 0 -Exactly
+        $script:pushes.Count | Should -Be 0
+    }
+
+    It 'refuses a different <Mismatch> in a correctly hashed artifact' -ForEach @(
+        @{ Mismatch = 'version'; Id = 'EdFi.Api.SecurityMetadataTools'; Version = '8.1.9' }
+        @{ Mismatch = 'package'; Id = 'EdFi.Api.ConfigurationService'; Version = '8.1.2' }
+    ) {
+        $script:packageFile = New-ReleasePackage -Version $Version -Id $Id
+        $script:hash = (Get-FileHash $script:packageFile).Hash
+        { Invoke-TestPublication } | Should -Throw '*package identity does not match*'
+        Should -Invoke -ModuleName package-helpers Invoke-RestMethod -Times 0 -Exactly
+        $script:pushes.Count | Should -Be 0
+    }
+
+    It 'treats promotion of an already-built package as promotion, without another publication check or push' {
+        $script:published.Add($script:version)
+        Invoke-TestPromotion | Should -Match 'promoted'
+        $script:pushes.Count | Should -Be 0
+        Should -Invoke -ModuleName package-helpers Invoke-WebRequest -Times 1 -Exactly
+    }
+
+    It 'does not mutate a version already in the release view' {
+        $script:released = @($script:version)
+        Invoke-TestPromotion | Should -Match 'already in the Release view'
+        $script:pushes.Count | Should -Be 0
+        Should -Invoke -ModuleName package-helpers Invoke-WebRequest -Times 0 -Exactly
+    }
+
+    It 'refuses to promote a version absent from the feed' {
+        { Invoke-TestPromotion } | Should -Throw '*not on the feed cannot be promoted*'
+        Should -Invoke -ModuleName package-helpers Invoke-WebRequest -Times 0 -Exactly
+    }
+}
+
+Describe 'Security Metadata Tools normal release workflow wiring and source handoff' {
+    BeforeAll {
+        $script:repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
+        Import-Module (Join-Path $script:repoRoot 'package-helpers.psm1')
+        $script:workflow = Get-Content (Join-Path $script:repoRoot '.github/workflows/on-prerelease.yml') -Raw
+        $script:release = Get-Content (Join-Path $script:repoRoot '.github/workflows/on-release.yml') -Raw
+        function Get-ReleaseJob([string] $Name) {
+            $match = [regex]::Match($script:workflow, "(?ms)^  $([regex]::Escape($Name)):\r?\n.*?(?=^  [\w-]+:|\z)")
+            if (-not $match.Success) { throw "Missing job: $Name" }
+            $match.Value
+        }
+    }
+
+    It 'keeps the actual release API payload on the triggering commit after main advances' {
+        $source = New-Item -ItemType Directory (Join-Path $TestDrive 'source')
+        Push-Location $source
+        try {
+            git init -b main | Out-Null
+            $project = Join-Path $source 'tool.csproj'
+            Set-Content $project '<Project><PropertyGroup><SecurityMetadataToolsPatchVersion>1</SecurityMetadataToolsPatchVersion></PropertyGroup></Project>'
+            git add tool.csproj
+            git -c user.name=Test -c user.email=test@example.invalid -c commit.gpgSign=false commit -m 'Release source' | Out-Null
+            $triggerVersion = Get-SecurityMetadataToolsVersion -AppVersion '8.1.9' -ProjectPath $project
+            $triggerVersion | Should -BeExactly '8.1.1'
+            $triggerSha = git rev-parse HEAD
+            Set-Content $project '<Project><PropertyGroup><SecurityMetadataToolsPatchVersion>2</SecurityMetadataToolsPatchVersion></PropertyGroup></Project>'
+            git add tool.csproj
+            git -c user.name=Test -c user.email=test@example.invalid -c commit.gpgSign=false commit -m 'Later main' | Out-Null
+            Get-SecurityMetadataToolsVersion -AppVersion '8.1.9' -ProjectPath $project | Should -BeExactly '8.1.2'
+            (git rev-parse main) | Should -Not -Be $triggerSha
+
+            $workflow = Get-Content (Join-Path $script:repoRoot '.github/workflows/on-config-merge-or-tag.yml') -Raw
+            $step = [regex]::Match($workflow, '(?ms)^      - name: Create CS API Pre-Release\r?\n        run: \|\r?\n(?<body>.*)\z').Groups['body'].Value
+            $step | Should -Not -BeNullOrEmpty
+            $body = ($step -replace '(?m)^          ', '').Replace('${{ steps.versions.outputs.dms-semver }}', 'cs-v8.1.9').
+                Replace('${{ github.sha }}', $triggerSha).Replace('${{ env.TOKEN }}', 'test-only').
+                Replace('${{ env.API_URL }}', 'https://api.invalid/repos/test/repo')
+            $script:capturedRelease = $null
+            Mock Invoke-RestMethod {
+                $script:capturedRelease = $Body | ConvertFrom-Json
+                return @{ id = 1 }
+            }
+            & ([scriptblock]::Create($body)) | Out-Null
+            # Model GitHub's tag creation using the actual API payload, then read that source's patch.
+            git -c tag.gpgSign=false tag --no-sign $script:capturedRelease.tag_name $script:capturedRelease.target_commitish
+            $LASTEXITCODE | Should -Be 0
+            git show "$($script:capturedRelease.tag_name):tool.csproj" | Set-Content (Join-Path $TestDrive 'tagged-tool.csproj')
+            Get-SecurityMetadataToolsVersion -AppVersion '8.1.9' -ProjectPath (Join-Path $TestDrive 'tagged-tool.csproj') |
+                Should -BeExactly $triggerVersion
+            Should -Invoke Invoke-RestMethod -Times 1 -Exactly -ParameterFilter {
+                $payload = $Body | ConvertFrom-Json
+                $Method -eq 'POST' -and $Uri -eq 'https://api.invalid/repos/test/repo/releases' -and
+                $payload.target_commitish -ceq $triggerSha -and $payload.tag_name -ceq 'cs-pre-8.1.9' -and
+                $payload.name -ceq 'cs-v8.1.9' -and $payload.prerelease -eq $true
+            }
+        }
+        finally { Pop-Location }
+    }
+
+    It 'gates packing on the Secrets check and the cs- release event, excluding contract dispatch' {
+        $pack = Get-ReleaseJob 'pack-security-metadata-tools'
+        $pack | Should -Match '(?m)^      - check-secrets-contract$'
+        $pack | Should -Match "if: startsWith\(github.event.release.tag_name, 'cs-'\)"
+        $pack | Should -Not -Match 'workflow_dispatch|always\('
+        $pack | Should -Match 'fetch-depth: 0'
+        $pack | Should -Match 'Get-SecurityMetadataToolsVersion -AppVersion "\$\{\{ steps.versions.outputs.dms-v \}\}"'
+        $pack | Should -Not -Match '-StableRelease'
+        $pack | Should -Match 'Test-SecurityMetadataToolsPackage.ps1'
+    }
+
+    It 'gates publication on successful packing and Secrets publication and checks the original version and hash' {
+        $publish = Get-ReleaseJob 'publish-package-security-metadata-tools'
+        $publish | Should -Match '(?m)^      - publish-package-secrets$'
+        $publish | Should -Match '(?m)^      - pack-security-metadata-tools$'
+        $publish | Should -Not -Match 'always\(|skip-duplicate|continue-on-error'
+        $publish | Should -Match 'Publish-SecurityMetadataToolsPackage'
+        $publish | Should -Match '-Version "\$\{\{ needs.pack-security-metadata-tools.outputs.tool-version \}\}"'
+        $publish | Should -Match '-Sha256 "\$\{\{ needs.pack-security-metadata-tools.outputs.sha256 \}\}"'
+    }
+
+    It 'uses distinct artifacts and the same version and subject for SBOM, provenance and release attachments' {
+        $pack = Get-ReleaseJob 'pack-security-metadata-tools'
+        $pack | Should -Match 'tool-version: \$\{\{ steps.tool-version.outputs.version \}\}'
+        $pack | Should -Match 'hash-code: \$\{\{ steps.hash-code.outputs.hash-code \}\}'
+        $pack | Should -Match 'SECURITY_METADATA_TOOLS_PACKAGE_NAME.*steps.tool-version.outputs.version.*nupkg'
+        $sbom = Get-ReleaseJob 'sbom-create-security-metadata-tools'
+        $sbom | Should -Match 'needs.pack-security-metadata-tools.outputs.tool-version'
+        $sbom | Should -Match 'SECURITY_METADATA_TOOLS_PACKAGE_NAME.*-NuGet'
+        $sbom | Should -Match 'SECURITY_METADATA_TOOLS_PACKAGE_NAME.*-SBOM'
+        $provenance = Get-ReleaseJob 'provenance-create-security-metadata-tools'
+        $provenance | Should -Match 'base64-subjects: \$\{\{ needs.pack-security-metadata-tools.outputs.hash-code \}\}'
+        $provenance | Should -Match 'provenance-name: edfiApiSecurityMetadataTools.intoto.jsonl'
+        $attach = Get-ReleaseJob 'attach-security-metadata-tools-artifacts-to-release'
+        foreach ($dependency in @('classify-release', 'pack-security-metadata-tools', 'publish-package-security-metadata-tools',
+            'sbom-create-security-metadata-tools', 'provenance-create-security-metadata-tools')) {
+            $attach | Should -Match "(?m)^      - $dependency`$"
+        }
+        $attach | Should -Match 'tagged-release == ''true'''
+        $attach | Should -Match 'SECURITY_METADATA_TOOLS_PACKAGE_NAME.*-SBOM.zip'
+        $attach | Should -Match 'edfiApiSecurityMetadataTools.intoto.jsonl'
+    }
+
+    It 'promotes from the release source checkout with full history and the calculated exact tool version' {
+        $promotionJob = [regex]::Match($script:release, '(?ms)^  promote-azure-artifact:.*?(?=^  [\w-]+:|\z)').Value
+        $promotionJob | Should -Match 'ref: \$\{\{ github.ref \}\}'
+        $promotionJob | Should -Match 'fetch-depth: 0'
+        $step = [regex]::Match($promotionJob, '(?ms)^      - name: Promote EdFi.Api.SecurityMetadataTools Package.*?(?=^      - name:|\z)').Value
+        $step | Should -Match "github.ref_type == 'tag'"
+        $step | Should -Match 'Get-SecurityMetadataToolsVersion -AppVersion "\$\{\{ steps.tool-release-source.outputs.dms-v \}\}" -StableRelease'
+        $step | Should -Match 'Invoke-ContractPromotion'
+        $step | Should -Match '-PackageName "EdFi.Api.SecurityMetadataTools"'
+        $step | Should -Match '-Version \$version'
+        $step | Should -Not -Match 'Publish-SecurityMetadataToolsPackage'
+    }
+}
