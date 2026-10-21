@@ -8,6 +8,8 @@
         <AssemblyName>security-metadata-tools</AssemblyName>
         <RootNamespace>EdFi.DmsConfigurationService.SecurityMetadataTools</RootNamespace>
         <PackageId>EdFi.Api.SecurityMetadataTools</PackageId>
+        <!-- Shared calculation and release-line reset policy: VERSIONING.md -->
+        <SecurityMetadataToolsPatchVersion>0</SecurityMetadataToolsPatchVersion>
         <PackageType>DotnetTool</PackageType>
         <PackAsTool>true</PackAsTool>
         <ToolCommandName>security-metadata-tools</ToolCommandName>

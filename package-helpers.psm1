@@ -259,6 +259,64 @@ function Get-DeclaredVersionElement {
 
 <#
 .DESCRIPTION
+Calculates the tool version from the app release version produced by Get-VersionNumber (MinVer)
+and the selected checkout's committed SecurityMetadataToolsPatchVersion. AppVersion is that
+existing release source, not src/config/Directory.Build.props or a tool version override.
+StableRelease removes prerelease/build labels for independent dispatch; publication switches
+never affect the calculation. This function only reads the project, including for prereleases.
+
+Policy: src/config/clis/EdFi.DmsConfigurationService.SecurityMetadataTools/VERSIONING.md
+#>
+function Get-SecurityMetadataToolsVersion {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param (
+        [Parameter(Mandatory)]
+        [string]
+        $AppVersion,
+
+        [string]
+        $ProjectPath = (Join-Path $PSScriptRoot "src/config/clis/EdFi.DmsConfigurationService.SecurityMetadataTools/EdFi.DmsConfigurationService.SecurityMetadataTools.csproj"),
+
+        [switch]
+        $StableRelease
+    )
+
+    $sourceVersion = $null
+    if (
+        -not [System.Management.Automation.SemanticVersion]::TryParse($AppVersion, [ref] $sourceVersion) -or
+        $sourceVersion.ToString() -cne $AppVersion
+    ) {
+        throw "Cannot calculate the Security Metadata Tools version: AppVersion '$AppVersion' must be a semantic version from Get-VersionNumber (MinVer)."
+    }
+
+    $property = "SecurityMetadataToolsPatchVersion"
+    $patch = Get-DeclaredVersionElement -Path $ProjectPath -ElementName $property -ContractDescription "Security Metadata Tools"
+    $declaration = ([xml] (Get-Content -LiteralPath $ProjectPath -Raw)).SelectSingleNode("/Project/PropertyGroup/$property")
+    if ($null -eq $declaration -or $declaration.SelectNodes("ancestor-or-self::*[@Condition]").Count -gt 0) {
+        throw "Cannot calculate the Security Metadata Tools version: $ProjectPath must declare one unconditional $property in a Project/PropertyGroup."
+    }
+
+    $patchNumber = 0
+    if ($patch -cnotmatch '^(0|[1-9][0-9]*)$' -or -not [int]::TryParse($patch, [ref] $patchNumber)) {
+        throw "Cannot calculate the Security Metadata Tools version: $ProjectPath $property must be a nonnegative integer from 0 to 2147483647, without leading zeros; found '$patch'."
+    }
+
+    $version = "$($sourceVersion.Major).$($sourceVersion.Minor).$patchNumber"
+    if (-not $StableRelease) {
+        if ($sourceVersion.PreReleaseLabel) {
+            $version += "-$($sourceVersion.PreReleaseLabel)"
+        }
+        if ($sourceVersion.BuildLabel) {
+            $version += "+$($sourceVersion.BuildLabel)"
+        }
+    }
+
+    return $version
+}
+
+<#
+.DESCRIPTION
 Reads the plugin contract's own declared version out of src/plugins/Directory.Build.props.
 
 The contract package is versioned on its own and deliberately outside SetDMSAssemblyInfo's reach,
@@ -715,6 +773,7 @@ Export-ModuleMember -Function `
     Invoke-Promote, `
     InstallCredentialHandler, `
     Convert-ToAssemblyVersion, `
+    Get-SecurityMetadataToolsVersion, `
     Get-PluginsContractVersion, `
     Get-CustomValidationContractVersion, `
     Get-IdentityContractVersion, `
