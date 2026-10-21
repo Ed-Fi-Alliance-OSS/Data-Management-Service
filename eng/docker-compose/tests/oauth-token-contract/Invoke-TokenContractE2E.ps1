@@ -194,8 +194,12 @@ function Build-TokenContractE2ETestAssembly {
 }
 
 function Stop-TokenContractDmsIfPresent {
+    [CmdletBinding(SupportsShouldProcess)]
+    param()
+
     docker inspect ed-fi-api *> $null
     if ($LASTEXITCODE -ne 0) { return 'NotPresent' }
+    if (-not $PSCmdlet.ShouldProcess('ed-fi-api', 'Stop DMS container')) { return 'Skipped' }
     docker stop ed-fi-api *> $null
     if ($LASTEXITCODE -ne 0) { return 'Failed' }
     return 'Stopped'
