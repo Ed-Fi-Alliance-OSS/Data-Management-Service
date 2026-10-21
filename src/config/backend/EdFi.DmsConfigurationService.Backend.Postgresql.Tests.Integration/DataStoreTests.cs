@@ -379,26 +379,18 @@ public class DataStoreTests : DatabaseTest
                 .Should()
                 .Be(ResubmittedConnectionString);
 
+        /// <summary>
+        /// The rewritten value is an AES-GCM envelope, so the previous key always fails authentication.
+        /// </summary>
         [Test]
-        public void It_no_longer_yields_the_connection_string_under_the_previous_key()
+        public void It_fails_authentication_under_the_previous_key()
         {
-            // AES-CBC with PKCS7 padding is unauthenticated, so the previous key either throws on
-            // invalid padding or returns unrelated bytes, and both outcomes prove the row was
-            // re-keyed. Requiring the throw would make this intermittent, because a wrong key lands
-            // on structurally valid padding often enough to matter.
-            string? decryptedWithPreviousKey = null;
-            try
-            {
-                decryptedWithPreviousKey = new ConnectionStringEncryptionService(
-                    Configuration.DatabaseOptions
-                ).Decrypt(Convert.FromBase64String(_storedCipherTextAfterRotation));
-            }
-            catch (CryptographicException)
-            {
-                // Left null: the assertion below holds either way.
-            }
+            var act = () =>
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions).Decrypt(
+                    Convert.FromBase64String(_storedCipherTextAfterRotation)
+                );
 
-            decryptedWithPreviousKey.Should().NotBe(ResubmittedConnectionString);
+            act.Should().ThrowExactly<AuthenticationTagMismatchException>();
         }
     }
 

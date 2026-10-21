@@ -153,10 +153,20 @@ public class ConnectionStringCipherTextTests
 
         [TestCase(15, TestName = "It_is_not_recognized_at_15_bytes")]
         [TestCase(31, TestName = "It_is_not_recognized_at_31_bytes")]
-        [TestCase(45, TestName = "It_is_not_recognized_at_45_bytes")]
         public void It_is_not_recognized_below_the_shortest_stored_value(int byteCount) =>
             ConnectionStringCipherText
                 .LooksLikeCipherText(Convert.ToBase64String(new byte[byteCount]))
+                .Should()
+                .BeFalse();
+
+        /// <summary>
+        /// 45 bytes has the envelope length class but is only marker, version, nonce and tag: the
+        /// shortest envelope also carries one block of cipher text (61 bytes).
+        /// </summary>
+        [Test]
+        public void It_is_not_recognized_as_an_envelope_without_cipher_text() =>
+            ConnectionStringCipherText
+                .LooksLikeCipherText(Convert.ToBase64String(new byte[45]))
                 .Should()
                 .BeFalse();
 

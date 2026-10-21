@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-#Requires -Version 7
+#Requires -Version 7.4
 
 Set-StrictMode -Version Latest
 
@@ -1745,23 +1745,33 @@ function ConvertFrom-RestoreSmokeDataStoreCipherText {
         [System.Array]::Copy($payload, 45, $sealed, 0, $sealed.Length)
         $padded = [byte[]]::new($sealed.Length)
 
-        $envelopeKey = [System.Security.Cryptography.HKDF]::DeriveKey(
-            [System.Security.Cryptography.HashAlgorithmName]::SHA256,
-            $Key,
-            32,
-            [byte[]]::new(0),
-            [System.Text.Encoding]::ASCII.GetBytes("EdFi.ConnectionString.AES-256-GCM.v1"))
-        $aesGcm = [System.Security.Cryptography.AesGcm]::new($envelopeKey, 16)
+        # Key derivation and construction sit inside the try, so a runtime without them gives a fixed
+        # reason rather than raw overload or platform text. Only a tag mismatch is reported as an
+        # authentication failure.
+        $aesGcm = $null
         try {
+            $envelopeKey = [System.Security.Cryptography.HKDF]::DeriveKey(
+                [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+                $Key,
+                32,
+                [byte[]]::new(0),
+                [System.Text.Encoding]::ASCII.GetBytes("EdFi.ConnectionString.AES-256-GCM.v1"))
+            $aesGcm = [System.Security.Cryptography.AesGcm]::new($envelopeKey, 16)
             # Authentication comes first: nothing is read from the plain text unless it passes.
             $aesGcm.Decrypt($nonce, $sealed, $tag, $padded, $header)
         }
-        catch {
+        catch [System.Security.Cryptography.AuthenticationTagMismatchException] {
             $result.Reason = "its connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY"
             return $result
         }
+        catch {
+            $result.Reason = $undecryptableReason
+            return $result
+        }
         finally {
-            $aesGcm.Dispose()
+            if ($null -ne $aesGcm) {
+                $aesGcm.Dispose()
+            }
         }
 
         $paddingLength = [int]$padded[$padded.Length - 1]

@@ -311,6 +311,52 @@ exit $ExitCode
     }
 
     Context "public script contracts" {
+        # The connection string readers construct AesGcm(byte[], int), which PowerShell 7.4 (.NET 8)
+        # introduced, so every script and module that reaches one declares that floor.
+        It "<file> requires PowerShell 7.4" -ForEach @(
+            @{ File = "eng/docker-compose/provision-dms-schema.ps1" }
+            @{ File = "eng/docker-compose/configure-local-data-store.ps1" }
+            @{ File = "eng/docker-compose/database-safety.psm1" }
+            @{ File = "eng/docker-compose/tests/RestoreSmokeProbes.psm1" }
+        ) {
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:sourceRepoRoot $File), [ref]$null, [ref]$null)
+
+            $ast.ScriptRequirements.RequiredPSVersion | Should -Be ([version]"7.4")
+        }
+
+        # A runtime that cannot derive the key or construct AesGcm must fail with the reader's fixed
+        # text, never raw overload or platform text, and only a tag mismatch counts as an
+        # authentication failure.
+        It "<function> constructs AesGcm inside a try that catches a tag mismatch separately" -ForEach @(
+            @{ File = "eng/docker-compose/database-safety.psm1"; Function = "ConvertFrom-CmsEncryptedConnectionString" }
+            @{ File = "eng/docker-compose/tests/RestoreSmokeProbes.psm1"; Function = "ConvertFrom-RestoreSmokeDataStoreCipherText" }
+        ) {
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:sourceRepoRoot $File), [ref]$null, [ref]$null)
+            $function = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $Function }, $true)
+            $constructions = @($function.FindAll({
+                        param($node)
+                        $node -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and
+                        $node.Member.Extent.Text -eq "new" -and
+                        $node.Expression.Extent.Text -in @("[System.Security.Cryptography.AesGcm]", "[System.Security.Cryptography.HKDF]")
+                    }, $true)) + @($function.FindAll({
+                        param($node)
+                        $node -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and
+                        $node.Member.Extent.Text -eq "DeriveKey"
+                    }, $true))
+
+            $constructions.Count | Should -Be 2
+            foreach ($construction in $constructions) {
+                $parent = $construction.Parent
+                while ($null -ne $parent -and $parent -isnot [System.Management.Automation.Language.TryStatementAst]) {
+                    $parent = $parent.Parent
+                }
+                $parent | Should -Not -BeNullOrEmpty -Because "$($construction.Extent.Text) has to be inside a try"
+                @($parent.CatchClauses | ForEach-Object { $_.CatchTypes.TypeName.FullName }) |
+                    Should -Contain "System.Security.Cryptography.AuthenticationTagMismatchException"
+                @($parent.CatchClauses | Where-Object { $_.IsCatchAll }).Count | Should -Be 1
+            }
+        }
+
         It "provision-dms-schema.ps1 exposes selectors, environment, topology, and managed provenance parameters" {
             $params = Get-DeclaredScriptParameters -Path $script:repo.ProvisionScript
 

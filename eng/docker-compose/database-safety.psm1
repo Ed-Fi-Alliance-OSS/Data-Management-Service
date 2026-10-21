@@ -3,6 +3,9 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
+# 7.4 for the AesGcm(byte[], int) constructor ConvertFrom-CmsEncryptedConnectionString uses.
+#Requires -Version 7.4
+
 <#
 .SYNOPSIS
     Shared database-name safety guards for E2E provisioning.
@@ -1352,22 +1355,31 @@ function ConvertFrom-CmsEncryptedConnectionString {
         [Array]::Copy($encryptedBytes, 45, $cipherText, 0, $cipherText.Length)
         $padded = [byte[]]::new($cipherText.Length)
 
-        $envelopeKey = [System.Security.Cryptography.HKDF]::DeriveKey(
-            [System.Security.Cryptography.HashAlgorithmName]::SHA256,
-            $keyBytes,
-            32,
-            [byte[]]::new(0),
-            [System.Text.Encoding]::ASCII.GetBytes("EdFi.ConnectionString.AES-256-GCM.v1"))
-        $aesGcm = [System.Security.Cryptography.AesGcm]::new($envelopeKey, 16)
+        # Key derivation and construction sit inside the try, so a runtime without them fails with a
+        # fixed message rather than raw overload or platform text. Only a tag mismatch is reported as
+        # an authentication failure.
+        $aesGcm = $null
         try {
+            $envelopeKey = [System.Security.Cryptography.HKDF]::DeriveKey(
+                [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+                $keyBytes,
+                32,
+                [byte[]]::new(0),
+                [System.Text.Encoding]::ASCII.GetBytes("EdFi.ConnectionString.AES-256-GCM.v1"))
+            $aesGcm = [System.Security.Cryptography.AesGcm]::new($envelopeKey, 16)
             # Authentication comes first: nothing is read from the plain text unless it passes.
             $aesGcm.Decrypt($nonce, $cipherText, $tag, $padded, $header)
         }
-        catch {
+        catch [System.Security.Cryptography.AuthenticationTagMismatchException] {
             throw "Configuration Service data store encrypted connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY."
         }
+        catch {
+            throw "Configuration Service data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY."
+        }
         finally {
-            $aesGcm.Dispose()
+            if ($null -ne $aesGcm) {
+                $aesGcm.Dispose()
+            }
         }
 
         $paddingLength = [int]$padded[$padded.Length - 1]
