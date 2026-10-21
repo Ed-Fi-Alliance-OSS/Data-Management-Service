@@ -16,6 +16,7 @@ using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -605,7 +606,8 @@ public class TokenEndpointModuleTests
     private static (HttpResponseMessage Response, List<ManagerCall> Calls) SendCapturingManagerCalls(
         HttpRequestMessage request,
         string environment = "Test",
-        ILoggerProvider? loggerProvider = null
+        ILoggerProvider? loggerProvider = null,
+        string correlationHeader = ""
     )
     {
         List<ManagerCall> calls = [];
@@ -650,6 +652,7 @@ public class TokenEndpointModuleTests
                             ["AppSettings:AuthenticationService"] = "http://dev-test-auth-service",
                             ["AppSettings:ApiSchema:UseCustomPath"] = "false",
                             ["AppSettings:BypassAuthorization"] = "true",
+                            ["AppSettings:CorrelationIdHeader"] = correlationHeader,
                             ["JwtAuthentication:MetadataAddress"] =
                                 "http://test-idp/.well-known/openid-configuration",
                             ["JwtAuthentication:RequireHttpsMetadata"] = "false",
@@ -1713,6 +1716,167 @@ public class TokenEndpointModuleTests
         public void It_does_not_call_the_manager()
         {
             _calls.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture(0, "The token request body must be valid form data")]
+    [TestFixture(2, "A request parameter was included more than once")]
+    [TestFixture(1024, "A request parameter was included more than once")]
+    [TestFixture(1025, "The token request body must be valid form data")]
+    public class Given_Invalid_Form_Data(int parameterCount, string expectedDescription)
+        : TokenEndpointModuleTests
+    {
+        private HttpResponseMessage _response = null!;
+        private List<ManagerCall> _calls = null!;
+        private JsonObject _body = null!;
+        private RecordingLoggerProvider _recorder = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            // At 1024 values parsing succeeds and duplicate validation rejects the request.
+            // At 1025 the parser rejects it first; both paths must remain client errors.
+            string content =
+                parameterCount == 0
+                    ? "grant_type=client_credentials&client_id=%00&client_secret=topSECRETvalue"
+                    : string.Join('&', Enumerable.Repeat("grant_type=client_credentials", parameterCount));
+            using var request = UnauthenticatedRequest(content, "application/x-www-form-urlencoded");
+            request.Headers.Add("x-token-trace", "form%trace+id/1");
+            _recorder = new RecordingLoggerProvider();
+            (_response, _calls) = SendCapturingManagerCalls(
+                request,
+                loggerProvider: _recorder,
+                correlationHeader: "x-token-trace"
+            );
+            _body = JsonNode
+                .Parse(_response.Content.ReadAsStringAsync().GetAwaiter().GetResult())!
+                .AsObject();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _recorder.Dispose();
+        }
+
+        [Test]
+        public void It_responds_with_bad_request()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public void It_delivers_only_the_oauth_error_members_with_a_safe_description()
+        {
+            _response.Content.Headers.ContentType!.ToString().Should().Be("application/json; charset=utf-8");
+            _body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
+            _body["error"]!.GetValue<string>().Should().Be("invalid_request");
+            _body["error_description"]!.GetValue<string>().Should().Be(expectedDescription);
+            _response.Headers.WwwAuthenticate.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_encodes_the_correlation_id_that_is_logged()
+        {
+            string correlationId = _response
+                .Headers.GetValues("X-Correlation-ID")
+                .Should()
+                .ContainSingle()
+                .Which;
+            correlationId.Should().Be("form%25trace%2Bid%2F1");
+            Uri.UnescapeDataString(correlationId).Should().Be("form%trace+id/1");
+            _recorder
+                .Entries.Should()
+                .Contain(entry => entry.Contains("form%trace+id/1", StringComparison.Ordinal));
+        }
+
+        [Test]
+        public void It_does_not_log_the_secret_or_a_request_failure()
+        {
+            _recorder
+                .Entries.Should()
+                .NotContain(entry => entry.Contains(LeakSentinel, StringComparison.Ordinal));
+            _recorder
+                .Entries.Should()
+                .NotContain(entry => entry.Contains("HttpRequestFailed", StringComparison.Ordinal));
+        }
+
+        [Test]
+        public void It_does_not_call_the_manager()
+        {
+            _calls.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture("io")]
+    [TestFixture("cancellation")]
+    [TestFixture("body-size")]
+    public class Given_A_Form_Read_Failure_That_Is_Not_Invalid_Data(string failure) : TokenEndpointModuleTests
+    {
+        private Exception _exception = null!;
+        private Exception _caught = null!;
+        private DefaultHttpContext _context = null!;
+
+        [SetUp]
+        public async Task SetUp()
+        {
+            _exception = failure switch
+            {
+                "io" => new IOException("Interrupted request body"),
+                "cancellation" => new OperationCanceledException(),
+                _ => new BadHttpRequestException(
+                    "Request body too large",
+                    StatusCodes.Status413PayloadTooLarge
+                ),
+            };
+            var formFeature = A.Fake<IFormFeature>();
+            A.CallTo(() => formFeature.HasFormContentType).Returns(true);
+            A.CallTo(() => formFeature.ReadFormAsync(A<CancellationToken>.Ignored)).ThrowsAsync(_exception);
+            _context = new DefaultHttpContext();
+            _context.Features.Set(formFeature);
+            _context.Response.Body = new MemoryStream();
+
+            try
+            {
+                await AspNetCore.Modules.TokenEndpointModule.HandleFormData(
+                    _context,
+                    Options.Create(
+                        new AppSettings
+                        {
+                            AuthenticationService = "http://localhost/connect/token",
+                            Datastore = "postgresql",
+                            CorrelationIdHeader = "",
+                        }
+                    ),
+                    A.Fake<IOAuthManager>(),
+                    NullLogger<AspNetCore.Modules.TokenEndpointModule>.Instance,
+                    A.Fake<IHttpClientFactory>()
+                );
+            }
+            catch (Exception ex)
+            {
+                _caught = ex;
+            }
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _context.Response.Body.Dispose();
+        }
+
+        [Test]
+        public void It_leaves_the_failure_for_the_existing_middleware()
+        {
+            _caught.Should().BeSameAs(_exception);
+        }
+
+        [Test]
+        public void It_does_not_write_an_invalid_request_response()
+        {
+            ((MemoryStream)_context.Response.Body).Length.Should().Be(0);
+            _context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         }
     }
 

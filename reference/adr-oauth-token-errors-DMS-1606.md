@@ -25,7 +25,7 @@ behavior. DMS `404` remains `404`; this decision does not change it to ODS/API `
 | Condition | Status and OAuth error |
 | --- | --- |
 | Missing client credentials; rejected non-Basic authorization scheme | `401 invalid_client` |
-| Partial body credentials, empty authorization, malformed Basic addition, mixed mechanisms, duplicate form fields, invalid JSON, missing grant, or oversized token request | `400 invalid_request` |
+| Partial body credentials, empty authorization, malformed Basic addition, mixed mechanisms, duplicate form fields, malformed form data or form-parser limits, invalid JSON, missing grant, or oversized token request | `400 invalid_request` |
 | Unsupported grant | `400 unsupported_grant_type` |
 | Provider `401`, or provider `400 invalid_client` after caller Authorization authentication | `401 invalid_client` |
 | Provider `400` with one of the six recognized RFC 6749 errors | `400` with that code, except the preceding `invalid_client` rule |
