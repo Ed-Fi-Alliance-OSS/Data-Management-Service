@@ -868,3 +868,176 @@ Describe "Dedicated E2E database guard" {
         }
     }
 }
+
+# Behavioral evidence that the guard runs before provision-e2e-database.ps1 touches a database. Each
+# run executes the real script and database-safety.psm1 from an isolated copy of the eng tree in a
+# child pwsh, so stub modules, docker/dotnet functions and environment changes never reach this
+# session. The child clears the keys the script resolves, points the stubs at per-run logs and writes
+# a JSON record of the outcome and both logs, which these tests assert on:
+# - env-utility.psm1 (stub): Resolve-DatabaseEngineEnvironmentFile returns the base file;
+#   Test-NativeCommandWithTimeout logs the readiness probe and succeeds, so readiness ends on the
+#   first probe.
+# - schema-package-utility.psm1 (stub): Resolve-SchemaFilesFromEnvironmentFile logs and throws a
+#   sentinel, so a control run stops before any reset.
+# - docker and dotnet: child functions that log to the destructive log and throw.
+# The collision runs fail if the guard compares with -ieq alone or runs after readiness; the
+# control runs are preservation.
+Describe "Dedicated E2E database guard in the provisioning flow" {
+    BeforeAll {
+        $sourceDockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        $script:flowRoot = Join-Path ([System.IO.Path]::GetTempPath()) "e2e-guard-flow-$([Guid]::NewGuid().ToString('N'))"
+        $flowDockerComposeRoot = Join-Path $script:flowRoot "eng/docker-compose"
+        New-Item -ItemType Directory -Path $flowDockerComposeRoot -Force | Out-Null
+
+        foreach ($fileName in @("provision-e2e-database.ps1", "database-safety.psm1")) {
+            Copy-Item -LiteralPath (Join-Path $sourceDockerComposeRoot $fileName) -Destination (Join-Path $flowDockerComposeRoot $fileName)
+        }
+        $script:provisionScript = Join-Path $flowDockerComposeRoot "provision-e2e-database.ps1"
+
+        @'
+function Resolve-DatabaseEngineEnvironmentFile {
+    param([string]$DatabaseEngine, [string]$BaseEnvironmentFile, [string]$DockerComposeRoot)
+    return $BaseEnvironmentFile
+}
+
+function Test-NativeCommandWithTimeout {
+    param([string]$FilePath, [string[]]$ArgumentList, [int]$TimeoutSeconds)
+    Add-Content -LiteralPath $env:GUARD_FLOW_BOUNDARY_LOG -Value "readiness|$FilePath|$($ArgumentList[0])"
+    return $true
+}
+
+Export-ModuleMember -Function Resolve-DatabaseEngineEnvironmentFile, Test-NativeCommandWithTimeout
+'@ | Set-Content -LiteralPath (Join-Path $flowDockerComposeRoot "env-utility.psm1") -Encoding utf8
+
+        @'
+function Resolve-SchemaFilesFromEnvironmentFile {
+    param(
+        [string]$EnvironmentFilePath,
+        [string]$Configuration,
+        [string]$RepoRoot,
+        [string]$SchemaDirectory,
+        [string[]]$DownloaderDotnetRunArgs
+    )
+    Add-Content -LiteralPath $env:GUARD_FLOW_BOUNDARY_LOG -Value "schema-resolution|$([System.IO.Path]::GetFileName($EnvironmentFilePath))"
+    throw "guard-flow sentinel: schema resolution reached"
+}
+
+Export-ModuleMember -Function Resolve-SchemaFilesFromEnvironmentFile
+'@ | Set-Content -LiteralPath (Join-Path $script:flowRoot "eng/schema-package-utility.psm1") -Encoding utf8
+
+        $script:childScript = Join-Path $script:flowRoot "invoke-provision.ps1"
+        @'
+param(
+    [string]$ProvisionScript,
+    [string]$EnvironmentFile,
+    [string]$DatabaseEngine,
+    [string]$DatabaseName,
+    [string]$RunDirectory
+)
+
+$ErrorActionPreference = "Stop"
+foreach ($name in @(
+        "POSTGRES_DB_NAME", "MSSQL_DB_NAME", "DATABASE_CONNECTION_STRING_ADMIN",
+        "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING", "E2E_DATABASE_NAME", "POSTGRES_PORT",
+        "POSTGRES_PASSWORD", "POSTGRES_USER", "MSSQL_PORT", "MSSQL_SA_PASSWORD"
+    )) {
+    Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+}
+
+$boundaryLog = Join-Path $RunDirectory "boundary.log"
+$destructiveLog = Join-Path $RunDirectory "destructive.log"
+$env:GUARD_FLOW_BOUNDARY_LOG = $boundaryLog
+$env:GUARD_FLOW_DESTRUCTIVE_LOG = $destructiveLog
+
+function global:docker {
+    Add-Content -LiteralPath $env:GUARD_FLOW_DESTRUCTIVE_LOG -Value "docker|$($args -join ' ')"
+    throw "guard-flow: docker must not run"
+}
+
+function global:dotnet {
+    Add-Content -LiteralPath $env:GUARD_FLOW_DESTRUCTIVE_LOG -Value "dotnet|$($args -join ' ')"
+    throw "guard-flow: dotnet must not run"
+}
+
+$outcome = "completed"
+$message = $null
+try {
+    & $ProvisionScript -EnvironmentFile $EnvironmentFile -DatabaseEngine $DatabaseEngine -DatabaseName $DatabaseName 6>$null
+}
+catch {
+    $outcome = "threw"
+    $message = $_.Exception.Message
+}
+
+[ordered]@{
+    Outcome = $outcome
+    Message = $message
+    BoundaryLogExists = Test-Path -LiteralPath $boundaryLog
+    BoundaryLog = @(if (Test-Path -LiteralPath $boundaryLog) { Get-Content -LiteralPath $boundaryLog })
+    DestructiveLogExists = Test-Path -LiteralPath $destructiveLog
+    DestructiveLog = @(if (Test-Path -LiteralPath $destructiveLog) { Get-Content -LiteralPath $destructiveLog })
+} | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $RunDirectory "record.json") -Encoding utf8
+'@ | Set-Content -LiteralPath $script:childScript -Encoding utf8
+
+        $script:pwshPath = (Get-Process -Id $PID).Path
+
+        function Invoke-ProvisionFlow {
+            param(
+                [string]$Name,
+                [string]$DatabaseEngine,
+                [string[]]$EnvironmentLines
+            )
+
+            $runDirectory = Join-Path $script:flowRoot "runs/$Name"
+            New-Item -ItemType Directory -Path $runDirectory -Force | Out-Null
+            $environmentFile = Join-Path $runDirectory ".env.flow"
+            [System.IO.File]::WriteAllLines($environmentFile, $EnvironmentLines, [System.Text.UTF8Encoding]::new($false))
+
+            $childOutput = & $script:pwshPath -NoProfile -NonInteractive -File $script:childScript `
+                -ProvisionScript $script:provisionScript `
+                -EnvironmentFile $environmentFile `
+                -DatabaseEngine $DatabaseEngine `
+                -DatabaseName "edfi_dms" `
+                -RunDirectory $runDirectory 2>&1
+
+            $recordPath = Join-Path $runDirectory "record.json"
+            if (-not (Test-Path -LiteralPath $recordPath)) {
+                throw "The provisioning child wrote no record. Output:`n$($childOutput -join "`n")"
+            }
+
+            $record = Get-Content -LiteralPath $recordPath -Raw | ConvertFrom-Json
+            $record | Add-Member -NotePropertyName EnvironmentFile -NotePropertyValue $environmentFile
+            return $record
+        }
+    }
+
+    AfterAll {
+        if ($script:flowRoot -and (Test-Path -LiteralPath $script:flowRoot)) {
+            Remove-Item -LiteralPath $script:flowRoot -Recurse -Force
+        }
+    }
+
+    It "stops a <Engine> run at the <Key> collision before any readiness probe, schema resolution or reset" -ForEach @(
+        @{ Engine = "postgresql"; Key = "POSTGRES_DB_NAME"; Lines = @("POSTGRES_PORT=5432", "POSTGRES_PASSWORD=guard-flow-pass", "POSTGRES_DB_NAME='edfi_dms '") }
+        @{ Engine = "mssql"; Key = "MSSQL_DB_NAME"; Lines = @("MSSQL_PORT=1433", "MSSQL_SA_PASSWORD=guard-flow-pass", "MSSQL_DB_NAME=`"EDFI_DMS$([char]0x3000)`"") }
+    ) {
+        $record = Invoke-ProvisionFlow -Name "collision-$Engine" -DatabaseEngine $Engine -EnvironmentLines $Lines
+
+        $record.Outcome | Should -Be "threw"
+        $record.Message | Should -BeExactly "E2E database 'edfi_dms' in '$($record.EnvironmentFile)' must be dedicated and cannot match $Key."
+        $record.BoundaryLogExists | Should -BeFalse -Because "the guard must reject before the readiness probe and schema resolution"
+        $record.DestructiveLogExists | Should -BeFalse -Because "no docker or dotnet command may run after a rejection"
+    }
+
+    It "lets a <Engine> run with a distinct <Key> reach readiness and schema resolution, then stop before reset" -ForEach @(
+        @{ Engine = "postgresql"; Key = "POSTGRES_DB_NAME"; Lines = @("POSTGRES_PORT=5432", "POSTGRES_PASSWORD=guard-flow-pass", "POSTGRES_DB_NAME='edfi_dms_primary '") }
+        @{ Engine = "mssql"; Key = "MSSQL_DB_NAME"; Lines = @("MSSQL_PORT=1433", "MSSQL_SA_PASSWORD=guard-flow-pass", "MSSQL_DB_NAME=`"EDFI_DMS_PRIMARY$([char]0x3000)`"") }
+    ) {
+        $record = Invoke-ProvisionFlow -Name "control-$Engine" -DatabaseEngine $Engine -EnvironmentLines $Lines
+
+        $record.Outcome | Should -Be "threw"
+        $record.Message | Should -BeExactly "guard-flow sentinel: schema resolution reached"
+        ($record.BoundaryLog -join "`n") | Should -BeExactly "readiness|docker|exec`nschema-resolution|.env.flow"
+        $record.DestructiveLogExists | Should -BeFalse -Because "the sentinel stops the run before Reset-* and SchemaTools"
+    }
+}
