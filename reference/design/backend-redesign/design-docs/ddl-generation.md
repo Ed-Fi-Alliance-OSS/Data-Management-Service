@@ -168,7 +168,7 @@ This inventory is the explicit “what exists in the database” contract that t
     against the owning document by the stamping trigger.
   - No live descriptor discriminator or physically stored URI; see the reconstructed-URI
     index and runtime-session contract below.
-- `dms.ReferentialIdentity` (retained by the current RI runtime)
+- `dms.ReferentialIdentity` (trigger-maintained for resources until RI removal; no runtime path reads it)
 - `dms.DataStoreIdentity` (singleton source identity stable during ordinary operation)
 - `dms.DocumentCache` (always present; optionally populated/read)
 - `dms.DocumentProjectionWork` (always-present coalesced durable projection work)

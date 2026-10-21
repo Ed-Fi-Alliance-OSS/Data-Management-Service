@@ -603,8 +603,9 @@ For a write request targeting resource `R`:
    - Resolve `R` in `MappingSet.Model` and branch on its `StorageKind`.
    - Abstract resources are not direct write targets.
    - For `StorageKind = SharedDescriptorTable`, route to the descriptor write handler, which
-     uses the current RI POST match and compile-time resource key. It has no generic resource
-     write plan or own-natural-key probe requirement.
+     detects its POST target with the lowered-URI probe over `DescriptorProbeTarget` and the
+     compile-time resource key. It has no generic resource write plan or own-natural-key probe
+     requirement.
    - For `StorageKind = RelationalTables`, lookup `ResourceWritePlan` via `MappingSet.WritePlansByResource[R]`.
    - Use `MappingSet.ResourceKeyIdByResource[R]` for qualified type identity in shared tables.
      The remaining generic flatten/write steps apply to the `RelationalTables` branch.
@@ -612,8 +613,9 @@ For a write request targeting resource `R`:
 2. **Document identity and both key roles**
    - Core extracts document identity and reference instances with concrete JSON locations.
    - Regular-resource POST uses the own-natural-key capture to obtain an existing `DocumentId`, or
-     allocates a document on insert. Descriptor POST and PUT use the lowered-URI probe over
-     `DescriptorProbeTarget`. Descriptor creation allocates its `DocumentId` and native
+     allocates a document on insert. Descriptor POST detects its target with the lowered-URI probe
+     over `DescriptorProbeTarget`; descriptor PUT addresses its target by document UUID.
+     Descriptor creation allocates its `DocumentId` and native
      `DescriptorId` independently. The create command captures only values it consumes:
      `DocumentId` for descriptor inserts and cache work, and `ContentVersion` for the response.
      SQL Server carries the owning `DocumentId` through `OUTPUT ... INTO` without reading the
