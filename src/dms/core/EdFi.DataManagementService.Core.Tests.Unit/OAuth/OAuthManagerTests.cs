@@ -3032,14 +3032,6 @@ public class OAuthManagerTests
     }
 
     /// <summary>
-    /// DMS's own token-limit type, independent of the CMS prefix. It has the same characters as
-    /// <see cref="TooManyTokensUpstream.LegacyType"/> but is a different contract: output assertions
-    /// use this constant, so a test fed the Management API type proves DMS answers with its own type
-    /// rather than echoing the upstream one.
-    /// </summary>
-    private const string DmsTooManyTokensType = "urn:ed-fi:api:security:authentication:too-many-tokens";
-
-    /// <summary>
     /// Drives an upstream 429 and returns the parsed response body, plus the logger, because the
     /// fallback branch's warning is the only record a deviating body leaves anywhere.
     /// </summary>
@@ -3587,8 +3579,12 @@ public class OAuthManagerTests
             );
 
             status.Should().Be(HttpStatusCode.TooManyRequests);
-            body["type"]!.ToString().Should().Be(DmsTooManyTokensType);
-            body["errors"]![0]!.ToString().Should().Be(CanonicalMessage);
+            body.AsObject()
+                .Select(property => property.Key)
+                .Should()
+                .BeEquivalentTo("error", "error_description");
+            body["error"]!.GetValue<string>().Should().Be("temporarily_unavailable");
+            body["error_description"]!.GetValue<string>().Should().Be(CanonicalMessage);
         }
     }
 
