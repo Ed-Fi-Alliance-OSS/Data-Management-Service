@@ -16,11 +16,11 @@ CONFIGURATION_SERVICE_CLAIMS_DIRECTORY=/app/additional-claims
 ```
 
 ### Docker Setup
-The tests require the full DMS stack to be running:
+The tests use the isolated Configuration Service `cs-local` stack:
 
 ```bash
-cd src/dms/tests/EdFi.DataManagementService.Tests.E2E
-./setup-local-dms.ps1
+cd src/config/tests/EdFi.DmsConfigurationService.Tests.E2E
+pwsh ./setup-local-cms.ps1
 ```
 
 ### Container Environment Variables
@@ -82,9 +82,54 @@ Tests that a downloaded claims document can be uploaded unmodified:
 - Posts those exact bytes to `POST /management/upload-claims`
 - Verifies HTTP 200 with a new reload ID, and that the claim sets and hierarchy are unchanged afterward
 
+### Scenario 7: SecurityMetadataTools Upload
+
+Runs the built `security-metadata-tools` executable against the shared
+[representative ODS export](../../../clis/EdFi.DmsConfigurationService.SecurityMetadataTools.Tests.Unit/Fixtures/OdsSecurityMetadata/README.md).
+A project reference builds the tool, and a build target stages its complete runtime
+output in a separate `SecurityMetadataTools` directory so the test host's shared-framework
+dependencies cannot mask missing CLI dependencies. The XML is linked from its original fixture location. The scenario uploads the generated file bytes through
+`PostVerbatimBodyAsync`, without a wrapper, placeholder substitution, or policy edits.
+
+The provider must return the complete converted document, including `isSystemReserved: false`
+for every imported set. Separate database reads compare the full hierarchy after deserializing
+both sides through CMS's `Claim` model and serializing with the persistence defaults. This
+accounts for absent defaults becoming null and absent collections becoming empty arrays;
+claim order, nesting, actions, strategy names and overrides still compare exactly. The
+persisted catalog must contain the captured reserved entries plus imported names that are
+not already reserved. Existing reserved IDs/flags must survive, and at least one previously
+absent imported name must be inserted with `isSystemReserved: false`.
+
+Before changing state, the scenario requires no applications, captures both database tables,
+and saves their baseline. It reloads the standard provider, removes nonreserved catalog
+entries, and temporarily removes the first imported name to guarantee a real insert: the
+standard seed already reserves every name in this export. The remaining reserved rows form
+the upload baseline and must keep their IDs/flags. The removed row is test preparation only;
+the full original catalog, including that row's reserved flag and ID, is restored afterward. A tagged `AfterScenario` hook reloads the standard provider
+and restores the original catalog IDs, flags, tenant/audit fields and hierarchy, even after
+an assertion fails. Database restoration runs in `finally`, including if provider cleanup fails;
+cleanup errors fail the scenario. Run against an isolated test deployment, never a shared CMS.
+
+From the repository root, build fresh binaries and run the named scenario:
+
+```bash
+pwsh ./src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/teardown-local-cms.ps1
+pwsh ./build-config.ps1 Build -Configuration Release
+env -u NODE_OPTIONS pwsh ./build-config.ps1 E2ETest -Configuration Release -IdentityProvider self-contained -E2ETestFilter 'FullyQualifiedName~SecurityMetadataTools'
+```
+
+Run the full feature against that stack with `-SkipDockerBuild` and
+`-E2ETestFilter 'FullyQualifiedName~ClaimsManagement'`. The existing PostgreSQL CI E2E
+run discovers the scenario without workflow changes. The database helper also uses the
+existing SQL Server connection conventions when that backend is explicitly selected.
+Inspect the new TRX result for `_07SecurityMetadataToolsConvertedODSExportUploadsUnchangedAndPersists`:
+a skipped scenario or zero matching tests is not verification. TRX attachments retain the
+unmodified generated file, provider response, baseline/isolated/persisted catalogs, persisted
+hierarchy, and restored provider/database state under `TestResults/SecurityMetadataTools-*`.
+
 ## Authorization Coverage
 
-This feature's `Background` obtains a **full-access** Configuration Service token (`Given valid credentials` / `And token received`) and sends it on every request, so scenarios 01–06 exercise only the **authenticated happy path** (including the 400 validation case in scenario 05). The feature does **not** contain a negative-authorization scenario.
+This feature's `Background` obtains a **full-access** Configuration Service token (`Given valid credentials` / `And token received`) and sends it on every request, so scenarios 01–07 exercise only the **authenticated happy path** (including the 400 validation case in scenario 05). The feature does **not** contain a negative-authorization scenario.
 
 The negative authorization behavior of the `/management/*` claims endpoints is covered by the focused in-process unit tests in `ClaimsManagementModuleTests` (project `EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit`), not by this E2E feature:
 
@@ -123,7 +168,7 @@ The negative authorization behavior of the `/management/*` claims endpoints is c
 
 To run a specific scenario:
 ```bash
-dotnet test --filter "FullyQualifiedName~ClaimsManagement" --filter "Name~scenario_name"
+env -u NODE_OPTIONS pwsh ./build-config.ps1 E2ETest -Configuration Release -SkipDockerBuild -E2ETestFilter 'FullyQualifiedName~ClaimsManagement'
 ```
 
 ### Debugging
