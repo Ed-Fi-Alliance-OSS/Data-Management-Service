@@ -6,8 +6,11 @@ Ed-Fi API Configuration Service claims documents.
 ## Development status
 
 Conversion, CMS schema validation, output writing, upload acceptance coverage,
-and local package build/installation checks are implemented. Release automation
-remains under development in DMS-1617; this tool has not yet been released.
+and local package build/installation checks are implemented. Normal app-release
+and independent tool-release automation are also implemented. Hosted independent-workflow
+verification and initial stable publication remain outstanding post-merge follow-ups,
+as recorded in the [DMS-1617 rollout record](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/DMS-1617-rollout.md).
+This tool has not yet been released.
 
 ```sh
 security-metadata-tools --help
@@ -26,6 +29,6 @@ destination. The destination's parent directory must already exist.
 
 ## Maintainer versioning
 
-See [VERSIONING.md](VERSIONING.md) for the committed tool patch, shared version
+See [VERSIONING.md](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/config/clis/EdFi.DmsConfigurationService.SecurityMetadataTools/VERSIONING.md) for the committed tool patch, shared version
 calculation, release preparation and recovery policy, and current build/workflow
 implementation status.
