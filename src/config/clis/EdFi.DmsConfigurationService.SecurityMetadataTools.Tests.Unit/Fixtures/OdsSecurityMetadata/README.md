@@ -1,13 +1,10 @@
-# ODS security metadata acceptance fixture — DMS-1617-01
+# ODS security metadata acceptance fixture
 
-## Review status
+## Purpose and reviewed artifacts
 
-**DMS-1617-01 fixture review complete.** The checked-in expected document is the
-acceptance oracle for the later conversion, package, and upload tasks. The
-current fixture task requires independent preparation, policy review, and
-reproduction evidence; it does not require personal approval from Brad. The
-earlier pending-approval notice added a gate beyond that task contract and is
-superseded by this technical review record. No personal approval is claimed.
+The checked-in expected document defines the correct result for conversion,
+package, and upload tests. It was prepared from independently captured database
+rows rather than production converter output.
 
 | Review artifact | SHA-256 |
 | --- | --- |
@@ -20,7 +17,6 @@ the pinned exporter and independent capture query; rechecked both previously
 captured fresh-database exports and row sets, all artifact/export hashes, the
 complete database/XML/JSON policy audit, and the existing CMS JSON schema.
 Any change to the expected document requires independent review of its new hash.
-The full converter comparison is implemented separately in DMS-1617-04.
 
 ## Provenance and supported scope
 
@@ -111,20 +107,9 @@ All ten used strategy names survive unchanged: `NamespaceBased`,
 The source strategy table contains 13 definitions; unused definitions are not
 exported by the pinned script and are not policy assignments.
 
-The expected JSON parses and passes the repository's existing CMS
-`JsonSchemaForClaims.json` under a Draft 2020-12 JSON Schema validator. Actual
-converter-to-CMS-validator integration remains DMS-1617-05.
-
-Verification on 2026-10-21: a second fresh database deployment reproduced both
-the formatted XML bytes and independent source rows exactly; all three artifact
-hashes matched. The documented Db.Deploy 4.1.52 installation succeeded in a fresh
-tool directory. The SecurityMetadataTools Release unit suite passed 28/28 tests
-with no skips, and the XML, JSON, and database evidence copied unchanged into
-test output. These existing tests exercise synthetic cases; the representative
-converter comparison remains DMS-1617-04. Final fixture-review verification
-rechecked the retained outputs from both database deployments without rebuilding
-the databases. Local TRX: `TestResults/DMS-1617-01-final.trx` relative to the test
-project directory.
+The expected JSON was validated against the CMS `JsonSchemaForClaims.json`
+using a Draft 2020-12 JSON Schema validator. A second fresh database deployment
+reproduced the formatted XML bytes and independent source rows exactly.
 
 ## Reproduce the database and export
 
@@ -147,29 +132,29 @@ git -C Ed-Fi-ODS-Implementation show \
 dotnet tool install EdFi.Suite3.Db.Deploy --version 4.1.52 --tool-path ./tools \
   --add-source https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json
 
-docker run --rm -d --name dms-1617-ods-fixture \
-  -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='Dms1617_FixtureOnly!' \
+docker run --rm -d --name ods-security-fixture \
+  -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='OdsSecurity_FixtureOnly!' \
   -p 127.0.0.1:14347:1433 \
   mcr.microsoft.com/mssql/server@sha256:b036b61e953e6e660f04514fc3f703b995a9cdda569cf96d07d3f751240f615a
 
 # Proceed once this query succeeds; inspect docker logs if SQL Server is not ready.
-docker exec dms-1617-ods-fixture /opt/mssql-tools18/bin/sqlcmd \
-  -S localhost -U sa -P 'Dms1617_FixtureOnly!' -C -b -Q 'SELECT @@VERSION'
+docker exec ods-security-fixture /opt/mssql-tools18/bin/sqlcmd \
+  -S localhost -U sa -P 'OdsSecurity_FixtureOnly!' -C -b -Q 'SELECT @@VERSION'
 
 ./tools/EdFi.Db.Deploy deploy --database Security --engine SqlServer \
   --standardVersion 5.2.0 \
   --filePaths "$PWD/Ed-Fi-ODS,$PWD/Ed-Fi-ODS/Application/EdFi.Ods.Standard,$PWD/Ed-Fi-ODS-Implementation" \
-  --connectionString 'Server=127.0.0.1,14347;Database=EdFi_Security;User Id=sa;Password=Dms1617_FixtureOnly!;TrustServerCertificate=True' \
+  --connectionString 'Server=127.0.0.1,14347;Database=EdFi_Security;User Id=sa;Password=OdsSecurity_FixtureOnly!;TrustServerCertificate=True' \
   > seed.log 2>&1
 # Require exit 0 and Upgrade successful; preserve seed.log for diagnosis.
 
-docker cp export.sql dms-1617-ods-fixture:/tmp/export.sql
-docker exec dms-1617-ods-fixture /opt/mssql-tools18/bin/sqlcmd \
-  -S localhost -U sa -P 'Dms1617_FixtureOnly!' -C -b -y 0 \
+docker cp export.sql ods-security-fixture:/tmp/export.sql
+docker exec ods-security-fixture /opt/mssql-tools18/bin/sqlcmd \
+  -S localhost -U sa -P 'OdsSecurity_FixtureOnly!' -C -b -y 0 \
   -i /tmp/export.sql > export.raw.txt
-docker cp "$fixture/capture-policy.sql" dms-1617-ods-fixture:/tmp/capture.sql
-docker exec dms-1617-ods-fixture /opt/mssql-tools18/bin/sqlcmd \
-  -S localhost -U sa -P 'Dms1617_FixtureOnly!' -C -b -d EdFi_Security -y 0 \
+docker cp "$fixture/capture-policy.sql" ods-security-fixture:/tmp/capture.sql
+docker exec ods-security-fixture /opt/mssql-tools18/bin/sqlcmd \
+  -S localhost -U sa -P 'OdsSecurity_FixtureOnly!' -C -b -d EdFi_Security -y 0 \
   -i /tmp/capture.sql > policy.raw.json
 ```
 
@@ -203,24 +188,23 @@ print('Export and independent database rows reproduced exactly')
 PY
 python3 "$fixture/verify-fixtures.py"
 python3 -m json.tool "$fixture/expected-claims.json" > /dev/null
-docker stop dms-1617-ods-fixture
+docker stop ods-security-fixture
 ```
 
 The pinned SQL orders actions and strategies explicitly, but does not explicitly
 order root/child claims or claim sets. The captured ordering reproduced on this
 identified engine/seed. A different engine plan may require structural review of
-ordering differences; do not silently regenerate an approved expected file.
+ordering differences; do not silently regenerate the reviewed expected file.
 
 The unit project copies `Fixtures/**/*` to its output directory, retaining paths.
 Review scripts and provenance are not production dependencies.
 
-## Synthetic coverage still required
+## Coverage outside this fixture
 
 This seed does not cover name/URI collisions, empty normalized names, 256/257
 character limits, controls or non-ASCII set names, case preservation edge cases,
 near-match/non-leading legacy prefixes, malformed XML, unknown policy content,
 missing names/actions, or documents missing claims/references/actions. It also
 does not cover explicit empty default/strategy/override containers or populated
-`validationRuleSet`/`validationRuleSetOverride` attributes. Preserve those as small
-synthetic tests under DMS-1617-03/-04/-05; do not alter this actual export to add
-them. CLI failure/write-order and upload checks remain their respective tasks.
+`validationRuleSet`/`validationRuleSetOverride` attributes. Cover these cases with
+small synthetic tests rather than altering the database export.
