@@ -1387,13 +1387,17 @@ function Get-DatabaseNameFromConnectionString {
         on Get-DatabaseNameFromResolvedConnectionString: a whitespace-mutated spelling is a keyword no
         provider supports, so reading its value as a protected database name compares this guard
         against a database the connection would never target.
+
+    .PARAMETER ConnectionString
+        The connection string as Compose has already resolved it: quotes, inline comments and
+        references are settled, and the string is parsed as given. Converting it again would read a
+        ' #' that Compose kept inside a quoted value as a comment and drop every keyword after it,
+        including a later Initial Catalog or DB the provider uses.
     #>
     param(
         [string]$ConnectionString,
         [hashtable]$EnvironmentValues
     )
-
-    $ConnectionString = ConvertFrom-ComposeEnvironmentValue -Value $ConnectionString
 
     if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
         return @()

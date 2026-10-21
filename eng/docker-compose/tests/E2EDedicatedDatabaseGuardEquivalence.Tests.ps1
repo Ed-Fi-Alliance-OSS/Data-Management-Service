@@ -398,6 +398,28 @@ Describe "Dedicated E2E database guard" {
             }
             throw "The guard accepted a configuration it must reject."
         }
+
+        # Resolves the key the way the guard does, then returns the extractor's candidates, with the
+        # protected keys cleared from the process environment and restored afterward.
+        function Get-IsolatedConnectionStringDatabaseName {
+            param([string]$Key, [string]$RawValue)
+
+            $savedVariables = foreach ($name in $script:protectedKeys) {
+                Save-AmbientVariable -Name $name
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+            }
+
+            try {
+                $environmentValues = @{ $Key = $RawValue }
+                $connectionString = Get-ComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name $Key
+                Get-DatabaseNameFromConnectionString -ConnectionString $connectionString -EnvironmentValues $environmentValues
+            }
+            finally {
+                foreach ($savedVariable in $savedVariables) {
+                    Restore-AmbientVariable -Saved $savedVariable
+                }
+            }
+        }
     }
 
     Context "direct keys: trailing runs a bare -ieq comparison misses" {
@@ -528,6 +550,73 @@ Describe "Dedicated E2E database guard" {
         ) {
             { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = "Server=s;Database=edfi_dms;User Id=sa" } -E2EDatabaseName "edfi_dms`n" } |
                 Should -Throw -ExpectedMessage (Get-SeparateDiagnostic -Key $Key -E2EDatabaseName "edfi_dms`n")
+        }
+    }
+
+    # Compose keeps a ' #' inside a quoted value, so the resolved string still carries every keyword
+    # after it. The extractor parses that string as given; converting it again as a dotenv value would
+    # read ' #' as a comment and drop the later Initial Catalog or DB the provider uses.
+    Context "connection-string keys: a ' #' that Compose keeps inside a quoted value" {
+        It "keeps the later <Alias> = 'edfi_dms' after 'Database=x #y' in <Key>, <Quote>-quoted" -ForEach @(
+            foreach ($key in @("DATABASE_CONNECTION_STRING_ADMIN", "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING")) {
+                foreach ($quote in @("'", '"')) {
+                    @{ Key = $key; Quote = $quote; Alias = "Initial Catalog"; ConnectionString = "Server=s;Database=x #y;Initial Catalog=edfi_dms;User Id=sa" }
+                    @{ Key = $key; Quote = $quote; Alias = "DB"; ConnectionString = "Host=h;Database=x #y;DB=edfi_dms;Username=u" }
+                }
+            }
+        ) {
+            $rawValue = "$Quote$ConnectionString$Quote"
+
+            (@(Get-IsolatedConnectionStringDatabaseName -Key $Key -RawValue $rawValue) -join "|") | Should -BeExactly "x|edfi_dms"
+            { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = $rawValue } } |
+                Should -Throw -ExpectedMessage (Get-SeparateDiagnostic -Key $Key)
+        }
+
+        It "keeps the Initial Catalog = 'edfi_dms' after a password containing ' #' in <Key>, <Quote>-quoted" -ForEach @(
+            foreach ($key in @("DATABASE_CONNECTION_STRING_ADMIN", "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING")) {
+                foreach ($quote in @("'", '"')) {
+                    @{ Key = $key; Quote = $quote }
+                }
+            }
+        ) {
+            $rawValue = "$($Quote)Server=s;Database=safe;Password=a #b;Initial Catalog=edfi_dms;User Id=sa$Quote"
+
+            (@(Get-IsolatedConnectionStringDatabaseName -Key $Key -RawValue $rawValue) -join "|") | Should -BeExactly "safe|edfi_dms"
+            { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = $rawValue } } |
+                Should -Throw -ExpectedMessage (Get-SeparateDiagnostic -Key $Key)
+        }
+
+        It "accepts <Key> naming only distinct databases around a password containing ' #'" -ForEach @(
+            @{ Key = "DATABASE_CONNECTION_STRING_ADMIN" }
+            @{ Key = "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" }
+        ) {
+            $rawValue = "'Server=s;Database=safe;Password=a #b;Initial Catalog=edfi_dms_other;User Id=sa'"
+
+            (@(Get-IsolatedConnectionStringDatabaseName -Key $Key -RawValue $rawValue) -join "|") | Should -BeExactly "safe|edfi_dms_other"
+            { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = $rawValue } } | Should -Not -Throw
+        }
+
+        # Unquoted, Compose itself strips ' #' and the rest of the line, so the provider never receives
+        # the later keywords and the guard compares only what remains.
+        It "accepts unquoted <Key> whose ' #' comment Compose strips with the Initial Catalog after it" -ForEach @(
+            @{ Key = "DATABASE_CONNECTION_STRING_ADMIN" }
+            @{ Key = "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" }
+        ) {
+            $rawValue = "Server=s;Database=x #y;Initial Catalog=edfi_dms;User Id=sa"
+
+            (@(Get-IsolatedConnectionStringDatabaseName -Key $Key -RawValue $rawValue) -join "|") | Should -BeExactly "x"
+            { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = $rawValue } } | Should -Not -Throw
+        }
+
+        It "rejects unquoted <Key> naming 'edfi_dms' before a trailing comment Compose strips" -ForEach @(
+            @{ Key = "DATABASE_CONNECTION_STRING_ADMIN" }
+            @{ Key = "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" }
+        ) {
+            $rawValue = "Server=s;Database=edfi_dms;User Id=sa #note"
+
+            (@(Get-IsolatedConnectionStringDatabaseName -Key $Key -RawValue $rawValue) -join "|") | Should -BeExactly "edfi_dms"
+            { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = $rawValue } } |
+                Should -Throw -ExpectedMessage (Get-SeparateDiagnostic -Key $Key)
         }
     }
 
