@@ -554,7 +554,6 @@ public class ExtractDocumentInfoMiddlewareTests
         [Test]
         public void It_still_populates_document_info_for_repository_owned_guard_rail_handling()
         {
-            _requestInfo.DocumentInfo.ReferentialId.Should().NotBe(No.ReferentialId);
             _requestInfo.DocumentInfo.DocumentIdentity.DocumentIdentityElements.Should().ContainSingle();
             _requestInfo.DocumentInfo.DocumentReferences.Should().BeEmpty();
             _requestInfo.DocumentInfo.DescriptorReferences.Should().BeEmpty();

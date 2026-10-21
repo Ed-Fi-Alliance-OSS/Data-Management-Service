@@ -20,7 +20,6 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -1751,7 +1750,10 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         AuthorizationRootChildSeed seed
     )
     {
-        var referentialId = CreateAuthorizationRootChildDocumentInfo(seed).ReferentialId;
+        var referentialId = ReferentialIdTestHelper.ReferentialIdFrom(
+            GetResourceHandle("authz", "AuthorizationRootChildResource").ResourceInfo,
+            CreateAuthorizationRootChildDocumentInfo(seed).DocumentIdentity
+        );
 
         return await Database.ExecuteScalarAsync<long>(
             """
@@ -1759,7 +1761,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             FROM "dms"."ReferentialIdentity"
             WHERE "ReferentialId" = @referentialId;
             """,
-            new NpgsqlParameter("referentialId", referentialId.Value)
+            new NpgsqlParameter("referentialId", referentialId)
         );
     }
 
@@ -2773,7 +2775,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
     }
 
     private async Task InsertReferentialIdentityAsync(
-        ReferentialId referentialId,
+        Guid referentialId,
         long documentId,
         short resourceKeyId
     )
@@ -2785,19 +2787,19 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             ON CONFLICT ("DocumentId", "ResourceKeyId") DO UPDATE
             SET "ReferentialId" = EXCLUDED."ReferentialId";
             """,
-            new NpgsqlParameter("referentialId", referentialId.Value),
+            new NpgsqlParameter("referentialId", referentialId),
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("resourceKeyId", resourceKeyId)
         );
     }
 
-    private static ReferentialId CreateDescriptorReferentialId(
+    private static Guid CreateDescriptorReferentialId(
         string projectName,
         string resourceName,
         string descriptorUri
     )
     {
-        return ReferentialIdCalculator.ReferentialIdFrom(
+        return ReferentialIdTestHelper.ReferentialIdFrom(
             new BaseResourceInfo(new ProjectName(projectName), new ResourceName(resourceName), true),
             new DocumentIdentity([
                 new DocumentIdentityElement(
@@ -2808,7 +2810,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
-    private static ReferentialId CreateStudentAcademicRecordReferentialId(StudentAcademicRecordSeed seed) =>
+    private static Guid CreateStudentAcademicRecordReferentialId(StudentAcademicRecordSeed seed) =>
         CreateReferentialId(
             "Ed-Fi",
             "StudentAcademicRecord",
@@ -2821,13 +2823,13 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             ("$.termDescriptor", seed.TermDescriptor.ToLowerInvariant())
         );
 
-    private static ReferentialId CreateReferentialId(
+    private static Guid CreateReferentialId(
         string projectName,
         string resourceName,
         params (string JsonPath, string Value)[] identityElements
     )
     {
-        return ReferentialIdCalculator.ReferentialIdFrom(
+        return ReferentialIdTestHelper.ReferentialIdFrom(
             new BaseResourceInfo(new ProjectName(projectName), new ResourceName(resourceName), false),
             new DocumentIdentity([
                 .. identityElements.Select(static identityElement => new DocumentIdentityElement(

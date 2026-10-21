@@ -168,7 +168,7 @@ This inventory is the explicit “what exists in the database” contract that t
     against the owning document by the stamping trigger.
   - No live descriptor discriminator or physically stored URI; see the reconstructed-URI
     index and runtime-session contract below.
-- `dms.ReferentialIdentity` (retained by the current RI runtime)
+- `dms.ReferentialIdentity` (trigger-maintained for resources until RI removal; no runtime path reads it)
 - `dms.DataStoreIdentity` (singleton source identity stable during ordinary operation)
 - `dms.DocumentCache` (always present; optionally populated/read)
 - `dms.DocumentProjectionWork` (always-present coalesced durable projection work)
@@ -261,8 +261,9 @@ initializer: at compatibility level 90 or above, `ANSI_WARNINGS ON` implies effe
 provisioning-only settings do not survive onto runtime connections.
 
 The current DDL retains `dms.ReferentialIdentity`, RI maintenance triggers/functions,
-PostgreSQL `dms.uuidv5()` and its `pgcrypto` dependency for descriptor writes; resource POST
-upsert existence detection uses the own-natural-key capture instead. RI maintenance joins use `DescriptorId` and reconstruct the whole URI before
+PostgreSQL `dms.uuidv5()` and its `pgcrypto` dependency, which keep resource RI rows maintained
+until RI removal; no runtime path reads them. Resource POST upsert existence detection uses the
+own-natural-key capture, and descriptor writes use the lowered-URI probe and write no RI rows. RI maintenance joins use `DescriptorId` and reconstruct the whole URI before
 existing hashing transformations; document-level RI maintenance uses the owning `DocumentId`.
 Reference resolution and descriptor filters already use the lowered-URI probes; RI removal
 described in [natural-key-resolution.md](natural-key-resolution.md) belongs to later stories.

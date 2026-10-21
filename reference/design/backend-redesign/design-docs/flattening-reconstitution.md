@@ -22,8 +22,8 @@ It also defines the minimal `ApiSchema.json` metadata needed (beyond what alread
 References resolve through the natural-key resolver in
 [natural-key-resolution.md](natural-key-resolution.md), and resource POST upsert detection uses the
 compiled own-natural-key capture. On SQL Server, identity values equal under the identity comparer
-(`OrdinalIgnoreCase`) match and keep their stored casing. Descriptor writes still use RI and their current rules until
-DMS-1454.
+(`OrdinalIgnoreCase`) match and keep their stored casing. Descriptor writes detect their target
+through the lowered-URI descriptor probe and keep the stored descriptor identity on both engines.
 The illustrative C# shapes below describe plan roles rather than replacing the production contracts.
 
 ## Table of Contents
@@ -595,13 +595,13 @@ The resulting write set is keyed by stable `CollectionItemId`s plus parent-scope
 
 This generic flatten-and-write algorithm applies to concrete resources with
 `StorageKind = RelationalTables`. Descriptor resources stored in the shared
-`dms.Descriptor` table use the current descriptor write handler and RI upsert match, preserving
-both IDs and applying incoming components on an authorized matched POST. PUT checks the reconstructed
-whole URI ordinally. See [transactions-and-concurrency.md](transactions-and-concurrency.md#descriptor-references-_descriptorid).
+`dms.Descriptor` table use the separate descriptor write handler and its lowered-URI probe,
+preserving both IDs and keeping the stored identity components on a matched POST or an
+identity-equal PUT. See [transactions-and-concurrency.md](transactions-and-concurrency.md#descriptor-references-_descriptorid).
 
 Within a single transaction:
 
-1. Resolve insert vs update through RI for the relational-table resource, then insert/update `dms.Document`
+1. Resolve insert vs update through the own-natural-key capture for the relational-table resource, then insert/update `dms.Document`
 2. Write the resource root row (`INSERT` or `UPDATE`)
 3. For each non-root 1:1 scope:
    - `InsertSql` when the scope is visible and present, the row is newly present, and Core marked the scope creatable
@@ -2249,7 +2249,7 @@ Key points:
 This sketch follows the natural-key write path in [natural-key-resolution.md](natural-key-resolution.md):
 reference resolution uses the natural-key resolver, POST upsert existence detection uses the
 own-natural-key capture, and the schema equality rules and stored-identity rebind apply on SQL Server.
-Descriptor writes (DMS-1454) still use RI and the descriptor CRUD rules in
+Descriptor writes use the lowered-URI descriptor probe and the stored-wins descriptor rules in
 [transactions-and-concurrency.md](transactions-and-concurrency.md#descriptor-references-_descriptorid).
 Assume `EffectiveSchemaHash` comes from the selected database's `dms.EffectiveSchema` fingerprint.
 The main branch is for `StorageKind = RelationalTables`; descriptors leave through their separate
@@ -2330,7 +2330,7 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
 
     // 8) Rebind identity values equal under the identity comparer to their stored values before
     //    proposed-value authorization/no-op detection (SQL Server; a no-op on PostgreSQL).
-    //    Future descriptor stored-wins behavior belongs to the separate descriptor handler.
+    //    Descriptor stored-wins binding happens in the separate descriptor handler.
     //    See natural-key-resolution.md#how-the-write-path-will-preserve-stored-casing-sql-server.
     var proposedWriteSet = _storedIdentityRebinder.Rebind(writePlan, writeSet, currentState);
 
@@ -2365,9 +2365,9 @@ Notes:
   authorization, no-op detection and writer DML: root identity columns that differ only under the
   identity comparer take the stored value, and any other difference is a genuine identity change.
   The merge binder applies the same rebind to matched collection rows' semantic-key members.
-  Future descriptor stored-wins semantics belong to the separate descriptor handler; current
-  RI-matched descriptor POST applies incoming components and stamps accepted changes, and current
-  PUT uses an ordinal whole-URI guard.
+  Descriptor stored-wins binding belongs to the separate descriptor handler: a probe-matched POST
+  and an identity-equal PUT keep the stored components on both engines, and only a different
+  identity on PUT is rejected.
 - `_writer.ExecuteAsync(...)` uses the compiled `CollectionMergePlan`s, table-local `CollectionKeyPreallocationPlan`s, batched reservations from `dms.CollectionItemIdSequence`, and `IBulkInserter` to avoid N+1 inserts while preserving stable `CollectionItemId`s for matched rows.
 - The sketch omits the explicit profile branches: profile-constrained creates consult `RootResourceCreatable`, non-collection scope behavior comes from `RequestScopeStates` / `StoredScopeStates` using `VisiblePresent`, `VisibleAbsent`, and `Hidden`, and collection merges consume `VisibleRequestCollectionItems` / `VisibleStoredCollectionRows` plus `HiddenMemberPaths`.
 - For separate-table 1:1 scopes (including document-scope `_ext` tables), execution uses `InsertSql` when the scoped row is newly `VisiblePresent`, `UpdateSql` when it already exists, and `DeleteByParentSql` only when the scope state is `VisibleAbsent`; `Hidden` scopes are preserved, and inlined `VisibleAbsent` scopes clear only their visible compiled bindings.

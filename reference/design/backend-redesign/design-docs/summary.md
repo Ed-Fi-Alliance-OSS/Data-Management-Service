@@ -37,9 +37,10 @@ Source documents:
 - References and descriptor-valued filters resolve through generated natural-key/lowered-URI
   probes that carry the raw validated URI and fold case in SQL; a NUL in a descriptor reference or
   filter is a 400. Resource POST upserts detect existing documents through the own-natural-key
-  capture. Descriptor writes retain RI calculation, lookup and maintenance; their natural-key
-  cutover and equality changes are later work in
-  [natural-key-resolution.md](natural-key-resolution.md).
+  capture, and descriptor writes through the lowered-URI probe with stored-wins identity (see
+  [natural-key-resolution.md](natural-key-resolution.md)). Core computes no referential ids,
+  and no runtime path reads `dms.ReferentialIdentity`; resource triggers maintain it until its
+  removal.
 - SQL Server identity string columns carry the explicit DMS collation
   `SQL_Latin1_General_CP1_CI_AS`, independent of the database default; PostgreSQL keeps its
   existing collation verdicts. Compact descriptor storage introduces no normalization.
@@ -252,9 +253,10 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
      - for profile-scoped collection/common-type/extension collection writes, start from the current full sibling sequence for that scope instance, replace the visible-row subsequence with the merged visible rows in request order, preserve hidden rows in their existing relative gaps, append extra visible inserts after the last previously visible row for that scope instance (or at the end when there was no previously visible row), and renumber `Ordinal` contiguously using the same deterministic post-merge sibling-order rule as no-op detection.
    - Write extension tables similarly (root extension rows only when extension values exist; scope-aligned rows for nested extension sites).
    - Descriptor writes to resource rows bind `int DescriptorId`; hydration and descriptor-valued
-     filters use that same key. Descriptor CRUD preserves both IDs: RI-matched POST applies
-     incoming components, PUT rejects different whole-URI text ordinally, accepted component
-     changes stamp normally, and unchanged bodies preserve stamps/ETags.
+     filters use that same key. Descriptor CRUD preserves both IDs and keeps the stored identity:
+     a probe-matched POST and an identity-equal PUT keep the stored components, a PUT with a
+     different identity returns 400, descriptive changes stamp normally, and unchanged bodies
+     preserve stamps/ETags.
    - For each document reference site, write the stable `..._DocumentId` FK column (resolved by the natural-key resolver) and the referenced identity-part values to the table’s canonical stored columns (the per-site binding columns used for query/reconstitution may be generated/persisted aliases under key unification). Composite FKs enforce consistency.
 
 5. **Strict identity maintenance (row-local triggers)**

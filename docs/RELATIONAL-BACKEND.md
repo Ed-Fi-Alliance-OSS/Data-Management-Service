@@ -43,7 +43,7 @@ Descriptors have two independent keys:
 | Key | Storage and use |
 |---|---|
 | `DescriptorId` | Native `int` primary key on `dms.Descriptor`; PostgreSQL `GENERATED ALWAYS AS IDENTITY` with its own backing sequence, SQL Server `IDENTITY(1,1)`. Every stored descriptor reference is `Int32` and targets this key, including collections, extensions, copied reference identities, and composite keys. |
-| `DocumentId` | Unique, non-null `bigint` association to `dms.Document`; used for UUID lookup, document-level RI, locks, concurrency, paging, cache/projection work, and representation restamping. Updates preserve both keys. |
+| `DocumentId` | Unique, non-null `bigint` association to `dms.Document`; used for UUID lookup, locks, concurrency, paging, cache/projection work, and representation restamping. Updates preserve both keys. |
 
 `ResourceKeyId` (`smallint`) identifies the qualified descriptor type. The composite
 `FK_Descriptor_DocumentResourceKey (DocumentId, ResourceKeyId)` references the owning document's
@@ -76,14 +76,26 @@ unpaired-surrogate escape in any request-body string is rejected at body parse w
 malformed-body 400, whose message names the path. Reference resolution and descriptor-valued query
 filters use the lowered-URI natural-key probes, which return both IDs in one lookup and fold case
 in SQL; original-case responses reconstruct the whole string. Resource POST target detection
-uses the natural-key columns of the resource; only descriptor writes still read RI, which is
-still calculated for every document and maintained for every resource and descriptor. On SQL
+uses the natural-key columns of the resource, and descriptor POST detects its target with the
+same lowered-URI probe; descriptor PUT addresses its target by document UUID and uses the probe
+only for its identity verdict. No runtime path reads `dms.ReferentialIdentity`, and Core
+computes no UUIDv5 referential ids. Descriptor writes no longer write RI rows; resource RI rows
+stay trigger-maintained until RI is removed. On SQL
 Server, a resource's own identity values, including the values of the references that are part
 of it, and the string values that identify collection items keep their stored casing on POST and
 PUT when they are equal under the identity comparer (`OrdinalIgnoreCase`). Values inside other
-references, including the references that identify collection items, are stored as sent. RI
-removal and stored-wins descriptor writes belong to later stories. Abstract identity
-discriminators and union-view discriminator outputs remain unchanged.
+references, including the references that identify collection items, are stored as sent.
+Descriptor POST and PUT keep the stored `Namespace` and `CodeValue` on both engines when the
+database treats the request's identity as the stored one: a case variant on either engine, and
+on SQL Server also a collation alias such as `ß`/`ss`. A casing-only descriptor re-POST is a
+no-op, and a PUT that changes only the identity's casing returns 204 without changes. Abstract
+identity discriminators and union-view discriminator outputs remain unchanged.
+
+**Rollback boundary.** From DMS-1454 on, descriptor writes write no RI rows, so descriptor RI
+rows in a database written by DMS-1454 or later are absent or stale. Every earlier build,
+including the DMS-1451 to DMS-1453 checkpoints and 8.0.x, matches descriptor POSTs through RI.
+Running one of them against a database written by DMS-1454 or later requires reprovisioning it
+with that build or an approved RI backfill.
 
 The regenerated [DS 5.2 artifacts](../src/dms/backend/Fixtures/authoritative/ds-5.2/expected)
 cover 595 stored descriptor columns and 879 indexes containing such columns. These are schema

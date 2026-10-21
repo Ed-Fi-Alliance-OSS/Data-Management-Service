@@ -113,8 +113,6 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         var descriptorWriteHandler = scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>();
         var targetLookupService =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupService>();
-        var targetLookupResolver =
-            scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupResolver>();
         var writeExecutor = scope.ServiceProvider.GetRequiredService<IRelationalWriteExecutor>();
         var currentEtagPreconditionChecker =
             scope.ServiceProvider.GetRequiredService<IRelationalCurrentEtagPreconditionChecker>();
@@ -167,7 +165,6 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         descriptorReadHandler.Should().BeOfType<DescriptorReadHandler>();
         descriptorWriteHandler.Should().BeOfType<DescriptorWriteHandler>();
         targetLookupService.Should().BeOfType<RelationalWriteTargetLookupService>();
-        targetLookupResolver.Should().BeOfType<RelationalWriteTargetLookupResolver>();
         writeExecutor.Should().BeOfType<DefaultRelationalWriteExecutor>();
         currentEtagPreconditionChecker.Should().BeOfType<RelationalCurrentEtagPreconditionChecker>();
         deleteEtagPreconditionChecker.Should().BeOfType<RelationalCurrentEtagPreconditionChecker>();

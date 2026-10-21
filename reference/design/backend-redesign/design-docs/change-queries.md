@@ -1963,7 +1963,7 @@ The example seeks a recreated descriptor by retained namespace/code components a
 The PostgreSQL renderer uses the same component predicates under its existing collation.
 `ResourceKeyId` parameters come from `MappingSet.ResourceKeyIdByResource` through each
 `TrackedChangeDescriptorJoinInfo.DescriptorResource`. These history comparisons are distinct
-from whole-URI RI hashing/verification and ordinal descriptor PUT checks; compact storage does
+from whole-URI RI trigger hashing and the descriptor write probe; compact storage does
 not make every consumer use a new shared equality rule.
 
 #### `*_RefKey` index ordering for `/deletes`

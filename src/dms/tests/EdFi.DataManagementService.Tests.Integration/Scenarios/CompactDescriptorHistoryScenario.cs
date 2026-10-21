@@ -293,27 +293,28 @@ internal static class CompactDescriptorHistoryScenario
             "Campus#MiXeD"
         );
         long initial = await NewestVersionAsync(harness);
-        string ns = original.Namespace + "#Campus";
-        (await PostAsync(harness, Descriptors, DescriptorBody(ns, "MiXeD"), HttpStatusCode.OK))
-            .Should()
-            .Be(original.Path);
-        Descriptor components = await ReadDescriptorAsync(harness, original.Path, Descriptors, ns, "MiXeD");
-        components.DescriptorId.Should().Be(original.DescriptorId);
-        components.DocumentId.Should().Be(original.DocumentId);
-        components.Version.Should().BeGreaterThan(initial);
-        components.Uri.Should().Be(original.Uri);
-        (await HistoryAsync(harness, Descriptors, "deletes")).Should().BeEmpty();
-        (await HistoryAsync(harness, Descriptors, "keyChanges")).Should().BeEmpty();
-        long newest = await NewestVersionAsync(harness);
         string etag = await EtagAsync(harness, original.Path);
+        string ns = original.Namespace + "#Campus";
+
+        // The re-split components reconstruct the stored URI, so POST and PUT bind the stored components and
+        // change nothing: no stamp, no ETag change and no change-query history.
         (await PostAsync(harness, Descriptors, DescriptorBody(ns, "MiXeD"), HttpStatusCode.OK))
             .Should()
             .Be(original.Path);
         await PutAsync(harness, original.Path, DescriptorBody(ns, "MiXeD"));
-        (await ReadDescriptorAsync(harness, original.Path, Descriptors, ns, "MiXeD")).Should().Be(components);
-        (await NewestVersionAsync(harness)).Should().Be(newest);
+        Descriptor components = await ReadDescriptorAsync(
+            harness,
+            original.Path,
+            Descriptors,
+            original.Namespace,
+            original.CodeValue
+        );
+        components.Should().Be(original);
+        (await NewestVersionAsync(harness)).Should().Be(initial);
         (await EtagAsync(harness, original.Path)).Should().Be(etag);
-        (await GetArrayAsync(harness, $"{Descriptors}?minChangeVersion={newest + 1}")).Should().BeEmpty();
+        (await GetArrayAsync(harness, $"{Descriptors}?minChangeVersion={initial + 1}")).Should().BeEmpty();
+        (await HistoryAsync(harness, Descriptors, "deletes")).Should().BeEmpty();
+        (await HistoryAsync(harness, Descriptors, "keyChanges")).Should().BeEmpty();
 
         await DeleteAsync(harness, original.Path);
         await AssertGoneAsync(harness, components);

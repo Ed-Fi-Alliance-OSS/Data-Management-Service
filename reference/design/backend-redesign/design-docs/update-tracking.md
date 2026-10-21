@@ -20,9 +20,9 @@ The backend redesign needs resource-state-sensitive metadata:
   representation-sensitive: two representations of the same stored state that differ in served bytes
   (e.g. different readable profiles, links on vs. off, or identity vs. gzip coding) MUST carry different `_etag` values, as
   required for RFC 9110 §8.8.1 strong validators.
-  Descriptor PUT retains its ordinal whole-URI guard, while an RI-matched POST can apply
-  incoming components. Accepted descriptor representation changes receive normal stamps;
-  unchanged descriptor bodies preserve stamps and ETags.
+  Descriptor writes keep the stored identity components (stored wins), so an unchanged identity,
+  including a casing-only change, never stamps. Accepted descriptive changes receive normal
+  stamps; unchanged descriptor bodies preserve stamps and ETags.
 - Ed-Fi Change Query APIs depend on a global monotonic `ChangeVersion`.
 
 This redesign accomplishes indirect-update semantics without a reverse-edge table by:
@@ -111,12 +111,11 @@ capture can read the document metadata before it is removed.
 
 There is no live descriptor discriminator or physically stored URI. URI consumers reconstruct
 the whole `Namespace + '#' + CodeValue`; SQL Server's non-persisted computed `Uri` and `UriLowered`
-exist for indexing. Namespace and code value remain independently compared stored representation fields.
-An RI-matched POST applies incoming components, including case changes. PUT rejects differing
-whole-URI text ordinally (including case-only text), but accepts changed component pairs that
-reconstruct exactly the same URI. Such accepted component changes receive stamps/ETag changes;
-an unchanged representation receives neither. This change preserves existing RI matching,
-normalization and no-op rules rather than adopting later stored-wins semantics.
+exist for indexing. A POST matched by the lowered-URI descriptor probe, and a PUT whose identity
+the database treats as unchanged (casing, SQL Server collation aliases, re-split components),
+keep the stored `Namespace` and `CodeValue`. An unchanged identity therefore produces no stamp,
+ETag change or tracked change; descriptive and date changes stamp normally. A PUT with a
+different identity returns 400 without stamping.
 
 Cache materialization reconstructs original-case URI content while source metadata and work
 remain document-keyed. Resource-scope and UUID-scope representation restamps likewise retain

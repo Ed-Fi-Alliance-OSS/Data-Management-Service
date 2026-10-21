@@ -13,7 +13,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -111,10 +110,6 @@ file static class WriteSessionCommandStreamTestSupport
             ResourceInfo: AddressTypeDescriptorResourceInfo,
             DocumentInfo: new DocumentInfo(
                 DocumentIdentity: AddressTypeDescriptorIdentity(),
-                ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(
-                    AddressTypeDescriptorResourceInfo,
-                    AddressTypeDescriptorIdentity()
-                ),
                 DocumentReferences: [],
                 DocumentReferenceArrays: [],
                 DescriptorReferences: [],
@@ -144,7 +139,6 @@ file static class WriteSessionCommandStreamTestSupport
 
         return new DocumentInfo(
             DocumentIdentity: schoolIdentity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],

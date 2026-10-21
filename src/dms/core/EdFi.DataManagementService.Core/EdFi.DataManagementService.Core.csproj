@@ -12,7 +12,6 @@
             CopyToPublishDirectory="Always"
             CopyToOutputDirectory="Never"
         />
-        <PackageReference Include="Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic" />
         <PackageReference Include="FastGuid" />
         <PackageReference Include="Microsoft.CodeAnalysis" />
         <PackageReference Include="Microsoft.Extensions.Caching.Abstractions" />

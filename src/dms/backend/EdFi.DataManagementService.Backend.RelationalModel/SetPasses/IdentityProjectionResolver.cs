@@ -20,8 +20,8 @@ internal static class IdentityProjectionResolver
     /// <summary>
     /// Builds identity element mappings for UUIDv5 computation by pairing each identity JSON path
     /// with exactly one column, preserving identity-path order and cardinality so the computed
-    /// UUIDv5 hash matches Core's <c>ReferentialIdCalculator</c> (one element per document identity
-    /// element). For identity-component references, this resolves to locally stored identity-part
+    /// UUIDv5 hash matches the referential identity trigger hash over the document identity (one
+    /// element per document identity element). For identity-component references, this resolves to locally stored identity-part
     /// columns (not the FK <c>..._DocumentId</c>); when key unification fans one reference-site
     /// logical field out to multiple member columns, only the first member represents the path.
     /// Distinct identity paths are never merged, even when they share a canonical storage column.

@@ -9,7 +9,6 @@ using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
-using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
@@ -75,7 +74,6 @@ internal class ExtractDocumentInfoMiddleware(ILogger _logger) : IPipelineStep
             DocumentReferenceArrays: documentReferenceArrays,
             DescriptorReferences: descriptorReferences,
             DocumentIdentity: documentIdentity,
-            ReferentialId: ReferentialIdFrom(requestInfo.ResourceInfo, documentIdentity),
             SuperclassIdentity: superclassIdentity
         );
 

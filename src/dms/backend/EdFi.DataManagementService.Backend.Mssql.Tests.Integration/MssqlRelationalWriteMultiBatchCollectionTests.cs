@@ -18,7 +18,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -224,7 +223,6 @@ file static class MultiBatchCollectionsIntegrationTestSupport
             ResourceInfo: SchoolResourceInfo,
             DocumentInfo: new DocumentInfo(
                 DocumentIdentity: schoolIdentity,
-                ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
                 DocumentReferences: [],
                 DocumentReferenceArrays: [],
                 DescriptorReferences: [],
@@ -257,7 +255,6 @@ file static class MultiBatchCollectionsIntegrationTestSupport
             ResourceInfo: SchoolResourceInfo,
             DocumentInfo: new DocumentInfo(
                 DocumentIdentity: schoolIdentity,
-                ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
                 DocumentReferences: [],
                 DocumentReferenceArrays: [],
                 DescriptorReferences: [],
@@ -458,7 +455,6 @@ file static class MultiBatchCollectionsIntegrationTestSupport
 
         return new DocumentInfo(
             DocumentIdentity: schoolIdentity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: descriptorReferences,
@@ -584,7 +580,7 @@ file static class MultiBatchCollectionsIntegrationTestSupport
                 INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
                 VALUES (@referentialId, @documentId, @resourceKeyId);
                 """,
-                new SqlParameter("@referentialId", referentialId.Value),
+                new SqlParameter("@referentialId", referentialId),
                 new SqlParameter("@documentId", documentId),
                 new SqlParameter("@resourceKeyId", resourceKeyId)
             );
@@ -593,12 +589,8 @@ file static class MultiBatchCollectionsIntegrationTestSupport
         return descriptorId;
     }
 
-    private static ReferentialId CreateDescriptorReferentialId(
-        string projectName,
-        string resourceName,
-        string uri
-    ) =>
-        ReferentialIdCalculator.ReferentialIdFrom(
+    private static Guid CreateDescriptorReferentialId(string projectName, string resourceName, string uri) =>
+        ReferentialIdTestHelper.ReferentialIdFrom(
             new BaseResourceInfo(new ProjectName(projectName), new ResourceName(resourceName), true),
             new DocumentIdentity([
                 new DocumentIdentityElement(

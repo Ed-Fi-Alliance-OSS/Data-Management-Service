@@ -8,7 +8,6 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
-using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
 
 namespace EdFi.DataManagementService.Core.Model;
 
@@ -65,13 +64,12 @@ internal class DescriptorDocument(JsonNode _document)
     /// <summary>
     /// Creates a new DocumentInfo from the DescriptorDocument
     /// </summary>
-    public DocumentInfo ToDocumentInfo(BaseResourceInfo resourceInfo)
+    public DocumentInfo ToDocumentInfo()
     {
         DocumentIdentity documentIdentity = ToDocumentIdentity();
 
         return new(
             DocumentIdentity: documentIdentity,
-            ReferentialId: ReferentialIdFrom(resourceInfo, documentIdentity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],

@@ -73,9 +73,9 @@ and [shared inventory reader](../../../../eng/DatabaseTemplates/Compact-Descript
 provide full canonical stored-column coverage; aliases and union output are not writable
 copy destinations. Abstract discriminator columns, keys and authorization remain unchanged.
 
-Current resolver results carry both `int DescriptorId` and `long DocumentId` through the
-existing RI join. Flattening, descriptor-valued filters and hydration bind the compact key;
-RI, UUIDs, locking, metadata, cache work and restamping bind the document key. URI consumers
+Current resolver results carry both `int DescriptorId` and `long DocumentId` from the
+lowered-URI descriptor probe. Flattening, descriptor-valued filters and hydration bind the compact key;
+UUIDs, locking, metadata, cache work and restamping bind the document key. URI consumers
 reconstruct the whole `Namespace + '#' + CodeValue`, retaining existing transformations.
 `dms.Document.ContentVersion` remains authoritative for concurrency and enqueueing; the
 root/descriptor owns `ContentLastModifiedAt` in the combined DMS-1401 schema. Mapping version `v3` and hash equality do not prove physical-schema compatibility;
@@ -460,7 +460,7 @@ The mapping set is what runtime code uses after selection. It is also the semant
 The batched natural-key reference resolver consumes the probe members in the following conceptual
 shape, including `DescriptorProbeTarget` and the lowered-URI index. Resource POST upsert existence
 detection compiles its own-natural-key capture from the same probe metadata. Descriptor writes
-(DMS-1454) still use RI; the natural-key workstream owns their later equality/index transition.
+consume `DescriptorProbeTarget` for their lowered-URI target probe.
 
 > **Mapping-pack alignment pending.** The natural-key probe metadata (`NaturalKeyProbeTargets`,
 > `OwnNaturalKeyProbesByResource`, `DescriptorProbeTarget`, `NaturalKeyProbeKeyBinding`), consumed
@@ -603,21 +603,24 @@ For a write request targeting resource `R`:
    - Resolve `R` in `MappingSet.Model` and branch on its `StorageKind`.
    - Abstract resources are not direct write targets.
    - For `StorageKind = SharedDescriptorTable`, route to the descriptor write handler, which
-     uses the current RI POST match and compile-time resource key. It has no generic resource
-     write plan or own-natural-key probe requirement.
+     detects its POST target with the lowered-URI probe over `DescriptorProbeTarget` and the
+     compile-time resource key. It has no generic resource write plan or own-natural-key probe
+     requirement.
    - For `StorageKind = RelationalTables`, lookup `ResourceWritePlan` via `MappingSet.WritePlansByResource[R]`.
    - Use `MappingSet.ResourceKeyIdByResource[R]` for qualified type identity in shared tables.
      The remaining generic flatten/write steps apply to the `RelationalTables` branch.
 
 2. **Document identity and both key roles**
-   - Core extracts document/RI identity and reference instances with concrete JSON locations.
-   - Regular-resource POST uses the current RI match to obtain an existing `DocumentId`, or
-     allocates a document on insert. Descriptor creation allocates its `DocumentId` and native
+   - Core extracts document identity and reference instances with concrete JSON locations.
+   - Regular-resource POST uses the own-natural-key capture to obtain an existing `DocumentId`, or
+     allocates a document on insert. Descriptor POST detects its target with the lowered-URI probe
+     over `DescriptorProbeTarget`; descriptor PUT addresses its target by document UUID.
+     Descriptor creation allocates its `DocumentId` and native
      `DescriptorId` independently. The create command captures only values it consumes:
-     `DocumentId` for descriptor/RI inserts and cache work, and `ContentVersion` for the response.
+     `DocumentId` for descriptor inserts and cache work, and `ContentVersion` for the response.
      SQL Server carries the owning `DocumentId` through `OUTPUT ... INTO` without reading the
-     descriptor's identity value. Descriptor updates preserve both IDs and reconstruct stored
-     URI text for the ordinal PUT identity guard.
+     descriptor's identity value. Descriptor updates preserve both IDs and keep the stored identity
+     components; the PUT identity guard follows the probe's verdict.
 
 3. **Bulk reference + descriptor resolution**
    - Core extracts references and carries the raw validated descriptor URI; C# performs no case
@@ -634,8 +637,7 @@ For a write request targeting resource `R`:
      parameters; ancestor/profile merge paths use that same key. Document references, metadata,
      locks, cache/projection work and restamps retain owning `DocumentId`.
    - The probes, memoization and validation contracts are specified in
-     [natural-key-resolution.md](natural-key-resolution.md); descriptor-write equality
-     (DMS-1454) is later work.
+     [natural-key-resolution.md](natural-key-resolution.md).
 
 4. **Build the per-request reference index**
    - Build an `IDocumentReferenceInstanceIndex` for this request using:

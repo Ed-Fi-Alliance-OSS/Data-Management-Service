@@ -787,7 +787,15 @@ public class Given_A_Mssql_Post_With_Distinct_Create_And_Update_Authorization
             .Should()
             .Contain(expectedText)
             .And.NotContain("Loser");
-        state.ReferentialIdentities.Should().NotBeEmpty();
+        // Resource triggers still maintain referential identity; descriptor writes no longer write any.
+        if (resource == DescriptorResource)
+        {
+            state.ReferentialIdentities.Should().BeEmpty();
+        }
+        else
+        {
+            state.ReferentialIdentities.Should().NotBeEmpty();
+        }
         return state;
     }
 

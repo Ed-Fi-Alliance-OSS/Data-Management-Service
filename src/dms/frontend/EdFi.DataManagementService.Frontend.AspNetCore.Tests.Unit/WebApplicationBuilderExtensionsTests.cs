@@ -655,10 +655,6 @@ public class WebApplicationBuilderExtensionsTests
                 .Should()
                 .BeOfType<RelationalWriteTargetLookupService>();
             scope
-                .ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupResolver>()
-                .Should()
-                .BeOfType<RelationalWriteTargetLookupResolver>();
-            scope
                 .ServiceProvider.GetRequiredService<IRelationalWriteExecutor>()
                 .Should()
                 .BeOfType<DefaultRelationalWriteExecutor>();
@@ -904,10 +900,6 @@ public class WebApplicationBuilderExtensionsTests
                 .ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupService>()
                 .Should()
                 .BeOfType<RelationalWriteTargetLookupService>();
-            scope
-                .ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupResolver>()
-                .Should()
-                .BeOfType<RelationalWriteTargetLookupResolver>();
             scope
                 .ServiceProvider.GetRequiredService<IRelationalWriteExecutor>()
                 .Should()
