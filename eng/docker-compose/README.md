@@ -144,7 +144,10 @@ ideographic spaces (U+3000), tabs, line feeds, carriage returns and form feeds, 
 `'edfi_dms '` blocks an E2E database named `edfi_dms`. A protected name that still contains anything
 other than ASCII letters, digits or underscore once that trailing whitespace is removed also stops
 provisioning, because the check cannot compare it reliably; keep protected database names to those
-characters. The check reads connection-string values with the env-file rules, which is not always
+characters. The check does not limit length: PostgreSQL uses only the first 63 bytes of a database
+name, so an E2E name and a protected name that share their first 63 characters are the same
+PostgreSQL database and the check does not catch them; keep database names to 63 characters or
+fewer. The check reads connection-string values with the env-file rules, which is not always
 the name the provider uses, so it does not catch every unsupported name a provider would accept.
 
 If DMS starts before provisioning has run (or against a database missing

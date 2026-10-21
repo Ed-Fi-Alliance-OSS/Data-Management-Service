@@ -1521,7 +1521,9 @@ function Test-E2EGuardComparisonDomain {
     <#
     .SYNOPSIS
         Returns true when a name is non-empty and made only of ASCII letters, digits and underscore,
-        the domain in which the dedicated-E2E guard's comparison is complete.
+        the character domain the dedicated-E2E guard's comparison is built for. Length is not
+        checked, so two names in this domain can still be one PostgreSQL database; see
+        Assert-E2EDatabaseIsDedicated.
 
     .DESCRIPTION
         Each character is tested by code point against explicit ranges, with no regex anchor, culture
@@ -1658,7 +1660,11 @@ function Assert-E2EDatabaseIsDedicated {
     # pairs, no zero-weight character and no expansion, so two names in that domain are the same
     # database there only when they differ by case, which -ieq covers. Outside it, forms such as
     # full-width letters and trailing emoji compare equal there although -ieq calls them distinct.
-    # Other collations and servers are unmeasured. This runs after every key's collision check, so a
+    # Other collations and servers are unmeasured. Length is not limited, here or by
+    # Assert-SafeDatabaseName: PostgreSQL keeps only the first 63 bytes of a database name, quoted or
+    # not, in createdb, CREATE and DROP DATABASE and the connection's database, so two names in the
+    # domain that share their first 63 characters are one PostgreSQL database although -ieq calls them
+    # distinct. The guard does not detect that. This runs after every key's collision check, so a
     # configuration rejected as a collision keeps that diagnostic. Compatibility cost: a protected
     # name with punctuation, leading or embedded whitespace, or any non-ASCII character blocks E2E
     # provisioning. The refused value is withheld from the message.
