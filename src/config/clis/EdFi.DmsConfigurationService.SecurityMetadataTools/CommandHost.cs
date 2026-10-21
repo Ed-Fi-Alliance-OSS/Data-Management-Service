@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.CommandLine;
+using System.Text.Json;
 
 namespace EdFi.DmsConfigurationService.SecurityMetadataTools;
 
@@ -36,14 +37,69 @@ internal static class CommandHost
                 Description = "Replace an existing output file after successful conversion and validation.",
             }
         );
-        // DMS-1617-06 wires the validated complete-document converter into this handler.
-        convert.SetAction(_ =>
-        {
-            error.WriteLine("ODS XML conversion is not yet implemented.");
-            return 1;
-        });
+        convert.SetAction(result =>
+            Convert(
+                result.GetRequiredValue<string>("--input"),
+                result.GetRequiredValue<string>("--output"),
+                result.GetValue<bool>("--force"),
+                error
+            )
+        );
         root.Subcommands.Add(convert);
         return root;
+    }
+
+    private static int Convert(string inputPath, string outputPath, bool force, TextWriter error)
+    {
+        try
+        {
+            // Complete conversion, CMS validation, and serialization before touching the destination.
+            string json = OdsXmlToClaimsConverter
+                .Convert(File.ReadAllText(inputPath))
+                .ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+            string destination = Path.GetFullPath(outputPath);
+            if (File.Exists(destination) && !force)
+            {
+                throw new IOException("Output file already exists. Use --force to replace it.");
+            }
+
+            // Stage beside the destination so a failed write cannot truncate an existing file.
+            // Move also enforces no-overwrite if a destination appears after the existence check.
+            string temporaryPath = Path.Combine(
+                Path.GetDirectoryName(destination)!,
+                $".security-metadata-tools-{Guid.NewGuid():N}.tmp"
+            );
+            var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write);
+            try
+            {
+                using (stream)
+                using (var writer = new StreamWriter(stream))
+                {
+                    writer.Write(json);
+                }
+
+                File.Move(temporaryPath, destination, overwrite: force);
+            }
+            finally
+            {
+                File.Delete(temporaryPath);
+            }
+
+            return 0;
+        }
+        catch (Exception exception)
+            when (exception
+                    is IOException
+                        or UnauthorizedAccessException
+                        or ArgumentException
+                        or NotSupportedException
+                        or InvalidOperationException
+            )
+        {
+            // Escape paths and source-derived diagnostics before writing a single stderr line.
+            error.WriteLine($"Conversion failed: {JsonSerializer.Serialize(exception.Message)}");
+            return 1;
+        }
     }
 
     internal static Task<int> InvokeAsync(string[] args, TextWriter output, TextWriter error) =>

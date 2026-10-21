@@ -5,20 +5,24 @@ Ed-Fi API Configuration Service claims documents.
 
 ## Development status
 
-The command host and package structure are available. Conversion, validation, and
-output writing are under development in DMS-1617. Conversion currently exits with
-an error and does not write output. This package is not ready for operational use.
+Conversion, CMS schema validation, and output writing are implemented. Package
+release integration and upload acceptance coverage remain under development in
+DMS-1617; this tool has not yet been released.
 
 ```sh
 security-metadata-tools --help
 security-metadata-tools --version
 security-metadata-tools convert-ods-xml --help
+security-metadata-tools convert-ods-xml --input security-metadata.xml --output Claims.json
 ```
 
 The conversion command requires `--input <xml>` and `--output <json>`.
-`--force` requests replacement of an existing destination after successful
-conversion and validation. These options establish the command contract; the
-conversion handler will be implemented in subsequent tasks.
+`--force` permits replacement of an existing destination after successful
+conversion and validation. Conversion writes a complete document with `claimSets`
+and `claimsHierarchy` to the output file and exits zero without writing JSON to
+stdout. Failures exit nonzero with diagnostics on stderr. Conversion and validation
+failures leave existing destination bytes unchanged and do not create a new
+destination. The destination's parent directory must already exist.
 
 ## Maintainer versioning
 
