@@ -3705,8 +3705,8 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
     # Both halves of the exact-ownership invariant, proven AFTER Invoke-Pester returns: owned
     # staged instances are gone, and caller-owned modules beneath LOOKALIKE-named directories -
     # one per namespace this file stages under - survive untouched. The children exclude this
-    # tag, so there is no recursion; launches go through [Environment]::ProcessPath, never a
-    # literal executable name.
+    # tag, so there is no recursion. Resolve the pwsh application explicitly: when PowerShell
+    # runs as a .NET tool, [Environment]::ProcessPath points to dotnet instead of pwsh.
 
     BeforeAll {
         $script:ownershipChildWork = Join-Path ([System.IO.Path]::GetTempPath()) "dms-seed-ownership-child-$([Guid]::NewGuid().ToString('N'))"
@@ -3757,7 +3757,7 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
             "}"
         ) -join "`n" | Set-Content -LiteralPath $childScript
 
-        $childState = (& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
+        $childState = (& ((Get-Command pwsh -CommandType Application | Select-Object -First 1).Source) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
         # Execution proof first: both family probes must have RUN and PASSED - discovery counts
         # prove nothing, and probes that never reached their staged imports make survival vacuous.
         $childState.Failed | Should -Be 0 -Because "both staged-import probes must complete cleanly around the caller's modules"
@@ -3800,7 +3800,7 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
             "} | ConvertTo-Json -Compress"
         ) -join "`n" | Set-Content -LiteralPath $childScript
 
-        $childState = (& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
+        $childState = (& ((Get-Command pwsh -CommandType Application | Select-Object -First 1).Source) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
         # Execution proof first: the residue check is meaningful only if both family probes
         # really ran and passed - a run that never imported staged modules has nothing to clean.
         $childState.Failed | Should -Be 0 -Because "both staged-import probes must complete cleanly"
