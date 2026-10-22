@@ -17,12 +17,17 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
 /// </summary>
 /// <remarks>
 /// The decision is made at request time, because the endpoint is only known after routing, and the
-/// headers are written in a Response.OnStarting callback, which survives the response clear performed by
-/// <c>GlobalExceptionHandler</c>. OnStarting callbacks run last-registered-first: this middleware runs
-/// later in the pipeline than <see cref="SecurityHeadersMiddleware"/>, so its callback is registered
-/// second and therefore fires first, writing the value before <see cref="SecurityHeadersMiddleware"/>'s
-/// later <c>TryAdd</c> runs and finds the header already present. The result is exactly one
-/// <c>Cache-Control</c> value on every marked response, success or failure.
+/// headers are written in a Response.OnStarting callback, which survives the response clear that the
+/// framework exception handler middleware performs before <c>GlobalExceptionHandler</c> runs.
+/// OnStarting callbacks run last-registered-first: this middleware runs later in the pipeline than
+/// <see cref="SecurityHeadersMiddleware"/>, so its callback is registered second and therefore fires
+/// first, writing the value before <see cref="SecurityHeadersMiddleware"/>'s later <c>TryAdd</c> runs
+/// and finds the header already present. On an unhandled exception the framework middleware registers
+/// its own callback last, so that one fires first and writes <c>Cache-Control: no-cache,no-store</c>,
+/// <c>Pragma: no-cache</c> and <c>Expires: -1</c>; this callback then replaces the Cache-Control value
+/// with <c>no-store</c> on an OAuth endpoint and keeps the framework's value on any other endpoint.
+/// Either way every marked response, success or failure, carries exactly one <c>Cache-Control</c>
+/// value.
 /// </remarks>
 public class ResponseCachePolicyMiddleware(RequestDelegate next)
 {

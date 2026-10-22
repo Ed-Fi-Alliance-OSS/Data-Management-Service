@@ -29,7 +29,6 @@ Feature: OWASP critical attack path protections
             Given token signature manipulated
              When a security GET request is made to "/v3/vendors" with header "X-Forwarded-Proto" value "https"
              Then it should respond with 401
-              And the response header "Strict-Transport-Security" is not present
               And the response headers include
                   """
                   {

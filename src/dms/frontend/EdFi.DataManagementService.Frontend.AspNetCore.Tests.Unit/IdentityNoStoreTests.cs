@@ -113,12 +113,7 @@ public class IdentityNoStoreTests
             var response = await client.SendAsync(request);
 
             ((int)response.StatusCode).Should().Be(statusCode);
-            response
-                .Headers.GetValues("Cache-Control")
-                .Should()
-                .ContainSingle()
-                .Which.Should()
-                .Be("no-store");
+            response.Headers.NonValidated["Cache-Control"].Should().Equal("no-store");
         }
     }
 
@@ -195,12 +190,7 @@ public class IdentityNoStoreTests
         [Test]
         public void It_is_not_cacheable()
         {
-            _response
-                .Headers.GetValues("Cache-Control")
-                .Should()
-                .ContainSingle()
-                .Which.Should()
-                .Be("no-store");
+            _response.Headers.NonValidated["Cache-Control"].Should().Equal("no-store");
         }
 
         [Test]
@@ -413,12 +403,7 @@ public class IdentityNoStoreTests
         [Test]
         public void It_carries_the_same_single_no_store_as_today()
         {
-            _response
-                .Headers.GetValues("Cache-Control")
-                .Should()
-                .ContainSingle()
-                .Which.Should()
-                .Be("no-store");
+            _response.Headers.NonValidated["Cache-Control"].Should().Equal("no-store");
         }
     }
 }
