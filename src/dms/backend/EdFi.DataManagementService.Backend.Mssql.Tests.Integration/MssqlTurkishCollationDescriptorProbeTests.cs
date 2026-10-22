@@ -253,11 +253,15 @@ public class Given_A_Mssql_Turkish_Default_Database_With_Descriptor_Probes
     }
 
     [Test]
-    public async Task It_filters_descriptor_queries_by_an_uppercase_I_case_variant()
+    public async Task It_filters_a_descriptor_valued_query_by_an_uppercase_I_case_variant()
     {
         SeededDescriptor seeded = await InsertDescriptorAsync("INTERIM QUERY");
+        Guid programUuid = Guid.NewGuid();
+        long programDocumentId = await InsertDocumentAsync(ProgramResource, programUuid);
+        await InsertProgramRootAsync(programDocumentId, seeded.DocumentId, "Interim Query Program");
 
         await using AsyncServiceScope scope = CreateConfiguredScope();
+        // programTypeDescriptor is a DescriptorIdColumn target, so the URI resolves through the lowered-URI probe.
         QueryResult result = await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
             .QueryDocuments(
@@ -265,16 +269,16 @@ public class Given_A_Mssql_Turkish_Default_Database_With_Descriptor_Probes
                     ResourceInfo: DescriptorReadIntegrationTestSupport.CreateResourceInfo(
                         _fixture.EffectiveSchemaSet,
                         "ed-fi",
-                        ProgramTypeDescriptorResource.ResourceName
+                        ProgramResource.ResourceName
                     ),
                     AuthorizationContext: new RelationalAuthorizationContext([]),
                     MappingSet: _mappingSet,
                     QueryElements:
                     [
                         new QueryElement(
-                            "codeValue",
-                            [new JsonPath("$.codeValue")],
-                            "Interim Query",
+                            "programTypeDescriptor",
+                            [new JsonPath("$.programTypeDescriptor")],
+                            $"{ProgramTypeNamespace}#Interim Query",
                             "string"
                         ),
                     ],
@@ -297,7 +301,7 @@ public class Given_A_Mssql_Turkish_Default_Database_With_Descriptor_Probes
             .BeOfType<QueryResult.QuerySuccess>()
             .Which.EdfiDocs.Select(document => document!["id"]!.GetValue<string>())
             .Should()
-            .Equal(seeded.DocumentUuid.Value.ToString("D"));
+            .Equal(programUuid.ToString("D"));
     }
 
     [Test]
