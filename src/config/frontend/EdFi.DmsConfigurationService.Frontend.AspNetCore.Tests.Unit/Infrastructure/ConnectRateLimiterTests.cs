@@ -74,7 +74,7 @@ public class ConnectRateLimiterTests
     [TestFixture]
     public class Given_a_client_that_exhausts_its_budget
     {
-        private readonly List<bool> _sameClient = [];
+        private List<bool> _sameClient = [];
         private bool _caseVariant;
         private bool _otherClient;
         private bool _sourceAfterClientExhausted;
@@ -84,6 +84,7 @@ public class ConnectRateLimiterTests
         [SetUp]
         public void Setup()
         {
+            _sameClient = [];
             using ConnectRateLimiter limiter = CreateLimiter(sourceLimit: 2, clientLimit: 2);
             _sameClient.Add(Admits(limiter.AttemptClient("ClientA")));
             _sameClient.Add(Admits(limiter.AttemptClient("ClientA")));
@@ -169,11 +170,12 @@ public class ConnectRateLimiterTests
     [TestFixture]
     public class Given_limiting_is_disabled
     {
-        private readonly List<bool> _results = [];
+        private List<bool> _results = [];
 
         [SetUp]
         public void Setup()
         {
+            _results = [];
             using ConnectRateLimiter limiter = CreateLimiter(sourceLimit: 1, clientLimit: 1, enabled: false);
             for (int i = 0; i < 5; i++)
             {

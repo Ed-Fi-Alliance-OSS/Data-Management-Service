@@ -340,6 +340,7 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
                 logger
             );
         }
+
         // RFC 6749 section 3.2: a parameter sent without a value is treated as omitted
         List<KeyValuePair<string, string>> tokenRequestParameters =
         [

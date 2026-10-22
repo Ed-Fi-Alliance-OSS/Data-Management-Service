@@ -347,29 +347,43 @@ public class ConnectRateLimitPipelineTests
         [SetUp]
         public async Task Setup()
         {
-            Environment.SetEnvironmentVariable(UseForwardedHeadersEnv, "true");
-            Environment.SetEnvironmentVariable(KnownProxiesEnv, "10.0.0.5");
-            await using WebApplicationFactory<Program> factory = Create(
-                sourcePermitLimit: 1,
-                clientPermitLimit: 1000
-            );
-            using HttpClient client = factory.CreateClient();
-            _viaTrustedProxy = await SendAll(
-                client,
-                [
-                    Forwarded("10.0.0.5", "198.51.100.1", "a"),
-                    Forwarded("10.0.0.5", "198.51.100.2", "b"),
-                    Forwarded("10.0.0.5", "198.51.100.1", "c"),
-                ]
-            );
-            _fromUntrustedPeer = await SendAll(
-                client,
-                [Forwarded("203.0.113.9", "198.51.100.3", "d"), Forwarded("203.0.113.9", "198.51.100.4", "e")]
-            );
+            // NUnit skips [TearDown] when [SetUp] throws, so restore the variables here on failure.
+            try
+            {
+                Environment.SetEnvironmentVariable(UseForwardedHeadersEnv, "true");
+                Environment.SetEnvironmentVariable(KnownProxiesEnv, "10.0.0.5");
+                await using WebApplicationFactory<Program> factory = Create(
+                    sourcePermitLimit: 1,
+                    clientPermitLimit: 1000
+                );
+                using HttpClient client = factory.CreateClient();
+                _viaTrustedProxy = await SendAll(
+                    client,
+                    [
+                        Forwarded("10.0.0.5", "198.51.100.1", "a"),
+                        Forwarded("10.0.0.5", "198.51.100.2", "b"),
+                        Forwarded("10.0.0.5", "198.51.100.1", "c"),
+                    ]
+                );
+                _fromUntrustedPeer = await SendAll(
+                    client,
+                    [
+                        Forwarded("203.0.113.9", "198.51.100.3", "d"),
+                        Forwarded("203.0.113.9", "198.51.100.4", "e"),
+                    ]
+                );
+            }
+            catch
+            {
+                RestoreEnvironment();
+                throw;
+            }
         }
 
         [TearDown]
-        public void TearDown()
+        public void TearDown() => RestoreEnvironment();
+
+        private static void RestoreEnvironment()
         {
             Environment.SetEnvironmentVariable(UseForwardedHeadersEnv, null);
             Environment.SetEnvironmentVariable(KnownProxiesEnv, null);
@@ -394,13 +408,25 @@ public class ConnectRateLimitPipelineTests
         [SetUp]
         public async Task Setup()
         {
-            Environment.SetEnvironmentVariable(SourceLimitEnv, "1");
-            await using WebApplicationFactory<Program> factory = Create();
-            using HttpClient client = factory.CreateClient();
-            _statuses = await SendAll(
-                client,
-                [() => Post("/connect/token", TokenForm("a")), () => Post("/connect/token", TokenForm("b"))]
-            );
+            // NUnit skips [TearDown] when [SetUp] throws, so restore the variable here on failure.
+            try
+            {
+                Environment.SetEnvironmentVariable(SourceLimitEnv, "1");
+                await using WebApplicationFactory<Program> factory = Create();
+                using HttpClient client = factory.CreateClient();
+                _statuses = await SendAll(
+                    client,
+                    [
+                        () => Post("/connect/token", TokenForm("a")),
+                        () => Post("/connect/token", TokenForm("b")),
+                    ]
+                );
+            }
+            catch
+            {
+                Environment.SetEnvironmentVariable(SourceLimitEnv, null);
+                throw;
+            }
         }
 
         [TearDown]

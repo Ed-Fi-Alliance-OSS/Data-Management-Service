@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Net;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
@@ -65,6 +66,7 @@ public class ConnectSourceRateLimitMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
+            _nextCalls = 0;
             using ConnectRateLimiter limiter = CreateLimiter(sourceLimit: 1);
             var middleware = new ConnectSourceRateLimitMiddleware(_ =>
             {
@@ -96,6 +98,7 @@ public class ConnectSourceRateLimitMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
+            _nextCalls = 0;
             using ConnectRateLimiter limiter = CreateLimiter(sourceLimit: 1);
             _logger = new TestLogger<ConnectSourceRateLimitMiddleware>();
             var middleware = new ConnectSourceRateLimitMiddleware(_ =>
@@ -130,7 +133,10 @@ public class ConnectSourceRateLimitMiddlewareTests
         [Test]
         public void It_sets_a_whole_second_retry_after()
         {
-            int seconds = int.Parse(_rejected.Response.Headers.RetryAfter.ToString());
+            int seconds = int.Parse(
+                _rejected.Response.Headers.RetryAfter.ToString(),
+                CultureInfo.InvariantCulture
+            );
             seconds.Should().BeInRange(1, 60);
         }
 

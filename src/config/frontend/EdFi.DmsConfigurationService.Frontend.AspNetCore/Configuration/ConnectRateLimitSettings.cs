@@ -28,6 +28,7 @@ public class ConnectRateLimitSettings
     /// <summary>Token and revocation requests admitted per <c>client_id</c> in each window, across all sources.</summary>
     public int ClientPermitLimit { get; set; } = 30;
 
+    /// <summary>Length in seconds of the fixed window that both budgets are counted over.</summary>
     public int WindowSeconds { get; set; } = 60;
 }
 
