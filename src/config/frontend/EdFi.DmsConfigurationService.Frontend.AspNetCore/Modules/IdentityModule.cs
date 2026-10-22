@@ -5,6 +5,7 @@
 
 using System.Text;
 using System.Text.Json;
+using System.Threading.RateLimiting;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
@@ -261,6 +262,7 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
     private static async Task<IResult> GetClientAccessToken(
         TokenRequest.Validator validator,
         [FromServices] ITokenManager tokenManager,
+        [FromServices] ConnectRateLimiter rateLimiter,
         [FromServices] ILogger<IdentityModule> logger,
         HttpContext httpContext
     )
@@ -325,6 +327,19 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
             );
         }
 
+        // DMS-1482 client gate: after the request is known to be well formed and before the manager
+        // verifies the secret. The budget is spent whether or not the client exists, so a 429 says
+        // nothing about existence; a malformed request keeps its answer and spends nothing.
+        using RateLimitLease clientLease = rateLimiter.AttemptClient(model.client_id);
+        if (!clientLease.IsAcquired)
+        {
+            return ConnectRateLimitRejection.Create(
+                httpContext,
+                clientLease,
+                ConnectRateLimitRejection.ClientGate,
+                logger
+            );
+        }
         // RFC 6749 section 3.2: a parameter sent without a value is treated as omitted
         List<KeyValuePair<string, string>> tokenRequestParameters =
         [
@@ -505,6 +520,7 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
     private static async Task<IResult> RevokeToken(
         [FromServices] ILogger<IdentityModule> logger,
         [FromServices] ITokenRevocationManager revocationManager,
+        [FromServices] ConnectRateLimiter rateLimiter,
         HttpContext httpContext
     )
     {
@@ -526,6 +542,17 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
             bool basicAttempted
         ) = (ClientAuthenticatedForm.Accepted)form;
 
+        // Apply the client gate after parsing credentials and before authenticating the caller.
+        using RateLimitLease clientLease = rateLimiter.AttemptClient(clientId);
+        if (!clientLease.IsAcquired)
+        {
+            return ConnectRateLimitRejection.Create(
+                httpContext,
+                clientLease,
+                ConnectRateLimitRejection.ClientGate,
+                logger
+            );
+        }
         TokenRevocationRequest request = new(clientId, clientSecret, token, tokenTypeHint);
 
         // The manager owns authenticate → ownership → mutate and classifies every dependency

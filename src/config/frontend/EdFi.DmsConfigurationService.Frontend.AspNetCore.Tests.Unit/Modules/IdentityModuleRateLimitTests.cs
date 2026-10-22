@@ -1,0 +1,305 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Text.Json.Nodes;
+using EdFi.DmsConfigurationService.Backend;
+using FakeItEasy;
+using FluentAssertions;
+using Microsoft.AspNetCore.Mvc.Testing;
+using NUnit.Framework;
+using static EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure.ConnectRateLimitTestHost;
+
+namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
+
+/// <summary>
+/// The per-client gate inside /connect/token and /connect/revoke (DMS-1482 REQ-1, REQ-2, REQ-3). The
+/// source budget is raised out of the way. The managers are fakes, so "the manager was not called" is
+/// exactly "the secret was not verified".
+/// </summary>
+public class IdentityModuleRateLimitTests
+{
+    private const string Detail =
+        "The number of allowed requests has been exceeded. Retry the request later.";
+
+    private static void ManagerCalls(ITokenManager tokenManager, int times) =>
+        A.CallTo(() => tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>._))
+            .MustHaveHappened(times, Times.Exactly);
+
+    private static void RevocationCalls(ITokenRevocationManager revocationManager, int times) =>
+        A.CallTo(() =>
+                revocationManager.RevokeTokenAsync(A<TokenRevocationRequest>._, A<CancellationToken>._)
+            )
+            .MustHaveHappened(times, Times.Exactly);
+
+    [TestFixture]
+    public class Given_a_client_over_its_token_limit
+    {
+        private ITokenManager _tokenManager = null!;
+        private List<int> _statuses = null!;
+        private HttpResponseMessage _rejected = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _tokenManager = SucceedingTokenManager();
+            await using WebApplicationFactory<Program> factory = Create(
+                sourcePermitLimit: 1000,
+                clientPermitLimit: 2,
+                tokenManager: _tokenManager
+            );
+            using HttpClient client = factory.CreateClient();
+            _statuses = await SendAll(
+                client,
+                [
+                    () => Post("/connect/token", TokenForm("ClientA")),
+                    () => Post("/connect/token", TokenForm("ClientA")),
+                ]
+            );
+            _rejected = await client.SendAsync(Post("/connect/token", TokenForm("ClientA")));
+            _body = JsonNode.Parse(await _rejected.Content.ReadAsStringAsync())!.AsObject();
+        }
+
+        [TearDown]
+        public void TearDown() => _rejected.Dispose();
+
+        [Test]
+        public void It_admits_up_to_the_limit() => _statuses.Should().Equal(200, 200);
+
+        [Test]
+        public void It_answers_429_past_the_limit() => ((int)_rejected.StatusCode).Should().Be(429);
+
+        [Test]
+        public void It_uses_the_ed_fi_contract()
+        {
+            _rejected.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:too-many-requests");
+            _body["detail"]!.GetValue<string>().Should().Be(Detail);
+            _body["status"]!.GetValue<int>().Should().Be(429);
+        }
+
+        [Test]
+        public void It_sends_a_whole_second_retry_after() =>
+            _rejected.Headers.RetryAfter!.Delta!.Value.TotalSeconds.Should().BeInRange(1, 60);
+
+        [Test]
+        public void It_does_not_verify_the_rejected_secret() => ManagerCalls(_tokenManager, 2);
+    }
+
+    [TestFixture]
+    public class Given_one_client_exhausted_and_other_callers
+    {
+        private List<int> _statuses = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await using WebApplicationFactory<Program> factory = Create(
+                sourcePermitLimit: 1000,
+                clientPermitLimit: 1
+            );
+            using HttpClient client = factory.CreateClient();
+            _statuses = await SendAll(
+                client,
+                [
+                    () => Post("/connect/token", TokenForm("ClientA"), "198.51.100.1"),
+                    () => Post("/connect/token", TokenForm("ClientB"), "198.51.100.1"),
+                    () => Post("/connect/token", TokenForm("CLIENTA"), "198.51.100.1"),
+                    () => Post("/connect/token", TokenForm("ClientA"), "198.51.100.2"),
+                ]
+            );
+        }
+
+        [Test]
+        public void It_limits_the_client_across_case_variants_and_sources_but_not_other_clients() =>
+            _statuses.Should().Equal(200, 200, 429, 429);
+    }
+
+    [TestFixture]
+    public class Given_a_client_authenticating_with_a_basic_header
+    {
+        private List<int> _statuses = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await using WebApplicationFactory<Program> factory = Create(
+                sourcePermitLimit: 1000,
+                clientPermitLimit: 1
+            );
+            using HttpClient client = factory.CreateClient();
+            _statuses = await SendAll(
+                client,
+                [
+                    () =>
+                    {
+                        HttpRequestMessage request = Post(
+                            "/connect/token",
+                            new FormUrlEncodedContent([new("grant_type", "client_credentials")])
+                        );
+                        request.Headers.Authorization = Basic("ClientA");
+                        return request;
+                    },
+                    () => Post("/connect/token", TokenForm("ClientA")),
+                ]
+            );
+        }
+
+        [Test]
+        public void It_keys_on_the_parsed_basic_client_id() => _statuses.Should().Equal(200, 429);
+    }
+
+    /// <summary>
+    /// Order of operations: requests the handler rejects before secret verification keep their answer
+    /// and spend no client budget.
+    /// </summary>
+    [TestFixture]
+    public class Given_token_requests_that_fail_before_secret_verification
+    {
+        private ITokenManager _tokenManager = null!;
+        private List<int> _statuses = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _tokenManager = SucceedingTokenManager();
+            await using WebApplicationFactory<Program> factory = Create(
+                sourcePermitLimit: 1000,
+                clientPermitLimit: 1,
+                tokenManager: _tokenManager
+            );
+            using HttpClient client = factory.CreateClient();
+            _statuses = await SendAll(
+                client,
+                [
+                    () => Post("/connect/token", TokenForm("ClientA", grantType: "password")),
+                    () => Post("/connect/token", TokenForm("ClientA", grantType: "password")),
+                    () => Post("/connect/token", TokenForm("ClientA")),
+                ]
+            );
+        }
+
+        [Test]
+        public void It_keeps_their_answers_and_admits_the_valid_request() =>
+            _statuses.Should().Equal(400, 400, 200);
+
+        [Test]
+        public void It_verifies_only_the_valid_request() => ManagerCalls(_tokenManager, 1);
+    }
+
+    [TestFixture]
+    public class Given_a_client_over_its_revocation_limit
+    {
+        private ITokenRevocationManager _revocationManager = null!;
+        private List<int> _statuses = null!;
+        private HttpResponseMessage _rejected = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _revocationManager = CompletingRevocationManager();
+            await using WebApplicationFactory<Program> factory = Create(
+                sourcePermitLimit: 1000,
+                clientPermitLimit: 2,
+                revocationManager: _revocationManager
+            );
+            using HttpClient client = factory.CreateClient();
+            _statuses = await SendAll(
+                client,
+                [
+                    () => Post("/connect/revoke", RevokeForm("ClientA")),
+                    () => Post("/connect/revoke", RevokeForm("ClientA")),
+                ]
+            );
+            _rejected = await client.SendAsync(Post("/connect/revoke", RevokeForm("ClientA")));
+            _body = JsonNode.Parse(await _rejected.Content.ReadAsStringAsync())!.AsObject();
+        }
+
+        [TearDown]
+        public void TearDown() => _rejected.Dispose();
+
+        [Test]
+        public void It_admits_up_to_the_limit() => _statuses.Should().Equal(200, 200);
+
+        [Test]
+        public void It_answers_429_in_the_oauth_format()
+        {
+            ((int)_rejected.StatusCode).Should().Be(429);
+            _rejected.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+            _body.Count.Should().Be(2);
+            _body["error"]!.GetValue<string>().Should().Be("temporarily_unavailable");
+            _body["error_description"]!.GetValue<string>().Should().Be(Detail);
+        }
+
+        [Test]
+        public void It_does_not_revoke_for_the_rejected_request() => RevocationCalls(_revocationManager, 2);
+    }
+
+    [TestFixture]
+    public class Given_revocations_that_fail_shape_checks
+    {
+        private ITokenRevocationManager _revocationManager = null!;
+        private List<int> _statuses = null!;
+
+        private static FormUrlEncodedContent WithoutToken() =>
+            new([new("client_id", "ClientA"), new("client_secret", ClientSecret)]);
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _revocationManager = CompletingRevocationManager();
+            await using WebApplicationFactory<Program> factory = Create(
+                sourcePermitLimit: 1000,
+                clientPermitLimit: 1,
+                revocationManager: _revocationManager
+            );
+            using HttpClient client = factory.CreateClient();
+            _statuses = await SendAll(
+                client,
+                [
+                    () => Post("/connect/revoke", WithoutToken()),
+                    () => Post("/connect/revoke", WithoutToken()),
+                    () => Post("/connect/revoke", RevokeForm("ClientA")),
+                ]
+            );
+        }
+
+        [Test]
+        public void It_keeps_their_answers_and_admits_the_valid_request() =>
+            _statuses.Should().Equal(400, 400, 200);
+
+        [Test]
+        public void It_revokes_only_for_the_valid_request() => RevocationCalls(_revocationManager, 1);
+    }
+
+    [TestFixture]
+    public class Given_token_and_revocation_requests_for_one_client
+    {
+        private List<int> _statuses = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await using WebApplicationFactory<Program> factory = Create(
+                sourcePermitLimit: 1000,
+                clientPermitLimit: 2
+            );
+            using HttpClient client = factory.CreateClient();
+            _statuses = await SendAll(
+                client,
+                [
+                    () => Post("/connect/token", TokenForm("ClientA")),
+                    () => Post("/connect/revoke", RevokeForm("ClientA")),
+                    () => Post("/connect/token", TokenForm("ClientA")),
+                ]
+            );
+        }
+
+        [Test]
+        public void It_spends_one_client_budget_across_both_routes() =>
+            _statuses.Should().Equal(200, 200, 429);
+    }
+}
