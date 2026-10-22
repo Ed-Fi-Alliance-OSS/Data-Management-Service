@@ -140,8 +140,6 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
     private const string ProgramName = "Repository tracked program";
     private const string ProgramTypeDescriptorNamespace = "uri://ed-fi.org/ProgramTypeDescriptor";
     private const string ProgramTypeDescriptorCodeValue = "Repository tracked delete";
-    private const string ProgramTypeDescriptorUri =
-        $"{ProgramTypeDescriptorNamespace}#{ProgramTypeDescriptorCodeValue}";
 
     private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
     private static readonly QualifiedResourceName AcademicWeekResource = new("Ed-Fi", "AcademicWeek");
@@ -327,7 +325,6 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         long descriptorDocumentId = await SeedDescriptorAsync(
             Guid.Parse("c0000003-1000-0000-0000-000000000003"),
             "ProgramTypeDescriptor",
-            ProgramTypeDescriptorUri,
             ProgramTypeDescriptorNamespace,
             ProgramTypeDescriptorCodeValue,
             ProgramTypeDescriptorCodeValue
@@ -643,7 +640,6 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         await SeedDescriptorAsync(
             Guid.Parse("c0000001-1000-0000-0000-000000000001"),
             "EducationOrganizationCategoryDescriptor",
-            "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School",
             "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
             "School",
             "School"
@@ -651,7 +647,6 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         await SeedDescriptorAsync(
             Guid.Parse("c0000002-1000-0000-0000-000000000002"),
             "GradeLevelDescriptor",
-            "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade",
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Ninth grade",
             "Ninth grade"
@@ -661,7 +656,6 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
     private async Task<long> SeedDescriptorAsync(
         Guid documentUuid,
         string resourceName,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
@@ -674,12 +668,6 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
             @namespace,
             codeValue,
             shortDescription
-        );
-
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId("Ed-Fi", resourceName, uri),
-            documentId,
-            resourceKeyId
         );
 
         return documentId;
@@ -1120,41 +1108,6 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         );
 
         return documentId;
-    }
-
-    private async Task InsertReferentialIdentityAsync(
-        Guid referentialId,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-            VALUES (@referentialId, @documentId, @resourceKeyId)
-            ON CONFLICT ("ReferentialId") DO NOTHING;
-            """,
-            new NpgsqlParameter("referentialId", referentialId),
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-    }
-
-    private static Guid CreateDescriptorReferentialId(
-        string projectName,
-        string resourceName,
-        string descriptorUri
-    )
-    {
-        return ReferentialIdTestHelper.ReferentialIdFrom(
-            new BaseResourceInfo(new ProjectName(projectName), new ResourceName(resourceName), true),
-            new DocumentIdentity([
-                new DocumentIdentityElement(
-                    DocumentIdentity.DescriptorIdentityJsonPath,
-                    descriptorUri.ToLowerInvariant()
-                ),
-            ])
-        );
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -2005,7 +1958,6 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         await SeedDescriptorAsync(
             Guid.NewGuid(),
             "TermDescriptor",
-            SeekTermDescriptorUri,
             "uri://ed-fi.org/TermDescriptor",
             "Seek Fall Semester",
             "Seek Fall Semester"
@@ -2013,7 +1965,6 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         await SeedDescriptorAsync(
             Guid.NewGuid(),
             "GradingPeriodDescriptor",
-            SeekGradingPeriodDescriptorUri,
             "uri://ed-fi.org/GradingPeriodDescriptor",
             "Seek First Six Weeks",
             "Seek First Six Weeks"
@@ -2021,7 +1972,6 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         await SeedDescriptorAsync(
             Guid.NewGuid(),
             "GradeTypeDescriptor",
-            SeekGradeTypeDescriptorUri,
             "uri://ed-fi.org/GradeTypeDescriptor",
             "Seek Final",
             "Seek Final"
@@ -3127,7 +3077,6 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         await SeedDescriptorAsync(
             Guid.NewGuid(),
             "GradeTypeDescriptor",
-            SeekMidtermGradeTypeDescriptorUri,
             "uri://ed-fi.org/GradeTypeDescriptor",
             "Seek Midterm",
             "Seek Midterm"
@@ -3544,14 +3493,13 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         return new GradingPeriodRecreation(windowStart, recreatedGradingPeriodDocumentId);
     }
 
-    // Deletes the root row (firing its tombstone trigger), its referential identity and its document, as
+    // Deletes the root row (firing its tombstone trigger) and its document, as
     // a DELETE through the API does, so an equal identity can be recreated.
     private async Task DeleteGradingPeriodAsync(long documentId)
     {
         await DeleteEdfiRootAsync("GradingPeriod", documentId);
         await _database.ExecuteNonQueryAsync(
             """
-            DELETE FROM "dms"."ReferentialIdentity" WHERE "DocumentId" = @documentId;
             DELETE FROM "dms"."Document" WHERE "DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", documentId)
@@ -4122,7 +4070,6 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         await SeedDescriptorAsync(
             Guid.NewGuid(),
             "SchoolTypeDescriptor",
-            AlternativeSchoolTypeUri,
             SchoolTypeDescriptorNamespace,
             "Alternative",
             "Alternative"
@@ -4130,7 +4077,6 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         await SeedDescriptorAsync(
             Guid.NewGuid(),
             "SchoolTypeDescriptor",
-            RegularSchoolTypeUri,
             SchoolTypeDescriptorNamespace,
             "Regular",
             "Regular"

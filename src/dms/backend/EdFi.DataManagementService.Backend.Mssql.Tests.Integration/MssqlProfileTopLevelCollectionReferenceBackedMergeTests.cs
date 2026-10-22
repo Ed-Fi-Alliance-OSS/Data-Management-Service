@@ -322,8 +322,8 @@ internal static class MssqlReferenceBackedTopLevelCollectionMergeSupport
     }
 
     /// <summary>
-    /// Seeds a Program document directly via raw SQL so that dms.ReferentialIdentity is populated
-    /// for subsequent School upserts that reference these programs.
+    /// Seeds a Program document directly via raw SQL so that subsequent School upserts
+    /// that reference these programs resolve them by natural key.
     /// Returns the inserted DocumentId.
     /// </summary>
     public static async Task<long> SeedProgramAsync(
@@ -345,8 +345,6 @@ internal static class MssqlReferenceBackedTopLevelCollectionMergeSupport
             new SqlParameter("@resourceKeyId", ProgramResourceKeyId)
         );
 
-        // Inserting into edfi.Program fires the TR_Program_ReferentialIdentity trigger,
-        // which automatically inserts the matching row into dms.ReferentialIdentity.
         await database.ExecuteNonQueryAsync(
             """
             INSERT INTO [edfi].[Program] ([DocumentId], [ProgramId], [ProgramName])
@@ -550,7 +548,7 @@ public class Given_A_Mssql_Profiled_TopLevelCollection_ReferenceBackedIdentity_M
     {
         await _database.ResetAsync();
 
-        // Pre-seed all Program documents so dms.ReferentialIdentity rows exist for every
+        // Pre-seed all Program documents so every
         // program that any test may reference (either in seed or in a profiled PUT body).
         await MssqlReferenceBackedTopLevelCollectionMergeSupport.SeedProgramAsync(
             _database,
@@ -773,7 +771,7 @@ public class Given_A_Mssql_Profiled_TopLevelCollection_ReferenceBackedIdentity_M
     )
     {
         // Note: Program documents are pre-seeded in SetUp for all three stable programs
-        // (Alpha, Beta, Gamma) so dms.ReferentialIdentity exists before this method is called.
+        // (Alpha, Beta, Gamma) so they exist before this method is called.
 
         var seedBody = MssqlReferenceBackedTopLevelCollectionMergeSupport.CreateSchoolBody(
             SchoolId,

@@ -136,30 +136,6 @@ public class Given_A_Mssql_Anchored_Authorization_Row_Set_Equivalence
     }
 
     /// <summary>
-    /// The referential-identity trigger hashes each row's natural key into a primary key, so a generator that
-    /// failed to vary the hashed columns would not merely under-count here — its INSERT would have failed. One
-    /// identity row per generated row is the evidence that the triggers ran, set-based, and collided with nothing.
-    /// </summary>
-    [TestCaseSource(nameof(ResourceNames))]
-    public async Task It_should_write_one_referential_identity_row_per_generated_root_row(string resourceName)
-    {
-        var identityCount = await _context.Database.ExecuteScalarAsync<long>(
-            $"""
-            SELECT COUNT_BIG(*)
-            FROM [dms].[ReferentialIdentity] identityRow
-            INNER JOIN [edfi].[{resourceName}] root ON root.[DocumentId] = identityRow.[DocumentId];
-            """
-        );
-
-        identityCount
-            .Should()
-            .Be(
-                RelationshipAuthorizationVolumeCounts.Ci.TotalRowsPerRoot,
-                $"the {resourceName} referential-identity trigger fires for every generated row"
-            );
-    }
-
-    /// <summary>
     /// Authorized and unauthorized rows must alternate across page boundaries. If the generator partitioned the
     /// populations instead, a page taken from the front of the DocumentId ordering would be entirely authorized
     /// and the paging assertions built on this data would stop exercising the mix they claim to.

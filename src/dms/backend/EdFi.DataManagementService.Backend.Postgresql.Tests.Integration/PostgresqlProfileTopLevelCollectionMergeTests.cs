@@ -433,7 +433,6 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
             new NpgsqlParameter("resourceKeyId", resourceKeyId)
         );
 
-        var uri = $"uri://ed-fi.org/AddressTypeDescriptor#{codeValue}";
         var descriptorId = await database.ExecuteScalarAsync<int>(
             """
             INSERT INTO "dms"."Descriptor" (
@@ -457,27 +456,6 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", "uri://ed-fi.org/AddressTypeDescriptor"),
             new NpgsqlParameter("codeValue", codeValue)
-        );
-
-        var descriptorReference = CreateAddressTypeDescriptorReference(
-            uri,
-            "$.addresses[0].addressTypeDescriptor"
-        );
-        await database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-            VALUES (@referentialId, @documentId, @resourceKeyId)
-            ON CONFLICT ("ReferentialId") DO NOTHING;
-            """,
-            new NpgsqlParameter(
-                "referentialId",
-                ReferentialIdTestHelper.ReferentialIdFrom(
-                    descriptorReference.ResourceInfo,
-                    descriptorReference.DocumentIdentity
-                )
-            ),
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
         );
 
         return descriptorId;

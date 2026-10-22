@@ -193,8 +193,8 @@ public class Given_A_Provisioned_Mssql_Database_Abstract_Identity_Document_Resou
         var stateEducationAgencyDocumentId = await InsertDocumentAsync(stateEducationAgencyResourceKeyId);
 
         // A direct insert isolates the natural key: both payload columns differ from the School row's.
-        // Going through a second member root instead would let SQL Server's unordered AFTER triggers hit
-        // the dms.ReferentialIdentity alias key first.
+        // Going through a second member root instead would let SQL Server's unordered AFTER triggers fail
+        // on another key first.
         var act = () =>
             _database.ExecuteNonQueryAsync(
                 """

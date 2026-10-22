@@ -234,11 +234,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
     private const string ContactUniqueId = "contact-100";
     private const string FirstName = "Ava";
     private const string LastSurname = "Coleman";
-    private const string HomeAddressTypeDescriptorUri = "uri://ed-fi.org/AddressTypeDescriptor#Home";
-    private const string WorkAddressTypeDescriptorUri = "uri://ed-fi.org/AddressTypeDescriptor#Work";
-    private const string TemporaryAddressTypeDescriptorUri =
-        "uri://ed-fi.org/AddressTypeDescriptor#Temporary";
-    private const string StateAbbreviationDescriptorUri = "uri://ed-fi.org/StateAbbreviationDescriptor#TX";
     private const string HomeStreetNumberName = "100 Congress Ave";
     private const string WorkStreetNumberName = "200 2nd St";
     private const string TemporaryStreetNumberName = "300 Elm St";
@@ -712,7 +707,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         var homeAddressTypeDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("11111111-aaaa-aaaa-aaaa-aaaaaaaaaaa1"),
             "AddressTypeDescriptor",
-            HomeAddressTypeDescriptorUri,
             "uri://ed-fi.org/AddressTypeDescriptor",
             "Home",
             "Home"
@@ -720,7 +714,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         var workAddressTypeDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("22222222-bbbb-bbbb-bbbb-bbbbbbbbbbb2"),
             "AddressTypeDescriptor",
-            WorkAddressTypeDescriptorUri,
             "uri://ed-fi.org/AddressTypeDescriptor",
             "Work",
             "Work"
@@ -728,7 +721,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         var temporaryAddressTypeDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("33333333-cccc-cccc-cccc-ccccccccccc3"),
             "AddressTypeDescriptor",
-            TemporaryAddressTypeDescriptorUri,
             "uri://ed-fi.org/AddressTypeDescriptor",
             "Temporary",
             "Temporary"
@@ -736,7 +728,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         var stateAbbreviationDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("44444444-dddd-dddd-dddd-ddddddddddd4"),
             "StateAbbreviationDescriptor",
-            StateAbbreviationDescriptorUri,
             "uri://ed-fi.org/StateAbbreviationDescriptor",
             "TX",
             "Texas"
@@ -753,7 +744,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
     private async Task<int> SeedDescriptorAsync(
         Guid documentUuid,
         string resourceName,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
@@ -766,12 +756,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
             @namespace,
             codeValue,
             shortDescription
-        );
-
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId("Ed-Fi", resourceName, uri),
-            documentId.DocumentId,
-            resourceKeyId
         );
 
         return documentId.DescriptorId;
@@ -843,56 +827,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         );
 
         return new(descriptorId, documentId);
-    }
-
-    private async Task InsertReferentialIdentityAsync(
-        Guid referentialId,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-            VALUES (@referentialId, @documentId, @resourceKeyId)
-            ON CONFLICT ("ReferentialId") DO NOTHING;
-            """,
-            new NpgsqlParameter("referentialId", referentialId),
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-    }
-
-    private static Guid CreateReferentialId(
-        (string ProjectName, string ResourceName, bool IsDescriptor) targetResource,
-        params (string IdentityJsonPath, string IdentityValue)[] identityElements
-    )
-    {
-        return ReferentialIdTestHelper.ReferentialIdFrom(
-            new BaseResourceInfo(
-                new ProjectName(targetResource.ProjectName),
-                new ResourceName(targetResource.ResourceName),
-                targetResource.IsDescriptor
-            ),
-            new DocumentIdentity([
-                .. identityElements.Select(identityElement => new DocumentIdentityElement(
-                    new JsonPath(identityElement.IdentityJsonPath),
-                    identityElement.IdentityValue
-                )),
-            ])
-        );
-    }
-
-    private static Guid CreateDescriptorReferentialId(
-        string projectName,
-        string resourceName,
-        string descriptorUri
-    )
-    {
-        return CreateReferentialId(
-            (projectName, resourceName, true),
-            (DocumentIdentity.DescriptorIdentityJsonPath.Value, descriptorUri.ToLowerInvariant())
-        );
     }
 
     private async Task<AuthoritativeDs52ContactPersistedState> ReadPersistedStateAsync(Guid documentUuid)

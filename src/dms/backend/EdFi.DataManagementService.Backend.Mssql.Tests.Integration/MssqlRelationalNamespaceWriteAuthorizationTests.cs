@@ -771,7 +771,7 @@ public class Given_A_Mssql_Relational_Namespace_Write_Authorization_With_A_Synth
         (await _context.CountResourceRootRowsAsync(ProjectEndpointName, ResourceName, seed.DocumentUuid))
             .Should()
             .Be(0);
-        (await _context.CountReferentialIdentityRowsForAuthorizationNamespaceAsync(seed)).Should().Be(0);
+        (await _context.CountAuthorizationNamespaceRowsByNaturalKeyAsync(seed)).Should().Be(0);
     }
 
     private static void AssertRootRow(

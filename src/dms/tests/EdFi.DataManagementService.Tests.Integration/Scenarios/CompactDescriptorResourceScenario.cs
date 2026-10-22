@@ -286,7 +286,7 @@ internal static class CompactDescriptorResourceScenario
         removedDescriptor.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
-    public static async Task It_maintains_RI_and_copied_descriptor_keys_after_resource_identity_updates(
+    public static async Task It_maintains_copied_descriptor_keys_after_resource_identity_updates(
         ApiIntegrationHarness harness
     )
     {

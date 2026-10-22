@@ -194,7 +194,7 @@ public static partial class ParityScenarioCatalog
         // --- NoProfileGuardedNoOp (6 variants) ----------------------------------------------
         NoProfile(
             "NoProfileGuardedNoOp",
-            "An unchanged PUT compares the post-merge rowset to current state and skips DML, relying on the capture lock held from observation through commit rather than a freshness re-read: the full persisted rowset (including referential identity), ContentVersion, every stored update-tracking stamp — document and root-table — and the engine's max ChangeVersion allocation all stay unchanged.",
+            "An unchanged PUT compares the post-merge rowset to current state and skips DML, relying on the capture lock held from observation through commit rather than a freshness re-read: the full persisted rowset, ContentVersion, every stored update-tracking stamp — document and root-table — and the engine's max ChangeVersion allocation all stay unchanged.",
             ProductionBoundary.GuardedNoOp,
             "RelationalWriteGuardedNoOpTests",
             "Given_A_Postgresql_Relational_Guarded_No_Op_Put_With_A_Focused_Stable_Key_Fixture",
@@ -477,7 +477,7 @@ public static partial class ParityScenarioCatalog
         // --- NoProfileRollbackSafety + variants ---------------------------------------------
         NoProfile(
             "NoProfileRollbackSafety",
-            "A failure injected at the last write of a full-surface create rolls the whole request back to its exact pre-state: document and tracking stamps, referential identity, root, nested child/grandchild, root extension, aligned extension, extension-child and visit rows, and tracked-change rowsets all return to empty.",
+            "A failure injected at the last write of a full-surface create rolls the whole request back to its exact pre-state: document and tracking stamps, root, nested child/grandchild, root extension, aligned extension, extension-child and visit rows, and tracked-change rowsets all return to empty.",
             ProductionBoundary.NoProfilePersister,
             "RelationalWriteRollbackSafetyTests",
             "Given_A_Postgresql_Relational_Write_Create_Failure_After_Early_Writes_With_A_Focused_Stable_Key_Fixture",
@@ -491,7 +491,7 @@ public static partial class ParityScenarioCatalog
         ),
         NoProfile(
             "NoProfileRollbackSafety/CreateFailureAfterEarlyWrites",
-            "An injected failure at the write plan's final aligned-extension address write rolls back fully after every earlier full-surface write category was attempted in plan order; the post-rollback snapshot equals the empty pre-state across document, referential-identity, root, child/grandchild, extension, aligned-extension, extension-child, visit, and tracked-change surfaces.",
+            "An injected failure at the write plan's final aligned-extension address write rolls back fully after every earlier full-surface write category was attempted in plan order; the post-rollback snapshot equals the empty pre-state across document, root, child/grandchild, extension, aligned-extension, extension-child, visit, and tracked-change surfaces.",
             ProductionBoundary.NoProfilePersister,
             "RelationalWriteRollbackSafetyTests",
             "Given_A_Postgresql_Relational_Write_Create_Failure_After_Early_Writes_With_A_Focused_Stable_Key_Fixture",

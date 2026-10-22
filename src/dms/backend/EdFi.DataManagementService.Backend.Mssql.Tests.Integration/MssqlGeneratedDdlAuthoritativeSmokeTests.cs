@@ -5,7 +5,6 @@
 
 using System.Globalization;
 using System.Xml.Linq;
-using Be.Vlaanderen.Basisregisters.Generators.Guid;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using FluentAssertions;
@@ -107,7 +106,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             _fixture.GeneratedDdl
         );
         _database = _databaseLease.Database;
-        await InstallReferentialIdentityAuditAsync();
         _contactExtensionAuthorForeignKeys = await _database.GetForeignKeyMetadataAsync(
             "sample",
             "ContactExtensionAuthor"
@@ -1033,29 +1031,14 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     [Test]
     public async Task It_should_not_stamp_same_value_identity_column_root_updates()
     {
-        var contactResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Contact");
-        var expectedRiRows = SortReferentialIdentityRows(
-            new[]
-            {
-                new ReferentialIdentityRow(
-                    ComputeReferentialId("Ed-Fi", "Contact", ("$.contactUniqueId", "10001")),
-                    _seedData.ContactDocumentId,
-                    contactResourceKeyId
-                ),
-            }
-        );
-
         var beforeStamps = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
-        var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.ContactDocumentId);
         var contactDocumentUuid = await GetDocumentUuidAsync(_seedData.ContactDocumentId);
         var beforeTrackedRows = await CountTrackedChangeRowsAsync(
             "tracked_changes_edfi",
             "Contact",
             contactDocumentUuid
         );
-        beforeRiRows.Should().Equal(expectedRiRows);
 
-        await TruncateReferentialIdentityAuditAsync();
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
             """
@@ -1067,51 +1050,33 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
 
         var afterStamps = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
-        var afterRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.ContactDocumentId);
         var afterTrackedRows = await CountTrackedChangeRowsAsync(
             "tracked_changes_edfi",
             "Contact",
             contactDocumentUuid
         );
-        var auditOps = await CountReferentialIdentityAuditOpsForDocumentAsync(_seedData.ContactDocumentId);
 
         afterStamps.Should().Be(beforeStamps);
-        afterRiRows.Should().Equal(beforeRiRows);
         afterTrackedRows.Should().Be(beforeTrackedRows);
-        auditOps.Should().Be(0);
     }
 
     [Test]
-    public async Task It_should_avoid_referential_identity_rewrites_when_scalar_identity_column_is_self_assigned_alongside_content_change()
+    public async Task It_should_not_record_key_changes_when_scalar_identity_column_is_self_assigned_alongside_content_change()
     {
         // The pure same-value test above is filtered out before the inner identity-only
         // gate runs. This test sends a content change AND a same-value self-assignment
         // of the identity column in one UPDATE — UPDATE([ContactUniqueId]) returns true
         // (the column appeared in SET), so the inner null-safe value-diff predicate is
-        // what must keep dms.ReferentialIdentity untouched.
-        var contactResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Contact");
-        var expectedRiRows = SortReferentialIdentityRows(
-            new[]
-            {
-                new ReferentialIdentityRow(
-                    ComputeReferentialId("Ed-Fi", "Contact", ("$.contactUniqueId", "10001")),
-                    _seedData.ContactDocumentId,
-                    contactResourceKeyId
-                ),
-            }
-        );
+        // what must keep the tracked-change trigger from recording a key change.
 
         var beforeStamps = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
-        var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.ContactDocumentId);
         var contactDocumentUuid = await GetDocumentUuidAsync(_seedData.ContactDocumentId);
         var beforeTrackedRows = await CountTrackedChangeRowsAsync(
             "tracked_changes_edfi",
             "Contact",
             contactDocumentUuid
         );
-        beforeRiRows.Should().Equal(expectedRiRows);
 
-        await TruncateReferentialIdentityAuditAsync();
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
             """
@@ -1125,19 +1090,15 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
 
         var afterStamps = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
-        var afterRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.ContactDocumentId);
         var afterTrackedRows = await CountTrackedChangeRowsAsync(
             "tracked_changes_edfi",
             "Contact",
             contactDocumentUuid
         );
-        var auditOps = await CountReferentialIdentityAuditOpsForDocumentAsync(_seedData.ContactDocumentId);
 
         afterStamps.ContentVersion.Should().BeGreaterThan(beforeStamps.ContentVersion);
         afterStamps.ContentLastModifiedAt.Should().BeAfter(beforeStamps.ContentLastModifiedAt);
-        afterRiRows.Should().Equal(beforeRiRows);
         afterTrackedRows.Should().Be(beforeTrackedRows);
-        auditOps.Should().Be(0);
     }
 
     [Test]
@@ -1440,29 +1401,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     public async Task It_should_not_stamp_same_value_propagated_identity_reference_updates()
     {
         // CourseOffering's INSTEAD OF UPDATE rewrites every column unconditionally, so the
-        // AFTER stamp/RI triggers see UPDATE([Session_SessionName]) = true even though the
+        // AFTER stamp triggers see UPDATE([Session_SessionName]) = true even though the
         // user-issued UPDATE was a same-value self-assignment. Only the null-safe value diff
         // in the trigger body should prevent a false content stamp bump and a
-        // redundant RI row rewrite.
-        var courseOfferingResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "CourseOffering");
-        var expectedRiRows = SortReferentialIdentityRows(
-            new[]
-            {
-                new ReferentialIdentityRow(
-                    ComputeReferentialId(
-                        "Ed-Fi",
-                        "CourseOffering",
-                        ("$.localCourseCode", "ALG-1-01"),
-                        ("$.schoolReference.schoolId", "100"),
-                        ("$.sessionReference.schoolId", "100"),
-                        ("$.sessionReference.schoolYear", "2025"),
-                        ("$.sessionReference.sessionName", "Fall")
-                    ),
-                    _seedData.CourseOfferingDocumentId,
-                    courseOfferingResourceKeyId
-                ),
-            }
-        );
+        // spurious key-change row.
 
         var beforeStamps = await GetDocumentStampStateAsync(_seedData.CourseOfferingDocumentId);
         var beforeMirror = await GetRootMirrorStampStateAsync(
@@ -1471,18 +1413,13 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             _seedData.CourseOfferingDocumentId
         );
         AssertRootVersionMatchesDocument(beforeMirror, beforeStamps);
-        var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(
-            _seedData.CourseOfferingDocumentId
-        );
         var courseOfferingDocumentUuid = await GetDocumentUuidAsync(_seedData.CourseOfferingDocumentId);
         var beforeTrackedRows = await CountTrackedChangeRowsAsync(
             "tracked_changes_edfi",
             "CourseOffering",
             courseOfferingDocumentUuid
         );
-        beforeRiRows.Should().Equal(expectedRiRows);
 
-        await TruncateReferentialIdentityAuditAsync();
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
             """
@@ -1499,67 +1436,35 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             "CourseOffering",
             _seedData.CourseOfferingDocumentId
         );
-        var afterRiRows = await GetReferentialIdentityRowsForDocumentAsync(
-            _seedData.CourseOfferingDocumentId
-        );
         var afterTrackedRows = await CountTrackedChangeRowsAsync(
             "tracked_changes_edfi",
             "CourseOffering",
             courseOfferingDocumentUuid
         );
-        var auditOps = await CountReferentialIdentityAuditOpsForDocumentAsync(
-            _seedData.CourseOfferingDocumentId
-        );
 
         afterStamps.Should().Be(beforeStamps);
         afterMirror.Should().Be(beforeMirror);
         AssertRootVersionMatchesDocument(afterMirror, afterStamps);
-        afterRiRows.Should().Equal(beforeRiRows);
         afterTrackedRows.Should().Be(beforeTrackedRows);
-        auditOps.Should().Be(0);
     }
 
     [Test]
-    public async Task It_should_avoid_referential_identity_rewrites_when_propagated_identity_reference_is_self_assigned_alongside_content_change()
+    public async Task It_should_not_record_key_changes_when_propagated_identity_reference_is_self_assigned_alongside_content_change()
     {
         // Mixed-write counterpart for the propagated identity-source reference column:
         // a non-identity content column changes while the propagated identity column is
         // self-assigned to the same value. UPDATE([Session_SessionName]) returns true
         // (and CourseOffering's INSTEAD OF UPDATE rewrites every column anyway), so the
-        // null-safe value-diff predicate is the sole protection against redundant RI rewrites.
-        var courseOfferingResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "CourseOffering");
-        var expectedRiRows = SortReferentialIdentityRows(
-            new[]
-            {
-                new ReferentialIdentityRow(
-                    ComputeReferentialId(
-                        "Ed-Fi",
-                        "CourseOffering",
-                        ("$.localCourseCode", "ALG-1-01"),
-                        ("$.schoolReference.schoolId", "100"),
-                        ("$.sessionReference.schoolId", "100"),
-                        ("$.sessionReference.schoolYear", "2025"),
-                        ("$.sessionReference.sessionName", "Fall")
-                    ),
-                    _seedData.CourseOfferingDocumentId,
-                    courseOfferingResourceKeyId
-                ),
-            }
-        );
+        // null-safe value-diff predicate is the sole protection against a spurious key-change row.
 
         var beforeStamps = await GetDocumentStampStateAsync(_seedData.CourseOfferingDocumentId);
-        var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(
-            _seedData.CourseOfferingDocumentId
-        );
         var courseOfferingDocumentUuid = await GetDocumentUuidAsync(_seedData.CourseOfferingDocumentId);
         var beforeTrackedRows = await CountTrackedChangeRowsAsync(
             "tracked_changes_edfi",
             "CourseOffering",
             courseOfferingDocumentUuid
         );
-        beforeRiRows.Should().Equal(expectedRiRows);
 
-        await TruncateReferentialIdentityAuditAsync();
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
             """
@@ -1573,23 +1478,15 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
 
         var afterStamps = await GetDocumentStampStateAsync(_seedData.CourseOfferingDocumentId);
-        var afterRiRows = await GetReferentialIdentityRowsForDocumentAsync(
-            _seedData.CourseOfferingDocumentId
-        );
         var afterTrackedRows = await CountTrackedChangeRowsAsync(
             "tracked_changes_edfi",
             "CourseOffering",
             courseOfferingDocumentUuid
         );
-        var auditOps = await CountReferentialIdentityAuditOpsForDocumentAsync(
-            _seedData.CourseOfferingDocumentId
-        );
 
         afterStamps.ContentVersion.Should().BeGreaterThan(beforeStamps.ContentVersion);
         afterStamps.ContentLastModifiedAt.Should().BeAfter(beforeStamps.ContentLastModifiedAt);
-        afterRiRows.Should().Equal(beforeRiRows);
         afterTrackedRows.Should().Be(beforeTrackedRows);
-        auditOps.Should().Be(0);
     }
 
     [Test]
@@ -4525,106 +4422,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     )
     {
         mirror.ContentVersion.Should().Be(document.ContentVersion);
-    }
-
-    private async Task<IReadOnlyList<ReferentialIdentityRow>> GetReferentialIdentityRowsForDocumentAsync(
-        long documentId
-    )
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT [ReferentialId], [DocumentId], [ResourceKeyId]
-            FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] = @documentId
-            ORDER BY [ResourceKeyId], [ReferentialId];
-            """,
-            new SqlParameter("@documentId", documentId)
-        );
-
-        return rows.Select(r => new ReferentialIdentityRow(
-                (Guid)r["ReferentialId"]!,
-                Convert.ToInt64(r["DocumentId"], CultureInfo.InvariantCulture),
-                Convert.ToInt16(r["ResourceKeyId"], CultureInfo.InvariantCulture)
-            ))
-            .ToList();
-    }
-
-    // Test-only audit installed in OneTimeSetUp captures every INSERT/DELETE on
-    // dms.ReferentialIdentity. The same-value identity tests truncate the audit
-    // immediately before the UPDATE under test and assert zero ops afterwards,
-    // so a regression that ran a redundant DELETE+INSERT cycle (which produces
-    // identical deterministic UUIDv5 rows) would still be caught.
-    private async Task InstallReferentialIdentityAuditAsync()
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            IF SCHEMA_ID(N'dms_test') IS NULL EXEC(N'CREATE SCHEMA [dms_test];');
-
-            IF OBJECT_ID(N'[dms_test].[ReferentialIdentityAudit]', N'U') IS NULL
-            CREATE TABLE [dms_test].[ReferentialIdentityAudit]
-            (
-                [Op] char(1) NOT NULL,
-                [DocumentId] bigint NOT NULL,
-                [ResourceKeyId] smallint NOT NULL,
-                [ReferentialId] uniqueidentifier NOT NULL
-            );
-
-            IF OBJECT_ID(N'[dms].[TR_ReferentialIdentity_Audit]', N'TR') IS NOT NULL
-            EXEC(N'DROP TRIGGER [dms].[TR_ReferentialIdentity_Audit];');
-
-            EXEC(N'
-                CREATE TRIGGER [dms].[TR_ReferentialIdentity_Audit] ON [dms].[ReferentialIdentity]
-                AFTER INSERT, DELETE
-                AS
-                BEGIN
-                    SET NOCOUNT ON;
-                    INSERT INTO [dms_test].[ReferentialIdentityAudit] ([Op], [DocumentId], [ResourceKeyId], [ReferentialId])
-                    SELECT N''I'', [DocumentId], [ResourceKeyId], [ReferentialId] FROM inserted;
-                    INSERT INTO [dms_test].[ReferentialIdentityAudit] ([Op], [DocumentId], [ResourceKeyId], [ReferentialId])
-                    SELECT N''D'', [DocumentId], [ResourceKeyId], [ReferentialId] FROM deleted;
-                END;
-            ');
-            """
-        );
-    }
-
-    private async Task<long> CountReferentialIdentityAuditOpsForDocumentAsync(long documentId)
-    {
-        return await _database.ExecuteScalarAsync<long>(
-            """
-            SELECT COUNT_BIG(*)
-            FROM [dms_test].[ReferentialIdentityAudit]
-            WHERE [DocumentId] = @documentId;
-            """,
-            new SqlParameter("@documentId", documentId)
-        );
-    }
-
-    private async Task TruncateReferentialIdentityAuditAsync()
-    {
-        await _database.ExecuteNonQueryAsync("""TRUNCATE TABLE [dms_test].[ReferentialIdentityAudit];""");
-    }
-
-    // Mirrors ReferentialIdFactory in EdFi.DataManagementService.Core.External: the same
-    // UUIDv5 namespace + "{ProjectName}{ResourceName}{path1=value1#path2=value2}" hashing
-    // used by the generated dms.uuidv5() trigger calls.
-    private static readonly Guid s_edFiUuidv5Namespace = new("edf1edf1-3df1-3df1-3df1-3df1edf1edf1");
-
-    private static Guid ComputeReferentialId(
-        string projectName,
-        string resourceName,
-        params (string Path, string Value)[] identityElements
-    )
-    {
-        var identityHash = string.Join("#", identityElements.Select(e => $"{e.Path}={e.Value}"));
-        return Deterministic.Create(s_edFiUuidv5Namespace, $"{projectName}{resourceName}{identityHash}");
-    }
-
-    private static IReadOnlyList<ReferentialIdentityRow> SortReferentialIdentityRows(
-        IEnumerable<ReferentialIdentityRow> rows
-    )
-    {
-        return rows.OrderBy(r => r.ResourceKeyId).ThenBy(r => r.ReferentialId).ToList();
     }
 
     private async Task<CourseOfferingSessionReferenceState> GetCourseOfferingSessionReferenceStateAsync(

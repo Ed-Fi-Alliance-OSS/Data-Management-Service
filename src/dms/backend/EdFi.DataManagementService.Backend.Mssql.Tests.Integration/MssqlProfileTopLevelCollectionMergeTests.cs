@@ -433,7 +433,6 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
             new SqlParameter("@resourceKeyId", resourceKeyId)
         );
 
-        var uri = $"uri://ed-fi.org/AddressTypeDescriptor#{codeValue}";
         var descriptorId = await database.ExecuteScalarAsync<int>(
             """
             DECLARE @descriptor TABLE ([DescriptorId] int);
@@ -460,29 +459,6 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
             new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", "uri://ed-fi.org/AddressTypeDescriptor"),
             new SqlParameter("@codeValue", codeValue)
-        );
-
-        var descriptorReference = CreateAddressTypeDescriptorReference(
-            uri,
-            "$.addresses[0].addressTypeDescriptor"
-        );
-        await database.ExecuteNonQueryAsync(
-            """
-            IF NOT EXISTS (
-                SELECT 1 FROM [dms].[ReferentialIdentity] WHERE [ReferentialId] = @referentialId
-            )
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            VALUES (@referentialId, @documentId, @resourceKeyId);
-            """,
-            new SqlParameter(
-                "@referentialId",
-                ReferentialIdTestHelper.ReferentialIdFrom(
-                    descriptorReference.ResourceInfo,
-                    descriptorReference.DocumentIdentity
-                )
-            ),
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
         );
 
         return descriptorId;

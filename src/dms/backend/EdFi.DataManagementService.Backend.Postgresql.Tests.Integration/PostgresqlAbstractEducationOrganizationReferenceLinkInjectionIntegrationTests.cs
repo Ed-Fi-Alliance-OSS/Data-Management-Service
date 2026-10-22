@@ -231,7 +231,6 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
         await SeedDescriptorAsync(
             Guid.Parse("c2b00001-0000-0000-0000-000000000001"),
             "EducationOrganizationCategoryDescriptor",
-            "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School",
             "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
             "School",
             "School"
@@ -239,7 +238,6 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
         await SeedDescriptorAsync(
             Guid.Parse("c2b00002-0000-0000-0000-000000000002"),
             "GradeLevelDescriptor",
-            "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade",
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Ninth grade",
             "Ninth grade"
@@ -249,26 +247,13 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
     private async Task SeedDescriptorAsync(
         Guid documentUuid,
         string resourceName,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
         short resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", resourceName);
-        long documentId = await InsertDescriptorAsync(
-            documentUuid,
-            resourceKeyId,
-            @namespace,
-            codeValue,
-            shortDescription
-        );
-
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId("Ed-Fi", resourceName, uri),
-            documentId,
-            resourceKeyId
-        );
+        await InsertDescriptorAsync(documentUuid, resourceKeyId, @namespace, codeValue, shortDescription);
     }
 
     private async Task<UpsertResult> UpsertSchoolAsync()
@@ -476,40 +461,5 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
         );
 
         return documentId;
-    }
-
-    private async Task InsertReferentialIdentityAsync(
-        Guid referentialId,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-            VALUES (@referentialId, @documentId, @resourceKeyId)
-            ON CONFLICT ("ReferentialId") DO NOTHING;
-            """,
-            new NpgsqlParameter("referentialId", referentialId),
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-    }
-
-    private static Guid CreateDescriptorReferentialId(
-        string projectName,
-        string resourceName,
-        string descriptorUri
-    )
-    {
-        return ReferentialIdTestHelper.ReferentialIdFrom(
-            new BaseResourceInfo(new ProjectName(projectName), new ResourceName(resourceName), true),
-            new DocumentIdentity([
-                new DocumentIdentityElement(
-                    DocumentIdentity.DescriptorIdentityJsonPath,
-                    descriptorUri.ToLowerInvariant()
-                ),
-            ])
-        );
     }
 }
