@@ -312,16 +312,25 @@ exit $ExitCode
 
     Context "public script contracts" {
         # The connection string readers construct AesGcm(byte[], int), which PowerShell 7.4 (.NET 8)
-        # introduced, so every script and module that reaches one declares that floor.
+        # introduced, so every script that decrypts declares that floor.
         It "<file> requires PowerShell 7.4" -ForEach @(
             @{ File = "eng/docker-compose/provision-dms-schema.ps1" }
             @{ File = "eng/docker-compose/configure-local-data-store.ps1" }
-            @{ File = "eng/docker-compose/database-safety.psm1" }
             @{ File = "eng/docker-compose/tests/RestoreSmokeProbes.psm1" }
         ) {
             $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:sourceRepoRoot $File), [ref]$null, [ref]$null)
 
             $ast.ScriptRequirements.RequiredPSVersion | Should -Be ([version]"7.4")
+        }
+
+        # The shared module is imported by every Compose entry point, most of which never decrypt, so
+        # it keeps their floor and its decrypting function checks for 7.4 itself.
+        It "database-safety.psm1 requires only PowerShell 7 and checks for 7.4 where it decrypts" {
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:sourceRepoRoot "eng/docker-compose/database-safety.psm1"), [ref]$null, [ref]$null)
+            $function = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq "ConvertFrom-CmsEncryptedConnectionString" }, $true)
+
+            $ast.ScriptRequirements.RequiredPSVersion | Should -Be ([version]"7.0")
+            $function.Body.Extent.Text | Should -Match ([regex]::Escape('$PSVersionTable.PSVersion -lt [version]"7.4"'))
         }
 
         # A runtime that cannot derive the key or construct AesGcm must fail with the reader's fixed
@@ -868,7 +877,7 @@ exit $ExitCode
 
         It "reads CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS <case> as <expected>" -ForEach @(
             @{ Case = "absent"; EnvValues = @{}; Expected = $true }
-            @{ Case = "blank"; EnvValues = @{ CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = "" }; Expected = $true }
+            @{ Case = "empty"; EnvValues = @{ CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = "" }; Expected = $true }
             @{ Case = "true"; EnvValues = @{ CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = "true" }; Expected = $true }
             @{ Case = "false"; EnvValues = @{ CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = "false" }; Expected = $false }
             @{ Case = "FALSE"; EnvValues = @{ CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = "FALSE" }; Expected = $false }
@@ -886,10 +895,21 @@ exit $ExitCode
             @{ Value = "flase" }
             @{ Value = "0" }
             @{ Value = "no" }
+            # Compose's ${VAR:-true} passes whitespace through, and the services refuse it at startup.
+            @{ Value = '" "' }
+            @{ Value = "' '" }
         ) {
             . $script:repo.ProvisionScript
 
             { Test-LegacyConnectionStringAllowed -EnvValues @{ CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = $Value } } |
+                Should -Throw -ExpectedMessage "CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS must be true or false."
+        }
+
+        It "rejects a whitespace-only ambient CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS, which Compose passes through" {
+            . $script:repo.ProvisionScript
+            $env:CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = " "
+
+            { Test-LegacyConnectionStringAllowed -EnvValues @{} } |
                 Should -Throw -ExpectedMessage "CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS must be true or false."
         }
 

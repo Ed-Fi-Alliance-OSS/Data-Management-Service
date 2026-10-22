@@ -6,6 +6,8 @@
     </PropertyGroup>
     <ItemGroup>
         <AssemblyAttribute Include="System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverageAttribute" />
+        <InternalsVisibleTo Include="EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration" />
+        <InternalsVisibleTo Include="EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration" />
     </ItemGroup>
     <ItemGroup>
         <PackageReference Include="JsonSchema.Net" />

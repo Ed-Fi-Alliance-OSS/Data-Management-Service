@@ -231,6 +231,61 @@ public class Given_ConnectionStringDecryptionService_and_the_interoperability_ve
     }
 }
 
+[TestFixture]
+public class Given_ConnectionStringDecryptionService_and_a_stored_value_to_classify
+{
+    private ConnectionStringEncryptionVectors _vectors = null!;
+    private ConnectionStringDecryptionService _service = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _vectors = ConnectionStringEncryptionVectors.Load();
+        _service = new ConnectionStringDecryptionService(_vectors.KeyText);
+    }
+
+    [Test]
+    public void It_reports_the_legacy_value_as_legacy() =>
+        _service.IsLegacyFormat(_vectors.LegacyCbc).Should().BeTrue();
+
+    [Test]
+    public void It_reports_envelopes_as_not_legacy()
+    {
+        _service.IsLegacyFormat(_vectors.EnvelopeV1).Should().BeFalse();
+        _service.IsLegacyFormat(_vectors.BlockAlignedEnvelopeV1).Should().BeFalse();
+    }
+
+    [TestCase(null)]
+    [TestCase("")]
+    [TestCase("@@@@")]
+    [TestCase("AAAAAAAAAAAAAAAAAAAAAA==")]
+    public void It_reports_a_value_of_neither_form_as_not_legacy(string? value) =>
+        _service.IsLegacyFormat(value).Should().BeFalse();
+}
+
+/// <summary>
+/// The Ed-Fi API accepts any non-empty key. A non-ASCII one makes more than 32 bytes of key material,
+/// which AES-CBC refuses; that failure has to arrive as the decryptor's own exception, which the data
+/// store provider's derivative boundary catches.
+/// </summary>
+[TestFixture]
+public class Given_ConnectionStringDecryptionService_with_a_non_ASCII_key_and_a_legacy_value
+{
+    [Test]
+    public void It_fails_with_the_decryptors_own_exception()
+    {
+        var act = () =>
+            new ConnectionStringDecryptionService("ü" + LegacyConnectionStrings.Key).DecryptFromBase64(
+                Convert.ToBase64String(LegacyConnectionStrings.Encrypt(LegacyConnectionStrings.PlainText))
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("Failed to decrypt the connection string.*")
+            .WithInnerException<CryptographicException>();
+    }
+}
+
 /// <summary>
 /// Header, body and length corruptions of a valid envelope: each has to be rejected, never
 /// decrypted under the legacy path and never returned as different text. Substitution with a

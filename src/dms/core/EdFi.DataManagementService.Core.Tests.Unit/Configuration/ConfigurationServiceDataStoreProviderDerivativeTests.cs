@@ -53,6 +53,8 @@ public class ConfigurationServiceDataStoreProviderDerivativeTests
             _inputs.Add(base64EncodedCipherText);
             return decrypt(base64EncodedCipherText);
         }
+
+        public bool IsLegacyFormat(string? base64EncodedCipherText) => false;
     }
 
     /// <summary>
@@ -233,6 +235,87 @@ public class ConfigurationServiceDataStoreProviderDerivativeTests
                     || text.Contains(PrimaryConnectionString, StringComparison.Ordinal)
                 );
         }
+    }
+
+    /// <summary>
+    /// Each legacy value read logs one warning naming its row, so an operator can tell when legacy
+    /// values can be disallowed. An envelope logs nothing.
+    /// </summary>
+    [TestFixture]
+    public class Given_DataStores_With_Legacy_And_Envelope_Connection_Strings
+    {
+        private RecordingLogger<ConfigurationServiceDataStoreProvider> _logger = null!;
+        private ConnectionStringEncryptionVectors _vectors = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _logger = new RecordingLogger<ConfigurationServiceDataStoreProvider>();
+            _vectors = ConnectionStringEncryptionVectors.Load();
+
+            object response = new[]
+            {
+                DataStore(
+                    1,
+                    "Envelope Primary",
+                    _vectors.EnvelopeV1,
+                    [Derivative("Snapshot", _vectors.LegacyCbc)]
+                ),
+                DataStore(
+                    2,
+                    "Legacy Primary",
+                    _vectors.LegacyCbc,
+                    [Derivative("ReadReplica", _vectors.EnvelopeV1)]
+                ),
+            };
+
+            await CreateProvider(response, _logger, new ConnectionStringDecryptionService(_vectors.KeyText))
+                .LoadDataStores();
+        }
+
+        private IReadOnlyList<LogRecord> Warnings =>
+            [.. _logger.Records.Where(record => record.Level == LogLevel.Warning)];
+
+        [Test]
+        public void It_should_warn_once_for_the_legacy_primary() =>
+            Warnings
+                .Where(record => !record.Properties.ContainsKey("DerivativeId"))
+                .Should()
+                .ContainSingle()
+                .Which.Properties["DataStoreId"]
+                .Should()
+                .Be(2L);
+
+        [Test]
+        public void It_should_warn_once_for_the_legacy_derivative()
+        {
+            var warning = Warnings
+                .Where(record => record.Properties.ContainsKey("DerivativeId"))
+                .Should()
+                .ContainSingle()
+                .Subject;
+            warning.Properties["DataStoreId"].Should().Be(1L);
+            warning.Properties["DerivativeId"].Should().Be(10L);
+        }
+
+        [Test]
+        public void It_should_name_the_setting_in_each_warning() =>
+            Warnings
+                .Should()
+                .AllSatisfy(record =>
+                    record
+                        .Message.Should()
+                        .Contain("ConfigurationServiceSettings:AllowLegacyConnectionStrings")
+                );
+
+        [Test]
+        public void It_should_never_log_a_stored_value() =>
+            AllLoggedText(_logger)
+                .Should()
+                .NotContain(text =>
+                    text.Contains(_vectors.LegacyCbc, StringComparison.Ordinal)
+                    || text.Contains(_vectors.PlainText, StringComparison.Ordinal)
+                );
     }
 
     /// <summary>

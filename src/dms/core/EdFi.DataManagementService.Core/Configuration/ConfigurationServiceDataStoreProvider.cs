@@ -539,15 +539,28 @@ public class ConfigurationServiceDataStoreProvider(
             RelationalProviderMetadataStatus relationalProviderMetadataStatus
         ) = NormalizeRelationalProviderMetadata(response);
 
+        // The primary connection string is decrypted here, inside the enclosing projection, so an
+        // undecryptable primary fails the whole tenant data-store load. Derivatives are decrypted one
+        // at a time in their own fault boundary below, so an unusable optional derivative cannot take
+        // its parent, its siblings, or another data store down with it.
+        string? connectionString = _connectionStringDecryptionService.DecryptFromBase64(
+            response.ConnectionString
+        );
+
+        if (_connectionStringDecryptionService.IsLegacyFormat(response.ConnectionString))
+        {
+            logger.LogWarning(
+                "The connection string for data store {DataStoreId} of tenant {Tenant} is in the legacy AES-CBC format, which has no integrity protection. Re-encrypt it in the Configuration Service before setting ConfigurationServiceSettings:AllowLegacyConnectionStrings to false",
+                response.Id,
+                LoggingSanitizer.SanitizeInternalValueForLogging(tenant ?? "(default)")
+            );
+        }
+
         return new DataStore(
             response.Id,
             response.DataStoreType,
             response.Name,
-            // The primary connection string is decrypted here, inside the enclosing projection, so an
-            // undecryptable primary fails the whole tenant data-store load. Derivatives are decrypted
-            // one at a time in their own fault boundary below, so an unusable optional derivative
-            // cannot take its parent, its siblings, or another data store down with it.
-            _connectionStringDecryptionService.DecryptFromBase64(response.ConnectionString),
+            connectionString,
             response.DataStoreContexts.ToDictionary(
                 rc => new RouteQualifierName(rc.ContextKey),
                 rc => new RouteQualifierValue(rc.ContextValue)
@@ -617,8 +630,8 @@ public class ConfigurationServiceDataStoreProvider(
                 // Base64; a length that fits neither stored form; an envelope that is malformed,
                 // unrecognized, of an unsupported version, or fails authentication, or whose
                 // authenticated plain text has invalid padding or is not UTF-8; a legacy value when
-                // legacy values are disabled; and a legacy value whose padding does not verify, usually
-                // a wrong key. Catching only it keeps an unrelated runtime or programming defect from
+                // legacy values are disabled; and a legacy value whose key is not 32 bytes of key
+                // material or whose padding does not verify, usually a wrong key. Catching only it keeps an unrelated runtime or programming defect from
                 // being reinterpreted as absent configuration.
                 // The exception object itself is not logged, so the no-secret guarantee is this
                 // boundary's own rather than the decryptor's message discipline: the tenant, parent
@@ -634,6 +647,17 @@ public class ConfigurationServiceDataStoreProvider(
                 );
 #pragma warning restore S6667
                 continue;
+            }
+
+            if (_connectionStringDecryptionService.IsLegacyFormat(derivative.ConnectionString))
+            {
+                logger.LogWarning(
+                    "The connection string for derivative {DerivativeId} ({DerivativeType}) of tenant {Tenant}, parent data store {DataStoreId}, is in the legacy AES-CBC format, which has no integrity protection. Re-encrypt it in the Configuration Service before setting ConfigurationServiceSettings:AllowLegacyConnectionStrings to false",
+                    derivative.Id,
+                    derivativeType,
+                    sanitizedTenant,
+                    response.Id
+                );
             }
 
             if (string.IsNullOrWhiteSpace(plainText))

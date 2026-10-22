@@ -86,15 +86,12 @@ public class ConnectionStringDecryptionService(string encryptionKey, bool allowL
 
         // Envelope first, and never a legacy attempt after it: a value with an altered marker keeps
         // the envelope length class, so it is rejected here rather than decrypted as legacy.
-        if (
-            encryptedBytes.Length % BlockLength == EnvelopeOverhead % BlockLength
-            || encryptedBytes.AsSpan().StartsWith(EnvelopeMarker)
-        )
+        if (IsEnvelopeCandidate(encryptedBytes))
         {
             return DecryptEnvelope(encryptedBytes);
         }
 
-        if (encryptedBytes.Length >= MinimumLegacyLength && encryptedBytes.Length % BlockLength == 0)
+        if (HasLegacyLength(encryptedBytes))
         {
             if (!allowLegacyConnectionStrings)
             {
@@ -113,6 +110,33 @@ public class ConnectionStringDecryptionService(string encryptionKey, bool allowL
                 + "it is neither a Configuration Service connection string envelope nor legacy AES-CBC cipher text."
         );
     }
+
+    public bool IsLegacyFormat(string? base64EncodedCipherText)
+    {
+        if (string.IsNullOrEmpty(base64EncodedCipherText))
+        {
+            return false;
+        }
+
+        byte[] encryptedBytes;
+        try
+        {
+            encryptedBytes = Convert.FromBase64String(base64EncodedCipherText);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+
+        return !IsEnvelopeCandidate(encryptedBytes) && HasLegacyLength(encryptedBytes);
+    }
+
+    private static bool IsEnvelopeCandidate(byte[] value) =>
+        value.Length % BlockLength == EnvelopeOverhead % BlockLength
+        || value.AsSpan().StartsWith(EnvelopeMarker);
+
+    private static bool HasLegacyLength(byte[] value) =>
+        value.Length >= MinimumLegacyLength && value.Length % BlockLength == 0;
 
     private string DecryptEnvelope(byte[] envelope)
     {
@@ -191,11 +215,13 @@ public class ConnectionStringDecryptionService(string encryptionKey, bool allowL
     private string DecryptLegacy(byte[] encrypted)
     {
         using var aes = Aes.Create();
-        aes.Key = _legacyKey;
 
         byte[] plainTextBytes;
         try
         {
+            // Inside the try: a key whose UTF-8 material is not 32 bytes, such as one with non-ASCII
+            // characters, is refused here.
+            aes.Key = _legacyKey;
             plainTextBytes = aes.DecryptCbc(
                 encrypted.AsSpan(LegacyIvLength),
                 encrypted.AsSpan(0, LegacyIvLength),

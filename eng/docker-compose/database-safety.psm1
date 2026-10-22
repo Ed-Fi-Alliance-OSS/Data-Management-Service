@@ -3,8 +3,10 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-# 7.4 for the AesGcm(byte[], int) constructor ConvertFrom-CmsEncryptedConnectionString uses.
-#Requires -Version 7.4
+# 7 for the module as a whole. ConvertFrom-CmsEncryptedConnectionString alone needs 7.4, for the
+# AesGcm(byte[], int) constructor, and checks for it itself, so only the scripts that decrypt carry
+# that floor.
+#Requires -Version 7
 
 <#
 .SYNOPSIS
@@ -589,11 +591,14 @@ function Get-ComposeResolvedEnvValue {
         Falls back to the documented default when the key is absent, blank, or resolves to empty. This
         is the single Compose-equivalent resolver shared by the connection-string factory, the
         destructive-safety guard, and the E2E startup/provision phases. Never logs the value.
+        With -KeepWhitespace, a whitespace-only value is returned as it is, as Compose's ${VAR:-default}
+        passes it through; only an absent or empty value falls back to the default.
     #>
     param(
         [hashtable]$EnvironmentValues,
         [Parameter(Mandatory)][string]$Name,
-        [string]$DefaultValue = ""
+        [string]$DefaultValue = "",
+        [switch]$KeepWhitespace
     )
 
     # Docker Compose interpolation gives a value set in the process/shell environment precedence over
@@ -613,7 +618,7 @@ function Get-ComposeResolvedEnvValue {
             Resolve-ComposeEnvRawValue -EnvironmentValues $EnvironmentValues -RawValue ([string]$EnvironmentValues[$Name])
         }
 
-    if ([string]::IsNullOrWhiteSpace($resolved)) {
+    if ($KeepWhitespace ? [string]::IsNullOrEmpty($resolved) : [string]::IsNullOrWhiteSpace($resolved)) {
         return $DefaultValue
     }
 
@@ -1268,8 +1273,9 @@ function Test-LegacyConnectionStringAllowed {
     <#
     .SYNOPSIS
         Reads CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS the way Docker Compose passes it to
-        the Configuration Service and the Ed-Fi API: absent or blank is true, the compatible default.
-        Any other value must be true or false (case-insensitive); a malformed one throws a fixed
+        the Configuration Service and the Ed-Fi API: absent or empty is true, the compatible default.
+        Any other value must be true or false (case-insensitive); a malformed one, including a
+        whitespace-only one, which Compose passes through and the services refuse, throws a fixed
         message that names the setting without echoing its value, so it never silently re-enables
         legacy reads. Parsed with [bool]::TryParse, not a [bool] cast, which would make "false" true.
     #>
@@ -1278,7 +1284,7 @@ function Test-LegacyConnectionStringAllowed {
         $EnvValues
     )
 
-    $value = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvValues -Name "CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS" -DefaultValue "true"
+    $value = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvValues -Name "CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS" -DefaultValue "true" -KeepWhitespace
     $allowLegacyConnectionStrings = $false
     if (-not [bool]::TryParse($value, [ref]$allowLegacyConnectionStrings)) {
         throw "CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS must be true or false."
@@ -1315,6 +1321,10 @@ function ConvertFrom-CmsEncryptedConnectionString {
         [hashtable]
         $EnvValues
     )
+
+    if ($PSVersionTable.PSVersion -lt [version]"7.4") {
+        throw "Decrypting a Configuration Service data store connection string requires PowerShell 7.4 or later."
+    }
 
     $encryptionKey = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvValues -Name "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY"
     if ([string]::IsNullOrWhiteSpace($encryptionKey)) {

@@ -64,8 +64,14 @@ public class ConnectionStringReencryptionTests : DatabaseTest
 
     protected static byte[] Envelope(string plainText) => StrictReader.Encrypt(plainText)!;
 
-    protected static ConnectionStringReencryption Reencryption(int batchSize = 500) =>
-        new(Configuration.DatabaseOptions.Value, ConnectionStringReencryptionEngine.Postgresql, batchSize);
+    protected static ConnectionStringReencryption Reencryption(
+        int batchSize = 500,
+        Action<string, int>? rowRewritten = null
+    ) =>
+        new(Configuration.DatabaseOptions.Value, ConnectionStringReencryptionEngine.Postgresql, batchSize)
+        {
+            RowRewritten = rowRewritten,
+        };
 
     protected async Task<long> InsertTenant(string name)
     {
@@ -352,6 +358,112 @@ public class ConnectionStringReencryptionTests : DatabaseTest
     }
 
     /// <summary>
+    /// Cancelled once the first legacy value is rewritten, at a point the pass reports rather than
+    /// after a delay: the rewrite must be rolled back with the rest.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_pass_cancelled_after_its_first_rewrite : ConnectionStringReencryptionTests
+    {
+        private readonly Dictionary<(string Table, int Id), byte[]> _before = [];
+        private readonly List<(string Table, int Id)> _rewritten = [];
+        private Func<Task> _act = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _before.Clear();
+            _rewritten.Clear();
+            int first = await InsertDataStore(null, Legacy("host=first;database=edfi;"));
+            _before[("DataStore", first)] = (await Stored("DataStore", first))!;
+            int second = await InsertDataStore(null, Legacy("host=second;database=edfi;"));
+            _before[("DataStore", second)] = (await Stored("DataStore", second))!;
+            int derivative = await InsertDerivative(
+                first,
+                "ReadReplica",
+                Legacy("host=replica;database=edfi;")
+            );
+            _before[("DataStoreDerivative", derivative)] = (await Stored("DataStoreDerivative", derivative))!;
+
+            using CancellationTokenSource cancellation = new();
+            ConnectionStringReencryption reencryption = Reencryption(
+                rowRewritten: (table, id) =>
+                {
+                    _rewritten.Add((table, id));
+                    cancellation.Cancel();
+                }
+            );
+            _act = () => reencryption.RunAsync(Connection!, cancellation.Token);
+            await _act.Should().ThrowAsync<OperationCanceledException>();
+        }
+
+        [Test]
+        public void It_stops_after_the_first_rewrite() => _rewritten.Should().ContainSingle();
+
+        [Test]
+        public async Task It_leaves_every_value_as_it_was()
+        {
+            foreach (((string table, int id), byte[] bytes) in _before)
+            {
+                (await Stored(table, id)).Should().Equal(bytes);
+            }
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_check : ConnectionStringReencryptionTests
+    {
+        private byte[] _legacy = null!;
+        private int _legacyStore;
+        private byte[] _envelope = null!;
+        private int _envelopeDerivative;
+        private IReadOnlyList<ConnectionStringReencryptionCounts> _counts = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _legacy = Legacy("host=legacy;database=edfi;");
+            _legacyStore = await InsertDataStore(null, _legacy);
+            _envelope = Envelope("host=current;database=edfi;");
+            _envelopeDerivative = await InsertDerivative(_legacyStore, "ReadReplica", _envelope);
+
+            _counts = await Reencryption().CheckAsync(Connection!, CancellationToken.None);
+        }
+
+        [Test]
+        public void It_counts_legacy_and_current_values_by_table() =>
+            _counts
+                .Should()
+                .Equal(
+                    new ConnectionStringReencryptionCounts("DataStore", 1, 0),
+                    new ConnectionStringReencryptionCounts("DataStoreDerivative", 0, 1)
+                );
+
+        [Test]
+        public async Task It_changes_nothing()
+        {
+            (await Stored("DataStore", _legacyStore)).Should().Equal(_legacy);
+            (await Stored("DataStoreDerivative", _envelopeDerivative)).Should().Equal(_envelope);
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_check_meeting_a_value_the_pass_cannot_migrate : ConnectionStringReencryptionTests
+    {
+        [Test]
+        public async Task It_fails_naming_the_row()
+        {
+            int parent = await InsertDataStore(null, Legacy("host=parent;database=edfi;"));
+            int derivative = await InsertDerivative(parent, "ReadReplica", new byte[33]);
+
+            var act = () => Reencryption().CheckAsync(Connection!, CancellationToken.None);
+
+            (await act.Should().ThrowAsync<ConnectionStringReencryptionException>()).WithMessage(
+                $"*DataStoreDerivative Id {derivative}*"
+            );
+        }
+    }
+
+    /// <summary>
     /// Each value is preceded by a legacy parent the pass converts first; the failure must roll that
     /// conversion back.
     /// </summary>
@@ -510,21 +622,6 @@ public class ConnectionStringReencryptionTests : DatabaseTest
             "--bogus",
             TestName = "It_exits_1_for_an_unknown_option"
         )]
-        [TestCase(
-            "--reencrypt-connection-strings=true",
-            "--engine",
-            "postgresql",
-            TestName = "It_exits_1_when_the_connection_string_is_missing_with_the_assignment_form"
-        )]
-        [TestCase(
-            "--reencrypt-connection-strings=true",
-            "--engine",
-            "postgresql",
-            "--connectionString",
-            "Host=unused",
-            "--bogus",
-            TestName = "It_exits_1_for_an_unknown_option_with_the_assignment_form"
-        )]
         public void It_exits_1_when_the_migration_arguments_do_not_parse(params string[] arguments)
         {
             Environment.SetEnvironmentVariable(Installer.Options.EncryptionKeyVariable, EncryptionKey);
@@ -535,10 +632,28 @@ public class ConnectionStringReencryptionTests : DatabaseTest
             _output.ToString().Should().NotContain("re-encryption completed");
         }
 
-        [Test]
-        public async Task It_dispatches_the_assignment_form_to_the_migration()
+        /// <summary>
+        /// Each would otherwise run the pass, deploy, or print help with exit status 0, and automation
+        /// would read it as a run that found nothing to migrate.
+        /// </summary>
+        [TestCase("--reencrypt-connection-strings=true", TestName = "It_refuses_the_assignment_form")]
+        [TestCase("--reencrypt-connection-strings=false", TestName = "It_refuses_an_assigned_false")]
+        [TestCase("--reencrypt-connection-strings=bogus", TestName = "It_refuses_an_assigned_non_boolean")]
+        [TestCase(
+            "--check-connection-strings=true",
+            TestName = "It_refuses_the_assignment_form_of_the_check"
+        )]
+        [TestCase("--reencrypt-connection-strings", "false", TestName = "It_refuses_a_stray_value")]
+        [TestCase("--reencrypt-connection-string", TestName = "It_refuses_a_misspelled_switch")]
+        [TestCase(
+            "--reencrypt-connection-strings",
+            "--check-connection-strings",
+            TestName = "It_refuses_both_modes_at_once"
+        )]
+        public async Task It_exits_1_and_changes_nothing(params string[] switches)
         {
-            int id = await InsertDataStore(null, Legacy(PlainText));
+            byte[] legacy = Legacy(PlainText);
+            int id = await InsertDataStore(null, legacy);
             Environment.SetEnvironmentVariable(Installer.Options.EncryptionKeyVariable, EncryptionKey);
 
             Installer.Program.Main([
@@ -546,12 +661,66 @@ public class ConnectionStringReencryptionTests : DatabaseTest
                 "postgresql",
                 "-c",
                 Configuration.DatabaseOptions.Value.DatabaseConnection,
-                "--reencrypt-connection-strings=true",
+                .. switches,
             ]);
 
+            Environment.ExitCode.Should().Be(1);
+            _output.ToString().Should().NotContain("completed");
+            (await Stored("DataStore", id)).Should().Equal(legacy);
+        }
+
+        private static void RunCheck() =>
+            Installer.Program.Main([
+                "-e",
+                "postgresql",
+                "-c",
+                Configuration.DatabaseOptions.Value.DatabaseConnection,
+                "--check-connection-strings",
+            ]);
+
+        [Test]
+        public async Task It_checks_with_exit_status_2_while_legacy_values_remain_and_changes_nothing()
+        {
+            byte[] legacy = Legacy(PlainText);
+            int id = await InsertDataStore(null, legacy);
+            Environment.SetEnvironmentVariable(Installer.Options.EncryptionKeyVariable, EncryptionKey);
+
+            RunCheck();
+
+            Environment.ExitCode.Should().Be(2);
+            _output
+                .ToString()
+                .Should()
+                .Contain("DataStore: 1 legacy, 0 current.")
+                .And.Contain("1 legacy values remain");
+            (await Stored("DataStore", id)).Should().Equal(legacy);
+        }
+
+        [Test]
+        public async Task It_checks_with_exit_status_0_once_no_legacy_values_remain()
+        {
+            byte[] envelope = Envelope(PlainText);
+            int id = await InsertDataStore(null, envelope);
+            Environment.SetEnvironmentVariable(Installer.Options.EncryptionKeyVariable, EncryptionKey);
+
+            RunCheck();
+
             Environment.ExitCode.Should().Be(0);
-            _output.ToString().Should().Contain("DataStore: 1 converted, 0 already current.");
-            StrictReader.Decrypt((await Stored("DataStore", id))!).Should().Be(PlainText);
+            _output.ToString().Should().Contain("no legacy values remain");
+            (await Stored("DataStore", id)).Should().Equal(envelope);
+        }
+
+        [Test]
+        public async Task It_checks_with_exit_status_1_for_a_value_it_cannot_verify()
+        {
+            int parent = await InsertDataStore(null, Envelope(PlainText));
+            int derivative = await InsertDerivative(parent, "ReadReplica", new byte[33]);
+            Environment.SetEnvironmentVariable(Installer.Options.EncryptionKeyVariable, EncryptionKey);
+
+            RunCheck();
+
+            Environment.ExitCode.Should().Be(1);
+            _output.ToString().Should().Contain($"DataStoreDerivative Id {derivative}");
         }
 
         [Test]

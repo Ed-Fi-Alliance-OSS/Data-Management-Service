@@ -502,7 +502,7 @@ public class ConnectionStringEncryptionServiceTests
 
         private static void ShouldBeRejectedAsLegacy(Func<string?> act) =>
             act.Should()
-                .ThrowExactly<CryptographicException>()
+                .ThrowExactly<LegacyConnectionStringRejectedException>()
                 .WithMessage("*legacy AES-CBC format*DatabaseSettings:AllowLegacyConnectionStrings is false*")
                 .Which.InnerException.Should()
                 .BeNull();
@@ -594,16 +594,18 @@ public class ConnectionStringEncryptionServiceTests
             var act = () => service.Decrypt(EncryptLegacy(LegacyPlainText));
 
             act.Should()
-                .ThrowExactly<CryptographicException>()
+                .ThrowExactly<LegacyConnectionStringRejectedException>()
                 .WithMessage("*AllowLegacyConnectionStrings is false*");
         }
 
         /// <summary>
         /// Fails closed: the options never resolve, so a typo cannot leave legacy reads enabled. The
-        /// Configuration Service resolves these options at startup. Compose never passes a blank value:
-        /// it substitutes true for a blank CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS.
+        /// Configuration Service resolves these options at startup. Compose never passes an empty value:
+        /// it substitutes true for an empty CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS. It
+        /// does pass a whitespace-only one through.
         /// </summary>
         [TestCase("")]
+        [TestCase(" ")]
         [TestCase("flase")]
         [TestCase("0")]
         public void It_fails_binding_for_a_blank_or_malformed_value(string value)

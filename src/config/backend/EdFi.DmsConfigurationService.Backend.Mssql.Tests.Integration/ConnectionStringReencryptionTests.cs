@@ -55,12 +55,14 @@ public class ConnectionStringReencryptionTests : DatabaseTest
 
     protected static byte[] Envelope(string plainText) => StrictReader.Encrypt(plainText)!;
 
-    protected static ConnectionStringReencryption Reencryption(int batchSize = 500) =>
-        new(
-            MssqlTestConfiguration.DatabaseOptions.Value,
-            ConnectionStringReencryptionEngine.Mssql,
-            batchSize
-        );
+    protected static ConnectionStringReencryption Reencryption(
+        int batchSize = 500,
+        Action<string, int>? rowRewritten = null
+    ) =>
+        new(MssqlTestConfiguration.DatabaseOptions.Value, ConnectionStringReencryptionEngine.Mssql, batchSize)
+        {
+            RowRewritten = rowRewritten,
+        };
 
     private static SqlParameter Binary(string name, byte[]? value) =>
         new(name, SqlDbType.VarBinary, -1) { Value = (object?)value ?? DBNull.Value };
@@ -320,6 +322,112 @@ public class ConnectionStringReencryptionTests : DatabaseTest
             {
                 (await Stored("DataStoreDerivative", id)).Should().Equal(bytes);
             }
+        }
+    }
+
+    /// <summary>
+    /// Cancelled once the first legacy value is rewritten, at a point the pass reports rather than
+    /// after a delay: the rewrite must be rolled back with the rest.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_pass_cancelled_after_its_first_rewrite : ConnectionStringReencryptionTests
+    {
+        private readonly Dictionary<(string Table, int Id), byte[]> _before = [];
+        private readonly List<(string Table, int Id)> _rewritten = [];
+        private Func<Task> _act = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _before.Clear();
+            _rewritten.Clear();
+            int first = await InsertDataStore(null, Legacy("host=first;database=edfi;"));
+            _before[("DataStore", first)] = (await Stored("DataStore", first))!;
+            int second = await InsertDataStore(null, Legacy("host=second;database=edfi;"));
+            _before[("DataStore", second)] = (await Stored("DataStore", second))!;
+            int derivative = await InsertDerivative(
+                first,
+                "ReadReplica",
+                Legacy("host=replica;database=edfi;")
+            );
+            _before[("DataStoreDerivative", derivative)] = (await Stored("DataStoreDerivative", derivative))!;
+
+            using CancellationTokenSource cancellation = new();
+            ConnectionStringReencryption reencryption = Reencryption(
+                rowRewritten: (table, id) =>
+                {
+                    _rewritten.Add((table, id));
+                    cancellation.Cancel();
+                }
+            );
+            _act = () => reencryption.RunAsync(Connection!, cancellation.Token);
+            await _act.Should().ThrowAsync<OperationCanceledException>();
+        }
+
+        [Test]
+        public void It_stops_after_the_first_rewrite() => _rewritten.Should().ContainSingle();
+
+        [Test]
+        public async Task It_leaves_every_value_as_it_was()
+        {
+            foreach (((string table, int id), byte[] bytes) in _before)
+            {
+                (await Stored(table, id)).Should().Equal(bytes);
+            }
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_check : ConnectionStringReencryptionTests
+    {
+        private byte[] _legacy = null!;
+        private int _legacyStore;
+        private byte[] _envelope = null!;
+        private int _envelopeDerivative;
+        private IReadOnlyList<ConnectionStringReencryptionCounts> _counts = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _legacy = Legacy("host=legacy;database=edfi;");
+            _legacyStore = await InsertDataStore(null, _legacy);
+            _envelope = Envelope("host=current;database=edfi;");
+            _envelopeDerivative = await InsertDerivative(_legacyStore, "ReadReplica", _envelope);
+
+            _counts = await Reencryption().CheckAsync(Connection!, CancellationToken.None);
+        }
+
+        [Test]
+        public void It_counts_legacy_and_current_values_by_table() =>
+            _counts
+                .Should()
+                .Equal(
+                    new ConnectionStringReencryptionCounts("DataStore", 1, 0),
+                    new ConnectionStringReencryptionCounts("DataStoreDerivative", 0, 1)
+                );
+
+        [Test]
+        public async Task It_changes_nothing()
+        {
+            (await Stored("DataStore", _legacyStore)).Should().Equal(_legacy);
+            (await Stored("DataStoreDerivative", _envelopeDerivative)).Should().Equal(_envelope);
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_check_meeting_a_value_the_pass_cannot_migrate : ConnectionStringReencryptionTests
+    {
+        [Test]
+        public async Task It_fails_naming_the_row()
+        {
+            int parent = await InsertDataStore(null, Legacy("host=parent;database=edfi;"));
+            int derivative = await InsertDerivative(parent, "ReadReplica", new byte[33]);
+
+            var act = () => Reencryption().CheckAsync(Connection!, CancellationToken.None);
+
+            (await act.Should().ThrowAsync<ConnectionStringReencryptionException>()).WithMessage(
+                $"*DataStoreDerivative Id {derivative}*"
+            );
         }
     }
 
