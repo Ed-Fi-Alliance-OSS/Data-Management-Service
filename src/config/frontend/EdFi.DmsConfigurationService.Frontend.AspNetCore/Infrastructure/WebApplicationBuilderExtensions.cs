@@ -109,6 +109,8 @@ public static class WebApplicationBuilderExtensions
         // The cache is a singleton taking the tenant as an argument, so it holds no scoped
         // dependency; the read seam that consults it is transient like the repositories calling it.
         webApplicationBuilder.Services.AddSingleton<SecretValueCache>();
+        // Holds the /connect/* budgets for the life of the process; disposed by the container (DMS-1482).
+        webApplicationBuilder.Services.AddSingleton<ConnectRateLimiter>();
         webApplicationBuilder.Services.AddTransient<IConnectionStringReader, ConnectionStringReader>();
         ConfigureJobOptions(webApplicationBuilder.Services, webApplicationBuilder.Configuration);
         ConfigureDatastore(webApplicationBuilder, logger);
