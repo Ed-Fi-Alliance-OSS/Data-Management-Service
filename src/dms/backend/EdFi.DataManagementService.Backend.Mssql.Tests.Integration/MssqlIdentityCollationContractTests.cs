@@ -23,7 +23,8 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 /// <summary>
 /// SQL Server evidence that the identity collation contract holds independent of the database default:
 /// ds-5.2 is provisioned into a case-sensitive database, and identity columns still compare
-/// case-insensitively in storage, in <c>/deletes</c> recreation suppression and in GET-many filters.
+/// case-insensitively in storage, in <c>/deletes</c> recreation suppression (descriptor recreation by
+/// lowered whole URI included) and in GET-many filters.
 /// </summary>
 /// <remarks>
 /// Provisioned directly rather than through the shared baseline cache, because the cache's databases
@@ -47,21 +48,32 @@ public class Given_A_Mssql_Case_Sensitive_Default_Database_With_Identity_Collati
     private const int SeededStudentCount = 2_000;
 
     private const string MatchingStudentUniqueId = "ABC123";
+    private const string ProgramTypeNamespace = "uri://ed-fi.org/ProgramTypeDescriptor";
 
     private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
     private static readonly QualifiedResourceName AcademicWeekResource = new("Ed-Fi", "AcademicWeek");
     private static readonly QualifiedResourceName StudentResource = new("Ed-Fi", "Student");
+    private static readonly QualifiedResourceName ProgramResource = new("Ed-Fi", "Program");
     private static readonly QualifiedResourceName AcademicSubjectDescriptorResource = new(
         "Ed-Fi",
         "AcademicSubjectDescriptor"
     );
+    private static readonly QualifiedResourceName ProgramTypeDescriptorResource = new(
+        "Ed-Fi",
+        "ProgramTypeDescriptor"
+    );
 
-    private static readonly ResourceInfo AcademicWeekResourceInfo = new(
-        new ProjectName("Ed-Fi"),
-        new ResourceName("AcademicWeek"),
-        IsDescriptor: false,
-        new SemVer("5.2.0"),
-        AllowIdentityUpdates: false
+    private static readonly ResourceInfo AcademicWeekResourceInfo = CreateResourceInfo(
+        AcademicWeekResource,
+        isDescriptor: false
+    );
+    private static readonly ResourceInfo ProgramResourceInfo = CreateResourceInfo(
+        ProgramResource,
+        isDescriptor: false
+    );
+    private static readonly ResourceInfo ProgramTypeDescriptorResourceInfo = CreateResourceInfo(
+        ProgramTypeDescriptorResource,
+        isDescriptor: true
     );
 
     private MssqlGeneratedDdlFixture _fixture = null!;
@@ -253,6 +265,92 @@ public class Given_A_Mssql_Case_Sensitive_Default_Database_With_Identity_Collati
         keyValues["weekIdentifier"]!.GetValue<string>().Should().Be("Week One Control");
     }
 
+    // Recreation compares lowered whole URIs. Dotted I (U+0130) lowers to i under the identity collation's
+    // LOWER, though its comparison weights alone keep the two apart.
+    [TestCase("Casing Recreation", "CASING RECREATION")]
+    [TestCase("Dotted i Recreation", "Dotted İ Recreation")]
+    public async Task It_suppresses_a_deleted_descriptor_recreated_with_an_equal_lowered_uri(
+        string oldCodeValue,
+        string newCodeValue
+    )
+    {
+        long windowStart = await NextChangeVersionAsync();
+        long descriptorDocumentId = await InsertDescriptorAsync(
+            ProgramTypeDescriptorResource,
+            ProgramTypeNamespace,
+            oldCodeValue
+        );
+
+        await DeleteDescriptorAsync(descriptorDocumentId);
+        await InsertDescriptorAsync(ProgramTypeDescriptorResource, ProgramTypeNamespace, newCodeValue);
+
+        // A collation conflict (Msg 468) between the tracked-change and live columns would throw here.
+        TrackedChangeQueryResult result = await QueryDeletesAsync(
+            ProgramTypeDescriptorResourceInfo,
+            windowStart
+        );
+
+        result.Items.Should().BeEmpty();
+        result.TotalCount.Should().Be(0L);
+    }
+
+    [Test]
+    public async Task It_still_reports_a_deleted_descriptor_recreated_with_a_different_uri()
+    {
+        long windowStart = await NextChangeVersionAsync();
+        long descriptorDocumentId = await InsertDescriptorAsync(
+            ProgramTypeDescriptorResource,
+            ProgramTypeNamespace,
+            "Descriptor Control"
+        );
+
+        await DeleteDescriptorAsync(descriptorDocumentId);
+        await InsertDescriptorAsync(
+            ProgramTypeDescriptorResource,
+            ProgramTypeNamespace,
+            "Descriptor Control Other"
+        );
+
+        TrackedChangeQueryResult result = await QueryDeletesAsync(
+            ProgramTypeDescriptorResourceInfo,
+            windowStart
+        );
+
+        result.TotalCount.Should().Be(1L);
+        JsonObject keyValues = result.Items.Should().ContainSingle().Subject!["keyValues"]!.AsObject();
+        keyValues["namespace"]!.GetValue<string>().Should().Be(ProgramTypeNamespace);
+        keyValues["codeValue"]!.GetValue<string>().Should().Be("Descriptor Control");
+    }
+
+    [Test]
+    public async Task It_suppresses_a_deleted_program_recreated_on_a_case_variant_recreated_descriptor()
+    {
+        long windowStart = await NextChangeVersionAsync();
+        long oldDescriptorDocumentId = await InsertDescriptorAsync(
+            ProgramTypeDescriptorResource,
+            ProgramTypeNamespace,
+            "Program Casing"
+        );
+        long programDocumentId = await InsertDocumentAsync(ProgramResource);
+        await InsertProgramRootAsync(programDocumentId, oldDescriptorDocumentId);
+        await DeleteProgramRootAsync(programDocumentId);
+
+        // The descriptor comes back as a new row with a new DescriptorId, so only the lowered-URI join can
+        // connect the Program tombstone to the recreated Program.
+        await DeleteDescriptorAsync(oldDescriptorDocumentId);
+        long newDescriptorDocumentId = await InsertDescriptorAsync(
+            ProgramTypeDescriptorResource,
+            ProgramTypeNamespace,
+            "PROGRAM CASING"
+        );
+        await InsertProgramRootAsync(programDocumentId, newDescriptorDocumentId);
+
+        TrackedChangeQueryResult result = await QueryDeletesAsync(ProgramResourceInfo, windowStart);
+
+        result.Items.Should().BeEmpty();
+        result.TotalCount.Should().Be(0L);
+    }
+
     [Test]
     public async Task It_matches_a_case_variant_identity_filter()
     {
@@ -433,19 +531,10 @@ public class Given_A_Mssql_Case_Sensitive_Default_Database_With_Identity_Collati
         ConcreteResourceModel descriptor = _fixture.MappingSet.Model.ConcreteResourcesInNameOrder.Single(
             resource => resource.RelationalModel.Resource == AcademicSubjectDescriptorResource
         );
-        long documentId = await InsertDocumentAsync(AcademicSubjectDescriptorResource);
-        await _database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO [dms].[Descriptor] ([DocumentId], [ResourceKeyId], [Namespace], [CodeValue], [ShortDescription])
-            VALUES (@documentId, @resourceKeyId, @namespace, @codeValue, N'Identity collation');
-            """,
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter(
-                "@resourceKeyId",
-                _fixture.MappingSet.ResourceKeyIdByResource[AcademicSubjectDescriptorResource]
-            ),
-            new SqlParameter("@namespace", storedNamespace),
-            new SqlParameter("@codeValue", Guid.NewGuid().ToString("N"))
+        long documentId = await InsertDescriptorAsync(
+            AcademicSubjectDescriptorResource,
+            storedNamespace,
+            Guid.NewGuid().ToString("N")
         );
 
         var checks = (
@@ -489,6 +578,69 @@ public class Given_A_Mssql_Case_Sensitive_Default_Database_With_Identity_Collati
             SELECT [DocumentId] FROM @inserted;
             """,
             new SqlParameter("@resourceKeyId", _fixture.MappingSet.ResourceKeyIdByResource[resource])
+        );
+    }
+
+    private async Task<long> InsertDescriptorAsync(
+        QualifiedResourceName resource,
+        string @namespace,
+        string codeValue
+    )
+    {
+        long documentId = await InsertDocumentAsync(resource);
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [dms].[Descriptor] ([DocumentId], [ResourceKeyId], [Namespace], [CodeValue], [ShortDescription])
+            VALUES (@documentId, @resourceKeyId, @namespace, @codeValue, N'Identity collation');
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@resourceKeyId", _fixture.MappingSet.ResourceKeyIdByResource[resource]),
+            new SqlParameter("@namespace", @namespace),
+            new SqlParameter("@codeValue", codeValue)
+        );
+
+        return documentId;
+    }
+
+    private async Task DeleteDescriptorAsync(long documentId)
+    {
+        await _database.ExecuteNonQueryAsync(
+            "DELETE FROM [dms].[Descriptor] WHERE [DocumentId] = @documentId;",
+            new SqlParameter("@documentId", documentId)
+        );
+    }
+
+    private async Task InsertProgramRootAsync(long documentId, long programTypeDescriptorDocumentId)
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[Program] (
+                [DocumentId],
+                [EducationOrganization_DocumentId],
+                [EducationOrganization_EducationOrganizationId],
+                [ProgramTypeDescriptor_DescriptorId],
+                [ProgramName]
+            )
+            VALUES (
+                @documentId,
+                @schoolDocumentId,
+                @schoolId,
+                (SELECT [DescriptorId] FROM [dms].[Descriptor] WHERE [DocumentId] = @descriptorDocumentId),
+                N'Identity Collation Program'
+            );
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@schoolDocumentId", _schoolDocumentId),
+            new SqlParameter("@schoolId", SchoolId),
+            new SqlParameter("@descriptorDocumentId", programTypeDescriptorDocumentId)
+        );
+    }
+
+    private async Task DeleteProgramRootAsync(long documentId)
+    {
+        await _database.ExecuteNonQueryAsync(
+            "DELETE FROM [edfi].[Program] WHERE [DocumentId] = @documentId;",
+            new SqlParameter("@documentId", documentId)
         );
     }
 
@@ -594,13 +746,27 @@ public class Given_A_Mssql_Case_Sensitive_Default_Database_With_Identity_Collati
         );
     }
 
-    private async Task<TrackedChangeQueryResult> QueryAcademicWeekDeletesAsync(long windowStart)
+    private Task<TrackedChangeQueryResult> QueryAcademicWeekDeletesAsync(long windowStart) =>
+        QueryDeletesAsync(AcademicWeekResourceInfo, windowStart);
+
+    private async Task<TrackedChangeQueryResult> QueryDeletesAsync(
+        ResourceInfo resourceInfo,
+        long windowStart
+    )
     {
-        ConcreteResourceModel resourceModel = _fixture.MappingSet.Model.ConcreteResourcesInNameOrder.Single(
-            resource => resource.RelationalModel.Resource == AcademicWeekResource
+        var resource = new QualifiedResourceName(
+            resourceInfo.ProjectName.Value,
+            resourceInfo.ResourceName.Value
         );
+        ConcreteResourceModel resourceModel = _fixture.MappingSet.Model.ConcreteResourcesInNameOrder.Single(
+            model => model.RelationalModel.Resource == resource
+        );
+        // Every descriptor tombstone lands in the one shared descriptor tracked-change table.
         TrackedChangeTableInfo trackedTable = _fixture.MappingSet.Model.TrackedChangeTablesInNameOrder.Single(
-            table => table.SourceTable == resourceModel.RelationalModel.Root.Table
+            table =>
+                resourceInfo.IsDescriptor
+                    ? table.Kind is TrackedChangeTableKind.SharedDescriptor
+                    : table.SourceTable == resourceModel.RelationalModel.Root.Table
         );
 
         var repository = new RelationalChangeQueryRepository(
@@ -618,7 +784,7 @@ public class Given_A_Mssql_Case_Sensitive_Default_Database_With_Identity_Collati
 
         return await repository.QueryTrackedChanges(
             new IdentityCollationTrackedChangeQueryRequest(
-                ResourceInfo: AcademicWeekResourceInfo,
+                ResourceInfo: resourceInfo,
                 Operation: ChangeQueryEndpointOperation.Deletes,
                 PaginationParameters: new PaginationParameters(
                     Limit: 25,
@@ -627,7 +793,7 @@ public class Given_A_Mssql_Case_Sensitive_Default_Database_With_Identity_Collati
                     MaximumPageSize: 500
                 ),
                 ChangeVersionRange: new ChangeVersionRange(windowStart, long.MaxValue),
-                TraceId: new TraceId("mssql-identity-collation-deletes"),
+                TraceId: new TraceId($"mssql-identity-collation-deletes-{resource.ResourceName}"),
                 AuthorizationContext: new RelationalAuthorizationContext([]),
                 AuthorizationStrategyEvaluators: [],
                 MappingSet: _fixture.MappingSet,
@@ -636,6 +802,15 @@ public class Given_A_Mssql_Case_Sensitive_Default_Database_With_Identity_Collati
             )
         );
     }
+
+    private static ResourceInfo CreateResourceInfo(QualifiedResourceName resource, bool isDescriptor) =>
+        new(
+            new ProjectName(resource.ProjectName),
+            new ResourceName(resource.ResourceName),
+            isDescriptor,
+            new SemVer("5.2.0"),
+            AllowIdentityUpdates: false
+        );
 }
 
 file sealed record IdentityCollationTrackedChangeQueryRequest(
