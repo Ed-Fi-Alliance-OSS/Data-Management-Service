@@ -340,7 +340,9 @@ a new token for each resource GET and otherwise exceeds the default limit of 15.
 DMS also proxies each token request to the Configuration Service's `/connect/token`, so also raise
 `CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_SOURCE_PERMIT_LIMIT` and
 `CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_CLIENT_PERMIT_LIMIT` for the run, or set
-`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_ENABLED=false`.
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_ENABLED=false`. The rate-limit raise is only needed for stacks
+not started from `.env.smoke*` (for example custom or `.env.example`-based stacks), since the tracked
+smoke profiles already raise them.
 Restore the configured values and recreate the stack after the smoke run.
 
 After the stack is up, run the smoke tests the same way as for PostgreSQL. The script imports its

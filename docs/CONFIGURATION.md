@@ -1380,7 +1380,7 @@ the Configuration Service's `/connect/token`, so also raise
 `CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_CLIENT_PERMIT_LIMIT` for the run, or set
 `CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_ENABLED=false` (see [ConnectRateLimit](#connectratelimit)).
 Restore the configured values and recreate the stack after the smoke run. The tracked
-`.env.smoke` and `.env.smoke.ds61` profiles show 15 and the default rate limits; the smoke
+`.env.smoke` and `.env.smoke.ds61` profiles show the token override of 15 and `/connect/*` rate limits raised to 1000000; the smoke
 workflow supplies the `-1` override and disables the `/connect/*` rate limit through the
 stack-start step's environment.
 

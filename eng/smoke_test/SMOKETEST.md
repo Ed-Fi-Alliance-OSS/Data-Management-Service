@@ -54,7 +54,9 @@ DMS also proxies each of those token requests to the Configuration Service's
 per source and 30 per client in 60 seconds). For the run, also raise
 `CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_SOURCE_PERMIT_LIMIT` and
 `CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_CLIENT_PERMIT_LIMIT`, or set
-`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_ENABLED=false`. Restore the configured
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_ENABLED=false`. The rate-limit raise is only
+needed for stacks not started from `.env.smoke*` (for example custom or `.env.example`-based
+stacks), since the tracked smoke profiles already raise them. Restore the configured
 values and recreate the stack after the smoke run.
 
 ```powershell
