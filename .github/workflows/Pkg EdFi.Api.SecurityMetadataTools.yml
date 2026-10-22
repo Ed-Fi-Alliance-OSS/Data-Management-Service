@@ -73,8 +73,6 @@ jobs:
     permissions:
       actions: read
       contents: write
-    outputs:
-      sbom-hash-code: ${{ steps.sbom-hash-code.outputs.sbom-hash-code }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -100,13 +98,6 @@ jobs:
           path: ${{ env.MANIFEST_FILE }}
           if-no-files-found: error
           retention-days: 30
-
-      - name: Generate SecurityMetadataTools hash code for SBOM
-        id: sbom-hash-code
-        shell: bash
-        run: |
-          sbom_hash=$(sha256sum ./${{ env.MANIFEST_FILE }} | awk '{split($0,a); print a[1]}')
-          echo "sbom-hash-code=$sbom_hash" >> "$GITHUB_OUTPUT"
 
   provenance-create-security-metadata-tools:
     name: Create SecurityMetadataTools Provenance
