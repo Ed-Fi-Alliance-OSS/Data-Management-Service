@@ -72,7 +72,7 @@ public class Given_The_Parity_Scenario_Catalog
         "Api/CompactDescriptorResources/IdentityUpdatePropagation",
         "Api/CompactDescriptorResources/NamespaceAuthorization",
         "Api/CompactDescriptorHistory/QualifiedDeleteRouting",
-        "Api/CompactDescriptorHistory/ProviderRecreationComparisons",
+        "Api/CompactDescriptorHistory/LoweredUriRecreation",
         "Api/CompactDescriptorHistory/ResourceIdentitySnapshots",
         "Api/CompactDescriptorHistory/ResourceRecreation",
         "Api/CompactDescriptorHistory/ComponentUpdateAndNoOpHistory",

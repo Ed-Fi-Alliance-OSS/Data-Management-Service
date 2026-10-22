@@ -212,10 +212,10 @@ public static partial class ParityScenarioCatalog
             fixtureSuffix: "DerivativeTrackedChanges_CompactDescriptors"
         ),
         Api(
-            "Api/CompactDescriptorHistory/ProviderRecreationComparisons",
-            "Descriptor recreation follows provider component collation verdicts (the identity collation on SQL Server) for casing, namespace delimiter spaces, equal whole URIs with different components and extra delimiters.",
-            "CompactDescriptorHistoryScenario.It_preserves_provider_component_comparisons_for_descriptor_recreation",
-            "It_preserves_provider_component_comparisons_for_descriptor_recreation",
+            "Api/CompactDescriptorHistory/LoweredUriRecreation",
+            "Descriptor recreation suppresses by lowered whole URI plus ResourceKeyId on both providers: casing and equal whole URIs with different components suppress, a namespace trailing space does not, and extra delimiters compare exactly.",
+            "CompactDescriptorHistoryScenario.It_suppresses_descriptor_recreation_by_lowered_uri_and_resource_key",
+            "It_suppresses_descriptor_recreation_by_lowered_uri_and_resource_key",
             fixtureSuffix: "DerivativeTrackedChanges_CompactDescriptors"
         ),
         Api(
@@ -227,7 +227,7 @@ public static partial class ParityScenarioCatalog
         ),
         Api(
             "Api/CompactDescriptorHistory/ResourceRecreation",
-            "Recreated resources suppress their old deletes through the qualified descriptor compact key, preserving RI mixed-case matching and exact stored int values.",
+            "Recreated resources suppress their old deletes through the qualified descriptor compact key found by lowered whole URI, preserving RI mixed-case matching and exact stored int values.",
             "CompactDescriptorHistoryScenario.It_recreates_resources_using_compact_descriptor_identity_joins",
             "It_recreates_resources_using_compact_descriptor_identity_joins",
             fixtureSuffix: "DerivativeTrackedChanges_CompactDescriptors"
