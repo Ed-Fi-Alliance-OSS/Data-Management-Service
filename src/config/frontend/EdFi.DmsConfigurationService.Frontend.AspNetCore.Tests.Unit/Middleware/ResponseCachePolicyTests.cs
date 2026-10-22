@@ -31,7 +31,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Middleware
 /// </summary>
 [TestFixture]
 [NonParallelizable]
-public class Given_ResponseCachePolicyTests
+public class Given_The_Cms_Pipeline_Response_Cache_Policy
 {
     private WebApplicationFactory<Program> _factory = null!;
     private HttpClient _authenticatedClient = null!;
@@ -176,8 +176,10 @@ public class Given_ResponseCachePolicyTests
             new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
         ]);
 
+    // GetValues folds repeated Cache-Control fields into one value; NonValidated keeps each field, so
+    // a duplicate fails here.
     private static void ShouldHaveSingleNoStore(HttpResponseMessage response) =>
-        response.Headers.GetValues("Cache-Control").Should().Equal("no-store");
+        response.Headers.NonValidated["Cache-Control"].Should().Equal("no-store");
 
     private static void ShouldHaveNoPragma(HttpResponseMessage response) =>
         response.Headers.Contains("Pragma").Should().BeFalse();

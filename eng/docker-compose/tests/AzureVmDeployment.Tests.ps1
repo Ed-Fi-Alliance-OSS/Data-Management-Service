@@ -1122,6 +1122,29 @@ Describe "Azure VM Swagger UI" {
     }
 }
 
+Describe "Azure VM gateway security headers" {
+    BeforeAll {
+        $template = Join-Path $PSScriptRoot "../../azure-vm/compose/nginx/default.conf.template"
+        $gateway = Get-Content -LiteralPath ([System.IO.Path]::GetFullPath($template)) -Raw
+        $tlsServer = [regex]::Match($gateway, '(?ms)^server \{\s*\n    listen 443 ssl;\s*\n.*?^\}').Value
+        $parts = $tlsServer -split '(?m)^    location '
+        $script:serverLevel = $parts[0]
+        $script:locations = @($parts | Select-Object -Skip 1)
+    }
+
+    It "keeps its own HSTS policy authoritative over the applications'" {
+        $script:serverLevel | Should -Match 'proxy_hide_header Strict-Transport-Security;' -Because "nginx appends add_header after the upstream field, and browsers honor only the first"
+        $script:serverLevel | Should -Match 'add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;'
+    }
+
+    It "sets no headers inside a location, which would stop the server-level header directives from being inherited" {
+        $script:locations.Count | Should -BeGreaterThan 0
+        foreach ($location in $script:locations) {
+            $location | Should -Not -Match '(?m)^\s*(add_header|proxy_hide_header)\s' -Because "location $($location.Split("`n")[0])"
+        }
+    }
+}
+
 Describe "Azure VM ODS parity check" {
     BeforeAll {
         $script:paritySource = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../azure-vm/compose/seed/check-ods-parity.py"))

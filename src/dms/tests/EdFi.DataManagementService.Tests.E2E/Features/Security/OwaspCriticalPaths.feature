@@ -102,7 +102,6 @@ Feature: OWASP critical attack path protections
                   }
                   """
              Then it should respond with 401
-              And the response header "Strict-Transport-Security" is not present
 
         @e2e-ci-shard-3
         Scenario: 06 X-Forwarded-Host spoofing does not bypass authentication

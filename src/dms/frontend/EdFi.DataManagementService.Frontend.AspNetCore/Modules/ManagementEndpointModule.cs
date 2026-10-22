@@ -165,6 +165,17 @@ public class ManagementEndpointModule(
             _ => Results.StatusCode(response.StatusCode),
         };
 
+    /// <summary>
+    /// The claimset view returns authorization configuration to an authenticated caller, so even its
+    /// success response is kept out of every cache. Failures are already marked no-store by
+    /// <see cref="Infrastructure.SecurityHeadersMiddleware"/>.
+    /// </summary>
+    private static IResult ToNoStoreResult(HttpContext httpContext, IFrontendResponse response)
+    {
+        httpContext.Response.Headers.CacheControl = "no-store";
+        return ToResult(response);
+    }
+
     private static IResult NotFoundProblem() =>
         Results.NotFound(
             new
@@ -260,7 +271,7 @@ public class ManagementEndpointModule(
 
         logger.LogInformation("View claimsets requested via management endpoint");
 
-        return ToResult(await apiService.ViewClaimsetsAsync());
+        return ToNoStoreResult(httpContext, await apiService.ViewClaimsetsAsync());
     }
 
     /// <summary>
@@ -290,6 +301,6 @@ public class ManagementEndpointModule(
 
         logger.LogInformation("View claimsets requested via management endpoint for tenant");
 
-        return ToResult(await apiService.ViewClaimsetsAsync(tenant));
+        return ToNoStoreResult(httpContext, await apiService.ViewClaimsetsAsync(tenant));
     }
 }

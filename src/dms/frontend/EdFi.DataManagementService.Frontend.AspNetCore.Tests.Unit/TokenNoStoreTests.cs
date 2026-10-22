@@ -19,10 +19,11 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 
 /// <summary>
-/// Every DMS <c>/oauth/token</c> response carries exactly one <c>Cache-Control: no-store</c> and
-/// <c>Pragma: no-cache</c> (RFC 6749 section 5.1), including the 2xx shapes
-/// <see cref="Infrastructure.SecurityHeadersMiddleware"/> deliberately leaves alone. Non-token
-/// surfaces keep their existing behavior.
+/// Every response from the DMS <c>/oauth/token</c> POST endpoints carries exactly one
+/// <c>Cache-Control: no-store</c> and <c>Pragma: no-cache</c> (RFC 6749 section 5.1), including the
+/// 2xx shapes <see cref="Infrastructure.SecurityHeadersMiddleware"/> deliberately leaves alone.
+/// Routing rejections on the token path carry no token and keep only the non-2xx no-store, without
+/// Pragma. Non-token surfaces keep their existing behavior.
 /// </summary>
 [TestFixture]
 [NonParallelizable]
@@ -50,7 +51,9 @@ public class TokenNoStoreTests
 
     private static void AssertNoStoreWithPragma(HttpResponseMessage response)
     {
-        response.Headers.GetValues("Cache-Control").Should().ContainSingle().Which.Should().Be("no-store");
+        // GetValues folds repeated Cache-Control fields into one value; NonValidated keeps each
+        // field, so a duplicate fails here.
+        response.Headers.NonValidated["Cache-Control"].Should().Equal("no-store");
         response.Headers.GetValues("Pragma").Should().ContainSingle().Which.Should().Be("no-cache");
     }
 
@@ -266,12 +269,7 @@ public class TokenNoStoreTests
         [Test]
         public void It_keeps_the_non_2xx_no_store_without_pragma()
         {
-            Response
-                .Headers.GetValues("Cache-Control")
-                .Should()
-                .ContainSingle()
-                .Which.Should()
-                .Be("no-store");
+            Response.Headers.NonValidated["Cache-Control"].Should().Equal("no-store");
             Response.Headers.Contains("Pragma").Should().BeFalse();
         }
     }
