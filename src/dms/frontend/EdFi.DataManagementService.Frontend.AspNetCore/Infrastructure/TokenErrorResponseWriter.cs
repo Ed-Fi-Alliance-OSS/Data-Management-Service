@@ -31,6 +31,11 @@ internal static class TokenErrorResponseWriter
         {
             context.Response.Headers.WWWAuthenticate = response.Headers.WwwAuthenticate.ToString();
         }
+        else if (!response.IsSuccessStatusCode)
+        {
+            // A writable exception response can replace an earlier authentication rejection.
+            context.Response.Headers.Remove("WWW-Authenticate");
+        }
 
         await response.Content.CopyToAsync(context.Response.Body, cancellationToken);
     }

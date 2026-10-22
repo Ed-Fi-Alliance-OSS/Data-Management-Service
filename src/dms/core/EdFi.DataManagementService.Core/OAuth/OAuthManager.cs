@@ -482,10 +482,11 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         )
         {
             string body = await response.Content.ReadAsStringAsync();
-            JsonObject? obj = JsonObjectOrNull(body);
-            string? error = GetStringOrNull(obj?["error"]);
-
-            if (obj is null || error is null || !IsRecognizedTokenError(error))
+            if (
+                JsonObjectOrNull(body) is not JsonObject obj
+                || GetStringOrNull(obj["error"]) is not string error
+                || !IsRecognizedTokenError(error)
+            )
             {
                 logger.LogWarning(
                     "Error from upstream identity service - {TraceId} - {Content}",
@@ -500,9 +501,8 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                 );
             }
 
-            string? suppliedDescription = GetStringOrNull(obj["error_description"]);
-            bool hasUsableDescription =
-                suppliedDescription is not null && IsUsableOAuthDescription(suppliedDescription);
+            string suppliedDescription = GetStringOrNull(obj["error_description"]) ?? string.Empty;
+            bool hasUsableDescription = IsUsableOAuthDescription(suppliedDescription);
             if (!hasUsableDescription)
             {
                 (string standardFields, string otherFieldNames) = SummarizeUpstreamFieldsForLogging(obj);
@@ -522,7 +522,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             return OAuthErrorResponse.Create(
                 unauthorized ? HttpStatusCode.Unauthorized : HttpStatusCode.BadRequest,
                 error,
-                hasUsableDescription ? suppliedDescription! : fallbackDescription,
+                hasUsableDescription ? suppliedDescription : fallbackDescription,
                 traceId
             );
         }

@@ -172,6 +172,21 @@ Feature: Client credentials at the token endpoint
 
   Rule: Missing and unsupported grant types have distinct OAuth errors
 
+    @DMS-1606
+    @e2e-ci-shard-1
+    Scenario Outline: 38 Grant validation precedes malformed Basic header parsing
+      When a token request is made with Authorization header "Basicxyz:secret", content type "application/json" and body
+        """
+        <body>
+        """
+      Then the token error is 400 "<error>" with description "<description>"
+
+      Examples:
+        | body                      | error                  | description                                        |
+        | {"grant_type":"password"} | unsupported_grant_type | Unsupported grant type                             |
+        | {}                        | invalid_request        | The grant_type request parameter must be supplied  |
+        | {"grant_type":null}       | invalid_request        | The grant_type request parameter must be supplied  |
+
     @DMS-1604
     @DMS-1606
     @e2e-ci-shard-1

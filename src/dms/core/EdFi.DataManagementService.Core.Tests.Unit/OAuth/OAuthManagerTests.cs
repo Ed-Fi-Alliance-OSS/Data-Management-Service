@@ -91,7 +91,7 @@ public class OAuthManagerTests
             _upstreamRequest!.Headers.GetValues("Authorization").Should().ContainSingle().Subject;
 
         /// <summary>
-        /// The <c>detail</c> of the problem response OAuthManager returned.
+        /// The <c>error_description</c> of the OAuth response OAuthManager returned.
         /// </summary>
         protected async Task<string> ResponseDetail() =>
             JsonNode.Parse(await _response.Content.ReadAsStringAsync())![
@@ -99,8 +99,7 @@ public class OAuthManagerTests
             ]!.GetValue<string>();
 
         /// <summary>
-        /// The <c>title</c> of the problem response OAuthManager returned, which carries the
-        /// OAuth error code on a 401.
+        /// The <c>error</c> code of the OAuth response OAuthManager returned.
         /// </summary>
         protected async Task<string> ResponseTitle() =>
             JsonNode.Parse(await _response.Content.ReadAsStringAsync())!["error"]!.GetValue<string>();
@@ -915,6 +914,33 @@ public class OAuthManagerTests
             "Malformed Authorization header"
         )]
         [TestCase(
+            "Basicxyz:s3cr3t-sentinel",
+            null,
+            null,
+            "password",
+            HttpStatusCode.BadRequest,
+            "unsupported_grant_type",
+            "Unsupported grant type"
+        )]
+        [TestCase(
+            "Basicxyz:s3cr3t-sentinel",
+            null,
+            null,
+            null,
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "The grant_type request parameter must be supplied"
+        )]
+        [TestCase(
+            "Basicxyz:s3cr3t-sentinel",
+            null,
+            null,
+            "",
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "The grant_type request parameter must be supplied"
+        )]
+        [TestCase(
             "Basic abc:123",
             "client",
             "secret",
@@ -965,6 +991,8 @@ public class OAuthManagerTests
     }
 
     /// <summary>
+    /// Provider failures use the token error contract and safe, classified descriptions.
+    /// </summary>
     [TestFixture]
     [Parallelizable]
     public class Given_An_Upstream_Token_Error_OAuth_Contract : When_Getting_An_Access_Token
@@ -1194,7 +1222,7 @@ public class OAuthManagerTests
 
     /// <summary>
     /// A JSON <c>null</c> grant type reaches the manager as <c>null</c> when a caller binds it
-    /// without coalescing. It is unsupported, not a fault.
+    /// without coalescing. It is a missing required parameter, not a fault.
     /// </summary>
     [TestFixture("basic abc:123", null, null)]
     [TestFixture(null, "my-client", "my-secret")]
@@ -1221,7 +1249,7 @@ public class OAuthManagerTests
         }
 
         [Test]
-        public async Task Then_The_Response_Content_Says_The_Grant_Type_Is_Unsupported()
+        public async Task Then_The_Response_Content_Says_The_Grant_Type_Is_Missing()
         {
             (await ResponseTitle()).Should().Be(ExpectedInvalidRequestError);
             (await ResponseDetail()).Should().Be("The grant_type request parameter must be supplied");
@@ -1872,18 +1900,13 @@ public class OAuthManagerTests
             }
             else
             {
-                expectedDescription = "The number of allowed requests has been exceeded. Retry the request later.";
+                expectedDescription =
+                    "The number of allowed requests has been exceeded. Retry the request later.";
             }
 
             _body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
-            _body["error"]!
-                .GetValue<string>()
-                .Should()
-                .Be(expectedError);
-            _body["error_description"]!
-                .GetValue<string>()
-                .Should()
-                .Be(expectedDescription);
+            _body["error"]!.GetValue<string>().Should().Be(expectedError);
+            _body["error_description"]!.GetValue<string>().Should().Be(expectedDescription);
             _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
             _response.Headers.GetValues("X-Correlation-ID").Should().Equal(CorrelationId);
             _response

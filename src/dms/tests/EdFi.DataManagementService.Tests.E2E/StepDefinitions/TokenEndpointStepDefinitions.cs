@@ -22,8 +22,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
         private const string StoredTokenResponsesContextKey = "storedTokenResponses";
 
-        private const string TokenRequestStartedContextKey = "tokenRequestStartedUnixSeconds";
-
         private const string TokenRequestCorrelationContextKey = "tokenRequestCorrelation";
 
         private const string CorrelationHeaderName = "X-Correlation-ID";
@@ -269,7 +267,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 _scenarioContext.Remove(TokenRequestCorrelationContextKey);
             }
 
-            _scenarioContext[TokenRequestStartedContextKey] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             SetCurrentApiResponse(
                 await _playwrightContext.ApiRequestContext!.PostAsync(
                     path,
@@ -306,56 +303,45 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
         private async Task AssertDmsRequestLogContains(string traceId, int status)
         {
-            _scenarioContext.TryGetValue(TokenRequestStartedContextKey, out long startedAt).Should().BeTrue();
             using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(20));
-            while (!timeout.IsCancellationRequested)
+            using Process process = new();
+            process.StartInfo = new ProcessStartInfo("docker")
             {
-                using Process process = new();
-                process.StartInfo = new ProcessStartInfo("docker")
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            process.StartInfo.ArgumentList.Add("logs");
+            process.StartInfo.ArgumentList.Add("--follow");
+            process.StartInfo.ArgumentList.Add(AppSettings.DmsContainerName);
+            process.Start();
+            // Read retained logs as well as newly flushed events. The response's unique TraceId
+            // selects this request without relying on synchronized test-host and Docker clocks.
+            Task<string> stderr = process.StandardError.ReadToEndAsync();
+            try
+            {
+                while (await process.StandardOutput.ReadLineAsync(timeout.Token) is string line)
                 {
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                };
-                process.StartInfo.ArgumentList.Add("logs");
-                process.StartInfo.ArgumentList.Add("--since");
-                process.StartInfo.ArgumentList.Add(
-                    startedAt.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                );
-                process.StartInfo.ArgumentList.Add(AppSettings.DmsContainerName);
-                process.Start();
-
-                try
-                {
-                    Task<string> stdout = process.StandardOutput.ReadToEndAsync(timeout.Token);
-                    Task<string> stderr = process.StandardError.ReadToEndAsync(timeout.Token);
-                    await process.WaitForExitAsync(timeout.Token);
-                    string logs = await stdout;
-                    _ = await stderr;
-                    if (process.ExitCode == 0 && TokenRequestLogContains(logs, traceId, status))
+                    if (TokenRequestLogContains(line, traceId, status))
                     {
                         return;
                     }
                 }
-                catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+            }
+            catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+            {
+                // The deadline bounds waiting for the request event; it is not a log-time cutoff.
+            }
+            finally
+            {
+                if (!process.HasExited)
                 {
-                    if (!process.HasExited)
-                    {
-                        process.Kill(entireProcessTree: true);
-                    }
-
-                    break;
+                    process.Kill(entireProcessTree: true);
                 }
 
-                try
-                {
-                    await Task.Delay(TimeSpan.FromMilliseconds(250), timeout.Token);
-                }
-                catch (OperationCanceledException) when (timeout.IsCancellationRequested)
-                {
-                    break;
-                }
+                await process.WaitForExitAsync();
+                _ = await stderr;
             }
 
             Assert.Fail("The token response correlation identifier did not appear in DMS request logs.");
