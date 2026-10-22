@@ -5,9 +5,11 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
 using EdFi.DmsConfigurationService.Backend.Claims;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DmsConfigurationService.SecurityMetadataTools;
@@ -177,10 +179,14 @@ internal static class OdsXmlToClaimsConverter
                 .Replace(" ", "", StringComparison.Ordinal)
                 .Replace("-", "", StringComparison.Ordinal);
 
-            if (mappedName.Length is 0 or > 256 || mappedName.Any(char.IsControl))
+            if (
+                mappedName.Length is 0 or > ValidationConstants.ClaimSetNameMaxLength
+                || mappedName.Any(char.IsControl)
+                || !Regex.IsMatch(mappedName, ValidationConstants.ClaimSetNameNoWhiteSpaceRegex)
+            )
             {
                 throw new InvalidOperationException(
-                    $"Claim-set name {JsonSerializer.Serialize(sourceName)} must contain 1 to 256 characters after removing literal spaces and hyphens, and must not contain control characters."
+                    $"Claim-set name {JsonSerializer.Serialize(sourceName)} must contain 1 to {ValidationConstants.ClaimSetNameMaxLength} characters after removing literal spaces and hyphens, and must not contain whitespace or control characters."
                 );
             }
 

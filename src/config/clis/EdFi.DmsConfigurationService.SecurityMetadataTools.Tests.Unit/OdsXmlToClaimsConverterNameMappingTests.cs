@@ -31,7 +31,7 @@ internal static class NameMappingExport
 }
 
 [TestFixture(" District-Reader ", "DistrictReader")]
-[TestFixture("École- Élèves_東京–Reader\u00a0X", "ÉcoleÉlèves_東京–Reader\u00a0X")]
+[TestFixture("École- Élèves_東京–Reader", "ÉcoleÉlèves_東京–Reader")]
 [TestFixture("MiXeD.Case_Name", "MiXeD.Case_Name")]
 [TestFixture("e\u0301-Reader", "e\u0301Reader")]
 [TestFixture("School-😀 Reader", "School😀Reader")]
@@ -120,6 +120,33 @@ public class Given_an_invalid_normalized_claim_set_name(string sourceName)
         string message = _convert.Should().Throw<InvalidOperationException>().Which.Message;
         message.Should().Contain(JsonSerializer.Serialize(sourceName));
         message.Should().Contain("1 to 256").And.Contain("control characters");
+    }
+}
+
+[TestFixture("École- Élèves_東京–Reader\u00a0X")]
+[TestFixture(" Reader-\u1680Name ")]
+[TestFixture("Reader\u2003Name")]
+[TestFixture("Reader\u2028Name")]
+[TestFixture("Reader\u2029Name")]
+[TestFixture("Reader\u202fName")]
+[TestFixture("Reader\u205fName")]
+[TestFixture("Reader\u3000Name")]
+public class Given_a_claim_set_name_with_remaining_unicode_whitespace(string sourceName)
+{
+    private Action _convert = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        XDocument document = NameMappingExport.Document(NameMappingExport.Claim("resource", sourceName));
+        _convert = () => OdsXmlToClaimsConverter.Convert(document);
+    }
+
+    [Test]
+    public void It_rejects_the_name_with_an_escaped_source_and_the_whitespace_rule()
+    {
+        string message = _convert.Should().Throw<InvalidOperationException>().Which.Message;
+        message.Should().Contain(JsonSerializer.Serialize(sourceName)).And.Contain("whitespace");
     }
 }
 

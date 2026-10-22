@@ -120,6 +120,8 @@ public class Given_a_successful_conversion_command(bool overwrite)
 [TestFixture("name-collision", true)]
 [TestFixture("control-name", false)]
 [TestFixture("control-name", true)]
+[TestFixture("whitespace-name", false)]
+[TestFixture("whitespace-name", true)]
 [TestFixture("missing-input", false)]
 [TestFixture("missing-input", true)]
 [TestFixture("unreadable-input", false)]
@@ -186,6 +188,10 @@ public class Given_a_failed_conversion_command(string failure, bool existingOutp
             case "control-name":
                 xml = xml.Replace("name=\"Reader\"", "name=\"Reader&#xA;forged\"", StringComparison.Ordinal);
                 _expectedDiagnostic = "control characters";
+                break;
+            case "whitespace-name":
+                xml = xml.Replace("name=\"Reader\"", "name=\"Reader&#xA0;Name\"", StringComparison.Ordinal);
+                _expectedDiagnostic = "whitespace";
                 break;
             case "invalid-utf8":
                 _expectedDiagnostic = "Invalid security metadata XML at line";
