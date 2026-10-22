@@ -8,14 +8,19 @@ rows rather than production converter output.
 
 | Review artifact | SHA-256 |
 | --- | --- |
-| [Expected complete claims document](expected-claims.json) | `8884f815c595e687d43e8fd1fdd20ef28ada665f90343febf42617bb578e6b43` |
+| [Expected complete claims document](expected-claims.json) | `c087f3c3267b3223c6428c57759dcfb0db148270531ccea241804a1e8ed50b08` |
 | [Actual database export](representative.xml) | `2494968160141a1b88918d4a043fc8451e43fdb87e80e32fd0cf64160e447920` |
 | [Independent database rows](database-policy.json) | `ffba5a1b4c6e260113bfa026c65889f262d1bb52642e905520bf81ea428cf5dc` |
 
-Technical review: **Codex, 2026-10-21**, against the exact hashes above. Reviewed
-the pinned exporter and independent capture query; rechecked both previously
-captured fresh-database exports and row sets, all artifact/export hashes, the
-complete database/XML/JSON policy audit, and the existing CMS JSON schema.
+Technical review: **Codex, 2026-10-22**, for the R2-F1 URI correction and exact
+hashes above. Derived the 342 corrected resource names from retained database
+claim names/parent IDs and corresponding XML nodes; verified all 342 against the
+existing ds52 claims document, with no other expected-policy changes. The source
+XML and database rows remain byte-for-byte unchanged. The original 2026-10-21
+review covered the pinned exporter and independent capture query, both captured
+fresh-database exports and row sets, artifact/export hashes, the complete
+three-way policy audit, and the existing CMS JSON schema. No database or export
+regeneration was needed for this correction.
 Any change to the expected document requires independent review of its new hash.
 
 ## Provenance and supported scope
@@ -62,8 +67,10 @@ The catalog follows first reference in the depth-first hierarchy traversal.
 compares database, XML, and JSON policy facts for every claim, parent, default,
 grant, strategy, and override. It also compares XML/JSON list order, optional
 container presence, catalog references, and imported-set flags. It never runs
-the converter or generates expected JSON. Tests must consume the checked-in
-expected document unchanged.
+the converter or generates expected JSON. It also verifies recorded artifact
+hashes and checks all 342 qualified core-resource names against the repository's
+existing ds52 claims document. Run it from the source checkout so that standard
+is available. Tests must consume the checked-in expected document unchanged.
 
 Inventory verified against the database:
 
@@ -74,13 +81,26 @@ Inventory verified against the database:
 | Referenced claim sets | 12; all `isSystemReserved: false` |
 | Local default actions | 116, containing 123 strategy assignments |
 | Claim-set actions | 266, containing 26 strategy override assignments |
-| Legacy claim URIs migrated | 373 |
+| Legacy claim URIs migrated | 373: 342 core resources gain `ed-fi/`; 31 domain/service paths retain their suffix |
 | Unchanged external claim URIs | 6 OneRoster URIs under `https://purl.imsglobal.org/spec/or/v1p2/scope` |
 | Populated validation-rule attributes | 0 |
 
-Only the leading `http://ed-fi.org/ods/identity/claims/` becomes
-`http://ed-fi.org/identity/claims/`. Only literal spaces and hyphens are removed
-from source set names. The complete source-to-catalog mapping is:
+Only the exact ordinal leading `http://ed-fi.org/ods/identity/claims/` becomes
+`http://ed-fi.org/identity/claims/`. A nonempty single-segment suffix also gains
+`ed-fi/`: legacy `academicWeek` becomes
+`http://ed-fi.org/identity/claims/ed-fi/academicWeek`. Domain, service, and already
+namespaced suffixes retain their paths; already-current and external URIs remain
+unchanged. The earlier prefix-only expectation omitted the project required by
+DMS and must not be restored.
+
+This matches `ProjectEndpointNameExtensions.GetResourceClaimUri` in
+`src/dms/core/EdFi.DataManagementService.Core/Utilities/`: base URI, project
+endpoint name, then resource name. `ClaimSetExtensions.FindMatchingResourceClaims`
+in the same directory compares the complete URI. The independent standard-name
+check uses `src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/Standards/ds52/Claims.json`;
+these are review inputs, not new runtime dependencies or a compatibility catalog.
+Only literal spaces and hyphens are removed from source set names. The complete
+source-to-catalog mapping is:
 
 | Source name | Catalog/reference name |
 | --- | --- |

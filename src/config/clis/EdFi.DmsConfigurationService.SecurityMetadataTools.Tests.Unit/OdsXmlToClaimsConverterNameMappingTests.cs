@@ -180,6 +180,22 @@ public class Given_distinct_claim_set_names_that_collide(string firstName, strin
 }
 
 [TestFixture(
+    "http://ed-fi.org/ods/identity/claims/academicWeek",
+    "http://ed-fi.org/identity/claims/ed-fi/academicWeek"
+)]
+[TestFixture(
+    "http://ed-fi.org/ods/identity/claims/domains/education",
+    "http://ed-fi.org/identity/claims/domains/education"
+)]
+[TestFixture(
+    "http://ed-fi.org/ods/identity/claims/services/identity",
+    "http://ed-fi.org/identity/claims/services/identity"
+)]
+[TestFixture(
+    "http://ed-fi.org/identity/claims/academicWeek",
+    "http://ed-fi.org/identity/claims/academicWeek"
+)]
+[TestFixture(
     "http://ed-fi.org/ods/identity/claims/ed-fi/students",
     "http://ed-fi.org/identity/claims/ed-fi/students"
 )]
@@ -240,14 +256,36 @@ public class Given_a_claim_uri_to_map(string sourceName, string expectedName)
     }
 
     [Test]
-    public void It_changes_only_the_exact_leading_legacy_prefix()
+    public void It_migrates_only_legacy_uris_and_qualifies_only_single_segment_resources()
     {
         _result["claimsHierarchy"]![0]!["claims"]![0]!["name"]!.GetValue<string>().Should().Be(expectedName);
     }
 }
 
-[TestFixture("http://ed-fi.org/ods/identity/claims/students", "http://ed-fi.org/identity/claims/students")]
-[TestFixture("http://ed-fi.org/identity/claims/students", "http://ed-fi.org/ods/identity/claims/students")]
+[TestFixture(
+    "http://ed-fi.org/ods/identity/claims/academicWeek",
+    "http://ed-fi.org/identity/claims/ed-fi/academicWeek"
+)]
+[TestFixture(
+    "http://ed-fi.org/identity/claims/ed-fi/academicWeek",
+    "http://ed-fi.org/ods/identity/claims/academicWeek"
+)]
+[TestFixture(
+    "http://ed-fi.org/ods/identity/claims/academicWeek",
+    "http://ed-fi.org/ods/identity/claims/ed-fi/academicWeek"
+)]
+[TestFixture(
+    "http://ed-fi.org/ods/identity/claims/ed-fi/academicWeek",
+    "http://ed-fi.org/ods/identity/claims/academicWeek"
+)]
+[TestFixture(
+    "http://ed-fi.org/ods/identity/claims/domains/education",
+    "http://ed-fi.org/identity/claims/domains/education"
+)]
+[TestFixture(
+    "http://ed-fi.org/identity/claims/domains/education",
+    "http://ed-fi.org/ods/identity/claims/domains/education"
+)]
 public class Given_claim_uris_that_collide_across_hierarchy_locations(string firstName, string secondName)
 {
     private Action _convert = null!;
@@ -289,7 +327,7 @@ public class Given_successive_conversions_with_independently_colliding_names
         );
         _result = OdsXmlToClaimsConverter.Convert(
             NameMappingExport.Document(
-                NameMappingExport.Claim("http://ed-fi.org/identity/claims/students", "District Reader")
+                NameMappingExport.Claim("http://ed-fi.org/identity/claims/ed-fi/students", "District Reader")
             )
         );
     }
@@ -300,7 +338,7 @@ public class Given_successive_conversions_with_independently_colliding_names
         JsonNode expected = JsonNode.Parse(
             """
             {"claimSets":[{"claimSetName":"DistrictReader","isSystemReserved":false}],
-             "claimsHierarchy":[{"name":"http://ed-fi.org/identity/claims/students",
+             "claimsHierarchy":[{"name":"http://ed-fi.org/identity/claims/ed-fi/students",
                "claimSets":[{"name":"DistrictReader","actions":[{"name":"Read"}]}]}]}
             """
         )!;
@@ -336,5 +374,53 @@ public class Given_the_representative_ods_security_metadata_export
             .DeepEquals(_result, _expected)
             .Should()
             .BeTrue("all catalog, hierarchy, policy, and ordering values must match the independent fixture");
+    }
+}
+
+[TestFixture]
+public class Given_a_legacy_core_resource_used_by_dms
+{
+    private string _convertedName = null!;
+    private string[] _standardNames = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        JsonObject converted = OdsXmlToClaimsConverter.Convert(
+            NameMappingExport.Document(
+                NameMappingExport.Claim("http://ed-fi.org/ods/identity/claims/academicWeek", "Reader")
+            )
+        );
+        _convertedName = converted["claimsHierarchy"]![0]!["name"]!.GetValue<string>();
+        JsonNode standard = JsonNode.Parse(
+            File.ReadAllText(
+                Path.Combine(TestContext.CurrentContext.TestDirectory, "Fixtures", "ds52-claims.json")
+            )
+        )!;
+        _standardNames = ClaimNames(standard["claimsHierarchy"]!.AsArray()).ToArray();
+    }
+
+    private static IEnumerable<string> ClaimNames(JsonArray claims)
+    {
+        foreach (JsonNode claim in claims.OfType<JsonNode>())
+        {
+            yield return claim["name"]!.GetValue<string>();
+            if (claim["claims"] is JsonArray children)
+            {
+                foreach (string name in ClaimNames(children))
+                {
+                    yield return name;
+                }
+            }
+        }
+    }
+
+    [Test]
+    public void It_matches_the_project_qualified_resource_uri_in_the_existing_ds52_policy()
+    {
+        // The DMS resource naming extension includes the project between base and resource.
+        // Claim-set authorization then matches the complete URI, as used in this standard policy.
+        _convertedName.Should().Be("http://ed-fi.org/identity/claims/ed-fi/academicWeek");
+        _standardNames.Should().ContainSingle(name => name == _convertedName);
     }
 }

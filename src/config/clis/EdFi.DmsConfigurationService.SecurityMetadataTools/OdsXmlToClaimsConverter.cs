@@ -199,9 +199,17 @@ internal static class OdsXmlToClaimsConverter
 
         public string MapClaimName(string sourceName)
         {
-            string mappedName = sourceName.StartsWith(LegacyClaimPrefix, StringComparison.Ordinal)
-                ? CurrentClaimPrefix + sourceName[LegacyClaimPrefix.Length..]
-                : sourceName;
+            string mappedName = sourceName;
+            if (sourceName.StartsWith(LegacyClaimPrefix, StringComparison.Ordinal))
+            {
+                string suffix = sourceName[LegacyClaimPrefix.Length..];
+                // Legacy core resources lack the project segment required by DMS authorization.
+                // Domain, service, and already-namespaced paths keep their existing suffix.
+                mappedName =
+                    CurrentClaimPrefix
+                    + (suffix.Length > 0 && !suffix.Contains('/') ? "ed-fi/" : "")
+                    + suffix;
+            }
 
             if (_claimSources.TryGetValue(mappedName, out var previousSource) && previousSource != sourceName)
             {

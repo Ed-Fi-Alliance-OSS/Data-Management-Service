@@ -84,7 +84,7 @@ public class Given_an_encoded_xml_conversion_command(string encodingName)
             {
               "claimSets": [{ "claimSetName": "CaféReaders", "isSystemReserved": false }],
               "claimsHierarchy": [{
-                "name": "http://ed-fi.org/identity/claims/students",
+                "name": "http://ed-fi.org/identity/claims/ed-fi/students",
                 "defaultAuthorization": {
                   "actions": [{ "name": "Read", "authorizationStrategies": [{ "name": "Défaut" }] }]
                 },

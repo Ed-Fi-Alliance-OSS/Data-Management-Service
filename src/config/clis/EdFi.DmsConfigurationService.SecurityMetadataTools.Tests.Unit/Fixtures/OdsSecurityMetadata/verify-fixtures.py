@@ -5,6 +5,7 @@ Compare policy facts independently extracted from database rows, XML, and JSON.
 Run with Python 3 from any directory. This audits fixtures, not converter output.
 """
 
+import hashlib
 import json
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -20,7 +21,10 @@ def require(condition, message):
 
 
 def uri(value):
-    return CURRENT + value[len(LEGACY) :] if value.startswith(LEGACY) else value
+    if not value.startswith(LEGACY):
+        return value
+    suffix = value[len(LEGACY) :]
+    return CURRENT + ("ed-fi/" if suffix and "/" not in suffix else "") + suffix
 
 
 def name(value):
@@ -96,6 +100,17 @@ def review():
     source = json.loads((DIRECTORY / "database-policy.json").read_text())
     expected = json.loads((DIRECTORY / "expected-claims.json").read_text())
     root = ET.parse(DIRECTORY / "representative.xml").getroot()
+    provenance = json.loads((DIRECTORY / "provenance.json").read_text())
+    for artifact, digest in provenance["artifacts"].items():
+        require(
+            hashlib.sha256((DIRECTORY / artifact).read_bytes()).hexdigest() == digest,
+            f"Recorded artifact hash differs: {artifact}",
+        )
+    require(
+        provenance["review"]["expectedClaimsSha256"]
+        == provenance["artifacts"]["expected-claims.json"],
+        "Reviewed expected-document hash differs",
+    )
     xml_policy, json_policy = policy(), policy()
     catalog = []
 
@@ -210,6 +225,49 @@ def review():
         require(
             database[section] == json_policy[section], f"Database/JSON {section} differ"
         )
+    # Compare every affected resource with the existing CMS standard, independently
+    # of the converter and the mapping used by the three-way policy audit above.
+    standard_path = (
+        DIRECTORY.parents[3]
+        / "backend/EdFi.DmsConfigurationService.Backend/Claims/Standards/ds52/Claims.json"
+    )
+    standard = json.loads(standard_path.read_text())
+
+    def claim_names(claims):
+        for claim in claims:
+            yield claim["name"]
+            yield from claim_names(claim.get("claims", []))
+
+    standard_names = set(claim_names(standard["claimsHierarchy"]))
+    core_resources = [
+        row["ClaimName"].removeprefix(LEGACY)
+        for row in source["claims"]
+        if row["ClaimName"].startswith(LEGACY)
+        and row["ClaimName"].removeprefix(LEGACY)
+        and "/" not in row["ClaimName"].removeprefix(LEGACY)
+    ]
+    require(len(core_resources) == 342, "Expected 342 legacy core resources")
+    for resource in core_resources:
+        expected_uri = f"http://ed-fi.org/identity/claims/ed-fi/{resource}"
+        require(
+            expected_uri in standard_names,
+            f"Core resource absent from ds52: {expected_uri}",
+        )
+        require(
+            expected_uri in json_policy["claims"],
+            f"Core resource not qualified: {expected_uri}",
+        )
+    external = {
+        row["ClaimName"]
+        for row in source["claims"]
+        if not row["ClaimName"].startswith(LEGACY)
+    }
+    require(len(external) == 6, "Expected six external IMS claims")
+    require(external <= json_policy["claims"].keys(), "External claims changed")
+    print(
+        "Verified 342 project-qualified core resources against ds52 Claims.json "
+        "and six unchanged external IMS URIs."
+    )
     print(
         f"Verified {len(database['claims'])} claims, {len(catalog)} referenced sets, {len(database['defaults'])} defaults, {len(database['grants'])} grants; all strategy lists, overrides, parents, ordering, and imported flags match."
     )
