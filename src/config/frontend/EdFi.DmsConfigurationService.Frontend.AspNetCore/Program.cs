@@ -161,6 +161,12 @@ app.UseMiddleware<ResponseCachePolicyMiddleware>();
 app.UseMiddleware<FrameworkErrorResponseMiddleware>();
 
 app.UseCors("AllowSwaggerUI");
+
+// The /connect/* source gate (DMS-1482). After forwarded headers, so the remote address is the trusted
+// one; inside both exception boundaries and after CORS, so Swagger UI can read a 429; before
+// authentication, so a refused request does no bearer work. The per-client budget is applied inside the
+// token and revoke handlers, immediately before secret verification.
+app.UseMiddleware<ConnectSourceRateLimitMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 

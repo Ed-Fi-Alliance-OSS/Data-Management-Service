@@ -36,11 +36,11 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
         endpoints
             .MapPost("connect/register/{**contextPath}", RegisterClient)
             .DisableAntiforgery()
-            .WithMetadata(OAuthEndpointMetadata.Instance);
+            .WithMetadata(OAuthEndpointMetadata.Instance, ConnectRateLimitMetadata.Instance);
         endpoints
             .MapPost("connect/token/{**contextPath}", GetClientAccessToken)
             .DisableAntiforgery()
-            .WithMetadata(OAuthEndpointMetadata.Instance);
+            .WithMetadata(OAuthEndpointMetadata.Instance, ConnectRateLimitMetadata.Instance);
         // No RequireAuthorization() here: RFC 7009 §2.1 requires the caller to authenticate with
         // client credentials (RFC 6749 §2.3), the same as at /connect/token, not with a bearer
         // access token. The ITokenRevocationManager authenticates the caller inside
@@ -77,7 +77,8 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
                 OAuthErrorContractMetadata.Introspection,
                 ExceptionTypeOnlyLoggingMetadata.Instance,
                 BearerAuthenticationExemptMetadata.Instance,
-                OAuthEndpointMetadata.Instance
+                OAuthEndpointMetadata.Instance,
+                ConnectRateLimitMetadata.Instance
             );
         if (
             string.Equals(
