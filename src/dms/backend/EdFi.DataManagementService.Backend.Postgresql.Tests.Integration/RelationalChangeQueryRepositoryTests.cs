@@ -3439,6 +3439,7 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
     private static IEnumerable<DescriptorIdentityVariant> DescriptorIdentityVariants() =>
         [
             new("CaseOnly", "", "Seek Recreated", "", "SEEK RECREATED", Matches: true),
+            new("DottedI", "", "Seek \u0130nterim", "", "Seek interim", Matches: true),
             new("EqualUriResplit", "", "Seek#Split", "#Seek", "Split", Matches: true),
             new("TrailingNamespaceSpace", " ", "Seek Spaced", "", "Seek Spaced", Matches: false),
             new("Unequal", "", "Seek Recreated", "", "Seek Recreated Other", Matches: false),
