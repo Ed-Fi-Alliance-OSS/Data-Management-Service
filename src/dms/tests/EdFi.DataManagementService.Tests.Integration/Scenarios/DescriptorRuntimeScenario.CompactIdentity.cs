@@ -370,7 +370,6 @@ internal static partial class DescriptorRuntimeScenario
         after.ModifiedAt.Should().BeAfter(before.ModifiedAt);
         after.Namespace.Should().Be(values.Namespace);
         after.CodeValue.Should().Be(values.CodeValue);
-        after.RiCount.Should().Be(before.RiCount);
         after.HistoryCount.Should().Be(before.HistoryCount);
     }
 
@@ -447,7 +446,6 @@ internal static partial class DescriptorRuntimeScenario
                    descriptor."Namespace", descriptor."CodeValue",
                    document."ContentVersion", descriptor."ContentLastModifiedAt",
                    descriptor."ContentVersion",
-                   (SELECT COUNT(*) FROM "dms"."ReferentialIdentity" ri WHERE ri."DocumentId" = document."DocumentId"),
                    (SELECT COUNT(*) FROM "tracked_changes_edfi"."Descriptor" history WHERE history."DocumentId" = document."DocumentId")
             FROM "dms"."Document" document
             JOIN "dms"."Descriptor" descriptor ON descriptor."DocumentId" = document."DocumentId"
@@ -470,8 +468,7 @@ internal static partial class DescriptorRuntimeScenario
             reader.GetString(4),
             version,
             at,
-            Convert.ToInt32(reader.GetValue(8)),
-            Convert.ToInt32(reader.GetValue(9))
+            Convert.ToInt32(reader.GetValue(8))
         );
     }
 
@@ -483,7 +480,6 @@ internal static partial class DescriptorRuntimeScenario
         string CodeValue,
         long Version,
         DateTimeOffset ModifiedAt,
-        int RiCount,
         int HistoryCount
     );
 }

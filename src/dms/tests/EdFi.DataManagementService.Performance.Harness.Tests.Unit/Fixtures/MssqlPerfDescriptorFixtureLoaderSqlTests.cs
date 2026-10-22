@@ -45,17 +45,6 @@ public class Given_The_Mssql_Descriptor_Loader_Sql
     }
 
     [Test]
-    public void It_derives_referential_identities_through_the_database_uuidv5_function()
-    {
-        string sql = MssqlPerfDescriptorFixtureLoaderSql.ReferentialIdentityInsertSql;
-
-        sql.Should().Contain("[dms].[uuidv5]");
-        sql.Should().Contain("'edf1edf1-3df1-3df1-3df1-3df1edf1edf1'");
-        sql.Should().Contain("N'Ed-FiAcademicSubjectDescriptor'");
-        sql.Should().Contain("N'$.descriptor=' + LOWER(");
-    }
-
-    [Test]
     public void It_reseeds_so_the_next_id_follows_the_fixture()
     {
         MssqlPerfDescriptorFixtureLoaderSql

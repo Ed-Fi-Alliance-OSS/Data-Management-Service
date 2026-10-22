@@ -48,7 +48,8 @@ dotnet test src/dms/tests/EdFi.DataManagementService.Performance.Harness -c Rele
 Available smokes, per provider (`Given_Postgresql_*` / `Given_Mssql_*`):
 
 - `PerfFixtureLoaderSmoke` — loads 10k rows and runs the loader-vs-POST proof gate across
-  `dms.Document`, `edfi.Student`, `dms.ReferentialIdentity`, and tracked-change side effects.
+  `dms.Document`, `edfi.Student` and its child collections, `dms.Descriptor`, and tracked-change
+  side effects.
 - `ObserverProbe` — the instrumentation checkpoint: recorder and driver observer signals.
 - `ScenarioExecutorSmoke` — the six-cell matrix with per-request guardrails.
 - `BaselineRunSmoke` — the full pipeline writing validated artifacts to a temp directory.

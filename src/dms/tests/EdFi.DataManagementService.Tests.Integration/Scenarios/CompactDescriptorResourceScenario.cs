@@ -122,15 +122,6 @@ internal static class CompactDescriptorResourceScenario
                 .Should()
                 .BeTrue("the resolved compact key makes casing-only resource POST a no-op");
             (await ReadStampAsync(harness, path)).Should().Be(stamp);
-            (
-                await ScalarAsync(
-                    harness,
-                    "SELECT COUNT(*) FROM \"dms\".\"ReferentialIdentity\" WHERE \"DocumentId\" = @id",
-                    ("@id", stamp.DocumentId)
-                )
-            )
-                .Should()
-                .Be(1);
         }
         await AssertStoredKeysAsync(harness, seed.Keys, seed.Keys, expectedColumns: 3);
     }
@@ -171,7 +162,7 @@ internal static class CompactDescriptorResourceScenario
                 .Should()
                 .BeEmpty("URI resolution must retain descriptor type identity");
         }
-        // Moving the delimiter between stored components retains the same whole URI and RI.
+        // Moving the delimiter between stored components retains the same whole URI and descriptor identity.
         string[] components = seed.Uri.Split('#', 2);
         await PostAsync(
             harness,
@@ -892,16 +883,6 @@ internal static class CompactDescriptorResourceScenario
     {
         await using DbCommand command = Command(harness, sql);
         await command.ExecuteNonQueryAsync();
-    }
-
-    private static async Task<long> ScalarAsync(
-        ApiIntegrationHarness harness,
-        string sql,
-        params (string Name, object Value)[] parameters
-    )
-    {
-        await using DbCommand command = Command(harness, sql, parameters);
-        return Convert.ToInt64(await command.ExecuteScalarAsync());
     }
 
     private static async Task<Stamp> ReadStampAsync(ApiIntegrationHarness harness, string path)
