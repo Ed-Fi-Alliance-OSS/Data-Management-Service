@@ -183,26 +183,32 @@ function SetDMSAssemblyInfo {
     }
 }
 
+function Get-ConfigVersionArgument {
+    $versionArgs = @()
+    if (-not [string]::IsNullOrEmpty($DmsCSVersion))
+    {
+        $versionArgs += "/p:Version=$DmsCSVersion"
+        $versionArgs += "/p:InformationalVersion=$DmsCSVersion"
+        $versionArgs += "/p:VersionPrefix=$DmsCSVersion"
+    }
+    $assemblyVersion = $DmsCSAssemblyVersion
+    if ([string]::IsNullOrEmpty($assemblyVersion) -and -not [string]::IsNullOrEmpty($DmsCSVersion)) {
+        # Plugin test projects derive assembly versions from VersionPrefix; a prerelease
+        # label is not a valid assembly version. Support callers supplying only semver.
+        $assemblyVersion = Convert-ToAssemblyVersion -Version ($DmsCSVersion -split '\+', 2)[0]
+    }
+    if (-not [string]::IsNullOrEmpty($assemblyVersion))
+    {
+        $versionArgs += "/p:AssemblyVersion=$assemblyVersion"
+        $versionArgs += "/p:FileVersion=$assemblyVersion"
+    }
+
+    return $versionArgs
+}
+
 function Compile {
     Invoke-Execute {
-        $versionArgs = @()
-        if (-not [string]::IsNullOrEmpty($DmsCSVersion))
-        {
-            $versionArgs += "/p:Version=$DmsCSVersion"
-            $versionArgs += "/p:InformationalVersion=$DmsCSVersion"
-            $versionArgs += "/p:VersionPrefix=$DmsCSVersion"
-        }
-        $assemblyVersion = $DmsCSAssemblyVersion
-        if ([string]::IsNullOrEmpty($assemblyVersion) -and -not [string]::IsNullOrEmpty($DmsCSVersion)) {
-            # Plugin test projects derive assembly versions from VersionPrefix; a prerelease
-            # label is not a valid assembly version. Support callers supplying only semver.
-            $assemblyVersion = Convert-ToAssemblyVersion -Version ($DmsCSVersion -split '\+', 2)[0]
-        }
-        if (-not [string]::IsNullOrEmpty($assemblyVersion))
-        {
-            $versionArgs += "/p:AssemblyVersion=$assemblyVersion"
-            $versionArgs += "/p:FileVersion=$assemblyVersion"
-        }
+        $versionArgs = @(Get-ConfigVersionArgument)
 
         dotnet build $defaultSolution -c $Configuration --nologo --no-restore @versionArgs
     }
@@ -212,24 +218,7 @@ function PublishApi {
     Invoke-Execute {
         $project = "$applicationRoot/$projectName/"
         $outputPath = "$project/publish"
-        $versionArgs = @()
-        if (-not [string]::IsNullOrEmpty($DmsCSVersion))
-        {
-            $versionArgs += "/p:Version=$DmsCSVersion"
-            $versionArgs += "/p:InformationalVersion=$DmsCSVersion"
-            $versionArgs += "/p:VersionPrefix=$DmsCSVersion"
-        }
-        $assemblyVersion = $DmsCSAssemblyVersion
-        if ([string]::IsNullOrEmpty($assemblyVersion) -and -not [string]::IsNullOrEmpty($DmsCSVersion)) {
-            # Plugin test projects derive assembly versions from VersionPrefix; a prerelease
-            # label is not a valid assembly version. Support callers supplying only semver.
-            $assemblyVersion = Convert-ToAssemblyVersion -Version ($DmsCSVersion -split '\+', 2)[0]
-        }
-        if (-not [string]::IsNullOrEmpty($assemblyVersion))
-        {
-            $versionArgs += "/p:AssemblyVersion=$assemblyVersion"
-            $versionArgs += "/p:FileVersion=$assemblyVersion"
-        }
+        $versionArgs = @(Get-ConfigVersionArgument)
 
         # --no-restore: reuse the restore from Invoke-Build (which honors -LockedMode) instead of
         # letting publish run a second, unlocked restore that would bypass the lock graph.
