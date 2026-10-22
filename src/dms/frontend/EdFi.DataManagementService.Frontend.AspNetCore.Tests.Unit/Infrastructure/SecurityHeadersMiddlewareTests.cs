@@ -133,8 +133,8 @@ public class SecurityHeadersMiddlewareTests
     public async Task It_does_not_overwrite_a_cache_control_already_present()
     {
         // TryAdd semantics for Cache-Control specifically: a handler that has chosen its own
-        // directive - GetTokenInfoHandler sets no-cache - keeps it. Run on a failing status so the
-        // middleware would otherwise have written no-store here.
+        // directive keeps it. Run on a failing status so the middleware would otherwise have
+        // written no-store here.
         IHeaderDictionary headers = await RunAndStartResponseAsync(
             h => h["Cache-Control"] = "no-cache",
             StatusCodes.Status404NotFound
