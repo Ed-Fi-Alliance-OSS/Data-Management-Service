@@ -80,6 +80,10 @@ public static class WebApplicationBuilderExtensions
                 webApplicationBuilder.Configuration.GetSection("AppSettings:ReverseProxy")
             )
             .AddSingleton<IValidateOptions<ReverseProxySettings>, ReverseProxySettingsValidator>()
+            .Configure<ConnectRateLimitSettings>(
+                webApplicationBuilder.Configuration.GetSection(ConnectRateLimitSettings.SectionName)
+            )
+            .AddSingleton<IValidateOptions<ConnectRateLimitSettings>, ConnectRateLimitSettingsValidator>()
             .Configure<DatabaseOptions>(webApplicationBuilder.Configuration.GetSection("DatabaseSettings"))
             .AddSingleton<IValidateOptions<DatabaseOptions>, DatabaseOptionsValidator>()
             .Configure<ClientSecretValidationOptions>(

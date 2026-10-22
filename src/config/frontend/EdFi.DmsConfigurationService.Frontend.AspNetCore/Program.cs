@@ -391,6 +391,7 @@ bool ReportInvalidConfiguration(WebApplication app)
         _ = app.Services.GetRequiredService<IOptions<AppSettings>>().Value;
         _ = app.Services.GetRequiredService<IOptions<IdentitySettings>>().Value;
         _ = app.Services.GetRequiredService<IOptions<ReverseProxySettings>>().Value;
+        _ = app.Services.GetRequiredService<IOptions<ConnectRateLimitSettings>>().Value;
     }
     catch (OptionsValidationException ex)
     {
