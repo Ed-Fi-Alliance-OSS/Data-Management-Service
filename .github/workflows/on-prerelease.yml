@@ -2481,32 +2481,10 @@ jobs:
 
       - name: Generate SecurityMetadataTools Software Bill of Materials (SBOM)
         run: |
-          $packageName = "${{ env.SECURITY_METADATA_TOOLS_PACKAGE_NAME }}"
-          $version = "${{ needs.pack-security-metadata-tools.outputs.tool-version }}"
-          $packageFile = "$packageName.$version.nupkg"
-          if (-not (Test-Path $packageFile)) {
-            throw "Expected SecurityMetadataTools package was not found: $packageFile"
-          }
-          if ((Get-FileHash -LiteralPath $packageFile -Algorithm SHA256).Hash -ine "${{ needs.pack-security-metadata-tools.outputs.sha256 }}") {
-            throw "SecurityMetadataTools package differs from the build artifact."
-          }
-          (Resolve-Path $packageFile).Path > buildfilelist.txt
-
-          dotnet tool install --global Microsoft.Sbom.DotNetTool
-          if ($LASTEXITCODE -ne 0) { throw "SBOM tool installation failed." }
-
-          sbom-tool generate `
-              -b ./ `
-              -bl ./buildfilelist.txt `
-              -bc "./" `
-              -pn "$packageName" `
-              -pv $version `
-              -nsb https://ed-fi.org `
-              -m ./ `
-              -ps "Ed-Fi Alliance"
-          if ($LASTEXITCODE -ne 0) { throw "SecurityMetadataTools SBOM generation failed." }
-
-          cp _manifest/spdx_2.2/manifest.spdx.* .
+          ./eng/ci/New-SecurityMetadataToolsSbom.ps1 `
+            -PackageFile "${{ env.SECURITY_METADATA_TOOLS_PACKAGE_NAME }}.${{ needs.pack-security-metadata-tools.outputs.tool-version }}.nupkg" `
+            -Version "${{ needs.pack-security-metadata-tools.outputs.tool-version }}" `
+            -Sha256 "${{ needs.pack-security-metadata-tools.outputs.sha256 }}"
 
       - name: Upload SecurityMetadataTools SBOM
         if: success()

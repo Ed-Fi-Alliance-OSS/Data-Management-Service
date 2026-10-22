@@ -569,6 +569,8 @@ Describe 'Security Metadata Tools normal release workflow wiring and source hand
         $pack | Should -Match 'SECURITY_METADATA_TOOLS_PACKAGE_NAME.*steps.tool-version.outputs.version.*nupkg'
         $sbom = Get-ReleaseJob 'sbom-create-security-metadata-tools'
         $sbom | Should -Match 'needs.pack-security-metadata-tools.outputs.tool-version'
+        $sbom | Should -Match './eng/ci/New-SecurityMetadataToolsSbom.ps1'
+        $sbom | Should -Match '-Sha256 "\$\{\{ needs.pack-security-metadata-tools.outputs.sha256 \}\}"'
         $sbom | Should -Match 'SECURITY_METADATA_TOOLS_PACKAGE_NAME.*-NuGet'
         $sbom | Should -Match 'SECURITY_METADATA_TOOLS_PACKAGE_NAME.*-SBOM'
         $provenance = Get-ReleaseJob 'provenance-create-security-metadata-tools'
@@ -830,11 +832,11 @@ Describe 'SecurityMetadataTools independent workflow wiring' {
     It 'always attests the exact artifact and gates publication on both attestations' {
         $script:dispatch | Should -Match 'needs: \[build, check-secrets-contract, sbom-create-security-metadata-tools, provenance-create-security-metadata-tools\]'
         $script:dispatch | Should -Match 'base64-subjects: \$\{\{ needs.build.outputs.hash-code \}\}'
-        $script:dispatch | Should -Match 'Get-FileHash.*SHA256.*needs.build.outputs.sha256'
+        $script:dispatch | Should -Match '-Sha256 "\$\{\{ needs.build.outputs.sha256 \}\}"'
         $check = [regex]::Match($script:dispatch, '(?ms)^  check-secrets-contract:.*?(?=^  publish:)').Value
         $check | Should -Match 'Assert-PublishedSecretsContract'
         $check | Should -Not -Match 'if:|publish_package'
-        $script:dispatch | Should -Match 'sbom-tool generate'
+        $script:dispatch | Should -Match './eng/ci/New-SecurityMetadataToolsSbom.ps1'
         $script:dispatch | Should -Match 'provenance-name: edfiApiSecurityMetadataTools.intoto.jsonl'
     }
     It 'guards both mutations and retries promotion with only the original build version' {
@@ -849,5 +851,77 @@ Describe 'SecurityMetadataTools independent workflow wiring' {
         $promote | Should -Match '-Version \$env:TOOL_VERSION'
         $promote | Should -Not -Match 'Publish-SecurityMetadataTools|Get-SecurityMetadataToolsVersion|dotnet pack|ReleaseBuild'
         $script:dispatch | Should -Not -Match 'on-prerelease.yml|on-release.yml|nuget push.*Secrets'
+    }
+}
+
+Describe 'SecurityMetadataTools shared SBOM generation' {
+    BeforeAll {
+        $script:sbomScript = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../New-SecurityMetadataToolsSbom.ps1'))
+        function dotnet { throw "Unmocked dotnet: $args" }
+        function sbom-tool {
+            [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseApprovedVerbs', '', Justification = 'Matches the external executable name for mocking.')]
+            param()
+            throw "Unmocked sbom-tool: $args"
+        }
+    }
+
+    BeforeEach {
+        $workspace = Join-Path $TestDrive ([guid]::NewGuid().ToString())
+        New-Item -ItemType Directory -Path $workspace | Out-Null
+        Push-Location $workspace
+        $script:packageFile = Join-Path $workspace 'EdFi.Api.SecurityMetadataTools.8.1.0-alpha.42.nupkg'
+        Set-Content -LiteralPath $script:packageFile -Value 'downloaded package'
+        $script:sha256 = (Get-FileHash -LiteralPath $script:packageFile).Hash.ToLowerInvariant()
+        Mock dotnet { $global:LASTEXITCODE = 0 }
+        Mock sbom-tool {
+            New-Item -ItemType Directory -Path '_manifest/spdx_2.2' -Force | Out-Null
+            Set-Content '_manifest/spdx_2.2/manifest.spdx.json' -Value 'generated manifest'
+            $global:LASTEXITCODE = 0
+        }
+    }
+
+    AfterEach { Pop-Location }
+
+    It 'generates and copies the manifest for the verified package and supplied version' {
+        & $script:sbomScript -PackageFile $script:packageFile -Version '8.1.0-alpha.42' -Sha256 $script:sha256
+
+        (Get-Content 'buildfilelist.txt') | Should -BeExactly $script:packageFile
+        Should -Invoke sbom-tool -Times 1 -Exactly -ParameterFilter {
+            ($args -join '|') -ceq 'generate|-b|./|-bl|./buildfilelist.txt|-bc|./|-pn|EdFi.Api.SecurityMetadataTools|-pv|8.1.0-alpha.42|-nsb|https://ed-fi.org|-m|./|-ps|Ed-Fi Alliance'
+        }
+        (Get-Content 'manifest.spdx.json') | Should -BeExactly 'generated manifest'
+        Should -Invoke dotnet -Times 1 -Exactly -ParameterFilter {
+            ($args -join ' ') -ceq 'tool install --global Microsoft.Sbom.DotNetTool'
+        }
+    }
+
+    It 'rejects a <Failure> package before installing or generating anything' -ForEach @(
+        @{ Failure = 'missing'; Message = '*package was not found*' }
+        @{ Failure = 'changed'; Message = '*differs from the build artifact*' }
+    ) {
+        if ($Failure -eq 'missing') { Remove-Item -LiteralPath $script:packageFile }
+        else { Set-Content -LiteralPath $script:packageFile -Value 'changed bytes' }
+
+        { & $script:sbomScript -PackageFile $script:packageFile -Version '8.1.0' -Sha256 $script:sha256 } |
+            Should -Throw $Message
+        Should -Invoke dotnet -Times 0 -Exactly
+        Should -Invoke sbom-tool -Times 0 -Exactly
+    }
+
+    It 'stops when the tool installation fails' {
+        Mock dotnet { $global:LASTEXITCODE = 1 }
+
+        { & $script:sbomScript -PackageFile $script:packageFile -Version '8.1.0' -Sha256 $script:sha256 } |
+            Should -Throw '*SBOM tool installation failed*'
+        Should -Invoke sbom-tool -Times 0 -Exactly
+    }
+
+    It 'does not copy a manifest when generation fails' {
+        Mock sbom-tool { $global:LASTEXITCODE = 1 }
+        Mock Copy-Item { throw 'Must not copy a failed generation' }
+
+        { & $script:sbomScript -PackageFile $script:packageFile -Version '8.1.0' -Sha256 $script:sha256 } |
+            Should -Throw '*SBOM generation failed*'
+        Should -Invoke Copy-Item -Times 0 -Exactly
     }
 }
