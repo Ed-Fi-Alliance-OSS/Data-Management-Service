@@ -1039,16 +1039,24 @@ public class Given_TrackedChangeAuthorizationSqlEmitter_CustomViews
             );
     }
 
-    private static TrackedChangeAuthorizationSql Emit(
-        ReadChangesAuthorizationPlan plan,
-        SqlDialect dialect
-    ) =>
-        TrackedChangeAuthorizationSqlEmitter.Emit(
+    // Every custom-view predicate these tests emit also passes the descriptor probe SQL guard, so each basis
+    // shape (live seek, its probe arm, descriptor seek, abstract members) is held to the pinned fold.
+    private static TrackedChangeAuthorizationSql Emit(ReadChangesAuthorizationPlan plan, SqlDialect dialect)
+    {
+        TrackedChangeAuthorizationSql result = TrackedChangeAuthorizationSqlEmitter.Emit(
             plan,
             dialect,
             "c",
             A.Fake<IRelationalParameterConfigurator>()
         );
+
+        foreach (string predicate in result.Predicates)
+        {
+            DescriptorUriFoldGuard.AssertEveryLoweringIsCollated(predicate, dialect);
+        }
+
+        return result;
+    }
 
     private static ReadChangesAuthorizationPlan CustomViewOnlyPlan(
         params ReadChangesCustomViewCheckSpec[] customViewChecks

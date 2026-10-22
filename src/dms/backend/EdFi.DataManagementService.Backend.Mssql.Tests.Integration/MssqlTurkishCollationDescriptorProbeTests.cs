@@ -31,8 +31,11 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 /// <remarks>
 /// Each stored descriptor carries an uppercase ASCII <c>I</c> and each probe input is a case variant that
 /// keeps one (<c>INTERIM</c> against <c>Interim</c>). A lowercase-<c>i</c> input lowers to <c>i</c> under
-/// either collation, so it would pass even with the inner <c>COLLATE</c> removed. Every test seeds its own
-/// descriptor, so the fixture needs no per-test reset.
+/// either collation, so it would pass even with the inner <c>COLLATE</c> removed. The Change Query tests
+/// recreate the descriptor with dotted <c>I</c> (U+0130) instead: their probe inputs are identity-collated
+/// tracked columns the database default cannot reach, and only the lowered-URI fold equates U+0130 with the
+/// stored <c>I</c>, so they fail if the cutover to it is reverted. Every test seeds its own descriptor, so
+/// the fixture needs no per-test reset.
 /// </remarks>
 [TestFixture]
 [NonParallelizable]
@@ -305,13 +308,13 @@ public class Given_A_Mssql_Turkish_Default_Database_With_Descriptor_Probes
     }
 
     [Test]
-    public async Task It_suppresses_a_deleted_descriptor_recreated_as_an_uppercase_I_case_variant()
+    public async Task It_suppresses_a_deleted_uppercase_I_descriptor_recreated_with_a_dotted_I()
     {
         long windowStart = await NextChangeVersionAsync();
         SeededDescriptor deleted = await InsertDescriptorAsync("INTERIM DELETES");
 
         await DeleteDescriptorAsync(deleted.DocumentId);
-        await InsertDescriptorAsync("Interim Deletes");
+        await InsertDescriptorAsync("\u0130nterim Deletes");
 
         TrackedChangeQueryResult result = await QueryDeletesAsync(
             ProgramTypeDescriptorResource,
@@ -324,15 +327,19 @@ public class Given_A_Mssql_Turkish_Default_Database_With_Descriptor_Probes
     }
 
     [Test]
-    public async Task It_suppresses_a_deleted_program_recreated_on_an_uppercase_I_case_variant_descriptor()
+    public async Task It_suppresses_a_deleted_program_recreated_on_a_dotted_I_recreation_of_its_descriptor()
     {
         long windowStart = await NextChangeVersionAsync();
         long programDocumentId = await DeleteProgramAndRecreateItsDescriptorAsync(
             "INTERIM PROGRAM",
-            "Interim Program"
+            "\u0130nterim Program"
         );
-        long recreatedDescriptorDocumentId = await ReadDescriptorDocumentIdAsync("Interim Program");
-        await InsertProgramRootAsync(programDocumentId, recreatedDescriptorDocumentId, "Interim Program");
+        long recreatedDescriptorDocumentId = await ReadDescriptorDocumentIdAsync("\u0130nterim Program");
+        await InsertProgramRootAsync(
+            programDocumentId,
+            recreatedDescriptorDocumentId,
+            "\u0130nterim Program"
+        );
 
         TrackedChangeQueryResult result = await QueryDeletesAsync(
             ProgramResource,
@@ -345,11 +352,11 @@ public class Given_A_Mssql_Turkish_Default_Database_With_Descriptor_Probes
     }
 
     [Test]
-    public async Task It_authorizes_a_deleted_program_through_a_descriptor_seek_of_an_uppercase_I_case_variant()
+    public async Task It_authorizes_a_deleted_program_through_a_descriptor_seek_of_a_dotted_I_recreation()
     {
         const string StrategyName = "ProgramTypeDescriptorWithTurkishInterimSeek";
         long windowStart = await NextChangeVersionAsync();
-        await DeleteProgramAndRecreateItsDescriptorAsync("INTERIM SEEK", "Interim Seek");
+        await DeleteProgramAndRecreateItsDescriptorAsync("INTERIM SEEK", "\u0130nterim Seek");
         await _database.ExecuteNonQueryAsync($"DROP VIEW IF EXISTS [auth].[{StrategyName}];");
         await _database.ExecuteNonQueryAsync(
             $"""

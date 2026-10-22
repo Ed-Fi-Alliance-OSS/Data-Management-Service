@@ -129,19 +129,10 @@ public class Given_TrackedChange_Compact_Descriptor_Routing(SqlDialect dialect)
             _resourcePlan.Command!.CommandText,
             .. _descriptorPlans.Select(plan => plan.Command!.CommandText),
         ];
-        string collationSuffix =
-            dialect is SqlDialect.Pgsql ? " COLLATE \"pg_c_utf8\"" : " COLLATE SQL_Latin1_General_CP1_CI_AS";
-        string loweringFunction = dialect is SqlDialect.Pgsql ? "lower(" : "LOWER(";
 
         foreach (string sql in sqls)
         {
-            IReadOnlyList<(string Function, string Argument)> lowerings = LoweringCalls(sql);
-            lowerings.Should().NotBeEmpty();
-            foreach ((string function, string argument) in lowerings)
-            {
-                function.Should().Be(loweringFunction);
-                argument.Should().EndWith(collationSuffix);
-            }
+            DescriptorUriFoldGuard.AssertEveryLoweringIsCollated(sql, dialect).Should().BePositive();
         }
     }
 
@@ -324,34 +315,6 @@ public class Given_TrackedChange_Compact_Descriptor_Routing(SqlDialect dialect)
         dialect is SqlDialect.Pgsql
             ? $"lower((t.{Q("OldNamespace")} || '#' || t.{Q("OldCodeValue")}) COLLATE \"pg_c_utf8\") = lower((c.{Q(trackedPrefix + "_Namespace")} || '#' || c.{Q(trackedPrefix + "_CodeValue")}) COLLATE \"pg_c_utf8\")"
             : $"LOWER((t.{Q("OldNamespace")} + N'#' + t.{Q("OldCodeValue")}) COLLATE SQL_Latin1_General_CP1_CI_AS) = LOWER((c.{Q(trackedPrefix + "_Namespace")} + N'#' + c.{Q(trackedPrefix + "_CodeValue")}) COLLATE SQL_Latin1_General_CP1_CI_AS)";
-
-    /// <summary>
-    /// Every lowering call in <paramref name="sql"/>, in either case, with its full parenthesized argument.
-    /// </summary>
-    private static IReadOnlyList<(string Function, string Argument)> LoweringCalls(string sql)
-    {
-        List<(string, string)> calls = [];
-        int start = sql.IndexOf("lower(", StringComparison.OrdinalIgnoreCase);
-        while (start >= 0)
-        {
-            int argumentStart = start + "lower(".Length;
-            int depth = 1;
-            int index = argumentStart;
-            while (depth > 0)
-            {
-                depth += sql[index] switch
-                {
-                    '(' => 1,
-                    ')' => -1,
-                    _ => 0,
-                };
-                index++;
-            }
-            calls.Add((sql[start..argumentStart], sql[argumentStart..(index - 1)]));
-            start = sql.IndexOf("lower(", argumentStart, StringComparison.OrdinalIgnoreCase);
-        }
-        return calls;
-    }
 
     private string Table(string schema, string name) =>
         SqlIdentifierQuoter.QuoteTableName(dialect, new(new(schema), name));
