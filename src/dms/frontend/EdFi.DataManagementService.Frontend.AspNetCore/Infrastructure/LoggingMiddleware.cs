@@ -113,7 +113,7 @@ public class LoggingMiddleware
             }
             catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge)
             {
-                if (context.RequestAborted.IsCancellationRequested)
+                if (IsTokenEndpoint(context) && context.RequestAborted.IsCancellationRequested)
                 {
                     throw;
                 }

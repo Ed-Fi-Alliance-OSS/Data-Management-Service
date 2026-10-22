@@ -329,10 +329,17 @@ public class Given_LoggingMiddleware
         logger.Entries.Should().NotContain(e => e.EventId.Name == "HttpRequestCompleted");
     }
 
-    [Test]
-    public async Task It_logs_request_body_too_large_rejections_as_413_completions()
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_logs_request_body_too_large_rejections_as_413_completions(bool canceled)
     {
+        using var cancellationSource = new CancellationTokenSource();
+        if (canceled)
+        {
+            await cancellationSource.CancelAsync();
+        }
         var httpContext = new DefaultHttpContext();
+        httpContext.RequestAborted = cancellationSource.Token;
         httpContext.Request.Method = HttpMethods.Post;
         httpContext.Request.Path = "/schemas";
         var responseBody = new MemoryStream();
@@ -355,6 +362,39 @@ public class Given_LoggingMiddleware
         entry.Level.Should().Be(LogLevel.Information);
         entry.State.ContainStructuredProperty("StatusCode", StatusCodes.Status413PayloadTooLarge);
         entry.State.ContainKey("DurationMs");
+        logger.Entries.Should().NotContain(e => e.EventId.Name == "HttpRequestFailed");
+    }
+
+    [Test]
+    public async Task It_propagates_a_canceled_token_size_rejection_without_writing_or_completion_logging()
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        await cancellationSource.CancelAsync();
+        var httpContext = new DefaultHttpContext { RequestAborted = cancellationSource.Token };
+        httpContext.Request.Method = HttpMethods.Post;
+        httpContext.Request.Path = "/oauth/token";
+        httpContext.SetEndpoint(
+            new Endpoint(null, new EndpointMetadataCollection(TokenEndpointMetadata.Instance), "token")
+        );
+        using var responseBody = new MemoryStream();
+        httpContext.Response.Body = responseBody;
+        var exception = new BadHttpRequestException(
+            "Request body too large.",
+            StatusCodes.Status413PayloadTooLarge
+        );
+        var logger = new TestLogger<LoggingMiddleware>();
+        var middleware = new LoggingMiddleware(
+            _ => throw exception,
+            AppSettingsWithCorrelationHeader(string.Empty)
+        );
+
+        Func<Task> invoke = () => middleware.Invoke(httpContext, logger);
+        (await invoke.Should().ThrowAsync<BadHttpRequestException>()).Which.Should().BeSameAs(exception);
+
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        httpContext.Response.Headers.Should().NotContainKey(OAuthErrorResponse.CorrelationHeaderName);
+        responseBody.ToArray().Should().BeEmpty();
+        logger.Entries.Should().NotContain(e => e.EventId.Name == "HttpRequestCompleted");
         logger.Entries.Should().NotContain(e => e.EventId.Name == "HttpRequestFailed");
     }
 
@@ -420,7 +460,11 @@ public class Given_LoggingMiddleware
         httpContext.Response.Body = new MemoryStream();
         var logger = new TestLogger<LoggingMiddleware>();
         var middleware = new LoggingMiddleware(
-            _ => throw new InvalidOperationException("boom"),
+            context =>
+            {
+                context.Response.Headers.WWWAuthenticate = OAuthErrorResponse.BasicChallenge;
+                throw new InvalidOperationException("boom");
+            },
             AppSettingsWithCorrelationHeader(string.Empty)
         );
 
@@ -437,6 +481,7 @@ public class Given_LoggingMiddleware
             .Should()
             .BeEquivalentTo("error", "error_description");
         httpContext.Response.ContentType.Should().StartWith("application/json");
+        httpContext.Response.Headers.Should().NotContainKey("WWW-Authenticate");
         Uri.UnescapeDataString(
                 httpContext.Response.Headers[OAuthErrorResponse.CorrelationHeaderName].ToString()
             )
@@ -464,11 +509,14 @@ public class Given_LoggingMiddleware
         httpContext.Response.Body = new MemoryStream();
         var logger = new TestLogger<LoggingMiddleware>();
         var middleware = new LoggingMiddleware(
-            _ =>
+            context =>
+            {
+                context.Response.Headers.WWWAuthenticate = OAuthErrorResponse.BasicChallenge;
                 throw new BadHttpRequestException(
                     "Request body too large.",
                     StatusCodes.Status413PayloadTooLarge
-                ),
+                );
+            },
             AppSettingsWithCorrelationHeader(string.Empty)
         );
 
@@ -488,6 +536,7 @@ public class Given_LoggingMiddleware
             .Should()
             .BeEquivalentTo("error", "error_description");
         httpContext.Response.ContentType.Should().StartWith("application/json");
+        httpContext.Response.Headers.Should().NotContainKey("WWW-Authenticate");
         logger.Entries.Should().ContainSingle(entry => entry.EventId.Name == "HttpRequestCompleted");
         logger
             .Entries.Single(entry => entry.EventId.Name == "HttpRequestCompleted")

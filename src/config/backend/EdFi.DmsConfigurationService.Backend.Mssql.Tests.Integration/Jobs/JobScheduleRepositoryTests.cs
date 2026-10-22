@@ -1059,7 +1059,7 @@ public class JobScheduleRepositoryTests
             _enqueuedJobs = await JobsOfAsync(_enqueuedId);
 
             // The recovered job is still Pending when the next interval falls due.
-            await MakeDueAsync(_enqueuedId, _enqueuedOccurrence.AddSeconds(1));
+            await MakeDueAsync(_enqueuedId);
             _nextInterval = await MaterializeAsync();
             _enqueuedJobsAfterNextInterval = await JobsOfAsync(_enqueuedId);
         }
@@ -1130,7 +1130,7 @@ public class JobScheduleRepositoryTests
             _previousOccurrence = MaterializedOf(await MaterializeAsync()).Occurrence;
             await SetLatestJobStateAsync(_scheduleId, state);
             _previousJob = (await JobsOfAsync(_scheduleId)).Single();
-            _skippedOccurrence = await MakeDueAsync(_scheduleId, _previousOccurrence.AddSeconds(1));
+            _skippedOccurrence = await MakeDueAsync(_scheduleId);
 
             _result = await MaterializeAsync();
             _again = await MaterializeAsync();
@@ -1196,20 +1196,20 @@ public class JobScheduleRepositoryTests
             _firstOccurrence = MaterializedOf(await MaterializeAsync()).Occurrence;
             await SetLatestJobStateAsync(_scheduleId, "InProgress");
 
-            await MakeDueAsync(_scheduleId, _firstOccurrence.AddSeconds(1));
+            await MakeDueAsync(_scheduleId);
             _secondInterval = await MaterializeAsync();
-            await MakeDueAsync(_scheduleId, _firstOccurrence.AddSeconds(2));
+            await MakeDueAsync(_scheduleId);
             _thirdInterval = await MaterializeAsync();
             _pointerWhileActive = (await ReadScheduleAsync(_scheduleId)).LastEnqueuedOccurrence;
 
             await SetLatestJobStateAsync(_scheduleId, terminalStatus);
-            _eligibleOccurrence = await MakeDueAsync(_scheduleId, _firstOccurrence.AddSeconds(3));
+            _eligibleOccurrence = await MakeDueAsync(_scheduleId);
             _newJobId = NewJobId();
             _afterTerminal = await MaterializeAsync(jobId: _newJobId);
             _jobs = await JobsOfAsync(_scheduleId);
             _pointerAfterTerminal = (await ReadScheduleAsync(_scheduleId)).LastEnqueuedOccurrence;
 
-            await MakeDueAsync(_scheduleId, _firstOccurrence.AddSeconds(4));
+            await MakeDueAsync(_scheduleId);
             _behindTheNewJob = await MaterializeAsync();
             _jobCountAtEnd = await JobCountAsync();
         }
