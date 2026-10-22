@@ -117,6 +117,19 @@ internal static class FailureResults
     }
 
     /// <summary>
+    /// Structured 429 <c>urn:ed-fi:management-api:too-many-requests</c> response for a <c>/connect/*</c>
+    /// request refused by the rate limiter (DMS-1482).
+    /// </summary>
+    public static IResult TooManyRequests(string correlationId)
+    {
+        return Results.Json(
+            FailureResponse.ForTooManyRequests(correlationId),
+            contentType: _errorContentType,
+            statusCode: 429
+        );
+    }
+
+    /// <summary>
     /// Structured 409 for a request that could not be serialized against the other requests in
     /// flight for the same resource before the contention budget ran out. Same status and same
     /// wording the application-lock paths use for their own acquisition timeouts, because it is
