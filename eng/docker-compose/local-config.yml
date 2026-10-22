@@ -78,6 +78,11 @@ services:
       # consisting only of recognized CMS admin scopes (case-sensitive).
       # Values below 1 disable enforcement globally.
       IdentitySettings__BearerTokenPerClientLimit: ${CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT:-15}
+      # /connect/* rate limiting (DMS-1482); see docs/CONFIGURATION.md#connectratelimit.
+      ConnectRateLimit__Enabled: ${CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_ENABLED:-true}
+      ConnectRateLimit__SourcePermitLimit: ${CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_SOURCE_PERMIT_LIMIT:-120}
+      ConnectRateLimit__ClientPermitLimit: ${CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_CLIENT_PERMIT_LIMIT:-30}
+      ConnectRateLimit__WindowSeconds: ${CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_WINDOW_SECONDS:-60}
       Cors__SwaggerUIOrigin: ${DMS_SWAGGER_UI_URL:-http://localhost:8082}
     ports:
       - "127.0.0.1:${CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS:-8081}:${CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS:-8081}"

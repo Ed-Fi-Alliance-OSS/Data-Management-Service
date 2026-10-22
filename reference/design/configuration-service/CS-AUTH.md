@@ -44,6 +44,14 @@ Failed form credentials get `400 invalid_client`, as at `/connect/revoke`: RFC 6
 `Authorization` header authentication, and a challenge would invite a scheme the caller did not use.
 See [Token introspection](#token-introspection).
 
+All four `/connect/*` endpoints are rate limited per source address, and `/connect/token` and
+`/connect/revoke` also per `client_id`, immediately before the client secret is verified (DMS-1482).
+A refusal is `429` with `Retry-After`: an Ed-Fi problem-details body of type
+`urn:ed-fi:management-api:too-many-requests`, except on `/connect/revoke`, which answers in the OAuth
+format with `error` `temporarily_unavailable`. Limits, defaults and sizing are in
+[CONFIGURATION.md](../../../docs/CONFIGURATION.md#connectratelimit); the design is
+[DMS-1482](./DMS-1482-cms-connect-rate-limiting.md).
+
 `/connect/token` accepts client credentials as HTTP Basic or as form fields in both identity provider modes, with Basic taking precedence.
 Each value a parsed Basic header supplies wins, and a form field only fills a value Basic left empty, such as the empty secret in `Basic base64("id:")`.
 A malformed Basic value falls back to the form fields.

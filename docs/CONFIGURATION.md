@@ -790,6 +790,78 @@ These settings configure the allowed client-secret length range used by Configur
 > run `teardown-local-dms.ps1` and set up again, or drop the Keycloak realm / `dmscs` OpenIddict
 > tables — then start with the new secret.
 
+## ConnectRateLimit
+
+The Configuration Service rate limits its four anonymous OAuth endpoints, `POST /connect/token`,
+`/connect/revoke`, `/connect/register` and `/connect/introspect` (route-context suffixes included),
+to slow client-secret guessing and client enumeration. No other endpoint is limited. Two independent
+budgets apply, and a request must fit both:
+
+- **Per source address**, across all four routes. The address is the connection's remote address after
+  [forwarded headers](#reverse-proxy-and-forwarded-headers) from trusted proxies are applied. A native
+  IPv6 address counts against its /64. Requests whose address is unknown share one budget.
+- **Per `client_id`**, across all sources, for `/connect/token` and `/connect/revoke` only, spent just
+  before the client secret is verified. A request rejected earlier (malformed form, unsupported grant
+  type, missing token) does not spend it. The comparison ignores case. The budget is spent whether or
+  not the client exists, so a `429` reveals nothing about which clients exist.
+
+| Parameter | Default | Description |
+| --- | --- | --- |
+| `Enabled` | `true` | `false` turns all `/connect/*` limiting off. |
+| `SourcePermitLimit` | `120` | Requests per source address in each window. Must be > 0 when enabled. |
+| `ClientPermitLimit` | `30` | Token and revocation requests per `client_id` in each window. Must be > 0 when enabled. |
+| `WindowSeconds` | `60` | Fixed-window length in seconds. Must be > 0 when enabled. |
+
+The Docker Compose stacks set these from `CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_ENABLED`,
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_SOURCE_PERMIT_LIMIT`,
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_CLIENT_PERMIT_LIMIT` and
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_WINDOW_SECONDS`. An invalid value is reported at startup and
+the service answers every request with `500` until it is corrected.
+
+Sizing notes:
+
+- Limits are enforced **per Configuration Service process**. With several replicas behind a load
+  balancer, a caller can reach up to replicas × limit requests per window.
+- Callers behind one NAT, and all requests proxied by the Ed-Fi API's `/oauth/token`, share **one
+  source budget**. Raise `SourcePermitLimit` if the Ed-Fi API serves many token requests.
+- The Ed-Fi API's own Configuration Service client caches its token, so it stays far below the client
+  limit. If it is ever refused, that request fails rather than retrying.
+- The defaults come from expected traffic shape, not measured load. Real clients are already capped at
+  15 active tokens (`IdentitySettings:BearerTokenPerClientLimit`) and should reuse them.
+
+### Rejection response
+
+A refused request receives `429 Too Many Requests` with a `Retry-After` header: the limiter's
+recommended delay rounded up to whole seconds, omitted if the limiter supplies none. `/connect/token`,
+`/connect/register` and `/connect/introspect` answer with an Ed-Fi problem-details body served as
+`application/problem+json`. Its `correlationId` is the request's trace identifier:
+
+```json
+{
+  "detail": "The number of allowed requests has been exceeded. Retry the request later.",
+  "type": "urn:ed-fi:management-api:too-many-requests",
+  "title": "Too Many Requests",
+  "status": 429,
+  "correlationId": "0HNCTN1IRQMDG:00000001",
+  "validationErrors": {},
+  "errors": []
+}
+```
+
+`/connect/revoke` keeps its OAuth error format (see
+[CS-AUTH](../reference/design/configuration-service/CS-AUTH.md#token-revocation)) and answers
+`application/json`:
+
+```json
+{
+  "error": "temporarily_unavailable",
+  "error_description": "The number of allowed requests has been exceeded. Retry the request later."
+}
+```
+
+This `429` is distinct from the active-token limit's `429`
+(`urn:ed-fi:management-api:security:authentication:too-many-tokens`), which is unchanged.
+
 ## Plugins
 
 Plugins are directories of already-published assemblies that DMS loads at startup and
