@@ -401,6 +401,45 @@ Behavior:
 
 Invalid IP or CIDR values cause the service to fail startup with a configuration error.
 
+### Security response headers
+
+Both services send these headers on every response.
+The values are fixed and are not configurable.
+
+| Header | Value |
+| --- | --- |
+| `X-Content-Type-Options` | `nosniff` |
+| `Referrer-Policy` | `no-referrer` |
+| `X-Frame-Options` | `DENY` |
+| `Content-Security-Policy` | `default-src 'none'; frame-ancestors 'none'` |
+
+`Strict-Transport-Security: max-age=31536000` is sent only when the request is HTTPS as the application sees it.
+That means TLS terminated by Kestrel, or `X-Forwarded-Proto: https` from a proxy trusted through `ReverseProxy:UseForwardedHeaders` with `KnownProxies` or `KnownNetworks`.
+It is never sent for `localhost`, `127.0.0.1` or `[::1]`.
+It carries no `includeSubDomains` or `preload`, because those are decisions for whoever owns the domain, so they belong at the edge.
+When TLS terminates at a proxy and forwarded headers are not enabled, the application does not send HSTS and the proxy should.
+
+`Cache-Control: no-store` is sent on:
+
+- Non-2xx responses, except 304, in both services.
+- The token endpoints, together with `Pragma: no-cache`: DMS `/oauth/token` and every Configuration Service `/connect/*` endpoint.
+- Authenticated Configuration Service endpoints.
+- DMS `/oauth/token_info`.
+- DMS identity operations, as described in [IDENTITY-MANAGEMENT.md](IDENTITY-MANAGEMENT.md).
+
+DMS data API success responses carry no `Cache-Control`, so conditional GET keeps working.
+
+A proxy's headers are appended to the application's, not merged, and the application cannot see them.
+Duplicate `X-Frame-Options`, `Content-Security-Policy` and `Cache-Control` fields resolve to the stricter value.
+For `Strict-Transport-Security`, browsers use the first field, which is the application's.
+To apply a different value at the edge, remove the application's header first.
+With nginx, use `proxy_hide_header`, as the review gateway does for HSTS:
+
+```nginx
+proxy_hide_header Strict-Transport-Security;
+add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+```
+
 ### Examples by environment
 
 **Local (no proxy)** — leave reverse proxy support disabled (the default):

@@ -16,6 +16,13 @@ Feature: Client credentials at the token endpoint
         grant_type=client_credentials
         """
       Then it should respond with 200
+      And the response headers include
+        """
+        {
+          "Cache-Control": "no-store",
+          "Pragma": "no-cache"
+        }
+        """
       And the token response carries an access token
       When the access token from the token response is used for authorization
       And a GET request is made to "/ed-fi/academicWeeks"

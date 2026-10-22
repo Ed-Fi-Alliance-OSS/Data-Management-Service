@@ -39,10 +39,12 @@ public class TokenEndpointModule : IEndpointModule
         endpoints
             .MapPost($"{routePattern}/oauth/token", HandleFormData)
             .Accepts<TokenRequest>(contentType: "application/x-www-form-urlencoded")
+            .WithMetadata(TokenEndpointMetadata.Instance)
             .DisableAntiforgery();
         endpoints
             .MapPost($"{routePattern}/oauth/token", HandleJsonData)
             .Accepts<TokenRequest>(contentType: "application/json")
+            .WithMetadata(TokenEndpointMetadata.Instance)
             .DisableAntiforgery();
         endpoints.MapMethodNotAllowed($"{routePattern}/oauth/token", HttpMethods.Post);
     }

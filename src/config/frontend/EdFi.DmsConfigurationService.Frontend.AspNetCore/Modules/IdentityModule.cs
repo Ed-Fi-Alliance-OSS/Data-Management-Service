@@ -34,9 +34,18 @@ public class IdentityModule : IEndpointModule
     {
         // Support dynamic route contexts: allows zero or more path segments after the endpoint
         // Examples: /connect/token, /connect/token/{districtId}, /connect/token/{districtId}/{schoolYear}
-        endpoints.MapPost("connect/register/{**contextPath}", RegisterClient).DisableAntiforgery();
-        endpoints.MapPost("connect/token/{**contextPath}", GetClientAccessToken).DisableAntiforgery();
-        endpoints.MapPost("connect/introspect/{**contextPath}", IntrospectToken).DisableAntiforgery();
+        endpoints
+            .MapPost("connect/register/{**contextPath}", RegisterClient)
+            .DisableAntiforgery()
+            .WithMetadata(OAuthEndpointMetadata.Instance);
+        endpoints
+            .MapPost("connect/token/{**contextPath}", GetClientAccessToken)
+            .DisableAntiforgery()
+            .WithMetadata(OAuthEndpointMetadata.Instance);
+        endpoints
+            .MapPost("connect/introspect/{**contextPath}", IntrospectToken)
+            .DisableAntiforgery()
+            .WithMetadata(OAuthEndpointMetadata.Instance);
         // No RequireAuthorization() here: RFC 7009 §2.1 requires the caller to authenticate with
         // client credentials (RFC 6749 §2.3), the same as at /connect/token, not with a bearer
         // access token. The ITokenRevocationManager authenticates the caller inside
@@ -53,7 +62,8 @@ public class IdentityModule : IEndpointModule
             .WithMetadata(
                 OAuthErrorContractMetadata.Instance,
                 ExceptionTypeOnlyLoggingMetadata.Instance,
-                BearerAuthenticationExemptMetadata.Instance
+                BearerAuthenticationExemptMetadata.Instance,
+                OAuthEndpointMetadata.Instance
             );
     }
 
