@@ -603,8 +603,9 @@ The query-time change-version filter ranges over `ContentVersion`. Descriptor li
 The relational `/deletes` and `/keyChanges` paths use
 [`TrackedChangeQueryPlanner.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/ChangeQueries/TrackedChangeQueryPlanner.cs)
 and retained old identity/securable values. Descriptor routes bind the compile-time qualified
-`ResourceKeyId`; namespace/custom-view authorization and recreation checks retain their
-existing behavior. See [change-queries.md](../reference/design/backend-redesign/design-docs/change-queries.md)
+`ResourceKeyId`. Descriptor recreation checks and custom-view descriptor seeks compare the lowered
+whole URI plus `ResourceKeyId`, the same descriptor identity the write path uses; namespace
+authorization is unchanged. See [change-queries.md](../reference/design/backend-redesign/design-docs/change-queries.md)
 for the endpoint contract.
 
 `newestChangeVersion` is the current value reported by the provider's change-version sequence, not

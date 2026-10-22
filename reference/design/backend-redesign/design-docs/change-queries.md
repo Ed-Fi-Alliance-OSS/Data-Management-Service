@@ -1188,10 +1188,11 @@ projections and the shared descriptor table's `Old*`/`New*` `Namespace`/`CodeVal
 `/deletes` anti-joins compare these historical `Old*` values to live identity columns to detect
 recreated rows; letting them inherit a case-sensitive database default would make those probes
 default-dependent or collation-conflicted. Routing-only values such as the shared descriptor
-`ResourceKeyId` are not identity text. Current descriptor recreation and history custom-view seeks
-compare the retained `Namespace` and `CodeValue` components separately; whole-URI recreation probes
-are later work. This identity-collation contract is owned by Epic 21 (DMS-1443, SQL Server identity
-collation contract; DMS-1455 for the Change Query descriptor probes).
+`ResourceKeyId` are not identity text. Descriptor recreation probes and history custom-view seeks
+compare the lowered whole URI rebuilt from the retained `Namespace` and `CodeValue`, folded inside
+`LOWER` under the identity collation (see "/deletes endpoints" below), so the column collation also
+pins what the fold reads. This identity-collation contract is owned by Epic 21 (DMS-1443, SQL Server
+identity collation contract; DMS-1455 for the Change Query descriptor probes).
 
 Each `TrackedChangeColumnInfo` carries `IsOldColumnNullable` and `IsNewColumnNullable` separately because tombstones populate only old values. `IsOldColumnNullable` follows the tracked source value's nullability. `IsNewColumnNullable` is normally `true` because delete tombstones leave `New*` columns null; key-change rows populate the new values when present.
 
@@ -1355,8 +1356,11 @@ primary key is independently allocated `int DescriptorId`; `bigint DocumentId` i
 non-null document association and remains the paging key when that anchor is selected. Uniqueness
 uses `UX_Descriptor_ResourceKeyId_Uri`: PostgreSQL indexes the unlowered whole-URI expression,
 and SQL Server indexes a non-persisted computed Uri that inherits the DMS identity collation
-(`SQL_Latin1_General_CP1_CI_AS`) of its `Namespace` and `CodeValue` components. Current recreation
-probes retain component comparisons and must not be described as lowered-URI index seeks.
+(`SQL_Latin1_General_CP1_CI_AS`) of its `Namespace` and `CodeValue` components. Descriptor identity is
+the lowered whole URI under `UX_Descriptor_UriLowered_ResourceKeyId`, and every Change Query probe of a
+live descriptor (recreation and custom-view seeks) is a seek on that index: PostgreSQL's expression
+index on `lower(("Namespace" || '#' || "CodeValue") COLLATE "pg_c_utf8")` and SQL Server's
+non-persisted `UriLowered` computed column.
 
 **Compiled-mapping-set additions** (defined in [compiled-mapping-set.md](compiled-mapping-set.md)):
 
@@ -1779,7 +1783,7 @@ AND EXISTS (
 )
 ```
 
-Transitive bases work the same way: `CourseOfferingWithX` on `/grades/deletes` seeks `edfi.CourseOffering` by `OldStudentSectionAssociation_LocalCourseCode`, `OldSchoolId_Unified`, `OldSchoolYear_Unified`, and `OldStudentSectionAssociation_SessionName`. Descriptor-valued identity parts of the basis key are matched through `dms.Descriptor` on the tombstone's old `Namespace` and `CodeValue`, and a basis that is itself a descriptor is sought in `dms.Descriptor` the same way; an abstract basis such as `EducationOrganization` is sought through its union view. Person bases read the person `DocumentId` columns the tombstone already stores, and the self basis reads the system column; a person reference that is not a securable element of the subject has no such column and is treated like any other basis, so it is sought live by the unique id when the reference is identifying and otherwise fails under the first-hop rule (ODS applies its identifying-only rule to `StaffUSI` alike). Because every seek key is a value stored on the row, seek bases have exact old-value semantics: a deleted basis is denied, since the seek finds nothing whatever the view returns, and a re-keyed basis is denied too, as in ODS for a natural-key basis. Stored-DocumentId bases (self and person) follow the current-membership rule described above instead, as in ODS for a surrogate-keyed basis. No new index is needed: the seek lands on the basis table's `*_RefKey` index, which already exists for every referenced resource and leads with the identity columns (see "`*_RefKey` index ordering for `/deletes`" below).
+Transitive bases work the same way: `CourseOfferingWithX` on `/grades/deletes` seeks `edfi.CourseOffering` by `OldStudentSectionAssociation_LocalCourseCode`, `OldSchoolId_Unified`, `OldSchoolYear_Unified`, and `OldStudentSectionAssociation_SessionName`. Descriptor-valued identity parts of the basis key are matched through `dms.Descriptor` by the lowered whole URI rebuilt from the tombstone's old `Namespace` and `CodeValue` under the descriptor's compiled `ResourceKeyId`, and a basis that is itself a descriptor is sought in `dms.Descriptor` the same way (see "Descriptor comparisons" below); an abstract basis such as `EducationOrganization` is sought through its union view. Person bases read the person `DocumentId` columns the tombstone already stores, and the self basis reads the system column; a person reference that is not a securable element of the subject has no such column and is treated like any other basis, so it is sought live by the unique id when the reference is identifying and otherwise fails under the first-hop rule (ODS applies its identifying-only rule to `StaffUSI` alike). Because every seek key is a value stored on the row, seek bases have exact old-value semantics: a deleted basis is denied, since the seek finds nothing whatever the view returns, and a re-keyed basis is denied too, as in ODS for a natural-key basis. Stored-DocumentId bases (self and person) follow the current-membership rule described above instead, as in ODS for a surrogate-keyed basis. No new index is needed: the seek lands on the basis table's `*_RefKey` index, which already exists for every referenced resource and leads with the identity columns (see "`*_RefKey` index ordering for `/deletes`" below).
 
 The planning cost lives in metadata, not in SQL. To pair each basis key column with the tombstone column holding its value, the planner walks the reference identity bindings from the subject to the basis (Grade's binding to StudentSectionAssociation, the association's to Section, Section's to CourseOffering) rather than relying on column names, which are not reliable under key unification and role names. This happens once per resource and strategy; see "Plan shape and SQL" below.
 
@@ -1826,14 +1830,15 @@ Both endpoints already build `FROM tracked_changes_x.Y c WHERE ...` and splice `
 The plan carries a `ReadChangesCustomViewCheckSpec` carrying the configured strategy, its CMS local order, the view name, the probe flag, and a basis resolution with three shapes:
 
 - **Stored DocumentId.** A self basis reads the `DocumentId` system column. A person basis reads the existing person `Old*_DocumentId` column, chosen by matching the resolved path against the person join chains as the relationship planner does today; when the resolved path is not a securable person path, no such column exists and the basis falls through to the live seek below. The predicate is `c.X IN (SELECT DocumentId FROM auth.View)`, so the basis is authorized by its current membership.
-- **Live seek.** For every other basis. The planner resolves the path with `SecurableElementColumnPathResolver` under the same preferred-path rule as the live page planner, then walks each hop's `DocumentReferenceBinding.IdentityBindings` from the basis back to the subject root to pair each basis identity column with the canonical tombstone column holding its old value. Descriptor identity parts pair the basis FK column with a `dms.Descriptor` row matched on the tombstone's old `Namespace` and `CodeValue`, reusing the shape of `BuildDescriptorIdentityJoin`. An abstract basis seeks the abstract union view by its identity column. A first hop whose values are not on the tombstone fails planning; see the error section below.
-- **Live seek plus tombstone probe.** When the strategy name carries the suffix, the live seek is unioned with one arm per basis tracked-change table. Each arm seeks that table's `Old*` identity columns with the same paired values and returns its `DocumentId`. Descriptor parts compare old `Namespace` and `CodeValue` directly, with no descriptor join. An abstract basis gets one arm per concrete member table, derived from the union view's arms.
-- **Descriptor basis.** The check seeks `dms.Descriptor` on old `Namespace` and `CodeValue`,
-  restricted by the qualified descriptor's compiled `smallint ResourceKeyId`, and tests its owning
-  `bigint DocumentId` against the view. With the suffix, the union adds an arm over shared
-  `tracked_changes_edfi.Descriptor`, filtered by that same ResourceKeyId and old components,
-  returning the retained `DocumentId` even after the live rows are gone. A descriptor self-basis
-  uses the subject history's stored `DocumentId` directly.
+- **Live seek.** For every other basis. The planner resolves the path with `SecurableElementColumnPathResolver` under the same preferred-path rule as the live page planner, then walks each hop's `DocumentReferenceBinding.IdentityBindings` from the basis back to the subject root to pair each basis identity column with the canonical tombstone column holding its old value. Descriptor identity parts pair the basis FK column with a `dms.Descriptor` row found by the lowered whole URI of the tombstone's old `Namespace` and `CodeValue` under the descriptor's `ResourceKeyId`, the same probe `BuildDescriptorIdentityJoin` emits for recreation. An abstract basis seeks the abstract union view by its identity column. A first hop whose values are not on the tombstone fails planning; see the error section below.
+- **Live seek plus tombstone probe.** When the strategy name carries the suffix, the live seek is unioned with one arm per basis tracked-change table. Each arm seeks that table's `Old*` identity columns with the same paired values and returns its `DocumentId`. Descriptor parts have no descriptor join: the basis tombstone's and the subject tombstone's old `<namespace>#<codeValue>` are both lowered under the per-engine fold and compared. An abstract basis gets one arm per concrete member table, derived from the union view's arms.
+- **Descriptor basis.** The check seeks `dms.Descriptor` by the lowered whole URI of the old
+  `Namespace` and `CodeValue`, restricted by the qualified descriptor's compiled `smallint
+  ResourceKeyId`, and tests its owning `bigint DocumentId` against the view. With the suffix, the
+  union adds an arm over shared `tracked_changes_edfi.Descriptor`, routed by that same
+  `ResourceKeyId` and matched by the two-sided lowered-URI fold, returning the retained `DocumentId`
+  even after the live rows are gone. A descriptor self-basis uses the subject history's stored
+  `DocumentId` directly.
 
 ```sql
 -- /studentSchoolAssociations/deletes with SchoolWithAlternativeTypeIncludingDeletes
@@ -1847,13 +1852,41 @@ AND EXISTS (
 )
 ```
 
+**Descriptor comparisons.** All four descriptor comparisons above (the live-seek descriptor join, the
+descriptor-basis live match, and both tombstone arms) follow the descriptor identity contract of
+[natural-key-resolution.md](natural-key-resolution.md): the lowered whole URI plus `ResourceKeyId`,
+never the components one by one. Live comparisons seek `UX_Descriptor_UriLowered_ResourceKeyId`;
+tombstone arms compare two tracked rows, so they lower both sides:
+
+```sql
+-- live seek / descriptor-basis live match (SQL Server, then PostgreSQL)
+d.[ResourceKeyId] = 23
+  AND d.[UriLowered] = LOWER((c.[OldGradeTypeDescriptor_Namespace] + N'#' + c.[OldGradeTypeDescriptor_CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS)
+d."ResourceKeyId" = 23
+  AND lower((d."Namespace" || '#' || d."CodeValue") COLLATE "pg_c_utf8")
+    = lower((c."OldGradeTypeDescriptor_Namespace" || '#' || c."OldGradeTypeDescriptor_CodeValue") COLLATE "pg_c_utf8")
+
+-- tombstone arm (SQL Server)
+LOWER((t.[OldNamespace] + N'#' + t.[OldCodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS)
+  = LOWER((c.[OldGradeTypeDescriptor_Namespace] + N'#' + c.[OldGradeTypeDescriptor_CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS)
+```
+
+The fold is applied to the rebuilt URI, not to each component, and on SQL Server the identity
+collation sits inside `LOWER`, so the database default never decides the casing table. A descriptor
+match only makes the basis row eligible; the view membership and every other identity part still
+apply. Compared with component equality this changes custom-view verdicts in four ways: case-only
+variants match on both engines (PostgreSQL newly), dotted `İ` matches `i` on SQL Server, component
+re-splits of the same URI (`ns/components` + `Campus#Code` against `ns/components#Campus` + `Code`)
+match on both engines, and on SQL Server a namespace that differs only by a trailing space no longer
+matches, so those rows are denied where `=`'s trailing-pad rule used to authorize them.
+
 `TrackedChangeAuthorizationSqlEmitter` appends custom-view predicates as separate AND terms after
 the namespace predicate and relationship OR-group, in CMS order as defined in [auth.md](auth.md).
 The predicate list is `[namespace, relationship OR-group, custom views...]`. Custom views bind no
-claim parameters; descriptor seeks add compiled `smallint ResourceKeyId` parameters named
-`@CustomViewDescriptorResourceKeyId{n}` and its `Qualified` twin, distinct from recreation's
-`@DescriptorResourceKeyId{n}`. They enter the existing SQL Server parameter-cap check. A null old
-value on a nullable securable first hop never matches, so the row is denied as before.
+parameters at all: a descriptor seek renders its compiled `smallint ResourceKeyId` as an integer
+literal. The value comes from the compiled `MappingSet`, never from the request. A null old value on
+a nullable securable first hop makes the rebuilt URI null, so it never matches and the row is denied
+as before.
 
 The first hop of the path may be an identity reference or any securable element the tombstone stores; later hops are identity-only. This is what the shared resolver already returns, and it is wider than the ODS rule, which admits identifying properties only. The difference is deliberate: DMS tombstones store securable values that ODS tombstones lack (ODS stores model-declared authorization columns such as `DisciplineAction.OldResponsibilitySchoolId`, but not C#-level overrides such as StudentAssessment's reported school), and the built-in relationship strategies already authorize those tombstones from those columns, so restricting custom views to identity references would protect nothing. In Data Standard 5.2 and 6.1 the non-identity securable elements are the EdOrg paths on `disciplineActions` (responsibility school), `organizationDepartments` (parent EdOrg), and `studentAssessments` (reported school, nullable), plus the Namespace paths on namespace-secured resources; none are person paths.
 
@@ -1922,13 +1955,16 @@ FROM
   tracked_changes_edfi.Grade AS c
   LEFT JOIN dms.Descriptor AS OldGradeTypeDescriptor 
     ON OldGradeTypeDescriptor.ResourceKeyId = @GradeTypeDescriptorResourceKeyId
-    AND OldGradeTypeDescriptor.Namespace = c.OldGradeTypeDescriptor_Namespace
-    AND OldGradeTypeDescriptor.CodeValue = c.OldGradeTypeDescriptor_CodeValue
+    AND OldGradeTypeDescriptor.UriLowered = LOWER(
+      (c.OldGradeTypeDescriptor_Namespace + N'#' + c.OldGradeTypeDescriptor_CodeValue)
+      COLLATE SQL_Latin1_General_CP1_CI_AS)
 
   LEFT JOIN dms.Descriptor AS OldGradingPeriodDescriptor
     ON OldGradingPeriodDescriptor.ResourceKeyId = @GradingPeriodDescriptorResourceKeyId
-    AND OldGradingPeriodDescriptor.Namespace = c.OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace
-    AND OldGradingPeriodDescriptor.CodeValue = c.OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue
+    AND OldGradingPeriodDescriptor.UriLowered = LOWER(
+      (c.OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace + N'#'
+        + c.OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue)
+      COLLATE SQL_Latin1_General_CP1_CI_AS)
 
   LEFT JOIN edfi.Grade AS src 
     ON OldGradeTypeDescriptor.DescriptorId                    = src.GradeTypeDescriptor_DescriptorId
@@ -1958,13 +1994,16 @@ ORDER BY
   c.ChangeVersion OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
 ```
 
-The example seeks a recreated descriptor by retained namespace/code components and qualified
-`ResourceKeyId`, then joins its new compact `DescriptorId` to the recreated resource's stored FK.
-The PostgreSQL renderer uses the same component predicates under its existing collation.
+The example (SQL Server) seeks a recreated descriptor by the lowered whole URI rebuilt from the
+retained namespace/code components and the qualified `ResourceKeyId`, then joins its new compact
+`DescriptorId` to the recreated resource's stored FK. The PostgreSQL renderer emits
+`lower((d."Namespace" || '#' || d."CodeValue") COLLATE "pg_c_utf8") = lower((c."Old…_Namespace" || '#' ||
+c."Old…_CodeValue") COLLATE "pg_c_utf8")`, which matches its expression index. Both are the predicate
+the descriptor write probe uses, so a descriptor recreation the engine considers the same identity
+suppresses the old tombstone, and the probe seeks `UX_Descriptor_UriLowered_ResourceKeyId`.
 `ResourceKeyId` parameters come from `MappingSet.ResourceKeyIdByResource` through each
-`TrackedChangeDescriptorJoinInfo.DescriptorResource`. These history comparisons are distinct
-from whole-URI RI trigger hashing and the descriptor write probe; compact storage does
-not make every consumer use a new shared equality rule.
+`TrackedChangeDescriptorJoinInfo.DescriptorResource`. A null old component makes the rebuilt URI
+null, so the join cannot match.
 
 #### `*_RefKey` index ordering for `/deletes`
 
@@ -1976,14 +2015,18 @@ For DMS, emit `*_RefKey` with `DocumentId` last: `(<identity storage columns...>
 
 `*_RefKey` is emitted only for resources that some other resource references (`EnsureTargetUnique`). Never-referenced resources have no RefKey; their recreated-row anti-join keeps the plan available from `UX_<Table>_NK` (a partial seek on leading scalar identity parts plus a residual filter). That is the pre-existing behavior and is not changed by the natural-key design. If measurement shows it is too slow on high-volume never-referenced tables, the agreed remedy is to re-shape the anti-join onto the resource's own natural key using the compiled `OwnNaturalKeyProbe` in the future natural-key workstream (reference-sourced parts resolved by scalar subselects over the referenced targets' `RefKey`s, bound from the tombstone `Old*` scalars; descriptor parts via the lowered-URI + `ResourceKeyId` subselect), so the outer join seeks `UX_<Table>_NK`. See `natural-key-resolution.md` § "`/deletes` recreated-row detection on never-referenced resources".
 
-Descriptor `/deletes` retains its component-wise anti-join: `ResourceKeyId`, `Namespace`, and
-`CodeValue`. On SQL Server both sides of the component comparison carry the DMS identity collation
-(`SQL_Latin1_General_CP1_CI_AS`), independent of the database default; PostgreSQL compares under its
-existing collation. Exact same-type component recreation suppresses the old tombstone; a different
-qualified descriptor type does not. The required regressions show case-only and
-trailing-namespace-space recreation suppressed on SQL Server, but retained on PostgreSQL. Different component pairs that reconstruct the exact same URI remain
-distinct for this history comparison on both providers. Responses still reconstruct the whole
-original-case URI from old components. Later DMS-1455 owns lowered-whole-URI recreation equality.
+Descriptor `/deletes` anti-joins the live descriptor by `ResourceKeyId` and the lowered whole URI
+rebuilt from the old `Namespace` and `CodeValue`, the same probe as resource `/deletes` above. On SQL
+Server the rebuilt URI is collated under the DMS identity collation (`SQL_Latin1_General_CP1_CI_AS`)
+inside `LOWER`, independent of the database default; PostgreSQL lowers both sides under
+`pg_c_utf8`. A recreation suppresses the old tombstone exactly when the engine would treat the two URIs
+as one descriptor on the write path; a different qualified descriptor type does not. The required
+regressions, on both providers: case-only recreation is suppressed; a component re-split of the same
+URI (`ns/components` + `Campus#Code` against `ns/components#Campus` + `Code`) is suppressed; a
+namespace that differs only by a trailing space is retained, because the space is part of the URI
+(SQL Server's `=` used to pad it away). A trailing code-value space keeps the engine's padding rule:
+suppressed on SQL Server, retained on PostgreSQL. Responses still reconstruct the whole
+original-case URI from old components.
 
 The shared `tracked_changes_edfi.Descriptor.ResourceKeyId` routes retained history to the requested
 endpoint using the fully qualified mapping-set resource. Neither live nor historical descriptors
@@ -2002,8 +2045,7 @@ FROM
   tracked_changes_edfi.Descriptor AS c 
   LEFT JOIN dms.Descriptor AS src 
     ON src.ResourceKeyId = @CrisisTypeDescriptorResourceKeyId
-    AND src.Namespace = c.OldNamespace
-    AND src.CodeValue = c.OldCodeValue
+    AND src.UriLowered = LOWER((c.OldNamespace + N'#' + c.OldCodeValue) COLLATE SQL_Latin1_General_CP1_CI_AS)
 WHERE 
   c.ResourceKeyId = @CrisisTypeDescriptorResourceKeyId -- Route this qualified type's history
   AND src.DocumentId IS NULL             -- Exclude entries that were recreated
@@ -2018,10 +2060,11 @@ ORDER BY
   c.ChangeVersion OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
 ```
 
-PostgreSQL emits `src."Namespace" = c."OldNamespace" AND src."CodeValue" = c."OldCodeValue"`
-with the same compiled `smallint ResourceKeyId` predicate. No LOWER, UriLowered, component
-trimming, or new collation is introduced. Whole-string transformations remain specific to the
-RI/reference consumers described in [transactions-and-concurrency.md](transactions-and-concurrency.md).
+PostgreSQL emits `lower((src."Namespace" || '#' || src."CodeValue") COLLATE "pg_c_utf8") =
+lower((c."OldNamespace" || '#' || c."OldCodeValue") COLLATE "pg_c_utf8")` with the same compiled
+`smallint ResourceKeyId` predicate. Both forms come from the helper that also emits the descriptor
+write probe, so Change Queries cannot drift from the write path's descriptor identity. No component
+trimming is introduced.
 
 ### /keyChanges endpoints
 
@@ -2344,10 +2387,21 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
   selection; no live-descriptor index has `Discriminator` as a key.
 - Emitted-SQL snapshots use qualified `ResourceKeyId` for live descriptor seeks and shared history
   routing, and compact `DescriptorId` for resource-FK joins. No descriptor Discriminator is emitted.
-- PostgreSQL and SQL Server regressions cover exact recreation, provider case/trailing-space
-  component comparisons, distinct pairs with equal whole URI, copied resource identity parts,
-  same-named cross-project descriptor types, and custom-view live/tombstone document membership.
-  Reusing URI/components for another type does not suppress the original type's tombstone.
+- PostgreSQL and SQL Server regressions cover exact recreation, case-only recreation (suppressed on
+  both), component re-splits of the same URI (suppressed on both), a trailing namespace space
+  (retained on both), copied resource identity parts, same-named cross-project descriptor types, and
+  custom-view live/tombstone document membership on all four descriptor comparison paths, including
+  dotted `İ`/`i` on SQL Server. Reusing URI/components for another type does not suppress the
+  original type's tombstone.
+- Descriptor probe SQL guard: every SQL Server `LOWER(` in emitted Change Query SQL collates its
+  input under the identity collation, and every PostgreSQL `lower(` carries `COLLATE "pg_c_utf8"`.
+- DB-behavior under a `Turkish_100_CS_AS` SQL Server database default: every descriptor probe surface
+  (write probe and POST, reference resolution, descriptor-valued identity, query filter, `/deletes`,
+  custom-view descriptor seek) resolves an existing `I`-bearing descriptor from an uppercase-`I`
+  case variant, where an unqualified `LOWER(N'I')` would yield dotless `ı`.
+- The cross-engine descriptor verdict matrix pins, per engine, the collation verdict and the
+  `OrdinalIgnoreCase` verdict for each listed Unicode pair, and requires the write probe, reference
+  resolution, stored-wins POST and `/deletes` to reach the collation verdict.
 - DB-behavior on SQL Server under a `Latin1_General_100_CS_AS_SC_UTF8` database default:
   deleting and recreating a regular resource with only string identity casing differences suppresses
   the old tombstone, proving tracked-change identity copies use the DMS CI identity collation rather
