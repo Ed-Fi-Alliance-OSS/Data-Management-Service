@@ -23,7 +23,10 @@
         <Using Include="NUnit.Framework" />
     </ItemGroup>
     <ItemGroup>
-        <None Update="Fixtures/connection-string-encryption-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+        <None
+            Update="Fixtures/connection-string-encryption-vectors.json"
+            CopyToOutputDirectory="PreserveNewest"
+        />
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend\EdFi.DmsConfigurationService.Backend.csproj" />
