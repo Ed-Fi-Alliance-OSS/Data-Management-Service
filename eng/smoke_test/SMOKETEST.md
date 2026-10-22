@@ -48,8 +48,14 @@ smoke testing. This function:
 For the self-contained identity provider, set
 `CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1` in the stack's `.env`
 before starting or recreating it. The Smoke Test Utility requests a new token
-for each resource GET and otherwise exceeds the default limit of 15. Restore
-the configured limit and recreate the stack after the smoke run.
+for each resource GET and otherwise exceeds the default limit of 15. A self-contained
+DMS also proxies each of those token requests to the Configuration Service's
+`/connect/token`, which exceeds the default `/connect/*` rate limits (120 requests
+per source and 30 per client in 60 seconds). For the run, also raise
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_SOURCE_PERMIT_LIMIT` and
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_CLIENT_PERMIT_LIMIT`, or set
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_ENABLED=false`. Restore the configured
+values and recreate the stack after the smoke run.
 
 ```powershell
 Import-Module ./modules/SmokeTest.psm1 -Force

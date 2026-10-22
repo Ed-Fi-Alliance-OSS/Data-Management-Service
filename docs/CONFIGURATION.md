@@ -824,6 +824,19 @@ Sizing notes:
   balancer, a caller can reach up to replicas × limit requests per window.
 - Callers behind one NAT, and all requests proxied by the Ed-Fi API's `/oauth/token`, share **one
   source budget**. Raise `SourcePermitLimit` if the Ed-Fi API serves many token requests.
+- For a self-contained Ed-Fi API, that source budget is a single bucket shared by all
+  Ed-Fi API-proxied `/oauth/token` traffic, because every such request reaches the Configuration
+  Service from the Ed-Fi API container's address, and by the Ed-Fi API's own Configuration Service
+  client (system-token refresh). Anyone who can reach the Ed-Fi API's `/oauth/token` can therefore
+  exhaust it, at about 2 junk requests per second against the default 120 per minute, and cause
+  `429` responses for every vendor's token issuance on that Configuration Service process. Size
+  `SourcePermitLimit` for the proxy path, or place a per-client-IP limiter in front of the Ed-Fi
+  API. Having the Ed-Fi API forward the caller's address, with the Configuration Service trusting
+  the Ed-Fi API's network through the existing
+  [reverse proxy settings](#reverse-proxy-and-forwarded-headers), would remove the shared bucket
+  but is not implemented.
+- Client keys are truncated to 256 characters for counting. Partitions are held in memory per
+  process, and memory is bounded by the per-source budget.
 - The Ed-Fi API's own Configuration Service client caches its token, so it stays far below the client
   limit. If it is ever refused, that request fails rather than retrying.
 - The defaults come from expected traffic shape, not measured load. Real clients are already capped at
@@ -1361,9 +1374,15 @@ operator values override the default; a value below 1 disables enforcement for e
 For self-contained deployments running the Ed-Fi Smoke Test Utility, temporarily set
 `CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1` in the stack's `.env` before
 starting or recreating it: the utility requests a new token for each resource GET and
-exceeds the default limit of 15. Restore the configured limit and recreate the stack
-after the smoke run. The tracked `.env.smoke` and `.env.smoke.ds61` profiles show 15;
-the smoke workflow supplies the `-1` override through the stack-start step's environment.
+exceeds the default limit of 15. A self-contained DMS proxies each of those token requests to
+the Configuration Service's `/connect/token`, so also raise
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_SOURCE_PERMIT_LIMIT` and
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_CLIENT_PERMIT_LIMIT` for the run, or set
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_ENABLED=false` (see [ConnectRateLimit](#connectratelimit)).
+Restore the configured values and recreate the stack after the smoke run. The tracked
+`.env.smoke` and `.env.smoke.ds61` profiles show 15 and the default rate limits; the smoke
+workflow supplies the `-1` override and disables the `/connect/*` rate limit through the
+stack-start step's environment.
 
 Waiting for a token to expire is not the only remedy. A caller that still holds a token it no
 longer needs can revoke it at `POST /connect/revoke`, the `revocation_endpoint` advertised in the
