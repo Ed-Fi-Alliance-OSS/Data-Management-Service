@@ -1,6 +1,6 @@
 # DMS-1482 — Configuration Service `/connect/*` rate limiting
 
-**Status:** design approved in brainstorming 2026-10-22; pending written-spec review.
+**Status:** approved 2026-10-22 (design and written spec). Next step: `superpowers:writing-plans`.
 **Story:** [DMS-1482](https://edfi.atlassian.net/browse/DMS-1482) (parent DMS-1475), including comment 98735.
 **Baseline:** `DMS-1482` at `6bb7d328a` (equal to `origin/main` on 2026-10-22).
 **Supporting analysis (not requirements):** `.plans/DMS-1482-implementation-pre-spec.md`, `.plans/DMS-1482-implementation-pre-spec.nano.md`, `.plans/DMS-1482-implementation-pre-spec-review.md`. Their aliases (C.Identity, D.Limiter, R08, U1…) are used below without repeating their analysis.
