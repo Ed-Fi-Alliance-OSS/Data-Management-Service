@@ -409,6 +409,155 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         result.TotalCount.Should().Be(0L);
     }
 
+    // DMS-1455: recreation compares the lowered whole URI under the descriptor resource's key, as the
+    // write path's identity does. Casing and component re-splits are the same descriptor; a trailing
+    // namespace space, another descriptor type or another value are not. PostgreSQL does not pad, so a
+    // trailing code-value space is significant too.
+    [TestCase(
+        "uri://ed-fi.org/ProgramTypeDescriptor",
+        "MiXeD Recreation",
+        "uri://ed-fi.org/ProgramTypeDescriptor",
+        "MIXED RECREATION",
+        "ProgramTypeDescriptor",
+        true
+    )]
+    [TestCase(
+        "uri://ed-fi.org/ProgramTypeDescriptor",
+        "Campus#Code",
+        "uri://ed-fi.org/ProgramTypeDescriptor#Campus",
+        "Code",
+        "ProgramTypeDescriptor",
+        true
+    )]
+    [TestCase(
+        "uri://ed-fi.org/ProgramTypeDescriptor ",
+        "Spaced",
+        "uri://ed-fi.org/ProgramTypeDescriptor",
+        "Spaced",
+        "ProgramTypeDescriptor",
+        false
+    )]
+    [TestCase(
+        "uri://ed-fi.org/ProgramTypeDescriptor",
+        "Spaced Code ",
+        "uri://ed-fi.org/ProgramTypeDescriptor",
+        "Spaced Code",
+        "ProgramTypeDescriptor",
+        false
+    )]
+    [TestCase(
+        "uri://ed-fi.org/ProgramTypeDescriptor",
+        "Other Type",
+        "uri://ed-fi.org/ProgramTypeDescriptor",
+        "Other Type",
+        "AcademicSubjectDescriptor",
+        false
+    )]
+    [TestCase(
+        "uri://ed-fi.org/ProgramTypeDescriptor",
+        "Unequal",
+        "uri://ed-fi.org/ProgramTypeDescriptor",
+        "Unequal Other",
+        "ProgramTypeDescriptor",
+        false
+    )]
+    public async Task It_suppresses_recreated_descriptors_by_lowered_uri_and_resource_key(
+        string oldNamespace,
+        string oldCodeValue,
+        string newNamespace,
+        string newCodeValue,
+        string recreatedResourceName,
+        bool suppressed
+    )
+    {
+        long deletedDocumentId = await InsertDescriptorAsync(
+            Guid.NewGuid(),
+            await GetResourceKeyIdAsync("Ed-Fi", "ProgramTypeDescriptor"),
+            oldNamespace,
+            oldCodeValue,
+            oldCodeValue
+        );
+        await DeleteDescriptorAsync(deletedDocumentId);
+        await InsertDescriptorAsync(
+            Guid.NewGuid(),
+            await GetResourceKeyIdAsync("Ed-Fi", recreatedResourceName),
+            newNamespace,
+            newCodeValue,
+            newCodeValue
+        );
+
+        TrackedChangeQueryResult result = await QueryDescriptorTrackedChangesAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            totalCount: true
+        );
+
+        if (suppressed)
+        {
+            result.Items.Should().BeEmpty();
+            result.TotalCount.Should().Be(0L);
+            return;
+        }
+
+        result.TotalCount.Should().Be(1L);
+        JsonObject keyValues = result.Items.Should().ContainSingle().Subject!["keyValues"]!.AsObject();
+        keyValues["namespace"]!.GetValue<string>().Should().Be(oldNamespace);
+        keyValues["codeValue"]!.GetValue<string>().Should().Be(oldCodeValue);
+    }
+
+    [TestCase("Recreated Program Type", "RECREATED PROGRAM TYPE", true)]
+    [TestCase("Recreated Program Type", "Recreated Program Type Other", false)]
+    public async Task It_suppresses_programs_recreated_on_a_recreated_descriptor_by_lowered_uri(
+        string oldCodeValue,
+        string newCodeValue,
+        bool suppressed
+    )
+    {
+        short programTypeResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "ProgramTypeDescriptor");
+        long oldDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.NewGuid(),
+            programTypeResourceKeyId,
+            ProgramTypeDescriptorNamespace,
+            oldCodeValue,
+            oldCodeValue
+        );
+        long programDocumentId = await InsertDocumentAsync(
+            ProgramDocumentUuid.Value,
+            await GetResourceKeyIdAsync("Ed-Fi", "Program")
+        );
+        await InsertProgramRootAsync(programDocumentId, oldDescriptorDocumentId, ProgramName);
+        await DeleteProgramRootAsync(programDocumentId);
+
+        // The descriptor comes back as a new row with a new DescriptorId, so only the lowered-URI join can
+        // connect the Program tombstone to the recreated Program.
+        await DeleteDescriptorAsync(oldDescriptorDocumentId);
+        long newDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.NewGuid(),
+            programTypeResourceKeyId,
+            ProgramTypeDescriptorNamespace,
+            newCodeValue,
+            newCodeValue
+        );
+        await InsertProgramRootAsync(programDocumentId, newDescriptorDocumentId, ProgramName);
+
+        TrackedChangeQueryResult result = await QueryProgramTrackedChangesAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            totalCount: true
+        );
+
+        if (suppressed)
+        {
+            result.Items.Should().BeEmpty();
+            result.TotalCount.Should().Be(0L);
+            return;
+        }
+
+        result.TotalCount.Should().Be(1L);
+        result.Items.Should().ContainSingle().Subject!["keyValues"]!["programTypeDescriptor"]!
+            .GetValue<string>()
+            .Should()
+            .Be($"{ProgramTypeDescriptorNamespace}#{oldCodeValue}");
+    }
+
     private ServiceProvider CreateServiceProvider()
     {
         ServiceCollection services = [];
@@ -3130,6 +3279,348 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
             WHERE resourceKey."ProjectName" = 'Ed-Fi' AND resourceKey."ResourceName" = 'GradeTypeDescriptor'
               AND descriptor."CodeValue" = '{codeValue}'
             """;
+
+    // ── DMS-1455: descriptor identity follows the lowered whole URI ────────
+    //
+    // Each scenario deletes a Grade, then deletes and recreates the descriptor its identity carries with
+    // another spelling. The recreated descriptor is a new row with a new DescriptorId and DocumentId, so a
+    // custom view can find the Grade's basis only by comparing the lowered whole URI. Views select every
+    // live row of the basis, plus (for the suffixed views) only the recreated tombstone, so a match on the
+    // original spelling cannot authorize the row.
+
+    [TestCaseSource(nameof(DescriptorIdentityVariants))]
+    public async Task ReadChanges_custom_view_descriptor_basis_matches_a_recreated_live_descriptor_by_lowered_uri(
+        DescriptorIdentityVariant variant
+    )
+    {
+        GradeTypeRecreation recreation = await DeleteGradeAndRecreateGradeTypeDescriptorAsync(
+            variant,
+            "STU-CV-GradeTypeLive"
+        );
+        await CreateCustomAuthViewAsync("GradeTypeDescriptorWithAnyLive", AllLiveGradeTypeDescriptorsViewSql);
+
+        TrackedChangeQueryResult result = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            GradeResource,
+            ["GradeTypeDescriptorWithAnyLive"],
+            claimEdOrgIds: [],
+            new ChangeVersionRange(recreation.WindowStart, await GetNewestChangeVersionAsync())
+        );
+
+        AssertCustomViewVerdict(result, variant.Matches, "STU-CV-GradeTypeLive");
+    }
+
+    [TestCaseSource(nameof(DescriptorIdentityVariants))]
+    public async Task ReadChanges_custom_view_descriptor_basis_matches_a_recreated_descriptor_tombstone_by_lowered_uri_only_with_the_suffix(
+        DescriptorIdentityVariant variant
+    )
+    {
+        GradeTypeRecreation recreation = await DeleteGradeAndRecreateGradeTypeDescriptorAsync(
+            variant,
+            "STU-CV-GradeTypeGone"
+        );
+        await DeleteDescriptorAsync(recreation.RecreatedDescriptorDocumentId);
+        await CreateCustomAuthViewAsync(
+            "GradeTypeDescriptorWithRecreated",
+            AllLiveGradeTypeDescriptorsViewSql
+        );
+        await CreateCustomAuthViewAsync(
+            "GradeTypeDescriptorWithRecreatedIncludingDeletes",
+            AllLiveGradeTypeDescriptorsViewSql
+                + $"""
+
+                UNION
+                SELECT tombstone."DocumentId"
+                FROM "tracked_changes_edfi"."Descriptor" tombstone
+                WHERE tombstone."DocumentId" = {recreation.RecreatedDescriptorDocumentId}
+                """
+        );
+        ChangeVersionRange window = new(recreation.WindowStart, await GetNewestChangeVersionAsync());
+
+        TrackedChangeQueryResult unsuffixed = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            GradeResource,
+            ["GradeTypeDescriptorWithRecreated"],
+            claimEdOrgIds: [],
+            window
+        );
+        TrackedChangeQueryResult suffixed = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            GradeResource,
+            ["GradeTypeDescriptorWithRecreatedIncludingDeletes"],
+            claimEdOrgIds: [],
+            window
+        );
+
+        AssertCustomViewVerdict(unsuffixed, authorized: false, "STU-CV-GradeTypeGone");
+        AssertCustomViewVerdict(suffixed, variant.Matches, "STU-CV-GradeTypeGone");
+    }
+
+    [TestCaseSource(nameof(DescriptorIdentityVariants))]
+    public async Task ReadChanges_custom_view_live_seek_matches_a_basis_on_a_recreated_descriptor_by_lowered_uri(
+        DescriptorIdentityVariant variant
+    )
+    {
+        GradingPeriodRecreation recreation = await DeleteGradeAndRecreateGradingPeriodAsync(
+            variant,
+            "STU-CV-GradingPeriodLive"
+        );
+        await CreateCustomAuthViewAsync("GradingPeriodWithAnyLive", AllLiveGradingPeriodsViewSql);
+
+        TrackedChangeQueryResult result = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            GradeResource,
+            ["GradingPeriodWithAnyLive"],
+            claimEdOrgIds: [],
+            new ChangeVersionRange(recreation.WindowStart, await GetNewestChangeVersionAsync())
+        );
+
+        AssertCustomViewVerdict(result, variant.Matches, "STU-CV-GradingPeriodLive");
+    }
+
+    [TestCaseSource(nameof(DescriptorIdentityVariants))]
+    public async Task ReadChanges_custom_view_live_seek_probes_a_basis_tombstone_by_lowered_uri_only_with_the_suffix(
+        DescriptorIdentityVariant variant
+    )
+    {
+        GradingPeriodRecreation recreation = await DeleteGradeAndRecreateGradingPeriodAsync(
+            variant,
+            "STU-CV-GradingPeriodGone"
+        );
+        await DeleteGradingPeriodAsync(recreation.RecreatedGradingPeriodDocumentId);
+        await CreateCustomAuthViewAsync("GradingPeriodWithRecreated", AllLiveGradingPeriodsViewSql);
+        await CreateCustomAuthViewAsync(
+            "GradingPeriodWithRecreatedIncludingDeletes",
+            AllLiveGradingPeriodsViewSql
+                + $"""
+
+                UNION
+                SELECT tombstone."DocumentId"
+                FROM "tracked_changes_edfi"."GradingPeriod" tombstone
+                WHERE tombstone."DocumentId" = {recreation.RecreatedGradingPeriodDocumentId}
+                """
+        );
+        ChangeVersionRange window = new(recreation.WindowStart, await GetNewestChangeVersionAsync());
+
+        TrackedChangeQueryResult unsuffixed = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            GradeResource,
+            ["GradingPeriodWithRecreated"],
+            claimEdOrgIds: [],
+            window
+        );
+        TrackedChangeQueryResult suffixed = await QueryCustomViewChangesAsync(
+            ChangeQueryEndpointOperation.Deletes,
+            GradeResource,
+            ["GradingPeriodWithRecreatedIncludingDeletes"],
+            claimEdOrgIds: [],
+            window
+        );
+
+        AssertCustomViewVerdict(unsuffixed, authorized: false, "STU-CV-GradingPeriodGone");
+        AssertCustomViewVerdict(suffixed, variant.Matches, "STU-CV-GradingPeriodGone");
+    }
+
+    /// <summary>
+    /// A descriptor's original spelling, its recreated spelling, and whether the lowered whole URIs match.
+    /// </summary>
+    public sealed record DescriptorIdentityVariant(
+        string Name,
+        string OldNamespaceSuffix,
+        string OldCodeValue,
+        string NewNamespaceSuffix,
+        string NewCodeValue,
+        bool Matches
+    )
+    {
+        public override string ToString() => Name;
+    }
+
+    private static IEnumerable<DescriptorIdentityVariant> DescriptorIdentityVariants() =>
+        [
+            new("CaseOnly", "", "Seek Recreated", "", "SEEK RECREATED", Matches: true),
+            new("DottedI", "", "Seek \u0130nterim", "", "Seek interim", Matches: true),
+            new("EqualUriResplit", "", "Seek#Split", "#Seek", "Split", Matches: true),
+            new("TrailingNamespaceSpace", " ", "Seek Spaced", "", "Seek Spaced", Matches: false),
+            new("Unequal", "", "Seek Recreated", "", "Seek Recreated Other", Matches: false),
+        ];
+
+    private sealed record GradeTypeRecreation(long WindowStart, long RecreatedDescriptorDocumentId);
+
+    private sealed record GradingPeriodRecreation(long WindowStart, long RecreatedGradingPeriodDocumentId);
+
+    /// <summary>
+    /// Inserts a Grade typed by a new GradeTypeDescriptor in the variant's old spelling, then deletes the
+    /// Grade and the descriptor and recreates the descriptor in the variant's new spelling.
+    /// </summary>
+    private async Task<GradeTypeRecreation> DeleteGradeAndRecreateGradeTypeDescriptorAsync(
+        DescriptorIdentityVariant variant,
+        string studentUniqueId
+    )
+    {
+        const string GradeTypeNamespace = "uri://ed-fi.org/GradeTypeDescriptor";
+        await SeedGradeChainReferenceDataAsync();
+        short gradeTypeResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "GradeTypeDescriptor");
+        long oldDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.NewGuid(),
+            gradeTypeResourceKeyId,
+            GradeTypeNamespace + variant.OldNamespaceSuffix,
+            variant.OldCodeValue,
+            variant.OldCodeValue
+        );
+        SectionChainSeed chain = await InsertSectionChainAsync();
+        long studentDocumentId = await InsertStudentAsync(studentUniqueId);
+        long associationDocumentId = await InsertStudentSectionAssociationRootAsync(
+            chain,
+            studentDocumentId,
+            studentUniqueId
+        );
+        long gradeDocumentId = await InsertGradeRootAsync(
+            chain,
+            associationDocumentId,
+            studentUniqueId,
+            $"{GradeTypeNamespace}{variant.OldNamespaceSuffix}#{variant.OldCodeValue}"
+        );
+
+        long windowStart = await GetNewestChangeVersionAsync() + 1;
+        await DeleteEdfiRootAsync("Grade", gradeDocumentId);
+        await DeleteDescriptorAsync(oldDescriptorDocumentId);
+        long recreatedDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.NewGuid(),
+            gradeTypeResourceKeyId,
+            GradeTypeNamespace + variant.NewNamespaceSuffix,
+            variant.NewCodeValue,
+            variant.NewCodeValue
+        );
+        return new GradeTypeRecreation(windowStart, recreatedDescriptorDocumentId);
+    }
+
+    /// <summary>
+    /// Re-seats the chain's GradingPeriod on a new GradingPeriodDescriptor in the variant's old spelling and
+    /// inserts a Grade on it, then deletes the Grade, the GradingPeriod and the descriptor, and recreates the
+    /// descriptor in the variant's new spelling with a new GradingPeriod of the same name on it.
+    /// </summary>
+    private async Task<GradingPeriodRecreation> DeleteGradeAndRecreateGradingPeriodAsync(
+        DescriptorIdentityVariant variant,
+        string studentUniqueId
+    )
+    {
+        const string GradingPeriodNamespace = "uri://ed-fi.org/GradingPeriodDescriptor";
+        await SeedGradeChainReferenceDataAsync();
+        short gradingPeriodResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "GradingPeriodDescriptor");
+        long oldDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.NewGuid(),
+            gradingPeriodResourceKeyId,
+            GradingPeriodNamespace + variant.OldNamespaceSuffix,
+            variant.OldCodeValue,
+            variant.OldCodeValue
+        );
+        SectionChainSeed chain = await InsertSectionChainAsync();
+        await DeleteGradingPeriodAsync(await GetGradingPeriodDocumentIdAsync(chain));
+        await InsertGradingPeriodRootAsync(chain, oldDescriptorDocumentId);
+        long studentDocumentId = await InsertStudentAsync(studentUniqueId);
+        long associationDocumentId = await InsertStudentSectionAssociationRootAsync(
+            chain,
+            studentDocumentId,
+            studentUniqueId
+        );
+        long gradeDocumentId = await InsertGradeRootAsync(chain, associationDocumentId, studentUniqueId);
+
+        long windowStart = await GetNewestChangeVersionAsync() + 1;
+        await DeleteEdfiRootAsync("Grade", gradeDocumentId);
+        await DeleteGradingPeriodAsync(await GetGradingPeriodDocumentIdAsync(chain));
+        await DeleteDescriptorAsync(oldDescriptorDocumentId);
+        long recreatedDescriptorDocumentId = await InsertDescriptorAsync(
+            Guid.NewGuid(),
+            gradingPeriodResourceKeyId,
+            GradingPeriodNamespace + variant.NewNamespaceSuffix,
+            variant.NewCodeValue,
+            variant.NewCodeValue
+        );
+        long recreatedGradingPeriodDocumentId = await InsertGradingPeriodRootAsync(
+            chain,
+            recreatedDescriptorDocumentId
+        );
+        return new GradingPeriodRecreation(windowStart, recreatedGradingPeriodDocumentId);
+    }
+
+    // Deletes the root row (firing its tombstone trigger), its referential identity and its document, as
+    // a DELETE through the API does, so an equal identity can be recreated.
+    private async Task DeleteGradingPeriodAsync(long documentId)
+    {
+        await DeleteEdfiRootAsync("GradingPeriod", documentId);
+        await _database.ExecuteNonQueryAsync(
+            """
+            DELETE FROM "dms"."ReferentialIdentity" WHERE "DocumentId" = @documentId;
+            DELETE FROM "dms"."Document" WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+    }
+
+    private async Task<long> GetGradingPeriodDocumentIdAsync(SectionChainSeed chain) =>
+        await _database.ExecuteScalarAsync<long>(
+            """SELECT "DocumentId" FROM "edfi"."GradingPeriod" WHERE "GradingPeriodName" = @gradingPeriodName;""",
+            new NpgsqlParameter("gradingPeriodName", chain.GradingPeriodName)
+        );
+
+    private async Task<long> InsertGradingPeriodRootAsync(SectionChainSeed chain, long descriptorDocumentId)
+    {
+        long documentId = await InsertDocumentAsync(
+            Guid.NewGuid(),
+            await GetResourceKeyIdAsync("Ed-Fi", "GradingPeriod")
+        );
+        await _database.ExecuteNonQueryAsync(
+            $"""
+            INSERT INTO "edfi"."GradingPeriod" ("DocumentId", "SchoolYear_DocumentId", "SchoolYear_SchoolYear",
+                "School_DocumentId", "School_SchoolId", "GradingPeriodDescriptor_DescriptorId", "BeginDate",
+                "EndDate", "GradingPeriodName", "TotalInstructionalDays")
+            VALUES (@documentId, {SchoolYearDocumentIdSql}, @schoolYear, @schoolDocumentId, @schoolId,
+                (SELECT "DescriptorId" FROM "dms"."Descriptor" WHERE "DocumentId" = @descriptorDocumentId),
+                DATE '2024-08-01', DATE '2024-09-13', @gradingPeriodName, 30);
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("schoolYear", SeekSchoolYear),
+            new NpgsqlParameter("schoolDocumentId", chain.SchoolDocumentId),
+            new NpgsqlParameter("schoolId", chain.ChainSchoolId),
+            new NpgsqlParameter("descriptorDocumentId", descriptorDocumentId),
+            new NpgsqlParameter("gradingPeriodName", chain.GradingPeriodName)
+        );
+        return documentId;
+    }
+
+    private const string AllLiveGradeTypeDescriptorsViewSql = """
+        SELECT descriptor."DocumentId"
+        FROM "dms"."Descriptor" descriptor
+        INNER JOIN "dms"."ResourceKey" resourceKey ON resourceKey."ResourceKeyId" = descriptor."ResourceKeyId"
+        WHERE resourceKey."ProjectName" = 'Ed-Fi' AND resourceKey."ResourceName" = 'GradeTypeDescriptor'
+        """;
+
+    private const string AllLiveGradingPeriodsViewSql = """
+        SELECT gradingPeriod."DocumentId"
+        FROM "edfi"."GradingPeriod" gradingPeriod
+        """;
+
+    private static void AssertCustomViewVerdict(
+        TrackedChangeQueryResult result,
+        bool authorized,
+        string studentUniqueId
+    )
+    {
+        result.AuthorizationFailure.Should().BeNull();
+        if (!authorized)
+        {
+            result.TotalCount.Should().Be(0);
+            result.Items.Should().BeEmpty();
+            return;
+        }
+
+        result.TotalCount.Should().Be(1);
+        result.Items.Should().ContainSingle().Subject!["keyValues"]!["studentUniqueId"]!
+            .GetValue<string>()
+            .Should()
+            .Be(studentUniqueId);
+    }
 
     // ── Person basis ──────────────────────────────────────────────────────
 

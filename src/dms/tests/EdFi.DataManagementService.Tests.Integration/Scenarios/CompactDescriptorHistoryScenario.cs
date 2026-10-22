@@ -71,13 +71,13 @@ internal static class CompactDescriptorHistoryScenario
         }
     }
 
-    public static async Task It_preserves_provider_component_comparisons_for_descriptor_recreation(
+    public static async Task It_suppresses_descriptor_recreation_by_lowered_uri_and_resource_key(
         ApiIntegrationHarness harness
     )
     {
         string ns = CreateNamespace();
-        // This history consumer still compares stored components: under the identity collation on SQL Server,
-        // under the database default on PostgreSQL.
+        // Recreation compares the lowered whole URI under the descriptor resource's key, as the write path
+        // does: casing and component splits are the same descriptor; a namespace trailing space is not.
         (
             string OldNamespace,
             string OldCode,
@@ -86,9 +86,9 @@ internal static class CompactDescriptorHistoryScenario
             bool Suppressed
         )[] cases =
         [
-            (ns + "/case", "MiXeD", ns + "/case", "MIXED", !IsPostgresql(harness)),
-            (ns + "/space ", "Code", ns + "/space", "Code", !IsPostgresql(harness)),
-            (ns + "/components", "Campus#Code", ns + "/components#Campus", "Code", false),
+            (ns + "/case", "MiXeD", ns + "/case", "MIXED", true),
+            (ns + "/space ", "Code", ns + "/space", "Code", false),
+            (ns + "/components", "Campus#Code", ns + "/components#Campus", "Code", true),
             (ns + "/exact", "Extra#Code", ns + "/exact", "Extra#Code", true),
         ];
         foreach (var test in cases)
@@ -227,9 +227,9 @@ internal static class CompactDescriptorHistoryScenario
         (string OldNamespace, string OldCode, string NewNamespace, string NewCode, bool Suppressed)[] cases =
         [
             (ns + "/exact", "Extra#Code", ns + "/exact", "Extra#Code", true),
-            (ns + "/case", "MiXeD", ns + "/case", "MIXED", !IsPostgresql(harness)),
-            (ns + "/space ", "Code", ns + "/space", "Code", !IsPostgresql(harness)),
-            (ns + "/components", "Campus#Code", ns + "/components#Campus", "Code", false),
+            (ns + "/case", "MiXeD", ns + "/case", "MIXED", true),
+            (ns + "/space ", "Code", ns + "/space", "Code", false),
+            (ns + "/components", "Campus#Code", ns + "/components#Campus", "Code", true),
         ];
         foreach (var test in cases)
         {
