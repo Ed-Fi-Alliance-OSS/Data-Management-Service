@@ -4392,7 +4392,6 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
     {
         return new(
             Documents: await ReadDocumentRowsAsync(),
-            ReferentialIdentities: await ReadReferentialIdentityRowsAsync(),
             ConflictCalendar: await ReadConflictCalendarRowAsync(),
             AssociationRows: await ReadAssociationRowsAsync(),
             AssociationExtensionRows: await ReadAssociationExtensionRowsAsync(),
@@ -4430,32 +4429,6 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
                 AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
                     row,
                     "ContentVersion"
-                )
-            ))
-            .ToArray();
-    }
-
-    private async Task<
-        IReadOnlyList<NoProfileAtomicRollbackAssertions.RejectedWriteReferentialIdentityRow>
-    > ReadReferentialIdentityRowsAsync()
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT "ReferentialId", "DocumentId", "ResourceKeyId"
-            FROM "dms"."ReferentialIdentity"
-            ORDER BY "ReferentialId";
-            """
-        );
-
-        return rows.Select(row => new NoProfileAtomicRollbackAssertions.RejectedWriteReferentialIdentityRow(
-                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetGuid(
-                    row,
-                    "ReferentialId"
-                ),
-                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(row, "DocumentId"),
-                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt16(
-                    row,
-                    "ResourceKeyId"
                 )
             ))
             .ToArray();

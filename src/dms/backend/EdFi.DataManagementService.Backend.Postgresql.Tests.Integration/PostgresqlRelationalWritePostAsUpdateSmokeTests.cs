@@ -181,8 +181,7 @@ file static class PostAsUpdateIntegrationTestSupport
     public static NoProfilePostAsUpdateScenarios.AuthoritativePostAsUpdateSnapshot ToSnapshot(
         AuthoritativeStudentAcademicRecordPersistedState state,
         long academicRecordContentVersion,
-        DateTimeOffset academicRecordContentLastModifiedAt,
-        IReadOnlyList<NoProfilePostAsUpdateScenarios.ReferentialIdentityRow> referentialIdentities
+        DateTimeOffset academicRecordContentLastModifiedAt
     ) =>
         new(
             new NoProfilePostAsUpdateScenarios.AuthoritativeDocumentSnapshot(
@@ -257,8 +256,7 @@ file static class PostAsUpdateIntegrationTestSupport
                         row.IssuerName
                     )
                 ),
-            ],
-            referentialIdentities
+            ]
         );
 
     public static short GetInt16(IReadOnlyDictionary<string, object?> row, string columnName) =>
@@ -3258,10 +3256,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     private AuthoritativeStudentAcademicRecordPersistedState _stateAfterRepeatPostAsUpdate = null!;
     private (long ContentVersion, DateTimeOffset ContentLastModifiedAt) _rootStampsAfterPostAsUpdate;
     private (long ContentVersion, DateTimeOffset ContentLastModifiedAt) _rootStampsAfterRepeatPostAsUpdate;
-    private IReadOnlyList<NoProfilePostAsUpdateScenarios.ReferentialIdentityRow> _referentialIdentitiesAfterPostAsUpdate =
-        null!;
-    private IReadOnlyList<NoProfilePostAsUpdateScenarios.ReferentialIdentityRow> _referentialIdentitiesAfterRepeatPostAsUpdate =
-        null!;
     private UpsertResult _postAsUpdateResult = null!;
     private UpsertResult _repeatPostAsUpdateResult = null!;
     private long _resourceDocumentCount;
@@ -3329,7 +3323,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         _rootStampsAfterPostAsUpdate = await ReadAcademicRecordRootStampsAsync(
             _stateAfterPostAsUpdate.AcademicRecord.DocumentId
         );
-        _referentialIdentitiesAfterPostAsUpdate = await ReadAllReferentialIdentityRowsAsync();
         _repeatPostAsUpdateResult = await ExecuteUpsertAsync(
             PostAsUpdateRequestBodyJson,
             RepeatStudentAcademicRecordDocumentUuid,
@@ -3349,7 +3342,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         _rootStampsAfterRepeatPostAsUpdate = await ReadAcademicRecordRootStampsAsync(
             _stateAfterRepeatPostAsUpdate.AcademicRecord.DocumentId
         );
-        _referentialIdentitiesAfterRepeatPostAsUpdate = await ReadAllReferentialIdentityRowsAsync();
         _resourceDocumentCount = await ReadDocumentCountAsync(
             _mappingSet.ResourceKeyIdByResource[StudentAcademicRecordResource]
         );
@@ -3385,26 +3377,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             : throw new InvalidOperationException(
                 $"Expected exactly one StudentAcademicRecord row for document id '{documentId}', but found {rows.Count}."
             );
-    }
-
-    private async Task<
-        IReadOnlyList<NoProfilePostAsUpdateScenarios.ReferentialIdentityRow>
-    > ReadAllReferentialIdentityRowsAsync()
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT "ReferentialId", "DocumentId", "ResourceKeyId"
-            FROM "dms"."ReferentialIdentity"
-            ORDER BY "ReferentialId";
-            """
-        );
-
-        return rows.Select(row => new NoProfilePostAsUpdateScenarios.ReferentialIdentityRow(
-                PostAsUpdateIntegrationTestSupport.GetGuid(row, "ReferentialId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(row, "DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt16(row, "ResourceKeyId")
-            ))
-            .ToArray();
     }
 
     [OneTimeTearDown]
@@ -3587,14 +3559,12 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             PostAsUpdateIntegrationTestSupport.ToSnapshot(
                 _stateAfterPostAsUpdate,
                 _rootStampsAfterPostAsUpdate.ContentVersion,
-                _rootStampsAfterPostAsUpdate.ContentLastModifiedAt,
-                _referentialIdentitiesAfterPostAsUpdate
+                _rootStampsAfterPostAsUpdate.ContentLastModifiedAt
             ),
             PostAsUpdateIntegrationTestSupport.ToSnapshot(
                 _stateAfterRepeatPostAsUpdate,
                 _rootStampsAfterRepeatPostAsUpdate.ContentVersion,
-                _rootStampsAfterRepeatPostAsUpdate.ContentLastModifiedAt,
-                _referentialIdentitiesAfterRepeatPostAsUpdate
+                _rootStampsAfterRepeatPostAsUpdate.ContentLastModifiedAt
             ),
             _repeatIncomingDocumentUuidCount
         );

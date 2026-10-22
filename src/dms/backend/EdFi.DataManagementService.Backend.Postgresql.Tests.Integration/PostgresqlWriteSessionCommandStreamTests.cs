@@ -269,9 +269,6 @@ file static class WriteSessionCommandStreamTestSupport
             BeginCount: beginCount,
             CommitCount: commitCount,
             RollbackCount: rollbackCount,
-            ReferentialIdentityLookupCount: commands.Count(command =>
-                command.CommandText.Contains("dms.\"ReferentialIdentity\"", StringComparison.Ordinal)
-            ),
             // The hydration batch reads the root table and its child collection together and modifies
             // neither. Touching several tables no longer separates it from persistence, because the DML
             // command co-batches every table's statements; being read-only still does. The same rule is

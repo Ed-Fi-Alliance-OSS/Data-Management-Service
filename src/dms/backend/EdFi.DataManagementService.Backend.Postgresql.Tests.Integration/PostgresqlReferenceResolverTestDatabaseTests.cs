@@ -110,7 +110,6 @@ public class Given_PostgresqlReferenceResolverTestDatabase
                 {
                     ["dms.ResourceKey"] = _database.Fixture.SeedData.ResourceKeys.Count,
                     ["dms.Document"] = _database.Fixture.SeedData.Documents.Count,
-                    ["dms.ReferentialIdentity"] = _database.Fixture.SeedData.ReferentialIdentities.Count,
                     ["dms.Descriptor"] = _database.Fixture.SeedData.Descriptors.Count,
                 }
             );
@@ -128,10 +127,6 @@ public class Given_PostgresqlReferenceResolverTestDatabase
         {
             ["dms.ResourceKey"] = await ReadTableCountAsync(connectionString, "dms.\"ResourceKey\""),
             ["dms.Document"] = await ReadTableCountAsync(connectionString, "dms.\"Document\""),
-            ["dms.ReferentialIdentity"] = await ReadTableCountAsync(
-                connectionString,
-                "dms.\"ReferentialIdentity\""
-            ),
             ["dms.Descriptor"] = await ReadTableCountAsync(connectionString, "dms.\"Descriptor\""),
         };
     }

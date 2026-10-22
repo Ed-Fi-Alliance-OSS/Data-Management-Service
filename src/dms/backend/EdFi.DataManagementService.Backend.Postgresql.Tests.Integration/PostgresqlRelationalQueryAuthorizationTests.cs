@@ -1778,10 +1778,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                 "authz",
                 "AuthorizationRootChildResource",
                 document.DocumentId
-            ),
-            ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
-                document.DocumentId,
-                resourceKeyId
             )
         );
     }
@@ -1858,11 +1854,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             Document: document,
             ResourceTables: GetResourceHandle(projectEndpointName, resourceName).ResourceInfo.IsDescriptor
                 ? await ReadDescriptorTableStatesAsync(document.DocumentId)
-                : await ReadResourceTableStatesAsync(projectEndpointName, resourceName, document.DocumentId),
-            ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
-                document.DocumentId,
-                resourceKeyId
-            )
+                : await ReadResourceTableStatesAsync(projectEndpointName, resourceName, document.DocumentId)
         );
     }
 
@@ -1996,10 +1988,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                 "authz",
                 "AuthorizationNullableResource",
                 document.DocumentId
-            ),
-            ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
-                document.DocumentId,
-                resourceKeyId
             )
         );
     }
@@ -2017,10 +2005,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                 "authz",
                 "AuthorizationStudentAcademicRecordResource",
                 document.DocumentId
-            ),
-            ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
-                document.DocumentId,
-                resourceKeyId
             )
         );
     }
@@ -2038,10 +2022,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                 "authz",
                 "AuthorizationStudentSchoolResource",
                 document.DocumentId
-            ),
-            ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
-                document.DocumentId,
-                resourceKeyId
             )
         );
     }
@@ -2384,33 +2364,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         }
 
         return states;
-    }
-
-    private async Task<IReadOnlyList<ReferentialIdentityRow>> ReadReferentialIdentityRowsForDocumentAsync(
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        var rows = await Database.QueryRowsAsync(
-            """
-            SELECT "ReferentialId", "DocumentId", "ResourceKeyId"
-            FROM "dms"."ReferentialIdentity"
-            WHERE "DocumentId" = @documentId
-              AND "ResourceKeyId" = @resourceKeyId
-            ORDER BY "ResourceKeyId", "ReferentialId";
-            """,
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-
-        return
-        [
-            .. rows.Select(row => new ReferentialIdentityRow(
-                GetRequiredGuid(row, "ReferentialId"),
-                GetRequiredInt64(row, "DocumentId"),
-                GetRequiredInt16(row, "ResourceKeyId")
-            )),
-        ];
     }
 
     private DocumentInfo CreateAuthorizationRootChildDocumentInfo(AuthorizationRootChildSeed seed)
