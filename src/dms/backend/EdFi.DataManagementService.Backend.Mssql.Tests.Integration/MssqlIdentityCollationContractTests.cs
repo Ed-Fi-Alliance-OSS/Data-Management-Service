@@ -323,13 +323,13 @@ public class Given_A_Mssql_Case_Sensitive_Default_Database_With_Identity_Collati
     }
 
     [Test]
-    public async Task It_suppresses_a_deleted_program_recreated_on_a_case_variant_recreated_descriptor()
+    public async Task It_suppresses_a_deleted_program_recreated_on_a_dotted_I_recreated_descriptor()
     {
         long windowStart = await NextChangeVersionAsync();
         long oldDescriptorDocumentId = await InsertDescriptorAsync(
             ProgramTypeDescriptorResource,
             ProgramTypeNamespace,
-            "Program Casing"
+            "Program Dotted i"
         );
         long programDocumentId = await InsertDocumentAsync(ProgramResource);
         await InsertProgramRootAsync(programDocumentId, oldDescriptorDocumentId);
@@ -341,7 +341,7 @@ public class Given_A_Mssql_Case_Sensitive_Default_Database_With_Identity_Collati
         long newDescriptorDocumentId = await InsertDescriptorAsync(
             ProgramTypeDescriptorResource,
             ProgramTypeNamespace,
-            "PROGRAM CASING"
+            "Program Dotted \u0130"
         );
         await InsertProgramRootAsync(programDocumentId, newDescriptorDocumentId);
 

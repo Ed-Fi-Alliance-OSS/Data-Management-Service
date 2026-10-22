@@ -67,6 +67,15 @@ public abstract class DescriptorUnicodeVerdictMatrixTests
             SqlServer: true,
             OrdinalIgnoreCase: true
         ),
+        new(
+            "E acute/e acute",
+            "\u00C9",
+            "\u00E9",
+            Postgresql: true,
+            SqlServer: true,
+            OrdinalIgnoreCase: true
+        ),
+        new("A/A + N grave", "A", "A\u01F8", Postgresql: false, SqlServer: true, OrdinalIgnoreCase: false),
         new("A/A + emoji", "A", "A\U0001F600", Postgresql: false, SqlServer: true, OrdinalIgnoreCase: false),
         new(
             "A + emoji/A + other emoji",

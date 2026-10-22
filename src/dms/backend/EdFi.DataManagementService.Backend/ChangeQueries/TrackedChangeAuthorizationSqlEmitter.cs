@@ -31,7 +31,6 @@ internal static class TrackedChangeAuthorizationSqlEmitter
     // Custom views expose the basis DocumentId under this fixed column name (auth.md §"View-based
     // authorization strategy"); the tracked-change side always names its system column the same way.
     private static readonly DbColumnName _documentIdColumn = new("DocumentId");
-    private static readonly DbColumnName _descriptorIdColumn = new("DescriptorId");
     private static readonly DescriptorProbeTarget _descriptorProbe =
         DescriptorProbeTarget.SharedDescriptorTable;
 
@@ -164,7 +163,7 @@ internal static class TrackedChangeAuthorizationSqlEmitter
                     )
             );
             liveConditions.Add(
-                $"{BasisAlias}.{Quote(dialect, pair.BasisFkColumn)} = {descriptorAlias}.{Quote(dialect, _descriptorIdColumn)}"
+                $"{BasisAlias}.{Quote(dialect, pair.BasisFkColumn)} = {descriptorAlias}.{Quote(dialect, _descriptorProbe.DescriptorIdColumn)}"
             );
         }
 

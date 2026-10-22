@@ -424,8 +424,9 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
 
     // DMS-1455: recreation compares the lowered whole URI under the descriptor resource's key, as the
     // write path's identity does. Casing and component re-splits are the same descriptor; a trailing
-    // namespace space, another descriptor type or another value are not. Dotted I (U+0130) lowers to i
-    // under the identity collation's LOWER, though the collation's comparison weights alone keep them apart.
+    // namespace space, another descriptor type or another value are not. A trailing code-value space ends
+    // the URI, so SQL Server's padding rule still ignores it. Dotted I (U+0130) lowers to i under the
+    // identity collation's LOWER, though the collation's comparison weights alone keep them apart.
     [TestCase(
         "uri://ed-fi.org/ProgramTypeDescriptor",
         "MiXeD Recreation",
@@ -457,6 +458,14 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
         "Spaced",
         "ProgramTypeDescriptor",
         false
+    )]
+    [TestCase(
+        "uri://ed-fi.org/ProgramTypeDescriptor",
+        "Spaced Code ",
+        "uri://ed-fi.org/ProgramTypeDescriptor",
+        "Spaced Code",
+        "ProgramTypeDescriptor",
+        true
     )]
     [TestCase(
         "uri://ed-fi.org/ProgramTypeDescriptor",

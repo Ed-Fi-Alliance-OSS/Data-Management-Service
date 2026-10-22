@@ -411,7 +411,8 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
 
     // DMS-1455: recreation compares the lowered whole URI under the descriptor resource's key, as the
     // write path's identity does. Casing and component re-splits are the same descriptor; a trailing
-    // namespace space, another descriptor type or another value are not.
+    // namespace space, another descriptor type or another value are not. PostgreSQL does not pad, so a
+    // trailing code-value space is significant too.
     [TestCase(
         "uri://ed-fi.org/ProgramTypeDescriptor",
         "MiXeD Recreation",
@@ -433,6 +434,14 @@ public class Given_A_Postgresql_Generated_Ddl_RelationalChangeQueryRepository
         "Spaced",
         "uri://ed-fi.org/ProgramTypeDescriptor",
         "Spaced",
+        "ProgramTypeDescriptor",
+        false
+    )]
+    [TestCase(
+        "uri://ed-fi.org/ProgramTypeDescriptor",
+        "Spaced Code ",
+        "uri://ed-fi.org/ProgramTypeDescriptor",
+        "Spaced Code",
         "ProgramTypeDescriptor",
         false
     )]
