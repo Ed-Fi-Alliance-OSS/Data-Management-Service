@@ -40,6 +40,10 @@ public class Given_The_Cms_Pipeline_Response_Cache_Policy
     private HttpResponseMessage _tokenSuccess = null!;
     private HttpResponseMessage _tokenInvalidClient = null!;
     private HttpResponseMessage _register = null!;
+    private HttpResponseMessage _introspect = null!;
+    private HttpResponseMessage _revoke = null!;
+    private HttpResponseMessage _tokenThrows = null!;
+    private HttpResponseMessage _vendorThrows = null!;
     private HttpResponseMessage _health = null!;
     private HttpResponseMessage _root = null!;
     private HttpResponseMessage _openApi = null!;
@@ -51,6 +55,8 @@ public class Given_The_Cms_Pipeline_Response_Cache_Policy
         var vendorRepository = A.Fake<IVendorRepository>();
         A.CallTo(() => vendorRepository.QueryVendor(A<VendorQuery>.Ignored))
             .Returns(new VendorQueryResult.Success([]));
+        A.CallTo(() => vendorRepository.GetVendor(ThrowingVendorId))
+            .Throws(new InvalidOperationException("Vendor lookup failed"));
 
         var clientRepository = A.Fake<IIdentityProviderRepository>();
         A.CallTo(() =>
@@ -78,6 +84,8 @@ public class Given_The_Cms_Pipeline_Response_Cache_Policy
             );
         A.CallTo(() => tokenManager.GetAccessTokenAsync(ForClient("BadClient")))
             .Returns(new TokenResult.FailureAuthentication("invalid_client", "Invalid client"));
+        A.CallTo(() => tokenManager.GetAccessTokenAsync(ForClient("ThrowingClient")))
+            .Throws(new InvalidOperationException("Token issuance failed"));
 
         _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -132,6 +140,10 @@ public class Given_The_Cms_Pipeline_Response_Cache_Policy
                 new KeyValuePair<string, string>("displayname", "CSClient1"),
             ])
         );
+        _introspect = await _anonymousClient.PostAsync("/connect/introspect", TokenOnlyForm());
+        _revoke = await _anonymousClient.PostAsync("/connect/revoke", TokenOnlyForm());
+        _tokenThrows = await _anonymousClient.PostAsync("/connect/token", TokenForm("ThrowingClient"));
+        _vendorThrows = await _authenticatedClient.GetAsync($"/v3/vendors/{ThrowingVendorId}");
         _health = await _anonymousClient.GetAsync("/health");
         _root = await _anonymousClient.GetAsync("/");
         _openApi = await _anonymousClient.GetAsync("/openapi/v1.json");
@@ -148,6 +160,10 @@ public class Given_The_Cms_Pipeline_Response_Cache_Policy
                 _tokenSuccess,
                 _tokenInvalidClient,
                 _register,
+                _introspect,
+                _revoke,
+                _tokenThrows,
+                _vendorThrows,
                 _health,
                 _root,
                 _openApi,
@@ -162,6 +178,11 @@ public class Given_The_Cms_Pipeline_Response_Cache_Policy
         _anonymousClient?.Dispose();
         _factory?.Dispose();
     }
+
+    private const int ThrowingVendorId = 999;
+
+    private static FormUrlEncodedContent TokenOnlyForm() =>
+        new([new KeyValuePair<string, string>("token", "not-a-real-token")]);
 
     private static IEnumerable<KeyValuePair<string, string>> ForClient(string clientId) =>
         A<IEnumerable<KeyValuePair<string, string>>>.That.Matches(fields =>
@@ -217,6 +238,38 @@ public class Given_The_Cms_Pipeline_Response_Cache_Policy
     {
         _register.StatusCode.Should().Be(HttpStatusCode.OK);
         ShouldHaveNoStoreAndPragma(_register);
+    }
+
+    [Test]
+    public void It_marks_an_introspection_response_no_store_with_pragma()
+    {
+        _introspect.StatusCode.Should().Be(HttpStatusCode.OK);
+        ShouldHaveNoStoreAndPragma(_introspect);
+    }
+
+    [Test]
+    public void It_marks_a_revocation_response_no_store_with_pragma()
+    {
+        _revoke.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        ShouldHaveNoStoreAndPragma(_revoke);
+    }
+
+    // The framework exception handler clears the response and registers its own OnStarting
+    // callback, which fires before this middleware's and writes "no-cache,no-store". On an OAuth
+    // endpoint the assignment replaces that value with exactly "no-store".
+    [Test]
+    public void It_replaces_the_exception_handler_cache_control_on_a_failed_token_request()
+    {
+        _tokenThrows.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        ShouldHaveNoStoreAndPragma(_tokenThrows);
+    }
+
+    // On any other authorized endpoint, TryAdd finds the exception handler's value and keeps it.
+    [Test]
+    public void It_keeps_the_exception_handler_cache_control_on_a_failed_authorized_request()
+    {
+        _vendorThrows.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        _vendorThrows.Headers.NonValidated["Cache-Control"].Should().Equal("no-cache,no-store");
     }
 
     [Test]

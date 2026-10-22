@@ -156,24 +156,21 @@ public class ManagementEndpointModule(
         );
     }
 
-    private static IResult ToResult(IFrontendResponse response) =>
-        response.StatusCode switch
+    /// <summary>
+    /// Claimset management answers an authenticated administrator, and the view returns
+    /// authorization configuration, so even a success response is kept out of every cache.
+    /// Failures are already marked no-store by <see cref="Infrastructure.SecurityHeadersMiddleware"/>.
+    /// </summary>
+    private static IResult ToResult(HttpContext httpContext, IFrontendResponse response)
+    {
+        httpContext.Response.Headers.CacheControl = "no-store";
+        return response.StatusCode switch
         {
             200 => Results.Ok(response.Body),
             404 => Results.NotFound(),
             500 => Results.Json(response.Body, statusCode: 500),
             _ => Results.StatusCode(response.StatusCode),
         };
-
-    /// <summary>
-    /// The claimset view returns authorization configuration to an authenticated caller, so even its
-    /// success response is kept out of every cache. Failures are already marked no-store by
-    /// <see cref="Infrastructure.SecurityHeadersMiddleware"/>.
-    /// </summary>
-    private static IResult ToNoStoreResult(HttpContext httpContext, IFrontendResponse response)
-    {
-        httpContext.Response.Headers.CacheControl = "no-store";
-        return ToResult(response);
     }
 
     private static IResult NotFoundProblem() =>
@@ -206,7 +203,7 @@ public class ManagementEndpointModule(
 
         logger.LogInformation("Claimsets reload requested via management endpoint");
 
-        return ToResult(await apiService.ReloadClaimsetsAsync());
+        return ToResult(httpContext, await apiService.ReloadClaimsetsAsync());
     }
 
     /// <summary>
@@ -236,7 +233,7 @@ public class ManagementEndpointModule(
 
         logger.LogInformation("Claimsets reload requested via management endpoint for tenant");
 
-        return ToResult(await apiService.ReloadClaimsetsAsync(tenant));
+        return ToResult(httpContext, await apiService.ReloadClaimsetsAsync(tenant));
     }
 
     /// <summary>
@@ -271,7 +268,7 @@ public class ManagementEndpointModule(
 
         logger.LogInformation("View claimsets requested via management endpoint");
 
-        return ToNoStoreResult(httpContext, await apiService.ViewClaimsetsAsync());
+        return ToResult(httpContext, await apiService.ViewClaimsetsAsync());
     }
 
     /// <summary>
@@ -301,6 +298,6 @@ public class ManagementEndpointModule(
 
         logger.LogInformation("View claimsets requested via management endpoint for tenant");
 
-        return ToNoStoreResult(httpContext, await apiService.ViewClaimsetsAsync(tenant));
+        return ToResult(httpContext, await apiService.ViewClaimsetsAsync(tenant));
     }
 }
