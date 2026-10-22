@@ -5,7 +5,6 @@
 
 using System.Collections.Generic;
 using System.Net;
-using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Services;
 using FluentAssertions;
@@ -266,7 +265,7 @@ public class DatabaseOptionsStartupTests
         public void It_rejects_a_legacy_value() =>
             _exception
                 .Should()
-                .BeOfType<CryptographicException>()
+                .BeOfType<LegacyConnectionStringRejectedException>()
                 .Which.Message.Should()
                 .Contain("DatabaseSettings:AllowLegacyConnectionStrings is false");
     }

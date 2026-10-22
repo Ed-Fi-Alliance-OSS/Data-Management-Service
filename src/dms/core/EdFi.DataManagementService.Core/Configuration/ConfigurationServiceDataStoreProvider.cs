@@ -624,6 +624,20 @@ public class ConfigurationServiceDataStoreProvider(
                     _connectionStringDecryptionService.DecryptFromBase64(derivative.ConnectionString)
                     ?? string.Empty;
             }
+            catch (LegacyConnectionStringRejectedException)
+            {
+                // Kept apart from the catch below, so a value awaiting re-encryption does not read as a
+                // key problem. The exception is withheld for the same reason as below.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - Deliberate: the exception object is withheld so nothing it might carry can reach the log
+                logger.LogError(
+                    "The connection string for the {DerivativeType} derivative of tenant {Tenant}, parent data store {DataStoreId}, is in the legacy AES-CBC format, which is rejected because ConfigurationServiceSettings:AllowLegacyConnectionStrings is false. That derivative is treated as not configured; the parent data store and its remaining derivatives are unaffected",
+                    derivativeType,
+                    sanitizedTenant,
+                    response.Id
+                );
+#pragma warning restore S6667
+                continue;
+            }
             catch (InvalidOperationException ex)
             {
                 // The decryption service wraps each of its failures in this one exception type: invalid

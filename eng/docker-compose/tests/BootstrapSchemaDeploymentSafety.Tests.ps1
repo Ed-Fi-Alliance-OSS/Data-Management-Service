@@ -317,6 +317,8 @@ exit $ExitCode
             @{ File = "eng/docker-compose/provision-dms-schema.ps1" }
             @{ File = "eng/docker-compose/configure-local-data-store.ps1" }
             @{ File = "eng/docker-compose/tests/RestoreSmokeProbes.psm1" }
+            @{ File = "eng/docker-compose/tests/Invoke-BootstrapRestoreSmoke.ps1" }
+            @{ File = "eng/docker-compose/tests/RestoreSmokeProbes.Tests.ps1" }
         ) {
             $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:sourceRepoRoot $File), [ref]$null, [ref]$null)
 
@@ -3224,6 +3226,18 @@ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey12345678901234567
 
             ($lines -join "`n") | Should -Match "ConfigurationServiceSettings__ClientId = CMSReadOnlyAccess"
             ($lines -join "`n") | Should -Match "ConfigurationServiceSettings__ClientSecret = \(present in environment file\)"
+            ($lines -join "`n") | Should -Match "ConfigurationServiceSettings__AllowLegacyConnectionStrings = true "
+        }
+
+        It "Get-ProvisionCmsReadOnlyAccessGuidance passes CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS on to an IDE-run Ed-Fi API" {
+            . $script:repo.ProvisionScript
+
+            $lines = Get-ProvisionCmsReadOnlyAccessGuidance -EnvValues @{
+                DMS_CONFIGURATION_SERVICE_CLIENT_SECRET = "explicit-secret"
+                CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = "false"
+            }
+
+            ($lines -join "`n") | Should -Match "ConfigurationServiceSettings__AllowLegacyConnectionStrings = false "
         }
     }
 

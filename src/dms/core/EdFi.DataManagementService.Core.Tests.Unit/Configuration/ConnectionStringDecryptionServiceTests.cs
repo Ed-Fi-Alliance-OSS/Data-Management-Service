@@ -461,7 +461,7 @@ public class Given_ConnectionStringDecryptionService_with_legacy_connection_stri
 
     private static void ShouldBeRejectedAsLegacy(Func<string?> act) =>
         act.Should()
-            .Throw<InvalidOperationException>()
+            .ThrowExactly<LegacyConnectionStringRejectedException>()
             .WithMessage(
                 "*legacy AES-CBC format*ConfigurationServiceSettings:AllowLegacyConnectionStrings is false*"
             )

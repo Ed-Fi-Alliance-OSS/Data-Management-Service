@@ -3,7 +3,8 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-#Requires -Version 7
+# 7.4, as RestoreSmokeProbes.psm1, which this imports, requires.
+#Requires -Version 7.4
 
 # Behavioral tests for the restore smoke's decision and evidence helpers (RestoreSmokeProbes.psm1)
 # and for the smoke's complete foreign-stack rejection path. No test reaches a real Docker daemon

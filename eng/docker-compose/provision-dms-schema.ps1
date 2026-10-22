@@ -1692,6 +1692,14 @@ function Get-ProvisionCmsReadOnlyAccessGuidance {
     else {
         $lines.Add("  ConfigurationServiceSettings__EncryptionKey = (present in environment file as CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY)")
     }
+    # Not a secret, so the value itself is shown. An IDE-run Ed-Fi API otherwise keeps appsettings' true.
+    try {
+        $allowLegacy = if (Test-LegacyConnectionStringAllowed -EnvValues $EnvValues) { "true" } else { "false" }
+        $lines.Add("  ConfigurationServiceSettings__AllowLegacyConnectionStrings = $allowLegacy (from CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS; true when unset)")
+    }
+    catch {
+        $lines.Add("  ConfigurationServiceSettings__AllowLegacyConnectionStrings = (CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS in the environment file is not true or false; fix it, then set the same value)")
+    }
 
     return $lines.ToArray()
 }

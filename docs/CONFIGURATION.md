@@ -545,8 +545,12 @@ These settings configure how the DMS API connects to the Configuration Service t
 > remains for as long as it is. Each legacy value read logs a warning naming its
 > row: the Configuration Service logs the data store or derivative and the tenant,
 > and the Ed-Fi API logs the data store or derivative Id and the tenant, each
-> time it loads data stores. A deployment without the .NET SDK can use these
-> warnings to tell whether legacy values remain. To remove the exposure:
+> time it loads data stores. A deployment without the .NET SDK can tell whether
+> legacy values remain from the Configuration Service's warnings, once every
+> tenant's data stores have been read since it started, for example after the
+> Ed-Fi API restarts and loads them. The Ed-Fi API's warnings alone are not
+> enough: a legacy row that holds a `${secret:...}` reference reaches it as a
+> new envelope. To remove the exposure:
 >
 > 1. Upgrade every consumer, as described under **Upgrading**.
 > 2. Stop every Configuration Service instance, so that nothing writes data
@@ -571,13 +575,13 @@ These settings configure how the DMS API connects to the Configuration Service t
 >    in neither format, or a legacy value the key does not decrypt) stops it: it
 >    names the table and row, exits with status 1, and commits nothing, because
 >    the pass runs in one transaction. A rerun rewrites nothing. Interrupting it
->    (Ctrl+C) also commits nothing.
+>    (Ctrl+C) before the final commit begins also commits nothing.
 >
 >    To confirm no legacy values remain, before step 4 or at any later time, run
 >    the same command with `--check-connection-strings` in place of
 >    `--reencrypt-connection-strings`. It verifies every value the same way and
 >    prints legacy and current counts per table, but writes nothing and takes no
->    row locks, so the Configuration Service may keep running. It exits with
+>    update locks, so the Configuration Service may keep running. It exits with
 >    status 0 when no legacy values remain, 2 when some do, and 1 when a value
 >    cannot be verified. Neither switch takes a value: `=true`, `=false` or a
 >    value after the switch is refused with status 1, as is any argument the

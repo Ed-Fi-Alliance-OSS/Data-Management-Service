@@ -3,7 +3,8 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-#Requires -Version 7
+# 7.4, as RestoreSmokeProbes.psm1, which this imports, requires.
+#Requires -Version 7.4
 
 <#
 .SYNOPSIS
@@ -63,7 +64,7 @@
                           source, adding the non-descriptor document count probe and the schools
                           API read. Long.
 
-    Prerequisites: an ISOLATED Docker daemon (see Foreign stacks); pwsh 7+; the .NET SDK (the
+    Prerequisites: an ISOLATED Docker daemon (see Foreign stacks); pwsh 7.4+; the .NET SDK (the
     smoke builds api-schema-tools); network access for the image builds and the source
     bootstrap's package downloads.
 

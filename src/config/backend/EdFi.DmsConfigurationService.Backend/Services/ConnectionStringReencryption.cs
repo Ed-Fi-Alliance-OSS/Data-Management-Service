@@ -37,13 +37,14 @@ public sealed class ConnectionStringReencryptionException(string message) : Exce
 /// <see cref="DatabaseOptions.AllowLegacyConnectionStrings"/> is, and decoded strictly as UTF-8.
 ///
 /// An offline maintenance operation: every Configuration Service writer must be stopped. It runs in
-/// one transaction across both tables, so any failure or cancellation leaves the database as it was.
+/// one transaction across both tables, so any failure, or a cancellation before the final commit
+/// begins, leaves the database as it was.
 /// Rows are read in batches of bounded size, in Id order, and locked as they are read, so no other
 /// writer can change a row between its read and the commit. Each rewrite still compares the
 /// original bytes, as a guard rather than a detector. A rerun rewrites nothing.
 ///
 /// <see cref="CheckAsync"/> is the read-only form: it verifies every value the same way and counts the
-/// legacy ones, but takes no row locks and writes nothing, so it can run while the Configuration
+/// legacy ones, but takes no update locks and writes nothing, so it can run while the Configuration
 /// Service is running.
 ///
 /// A legacy value carries no integrity check, so the pass cannot tell whether one was altered before

@@ -95,7 +95,7 @@ public class ConnectionStringDecryptionService(string encryptionKey, bool allowL
         {
             if (!allowLegacyConnectionStrings)
             {
-                throw new InvalidOperationException(
+                throw new LegacyConnectionStringRejectedException(
                     "Encrypted connection string is in the legacy AES-CBC format, which is rejected because "
                         + "ConfigurationServiceSettings:AllowLegacyConnectionStrings is false. Re-encrypt "
                         + "legacy connection strings in the Configuration Service before disabling them."
@@ -242,3 +242,10 @@ public class ConnectionStringDecryptionService(string encryptionKey, bool allowL
         return Encoding.UTF8.GetString(plainTextBytes);
     }
 }
+
+/// <summary>
+/// A legacy AES-CBC value, refused because legacy values are disallowed. Its own type, so a caller can
+/// report that setting rather than a decryption failure.
+/// </summary>
+public sealed class LegacyConnectionStringRejectedException(string message)
+    : InvalidOperationException(message);

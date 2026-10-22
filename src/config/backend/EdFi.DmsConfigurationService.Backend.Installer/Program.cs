@@ -5,6 +5,7 @@
 
 using System.Data.Common;
 using System.Diagnostics;
+using System.Net.Sockets;
 using CommandLine;
 using CommandLine.Text;
 using EdFi.DmsConfigurationService.Backend.Deploy;
@@ -249,8 +250,8 @@ public static class Program
         {
             Console.WriteLine(
                 check
-                    ? $"{operation} failed ({ex.GetType().Name}). It changes nothing, so it is safe to rerun."
-                    : $"{operation} failed ({ex.GetType().Name}). The pass runs in one transaction and a "
+                    ? $"{operation} failed ({Describe(ex)}). It changes nothing, so it is safe to rerun."
+                    : $"{operation} failed ({Describe(ex)}). The pass runs in one transaction and a "
                         + "rerun rewrites only values still in the legacy format, so it is safe to rerun."
             );
         }
@@ -262,11 +263,38 @@ public static class Program
         return 1;
     }
 
+    /// <summary>
+    /// The exception's type and any database or socket error code in its chain: enough to tell a wrong
+    /// host from a wrong database or password, and none of it secret.
+    /// </summary>
+    private static string Describe(Exception exception)
+    {
+        List<string> parts = [exception.GetType().Name];
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            switch (current)
+            {
+                case PostgresException postgres:
+                    parts.Add($"SQLSTATE {postgres.SqlState}");
+                    break;
+                case SqlException sqlServer:
+                    parts.Add($"SQL Server error {sqlServer.Number}");
+                    break;
+                case SocketException socket:
+                    parts.Add($"socket error {socket.SocketErrorCode}");
+                    break;
+            }
+        }
+
+        return string.Join(", ", parts.Distinct());
+    }
+
     private static void HandleResult(DatabaseDeployResult result)
     {
         if (result is DatabaseDeployResult.DatabaseDeployFailure failure)
         {
             Console.WriteLine($"Failed to deploy database: {failure.Error.Message}");
+            Environment.ExitCode = 1;
         }
     }
 

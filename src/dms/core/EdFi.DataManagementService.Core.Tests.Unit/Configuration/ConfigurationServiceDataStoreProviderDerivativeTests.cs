@@ -319,6 +319,58 @@ public class ConfigurationServiceDataStoreProviderDerivativeTests
     }
 
     /// <summary>
+    /// A legacy derivative the Ed-Fi API disallows, though the Configuration Service still returns it,
+    /// is reported as disallowed, not as a value that could not be decrypted.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Legacy_Derivative_While_Legacy_Values_Are_Disallowed
+    {
+        private RecordingLogger<ConfigurationServiceDataStoreProvider> _logger = null!;
+        private IList<DataStore> _loaded = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _logger = new RecordingLogger<ConfigurationServiceDataStoreProvider>();
+            var vectors = ConnectionStringEncryptionVectors.Load();
+
+            object response = new[]
+            {
+                DataStore(
+                    1,
+                    "Envelope Primary",
+                    vectors.EnvelopeV1,
+                    [Derivative("Snapshot", vectors.LegacyCbc)]
+                ),
+            };
+
+            _loaded = await CreateProvider(
+                    response,
+                    _logger,
+                    new ConnectionStringDecryptionService(
+                        vectors.KeyText,
+                        allowLegacyConnectionStrings: false
+                    )
+                )
+                .LoadDataStores();
+        }
+
+        [Test]
+        public void It_should_treat_the_derivative_as_not_configured() =>
+            _loaded.Should().ContainSingle().Which.Derivatives.Should().BeEmpty();
+
+        [Test]
+        public void It_should_log_one_error_naming_the_setting() =>
+            ErrorMessages(_logger)
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Contain("legacy AES-CBC format")
+                .And.Contain("ConfigurationServiceSettings:AllowLegacyConnectionStrings is false")
+                .And.NotContain("Unable to decrypt");
+    }
+
+    /// <summary>
     /// A null, empty, or whitespace *stored* connection string is recognized as not configured before
     /// decryption is attempted, so the decryption service is never asked about it. Proving that needs a
     /// recording seam: the real service returns null for a null or empty input and would only fault on

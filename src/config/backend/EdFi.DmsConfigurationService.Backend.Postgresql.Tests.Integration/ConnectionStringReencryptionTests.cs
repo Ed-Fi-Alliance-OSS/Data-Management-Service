@@ -732,6 +732,40 @@ public class ConnectionStringReencryptionTests : DatabaseTest
             _output.ToString().Should().Contain("reencrypt-connection-strings");
         }
 
+        /// <summary>
+        /// The database error code tells the operator what to fix, without the connection string.
+        /// </summary>
+        [Test]
+        public void It_names_the_database_error_code_when_the_database_does_not_exist()
+        {
+            string missingDatabase = new NpgsqlConnectionStringBuilder(
+                Configuration.DatabaseOptions.Value.DatabaseConnection
+            )
+            {
+                Database = $"missing_{Guid.NewGuid():N}",
+            }.ConnectionString;
+            Environment.SetEnvironmentVariable(Installer.Options.EncryptionKeyVariable, EncryptionKey);
+
+            Installer.Program.Main(["-e", "postgresql", "-c", missingDatabase, "--check-connection-strings"]);
+
+            Environment.ExitCode.Should().Be(1);
+            _output.ToString().Should().Contain("SQLSTATE 3D000").And.NotContain(missingDatabase);
+        }
+
+        [Test]
+        public void It_exits_1_when_the_deploy_fails()
+        {
+            Installer.Program.Main([
+                "-e",
+                "postgresql",
+                "-c",
+                "Host=localhost;Port=1;Username=nobody;Database=nothing;Timeout=1",
+            ]);
+
+            Environment.ExitCode.Should().Be(1);
+            _output.ToString().Should().Contain("Failed to deploy database");
+        }
+
         [Test]
         public async Task It_deploys_and_leaves_legacy_values_alone_without_the_switch()
         {
