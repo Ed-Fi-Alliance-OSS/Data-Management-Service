@@ -855,302 +855,330 @@ public class OAuthManagerTests
         }
     }
 
-    [TestFixture]
+    [TestFixture(
+        null,
+        null,
+        null,
+        "client_credentials",
+        HttpStatusCode.Unauthorized,
+        "invalid_client",
+        "Client credentials must be supplied in an Authorization: Basic header or as client_id and client_secret in the request body"
+    )]
+    [TestFixture(
+        null,
+        "client",
+        null,
+        "client_credentials",
+        HttpStatusCode.BadRequest,
+        "invalid_request",
+        "Client credentials must be supplied in an Authorization: Basic header or as client_id and client_secret in the request body"
+    )]
+    [TestFixture(
+        null,
+        null,
+        "secret",
+        "client_credentials",
+        HttpStatusCode.BadRequest,
+        "invalid_request",
+        "Client credentials must be supplied in an Authorization: Basic header or as client_id and client_secret in the request body"
+    )]
+    [TestFixture(
+        "Bearer token",
+        "client",
+        "secret",
+        "client_credentials",
+        HttpStatusCode.Unauthorized,
+        "invalid_client",
+        "The Authorization header must use the Basic scheme"
+    )]
+    [TestFixture(
+        "",
+        "client",
+        "secret",
+        "client_credentials",
+        HttpStatusCode.BadRequest,
+        "invalid_request",
+        "The Authorization header must not be empty"
+    )]
+    [TestFixture(
+        "Basicxyz:s3cr3t-sentinel",
+        null,
+        null,
+        "client_credentials",
+        HttpStatusCode.BadRequest,
+        "invalid_request",
+        "Malformed Authorization header"
+    )]
+    [TestFixture(
+        "Basicxyz:s3cr3t-sentinel",
+        null,
+        null,
+        "password",
+        HttpStatusCode.BadRequest,
+        "unsupported_grant_type",
+        "Unsupported grant type"
+    )]
+    [TestFixture(
+        "Basicxyz:s3cr3t-sentinel",
+        null,
+        null,
+        null,
+        HttpStatusCode.BadRequest,
+        "invalid_request",
+        "The grant_type request parameter must be supplied"
+    )]
+    [TestFixture(
+        "Basicxyz:s3cr3t-sentinel",
+        null,
+        null,
+        "",
+        HttpStatusCode.BadRequest,
+        "invalid_request",
+        "The grant_type request parameter must be supplied"
+    )]
+    [TestFixture(
+        "Basic abc:123",
+        "client",
+        "secret",
+        "client_credentials",
+        HttpStatusCode.BadRequest,
+        "invalid_request",
+        "Only one client authentication mechanism may be used"
+    )]
+    [TestFixture(
+        null,
+        "client",
+        "secret",
+        null,
+        HttpStatusCode.BadRequest,
+        "invalid_request",
+        "The grant_type request parameter must be supplied"
+    )]
+    [TestFixture(
+        null,
+        "client",
+        "secret",
+        "password",
+        HttpStatusCode.BadRequest,
+        "unsupported_grant_type",
+        "Unsupported grant type"
+    )]
     [Parallelizable]
-    public class Given_A_Local_OAuth_Validation_Error : When_Getting_An_Access_Token
+    public class Given_A_Local_OAuth_Validation_Error(
+        string authHeader,
+        string clientId,
+        string clientSecret,
+        string grantType,
+        HttpStatusCode expectedStatus,
+        string expectedError,
+        string expectedDescription
+    ) : When_Getting_An_Access_Token
     {
-        [TestCase(
-            null,
-            null,
-            null,
-            "client_credentials",
-            HttpStatusCode.Unauthorized,
-            "invalid_client",
-            "Client credentials must be supplied in an Authorization: Basic header or as client_id and client_secret in the request body"
-        )]
-        [TestCase(
-            null,
-            "client",
-            null,
-            "client_credentials",
-            HttpStatusCode.BadRequest,
-            "invalid_request",
-            "Client credentials must be supplied in an Authorization: Basic header or as client_id and client_secret in the request body"
-        )]
-        [TestCase(
-            null,
-            null,
-            "secret",
-            "client_credentials",
-            HttpStatusCode.BadRequest,
-            "invalid_request",
-            "Client credentials must be supplied in an Authorization: Basic header or as client_id and client_secret in the request body"
-        )]
-        [TestCase(
-            "Bearer token",
-            "client",
-            "secret",
-            "client_credentials",
-            HttpStatusCode.Unauthorized,
-            "invalid_client",
-            "The Authorization header must use the Basic scheme"
-        )]
-        [TestCase(
-            "",
-            "client",
-            "secret",
-            "client_credentials",
-            HttpStatusCode.BadRequest,
-            "invalid_request",
-            "The Authorization header must not be empty"
-        )]
-        [TestCase(
-            "Basicxyz:s3cr3t-sentinel",
-            null,
-            null,
-            "client_credentials",
-            HttpStatusCode.BadRequest,
-            "invalid_request",
-            "Malformed Authorization header"
-        )]
-        [TestCase(
-            "Basicxyz:s3cr3t-sentinel",
-            null,
-            null,
-            "password",
-            HttpStatusCode.BadRequest,
-            "unsupported_grant_type",
-            "Unsupported grant type"
-        )]
-        [TestCase(
-            "Basicxyz:s3cr3t-sentinel",
-            null,
-            null,
-            null,
-            HttpStatusCode.BadRequest,
-            "invalid_request",
-            "The grant_type request parameter must be supplied"
-        )]
-        [TestCase(
-            "Basicxyz:s3cr3t-sentinel",
-            null,
-            null,
-            "",
-            HttpStatusCode.BadRequest,
-            "invalid_request",
-            "The grant_type request parameter must be supplied"
-        )]
-        [TestCase(
-            "Basic abc:123",
-            "client",
-            "secret",
-            "client_credentials",
-            HttpStatusCode.BadRequest,
-            "invalid_request",
-            "Only one client authentication mechanism may be used"
-        )]
-        [TestCase(
-            null,
-            "client",
-            "secret",
-            null,
-            HttpStatusCode.BadRequest,
-            "invalid_request",
-            "The grant_type request parameter must be supplied"
-        )]
-        [TestCase(
-            null,
-            "client",
-            "secret",
-            "password",
-            HttpStatusCode.BadRequest,
-            "unsupported_grant_type",
-            "Unsupported grant type"
-        )]
-        public async Task It_returns_the_exact_oauth_contract_without_sending_upstream(
-            string? authHeader,
-            string? clientId,
-            string? clientSecret,
-            string? grantType,
-            HttpStatusCode expectedStatus,
-            string expectedError,
-            string expectedDescription
-        )
+        private JsonObject _body = default!;
+
+        [SetUp]
+        public async Task SetUp()
         {
             await Act(
                 authHeader,
                 HttpStatusCode.OK,
                 "{}",
-                grantType!,
+                grantType,
                 new TokenRequestCredentials(clientId, clientSecret)
             );
-
-            await AssertOAuthErrorResponse(expectedStatus, expectedError, expectedDescription);
-            A.CallTo(() => _httpClient.SendAsync(A<HttpRequestMessage>._)).MustNotHaveHappened();
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!.AsObject();
         }
+
+        [TearDown]
+        public void TearDown() => _response.Dispose();
+
+        [Test]
+        public void It_returns_the_classified_status() => _response.StatusCode.Should().Be(expectedStatus);
+
+        [Test]
+        public void It_uses_the_json_media_type() =>
+            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+
+        [Test]
+        public void It_writes_exactly_the_oauth_members() =>
+            _body.Select(property => property.Key).Should().BeEquivalentTo("error", "error_description");
+
+        [Test]
+        public void It_returns_the_classified_error() =>
+            _body["error"]!.GetValue<string>().Should().Be(expectedError);
+
+        [Test]
+        public void It_returns_the_fixed_description() =>
+            _body["error_description"]!.GetValue<string>().Should().Be(expectedDescription);
+
+        [Test]
+        public void It_encodes_the_correlation_header() =>
+            _response.Headers.GetValues("X-Correlation-ID").Should().Equal(Uri.EscapeDataString("trace-id"));
+
+        [Test]
+        public void It_challenges_only_for_401() =>
+            _response
+                .Headers.WwwAuthenticate.Select(challenge => challenge.ToString())
+                .Should()
+                .Equal(
+                    expectedStatus is HttpStatusCode.Unauthorized
+                        ? ["Basic realm=\"EdFi.DataManagementService\""]
+                        : []
+                );
+
+        [Test]
+        public void It_does_not_send_upstream() =>
+            A.CallTo(() => _httpClient.SendAsync(A<HttpRequestMessage>._)).MustNotHaveHappened();
     }
 
     /// <summary>
     /// Provider failures use the token error contract and safe, classified descriptions.
     /// </summary>
-    [TestFixture]
+    [TestFixtureSource(nameof(Cases))]
     [Parallelizable]
-    public class Given_An_Upstream_Token_Error_OAuth_Contract : When_Getting_An_Access_Token
+    public class Given_An_Upstream_Token_Error_OAuth_Contract(
+        HttpStatusCode upstreamStatus,
+        string upstreamBody,
+        bool callerUsedAuthorization,
+        HttpStatusCode expectedStatus,
+        string expectedError,
+        string expectedDescription
+    ) : When_Getting_An_Access_Token
     {
         private const string UpstreamDescription = "Provider rejected the request.";
         private const string CredentialFallback =
             "The upstream identity service rejected the request credentials.";
         private const string ProviderFallback = "The upstream identity service rejected the token request.";
-        private const string GenericRateLimit =
-            "The number of allowed requests has been exceeded. Retry the request later.";
-        private const string RetryDescription =
-            "The service is temporarily unable to handle the request. Retry the request later.";
+        private JsonObject _body = default!;
 
-        [TestCase("")]
-        [TestCase("<html>provider failure</html>")]
-        [TestCase("[]")]
-        [TestCase("\"text\"")]
-        [TestCase("7")]
-        [TestCase("true")]
-        [TestCase("null")]
-        [TestCase("{}")]
-        public async Task It_keeps_any_upstream_401_as_invalid_client(string upstreamBody)
+        private static IEnumerable<TestFixtureData> Cases()
         {
-            await Act("Basic abc:123", HttpStatusCode.Unauthorized, upstreamBody, GrantType);
+            foreach (
+                string body in new[]
+                {
+                    "",
+                    "<html>provider failure</html>",
+                    "[]",
+                    "\"text\"",
+                    "7",
+                    "true",
+                    "null",
+                    "{}",
+                }
+            )
+            {
+                yield return new(
+                    HttpStatusCode.Unauthorized,
+                    body,
+                    true,
+                    HttpStatusCode.Unauthorized,
+                    "invalid_client",
+                    CredentialFallback
+                );
+            }
 
-            await AssertOAuthErrorResponse(HttpStatusCode.Unauthorized, "invalid_client", CredentialFallback);
-        }
-
-        [Test]
-        public async Task It_preserves_a_usable_401_description_but_uses_invalid_client()
-        {
-            await Act(
-                "Basic abc:123",
+            yield return new(
                 HttpStatusCode.Unauthorized,
                 JsonSerializer.Serialize(
                     new { error = "server_error", error_description = UpstreamDescription }
                 ),
-                GrantType
-            );
-
-            await AssertOAuthErrorResponse(
+                true,
                 HttpStatusCode.Unauthorized,
                 "invalid_client",
                 UpstreamDescription
             );
-        }
 
-        [TestCase("invalid_request")]
-        [TestCase("invalid_client")]
-        [TestCase("invalid_grant")]
-        [TestCase("unauthorized_client")]
-        [TestCase("unsupported_grant_type")]
-        [TestCase("invalid_scope")]
-        public async Task It_preserves_each_recognized_provider_400_code(string error)
-        {
-            await Act(
-                null,
-                HttpStatusCode.BadRequest,
-                JsonSerializer.Serialize(new { error, error_description = UpstreamDescription }),
-                GrantType,
-                new TokenRequestCredentials("client", "secret")
-            );
+            foreach (
+                string error in new[]
+                {
+                    "invalid_request",
+                    "invalid_client",
+                    "invalid_grant",
+                    "unauthorized_client",
+                    "unsupported_grant_type",
+                    "invalid_scope",
+                }
+            )
+            {
+                yield return new(
+                    HttpStatusCode.BadRequest,
+                    JsonSerializer.Serialize(new { error, error_description = UpstreamDescription }),
+                    false,
+                    HttpStatusCode.BadRequest,
+                    error,
+                    UpstreamDescription
+                );
+            }
 
-            await AssertOAuthErrorResponse(HttpStatusCode.BadRequest, error, UpstreamDescription);
-        }
+            foreach (
+                string error in new[]
+                {
+                    "unknown",
+                    "INVALID_CLIENT",
+                    " invalid_client ",
+                    "temporarily_unavailable",
+                }
+            )
+            {
+                yield return new(
+                    HttpStatusCode.BadRequest,
+                    JsonSerializer.Serialize(new { error, error_description = UpstreamDescription }),
+                    false,
+                    HttpStatusCode.BadGateway,
+                    "server_error",
+                    ExpectedGatewayDetail
+                );
+            }
 
-        [TestCase("unknown")]
-        [TestCase("INVALID_CLIENT")]
-        [TestCase(" invalid_client ")]
-        [TestCase("temporarily_unavailable")]
-        public async Task It_replaces_unrecognized_provider_400_with_a_safe_gateway_error(string error)
-        {
-            await Act(
-                null,
-                HttpStatusCode.BadRequest,
-                JsonSerializer.Serialize(new { error, error_description = UpstreamDescription }),
-                GrantType,
-                new TokenRequestCredentials("client", "secret")
-            );
-
-            await AssertOAuthErrorResponse(
-                HttpStatusCode.BadGateway,
-                "server_error",
-                "The upstream identity service did not return a usable response. Contact your system administrator with the X-Correlation-ID response header, decoded once using UTF-8 percent decoding, which identifies the corresponding server log entry."
-            );
-        }
-
-        [TestCase(true, HttpStatusCode.Unauthorized)]
-        [TestCase(false, HttpStatusCode.BadRequest)]
-        public async Task It_classifies_provider_invalid_client_from_the_original_caller_mechanism(
-            bool callerUsedAuthorization,
-            HttpStatusCode expectedStatus
-        )
-        {
-            await Act(
-                callerUsedAuthorization ? "Basic abc:123" : null,
+            yield return new(
                 HttpStatusCode.BadRequest,
                 JsonSerializer.Serialize(
                     new { error = "invalid_client", error_description = UpstreamDescription }
                 ),
-                GrantType,
-                callerUsedAuthorization
-                    ? TokenRequestCredentials.None
-                    : new TokenRequestCredentials("client", "secret")
+                true,
+                HttpStatusCode.Unauthorized,
+                "invalid_client",
+                UpstreamDescription
             );
 
-            await AssertOAuthErrorResponse(expectedStatus, "invalid_client", UpstreamDescription);
-        }
+            foreach (string description in new[] { " ", "!", "#", "[", "]", "~" })
+            {
+                yield return new(
+                    HttpStatusCode.BadRequest,
+                    JsonSerializer.Serialize(
+                        new { error = "invalid_request", error_description = description }
+                    ),
+                    false,
+                    HttpStatusCode.BadRequest,
+                    "invalid_request",
+                    description
+                );
+            }
 
-        [TestCase(" ", true)]
-        [TestCase("!", true)]
-        [TestCase("#", true)]
-        [TestCase("[", true)]
-        [TestCase("]", true)]
-        [TestCase("~", true)]
-        [TestCase("\u001f", false)]
-        [TestCase("\"", false)]
-        [TestCase("\\", false)]
-        [TestCase("\u007f", false)]
-        [TestCase("ñ", false)]
-        public async Task It_validates_the_decoded_provider_description_characters(
-            string description,
-            bool isUsable
-        )
-        {
-            await Act(
-                null,
-                HttpStatusCode.BadRequest,
-                JsonSerializer.Serialize(new { error = "invalid_request", error_description = description }),
-                GrantType,
-                new TokenRequestCredentials("client", "secret")
-            );
+            foreach (string description in new[] { "\u001f", "\"", "\\", "\u007f", "é" })
+            {
+                yield return new(
+                    HttpStatusCode.BadRequest,
+                    JsonSerializer.Serialize(
+                        new { error = "invalid_request", error_description = description }
+                    ),
+                    false,
+                    HttpStatusCode.BadRequest,
+                    "invalid_request",
+                    ProviderFallback
+                );
+            }
 
-            await AssertOAuthErrorResponse(
-                HttpStatusCode.BadRequest,
-                "invalid_request",
-                isUsable ? description : ProviderFallback
-            );
-        }
-
-        [Test]
-        public async Task It_preserves_a_recognized_400_when_its_description_has_invalid_unicode()
-        {
-            await Act(
-                null,
+            yield return new(
                 HttpStatusCode.BadRequest,
                 """{"error":"invalid_request","error_description":"\uD800"}""",
-                GrantType,
-                new TokenRequestCredentials("client", "secret")
+                false,
+                HttpStatusCode.BadRequest,
+                "invalid_request",
+                ProviderFallback
             );
 
-            await AssertOAuthErrorResponse(HttpStatusCode.BadRequest, "invalid_request", ProviderFallback);
-        }
-
-        [Test]
-        public async Task It_accepts_the_management_api_token_limit_urn_and_rebuilds_guidance()
-        {
-            string upstreamBody = CmsFailureResponse
+            string limitBody = CmsFailureResponse
                 .ForTooManyTokens(7, "upstream-correlation-id")
                 .ToJsonString()
                 .Replace(
@@ -1158,39 +1186,83 @@ public class OAuthManagerTests
                     "urn:ed-fi:management-api:security:authentication:too-many-tokens",
                     StringComparison.Ordinal
                 );
-            await Act("Basic abc:123", HttpStatusCode.TooManyRequests, upstreamBody, GrantType);
-
-            await AssertOAuthErrorResponse(
+            yield return new(
+                HttpStatusCode.TooManyRequests,
+                limitBody,
+                true,
                 HttpStatusCode.TooManyRequests,
                 "temporarily_unavailable",
                 "Too many access tokens have been requested (limit is 7). Access tokens should be reused until they expire."
             );
-        }
-
-        [Test]
-        public async Task It_maps_unrecognized_429_to_the_documented_extension()
-        {
-            await Act("Basic abc:123", HttpStatusCode.TooManyRequests, "<provider body>", GrantType);
-
-            await AssertOAuthErrorResponse(
+            yield return new(
+                HttpStatusCode.TooManyRequests,
+                "<provider body>",
+                true,
                 HttpStatusCode.TooManyRequests,
                 "temporarily_unavailable",
-                GenericRateLimit
+                "The number of allowed requests has been exceeded. Retry the request later."
             );
-        }
-
-        [Test]
-        public async Task It_maps_contention_to_temporary_unavailability_without_upstream_text()
-        {
-            await Act("Basic abc:123", HttpStatusCode.Conflict, "private contention detail", GrantType);
-
-            await AssertOAuthErrorResponse(
+            yield return new(
+                HttpStatusCode.Conflict,
+                "private contention detail",
+                true,
                 HttpStatusCode.ServiceUnavailable,
                 "temporarily_unavailable",
-                RetryDescription
+                "The service is temporarily unable to handle the request. Retry the request later."
             );
-            (await _response.Content.ReadAsStringAsync()).Should().NotContain("private contention detail");
         }
+
+        [SetUp]
+        public async Task SetUp()
+        {
+            await Act(
+                callerUsedAuthorization ? "Basic abc:123" : null,
+                upstreamStatus,
+                upstreamBody,
+                GrantType,
+                callerUsedAuthorization
+                    ? TokenRequestCredentials.None
+                    : new TokenRequestCredentials("client", "secret")
+            );
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!.AsObject();
+        }
+
+        [TearDown]
+        public void TearDown() => _response.Dispose();
+
+        [Test]
+        public void It_returns_the_classified_status() => _response.StatusCode.Should().Be(expectedStatus);
+
+        [Test]
+        public void It_uses_the_json_media_type() =>
+            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+
+        [Test]
+        public void It_writes_exactly_the_oauth_members() =>
+            _body.Select(property => property.Key).Should().BeEquivalentTo("error", "error_description");
+
+        [Test]
+        public void It_returns_the_classified_error() =>
+            _body["error"]!.GetValue<string>().Should().Be(expectedError);
+
+        [Test]
+        public void It_returns_only_the_usable_or_fixed_description() =>
+            _body["error_description"]!.GetValue<string>().Should().Be(expectedDescription);
+
+        [Test]
+        public void It_encodes_the_correlation_header() =>
+            _response.Headers.GetValues("X-Correlation-ID").Should().Equal(Uri.EscapeDataString("trace-id"));
+
+        [Test]
+        public void It_challenges_only_for_401() =>
+            _response
+                .Headers.WwwAuthenticate.Select(challenge => challenge.ToString())
+                .Should()
+                .Equal(
+                    expectedStatus is HttpStatusCode.Unauthorized
+                        ? ["Basic realm=\"EdFi.DataManagementService\""]
+                        : []
+                );
     }
 
     /// <summary>
@@ -1780,16 +1852,28 @@ public class OAuthManagerTests
     private static async Task<(
         HttpResponseMessage Response,
         RecordingLogger<OAuthManager> Logger
-    )> UpstreamResponds(HttpStatusCode upstreamStatus, string upstreamBody) =>
+    )> UpstreamResponds(
+        HttpStatusCode upstreamStatus,
+        string upstreamBody,
+        bool callerUsedAuthorization = true,
+        string traceId = CorrelationId
+    ) =>
         await UpstreamResponds(
             upstreamStatus,
-            new StringContent(upstreamBody, Encoding.UTF8, "application/json")
+            new StringContent(upstreamBody, Encoding.UTF8, "application/json"),
+            callerUsedAuthorization,
+            traceId
         );
 
     private static async Task<(
         HttpResponseMessage Response,
         RecordingLogger<OAuthManager> Logger
-    )> UpstreamResponds(HttpStatusCode upstreamStatus, HttpContent upstreamContent)
+    )> UpstreamResponds(
+        HttpStatusCode upstreamStatus,
+        HttpContent upstreamContent,
+        bool callerUsedAuthorization = true,
+        string traceId = CorrelationId
+    )
     {
         var logger = new RecordingLogger<OAuthManager>();
 
@@ -1803,13 +1887,244 @@ public class OAuthManagerTests
         HttpResponseMessage response = await new OAuthManager(logger).GetAccessTokenAsync(
             httpClient,
             "client_credentials",
-            "basic abc:123",
-            TokenRequestCredentials.None,
+            callerUsedAuthorization ? "basic abc:123" : null,
+            callerUsedAuthorization
+                ? TokenRequestCredentials.None
+                : new TokenRequestCredentials("client", "request-secret-sentinel"),
             "http://example.com/oauth/token",
-            new TraceId(CorrelationId)
+            new TraceId(traceId)
         );
 
         return (response, logger);
+    }
+
+    // These cases must exercise the classified-400 event itself. The 401 summary fixtures
+    // cannot detect a missing event or accidental description stringification in the 400 handler.
+    [TestFixtureSource(nameof(Cases))]
+    [Parallelizable]
+    public class Given_A_Provider_400_With_An_Unusable_Description(
+        string error,
+        bool callerUsedAuthorization,
+        HttpStatusCode expectedStatus,
+        string descriptionMember,
+        string expectedDescriptionSummary
+    )
+    {
+        // A valid, already-normalized frontend TraceId, including characters that need header encoding.
+        private const string NormalizedTrace = "percent%plus+slash/ñ";
+        private HttpResponseMessage _response = default!;
+        private JsonObject _body = default!;
+        private RecordingLogger<OAuthManager> _logger = default!;
+        private LogRecord _summary = default!;
+        private string _raw = string.Empty;
+
+        private static IEnumerable<TestFixtureData> Cases()
+        {
+            (string Member, string Summary)[] descriptions =
+            [
+                ("", ""),
+                ("\"error_description\":null,", ", error_description=null"),
+                ("\"error_description\":42,", ", error_description=42"),
+                ("\"error_description\":true,", ", error_description=true"),
+                ("\"error_description\":false,", ", error_description=false"),
+                (
+                    "\"error_description\":{\"secret\":\"nested-sentinel\"},",
+                    ", error_description=(malformed)"
+                ),
+                ("\"error_description\":[\"nested-sentinel\"],", ", error_description=(malformed)"),
+                ("\"error_description\":\"\",", ", error_description="),
+                ("\"error_description\":\"\\uD800\",", ", error_description=(malformed)"),
+                ("\"error_description\":\"before\\r\\nafter\",", ", error_description=beforeafter"),
+                ("\"error_description\":\"\\\"\",", ", error_description=\""),
+                ("\"error_description\":\"\\\\\",", ", error_description=\\"),
+            ];
+            foreach (
+                (string error, bool header, HttpStatusCode status) in new[]
+                {
+                    ("invalid_request", false, HttpStatusCode.BadRequest),
+                    ("invalid_client", false, HttpStatusCode.BadRequest),
+                    ("invalid_client", true, HttpStatusCode.Unauthorized),
+                }
+            )
+            {
+                foreach ((string member, string summary) in descriptions)
+                {
+                    yield return new(error, header, status, member, summary);
+                }
+            }
+        }
+
+        [SetUp]
+        public async Task SetUp()
+        {
+            string upstreamBody =
+                "{\"error\":\""
+                + error
+                + "\","
+                + descriptionMember
+                + "\"error_uri\":\"https://internal.example/uri-sentinel?client_secret=uri-sentinel\","
+                + "\"details\":{\"secret\":\"nested-sentinel\"},\"rea\\r\\nson\":\"other-value-sentinel\"}";
+            (_response, _logger) = await UpstreamResponds(
+                HttpStatusCode.BadRequest,
+                upstreamBody,
+                callerUsedAuthorization,
+                NormalizedTrace
+            );
+            _raw = await _response.Content.ReadAsStringAsync();
+            _body = JsonNode.Parse(_raw)!.AsObject();
+            // Select by structured fields rather than level so a severity regression fails below.
+            _summary = _logger.Records.Single(record => record.Properties.ContainsKey("StandardFields"));
+        }
+
+        [TearDown]
+        public void TearDown() => _response.Dispose();
+
+        [Test]
+        public void It_preserves_the_classified_status() => _response.StatusCode.Should().Be(expectedStatus);
+
+        [Test]
+        public void It_preserves_the_recognized_error() =>
+            _body["error"]!.GetValue<string>().Should().Be(error);
+
+        [Test]
+        public void It_uses_the_fixed_description() =>
+            _body["error_description"]!
+                .GetValue<string>()
+                .Should()
+                .Be(
+                    error is "invalid_client"
+                        ? "The upstream identity service rejected the request credentials."
+                        : "The upstream identity service rejected the token request."
+                );
+
+        [Test]
+        public void It_writes_exactly_the_oauth_members() =>
+            _body.Select(property => property.Key).Should().BeEquivalentTo("error", "error_description");
+
+        [Test]
+        public void It_uses_the_json_media_type() =>
+            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+
+        [Test]
+        public void It_challenges_only_for_header_authentication_failure() =>
+            _response
+                .Headers.WwwAuthenticate.Select(challenge => challenge.ToString())
+                .Should()
+                .Equal(
+                    expectedStatus is HttpStatusCode.Unauthorized
+                        ? ["Basic realm=\"EdFi.DataManagementService\""]
+                        : []
+                );
+
+        [Test]
+        public void It_emits_the_provider_400_fallback_event_at_information() =>
+            _summary.Level.Should().Be(LogLevel.Information);
+
+        [Test]
+        public void It_records_the_normalized_trace_value() =>
+            _summary.Properties["TraceId"].Should().Be(NormalizedTrace);
+
+        [Test]
+        public void It_matches_the_decoded_response_correlation_to_the_summary() =>
+            Uri.UnescapeDataString(_response.Headers.GetValues("X-Correlation-ID").Single())
+                .Should()
+                .Be(_summary.Properties["TraceId"]);
+
+        [Test]
+        public void It_summarizes_only_safe_standard_values() =>
+            _summary
+                .Properties["StandardFields"]
+                .Should()
+                .Be("error=" + error + expectedDescriptionSummary + ", error_uri=(withheld)");
+
+        [Test]
+        public void It_records_sanitized_nonstandard_names_only() =>
+            _summary.Properties["OtherFieldNames"].Should().Be("details, reason");
+
+        [TestCase("nested-sentinel")]
+        [TestCase("uri-sentinel")]
+        [TestCase("other-value-sentinel")]
+        [TestCase("request-secret-sentinel")]
+        [TestCase("abc:123")]
+        public void It_withholds_provider_payloads_and_credentials_from_the_response(string sentinel) =>
+            _raw.Should().NotContain(sentinel);
+
+        [TestCase("nested-sentinel")]
+        [TestCase("uri-sentinel")]
+        [TestCase("other-value-sentinel")]
+        [TestCase("request-secret-sentinel")]
+        [TestCase("abc:123")]
+        public void It_withholds_provider_payloads_and_credentials_from_logs(string sentinel) =>
+            _logger
+                .Records.Select(record => record.Message)
+                .Should()
+                .OnlyContain(message => !message.Contains(sentinel));
+
+        [Test]
+        public void It_does_not_report_a_gateway_or_transport_failure() =>
+            _logger
+                .Records.Should()
+                .NotContain(record => record.Level == LogLevel.Warning || record.Level == LogLevel.Error);
+    }
+
+    [TestFixture(false)]
+    [TestFixture(true)]
+    [Parallelizable]
+    public class Given_A_Provider_400_With_Oversized_Fallback_Summaries(bool oversizedName)
+    {
+        private HttpResponseMessage _response = default!;
+        private LogRecord _summary = default!;
+        private const string StandardPrefix = "error=invalid_request, error_description=";
+
+        [SetUp]
+        public async Task SetUp()
+        {
+            JsonObject upstreamBody = new()
+            {
+                ["error"] = "invalid_request",
+                // Sanitization must precede truncation or the retained diagnostic disappears.
+                ["error_description"] = new string('\n', 3000) + new string('A', 3000),
+            };
+            for (int i = 0; i < 21; i++)
+            {
+                string name =
+                    oversizedName && i is 0
+                        ? new string('\n', 3000) + new string('B', 3000)
+                        : "field\r\n" + i;
+                upstreamBody[name] = "withheld-value-sentinel";
+            }
+            (_response, RecordingLogger<OAuthManager> logger) = await UpstreamResponds(
+                HttpStatusCode.BadRequest,
+                upstreamBody.ToJsonString()
+            );
+            _summary = logger.Records.Single(record => record.Properties.ContainsKey("StandardFields"));
+        }
+
+        [TearDown]
+        public void TearDown() => _response.Dispose();
+
+        [Test]
+        public void It_sanitizes_before_applying_the_standard_summary_bound() =>
+            _summary
+                .Properties["StandardFields"]
+                .Should()
+                .Be(StandardPrefix + new string('A', 2048 - StandardPrefix.Length) + "...[truncated]");
+
+        [Test]
+        public void It_caps_and_sanitizes_the_nonstandard_field_names() =>
+            _summary
+                .Properties["OtherFieldNames"]
+                .Should()
+                .Be(
+                    oversizedName
+                        ? new string('B', 2048) + "...[truncated]"
+                        : string.Join(", ", Enumerable.Range(0, 20).Select(i => "field" + i))
+                            + ", ...[1 more]"
+                );
+
+        [Test]
+        public void It_withholds_all_nonstandard_values() =>
+            _summary.Message.Should().NotContain("withheld-value-sentinel");
     }
 
     /// <summary>

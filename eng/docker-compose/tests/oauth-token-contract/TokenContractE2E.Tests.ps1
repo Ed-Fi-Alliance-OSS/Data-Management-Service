@@ -13,6 +13,7 @@ BeforeAll {
     if ($parseErrors.Count -gt 0) { throw "Launcher parse failed: $($parseErrors[0].Message)" }
 
     foreach ($functionName in @(
+        'Open-TokenContractStackLock',
         'Get-TokenContractOverlayLine',
         'Get-TokenContractUpstreamUri',
         'Get-TokenContractTestFilter',
@@ -58,6 +59,28 @@ Describe 'DMS-1606 token contract E2E launcher' {
             }
             else { Remove-Item -LiteralPath "Env:$key" -ErrorAction SilentlyContinue }
         }
+    }
+
+    It 'rejects another owner until the current launcher releases its handle' {
+        $path = Join-Path $TestDrive 'active.lock'
+        $owner = Open-TokenContractStackLock -Path $path
+        try {
+            { Open-TokenContractStackLock -Path $path } | Should -Throw '*Another token contract launcher*'
+        }
+        finally { $owner.Dispose() }
+
+        $nextOwner = Open-TokenContractStackLock -Path $path
+        try { $nextOwner.CanWrite | Should -BeTrue }
+        finally { $nextOwner.Dispose() }
+    }
+
+    It 'recovers an existing unowned lock marker without deleting it' {
+        $path = Join-Path $TestDrive 'stale.lock'
+        [IO.File]::WriteAllText($path, 'old marker')
+        $owner = Open-TokenContractStackLock -Path $path
+        try { $owner.CanWrite | Should -BeTrue }
+        finally { $owner.Dispose() }
+        [IO.File]::ReadAllText($path) | Should -Be 'old marker'
     }
 
     It 'is present and exposes the planned provider, engine, environment, and build switches' {

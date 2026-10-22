@@ -15,7 +15,7 @@ string upstreamUri =
     builder.Configuration["TOKEN_PROXY_UPSTREAM_URI"]
     ?? throw new InvalidOperationException("TOKEN_PROXY_UPSTREAM_URI is required.");
 if (
-    !Uri.TryCreate(upstreamUri, UriKind.Absolute, out Uri? upstream)
+    !Uri.TryCreate(upstreamUri, UriKind.Absolute, out var upstream)
     || upstream.Scheme is not ("http" or "https")
 )
 {
@@ -92,7 +92,7 @@ async Task ForwardOrFixture(HttpContext context, IHttpClientFactory clients)
 static string GetFixtureId(string authorization)
 {
     if (
-        !AuthenticationHeaderValue.TryParse(authorization, out AuthenticationHeaderValue? parsed)
+        !AuthenticationHeaderValue.TryParse(authorization, out var parsed)
         || !parsed.Scheme.Equals("Basic", StringComparison.OrdinalIgnoreCase)
         || parsed.Parameter is null
     )

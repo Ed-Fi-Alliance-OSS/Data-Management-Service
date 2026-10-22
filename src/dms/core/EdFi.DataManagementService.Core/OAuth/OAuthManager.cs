@@ -448,15 +448,13 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         )
         {
             string body = await ReadStatusClassifiedBody(response.Content);
-            JsonObject? obj = JsonObjectOrNull(body);
-            string? description = GetStringOrNull(obj?["error_description"]);
-            bool hasUsableDescription = description is not null && IsUsableOAuthDescription(description);
+            JsonObject obj = JsonObjectOrNull(body) ?? [];
+            string description = GetStringOrNull(obj["error_description"]) ?? string.Empty;
+            bool hasUsableDescription = IsUsableOAuthDescription(description);
 
             if (!hasUsableDescription)
             {
-                (string standardFields, string otherFieldNames) = obj is null
-                    ? (NoUpstreamFieldsMarker, NoUpstreamFieldsMarker)
-                    : SummarizeUpstreamFieldsForLogging(obj);
+                (string standardFields, string otherFieldNames) = SummarizeUpstreamFieldsForLogging(obj);
 
                 logger.LogInformation(
                     DiscardedUnauthorizedDetailTemplate,
@@ -469,7 +467,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             return OAuthErrorResponse.Create(
                 HttpStatusCode.Unauthorized,
                 InvalidClientError,
-                hasUsableDescription ? description! : UnauthorizedFallbackDetail,
+                hasUsableDescription ? description : UnauthorizedFallbackDetail,
                 traceId
             );
         }
@@ -542,9 +540,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         )
         {
             string body = await ReadStatusClassifiedBody(response.Content);
-            int? limit = TokenLimitFromUpstreamBody(body);
-
-            if (limit is null)
+            if (TokenLimitFromUpstreamBody(body) is not int limit)
             {
                 // A non-object response has no fields to summarize.
                 JsonObject rateLimit = JsonObjectOrNull(body) ?? new();
@@ -597,7 +593,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             // correlation header encodes DMS's own trace id, as on every other error branch.
             string message =
                 TokenLimitMessagePrefix
-                + limit.Value.ToString(CultureInfo.InvariantCulture)
+                + limit.ToString(CultureInfo.InvariantCulture)
                 + TokenLimitMessageSuffix;
 
             return OAuthErrorResponse.Create(
@@ -671,8 +667,8 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                 return null;
             }
 
-            // TryGetValue<string> succeeds only for a JSON string, so a number or a nested object
-            // in the errors array is rejected rather than stringified.
+            // Only a JSON string is accepted, so a number or a nested object in the errors array
+            // is rejected rather than stringified.
             if (GetStringOrNull(errors[0]) is not string message)
             {
                 return null;
@@ -883,7 +879,9 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
     {
         try
         {
-            return value is JsonValue jsonValue && jsonValue.TryGetValue(out string? text) ? text : null;
+            return value is JsonValue jsonValue && jsonValue.GetValueKind() is JsonValueKind.String
+                ? jsonValue.GetValue<string>()
+                : null;
         }
         catch (InvalidOperationException)
         {
