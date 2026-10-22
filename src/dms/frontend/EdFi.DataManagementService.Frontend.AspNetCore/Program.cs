@@ -259,6 +259,7 @@ if (invalidConfigurationException is null)
         app.UseRouting();
 
         app.UseMiddleware<IdentityResponseCachePolicyMiddleware>();
+        app.UseMiddleware<TokenResponseCachePolicyMiddleware>();
 
         if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
         {
