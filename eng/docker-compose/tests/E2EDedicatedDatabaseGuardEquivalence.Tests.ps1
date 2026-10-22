@@ -19,7 +19,8 @@
 # Comparison-domain rows are classified by the verdict the guard gave before the domain check existed,
 # measured per key kind: a spelling it accepted is a regression row whose only rejection is the domain
 # refusal; a spelling -ieq already rejected is a preservation row that accepts either the collision or
-# the domain diagnostic for its key.
+# the domain diagnostic for its key. E2E-name domain rows are classified the same way, by the verdict
+# the guard gave before it checked the E2E name's domain.
 
 Describe "Dedicated E2E database name comparer" {
     BeforeAll {
@@ -430,6 +431,11 @@ Describe "Dedicated E2E database guard" {
             "E2E database safety check cannot prove $source in '$script:environmentFileLabel' dedicated: after trailing whitespace is removed it contains characters outside the guard's supported comparison domain (ASCII letters, digits, underscore); refusing a destructive reset. The value is withheld."
         }
 
+        function Get-E2EDomainDiagnostic {
+            param([string]$E2EDatabaseName, [string]$EnvironmentFilePath = $script:environmentFileLabel)
+            "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' cannot be proven dedicated: after trailing whitespace is removed it contains characters outside the guard's supported comparison domain (ASCII letters, digits, underscore); refusing a destructive reset."
+        }
+
         function Get-GuardRejectionMessage {
             param([hashtable]$EnvironmentValues)
             try {
@@ -823,6 +829,150 @@ Describe "Dedicated E2E database guard" {
             }
         ) {
             { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = $Value } } | Should -Not -Throw
+        }
+    }
+
+    # Assert-SafeDatabaseName's case-insensitive match admits the Kelvin sign (U+212A), so these E2E
+    # names reach the comparison. With no protected name that -ieq folds them to, the guard accepted
+    # them before the E2E domain check.
+    Context "comparison domain: E2E names the guard accepted before the E2E domain check" {
+        It "refuses the E2E name 'edfi_dms_' + U+212A <Label>" -ForEach @(
+            @{ Label = "with no protected key configured"; EnvironmentValues = @{} }
+            @{ Label = "beside a distinct MSSQL_DB_NAME"; EnvironmentValues = @{ MSSQL_DB_NAME = "edfi_dms_primary" } }
+            @{ Label = "beside a distinct POSTGRES_DB_NAME"; EnvironmentValues = @{ POSTGRES_DB_NAME = "edfi_dms_primary" } }
+            @{ Label = "beside a distinct DATABASE_CONNECTION_STRING_ADMIN"; EnvironmentValues = @{ DATABASE_CONNECTION_STRING_ADMIN = "Server=s;Database=edfi_dms_primary;User Id=sa" } }
+        ) {
+            $e2eDatabaseName = "edfi_dms_$([char]0x212A)"
+            { Assert-SafeDatabaseName -DatabaseName $e2eDatabaseName } | Should -Not -Throw -Because "the name must reach the guard's comparison"
+
+            { Invoke-IsolatedGuard -EnvironmentValues $EnvironmentValues -E2EDatabaseName $e2eDatabaseName } |
+                Should -Throw -ExpectedMessage (Get-E2EDomainDiagnostic -E2EDatabaseName $e2eDatabaseName)
+        }
+    }
+
+    Context "comparison domain: E2E verdicts the guard already gives" {
+        It "accepts the E2E name 'edfi_dms_e2e' with the one trailing LF Assert-SafeDatabaseName admits beside <Key> = 'edfi_dms'" -ForEach @(
+            @{ Key = "MSSQL_DB_NAME"; Value = "edfi_dms" }
+            @{ Key = "POSTGRES_DB_NAME"; Value = "edfi_dms" }
+            @{ Key = "DATABASE_CONNECTION_STRING_ADMIN"; Value = "Server=s;Database=edfi_dms;User Id=sa" }
+            @{ Key = "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"; Value = "Host=h;Database=edfi_dms;Username=u" }
+        ) {
+            { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = $Value } -E2EDatabaseName "edfi_dms_e2e`n" } | Should -Not -Throw
+        }
+    }
+
+    # -ieq folds U+212A to k only when the process has culture data. The globalization mode is fixed
+    # when the runtime starts, so each row runs the guard in a child pwsh launched with
+    # DOTNET_SYSTEM_GLOBALIZATION_INVARIANT set (or removed) beforehand. The child records whether -ieq
+    # folded the pair, so a row cannot pass under the wrong mode. The invariant collision row is the
+    # regression case; the others are preservation.
+    Context "comparison domain: E2E names under each globalization mode" {
+        BeforeAll {
+            $script:globalizationChildScript = Join-Path $TestDrive "invoke-guard-globalization.ps1"
+            @'
+param([string]$InputPath, [string]$RecordPath)
+
+$inputRecord = Get-Content -LiteralPath $InputPath -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable
+foreach ($name in @(
+        "POSTGRES_DB_NAME", "MSSQL_DB_NAME", "DATABASE_CONNECTION_STRING_ADMIN",
+        "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"
+    )) {
+    Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+}
+Import-Module -Name $inputRecord.ModulePath -Force
+
+$outcome = "completed"
+$message = $null
+try {
+    Assert-E2EDatabaseIsDedicated `
+        -EnvironmentValues $inputRecord.EnvironmentValues `
+        -EnvironmentFilePath $inputRecord.EnvironmentFilePath `
+        -E2EDatabaseName $inputRecord.E2EDatabaseName
+}
+catch {
+    $outcome = "threw"
+    $message = $_.Exception.Message
+}
+
+[ordered]@{
+    Outcome = $outcome
+    Message = $message
+    IeqFolds = ("edfi_$([char]0x212A)" -ieq "edfi_k")
+} | ConvertTo-Json | Set-Content -LiteralPath $RecordPath -Encoding utf8
+'@ | Set-Content -LiteralPath $script:globalizationChildScript -Encoding utf8
+
+            $script:globalizationPwshPath = (Get-Process -Id $PID).Path
+
+            function Invoke-GuardInGlobalizationMode {
+                param([bool]$Invariant, [string]$E2EDatabaseName, [hashtable]$EnvironmentValues)
+
+                $runDirectory = Join-Path $TestDrive "globalization-$([guid]::NewGuid().ToString('N'))"
+                New-Item -ItemType Directory -Path $runDirectory | Out-Null
+                $inputPath = Join-Path $runDirectory "input.json"
+                $recordPath = Join-Path $runDirectory "record.json"
+                @{
+                    ModulePath = Join-Path $script:dockerComposeRoot "database-safety.psm1"
+                    EnvironmentFilePath = $script:environmentFileLabel
+                    E2EDatabaseName = $E2EDatabaseName
+                    EnvironmentValues = $EnvironmentValues
+                } | ConvertTo-Json | Set-Content -LiteralPath $inputPath -Encoding utf8
+
+                $savedVariable = Save-AmbientVariable -Name "DOTNET_SYSTEM_GLOBALIZATION_INVARIANT"
+                try {
+                    if ($Invariant) {
+                        [System.Environment]::SetEnvironmentVariable("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT", "1")
+                    }
+                    else {
+                        Remove-Item -LiteralPath "Env:DOTNET_SYSTEM_GLOBALIZATION_INVARIANT" -ErrorAction SilentlyContinue
+                    }
+
+                    $childOutput = & $script:globalizationPwshPath -NoProfile -NonInteractive -File $script:globalizationChildScript `
+                        -InputPath $inputPath `
+                        -RecordPath $recordPath 2>&1
+                }
+                finally {
+                    Restore-AmbientVariable -Saved $savedVariable
+                }
+
+                if (-not (Test-Path -LiteralPath $recordPath)) {
+                    throw "The globalization child wrote no record. Output:`n$($childOutput -join "`n")"
+                }
+
+                return Get-Content -LiteralPath $recordPath -Raw -Encoding utf8 | ConvertFrom-Json
+            }
+
+            $script:kelvinE2EDatabaseName = "edfi_$([char]0x212A)"
+        }
+
+        It "refuses the E2E name 'edfi_' + U+212A beside MSSQL_DB_NAME = 'edfi_k' when -ieq does not fold it" {
+            $record = Invoke-GuardInGlobalizationMode -Invariant $true -E2EDatabaseName $script:kelvinE2EDatabaseName -EnvironmentValues @{ MSSQL_DB_NAME = "edfi_k" }
+
+            $record.IeqFolds | Should -BeFalse -Because "invariant globalization mode leaves U+212A unfolded"
+            $record.Outcome | Should -Be "threw"
+            $record.Message | Should -BeExactly (Get-E2EDomainDiagnostic -E2EDatabaseName $script:kelvinE2EDatabaseName)
+        }
+
+        It "keeps the MSSQL_DB_NAME collision diagnostic for the same pair when -ieq folds it" {
+            $record = Invoke-GuardInGlobalizationMode -Invariant $false -E2EDatabaseName $script:kelvinE2EDatabaseName -EnvironmentValues @{ MSSQL_DB_NAME = "edfi_k" }
+
+            $record.IeqFolds | Should -BeTrue -Because "culture data folds U+212A to k"
+            $record.Outcome | Should -Be "threw"
+            $record.Message | Should -BeExactly (Get-DedicatedDiagnostic -Key "MSSQL_DB_NAME" -E2EDatabaseName $script:kelvinE2EDatabaseName)
+        }
+
+        It "keeps the MSSQL_DB_NAME collision diagnostic for the E2E name 'edfi_k' + LF in invariant mode" {
+            $record = Invoke-GuardInGlobalizationMode -Invariant $true -E2EDatabaseName "edfi_k`n" -EnvironmentValues @{ MSSQL_DB_NAME = "edfi_k" }
+
+            $record.IeqFolds | Should -BeFalse
+            $record.Outcome | Should -Be "threw"
+            $record.Message | Should -BeExactly (Get-DedicatedDiagnostic -Key "MSSQL_DB_NAME" -E2EDatabaseName "edfi_k`n")
+        }
+
+        It "accepts the ASCII E2E name 'edfi_dms_e2e' beside MSSQL_DB_NAME = 'edfi_k' in invariant mode" {
+            $record = Invoke-GuardInGlobalizationMode -Invariant $true -E2EDatabaseName "edfi_dms_e2e" -EnvironmentValues @{ MSSQL_DB_NAME = "edfi_k" }
+
+            $record.IeqFolds | Should -BeFalse
+            $record.Outcome | Should -Be "completed"
         }
     }
 

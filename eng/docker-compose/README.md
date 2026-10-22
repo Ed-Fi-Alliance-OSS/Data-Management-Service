@@ -141,9 +141,9 @@ name with each protected name: `POSTGRES_DB_NAME`, `MSSQL_DB_NAME`, and every `D
 `Initial Catalog` value it reads from `DATABASE_CONNECTION_STRING_ADMIN` and
 `CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING`. The comparison ignores case and trailing spaces,
 ideographic spaces (U+3000), tabs, line feeds, carriage returns and form feeds, so a protected
-`'edfi_dms '` blocks an E2E database named `edfi_dms`. A protected name that still contains anything
-other than ASCII letters, digits or underscore once that trailing whitespace is removed also stops
-provisioning, because the check cannot compare it reliably; keep protected database names to those
+`'edfi_dms '` blocks an E2E database named `edfi_dms`. An E2E or protected name that still contains
+anything other than ASCII letters, digits or underscore once that trailing whitespace is removed also
+stops provisioning, because the check cannot compare it reliably; keep database names to those
 characters. The check does not limit length: PostgreSQL uses only the first 63 bytes of a database
 name, so an E2E name and a protected name that share their first 63 characters are the same
 PostgreSQL database and the check does not catch them; keep database names to 63 characters or

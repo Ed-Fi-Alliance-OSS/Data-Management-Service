@@ -1668,6 +1668,17 @@ function Assert-E2EDatabaseIsDedicated {
     # configuration rejected as a collision keeps that diagnostic. Compatibility cost: a protected
     # name with punctuation, leading or embedded whitespace, or any non-ASCII character blocks E2E
     # provisioning. The refused value is withheld from the message.
+    #
+    # The E2E name is held to the same domain. Assert-SafeDatabaseName's case-insensitive match admits
+    # the Kelvin sign (U+212A) and, depending on the culture, U+0130 or U+0131, and whether -ieq folds
+    # those to ASCII letters depends on the process's globalization mode, so an E2E name carrying one
+    # could pass the collision checks beside the protected name it folds to. The trailing LF that
+    # Assert-SafeDatabaseName admits is removed first, as the comparer removes it.
+    $normalizedE2EDatabaseName = $E2EDatabaseName.TrimEnd($script:E2EGuardTrailingCharacters)
+    if (-not (Test-E2EGuardComparisonDomain -DatabaseName $normalizedE2EDatabaseName)) {
+        throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' cannot be proven dedicated: after trailing whitespace is removed it contains characters outside the guard's supported comparison domain (ASCII letters, digits, underscore); refusing a destructive reset."
+    }
+
     foreach ($candidate in $comparisonDomainCandidates) {
         $normalizedCandidate = $candidate.DatabaseName.TrimEnd($script:E2EGuardTrailingCharacters)
         if (-not (Test-E2EGuardComparisonDomain -DatabaseName $normalizedCandidate)) {
