@@ -27,12 +27,25 @@ $envModule = Join-Path $composeRoot 'env-utility.psm1'
 $databaseSafetyModule = Join-Path $composeRoot 'database-safety.psm1'
 $schemaModule = Join-Path $composeRoot 'dms-schema-environment.psm1'
 $primaryFailure = $null
-$lockCreated = $false
+$stackLock = $null
 $originalEnvironmentPath = $null
 $resolvedEnvironmentPath = $null
 $proxyLaunchAttempted = $false
 $e2eAttempted = $false
 $usableDmsWasStarted = $false
+
+function Open-TokenContractStackLock {
+    param([Parameter(Mandatory)] [string] $Path)
+
+    try {
+        # Ownership is the exclusive handle, not the marker's existence. OpenOrCreate also
+        # recovers markers left by a terminated launcher; the OS releases its handle on exit.
+        return [IO.File]::Open($Path, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+    }
+    catch [IO.IOException] {
+        throw 'Another token contract launcher holds the shared DMS E2E stack lock, or the lock file cannot be opened. Wait for its owner to finish and check file access before retrying.'
+    }
+}
 
 function Get-TokenContractOverlayLine {
     param(
@@ -251,14 +264,7 @@ function Invoke-TokenContractPass {
 
 try {
     New-Item -ItemType Directory -Path $derivedRoot -Force | Out-Null
-    try {
-        $lock = [IO.File]::Open($lockPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
-        $lock.Dispose()
-        $lockCreated = $true
-    }
-    catch [IO.IOException] {
-        throw 'Another token contract launcher holds the shared DMS E2E stack lock. Wait for it to finish before retrying.'
-    }
+    $stackLock = Open-TokenContractStackLock -Path $lockPath
 
     Build-TokenContractE2ETestAssembly `
         -ProjectPath (Join-Path $repoRoot 'src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj') `
@@ -405,10 +411,9 @@ finally {
         Remove-Item -LiteralPath $ownedRoot -Recurse -Force -ErrorAction SilentlyContinue
         if (Test-Path -LiteralPath $ownedRoot) { $cleanupFailures.Add('Owned token contract derived files could not be removed.') }
     }
-    if ($lockCreated) {
-        Remove-Item -LiteralPath $lockPath -Force -ErrorAction SilentlyContinue
-        if (Test-Path -LiteralPath $lockPath) { $cleanupFailures.Add('The token contract launcher lock could not be removed.') }
-    }
+    # Keep the inode/path stable: deleting it could let a new launcher lock a different file
+    # while another launcher still owns the original. An unowned marker is harmless.
+    if ($null -ne $stackLock) { $stackLock.Dispose() }
     if ($cleanupFailures.Count -gt 0) {
         $cleanupFailureText = $cleanupFailures -join ' '
         if ($null -eq $primaryFailure) { $primaryFailure = [InvalidOperationException]::new($cleanupFailureText) }

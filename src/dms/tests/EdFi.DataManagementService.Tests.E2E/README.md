@@ -88,6 +88,11 @@ an endpoint-only overlay, runs the token contract scenarios, retains a separate 
 root and qualified route passes, then removes only its Compose project resources and restarts DMS
 with the original environment. It never removes the shared `dms` network.
 
+The launcher holds an exclusive file handle for the run, including cleanup. Its `active.lock`
+file remains on disk; file existence does not indicate an active run. Normal exit or forced
+termination releases ownership, so the next launcher can reuse the file. Do not delete it while
+a launcher is running.
+
 ```pwsh
 pwsh ./eng/docker-compose/tests/oauth-token-contract/Invoke-TokenContractE2E.ps1 `
   -IdentityProvider self-contained `
