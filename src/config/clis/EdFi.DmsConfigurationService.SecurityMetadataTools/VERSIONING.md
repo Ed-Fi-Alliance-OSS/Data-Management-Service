@@ -1,8 +1,8 @@
 # Security Metadata Tools versioning
 
 This is the maintainer version policy for `EdFi.Api.SecurityMetadataTools`.
-Keep the build and release workflows linked to this document as they are
-implemented; update the implementation status below in the same changes.
+Maintain the implemented build and release workflows in accordance with this
+policy; update their documented behavior in the same changes.
 
 ## Version source and calculation
 
@@ -122,7 +122,7 @@ the patch for this recovery. Promotion changes the view of an existing package;
 it is not another publication. A new publication attempt for those same bytes
 still encounters the duplicate-version refusal above.
 
-## Implementation status and build modes
+## Build and release integration
 
 The patch property and `Get-SecurityMetadataToolsVersion` API are implemented.
 The helper supports normal calculation (preserving prerelease/build labels) and
@@ -133,9 +133,9 @@ anything. Run its existing verification from the repository root:
 Invoke-Pester -Path eng/ci/tests/SecurityMetadataToolsVersioning.Tests.ps1 -CI -Output Detailed
 ```
 
-The remaining integration points are tracked by DMS-1617:
+The implemented entry points share this version and recovery policy:
 
-| Entry point | Current status and intended integration |
+| Entry point | Implemented behavior |
 | --- | --- |
 | [build-config.ps1](../../../../build-config.ps1) | `Build -Configuration Release -DmsCSVersion <app-version> -LockedMode` builds the solution, then builds the tool at its calculated version. `Package -PackageTarget SecurityMetadataTools` restores, rebuilds, and packs only the tool; `-LockedMode` enforces its lock graph. The default `ConfigurationService` package target retains the app nuspec/publish path. Implicit `Push` selects the exact artifact for its target; normal release publication uses the gates below. |
 | [on-config-pullrequest.yml](../../../../.github/workflows/on-config-pullrequest.yml) | Config-relevant PRs, including helper-only changes, run the required `verify-security-metadata-tools` job: version/package Pester tests and a locked pack/install/convert smoke using the checkout's MinVer app version. `Config CI Gate` includes this job. The existing unit and CMS E2E jobs run the CLI tests and unchanged-file upload scenario. No package is published or promoted. |
@@ -161,4 +161,5 @@ does not push or promote anything.
 
 Direct `dotnet` project/solution builds do not apply the shared calculation; use
 `build-config.ps1` for versioned builds and packages. No separate tool version
-override is supported. Update workflow status as the remaining integrations land.
+override is supported. Keep these descriptions aligned with changes to the
+implemented build and release workflows.

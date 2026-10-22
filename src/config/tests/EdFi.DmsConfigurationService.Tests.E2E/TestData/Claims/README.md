@@ -46,6 +46,9 @@ security-metadata-tools convert-ods-xml --input export.xml --output Claims.json
 ```
 
 See [installation and verified export scope](../../../../../../docs/DATA-STANDARD-VERSIONS.md#converting-ods-security-metadata).
+The linked conversion guidance documents project-qualified legacy resource URIs
+and rejection of remaining whitespace in normalized names, including nonbreaking
+spaces. Preserve these rules when updating the shared fixture or upload scenario.
 The output is a complete document with top-level `claimSets` and `claimsHierarchy`.
 Send that file unchanged to `POST /management/upload-claims`; no wrapper, catalog
 edits, or strategy substitutions are needed. The local E2E stack enables

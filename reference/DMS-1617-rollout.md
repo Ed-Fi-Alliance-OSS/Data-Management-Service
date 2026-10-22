@@ -98,6 +98,71 @@ and copies of the generated page, redirect, Utilities and how-to HTML. These
 ignored build artifacts supplement this committed preparation record. The clean
 build had only non-failing update-date/Node localStorage warnings.
 
+## Final contract and combined verification — DMS-1617-R2-F3
+
+Prepared public-docs revision: `a7cfd4d83ecd1fa6f3edcf5aa664b5a66dbf9515` on
+local branch `DMS-1617` in `/home/brad/work/ed-fi-docs-DMS-1617`, following the
+original preparation commit recorded above. This revision is committed, **not
+pushed or deployed**. The original base, incoming links, redirect, and loading
+instructions are unchanged.
+
+The final page and active repository guidance document the R2-F1/R2-F2 contract:
+exact legacy-prefix migration adds `ed-fi/` for nonempty single-segment resource
+suffixes, while domain/service/namespaced paths and current/external URIs are
+preserved; literal-space/hyphen normalization rejects all remaining whitespace,
+including nonbreaking spaces. Package usage and maintainer guidance describe the
+implemented behavior without temporary development claims. The 8.1 changelog
+records the new package/command and removal of the retired commands/options and
+hierarchy-array output. Version allocation and promotion recovery policy are
+unchanged. R2-F5 diagnostic-readability polish remains deferred and is not marked
+complete.
+
+Combined verification on 2026-10-22, reused for R2-F1/R2-F2/R2-F3:
+
+- Full freshly built Release tool suite: **247/247 passed**, zero failed/skipped;
+  TRX counters independently inspected. Evidence:
+  `TestResults/DMS-1617-R2-F3-tests.log` and the tool unit project's
+  `TestResults/DMS-1617-R2-F3.trx`.
+- `minver -t v` calculated app version `8.1.0-beta.0.1.71` from checkout
+  `98d1a88a16a07c46556fc6a8cabd433e1e652357` with the final documentation changes.
+  `Test-SecurityMetadataToolsPackage.ps1 -AppVersion 8.1.0-beta.0.1.71` passed:
+  locked restore/build/pack, fresh local-only installation, bundled CMS schema,
+  preserved Secrets contract `1.0.0`, and representative conversion equal to the
+  independently corrected expected JSON. The final README is byte-identical at
+  the package root, with corrected conversion rules and the absolute version-policy
+  link. Package: `EdFi.Api.SecurityMetadataTools.8.1.0-beta.0.1.71.nupkg`;
+  SHA-256: `bf288ef00adabf6c0cc0004b44d41806dea49132360032b5f1c629a7fd52bb49`.
+  Evidence: `TestResults/DMS-1617-R2-F3-package.log`. This is a local prerelease
+  package check, not published-feed verification.
+- Documentation repository's required `npm run lint` and `npm run build` each
+  passed once after all page edits; explicit markdownlint on the affected page
+  also passed. Build retained broken-link validation and emitted only the
+  existing non-failing update-date/Node localStorage warnings. No unrelated docs
+  files or dependencies changed in this pass.
+- Generated page inspection verified corrected URI/whitespace rules, incoming
+  Utilities/how-to links, all linked how-to anchors, and the executed redirect's
+  exact target with preserved query/fragment. Existing fragment/loading guidance
+  remains byte-identical to the original 8.1 baseline. Evidence:
+  `TestResults/DMS-1617-R2-F3-docs-{lint,build,inspection}.log` and
+  `TestResults/DMS-1617-R2-F3-verify-docs.py` in the DMS checkout.
+- Root/subcommand help and version output agree with documented CLI syntax;
+  32 affected repository Markdown paths/anchors resolve (new entries only in
+  the general release changelog). Absolute package links resolve to their source
+  paths in this checkout. Evidence: `TestResults/DMS-1617-R2-F3-{help,links}.log`.
+  Retired-name search outside `reference/` found no matches; stale pending
+  integration wording is absent from the specified active guides. Both
+  repositories pass `git diff --check`.
+
+Separate pre-existing documentation finding: an unchanged entry in
+`docs/changelog/8.1.0.md` links to
+`reference/adr-etag-from-content-version.md#amendment-2026-09-30-if-none-match-is-a-conditional-read-validator-only`,
+whose anchor is absent. The new tool changelog links resolve. This unrelated
+anchor was left unchanged; it did not fail the public documentation build.
+
+Hosted workflow verification, publication/promotion, published-feed installation,
+and public-doc deployment remain the outstanding follow-ups below. No hosted
+run, publication, promotion, or deployment was performed in this verification.
+
 ## Post-merge follow-ups
 
 These follow-ups remain **outstanding** and do not gate DMS-1617 completion.

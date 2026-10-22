@@ -11,14 +11,14 @@ and the existing CMS contract at
 | Export structure | CMS document mapping |
 | --- | --- |
 | `SecurityMetadata/Claims/Claim` | `claimsHierarchy` entries |
-| `Claim/@name` | Claim `name`, with only the leading `http://ed-fi.org/ods/identity/claims/` migrated to `http://ed-fi.org/identity/claims/` |
+| `Claim/@name` | Claim `name`: migrate the exact leading `http://ed-fi.org/ods/identity/claims/` to `http://ed-fi.org/identity/claims/`; also add `ed-fi/` for a nonempty single-segment suffix (legacy `academicWeek` becomes `http://ed-fi.org/identity/claims/ed-fi/academicWeek`). Preserve domain, service, and already-namespaced suffixes and already-current/external URIs |
 | Nested `Claim/Claims/Claim` | Nested `claims` entries, retaining order and inheritance |
 | `Claim/@claimId` | Recognized export metadata; omitted from JSON |
 | `Claim/DefaultAuthorization/Action/@name` | `defaultAuthorization.actions[].name` |
 | Default action `AuthorizationStrategies/AuthorizationStrategy/@name` | `authorizationStrategies[].name`, preserving all names and their order |
 | Empty `DefaultAuthorization` | Omitted `defaultAuthorization`; the CMS schema requires at least one action when present |
 | Default action with no strategies | Required `authorizationStrategies: []` |
-| `Claim/ClaimSets/ClaimSet/@name` | Remove literal spaces/hyphens; use the same mapped name in `claimSets[].name` and one top-level catalog entry with `claimSetName` and `isSystemReserved: false` |
+| `Claim/ClaimSets/ClaimSet/@name` | Remove literal spaces/hyphens; reject remaining whitespace (including nonbreaking spaces), controls, empty names, or names over 256 UTF-16 code units; use the same mapped name in `claimSets[].name` and one top-level catalog entry with `claimSetName` and `isSystemReserved: false` |
 | Claim set `Actions/Action/@name` | Reference `actions[].name` |
 | Claim-set action `AuthorizationStrategyOverrides/AuthorizationStrategy/@name` | `authorizationStrategyOverrides[].name`, preserving all names and their order |
 | Empty override container | Explicit `authorizationStrategyOverrides: []` |
@@ -31,10 +31,11 @@ empty strategies/overrides, and independent conversion calls.
 
 `OdsXmlToClaimsConverterNameMappingTests.cs` covers exact name normalization,
 case-insensitive collisions across the tree, repeated references, 256/257-character
-boundaries after normalization, control characters, Unicode and case preservation,
-exact leading URI migration, near matches, and URI collisions in both traversal
-orders. Mapping indexes are isolated per conversion. The representative test reads
-the checked-in `OdsSecurityMetadata/expected-claims.json` unchanged and compares
+boundaries after normalization, control and remaining-whitespace rejection
+(including nonbreaking spaces), valid Unicode and case preservation, project-qualified
+legacy resource migration, preserved domain/service/namespaced paths, near matches,
+and URI collisions in both traversal orders. Mapping indexes are isolated per
+conversion. The representative test reads the checked-in `OdsSecurityMetadata/expected-claims.json` unchanged and compares
 the entire document, including array order, with the converted export. It never
 regenerates the expected document.
 
@@ -59,5 +60,8 @@ converter's failure path/messages with independent direct CMS validation to ensu
 the final gate cannot be bypassed. Existing positive cases and the representative
 comparison also run through this gate; the schema and acceptance oracle are unchanged.
 
-The converter remains internal; CLI wiring is DMS-1617-06. These examples do not
-establish broader export-format support or runtime strategy compatibility.
+Command tests exercise the actual CLI parsing/handler and process paths, including
+validate-before-write behavior, forced overwrite protection, and XML decoding.
+These examples do not establish broader export-format support or runtime strategy
+compatibility. Prefix-only legacy resource mapping and nonbreaking-space acceptance
+are not the supported conversion contract.

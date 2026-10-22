@@ -9,8 +9,8 @@ stable tool publication, including normal app releases after independent tool
 patches. Prerelease calculations do not consume a patch. Follow the single
 [versioning policy](clis/EdFi.DmsConfigurationService.SecurityMetadataTools/VERSIONING.md)
 for selected refs, dry runs, duplicate-version refusal, exact-version promotion,
-and promotion recovery. Keep its implementation status current as build and
-release integration lands.
+and promotion recovery. Maintain the implemented build and release integration
+against that policy and keep its entry-point descriptions current.
 
 ## Authorization Model
 

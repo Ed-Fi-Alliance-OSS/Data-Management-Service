@@ -276,6 +276,18 @@ identify the verified ODS/API 7.3.2 / Data Standard 5.2.0 seed and pinned SQL ex
 format. They do not establish conversion support for every ODS or Data Standard
 version. Review other sources against that format before adding a standard.
 
+Claim-set normalization removes only literal spaces and hyphens, then rejects
+remaining whitespace (including nonbreaking spaces), controls, empty names, and
+names over 256 UTF-16 code units. Valid non-ASCII spelling and case are preserved;
+distinct source names colliding case-insensitively fail. URI mapping recognizes
+only the exact, case-sensitive leading `http://ed-fi.org/ods/identity/claims/`
+prefix and replaces it with `http://ed-fi.org/identity/claims/`. A nonempty suffix
+without `/` also gains `ed-fi/`, so legacy `academicWeek` becomes
+`http://ed-fi.org/identity/claims/ed-fi/academicWeek`. Domain, service, and
+already-namespaced suffixes retain their paths; already-current and external
+URIs remain unchanged. URI collisions fail. Prefix-only legacy resource mapping
+and nonbreaking-space acceptance are not supported.
+
 The converter validates a complete CMS document with top-level `claimSets` and
 `claimsHierarchy`. Upload the generated file unchanged to
 `POST /management/upload-claims`, without wrapping it or extracting its hierarchy.

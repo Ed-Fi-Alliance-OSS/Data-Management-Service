@@ -99,8 +99,11 @@ endpoint name, then resource name. `ClaimSetExtensions.FindMatchingResourceClaim
 in the same directory compares the complete URI. The independent standard-name
 check uses `src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/Standards/ds52/Claims.json`;
 these are review inputs, not new runtime dependencies or a compatibility catalog.
-Only literal spaces and hyphens are removed from source set names. The complete
-source-to-catalog mapping is:
+Only literal spaces and hyphens are removed from source set names. Remaining
+whitespace (including nonbreaking spaces), controls, empty normalized names, and
+names over 256 UTF-16 code units are rejected; valid non-ASCII spelling and case
+are preserved. Distinct names colliding case-insensitively are rejected. The
+complete source-to-catalog mapping is:
 
 | Source name | Catalog/reference name |
 | --- | --- |
