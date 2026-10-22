@@ -1031,8 +1031,8 @@ public class Given_TrackedChangeQueryPlanner
     }
 
     // DMS-1193 Task 47: a custom-view predicate is one more authorization AND term. It must land inside the
-    // /deletes filtered subquery WHERE after the tombstone and change-version conditions, correlated on c,
-    // and its descriptor resource-key parameters ride along with the command's parameters.
+    // /deletes filtered subquery WHERE after the tombstone and change-version conditions, correlated on c.
+    // Custom views bind no parameters: descriptor resource keys are literals.
     [Test]
     public void It_places_a_custom_view_predicate_after_the_tombstone_and_version_conditions_in_deletes_sql()
     {

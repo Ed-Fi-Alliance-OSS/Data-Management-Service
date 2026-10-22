@@ -18,10 +18,9 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
     private const string ResourceKeyIdParameterName = "@ResourceKeyId";
     private const string DescriptorResourceKeyIdParameterPrefix = "@DescriptorResourceKeyId";
 
-    private static readonly DbTableName _descriptorTable = new(new DbSchemaName("dms"), "Descriptor");
     private static readonly DbColumnName _documentIdColumn = new("DocumentId");
-    private static readonly DbColumnName _descriptorResourceKeyIdColumn = new("ResourceKeyId");
-    private static readonly DbColumnName _descriptorIdColumn = new("DescriptorId");
+    private static readonly DescriptorProbeTarget _descriptorProbe =
+        DescriptorProbeTarget.SharedDescriptorTable;
 
     private readonly SqlDialect _dialect = dialect;
 
@@ -471,13 +470,13 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
         // A recreated descriptor is the same identity when its lowered whole URI matches the tombstone's
         // under the write path's fold, so the join seeks UX_Descriptor_UriLowered_ResourceKeyId.
         string descriptorJoinSql =
-            $"LEFT JOIN {Quote(_descriptorTable)} {descriptorAlias} ON "
-            + $"{descriptorAlias}.{Quote(_descriptorResourceKeyIdColumn)} = {resourceKeyIdParameterName} "
+            $"LEFT JOIN {Quote(_descriptorProbe.DescriptorTable)} {descriptorAlias} ON "
+            + $"{descriptorAlias}.{Quote(_descriptorProbe.ResourceKeyIdColumn)} = {resourceKeyIdParameterName} "
             + $"AND {BuildLiveDescriptorUriMatch(descriptorAlias, field.OldColumn.OldColumnName, codeValueColumn.OldColumnName)}";
 
         return new DescriptorIdentityJoin(
             descriptorJoinSql,
-            $"live.{Quote(descriptorIdentityMetadata.LiveDescriptorFkColumn)} = {descriptorAlias}.{Quote(_descriptorIdColumn)}",
+            $"live.{Quote(descriptorIdentityMetadata.LiveDescriptorFkColumn)} = {descriptorAlias}.{Quote(_descriptorProbe.DescriptorIdColumn)}",
             descriptorIdentityMetadata.DescriptorResource
         );
     }
@@ -506,8 +505,8 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
 
         predicates.Add($"c.{Quote(resourceKeyIdColumn.ColumnName)} = {ResourceKeyIdParameterName}");
         joins.Add(
-            $"LEFT JOIN {Quote(_descriptorTable)} live ON "
-                + $"live.{Quote(_descriptorResourceKeyIdColumn)} = {ResourceKeyIdParameterName} "
+            $"LEFT JOIN {Quote(_descriptorProbe.DescriptorTable)} live ON "
+                + $"live.{Quote(_descriptorProbe.ResourceKeyIdColumn)} = {ResourceKeyIdParameterName} "
                 + $"AND {BuildLiveDescriptorUriMatch("live", namespaceColumn.OldColumnName, codeValueColumn.OldColumnName)}"
         );
         predicates.Add($"live.{Quote(_documentIdColumn)} IS NULL");
@@ -520,7 +519,7 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
     ) =>
         NaturalKeyCapturePredicateBuilder.BuildDescriptorUriFoldPredicate(
             _dialect,
-            DescriptorProbeTarget.SharedDescriptorTable,
+            _descriptorProbe,
             descriptorAlias,
             NaturalKeyCapturePredicateBuilder.BuildTrackedDescriptorUri(
                 _dialect,
