@@ -26,7 +26,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 /// SQL Server evidence that every descriptor probe surface folds its input under the identity collation
 /// inside <c>LOWER</c>, so the database default never decides a descriptor's identity. ds-5.2 is provisioned
 /// into a <c>Turkish_100_CS_AS</c> database, where an unqualified <c>LOWER(N'I')</c> yields dotless
-/// <c>ı</c> while the stored <c>UriLowered</c> holds <c>i</c>.
+/// <c>i</c> (U+0131) while the stored <c>UriLowered</c> holds <c>i</c>.
 /// </summary>
 /// <remarks>
 /// Each stored descriptor carries an uppercase ASCII <c>I</c> and each probe input is a case variant that

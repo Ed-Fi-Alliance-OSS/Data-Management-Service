@@ -268,7 +268,7 @@ public class Given_A_Mssql_Case_Sensitive_Default_Database_With_Identity_Collati
     // Recreation compares lowered whole URIs. Dotted I (U+0130) lowers to i under the identity collation's
     // LOWER, though its comparison weights alone keep the two apart.
     [TestCase("Casing Recreation", "CASING RECREATION")]
-    [TestCase("Dotted i Recreation", "Dotted İ Recreation")]
+    [TestCase("Dotted i Recreation", "Dotted \u0130 Recreation")]
     public async Task It_suppresses_a_deleted_descriptor_recreated_with_an_equal_lowered_uri(
         string oldCodeValue,
         string newCodeValue
