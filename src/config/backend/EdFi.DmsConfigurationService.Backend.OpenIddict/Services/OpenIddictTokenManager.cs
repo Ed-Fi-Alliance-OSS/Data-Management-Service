@@ -450,7 +450,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         /// token, another client's token (never an oracle), and a token whose verification or status
         /// dependency failed, which is logged at Error with its category (DMS-1556 §4.7). Verification
         /// uses the signing-key snapshot, like the bearer path and unlike revocation, and only the
-        /// verified token's claims are reported. The comparison and parsing logic between the boundaries
+        /// verified token's claims are reported. The status read is scoped to the authenticated application,
+        /// as revocation's UPDATE is. The comparison and parsing logic between the boundaries
         /// is deliberately not wrapped, so a fault there propagates as an exception (DMS-1327 D-13.1).
         /// Nothing from the caller or a client-store exception reaches a log on the authentication path
         /// except the sanitized canonical client id and exception type names (DMS-1327 D-15).
@@ -502,7 +503,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
 
             if (verification.Token is not { } jwtToken)
             {
-                LogVerificationFailure("Token introspection failed", verification);
+                LogIntrospectionVerificationFailure(verification.Failure, callerClientId);
                 return new TokenIntrospectionResult.Inactive();
             }
 
@@ -529,7 +530,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
             string? status;
             try
             {
-                status = await GetTokenStatusAsync(tokenId);
+                status = await GetTokenStatusForApplicationAsync(tokenId, applicationInfo.Id);
             }
             catch (AuthenticationDependencyUnavailableException ex)
             {
@@ -666,6 +667,44 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 default:
                     _logger.LogWarning(
                         "Revocation ignored: the supplied token failed verification (signature or key id); calling client {CallerClientId}",
+                        sanitizedCaller
+                    );
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Fixed-category logging for an introspected token that failed verification, as for
+        /// revocation (DMS-1327 D-07.5): the validator's <c>Detail</c> is not written, because it
+        /// incorporates library exception messages and the token's unverified <c>kid</c>. Severities
+        /// match <see cref="LogVerificationFailure"/>.
+        /// </summary>
+        private void LogIntrospectionVerificationFailure(
+            TokenVerificationFailure failure,
+            string callerClientId
+        )
+        {
+            string sanitizedCaller = LoggingUtility.SanitizeForLog(callerClientId);
+            switch (failure)
+            {
+                case TokenVerificationFailure.Expired:
+                    _logger.LogDebug(
+                        "Introspection answered inactive: the supplied token failed the lifetime check (token expired); calling client {CallerClientId}",
+                        sanitizedCaller
+                    );
+                    break;
+
+                case TokenVerificationFailure.UntrustedIssuerOrAudience:
+                    _logger.LogWarning(
+                        "Introspection answered inactive: the supplied token failed the issuer or audience check; verify the configured Authority "
+                            + "and Audience if this affects every token; calling client {CallerClientId}",
+                        sanitizedCaller
+                    );
+                    break;
+
+                default:
+                    _logger.LogWarning(
+                        "Introspection answered inactive: the supplied token failed verification (signature or key id); calling client {CallerClientId}",
                         sanitizedCaller
                     );
                     break;
@@ -1024,6 +1063,27 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
             try
             {
                 return await _tokenRepository.GetTokenStatusAsync(tokenId);
+            }
+            catch (Exception ex) when (ex is DbException or TimeoutException or OperationCanceledException)
+            {
+                throw new AuthenticationDependencyUnavailableException(
+                    AuthenticationDependencyCategory.TokenStatusStore,
+                    "The token status store could not be read.",
+                    ex
+                );
+            }
+        }
+
+        /// <summary>
+        /// Reads a token's status through the authenticated application, with the same
+        /// dependency-failure classification as <see cref="GetTokenStatusAsync"/>. A row stored for
+        /// another application reads as unknown.
+        /// </summary>
+        private async Task<string?> GetTokenStatusForApplicationAsync(Guid tokenId, Guid applicationId)
+        {
+            try
+            {
+                return await _tokenRepository.GetTokenStatusForApplicationAsync(tokenId, applicationId);
             }
             catch (Exception ex) when (ex is DbException or TimeoutException or OperationCanceledException)
             {

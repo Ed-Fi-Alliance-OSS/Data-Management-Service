@@ -17,6 +17,7 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -26,7 +27,7 @@ using static EdFi.DmsConfigurationService.Backend.IdentityProviderError;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
-public class IdentityModule : IEndpointModule
+public class IdentityModule(IConfiguration configuration) : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
@@ -50,15 +51,19 @@ public class IdentityModule : IEndpointModule
             .WithMetadata(
                 OAuthErrorContractMetadata.Revocation,
                 ExceptionTypeOnlyLoggingMetadata.Instance,
-                BearerAuthenticationExemptMetadata.Instance
+                BearerAuthenticationExemptMetadata.Instance,
+                ClientCredentialAuthenticationMetadata.Instance
             );
         // The same contract as /connect/revoke. RFC 7662 §2.1 requires some form of authorization
-        // to call the endpoint; CMS uses client credentials (RFC 6749 §2.3), as at /connect/revoke,
-        // so a bearer header neither authenticates the caller nor reaches bearer processing.
+        // to call the endpoint; in self-contained mode CMS uses client credentials (RFC 6749 §2.3),
+        // as at /connect/revoke. Keycloak mode registers no introspection manager, and the endpoint
+        // then makes no credential check. In both modes a bearer header neither authenticates the
+        // caller nor reaches bearer processing.
         // Failures are answered in the OAuth error format. The manager the handler resolves can be
         // constructed by a plugin, so failures are logged by exception type names only
-        // (DMS-1327 D-03, D-15, D-17, CS-AUTH.md).
-        endpoints
+        // (DMS-1327 D-03, D-15, D-17, CS-AUTH.md). The OpenAPI document describes the client
+        // credentials only in self-contained mode, the mode that checks them.
+        RouteHandlerBuilder introspection = endpoints
             .MapPost("connect/introspect/{**contextPath}", IntrospectToken)
             .DisableAntiforgery()
             .WithMetadata(
@@ -66,6 +71,16 @@ public class IdentityModule : IEndpointModule
                 ExceptionTypeOnlyLoggingMetadata.Instance,
                 BearerAuthenticationExemptMetadata.Instance
             );
+        if (
+            string.Equals(
+                configuration["AppSettings:IdentityProvider"],
+                "self-contained",
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
+        {
+            introspection.WithMetadata(ClientCredentialAuthenticationMetadata.Instance);
+        }
     }
 
     private async Task<IResult> RegisterClient(
@@ -457,7 +472,7 @@ public class IdentityModule : IEndpointModule
     /// <summary>
     /// The outcome of <see cref="ReadClientAuthenticatedFormAsync"/>: the response that answers the
     /// request, or the client credentials and token parameters the endpoint goes on to use.
-    /// <paramref name="BasicAttempted"/> says whether the caller attempted Basic authentication, which
+    /// <c>BasicAttempted</c> says whether the caller attempted Basic authentication, which
     /// decides the shape of a later <c>invalid_client</c> answer.
     /// </summary>
     private abstract record ClientAuthenticatedForm

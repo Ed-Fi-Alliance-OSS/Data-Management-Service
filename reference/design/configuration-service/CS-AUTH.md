@@ -25,7 +25,7 @@ The CMS exposes standard OAuth 2.0 endpoints:
 | Endpoint | Purpose | Caller authentication |
 | --- | --- | --- |
 | `POST /connect/token` | Issue an access token (client credentials grant only) | Anonymous (client credentials in the request) |
-| `POST /connect/introspect` | Introspect a token (RFC 7662) | Client credentials (HTTP Basic or form body, exactly one of them) [^introspect] |
+| `POST /connect/introspect` | Introspect a token (RFC 7662) | `self-contained`: client credentials (HTTP Basic or form body, exactly one of them); `keycloak`: none, and every token is reported inactive [^introspect] |
 | `POST /connect/revoke` | Revoke a token (RFC 7009) | Client credentials (HTTP Basic or form body, exactly one of them) [^revoke] |
 
 [^revoke]: RFC 7009 §2.1 requires the revocation caller to authenticate the same
@@ -36,7 +36,8 @@ and not a bearer access token. Both identity provider modes enforce it and both 
 
 [^introspect]: RFC 7662 §2.1 requires some form of authorization to call the introspection endpoint, such as client
 authentication or a bearer access token, so that it cannot be used to scan for valid tokens.
-The Configuration Service uses client credentials, as at `/connect/revoke`; a bearer access token is not accepted.
+In `self-contained` mode the Configuration Service uses client credentials, as at `/connect/revoke`; a bearer access
+token is not accepted. In `keycloak` mode it makes no credential check (see [Token introspection](#token-introspection)).
 RFC 7662 §2.3 answers invalid client credentials with `401`, "as described in Section 5.2" of RFC 6749.
 The endpoint sends that `401`, with a `WWW-Authenticate: Basic` challenge, when HTTP Basic was attempted.
 Failed form credentials get `400 invalid_client`, as at `/connect/revoke`: RFC 6749 §5.2 requires the `401` only for
@@ -60,7 +61,9 @@ The `self-contained` provider does not reject an ungranted scope: it issues the 
 Both `/openapi/v1.json` and `/metadata/specifications` declare an `oauth2_client_credentials` scheme whose `tokenUrl` is the document's own server URL (request scheme, host and path base) followed by `/connect/token`.
 The token URL follows the address the document was requested on, as the server URL and the DMS OpenAPI token URL do; the discovery document instead builds its endpoints from `IdentitySettings:Authority`, because services fetch it to validate tokens.
 The scheme lists the scopes `edfi_admin_api/full_access`, `edfi_admin_api/readonly_access` and `edfi_admin_api/authMetadata_readonly_access`.
-Operations that need no token (`/connect/*`, `GET /`, `GET /tenancy`, `GET /health` and discovery) declare an empty `security` array.
+Operations that need no token (`/connect/register`, `/connect/token`, `GET /`, `GET /tenancy`, `GET /health` and discovery) declare an empty `security` array.
+`/connect/revoke`, and `/connect/introspect` in `self-contained` mode, instead require a `client_secret_basic` HTTP Basic scheme, whose description notes that the credentials may be sent as form fields instead.
+In `keycloak` mode `/connect/introspect` makes no credential check and declares an empty `security` array.
 A stock Swagger UI can therefore authorize against the Configuration Service in both modes.
 
 ## Token revocation
@@ -177,9 +180,9 @@ authentication error, because request shape is checked first. A public client is
 with the same `invalid_client` description as a wrong secret, so the response does not
 reveal the client's type.
 
-This is the one CMS endpoint that does not answer in the `application/problem+json`
-contract of [DMS-1218](./DMS-1218-cms-error-response-compliance.md), and the departure is
-deliberate: `/connect/revoke` is an OAuth endpoint, and an OAuth client reads `error` off the
+This endpoint and `/connect/introspect` are the two CMS endpoints that do not answer in the
+`application/problem+json` contract of [DMS-1218](./DMS-1218-cms-error-response-compliance.md), and the departure is
+deliberate: both are OAuth endpoints, and an OAuth client reads `error` off the
 root of the body. It covers every error the endpoint produces, including the missing-token
 `400` (which DMS-1218 had converted to problem details) and the `500` for an unexpected
 fault. Responses produced before the endpoint is selected (Kestrel request-line and header
@@ -492,7 +495,8 @@ ordinally, so a case variant is an unknown client (`invalid_client`).
   This is an exception to the problem-details format DMS-1218 gave that response, as it is for revoke.
   Failed credentials answer `invalid_client`: `401` with a `WWW-Authenticate: Basic` challenge when HTTP Basic was attempted, `400` otherwise.
 - **Only the token's own client receives metadata.**
-  Ownership compares the token's `client_id` claim with the caller's stored client id, ordinally.
+  Ownership compares the token's `client_id` claim with the caller's stored client id, ordinally, and the token's status
+  is read only from a row stored for the calling application, as revocation's update is.
   For the owner's valid token the answer is `200` with `active` true, `client_id`, `scope`, `exp`, `iat`, `sub`, `aud`, `iss` and `token_type` `Bearer`.
   `exp` and `iat` are JSON integers.
 - **Every other outcome is exactly `{"active": false}`.**
@@ -981,9 +985,11 @@ request that found the snapshot overdue. It is not a fault. The message
 ### Connection capacity
 
 The snapshot takes key reads off the steady-state request path; the exceptions are listed
-under [The key snapshot](#the-key-snapshot). Bearer authentication and introspection still
-open a database connection for the uncached status check of every token that passes
-verification with a valid `jti`, and most endpoints read their own data.
+under [The key snapshot](#the-key-snapshot). Bearer authentication still opens a database
+connection for the uncached status check of every token that passes verification with a valid
+`jti`, and introspection for the status of the caller's own verified token.
+Token, introspection and revocation requests also read the calling client and verify its secret
+(PBKDF2, `IdentitySettings:ClientSecretHashingIterations`), and most endpoints read their own data.
 Under heavy concurrency the database's connection limit can still be reached. See the
 connection-capacity note in
 [Signing-key settings](../../../docs/CONFIGURATION.md#signing-key-settings-configuration-service-self-contained-only).

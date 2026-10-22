@@ -128,7 +128,8 @@ _ = app.Services.GetRequiredService<IOptions<DatabaseOptions>>().Value;
 // DatabaseOptions, because the self-contained manager's repository reads those options when it is
 // constructed: a rejected key must stop startup with the validator's text, not as a manager that could
 // not be constructed. Before ReportInvalidConfiguration and the database work, so a host that cannot
-// revoke tokens never starts serving (DMS-1327 D-12).
+// revoke tokens, or a self-contained host that could not authenticate introspection callers, never
+// starts serving (DMS-1327 D-12).
 EnsureTokenRevocationSupport(app);
 EnsureTokenIntrospectionSupport(app);
 

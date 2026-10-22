@@ -38,6 +38,11 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
             return await dataRepository.GetTokenStatusAsync(tokenId);
         }
 
+        public async Task<string?> GetTokenStatusForApplicationAsync(Guid tokenId, Guid applicationId)
+        {
+            return await dataRepository.GetTokenStatusForApplicationAsync(tokenId, applicationId);
+        }
+
         public async Task<bool> RevokeTokenAsync(Guid tokenId, Guid applicationId)
         {
             return await dataRepository.RevokeTokenAsync(tokenId, applicationId);

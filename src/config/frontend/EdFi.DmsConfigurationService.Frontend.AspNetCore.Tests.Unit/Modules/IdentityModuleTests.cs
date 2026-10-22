@@ -3307,6 +3307,7 @@ public class IntrospectionOwnershipTests
         protected readonly IOpenIddictTokenRepository TokenRepository = A.Fake<IOpenIddictTokenRepository>();
         protected readonly IClientSecretHasher SecretHasher = A.Fake<IClientSecretHasher>();
         protected readonly Guid Jti = Guid.NewGuid();
+        protected readonly Guid OwnerApplicationId = Guid.NewGuid();
         protected readonly DateTimeOffset IssuedAt = DateTimeOffset.FromUnixTimeSeconds(
             DateTimeOffset.UtcNow.AddMinutes(-1).ToUnixTimeSeconds()
         );
@@ -3376,8 +3377,18 @@ public class IntrospectionOwnershipTests
                 );
             RevocationOwnershipTests.RegisterApprovedClient(TokenRepository, OwnerClientId);
             RevocationOwnershipTests.RegisterApprovedClient(TokenRepository, OtherClientId);
+            A.CallTo(() => TokenRepository.GetApplicationByClientIdAsync(OwnerClientId))
+                .Returns(
+                    new ApplicationInfo
+                    {
+                        Id = OwnerApplicationId,
+                        ClientId = OwnerClientId,
+                        IsApproved = true,
+                    }
+                );
             A.CallTo(() => SecretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
-            A.CallTo(() => TokenRepository.GetTokenStatusAsync(Jti)).Returns("valid");
+            A.CallTo(() => TokenRepository.GetTokenStatusForApplicationAsync(Jti, OwnerApplicationId))
+                .Returns("valid");
             Arrange();
 
             _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -3494,7 +3505,14 @@ public class IntrospectionOwnershipTests
 
         protected override void Arrange() =>
             A.CallTo(() => TokenRepository.GetApplicationByClientIdAsync(NonCanonicalClientId))
-                .Returns(new ApplicationInfo { ClientId = OwnerClientId, IsApproved = true });
+                .Returns(
+                    new ApplicationInfo
+                    {
+                        Id = OwnerApplicationId,
+                        ClientId = OwnerClientId,
+                        IsApproved = true,
+                    }
+                );
     }
 
     /// <summary>
@@ -3526,7 +3544,8 @@ public class IntrospectionOwnershipTests
 
         [Test]
         public void It_does_not_read_the_token_status() =>
-            A.CallTo(() => TokenRepository.GetTokenStatusAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => TokenRepository.GetTokenStatusForApplicationAsync(A<Guid>._, A<Guid>._))
+                .MustNotHaveHappened();
     }
 
     [TestFixture]
@@ -3545,7 +3564,8 @@ public class IntrospectionOwnershipTests
         protected override string Token => OwnedToken();
 
         protected override void Arrange() =>
-            A.CallTo(() => TokenRepository.GetTokenStatusAsync(Jti)).Returns((string?)null);
+            A.CallTo(() => TokenRepository.GetTokenStatusForApplicationAsync(Jti, OwnerApplicationId))
+                .Returns((string?)null);
 
         [Test]
         public void It_answers_200_active_false() => AssertInactive();
@@ -3631,7 +3651,7 @@ public class IntrospectionOwnershipTests
         protected override string Token => OwnedToken();
 
         protected override void Arrange() =>
-            A.CallTo(() => TokenRepository.GetTokenStatusAsync(Jti))
+            A.CallTo(() => TokenRepository.GetTokenStatusForApplicationAsync(Jti, OwnerApplicationId))
                 .Throws(new StoreUnavailableException("status store unavailable"));
 
         [Test]

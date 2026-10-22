@@ -3738,7 +3738,8 @@ public class OpenIddictTokenManagerTests
             StubAuthenticatedCaller(OwnerClientId);
 
             var jti = Guid.NewGuid();
-            A.CallTo(() => _tokenRepository.GetTokenStatusAsync(jti)).Returns("valid");
+            A.CallTo(() => _tokenRepository.GetTokenStatusForApplicationAsync(jti, _callerApplicationId))
+                .Returns("valid");
             string token = CreateIntrospectableToken(signingKey, jti, OwnerClientId);
             _mintedExp = new JwtSecurityTokenHandler().ReadJwtToken(token).Payload.Expiration!.Value;
 
@@ -3778,7 +3779,8 @@ public class OpenIddictTokenManagerTests
             StubAuthenticatedCaller(OtherClientId);
 
             var jti = Guid.NewGuid();
-            A.CallTo(() => _tokenRepository.GetTokenStatusAsync(jti)).Returns("valid");
+            A.CallTo(() => _tokenRepository.GetTokenStatusForApplicationAsync(jti, _callerApplicationId))
+                .Returns("valid");
             string token = CreateIntrospectableToken(signingKey, jti, OwnerClientId);
 
             _result = await CreateConfiguredTokenManager()
@@ -3791,7 +3793,121 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_never_reads_the_token_status() =>
-            A.CallTo(() => _tokenRepository.GetTokenStatusAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.GetTokenStatusForApplicationAsync(A<Guid>._, A<Guid>._))
+                .MustNotHaveHappened();
+    }
+
+    // The ownership comparison is deliberately case-sensitive (StringComparison.Ordinal), as it is for
+    // revocation. Switching it to OrdinalIgnoreCase would make the ownership boundary depend on the deployed
+    // database engine's collation, so this fixture exists to fail loudly if anyone loosens it.
+    [TestFixture]
+    public class Given_IntrospectTokenAsync_WithATokenWhoseClientIdDiffersOnlyByCase
+        : OpenIddictTokenManagerTests
+    {
+        private TokenIntrospectionResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            StubActivePublicKey(keyId, publicKeySpki);
+            StubAuthenticatedCaller("owner-client");
+
+            string token = CreateIntrospectableToken(signingKey, Guid.NewGuid(), "Owner-Client");
+
+            _result = await CreateConfiguredTokenManager()
+                .IntrospectTokenAsync(IntrospectionRequestFor("owner-client", token), CancellationToken.None);
+        }
+
+        [Test]
+        public void It_reports_the_token_inactive() =>
+            _result.Should().BeOfType<TokenIntrospectionResult.Inactive>();
+
+        [Test]
+        public void It_never_reads_the_token_status() =>
+            A.CallTo(() => _tokenRepository.GetTokenStatusForApplicationAsync(A<Guid>._, A<Guid>._))
+                .MustNotHaveHappened();
+    }
+
+    // The claim names the caller, but the stored row belongs to another application (for example a
+    // predecessor that held the same client id before it was deleted and re-registered). The status read is
+    // scoped to the authenticated application, so the token reads as unknown.
+    [TestFixture]
+    public class Given_IntrospectTokenAsync_WithATokenStoredForAnotherApplication
+        : OpenIddictTokenManagerTests
+    {
+        private TokenIntrospectionResult _result = null!;
+        private Guid _jti;
+
+        [SetUp]
+        public async Task Act()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            StubActivePublicKey(keyId, publicKeySpki);
+            StubAuthenticatedCaller(OwnerClientId);
+
+            _jti = Guid.NewGuid();
+            Guid otherApplicationId = Guid.NewGuid();
+            A.CallTo(() => _tokenRepository.GetTokenStatusForApplicationAsync(_jti, otherApplicationId))
+                .Returns("valid");
+            A.CallTo(() => _tokenRepository.GetTokenStatusForApplicationAsync(_jti, _callerApplicationId))
+                .Returns((string?)null);
+            string token = CreateIntrospectableToken(signingKey, _jti, OwnerClientId);
+
+            _result = await CreateConfiguredTokenManager()
+                .IntrospectTokenAsync(IntrospectionRequestFor(OwnerClientId, token), CancellationToken.None);
+        }
+
+        [Test]
+        public void It_reports_the_token_inactive() =>
+            _result.Should().BeOfType<TokenIntrospectionResult.Inactive>();
+
+        [Test]
+        public void It_reads_the_status_for_the_authenticated_application_only() =>
+            A.CallTo(() => _tokenRepository.GetTokenStatusForApplicationAsync(_jti, _callerApplicationId))
+                .MustHaveHappenedOnceExactly();
+    }
+
+    // Verification failures are logged by fixed category only. The validator's detail carries library
+    // messages and the unverified kid, which an unauthenticated token's author controls.
+    [TestFixture]
+    public class Given_IntrospectTokenAsync_WithATokenFailingVerificationCarryingAKeyIdSentinel
+        : OpenIddictTokenManagerTests
+    {
+        private const string KeyIdSentinel = "kid-sentinel-7d1f";
+        private ILogger<OpenIddictTokenManager> _fakeLogger = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _fakeLogger = A.Fake<ILogger<OpenIddictTokenManager>>();
+            A.CallTo(() => _fakeLogger.IsEnabled(A<LogLevel>._)).Returns(true);
+            var (_, publicKeySpki, _) = CreateSigningKey();
+            StubActivePublicKey(KeyIdSentinel, publicKeySpki);
+            StubAuthenticatedCaller(OwnerClientId);
+            // Signed by a key the snapshot does not hold, under the kid of the key it does hold, so the
+            // failure is a genuine signature rejection rather than an unknown-key refresh.
+            var (_, _, foreignKey) = CreateSigningKey();
+            foreignKey.KeyId = KeyIdSentinel;
+            string token = CreateIntrospectableToken(foreignKey, Guid.NewGuid(), OwnerClientId);
+
+            await CreateConfiguredTokenManager(_fakeLogger)
+                .IntrospectTokenAsync(IntrospectionRequestFor(OwnerClientId, token), CancellationToken.None);
+        }
+
+        [Test]
+        public void It_logs_nothing_containing_the_key_id() =>
+            AllLoggedText(_fakeLogger).Should().NotContain(KeyIdSentinel);
+
+        [Test]
+        public void It_logs_the_fixed_category_once_at_warning() =>
+            SigningKeyTestSupport
+                .MessagesAt(_fakeLogger, LogLevel.Warning)
+                .Should()
+                .Equal(
+                    "Introspection answered inactive: the supplied token failed verification (signature or key id); "
+                        + $"calling client {OwnerClientId}"
+                );
     }
 
     [TestFixture]
@@ -3832,7 +3948,8 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_does_not_read_the_token_status() =>
-            A.CallTo(() => _tokenRepository.GetTokenStatusAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.GetTokenStatusForApplicationAsync(A<Guid>._, A<Guid>._))
+                .MustNotHaveHappened();
     }
 
     [TestFixture]
@@ -4010,7 +4127,7 @@ public class OpenIddictTokenManagerTests
             StubAuthenticatedCaller(OwnerClientId);
 
             var jti = Guid.NewGuid();
-            A.CallTo(() => _tokenRepository.GetTokenStatusAsync(jti))
+            A.CallTo(() => _tokenRepository.GetTokenStatusForApplicationAsync(jti, _callerApplicationId))
                 .ThrowsAsync(new StoreUnavailableException("status store down"));
             string token = CreateIntrospectableToken(signingKey, jti, OwnerClientId);
 
@@ -4064,7 +4181,8 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_never_reads_the_token_status() =>
-            A.CallTo(() => _tokenRepository.GetTokenStatusAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.GetTokenStatusForApplicationAsync(A<Guid>._, A<Guid>._))
+                .MustNotHaveHappened();
     }
 
     [TestFixture]
@@ -4080,7 +4198,8 @@ public class OpenIddictTokenManagerTests
             StubAuthenticatedCaller(OwnerClientId);
 
             var jti = Guid.NewGuid();
-            A.CallTo(() => _tokenRepository.GetTokenStatusAsync(jti)).Returns("revoked");
+            A.CallTo(() => _tokenRepository.GetTokenStatusForApplicationAsync(jti, _callerApplicationId))
+                .Returns("revoked");
             string token = CreateIntrospectableToken(signingKey, jti, OwnerClientId);
 
             _result = await CreateConfiguredTokenManager()
@@ -4140,7 +4259,8 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_never_reads_the_token_status() =>
-            A.CallTo(() => _tokenRepository.GetTokenStatusAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.GetTokenStatusForApplicationAsync(A<Guid>._, A<Guid>._))
+                .MustNotHaveHappened();
     }
 
     [TestFixture]
@@ -4174,7 +4294,8 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_never_reads_the_token_status() =>
-            A.CallTo(() => _tokenRepository.GetTokenStatusAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.GetTokenStatusForApplicationAsync(A<Guid>._, A<Guid>._))
+                .MustNotHaveHappened();
     }
 
     [TestFixture]
@@ -4191,7 +4312,8 @@ public class OpenIddictTokenManagerTests
             StubAuthenticatedCaller(OwnerClientId);
 
             var jti = Guid.NewGuid();
-            A.CallTo(() => _tokenRepository.GetTokenStatusAsync(jti)).Returns("valid");
+            A.CallTo(() => _tokenRepository.GetTokenStatusForApplicationAsync(jti, _callerApplicationId))
+                .Returns("valid");
             string token = CreateIntrospectableToken(signingKey, jti, OwnerClientId, iat: "yesterday");
 
             _result = await CreateConfiguredTokenManager()
@@ -4216,11 +4338,12 @@ public class OpenIddictTokenManagerTests
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
             StubActivePublicKey(keyId, publicKeySpki);
 
+            _callerApplicationId = Guid.NewGuid();
             A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync("OWNER-Client"))
                 .Returns(
                     new ApplicationInfo
                     {
-                        Id = Guid.NewGuid(),
+                        Id = _callerApplicationId,
                         ClientId = OwnerClientId,
                         ClientSecret = "hashed-secret",
                         IsApproved = true,
@@ -4229,7 +4352,8 @@ public class OpenIddictTokenManagerTests
             A.CallTo(() => _secretHasher.VerifySecretAsync(CallerSecret, "hashed-secret")).Returns(true);
 
             var jti = Guid.NewGuid();
-            A.CallTo(() => _tokenRepository.GetTokenStatusAsync(jti)).Returns("valid");
+            A.CallTo(() => _tokenRepository.GetTokenStatusForApplicationAsync(jti, _callerApplicationId))
+                .Returns("valid");
             string token = CreateIntrospectableToken(signingKey, jti, OwnerClientId);
 
             _result = await CreateConfiguredTokenManager()

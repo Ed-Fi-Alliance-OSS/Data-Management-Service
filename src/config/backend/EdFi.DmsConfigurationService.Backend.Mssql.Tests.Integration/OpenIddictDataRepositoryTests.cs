@@ -1015,6 +1015,95 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         }
     }
 
+    // Introspection reads a token's status through the authenticated application: the status is returned only
+    // when the stored ApplicationId matches, so a token row stored for another application reads as unknown.
+    [TestFixture]
+    public class Given_GetTokenStatusForApplicationAsync_By_The_Owning_Application
+        : OpenIddictDataRepositoryTests
+    {
+        private string? _status;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            Guid applicationId = await RegisterApplicationAsync(
+                repository,
+                $"status-owner-{Guid.NewGuid():N}"
+            );
+            Guid tokenId = Guid.NewGuid();
+            await repository.StoreTokenAsync(
+                tokenId,
+                applicationId,
+                "status-owner-subject",
+                FarFuture,
+                EnforcementDisabled
+            );
+
+            _status = await repository.GetTokenStatusForApplicationAsync(tokenId, applicationId);
+        }
+
+        [Test]
+        public void It_returns_the_status() => _status.Should().Be("valid");
+    }
+
+    // The other application is a real registered row, so the only thing keeping the read off the token is the
+    // ApplicationId predicate.
+    [TestFixture]
+    public class Given_GetTokenStatusForApplicationAsync_By_Another_Application
+        : OpenIddictDataRepositoryTests
+    {
+        private string? _status;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            Guid ownerApplicationId = await RegisterApplicationAsync(
+                repository,
+                $"status-victim-{Guid.NewGuid():N}"
+            );
+            Guid otherApplicationId = await RegisterApplicationAsync(
+                repository,
+                $"status-other-{Guid.NewGuid():N}"
+            );
+            Guid tokenId = Guid.NewGuid();
+            await repository.StoreTokenAsync(
+                tokenId,
+                ownerApplicationId,
+                "status-victim-subject",
+                FarFuture,
+                EnforcementDisabled
+            );
+
+            _status = await repository.GetTokenStatusForApplicationAsync(tokenId, otherApplicationId);
+        }
+
+        [Test]
+        public void It_returns_null() => _status.Should().BeNull();
+    }
+
+    [TestFixture]
+    public class Given_GetTokenStatusForApplicationAsync_For_An_Unknown_Token : OpenIddictDataRepositoryTests
+    {
+        private string? _status;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            Guid applicationId = await RegisterApplicationAsync(
+                repository,
+                $"status-unknown-{Guid.NewGuid():N}"
+            );
+
+            _status = await repository.GetTokenStatusForApplicationAsync(Guid.NewGuid(), applicationId);
+        }
+
+        [Test]
+        public void It_returns_null() => _status.Should().BeNull();
+    }
+
     [TestFixture]
     public class Given_A_Client_Below_Its_Token_Limit : OpenIddictDataRepositoryTests
     {
