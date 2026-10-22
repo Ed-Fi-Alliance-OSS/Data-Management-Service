@@ -390,3 +390,94 @@ public class Given_The_Natural_Key_Capture_Predicate_Builder
         command.Parameters.Select(parameter => parameter.Name).Should().Equal("@resourceKeyId");
     }
 }
+
+[TestFixture]
+public class Given_The_Descriptor_Uri_Fold_Helpers
+{
+    [TestCase(
+        SqlDialect.Pgsql,
+        "lower((d.\"Namespace\" || '#' || d.\"CodeValue\") COLLATE \"pg_c_utf8\") = lower(@uri COLLATE \"pg_c_utf8\")"
+    )]
+    [TestCase(SqlDialect.Mssql, "d.[UriLowered] = LOWER(@uri COLLATE SQL_Latin1_General_CP1_CI_AS)")]
+    public void It_keeps_the_live_fold_for_a_uri_parameter(SqlDialect dialect, string expectedSql)
+    {
+        NaturalKeyCapturePredicateBuilder
+            .BuildDescriptorUriFoldPredicate(
+                dialect,
+                DescriptorProbeTarget.SharedDescriptorTable,
+                "d",
+                "@uri"
+            )
+            .Should()
+            .Be(expectedSql);
+    }
+
+    [TestCase(SqlDialect.Pgsql, "(c.\"OldNamespace\" || '#' || c.\"OldCodeValue\")")]
+    [TestCase(SqlDialect.Mssql, "(c.[OldNamespace] + N'#' + c.[OldCodeValue])")]
+    public void It_reconstructs_a_tracked_descriptor_uri(SqlDialect dialect, string expectedSql)
+    {
+        NaturalKeyCapturePredicateBuilder
+            .BuildTrackedDescriptorUri(dialect, "c", new("OldNamespace"), new("OldCodeValue"))
+            .Should()
+            .Be(expectedSql);
+    }
+
+    [TestCase(
+        SqlDialect.Pgsql,
+        "lower((d.\"Namespace\" || '#' || d.\"CodeValue\") COLLATE \"pg_c_utf8\") = lower((c.\"OldNamespace\" || '#' || c.\"OldCodeValue\") COLLATE \"pg_c_utf8\")"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        "d.[UriLowered] = LOWER((c.[OldNamespace] + N'#' + c.[OldCodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS)"
+    )]
+    public void It_folds_a_tracked_uri_against_the_live_descriptor_index(
+        SqlDialect dialect,
+        string expectedSql
+    )
+    {
+        NaturalKeyCapturePredicateBuilder
+            .BuildDescriptorUriFoldPredicate(
+                dialect,
+                DescriptorProbeTarget.SharedDescriptorTable,
+                "d",
+                NaturalKeyCapturePredicateBuilder.BuildTrackedDescriptorUri(
+                    dialect,
+                    "c",
+                    new("OldNamespace"),
+                    new("OldCodeValue")
+                )
+            )
+            .Should()
+            .Be(expectedSql);
+    }
+
+    [TestCase(
+        SqlDialect.Pgsql,
+        "lower((t.\"OldNamespace\" || '#' || t.\"OldCodeValue\") COLLATE \"pg_c_utf8\") = lower((c.\"OldKind_Namespace\" || '#' || c.\"OldKind_CodeValue\") COLLATE \"pg_c_utf8\")"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        "LOWER((t.[OldNamespace] + N'#' + t.[OldCodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS) = LOWER((c.[OldKind_Namespace] + N'#' + c.[OldKind_CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS)"
+    )]
+    public void It_folds_two_tracked_uris_on_both_sides(SqlDialect dialect, string expectedSql)
+    {
+        NaturalKeyCapturePredicateBuilder
+            .BuildTrackedDescriptorUriFoldPredicate(
+                dialect,
+                NaturalKeyCapturePredicateBuilder.BuildTrackedDescriptorUri(
+                    dialect,
+                    "t",
+                    new("OldNamespace"),
+                    new("OldCodeValue")
+                ),
+                NaturalKeyCapturePredicateBuilder.BuildTrackedDescriptorUri(
+                    dialect,
+                    "c",
+                    new("OldKind_Namespace"),
+                    new("OldKind_CodeValue")
+                )
+            )
+            .Should()
+            .Be(expectedSql);
+    }
+}

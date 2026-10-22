@@ -346,7 +346,9 @@ Descriptor history uses shared `tracked_changes_edfi.Descriptor` with `ResourceK
 old/new namespace and code-value snapshots. `(ResourceKeyId, ChangeVersion)` indexes history
 windows. There is no live-owner FK, so tombstones retain their type and identity after deletion.
 Resource history joins descriptor-valued identities through the compact key before capturing
-components; authorization and recreation checks keep their existing comparisons.
+components. Recreation checks and custom-view descriptor comparisons use the lowered whole URI plus
+`ResourceKeyId`, the descriptor identity the write path uses (see
+[change-queries.md](change-queries.md)); namespace authorization is unchanged.
 
 At the historical DMS-1404 handoff, both document stamp columns were authoritative and mirrored
 onto descriptors. In the combined DMS-1401 schema, only `ContentVersion` is mirrored from

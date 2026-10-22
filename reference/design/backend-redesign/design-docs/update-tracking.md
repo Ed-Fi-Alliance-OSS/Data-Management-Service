@@ -327,7 +327,8 @@ Change Query candidate selection is defined in [change-queries.md](change-querie
   `(ResourceKeyId, ChangeVersion)` indexing. It retains owning `DocumentId`, UUID and old/new
   namespace/code snapshots without a live-owner FK, so type and identity survive deletion.
   Resource history captures descriptor-valued identities by joining stored `Int32` values to
-  `dms.Descriptor.DescriptorId`; authorization/recreation comparisons retain existing behavior.
+  `dms.Descriptor.DescriptorId`. Recreation checks and custom-view descriptor comparisons use the
+  lowered whole URI plus `ResourceKeyId`; namespace authorization is unchanged.
 - Abstract identity discriminator storage, union-view outputs and authorization are unchanged.
 - `/availableChangeVersions` is served by `GetMaxChangeVersion` (`"dms"."GetMaxChangeVersion"()` in PostgreSQL, `[dms].[GetMaxChangeVersion]` in SQL Server).
 
