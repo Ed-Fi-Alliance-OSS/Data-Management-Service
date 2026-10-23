@@ -127,6 +127,9 @@ The DMS Configuration Management Service E2E tests have a similar setup and envi
 
 ## Working with MSSQL Backend Integration Tests
 
+See [RUNNING-LOCALLY.md](docs/RUNNING-LOCALLY.md#mssql-backend-integration-provisioning-diagnostics)
+for provisioning diagnostics, concurrency settings, and local shard filters.
+
 Before running MSSQL backend integration tests, verify that a SQL Server instance is listening locally on the expected test port, commonly `localhost,1434`. If no suitable instance is running, start a temporary SQL Server container and pass its admin connection string to the test command with `ConnectionStrings__MssqlAdmin`.
 
 Example local container setup:

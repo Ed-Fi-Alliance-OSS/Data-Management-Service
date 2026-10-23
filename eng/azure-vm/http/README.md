@@ -28,8 +28,8 @@ raw form.
 - `dms-assessment-namespace.http` — namespace-based authorization with the AssessmentVendor
   (`uri://one.example.com`) and EdFiSandbox (`uri://ed-fi.org`) review-variant keys: descriptor and
   assessment writes outside a vendor's namespace get 403; other vendors' assessments read as empty.
-- `cms-resourceclaims.http` — Configuration Service resource claims and claim-set authorization
-  metadata behind the walkthroughs above.
+- `configuration-service-resourceclaims.http` — Configuration Service resource claims and
+  claim-set authorization metadata behind the walkthroughs above.
 - `sample-all.sh` — curl-based smoke sampler: tokens each environment (ST + both tenants)
   and reads a spread of resources; exits nonzero if any token or read fails, so it doubles
   as a handoff check. Run `./sample-all.sh` (override host with `FQDN=...`).

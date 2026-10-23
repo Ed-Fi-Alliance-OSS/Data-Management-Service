@@ -32,8 +32,11 @@ public class ConnectionStringDecryptionService(string encryptionKey) : IConnecti
         catch (FormatException ex)
         {
             throw new InvalidOperationException(
-                "ConnectionString value from CMS is not valid Base64. "
-                    + "Verify that CMS and DMS share the same EncryptionKey and that the CMS version returns encrypted connection strings.",
+                "ConnectionString value from the Configuration Service is not valid Base64. "
+                    + "Verify that the Configuration Service DatabaseSettings:EncryptionKey and the Ed-Fi API "
+                    + "ConfigurationServiceSettings:EncryptionKey have the same value (the provided Docker Compose "
+                    + "deployments set both from CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY), and that the "
+                    + "Configuration Service version returns encrypted connection strings.",
                 ex
             );
         }
@@ -69,7 +72,9 @@ public class ConnectionStringDecryptionService(string encryptionKey) : IConnecti
         {
             throw new InvalidOperationException(
                 "Failed to decrypt the connection string. "
-                    + "Verify that CMS and DMS are configured with the same EncryptionKey.",
+                    + "Verify that the Configuration Service DatabaseSettings:EncryptionKey and the Ed-Fi API "
+                    + "ConfigurationServiceSettings:EncryptionKey have the same value (the provided Docker Compose "
+                    + "deployments set both from CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY).",
                 ex
             );
         }

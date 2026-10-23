@@ -26,7 +26,7 @@ param (
     [ValidateSet("keycloak", "self-contained")]
     $IdentityProvider="self-contained",
 
-    # Stage the test-owned E2E claim sets with the default claimset fragments and mount them for CMS
+    # Stage the test-owned E2E claim sets with the default claims fragments and mount them for CMS
     [Switch]
     $AddE2EClaimSets
 )
@@ -86,7 +86,7 @@ $priorClaimsMountSource = $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE
 try {
     if ($AddE2EClaimSets -and -not $d) {
         $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE = Initialize-E2EClaimsWorkspace
-        Write-Output "E2E claim sets staged for CMS at $(Format-LogSafePath $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE)"
+        Write-Output "E2E claim sets staged for Configuration Service at $(Format-LogSafePath $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE)"
     }
 
     if ($d) {
@@ -191,7 +191,7 @@ try {
             Wait-MssqlReady -ContainerName $mssqlContainerName -Password $mssqlSaPassword
         }
 
-        Write-Output "Starting locally-built DMS config service"
+        Write-Output "Starting locally-built Configuration Service"
         $configServices = if ($datastore -eq "mssql") { @("keycloak", "config") } else { @() }
         docker compose $files --env-file $EnvironmentFile -p $composeProject up $upArgs $configServices
 

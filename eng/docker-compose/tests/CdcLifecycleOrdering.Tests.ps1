@@ -669,6 +669,39 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
         (Read-TestDeployment).Phase | Should -Be 'Active'
     }
 
+    It 'rejects restore input <restoreInput> in <phase> before lock, inventory, environment, lifecycle, or infrastructure effects' -ForEach @(
+        foreach ($phase in @('Active', 'Stopped')) {
+            @{ restoreInput = 'RestoreTemplate'; phase = $phase; parameters = @{ RestoreTemplate = 'Minimal' } }
+            @{ restoreInput = 'PackageDirectory'; phase = $phase; parameters = @{ PackageDirectory = '/packages' } }
+            @{ restoreInput = 'RestoreTemplate and PackageDirectory'; phase = $phase; parameters = @{ RestoreTemplate = 'Minimal'; PackageDirectory = '/packages' } }
+        }
+    ) {
+        if ($phase -eq 'Stopped') { Invoke-TestLifecycle @{ d = $true } }
+        (Read-TestDeployment).Phase | Should -Be $phase
+        # Registration (and the stop) left the lock file behind; remove it so lock acquisition is observable.
+        $deployments = Join-Path $script:root '.cdc-deployments'
+        $lockPath = Join-Path $deployments 'dms-local.lock'
+        Remove-Item -LiteralPath $lockPath -Force -ErrorAction SilentlyContinue
+        $script:trace.Clear()
+        $inventoryBefore = @(Get-ChildItem -LiteralPath $deployments -File | Sort-Object Name | ForEach-Object { "$($_.Name)=$((Get-FileHash -LiteralPath $_.FullName).Hash)" })
+        $environmentBefore = @(Get-ChildItem Env: | Sort-Object Name | ForEach-Object { "$($_.Name)=$($_.Value)" })
+        Mock -ModuleName cdc-lifecycle Read-CdcDeployment { throw 'Unexpected inventory read' }
+        Mock -ModuleName cdc-lifecycle Set-CdcRetainedEnvironment { throw 'Unexpected environment change' }
+        Mock -ModuleName cdc-lifecycle Get-CdcDmsComposeHandoff { throw 'Unexpected DMS handoff write' }
+        Mock -ModuleName cdc-lifecycle Write-CdcDeployment { throw 'Unexpected lifecycle write' }
+
+        { Invoke-TestLifecycle $parameters } | Should -Throw '*Restore mode (-RestoreTemplate/-PackageDirectory) is unsupported while a retained CDC deployment exists*'
+
+        $lockPath | Should -Not -Exist -Because 'the refusal must precede lock acquisition'
+        @(Get-ChildItem -LiteralPath $deployments -File | Sort-Object Name | ForEach-Object { "$($_.Name)=$((Get-FileHash -LiteralPath $_.FullName).Hash)" }) | Should -Be $inventoryBefore
+        @(Get-ChildItem Env: | Sort-Object Name | ForEach-Object { "$($_.Name)=$($_.Value)" }) | Should -Be $environmentBefore
+        $script:trace.Count | Should -Be 0 -Because 'no controller command or infrastructure phase may run'
+        foreach ($command in @('Read-CdcDeployment', 'Set-CdcRetainedEnvironment', 'Get-CdcDmsComposeHandoff', 'Write-CdcDeployment')) {
+            Should -Invoke -ModuleName cdc-lifecycle $command -Times 0 -Exactly
+        }
+        (Read-TestDeployment).Phase | Should -Be $phase
+    }
+
     It 'CDC-DOC cdc-managed-stop' {
         $invocation = Get-CdcRunbookInvocation 'cdc-managed-stop' $script:root
         $invocation.Path | Should -Be 'eng/docker-compose/bootstrap-local-dms.ps1'
@@ -1394,10 +1427,9 @@ Describe 'SchemaTools lifecycle result boundary' {
         $script:root = Join-Path $TestDrive 'native'
         New-Item -ItemType Directory $script:root | Out-Null
         Copy-Item (Join-Path $PSScriptRoot '../cdc-lifecycle.psm1') $script:root
-        @'
-function Resolve-DmsSchemaTool { return Join-Path $PSScriptRoot 'tool.ps1' }
-Export-ModuleMember -Function Resolve-DmsSchemaTool
-'@ | Set-Content (Join-Path $script:root 'bootstrap-schema-tool.psm1')
+        foreach ($name in @('bootstrap-schema-tool.psm1', 'bootstrap-manifest.psm1')) {
+            Copy-Item (Join-Path $PSScriptRoot "../$name") $script:root
+        }
         @'
 param([Parameter(ValueFromRemainingArguments)][string[]]$Arguments)
 $Arguments | ConvertTo-Json | Set-Content (Join-Path $PSScriptRoot 'arguments.json')
@@ -1413,6 +1445,9 @@ exit ([int](Get-Content (Join-Path $PSScriptRoot 'exit-code')))
         }
     }
     BeforeEach {
+        $script:oldSchemaToolPath = $env:DMS_SCHEMA_TOOL_PATH
+        $env:DMS_SCHEMA_TOOL_PATH = Join-Path $script:root 'tool.ps1'
+        Remove-Item (Join-Path $script:root 'arguments.json') -ErrorAction SilentlyContinue
         $script:entry = @{ SettingsPath = '/original/settings'; StatePath = '/custom/state'; Generation = 7; InstanceKey = 'instance'; DeploymentKey = 'deployment'; DataStoreId = '42'; ConnectorName = '' }
         $script:result = @{
             operation = 'stop'; succeeded = $true; exitCode = 0
@@ -1422,7 +1457,22 @@ exit ([int](Get-Content (Join-Path $PSScriptRoot 'exit-code')))
         '0' | Set-Content (Join-Path $script:root 'exit-code')
         Save-TestResult
     }
-    AfterAll { Remove-Module cdc-lifecycle -Force }
+    AfterEach { $env:DMS_SCHEMA_TOOL_PATH = $script:oldSchemaToolPath }
+    AfterAll {
+        Get-Module -All | Where-Object { $_.Path -and $_.Path.StartsWith($script:root + [IO.Path]::DirectorySeparatorChar) } | Remove-Module -Force
+    }
+    It 'It_DMS1283_rejects_an_invalid_override_before_<operation>_despite_a_cached_tool' -ForEach @(
+        @{ operation = 'stop' }, @{ operation = 'start' }, @{ operation = 'start-worker' }, @{ operation = 'retire' }
+    ) {
+        $cache = Join-Path $script:root '.bootstrap/tools/api-schema-tools'
+        New-Item -ItemType Directory $cache -Force | Out-Null
+        $executableName = if ($IsWindows) { 'api-schema-tools.exe' } else { 'api-schema-tools' }
+        'cache sentinel' | Set-Content (Join-Path $cache $executableName)
+        $env:DMS_SCHEMA_TOOL_PATH = Join-Path $script:root 'missing-tool.ps1'
+
+        { Invoke-TestCommand $operation } | Should -Throw '*configured api-schema-tools executable was not found*'
+        Test-Path (Join-Path $script:root 'arguments.json') | Should -BeFalse
+    }
     It 'requires the structured verified target shutdown and retains original command inputs' {
         Invoke-TestCommand
         $script:entry.ConnectorName | Should -Be 'bound-connector'

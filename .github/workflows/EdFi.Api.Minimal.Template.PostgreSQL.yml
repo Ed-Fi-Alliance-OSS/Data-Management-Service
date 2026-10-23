@@ -30,6 +30,9 @@ on:
       - "eng/docker-compose/.env.template*"
       - "eng/docker-compose/bootstrap-claims-gate.psm1"
       - "eng/docker-compose/bootstrap-manifest.psm1"
+      - "eng/docker-compose/bootstrap-package-resolver.psm1"
+      - "eng/docker-compose/bootstrap-restore.psm1"
+      - "eng/docker-compose/bootstrap-schema-tool.psm1"
       - "eng/docker-compose/env-utility.psm1"
       - "eng/docker-compose/local-config.yml"
       - "eng/docker-compose/local-dms.yml"
@@ -114,3 +117,4 @@ jobs:
     secrets:
       AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
       AZURE_ARTIFACTS_USER_NAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+      TEMPLATE_ATTESTATION_PRIVATE_KEY: ${{ secrets.TEMPLATE_ATTESTATION_PRIVATE_KEY }}

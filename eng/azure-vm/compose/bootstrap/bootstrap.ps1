@@ -153,10 +153,10 @@ if (Test-Path $resetPending) {
     throw "A destructive reset did not finish. Re-run ./reset.sh (or ./down.sh -v) until it succeeds before bootstrapping."
 }
 if (Test-Path $bootstrapComplete) {
-    throw "Bootstrap already completed. Refusing to duplicate CMS objects. Run ./reset.sh before bootstrapping again."
+    throw "Bootstrap already completed. Refusing to duplicate Configuration Service objects. Run ./reset.sh before bootstrapping again."
 }
 if (Test-Path $bootstrapAttempted) {
-    throw ("A previous bootstrap did not complete. Refusing to duplicate partial identity/CMS objects. " +
+    throw ("A previous bootstrap did not complete. Refusing to duplicate partial identity and Configuration Service objects. " +
         "Run ./reset.sh before retrying; reset removes both application and Keycloak state.")
 }
 New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null

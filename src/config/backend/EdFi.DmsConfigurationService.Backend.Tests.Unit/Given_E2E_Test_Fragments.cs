@@ -11,6 +11,7 @@ using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.Backend.Claims.Models;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.TestHelpers;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using FakeItEasy;
@@ -156,7 +157,7 @@ public class Given_E2E_Test_Fragments(string standardFolder)
             "backend",
             "EdFi.DmsConfigurationService.Backend",
             "Deploy",
-            "AdditionalClaimsets"
+            "AdditionalClaims"
         );
 
         ClaimsDocument composed = Compose(defaultFragmentsPath, e2eFragmentsPath);
@@ -181,6 +182,22 @@ public class Given_E2E_Test_Fragments(string standardFolder)
                 .. PreChangeEmbeddedE2EGrants,
                 "E2E-NoFurtherAuthRequiredClaimSet|http://ed-fi.org/identity/claims/ed-fi/schoolTypeDescriptor|Create[NoFurtherAuthorizationRequired];Read[NoFurtherAuthorizationRequired];Update[NoFurtherAuthorizationRequired];Delete[NoFurtherAuthorizationRequired]",
             ]);
+    }
+
+    [Test]
+    public void It_composes_the_E2E_fragments_without_unmatched_grant_warnings()
+    {
+        List<string> warnings =
+        [
+            .. _composerLogger
+                .LoggedEntries()
+                .Where(entry =>
+                    entry.Level == LogLevel.Warning && entry.Message.Contains("matches no resource claim")
+                )
+                .Select(entry => entry.Message),
+        ];
+
+        warnings.Should().BeEmpty("composing the E2E fragments must not leave grant entries unmatched");
     }
 
     [Test]
@@ -263,6 +280,8 @@ public class Given_E2E_Test_Fragments(string standardFolder)
 
     private sealed record ReadinessCheck(string ClaimSetName, string ResourceClaim, string Action);
 
+    private ILogger<ClaimsFragmentComposer> _composerLogger = null!;
+
     private ClaimsDocument Compose(string defaultFragmentsPath, string e2eFragmentsPath)
     {
         // Stage both fragment directories into one, as the E2E claims workspace does
@@ -273,17 +292,16 @@ public class Given_E2E_Test_Fragments(string standardFolder)
         {
             foreach (
                 string fragment in Directory
-                    .GetFiles(defaultFragmentsPath, "*-claimset.json")
-                    .Concat(Directory.GetFiles(e2eFragmentsPath, "*-claimset.json"))
+                    .GetFiles(defaultFragmentsPath, "*-claims.json")
+                    .Concat(Directory.GetFiles(e2eFragmentsPath, "*-claims.json"))
             )
             {
                 File.Copy(fragment, Path.Combine(stagedPath, Path.GetFileName(fragment)));
             }
 
             JsonObject baseClaims = LoadEmbeddedClaims();
-            ClaimsLoadResult result = new ClaimsFragmentComposer(
-                A.Fake<ILogger<ClaimsFragmentComposer>>()
-            ).ComposeClaimsFromFragments(
+            _composerLogger = A.Fake<ILogger<ClaimsFragmentComposer>>();
+            ClaimsLoadResult result = new ClaimsFragmentComposer(_composerLogger).ComposeClaimsFromFragments(
                 new ClaimsDocument(baseClaims["claimSets"]!, baseClaims["claimsHierarchy"]!),
                 stagedPath
             );

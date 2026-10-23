@@ -111,8 +111,10 @@ infrastructure starts:
 ./bootstrap-local-dms.ps1 -Rebuild
 ```
 
-Because `-d -v` removes `.bootstrap/`, republish `api-schema-tools` as described under
-[Standard mode](#standard-mode-package-backed) before the next bootstrap.
+Because `-d -v` removes `.bootstrap/`, the next bootstrap reuses an eligible tool from the build
+output directories or publishes it from source. The .NET 10 SDK is required when publishing is
+needed. Clear or update `DMS_SCHEMA_TOOL_PATH` if it points into the deleted workspace; an
+explicit path fails closed rather than triggering automatic publishing.
 
 By default, authentication uses the Self-Contained (OpenIddict) identity provider. The environment and startup scripts are pre-configured for Self-Contained mode, and Keycloak is not required unless explicitly selected.
 
@@ -310,19 +312,80 @@ A few things are specific to the MSSQL path:
   the PostgreSQL package id; composing the `.env.mssql` overlay for `-DatabaseEngine mssql`
   rewrites only its engine segment to `MsSql` (`Convert-TemplatePackageToken` in
   `env-utility.psm1`), so the same base `-EnvironmentFile` names the matching package id for
-  either engine. This section documents the CI build/publish/verify pipeline only; no local
-  bootstrap flow currently restores these packages.
+  either engine. This bullet covers the CI build, publish, and verify pipeline; to restore one
+  of these packages into a local stack, see
+  [Restoring the datastore from a database template](#restoring-the-datastore-from-a-database-template-bootstrap-restore)
+  below.
 
 For a self-contained smoke run, set `CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1`
 in your `.env` before starting or recreating the stack: the Smoke Test Utility requests
 a new token for each resource GET and otherwise exceeds the default limit of 15.
 Restore the configured limit and recreate the stack after the smoke run.
 
-After the stack is up, run the smoke tests the same way as for PostgreSQL:
+After the stack is up, run the smoke tests the same way as for PostgreSQL. The script imports its
+modules relative to the current directory, so run it from `eng/smoke_test`. For `$key` and `$secret`, see
+[Smoke-test credentials](#smoke-test-credentials--addsmoketestcredentials).
 
 ```pwsh
-../smoke_test/Invoke-NonDestructiveApiTests.ps1 -BaseUrl "http://localhost:8080" -Key $key -Secret $secret
+cd ../smoke_test
+./Invoke-NonDestructiveApiTests.ps1 -BaseUrl "http://localhost:8080" -Key $key -Secret $secret
 ```
+
+## Smoke-test credentials (`-AddSmokeTestCredentials`)
+
+`-AddSmokeTestCredentials` creates a "Smoke Test Application" (vendor "Smoke Test Vendor", claim set
+`EdFiSandbox`) in the Configuration Service for `eng/smoke_test/Invoke-NonDestructiveApiTests.ps1`. The
+Configuration Service returns the application's secret **only once**, in its create response, so each
+entry point hands it to you in exactly one place.
+
+* **`bootstrap-local-dms.ps1` / `bootstrap-published-dms.ps1`:**
+  * The wrapper prints a smoke-test credential summary as its **last** output, on every run shape: Docker-hosted, `-LoadSeedData`, `-InfraOnly`, `-InfraOnly -DmsBaseUrl`, and `-EnableKafkaCdc`.
+  * If a later phase fails after the credential was created, it prints the summary under a "created before the failure; the stack is NOT ready" header, then reports the original error. This covers phases that fail with an error. It does not cover **Ctrl+C**: PowerShell stops the pipeline and discards output written while stopping, so an interrupted run prints no summary. If you interrupt a run after its configure phase, the application may exist with no copy of its secret. Remove the "Smoke Test Application" before you run with the flag again.
+* **`configure-local-data-store.ps1`:** the structured result gains a `SmokeTestCredential` property (`Key`, `Secret`, `ApplicationName`). Capture it, because the secret is not shown anywhere else:
+
+  ```pwsh
+  $configure = ./configure-local-data-store.ps1 -AddSmokeTestCredentials -EnvironmentFile ./.env.ide
+  $configure.SmokeTestCredential.Key
+  $configure.SmokeTestCredential.Secret
+  ```
+
+  Running it without capturing the result prints the whole object, secret included. Treat the result as sensitive: do not log or persist it.
+* **`start-published-dms.ps1`** (direct full start, a transitional flag):
+  * creates the application after it registers the data stores, for those data stores and the configured tenant (with `-NoDataStore`, for the first existing data store in that tenant);
+  * then prints the summary.
+  * It does **not** provision the DMS schema. Use it against an already-provisioned database, or use `bootstrap-published-dms.ps1`.
+  * With self-contained identity, running `start-published-dms.ps1` again against an already-running provisioned stack keeps the existing active OpenIddict signing key: `setup-openiddict.ps1 -InitDb` creates a key only when none is active. The running DMS therefore accepts newly issued tokens without a restart. For an encryption-key mismatch, see [Signing key on rerun](#signing-key-on-rerun--initdb). Keep the delivered key/secret; do not rerun `-AddSmokeTestCredentials`, because CMS rejects a duplicate Smoke Test Application.
+
+For a completed run with a single route-unqualified data store and no tenant route, the summary includes a
+copyable command. Every value is a
+single-quoted PowerShell literal, so characters such as `$` in a generated secret stay literal:
+
+```text
+--- Smoke test credentials ---
+Application: Smoke Test Application
+Key:         <key>
+Secret:      <secret>
+The Configuration Service returns this secret only once. These bootstrap scripts do not write it to logs or files; your terminal, transcripts, or host logging may still retain it. Store it now.
+Run the non-destructive API smoke tests:
+  Set-Location -LiteralPath '<repo>\eng\smoke_test'
+  ./Invoke-NonDestructiveApiTests.ps1 -BaseUrl 'http://localhost:8080' -OAuthUrl 'http://localhost:8080/oauth/token' -Key '<key>' -Secret '<secret>'
+```
+
+* **DMS URL not known yet** (`-InfraOnly` without `-DmsBaseUrl`): the command uses a `<dms-base-url>` placeholder for you to replace once the IDE-hosted DMS is healthy.
+* **IDE-hosted DMS** (`-InfraOnly`, with or without `-DmsBaseUrl`): whether the summary adds a tenant segment follows `DMS_MULTI_TENANCY` from the env file, but the IDE-hosted DMS reads its own `AppSettings:MultiTenancy` (default `false`). The summary states the value it assumes; set the IDE configuration to match.
+* **Tenant routes:** the summary lists the tenant-qualified DMS base and token URLs instead of a command. DMS serves tenant routes only with `DMS_MULTI_TENANCY=true`; a `DMS_CONFIGURATION_SERVICE_TENANT` used only by the Configuration Service does not qualify the URLs. Smoke runs against qualified routes have not been validated with the Smoke Test Utility.
+* **Data stores with route contexts** (school-year data stores from `-SchoolYearRange`, or a `-NoDataStore` direct start that selects a data store qualified by `schoolYear`, `districtId` or several contexts): the summary lists each data store's contexts as `key=value`, with no command or URL. Whether and in what order those values appear in the route depends on the target DMS's `ROUTE_QUALIFIER_SEGMENTS` (`AppSettings:RouteQualifierSegments`), which the Configuration Service records do not establish.
+* **Self-contained identity:** the summary also reminds you that `CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1` must be set **before the stack starts** (see above and `eng/smoke_test/SMOKETEST.md`).
+
+> [!IMPORTANT]
+> Pass `-AddSmokeTestCredentials` only once per Configuration Service. The application name is unique
+> per vendor, so a later run with the flag against the same Configuration Service fails, even after an
+> earlier run failed. That includes a `-NoDataStore` follow-up wrapper run. Omit the flag on follow-up runs,
+> or remove the existing "Smoke Test Application" first.
+
+The flag is not honored by `start-local-dms.ps1` (which has no such parameter), by
+`start-published-dms.ps1 -InfraOnly`, or by the retained-CDC lifecycle and CDC retry paths of the
+wrappers.
 
 ## Configuration Service database topology
 
@@ -390,7 +453,7 @@ with the key entirely absent fails clearly rather than starting the Configuratio
 Invocations that start the Configuration Service validate the result before any container starts: the resolved connection
 string's database, host, and port must agree with the selected topology, and a hand-edited
 `CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING` that disagrees fails fast with a
-`CMS database topology mismatch` error rather than silently starting the Configuration Service against the wrong
+`Configuration Service database topology mismatch` error rather than silently starting the Configuration Service against the wrong
 database. In separate mode the datastore database must also be genuinely distinct from
 `edfi_configurationservice`, so a datastore name (or `-DataStoreDatabaseName`) that would land in it
 is rejected rather than quietly re-sharing the database the switch exists to split.
@@ -468,6 +531,242 @@ Switching an existing stack between modes re-points the Configuration Service bu
 already written in one database stays there. For a clean switch, tear down with `-d -v` and start
 fresh, or migrate the Configuration Service data yourself.
 
+## Restoring the datastore from a database template (bootstrap restore)
+
+`-RestoreTemplate Minimal|Populated` on either bootstrap wrapper replaces the DMS datastore
+from a trusted database-template package instead of provisioning an empty schema. The flow is
+deliberately paranoid: the exact `.nupkg` bytes are authenticated against the template trust
+policy (fail-closed - there is no unsigned or local-origin bypass), the package's restore
+manifest is cross-checked against a freshly prepared candidate workspace, the artifact is first
+replayed into a throwaway scratch database and validated (schema inventory, effective-schema
+facts, physical baseline, privileges), and only then is the target database replaced - behind
+stop proofs, with the `.bootstrap` workspace committed as a whole tree. The previous tree is
+renamed aside and renamed back if publishing the candidate fails, and a schema tool published to
+`.bootstrap/tools/api-schema-tools` is carried into the new workspace. `provision-dms-schema.ps1`
+is skipped in restore mode: the restored artifact already carries the schema and data.
+
+```powershell
+# Restore the Populated template from the configured feed
+# (requires DATABASE_TEMPLATE_NUGET_VERSION in the effective env; never floats to latest)
+./bootstrap-local-dms.ps1 -RestoreTemplate Populated
+
+# Restore from a local directory holding exactly one matching template .nupkg
+# plus its sibling .nupkg.attestation.json (no NuGet version key needed)
+./bootstrap-local-dms.ps1 -RestoreTemplate Minimal -PackageDirectory C:\path\to\packages
+
+# Same through the build script, which lives at the repository root
+../../build-dms.ps1 StartEnvironment -RestoreTemplate Populated
+
+# Optional supplemental seed AFTER the restored stack is up (explicit source required;
+# a bare -LoadSeedData is rejected in restore mode - the template already carries data)
+./bootstrap-local-dms.ps1 -RestoreTemplate Minimal -LoadSeedData -SeedTemplate Minimal
+```
+
+The tracked `template-trust-policy.json` currently lists no trusted producers, so the feed
+example above refuses every package for now. That empty policy is intentional fail-closed
+behavior: a feed restore requires a package attested by a producer configured as a trust anchor
+in the tracked policy or the local overlay. Older packages that lack the restore manifest and
+attestation are not eligible for `-RestoreTemplate`. The database engine could still read their
+`.sql` or `.bak` artifact, but engine-level backup compatibility does not make a package eligible
+for the guarded bootstrap restore.
+
+Restore works on both database engines (`-DatabaseEngine`) and on both wrappers
+(`bootstrap-local-dms.ps1` and `bootstrap-published-dms.ps1`). It rejects `-InfraOnly`,
+`-NoDataStore`, and `-SchoolYearRange`: one restore invocation replaces exactly one
+route-unqualified physical target. That target is the effective env's `POSTGRES_DB_NAME` or
+`MSSQL_DB_NAME`; an explicit `-DataStoreDatabaseName` must repeat it, and a different name is
+refused before the package is resolved or anything is restored, in either Configuration Service
+topology. A PostgreSQL restore is also refused while `POSTGRES_USE_TMPFS=true`: the database would
+live in container memory and be lost when the stack restarts the database container after the
+restore.
+These refusals also happen before anything is restored:
+
+* `-EnableKafkaCdc`: a restore skips the provision phase that produces the CDC provisioning
+  receipt. Enable CDC on a bootstrap that provisions its own schema.
+* `-IncludeE2EClaimSets` (an option of the shared `Invoke-BootstrapWrapper` that the Kafka CDC
+  E2E setup passes; the wrapper scripts do not expose it): the restore candidate stages claims
+  without the test-only E2E claim sets, so they would be silently dropped.
+* `-Rebuild` on `bootstrap-local-dms.ps1`: it reaches only the start that follows the target
+  replacement. A restore that needs an image build runs through `build-dms.ps1 StartEnvironment
+  -RestoreTemplate`, which builds the image after package and candidate validation and before
+  database preflight.
+* `-d` (with or without `-v`) together with `-RestoreTemplate` or `-PackageDirectory`: teardown
+  and restore are separate invocations, and nothing is torn down.
+* A retained CDC deployment for the wrapper's compose project (`dms-local` or `dms-published`):
+  the request is refused before the retained deployment's lifecycle runs. Retire that deployment
+  with `-d -v` first.
+
+The whole-tree commit also refuses to replace an active `.bootstrap` workspace that holds retained
+CDC configuration or state for either compose project; that refusal comes after scratch validation,
+before the target is touched.
+
+The package identity comes from the effective `DATABASE_TEMPLATE_PACKAGE`, with the
+`Minimal|Populated` and engine segments swapped to match the request. Setting it in your base
+`.env` does not always decide the effective value:
+
+* A `DATABASE_TEMPLATE_PACKAGE` in the process environment wins over every env file, as it does
+  for Compose.
+* `bootstrap-local-dms.ps1` always layers the local-bootstrap Data Standard overlay
+  (`.env.bootstrap.ds52` or `.env.bootstrap.ds61`, chosen by `-DataStandardVersion`, default `5.2`)
+  over `-EnvironmentFile`. That overlay sets `DATABASE_TEMPLATE_PACKAGE`, so the base file's value
+  is replaced and the package id's Data Standard segment follows `-DataStandardVersion`.
+* `bootstrap-published-dms.ps1` layers the overlay only when `-DataStandardVersion` is passed;
+  otherwise the base env file's value is used as written.
+
+The overlays do not set `DATABASE_TEMPLATE_NUGET_VERSION` or `DATABASE_TEMPLATE_FEED_URL`, so those
+come from the base env file (or the process environment). See `.env.example` for the three version
+concepts (package ID's Data Standard segment, the manifest's `dataStandardVersion`, and
+`DATABASE_TEMPLATE_NUGET_VERSION` - the package's own NuGet version). Trusted producers are declared in `template-trust-policy.json` plus the git-ignored
+`template-trust-policy.local.json` overlay; a locally built package must be attested by a
+development producer registered there (see the next section).
+
+### Building a dev-signed package locally
+
+Restore never accepts an unattested package, so a package built on your machine must be signed
+by a producer the trust policy knows. These are the commands the
+`tests/Invoke-BootstrapRestoreSmoke.ps1` smoke runs. Run them in one PowerShell session, starting
+from `eng/docker-compose`, and choose the template kind and package directory once; every later
+step reads them.
+
+```powershell
+$kind = 'Minimal'   # or 'Populated'; selects the seed, settings file, package, and restore
+$packageDirectory = 'C:\path\to\packages'
+```
+
+1. Register a development signer, once per machine. The private key lands in the git-ignored
+   `eng/DatabaseTemplates/.dev-trust/` directory, and the public half is registered as the
+   `local-dev` producer in the git-ignored `template-trust-policy.local.json` overlay. An
+   existing key file or producer entry is never overwritten.
+
+   ```powershell
+   ../DatabaseTemplates/new-template-dev-trust.ps1 -Purpose Dev
+   ```
+
+2. Bring up a source stack seeded with the same template kind and a dedicated Configuration
+   Service database. The package build refuses a source database that also holds the
+   Configuration Service `dmscs` schema or the OpenIddict stores, which is where the default
+   shared topology puts them. Add the same `-DatabaseEngine`, `-DataStandardVersion`, and
+   `-EnvironmentFile` you will restore with.
+
+   ```powershell
+   ./bootstrap-local-dms.ps1 -SeparateConfigDatabase -LoadSeedData -SeedTemplate $kind
+   ```
+
+3. Build and attest the package. `Template-Management.psm1` resolves its `../` module imports
+   and `Build-TemplateNuGetPackage` writes its outputs relative to the current directory, so
+   import and run both from `eng/DatabaseTemplates`. `-StandardVersion` is the Data Standard
+   segment of the package id (`5.2.0` or `6.1.0`); `-PackageVersion` is the package's own NuGet
+   version. Use `-DatabaseEngine mssql` for SQL Server, and `-DatabaseName` when the env file
+   changes `POSTGRES_DB_NAME` or `MSSQL_DB_NAME`. `-SchemaFilePath` names the ApiSchema files the
+   source stack was provisioned from; the build refuses a source holding any object their DDL
+   does not define. The source stack's staged workspace lists them.
+
+   ```powershell
+   $schemaFiles = & (Import-Module ./bootstrap-restore.psm1 -PassThru) {
+       (Get-RestoreCandidateSchemaFact -CandidateDirectory (Resolve-Path ./.bootstrap).Path).SchemaFilePaths
+   }
+   Push-Location ../DatabaseTemplates
+   Import-Module ./Template-Management.psm1 -Force
+   Build-TemplateNuGetPackage `
+       -ConfigFilePath "./${kind}TemplateSettings.psd1" `
+       -TemplateKind $kind `
+       -StandardVersion 5.2.0 `
+       -PackageVersion 1.0.999 `
+       -DumpAllUserSchemas `
+       -DatabaseEngine postgresql `
+       -SchemaFilePath $schemaFiles `
+       -AttestationSignerKeyPath ./.dev-trust/local-dev.pem `
+       -AttestationProducer local-dev
+   Pop-Location
+   ```
+
+4. Move the package and its sibling attestation into the package directory, which must hold no
+   other template package, and delete the other build outputs (the `.sql` or `.bak` dump and
+   the `.csproj` are not git-ignored).
+
+   ```powershell
+   $packages = New-Item -ItemType Directory -Path $packageDirectory -Force
+   Get-ChildItem ../DatabaseTemplates -File -Filter "EdFi.Api.$kind.Template.*" | ForEach-Object {
+       if ($_.Extension -in '.nupkg', '.json') { Move-Item -LiteralPath $_.FullName -Destination $packages }
+       else { Remove-Item -LiteralPath $_.FullName }
+   }
+   Remove-Item ../DatabaseTemplates/restore-manifest.json -ErrorAction SilentlyContinue
+   ```
+
+   The directory then holds the template `.nupkg`, its `.nupkg.attestation.json`, and the
+   companion `.Attestation.` package, which restore ignores.
+
+5. Stop the source stack (volumes are kept), then restore the same kind. Pass the same
+   infrastructure flags to both commands.
+
+   ```powershell
+   ./bootstrap-local-dms.ps1 -d
+   ./bootstrap-local-dms.ps1 -RestoreTemplate $kind -PackageDirectory $packageDirectory
+   ```
+
+### Restoring into a stack with a separate Configuration Service database
+
+With `-SeparateConfigDatabase` the restore replaces only the DMS datastore; the dedicated
+`edfi_configurationservice` database is never touched, so on a stack that ran before it still holds
+the data stores earlier runs registered - for this target, and for other targets restored by earlier
+explicit invocations (each invocation restores one database). After the restore the wrapper's
+configure phase lists the Configuration Service data stores and decrypts each stored connection
+string with `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY`. A data store serves the restored target
+only when its engine (provider and connection-string form), its server and port (the composed
+database service, `dms-postgresql:5432` or `dms-mssql,1433`), and its database (exactly the
+restored database) all match; a matching database name alone is not enough. The phase then:
+
+* reuses the one route-unqualified data store that serves the restored target, with its id and
+  without changing it;
+* otherwise registers a new data store for the restored target under the first free name of
+  `Local Development Data Store`, `Local Development Data Store (2)`, and so on. A different
+  `-DataStoreDatabaseName` never gets this far: it is refused before anything is restored;
+* leaves every other target's data store in place, and returns only the restored target's id;
+* refuses what it cannot verify: two data stores serving the target, a route-qualified one, a
+  letter-case variant of the target's name, a stored value of this engine that cannot be decrypted
+  or read, or a listing that reaches the 500-item query page.
+
+Restoring database A, then B, then A again therefore reuses A's registration on the third run, and B
+keeps its own.
+
+This check runs **after** the target database was replaced. A refusal here stops before DMS starts,
+but unlike a scratch-validation refusal (next section) it does not leave the target untouched: the
+target already holds the restored package. Correct or remove the stale data store registration in
+the Configuration Service, then rerun the restore. The refusal names the data store id and the
+property that differs; it never prints the connection string, its credentials, or the database
+names.
+
+### Recovering from a failed scratch validation
+
+When scratch validation refuses a package, the restore drops the scratch and preflight
+databases, stops the database-only slice it started (with the same compose files and env file,
+never `down` and never volumes), removes its candidate workspace and generated env file, and leaves
+the target database and the active `.bootstrap` workspace as they were. The Configuration Service
+and DMS are not started. Each cleanup step runs even when another fails, and the error that ended
+the run stays the error; a step that fails is reported as a warning naming what remains. The same
+cleanup runs for any failure after the database-only slice started, including a partial startup.
+
+If that stop did not complete, the database container keeps running and the next restore attempt
+refuses at its first stop proof. On the local PostgreSQL stack the refusal reads as follows; the
+container is `dms-mssql` on SQL Server, and the project is `dms-published` for
+`bootstrap-published-dms.ps1`:
+
+```text
+Compose project 'dms-local' still has running containers: dms-postgresql. Stop the stack before the restore touches the bootstrap workspace or the target database.
+```
+
+To recover, stop the stack **without** `-v`, then retry with a package that passes:
+
+```powershell
+# Keeps the data volumes and the active .bootstrap workspace; pass the same
+# -DatabaseEngine, -EnvironmentFile, and other infrastructure flags as the restore
+./bootstrap-local-dms.ps1 -d
+./bootstrap-local-dms.ps1 -RestoreTemplate Minimal -PackageDirectory C:\path\to\packages
+```
+
+Do not use `-d -v` here: it deletes the data volumes, including the untouched target database,
+and removes the active `.bootstrap` workspace.
+
 ## Selecting a Data Standard version (bootstrap)
 
 `bootstrap-local-dms.ps1` (and `bootstrap-published-dms.ps1`) accept `-DataStandardVersion` to
@@ -523,27 +822,34 @@ developers. It is driven by the effective env file's `SCHEMA_PACKAGES` value - c
 listed extension packages (the DS 5.2 default stages core + TPDM); custom or unpublished schema
 sets use Expert mode below.
 
-> **Requirement - `api-schema-tools` tool:** `prepare-dms-schema.ps1` needs the in-repo `api-schema-tools`
-> CLI published as a native executable. Publish it before running the prepare command. The step is
-> safe to re-run and is required again after a branch switch changes the tool or after `-d -v`
-> removes the `.bootstrap/` workspace.
+> **Requirement - .NET 10 SDK:** When no eligible `api-schema-tools` executable is available,
+> `prepare-dms-schema.ps1` automatically publishes the in-repo CLI as a native executable. This
+> adds publish time on the first run. After changing the tool or its dependencies, including by
+> switching branches, refresh the cached tool with the command below or delete
+> `.bootstrap/tools/api-schema-tools` so the next bootstrap can resolve it again. The cache takes
+> precedence over build output, so building the solution alone does not refresh it. Teardown with
+> `-d -v` also clears the cache.
 
 ```pwsh
-# 1. Publish the api-schema-tools tool (required on a clean checkout)
+# Optional: manually refresh the cached api-schema-tools executable
 $schemaToolProject = "../../src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj"
 $schemaToolOutput  = ".bootstrap/tools/api-schema-tools"
 dotnet publish $schemaToolProject -c Release -p:UseAppHost=true -o $schemaToolOutput
-
-# 2. Point to the platform-appropriate executable
-$schemaToolExe = if ($IsWindows) { "$schemaToolOutput/api-schema-tools.exe" } else { "$schemaToolOutput/api-schema-tools" }
 ```
+
+To use an executable outside the discovered locations, set `DMS_SCHEMA_TOOL_PATH` (or pass
+`-SchemaToolPath` to `prepare-dms-schema.ps1`). Explicit paths take precedence and must exist;
+an invalid override fails without automatic publishing. Clear the environment override with
+`Remove-Item Env:DMS_SCHEMA_TOOL_PATH` to restore automatic resolution.
+Use the environment override when preparation and provisioning must use the same external tool;
+`-SchemaToolPath` selects the tool only for the prepare phase.
 
 Standard mode (omit `-ApiSchemaPath`) stages the packages listed by the env file's
 `SCHEMA_PACKAGES` value; invoked without `-EnvironmentFile` (as below) it falls back to the
 catalog-pinned core-only default. There is no `-Extensions` parameter.
 
 ```pwsh
-./prepare-dms-schema.ps1 -SchemaToolPath $schemaToolExe
+./prepare-dms-schema.ps1
 ./prepare-dms-claims.ps1
 ./bootstrap-local-dms.ps1
 ```
@@ -563,10 +869,12 @@ staged for TPDM). Only extensions that are **not** bootstrap-mapped (a custom ex
 supply) require an additional `-ClaimsDirectoryPath` argument to `prepare-dms-claims.ps1`.
 
 **Wrapper shorthand:** `bootstrap-local-dms.ps1` stages standard mode from the effective
-`SCHEMA_PACKAGES` in-line (when no workspace is staged, or when the staged workspace's recorded
-package identity no longer matches) and then starts the stack. It auto-discovers the
-`api-schema-tools` executable published to `.bootstrap/tools/api-schema-tools` in step 1 (or set
-`DMS_SCHEMA_TOOL_PATH` to point elsewhere).
+`SCHEMA_PACKAGES` in-line when no workspace is staged, then starts the stack. If an existing
+standard workspace has a different recorded package identity, the wrapper fails fast before
+package downloads or Docker/CMS side effects; stop the stack and remove `.bootstrap/` before
+retrying. Expert filesystem workspaces are reused as staged. The wrapper resolves the schema tool
+from eligible existing executables or publishes it from source when needed. Set
+`DMS_SCHEMA_TOOL_PATH` to select an explicit executable.
 
 ```pwsh
 ./bootstrap-local-dms.ps1
@@ -595,8 +903,8 @@ that already contains them.
 # -ClaimsDirectoryPath is only needed for a non-bootstrap-mapped (custom) extension. Core plus the
 # built-in extensions (Sample, Homograph, TPDM) need no fragment argument: Sample and Homograph
 # stage claim fragments, while TPDM's claims ship in the embedded DS 5.2 set (no fragment staged).
-./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath $schemaToolExe
-./prepare-dms-claims.ps1 [-ClaimsDirectoryPath <directory-with-custom-extension-claimset-fragment>]
+./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema
+./prepare-dms-claims.ps1 [-ClaimsDirectoryPath <directory-with-custom-extension-claims-fragment>]
 ./bootstrap-local-dms.ps1
 ```
 
@@ -625,7 +933,7 @@ for diagnostics and for other tooling to sequence a database-only startup around
 Expert mode (`-ApiSchemaPath`) and standard mode (omit `-ApiSchemaPath`) are the two schema-selection
 paths; there is no `-Extensions` parameter.
 
-`prepare-dms-claims.ps1` stages `*-claimset.json` fragments into
+`prepare-dms-claims.ps1` stages `*-claims.json` fragments into
 `.bootstrap/claims`. When a bootstrap manifest is present, startup activates
 `USE_API_SCHEMA_PATH`/`API_SCHEMA_PATH` and mounts `.bootstrap/ApiSchema` into
 the DMS container via `bootstrap-dms.yml`; staged claims are activated per
@@ -783,7 +1091,8 @@ cd eng/docker-compose
 
 The wrapper prints IDE next-step guidance (staged schema path and, when `DMS_CONFIGURATION_SERVICE_CLIENT_*`
 keys are set in the env file, `CMSReadOnlyAccess` client id and scope — never the secret value)
-after provisioning completes.
+after provisioning completes. With `-AddSmokeTestCredentials`, it ends with the
+[smoke-test credential summary](#smoke-test-credentials--addsmoketestcredentials).
 
 ### Two IDE workflow shapes
 
@@ -810,6 +1119,8 @@ wait passes.
 > so the configure phase reuses the existing data store; without it, the configure phase registers
 > the same name again and the Configuration Service rejects it with 400:
 > `./bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> -NoDataStore -EnvironmentFile ./.env.ide [-LoadSeedData ...]`
+> Do not repeat `-AddSmokeTestCredentials` on that follow-up run: the Configuration Service rejects a
+> second "Smoke Test Application" for the same vendor.
 >
 > `-NoDataStore` supports exactly one existing route-unqualified data store. If the earlier run
 > used `-SchoolYearRange` (or otherwise created route-qualified data stores), do **not** re-run the
@@ -839,10 +1150,11 @@ the health wait, then start DMS in the IDE between phases:
 
 ```pwsh
 cd eng/docker-compose
-./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath ...
+./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema
 ./prepare-dms-claims.ps1
 ./start-local-dms.ps1 -InfraOnly -IdentityProvider self-contained -EnvironmentFile ./.env.ide
-./configure-local-data-store.ps1 -AddSmokeTestCredentials -EnvironmentFile ./.env.ide
+$configure = ./configure-local-data-store.ps1 -AddSmokeTestCredentials -EnvironmentFile ./.env.ide
+$configure.SmokeTestCredential  # Key, Secret, ApplicationName - returned only once; store them now
 ./provision-dms-schema.ps1 -EnvironmentFile ./.env.ide
 # Start DMS in your IDE now.
 ./start-local-dms.ps1 -InfraOnly -DmsBaseUrl "http://localhost:5198" -EnvironmentFile ./.env.ide  # post-provision health wait only
@@ -1342,6 +1654,27 @@ $parameters = @{
 * `NewClientSecret` must also satisfy the Configuration Service complexity rule: lowercase, uppercase, number, and one special character from `!@#$%^&*()-_=+[]{}:;,.?`.
 * `NewClientSecret` is always the literal secret, even when it begins with `ENV:`. Use `NewClientSecretEnvironmentVariable` (naming the variable, in place of `NewClientSecret`) only when the secret must be read from that process's environment instead of the argument list.
 * Both switches can be used together or separately as needed.
+
+#### Signing key on rerun (`-InitDb`)
+
+With self-contained identity, `start-local-dms.ps1`, `start-local-config.ps1` and
+`start-published-dms.ps1` run `-InitDb` on every start, not only the first. So do the bootstrap
+wrappers, which call them.
+
+* An existing active signing key is kept. `-InitDb` creates a key only when none is active.
+* If the newest active key cannot be decrypted with the configured
+  `CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY`, `-InitDb` stops with an error and changes no
+  key. This happens, for example, after that value is changed in `.env` while the database is
+  kept, and the stack does not finish starting.
+  * To recover, restore the encryption key that the signing key was created with.
+  * Starting again with the mismatched value fails the same way, because startup never rotates
+    the key.
+* Replacing the signing key is an explicit operation, not something startup repairs. For a
+  disposable local stack, the simplest way is to remove it with its volumes (`-d -v`) and start
+  again.
+* On PostgreSQL, the database can reject the check itself, for example because of pgcrypto
+  permissions. `-InitDb` then reports that the key could not be checked and changes nothing; this
+  does not show that either key is wrong.
 
 ### Expired token cleanup (self-contained identity)
 

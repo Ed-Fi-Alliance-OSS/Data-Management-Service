@@ -56,7 +56,7 @@ jobs:
 
           $body = @{
             tag_name = "$tag"
-            target_commitish = "main"
+            target_commitish = "${{ github.sha }}"
             name = $version
             body = ""
             draft = $false

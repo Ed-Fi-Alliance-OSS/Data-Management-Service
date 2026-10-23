@@ -37,7 +37,7 @@
 
     Primary (pre-DMS stop) — `-InfraOnly` alone:
         Runs infrastructure startup, instance creation or reuse
-        (`configure-local-data-store.ps1`), optional CMS-only smoke-test credentials,
+        (`configure-local-data-store.ps1`), optional smoke-test credentials for the Configuration Service only,
         schema provisioning (`provision-dms-schema.ps1`), then prints IDE next-step
         guidance and stops. No DMS startup (`-DmsOnly`) runs. Terminal for that invocation.
         Use this to prepare the local stack for IDE-hosted (debugger) DMS launch.
@@ -62,8 +62,9 @@
     plus any listed extensions; the catalog-pinned core-only default applies only when the env
     carries no SCHEMA_PACKAGES). An already-staged standard-mode workspace is reused only while
     its recorded package identity still matches the effective SCHEMA_PACKAGES value. A mismatch
-    stops before package downloads or Docker/CMS side effects with guidance to stop the stack and
-    remove `eng/docker-compose/.bootstrap`; guarded automatic replacement belongs to DMS-1271.
+    stops before package downloads or Docker/Configuration Service side effects with guidance to stop the stack and
+    remove `eng/docker-compose/.bootstrap`. Guarded whole-workspace replacement exists only in
+    restore mode (`-RestoreTemplate`), which regenerates schema, claims, and seed state together.
     Expert `-ApiSchemaPath` workspaces are reused as-is. There is no
     `-Extensions` parameter; custom or unpublished schema sets are staged via expert
     `-ApiSchemaPath` before invoking the wrapper. All staging is delegated to
@@ -105,7 +106,8 @@
 .PARAMETER Rebuild
     Rebuild local DMS container images before the initial infrastructure startup. The switch is
     forwarded only to the first `start-local-dms.ps1 -InfraOnly` invocation and is not repeated
-    for the later `-DmsOnly` startup.
+    for the later `-DmsOnly` startup. Refused with -RestoreTemplate; a restore that needs an
+    image build runs through `build-dms.ps1 StartEnvironment -RestoreTemplate`.
 
 .PARAMETER EnableKafkaCdc
     Run the deployment controller after schema provisioning and before DMS or seed writes.
@@ -123,7 +125,7 @@
 
 .PARAMETER DataStoreDatabaseName
     Database name forwarded to configure-local-data-store.ps1. CDC requires a dedicated new name,
-    distinct from the database created by infrastructure initialization and the CMS database.
+    distinct from the database created by infrastructure initialization and the Configuration Service database.
 
 .PARAMETER EnableKafkaUI
     Forwarded to `start-local-dms.ps1`.
@@ -137,7 +139,7 @@
 
 .PARAMETER AddExtensionSecurityMetadata
     Forwarded to `start-local-dms.ps1`. Required by E2E pipelines that depend on extension
-    claimset fragments (e.g. Sample, Homograph) being loaded from the AdditionalClaimsets
+    claims fragments (e.g. Sample, Homograph) being loaded from the AdditionalClaims
     directory.
 
 .PARAMETER SchoolYearRange
@@ -145,6 +147,28 @@
     (`configure-local-data-store.ps1 -SchoolYearRange`) and, when seed loading is
     requested, every year in the range is passed to the seed phase via `-SchoolYear`.
     This is a wrapper/configure-phase input; it is not forwarded to `start-local-dms.ps1`.
+
+.PARAMETER RestoreTemplate
+    Restore mode. Restores the DMS datastore from a trusted database-template package of this
+    kind (Minimal or Populated) before services start, instead of provisioning an empty schema.
+    Mutually exclusive with -InfraOnly, -NoDataStore, and -SchoolYearRange. Combining
+    -LoadSeedData opts into the explicit supplemental seed and requires its own -SeedTemplate
+    or -SeedDataPath. Refused with -Rebuild, with -EnableKafkaCdc (a restore skips the provision
+    phase that produces the CDC provisioning receipt) and, on PostgreSQL only, while POSTGRES_USE_TMPFS=true
+    (the restored database would live in container memory and be lost when the database
+    container restarts after the restore).
+
+.PARAMETER PackageDirectory
+    Restore mode. Explicit local package source: a directory holding exactly one matching
+    template .nupkg and its sibling attestation document. Requires -RestoreTemplate. Without
+    it, restore mode resolves the package from the configured NuGet feed using
+    DATABASE_TEMPLATE_PACKAGE / DATABASE_TEMPLATE_NUGET_VERSION.
+
+.PARAMETER RestoreImageBuild
+    Restore mode. An image build to run once the package is authenticated, staged, and
+    cross-checked against the candidate workspace, before any Docker activity. Requires
+    -RestoreTemplate. build-dms.ps1 StartEnvironment passes its DockerBuild step here so a
+    rejected package never builds an image.
 
 .PARAMETER InfraOnly
     IDE workflow switch. When set, the wrapper runs infrastructure startup, configure, and
@@ -173,7 +197,7 @@
     Stop the local DMS stack, delete data volumes, and remove the .bootstrap workspace.
 
 .EXAMPLE
-    pwsh ./prepare-dms-schema.ps1 -EnvironmentFile ./.env.bootstrap.ds52 -SchemaToolPath $schemaToolExe
+    pwsh ./prepare-dms-schema.ps1 -EnvironmentFile ./.env.bootstrap.ds52
     pwsh ./prepare-dms-claims.ps1
     pwsh ./bootstrap-local-dms.ps1
     Standard-mode manual prepare flow. Stage the same default DS 5.2 core + TPDM package set the
@@ -181,7 +205,7 @@
     inspect or validate the staged workspace before starting infrastructure.
 
 .EXAMPLE
-    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath $schemaToolExe
+    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema
     pwsh ./prepare-dms-claims.ps1
     pwsh ./bootstrap-local-dms.ps1
     Expert mode (filesystem). Stage a local ApiSchema directory (which may include TPDM
@@ -190,7 +214,7 @@
     core, Sample, Homograph, and TPDM are all handled without it.
 
 .EXAMPLE
-    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath $schemaToolExe
+    pwsh ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema
     pwsh ./prepare-dms-claims.ps1
     pwsh ./bootstrap-local-dms.ps1 -LoadSeedData -SeedDataPath ./my-seed-xml/
     Expert mode with seed loading. Prepare the bootstrap manifest, then start the stack and
@@ -275,7 +299,7 @@ param(
 
     # Database engine for the whole stack. "mssql" swaps mssql.yml in for postgresql.yml:
     # SQL Server hosts the DMS datastore (relational backend), the Configuration Service
-    # (CMS SQL Server backend), and the self-contained OpenIddict identity stores — no
+    # (its SQL Server backend), and the self-contained OpenIddict identity stores — no
     # PostgreSQL container runs. Forwarded to start-local-dms.ps1 and
     # configure-local-data-store.ps1. The .env.mssql overlay (DMS_DATASTORE=mssql,
     # CONFIGURATION_SERVICE_DATASTORE=mssql, the MSSQL_* keys, and the SQL Server connection strings) is
@@ -284,7 +308,7 @@ param(
     [ValidateSet("postgresql", "mssql")]
     [string]$DatabaseEngine = "postgresql",
 
-    # Redirects the CMS (Configuration Service) database to a dedicated edfi_configurationservice
+    # Redirects the Configuration Service database to a dedicated edfi_configurationservice
     # database instead of sharing the DMS datastore database. Forwarded unchanged to
     # start-local-dms.ps1 and to both datastore phases, each of which enforces one half of the rule
     # that the DMS datastore may not land in the dedicated Configuration Service database: the
@@ -299,7 +323,16 @@ param(
     # start-local-dms.ps1 -DataStandardVersion, whose shared .env.ds<NN> overlays carry the
     # E2E/SDK surfaces (Sample/Homograph test extensions).
     [ValidateSet("5.2", "6.1")]
-    [string]$DataStandardVersion = "5.2"
+    [string]$DataStandardVersion = "5.2",
+
+    # Restore mode; see .PARAMETER RestoreTemplate / .PARAMETER PackageDirectory above.
+    # Forwarded to Invoke-BootstrapWrapper, which owns every restore-mode preflight.
+    [ValidateSet("Minimal", "Populated")]
+    [string]$RestoreTemplate,
+
+    [string]$PackageDirectory,
+
+    [scriptblock]$RestoreImageBuild
 )
 
 $ErrorActionPreference = "Stop"
@@ -326,6 +359,11 @@ trap {
 # running any phase. -v maps to -v -RemoveBootstrap; -v without -d is meaningless, so reject it.
 if ($v -and -not $d) {
     throw "-v requires -d. Use bootstrap-local-dms.ps1 -d -v to stop services, delete volumes, and remove the .bootstrap workspace."
+}
+# A restore request combined with teardown is ambiguous and teardown is destructive, so it is
+# refused before any teardown or retained-CDC lifecycle dispatch.
+if ($d -and ($PSBoundParameters.ContainsKey('RestoreTemplate') -or $PSBoundParameters.ContainsKey('PackageDirectory'))) {
+    throw "-d cannot be combined with -RestoreTemplate or -PackageDirectory. Run teardown and restore as separate invocations."
 }
 if ((-not $EnableKafkaCdc -or $d) -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot '.cdc-deployments/dms-local.json'))) {
     Import-Module (Join-Path $PSScriptRoot 'cdc-lifecycle.psm1')

@@ -372,7 +372,7 @@ function Get-CmsToken {
 
 <#
     .SYNOPSIS
-        Polls the CMS OAuth token endpoint with a freshly-created client_credentials grant until
+        Polls the Configuration Service OAuth token endpoint with a freshly-created client_credentials grant until
         OpenIddict has surfaced the new application and returns a 200, or until the budget is
         exhausted.
 
@@ -462,7 +462,7 @@ function Wait-CmsClientAvailable {
     }
 
     $waitSeconds = [math]::Round(($MaxAttempts * $DelayMs) / 1000.0, 1)
-    throw "CMS client '$ClientId' did not become available at $uri within ${waitSeconds}s ($MaxAttempts attempts). Last status: $lastStatus."
+    throw "Configuration Service client '$ClientId' did not become available at $uri within ${waitSeconds}s ($MaxAttempts attempts). Last status: $lastStatus."
 }
 
 <#
@@ -552,7 +552,7 @@ function Add-Vendor {
     $webResponse = Invoke-WebRequest @webRequestParams
     $location = $webResponse.Headers['Location']
     if ($location -is [array]) { $location = $location[0] }
-    if (-not $location) { throw "CMS Add-Vendor response missing Location header" }
+    if (-not $location) { throw "Configuration Service Add-Vendor response missing Location header" }
     return [long]($location -split '/')[-1]
 }
 
@@ -1563,7 +1563,7 @@ function Get-SeedLoaderNamespacePrefixes {
 
 <#
 .SYNOPSIS
-    Looks up an existing CMS vendor by company name.
+    Looks up an existing Configuration Service vendor by company name.
 
 .DESCRIPTION
     GETs v3/vendors?company={company} in the caller's tenant. The Configuration Service compares
@@ -1623,7 +1623,7 @@ function Find-CmsVendorByCompany {
 
 <#
 .SYNOPSIS
-    Looks up an existing CMS application by name and vendor ID.
+    Looks up an existing Configuration Service application by name and vendor ID.
 
 .DESCRIPTION
     GETs v3/vendors/{vendorId}/applications and filters by applicationName client-side.
@@ -1691,7 +1691,7 @@ function Find-CmsApplicationIdsByNameAndVendor {
 
 <#
 .SYNOPSIS
-    Deletes a CMS application by ID.
+    Deletes a Configuration Service application by ID.
 
 .DESCRIPTION
     Sends DELETE v3/applications/{id}. Treats 404 as already-deleted (warns instead of throwing).
@@ -1752,9 +1752,9 @@ function Remove-CmsApplication {
     Creates a fresh SeedLoader vendor/application and returns in-memory credentials.
 
 .DESCRIPTION
-    Orchestrates the CMS bootstrap steps required for seed delivery:
+    Orchestrates the Configuration Service bootstrap steps required for seed delivery:
       1. Registers the admin client (idempotent).
-      2. Obtains a CMS bearer token.
+      2. Obtains a Configuration Service bearer token.
       3. Creates the SeedLoader vendor, or reuses it and replaces its namespace prefixes.
       4. Deletes any existing Seed Loader application for that vendor so fresh credentials are returned.
       5. Creates a new application with ClaimSetName="SeedLoader" bound to the supplied DMS instance IDs.
@@ -1766,7 +1766,7 @@ function Remove-CmsApplication {
     The base URL of the Config server. Defaults to http://localhost:8081.
 
 .PARAMETER AdminClientId
-    The admin client ID used to obtain a CMS token.
+    The admin client ID used to obtain a Configuration Service token.
 
 .PARAMETER AdminClientSecret
     The admin client secret.
@@ -1937,10 +1937,10 @@ function New-SeedLoaderCredentials {
 
 <#
 .SYNOPSIS
-    Confirms CMS has the 'SeedLoader' claim set loaded before SeedLoader credentials are minted.
+    Confirms the Configuration Service has the 'SeedLoader' claim set loaded before SeedLoader credentials are minted.
 
 .DESCRIPTION
-    Add-Application stores the ClaimSetName as a string. A stale Config image that predates
+    Add-Application stores the ClaimSetName as a string. A stale Configuration Service image that predates
     DMS-1152's embedded Claims.json would accept the application creation but then BulkLoadClient
     would surface confusing 401/403 noise on the first call because the runtime grant resolution
     can't find the SeedLoader claim set. This fail-fast preflight queries /v3/claimSets and throws
@@ -1999,7 +1999,7 @@ function Assert-CmsSeedLoaderClaimSetLoaded {
             | Where-Object { $_.name -eq "SeedLoader" -or $_.claimSetName -eq "SeedLoader" }
         )
     ) {
-        throw "CMS does not have the 'SeedLoader' claim set loaded at $CmsUrl. The Configuration Service image likely predates DMS-1152's embedded Claims.json. Rebuild or pull a current Config image and re-run."
+        throw "The Configuration Service does not have the 'SeedLoader' claim set loaded at $CmsUrl. The Configuration Service image likely predates DMS-1152's embedded Claims.json. Rebuild or pull a current Configuration Service image and re-run."
     }
 }
 

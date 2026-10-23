@@ -54,8 +54,8 @@ docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d --no-
 
 echo
 echo "Reset complete. All prior review credentials were revoked with the Keycloak realm; rebuild in order:"
-echo "  1. Re-create the realm/clients plus CMS tenants/data stores. Wait until"
-echo "     https://localhost/st-config/health and /mt-config/health return 200 (the CMS"
+echo "  1. Re-create the realm/clients plus Configuration Service tenants/data stores. Wait until"
+echo "     https://localhost/st-config/health and /mt-config/health return 200 (the Configuration Service"
 echo "     containers were just recreated), then:"
 echo "         pwsh ./bootstrap/bootstrap.ps1 -BaseUrl https://localhost -Insecure"
 echo "  2. Provision the relational schema into edfi_st / edfi_mt / edfi_mt_t2"

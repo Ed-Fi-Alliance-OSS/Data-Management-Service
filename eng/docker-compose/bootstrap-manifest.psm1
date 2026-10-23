@@ -23,9 +23,32 @@ function Get-BootstrapRepoRoot {
 function Get-BootstrapRoot {
     <#
     .SYNOPSIS
-    Absolute path to eng/docker-compose/.bootstrap (staged workspace root).
+    Absolute path to the staged workspace root: eng/docker-compose/.bootstrap, unless the
+    restore-only DMS_BOOTSTRAP_ROOT_OVERRIDE seam redirected this module instance into a
+    candidate directory at import time (see the override block below Format-LogSafePath).
     #>
     return $script:BootstrapRoot
+}
+
+function Assert-NoBootstrapRootOverride {
+    <#
+    .SYNOPSIS
+    Fails fast when DMS_BOOTSTRAP_ROOT_OVERRIDE is set in the process environment. Only the
+    prepare phases may consume the override: the restore flow sets it strictly around candidate
+    creation and clears it in a finally block, so any phase command that talks to Docker, CMS,
+    or a database seeing it means the override leaked - and running would point live services at
+    a half-validated candidate workspace. A blank value counts as absent, matching the override
+    block's own read.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $PhaseName
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($env:DMS_BOOTSTRAP_ROOT_OVERRIDE)) {
+        throw "$PhaseName must not run while DMS_BOOTSTRAP_ROOT_OVERRIDE is set (currently '$(Format-LogSafePath $env:DMS_BOOTSTRAP_ROOT_OVERRIDE)'). The override redirects the bootstrap workspace to a restore candidate and only the prepare phases may consume it; clear the variable and retry."
+    }
 }
 
 function Get-BootstrapWorkspaceMismatchMessage {
@@ -115,6 +138,40 @@ function Format-LogSafePath {
     }
 
     return $builder.ToString()
+}
+
+# DMS_BOOTSTRAP_ROOT_OVERRIDE: restore-only redirection seam. When the database-template
+# restore flow builds a candidate workspace it sets this variable (strictly around the prepare
+# phases, cleared in finally) so prepare-dms-schema.ps1 / prepare-dms-claims.ps1 stage into a
+# candidate directory instead of the active .bootstrap. Validation is deliberately strict and
+# happens at import time so an invalid value can never be half-honored: the value must be an
+# absolute path strictly INSIDE eng/docker-compose/.bootstrap-restore/ (never the workspace root
+# itself, never the active .bootstrap, never an arbitrary location). Every phase command that
+# consumes the active workspace guards itself with Assert-NoBootstrapRootOverride, so a leaked
+# override fails fast instead of pointing live services at a half-validated candidate. A blank
+# value is treated as absent (on some hosts a cleared variable reads back as "").
+$script:BootstrapRestoreWorkspaceRoot = [System.IO.Path]::GetFullPath((Join-Path $script:DockerComposeRoot ".bootstrap-restore"))
+if (-not [string]::IsNullOrWhiteSpace($env:DMS_BOOTSTRAP_ROOT_OVERRIDE)) {
+    $overrideValue = $env:DMS_BOOTSTRAP_ROOT_OVERRIDE
+    if (-not [System.IO.Path]::IsPathRooted($overrideValue)) {
+        throw "DMS_BOOTSTRAP_ROOT_OVERRIDE must be an absolute path strictly inside '$(Format-LogSafePath $script:BootstrapRestoreWorkspaceRoot)', got relative path '$(Format-LogSafePath $overrideValue)'."
+    }
+    # TrimEnd before the containment check: with a trailing separator the workspace root itself
+    # ("...\.bootstrap-restore\") would otherwise start with its own prefix and slip through.
+    $overrideFullPath = [System.IO.Path]::GetFullPath($overrideValue).TrimEnd(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar)
+    $requiredPrefix = $script:BootstrapRestoreWorkspaceRoot + [System.IO.Path]::DirectorySeparatorChar
+    # Containment case sensitivity matches the platform: Windows paths are case-insensitive, but
+    # on Linux a case-variant sibling (e.g. .BOOTSTRAP-RESTORE) is a DIFFERENT directory outside
+    # the restore workspace and outside its .gitignore entry, so the check must be case-sensitive
+    # there. Keep this in lockstep with the prepare-dms-schema.ps1 fallback mirror.
+    $prefixComparison = if ($IsWindows) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+    if (-not $overrideFullPath.StartsWith($requiredPrefix, $prefixComparison)) {
+        throw "DMS_BOOTSTRAP_ROOT_OVERRIDE must point strictly inside '$(Format-LogSafePath $script:BootstrapRestoreWorkspaceRoot)' (a restore candidate directory), got '$(Format-LogSafePath $overrideValue)'."
+    }
+    $script:BootstrapRoot = $overrideFullPath
+    $script:BootstrapManifestPath = Join-Path $script:BootstrapRoot "bootstrap-manifest.json"
 }
 
 function New-BootstrapManifest {
@@ -613,7 +670,7 @@ function Restore-BootstrapEnvSnapshot {
 function Get-E2EClaimsFragmentsDirectory {
     <#
     .SYNOPSIS
-    Absolute path to the test-owned E2E claimset fragments (and their readiness checks file).
+    Absolute path to the test-owned E2E claims fragments (and their readiness checks file).
     #>
     return Join-Path $script:RepoRoot "src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/Fragments"
 }
@@ -621,19 +678,20 @@ function Get-E2EClaimsFragmentsDirectory {
 function Initialize-E2EClaimsWorkspace {
     <#
     .SYNOPSIS
-    Stages the default claimset fragments plus the test-owned E2E claimset fragments into
-    eng/docker-compose/.e2e-claims and returns its absolute path, for use as the CMS claims mount.
+    Stages the default claims fragments plus the test-owned E2E claims fragments into
+    eng/docker-compose/.e2e-claims and returns its absolute path, for use as the Configuration Service claims mount.
     .DESCRIPTION
     The directory is created only when missing and is never deleted or replaced: a later startup
-    phase calls this again while CMS is bind-mounted to it, and replacing it would leave CMS mounted
+    phase calls this again while the Configuration Service is bind-mounted to it, and replacing it would leave the Configuration Service mounted
     to the orphaned original. Content is synced in place instead: every intended file is copied over
-    its staged copy and stale *-claimset.json files are removed.
+    its staged copy and stale *-claims.json files, and any *-claimset.json copies left from
+    before the 8.1 rename, are removed.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal E2E staging helper; the E2E setup scripts do not expose -WhatIf end to end.')]
     param()
 
     $sourceDirectories = @(
-        (Join-Path $script:RepoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets"),
+        (Join-Path $script:RepoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaims"),
         (Get-E2EClaimsFragmentsDirectory)
     )
 
@@ -642,12 +700,12 @@ function Initialize-E2EClaimsWorkspace {
     )
     foreach ($sourceDirectory in $sourceDirectories) {
         if (-not (Test-Path -LiteralPath $sourceDirectory -PathType Container)) {
-            throw "E2E claimset fragment directory does not exist: $(Format-LogSafePath $sourceDirectory)"
+            throw "E2E claims fragment directory does not exist: $(Format-LogSafePath $sourceDirectory)"
         }
 
-        foreach ($fragment in @(Get-ChildItem -LiteralPath $sourceDirectory -Filter "*-claimset.json" -File | Sort-Object -Property Name)) {
+        foreach ($fragment in @(Get-ChildItem -LiteralPath $sourceDirectory -Filter "*-claims.json" -File | Sort-Object -Property Name)) {
             if ($intendedSources.ContainsKey($fragment.Name)) {
-                throw "Claimset fragment filename collision for '$(Format-LogSafeText $fragment.Name)' from '$(Format-LogSafePath $fragment.FullName)' and '$(Format-LogSafePath ($intendedSources[$fragment.Name]))'."
+                throw "Claims fragment filename collision for '$(Format-LogSafeText $fragment.Name)' from '$(Format-LogSafePath $fragment.FullName)' and '$(Format-LogSafePath ($intendedSources[$fragment.Name]))'."
             }
 
             $intendedSources[$fragment.Name] = $fragment.FullName
@@ -659,7 +717,8 @@ function Initialize-E2EClaimsWorkspace {
         New-Item -ItemType Directory -Path $workspace -ErrorAction Stop | Out-Null
     }
 
-    foreach ($staged in @(Get-ChildItem -LiteralPath $workspace -Filter "*-claimset.json" -File)) {
+    # Also removes copies staged under the *-claimset.json names used before 8.1, which CMS would warn about
+    foreach ($staged in @(Get-ChildItem -LiteralPath $workspace -File | Where-Object { $_.Name -like "*-claims.json" -or $_.Name -like "*-claimset.json" })) {
         if (-not $intendedSources.ContainsKey($staged.Name)) {
             Remove-Item -LiteralPath $staged.FullName -Force -ErrorAction Stop
         }
@@ -690,6 +749,11 @@ function Invoke-BootstrapStartupConfiguration {
         $AddExtensionSecurityMetadata
     )
 
+    # A leaked restore-candidate override must never reach service startup (or teardown, which
+    # can remove the workspace Get-BootstrapRoot resolves): refuse before any manifest read or
+    # environment activation.
+    Assert-NoBootstrapRootOverride -PhaseName "Startup configuration (start-local-dms.ps1 / start-published-dms.ps1)"
+
     try {
         $bootstrapMode = Set-BootstrapStartupEnvironment -SkipArtifactValidation:$IsTeardown
     } catch {
@@ -711,14 +775,14 @@ function Invoke-BootstrapStartupConfiguration {
     }
 
     if ($bootstrapMode) {
-        Write-Information "Bootstrap manifest detected and validated. Staged schema and claims workspaces are now runtime-authoritative; DMS reads ApiSchema from the staged workspace and CMS claims are governed by the manifest claims.mode." -InformationAction Continue
+        Write-Information "Bootstrap manifest detected and validated. Staged schema and claims workspaces are now runtime-authoritative; DMS reads ApiSchema from the staged workspace and Configuration Service claims are governed by the manifest claims.mode." -InformationAction Continue
         if ($AddExtensionSecurityMetadata) {
             # In bootstrap mode the manifest's claims.mode governs; -AddExtensionSecurityMetadata
             # is ignored. Set-BootstrapStartupEnvironment already activated staged claims above.
             Write-Information "Extension Security Metadata: bootstrap mode is active; staged claims from manifest govern (AddExtensionSecurityMetadata flag is ignored in bootstrap mode)." -InformationAction Continue
         }
     } elseif ($AddExtensionSecurityMetadata) {
-        # Non-bootstrap mode: activate Hybrid claims so the extension and E2E claimset fragments
+        # Non-bootstrap mode: activate Hybrid claims so the extension and E2E claims fragments
         # staged in .e2e-claims are loaded from /app/additional-claims. Every caller of this branch
         # is an E2E setup path, and the E2E claim sets are defined only by test-owned fragments.
         $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE = "Hybrid"
@@ -762,6 +826,7 @@ function Remove-BootstrapWorkspaceIfRequested {
 Export-ModuleMember -Function `
     Get-BootstrapRepoRoot, `
     Get-BootstrapRoot, `
+    Assert-NoBootstrapRootOverride, `
     Get-BootstrapWorkspaceMismatchMessage, `
     Format-LogSafeText, `
     Format-LogSafePath, `

@@ -507,7 +507,7 @@ function Get-CdcBootstrapRetryHandoff {
 function Invoke-CdcLifecycleCommand {
     param([hashtable]$Entry, [string]$Operation)
     Import-Module (Join-Path $PSScriptRoot 'bootstrap-schema-tool.psm1')
-    $tool = Resolve-DmsSchemaTool
+    $tool = Resolve-DmsSchemaTool -RequestedPath $env:DMS_SCHEMA_TOOL_PATH
     $arguments = @('cdc', $Operation, '--settings', $Entry.SettingsPath, '--state-path', $Entry.StatePath, '--json')
     if ($Operation -eq 'retire') { $arguments += @('--generation', [string]$Entry.Generation, '--destructive-cleanup') }
     if ($tool.EndsWith('.ps1', [StringComparison]::OrdinalIgnoreCase)) { $output = @(& pwsh -NoProfile -File $tool @arguments 2>$null) }
@@ -726,6 +726,12 @@ function Invoke-CdcDeploymentLifecycle {
     Governs all retained connectors before worker stop, retained startup, or destructive teardown.
     #>
     param([string]$Project, [string]$StartScript, [hashtable]$Parameters)
+    # Both entry scripts route here whenever a retained deployment exists, so a restore request would
+    # otherwise be silently ignored while the retained stack restarts. Refuse it before the lock is
+    # created and before any inventory, environment, lifecycle, or infrastructure effect.
+    if (-not [string]::IsNullOrWhiteSpace([string]$Parameters['RestoreTemplate']) -or -not [string]::IsNullOrWhiteSpace([string]$Parameters['PackageDirectory'])) {
+        throw 'Restore mode (-RestoreTemplate/-PackageDirectory) is unsupported while a retained CDC deployment exists for this project; retire it with -d -v first, or restore on a host without a retained deployment.'
+    }
     $lock = Enter-CdcDeploymentLock $Project
     $environmentSnapshot = @{}
     try {

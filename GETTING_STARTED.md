@@ -91,9 +91,13 @@ cd Data-Management-Service/eng/docker-compose
 cp .env.example .env
 ```
 
-On a clean checkout, publish the schema tool to the location the bootstrap
-auto-discovers. Repeat this after switching branches when the tool may have
-changed:
+The bootstrap automatically publishes the schema tool from source when it
+cannot find an eligible executable, then reuses it on later runs. This first
+startup can take longer while the .NET 10 SDK publishes the tool. After changing
+the tool or switching to a branch that changes it or its dependencies, refresh
+the cached tool with the following command, or delete its cache directory so the
+next bootstrap can resolve it again. Building the solution alone does not
+refresh the cache, which takes precedence over build output:
 
 ```powershell
 $schemaToolProject = "../../src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj"
@@ -109,8 +113,8 @@ Start the complete local environment with the bootstrap wrapper:
 
 The wrapper stages the schema and claims workspaces, starts the infrastructure,
 configures the data store, provisions its schema, and then starts DMS. Application
-images build inside containers; the host SDK is used only for the schema tool
-published above. Startup may take around a minute.
+images build inside containers. Startup may take around a minute, with additional
+time for the first schema tool publish when no eligible executable is available.
 
 Existing local images are reused by default, and stopping the stack (even with
 `-d -v`) does not remove them. After updating your checkout, rebuild them before
@@ -217,6 +221,53 @@ Use `-SeedTemplate Populated` for the populated sample. The wrapper also accepts
 `-SeedDataPath` for developer-supplied XML interchange files; see
 `Get-Help ./bootstrap-local-dms.ps1 -Detailed` for that expert workflow.
 
+## Restore the Datastore from a Database Template Package
+
+The supported way to initialize the datastore from a database-template package
+is the bootstrap wrappers' restore mode. Set the package's NuGet version in `.env`
+for feed-based restores. The package ID in `.env` is not always the effective one:
+a process environment value wins, `bootstrap-local-dms.ps1` always replaces it with
+the Data Standard overlay's value (following `-DataStandardVersion`), and
+`bootstrap-published-dms.ps1` does so only when `-DataStandardVersion` is passed.
+The restore then swaps in the requested kind and engine. See "Restoring the
+datastore from a database template" in `eng/docker-compose/README.md`.
+
+**Example:**
+
+```env
+DATABASE_TEMPLATE_PACKAGE=EdFi.Api.Minimal.Template.PostgreSql.5.2.0
+DATABASE_TEMPLATE_NUGET_VERSION=1.0.123
+```
+
+Then run one restore invocation, which authenticates the package against the
+template trust policy, validates it against a freshly prepared workspace and a
+throwaway scratch database, and only then replaces the target datastore before
+starting the stack:
+
+```powershell
+./bootstrap-local-dms.ps1 -RestoreTemplate Minimal
+```
+
+The tracked trust policy, `eng/docker-compose/template-trust-policy.json`,
+currently lists no trusted producers, so a feed restore refuses every package
+for now. That empty policy is intentional fail-closed behavior: a feed restore
+requires a package attested by a producer configured as a trust anchor in that
+policy (or in your local overlay). Older packages that lack the restore manifest
+and attestation are not eligible for `-RestoreTemplate`, even though the
+database engine could still read their `.sql` or `.bak` artifact; engine-level
+backup compatibility does not make a package eligible for the guarded bootstrap
+restore.
+
+Use `-PackageDirectory <path>` to restore from a local directory holding the
+template `.nupkg` and its sibling attestation document instead of the feed (no
+NuGet version key needed). See `eng/docker-compose/README.md` for the full
+restore documentation, including the trust-policy setup for locally built
+packages.
+
+The older `setup-database-template.psm1` module remains available as a
+legacy/manual path only, pending its deletion gate; it performs none of the
+restore mode's authentication or validation.
+
 ## Stopping the Containers
 
 When you are ready to stop the containers, append the `-d` ("down") flag to the
@@ -235,5 +286,8 @@ with, such as `-DatabaseEngine`, so the command stops the same services.
 ./bootstrap-local-dms.ps1 -d -v
 ```
 
-Before the next bootstrap, repeat the schema-tool publish step from the setup
-section because `-d -v` removes its `.bootstrap/tools/api-schema-tools` output.
+Because `-d -v` also clears the cached schema tool, the next bootstrap reuses an
+eligible executable from build output or publishes it automatically. Publishing
+requires the host .NET 10 SDK. If you set `DMS_SCHEMA_TOOL_PATH` to a deleted
+executable, clear or update that override before restarting; explicit paths fail
+closed rather than triggering automatic publishing.

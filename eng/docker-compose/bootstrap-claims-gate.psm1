@@ -11,7 +11,7 @@
 
 .DESCRIPTION
     Exposes Test-CmsClaimsReady, which reads claims.expectedVerificationChecks from the
-    bootstrap manifest and proves that CMS has applied the expected claim-set composition
+    bootstrap manifest and proves that the Configuration Service has applied the expected claim-set composition
     before the instance-configuration phase begins.
 
     Authentication uses the CMSAuthMetadataReadOnlyAccess client
@@ -253,7 +253,7 @@ function Invoke-ClaimsGateTokenRequest {
 function Get-ClaimsGateToken {
     <#
     .SYNOPSIS
-    Acquires a CMS bearer token for authorization-metadata queries. Tries the dedicated
+    Acquires a Configuration Service bearer token for authorization-metadata queries. Tries the dedicated
     CMSAuthMetadataReadOnlyAccess client first; falls back to the bootstrap admin client
     when the dedicated client is unavailable (e.g. during early startup before identity
     setup has completed). Uses Resolve-BootstrapAdminClient from env-utility.psm1 when
@@ -310,10 +310,10 @@ function Get-ClaimsGateToken {
 function Get-AuthorizationMetadataResponse {
     <#
     .SYNOPSIS
-    Calls CMS GET /v3/authorizationMetadata?claimSetName=<name> and returns the parsed response.
+    Calls the Configuration Service GET /v3/authorizationMetadata?claimSetName=<name> and returns the parsed response.
     Returns $null when the claim set is not found (404). Throws on unexpected HTTP errors.
-    Sends the Tenant header when a tenant is supplied, matching every other CMS Admin API
-    call in Dms-Management.psm1 so multi-tenant CMS routing resolves the request.
+    Sends the Tenant header when a tenant is supplied, matching every other Configuration Service Admin API
+    call in Dms-Management.psm1 so multi-tenant Configuration Service routing resolves the request.
     #>
     param(
         [Parameter(Mandatory)]
@@ -397,7 +397,7 @@ function Assert-SingleVerificationCheck {
     }
 
     if ($null -eq $Metadata) {
-        throw "Claims-ready gate FAILED: claim set '$(Format-ClaimsGateLogSafeText $claimSetName)' was not found in CMS /authorizationMetadata. CMS may not yet have applied the expected claims. /health green and /v2/claimSets name presence alone do not satisfy this gate."
+        throw "Claims-ready gate FAILED: claim set '$(Format-ClaimsGateLogSafeText $claimSetName)' was not found in the Configuration Service /authorizationMetadata. The Configuration Service may not yet have applied the expected claims. /health green and /v2/claimSets name presence alone do not satisfy this gate."
     }
 
     # /authorizationMetadata returns an array of claim-set objects when no filter is applied;
@@ -433,7 +433,7 @@ function Assert-SingleVerificationCheck {
     } | Select-Object -First 1
 
     if ($null -eq $matchingClaim) {
-        throw "Claims-ready gate FAILED: resource claim '$(Format-ClaimsGateLogSafeText $resourceClaim)' was not found in claim set '$(Format-ClaimsGateLogSafeText $claimSetName)'. The claim set exists but the expected resource claim URI is absent. Check CMS claims sources."
+        throw "Claims-ready gate FAILED: resource claim '$(Format-ClaimsGateLogSafeText $resourceClaim)' was not found in claim set '$(Format-ClaimsGateLogSafeText $claimSetName)'. The claim set exists but the expected resource claim URI is absent. Check Configuration Service claims sources."
     }
 
     # Resolve the claim's actions through the authorizations join:
@@ -487,7 +487,7 @@ function Assert-SingleVerificationCheck {
 function Test-CmsClaimsReady {
     <#
     .SYNOPSIS
-    Proves that CMS has applied the expected claims content before instance configuration
+    Proves that the Configuration Service has applied the expected claims content before instance configuration
     begins.
 
     .DESCRIPTION
@@ -496,7 +496,7 @@ function Test-CmsClaimsReady {
     manifest is present the list must be non-empty; a missing or empty list throws with
     an actionable message.
 
-    For each check, queries CMS GET /v3/authorizationMetadata?claimSetName=<name> and asserts:
+    For each check, queries the Configuration Service GET /v3/authorizationMetadata?claimSetName=<name> and asserts:
       1. The expected claim set exists in the response.
       2. The expected resource claim URI is in that claim set's claims array ('name').
       3. The expected action name is present in the actions of the authorizations entry
@@ -510,12 +510,12 @@ function Test-CmsClaimsReady {
     Returns nothing on success. Throws on failure with which check failed (caller exits non-zero).
 
     .PARAMETER CmsBaseUrl
-    Base URL of the running CMS (e.g. http://localhost:8081). When omitted the value is
+    Base URL of the running Configuration Service (e.g. http://localhost:8081). When omitted the value is
     derived from the environment file via Resolve-CmsBaseUrl (env-utility.psm1).
 
     .PARAMETER EnvironmentFile
-    Path to the .env file used to resolve CMS base URL, identity provider settings, and the
-    DMS_CONFIGURATION_SERVICE_TENANT tenant scope sent as the Tenant header on multi-tenant CMS calls.
+    Path to the .env file used to resolve the Configuration Service base URL, identity provider settings, and the
+    DMS_CONFIGURATION_SERVICE_TENANT tenant scope sent as the Tenant header on multi-tenant Configuration Service calls.
     Resolved via Resolve-LocalSettingsEnvironmentFile (env-utility.psm1) when the sibling
     module is present. Ignored when -CmsBaseUrl and -AccessToken are both supplied.
 
@@ -536,7 +536,7 @@ function Test-CmsClaimsReady {
     Test-CmsClaimsReady
 
     .EXAMPLE
-    # Explicit CMS URL and pre-obtained token for unit testing:
+    # Explicit Configuration Service URL and pre-obtained token for unit testing:
     Test-CmsClaimsReady -CmsBaseUrl "http://localhost:8081" -AccessToken "fake-token"
     #>
     [CmdletBinding()]
@@ -685,7 +685,7 @@ function Test-CmsClaimsReady {
     }
 
     $deferredSuffix = if ($deferredCount -gt 0) { " ($deferredCount parent-claim check(s) deferred)" } else { "" }
-    Write-Information "Claims gate PASSED: all $verifiedCount verifiable check(s) confirmed in CMS authorization metadata$deferredSuffix." -InformationAction Continue
+    Write-Information "Claims gate PASSED: all $verifiedCount verifiable check(s) confirmed in the Configuration Service authorization metadata$deferredSuffix." -InformationAction Continue
 }
 
 Export-ModuleMember -Function Test-CmsClaimsReady

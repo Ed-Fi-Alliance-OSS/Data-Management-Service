@@ -8,7 +8,7 @@ param(
     [string]
     $ClaimsDirectoryPath,
 
-    # Test-only: also stage the test-owned E2E claimset fragments, which define the E2E claim sets
+    # Test-only: also stage the test-owned E2E claims fragments, which define the E2E claim sets
     # the embedded Claims.json does not declare. Only the Kafka CDC E2E setup passes this.
     [switch]
     $IncludeE2EClaimSets
@@ -85,7 +85,7 @@ function Test-TruthyJsonValue {
         return $Value
     }
 
-    throw "Claimset fragment '$(Format-LogSafePath $Path)' has malformed boolean for 'isParent'."
+    throw "Claims fragment '$(Format-LogSafePath $Path)' has malformed boolean for 'isParent'."
 }
 
 function Get-EffectiveClaimSetName {
@@ -122,7 +122,7 @@ function Add-FragmentInput {
 
     $fileName = [System.IO.Path]::GetFileName($SourcePath)
     if ($TargetSources.ContainsKey($fileName)) {
-        throw "Claimset fragment filename collision for '$(Format-LogSafeText $fileName)' from '$(Format-LogSafePath $SourcePath)' and '$(Format-LogSafePath ($TargetSources[$fileName]))'."
+        throw "Claims fragment filename collision for '$(Format-LogSafeText $fileName)' from '$(Format-LogSafePath $SourcePath)' and '$(Format-LogSafePath ($TargetSources[$fileName]))'."
     }
 
     $TargetSources[$fileName] = $SourcePath
@@ -155,14 +155,28 @@ function Get-UserFragmentFile {
 
     $directory = Get-Item -LiteralPath $fullPath
 
-    $claimsetFiles = @(
-        Get-ChildItem -LiteralPath $directory.FullName -File -Filter "*-claimset.json" -Recurse |
+    # -Filter ignores case even on Linux, but CMS runs on Linux and matches -claims.json case-sensitively
+    $candidateFiles = @(
+        Get-ChildItem -LiteralPath $directory.FullName -File -Filter "*-claims.json" -Recurse |
             Sort-Object -Property FullName
     )
+    $claimsFiles = @($candidateFiles | Where-Object { $_.Name.EndsWith("-claims.json", [System.StringComparison]::Ordinal) })
 
-    $files = @($claimsetFiles | ForEach-Object { $_.FullName })
+    foreach ($mixedCaseFile in @($candidateFiles | Where-Object { -not $_.Name.EndsWith("-claims.json", [System.StringComparison]::Ordinal) })) {
+        Write-Warning "Claims fragment file '$(Format-LogSafePath $mixedCaseFile.FullName)' is not staged: fragment file names must end in lowercase -claims.json. Rename the file to apply it."
+    }
+
+    # Fragments were named *-claimset.json before 8.1; they are not staged, so say so
+    foreach ($retiredFile in @(
+            Get-ChildItem -LiteralPath $directory.FullName -File -Filter "*-claimset.json" -Recurse |
+                Sort-Object -Property FullName
+        )) {
+        Write-Warning "Claims fragment file '$(Format-LogSafePath $retiredFile.FullName)' is not staged: fragment file names must end in -claims.json. Rename the file to apply it."
+    }
+
+    $files = @($claimsFiles | ForEach-Object { $_.FullName })
     if ($files.Count -eq 0) {
-        throw "ClaimsDirectoryPath '$(Format-LogSafePath ($directory.FullName))' does not contain any *-claimset.json files."
+        throw "ClaimsDirectoryPath '$(Format-LogSafePath ($directory.FullName))' does not contain any *-claims.json files."
     }
 
     return $files
@@ -252,30 +266,30 @@ function Assert-FragmentValidAndExtractCheck {
 
     )
 
-    $fragment = Read-JsonHashtable -Path $Path -ArtifactName "Claimset fragment"
+    $fragment = Read-JsonHashtable -Path $Path -ArtifactName "Claims fragment"
     $fragmentName = Get-ValueOrNull -Hashtable $fragment -Key "name"
 
     $resourceClaims = Get-ValueOrNull -Hashtable $fragment -Key "resourceClaims"
     if ($null -eq $resourceClaims) {
-        throw "Claimset fragment '$(Format-LogSafePath $Path)' does not contain resourceClaims."
+        throw "Claims fragment '$(Format-LogSafePath $Path)' does not contain resourceClaims."
     }
     if ($resourceClaims -isnot [System.Collections.IList]) {
-        throw "Claimset fragment '$(Format-LogSafePath $Path)' has a resourceClaims value that is not a JSON array."
+        throw "Claims fragment '$(Format-LogSafePath $Path)' has a resourceClaims value that is not a JSON array."
     }
     if (@($resourceClaims).Count -eq 0) {
-        throw "Claimset fragment '$(Format-LogSafePath $Path)' does not contain resourceClaims."
+        throw "Claims fragment '$(Format-LogSafePath $Path)' does not contain resourceClaims."
     }
 
     $usesTopLevelNameAsClaimSet = $false
     $implicitVerificationChecks = [System.Collections.ArrayList]::new()
     foreach ($resourceClaim in @($resourceClaims)) {
         if ($resourceClaim -isnot [System.Collections.IDictionary]) {
-            throw "Claimset fragment '$(Format-LogSafePath $Path)' has a resourceClaims entry that is not a JSON object."
+            throw "Claims fragment '$(Format-LogSafePath $Path)' has a resourceClaims entry that is not a JSON object."
         }
 
         $resourceClaimName = Get-ValueOrNull -Hashtable $resourceClaim -Key "name"
         if ([string]::IsNullOrWhiteSpace($resourceClaimName)) {
-            throw "Claimset fragment '$(Format-LogSafePath $Path)' has a resourceClaims entry missing 'name'."
+            throw "Claims fragment '$(Format-LogSafePath $Path)' has a resourceClaims entry missing 'name'."
         }
 
         $isParent = Test-TruthyJsonValue `
@@ -284,11 +298,11 @@ function Assert-FragmentValidAndExtractCheck {
 
         $claimSets = Get-ValueOrNull -Hashtable $resourceClaim -Key "claimSets"
         if ($null -ne $claimSets -and $claimSets -isnot [System.Collections.IList]) {
-            throw "Claimset fragment '$(Format-LogSafePath $Path)' has a claimSets value that is not a JSON array."
+            throw "Claims fragment '$(Format-LogSafePath $Path)' has a claimSets value that is not a JSON array."
         }
         $claimSetsCount = if ($null -eq $claimSets) { 0 } else { @($claimSets).Count }
         if (-not $isParent -and $claimSetsCount -gt 0) {
-            throw "Claimset fragment '$(Format-LogSafePath $Path)' has a non-parent resourceClaims entry with claimSets. CMS composes non-parent claims from the fragment top-level name and authorizationStrategyOverridesForCRUD; move the actions there or make the resource claim a parent."
+            throw "Claims fragment '$(Format-LogSafePath $Path)' has a non-parent resourceClaims entry with claimSets. The Configuration Service composes non-parent claims from the fragment top-level name and authorizationStrategyOverridesForCRUD; move the actions there or make the resource claim a parent."
         }
 
         $usesImplicitClaimSetName = -not $isParent -and $claimSetsCount -eq 0
@@ -303,16 +317,16 @@ function Assert-FragmentValidAndExtractCheck {
 
             $claimSetName = Get-ValueOrNull -Hashtable $claimSet -Key "name"
             if ([string]::IsNullOrWhiteSpace($claimSetName)) {
-                throw "Claimset fragment '$(Format-LogSafePath $Path)' has a claimSets entry missing 'name'."
+                throw "Claims fragment '$(Format-LogSafePath $Path)' has a claimSets entry missing 'name'."
             }
 
             if (-not $EffectiveClaimSetNames.Contains($claimSetName)) {
-                throw "Claimset fragment '$(Format-LogSafePath $Path)' references unknown effective claim set '$(Format-LogSafeText $claimSetName)'."
+                throw "Claims fragment '$(Format-LogSafePath $Path)' references unknown effective claim set '$(Format-LogSafeText $claimSetName)'."
             }
 
             $actions = Get-ValueOrNull -Hashtable $claimSet -Key "actions"
             if ($null -ne $actions -and $actions -isnot [System.Collections.IList]) {
-                throw "Claimset fragment '$(Format-LogSafePath $Path)' has a claimSets actions value that is not a JSON array."
+                throw "Claims fragment '$(Format-LogSafePath $Path)' has a claimSets actions value that is not a JSON array."
             }
             foreach ($action in @($actions)) {
                 if ($null -eq $action) {
@@ -321,7 +335,7 @@ function Assert-FragmentValidAndExtractCheck {
 
                 $actionName = Get-ValueOrNull -Hashtable $action -Key "name"
                 if ([string]::IsNullOrWhiteSpace($actionName)) {
-                    throw "Claimset fragment '$(Format-LogSafePath $Path)' has a claimSets actions entry missing 'name'."
+                    throw "Claims fragment '$(Format-LogSafePath $Path)' has a claimSets actions entry missing 'name'."
                 }
 
                 # Explicit claimSets entries only occur on parent resource claims (non-parent
@@ -341,12 +355,12 @@ function Assert-FragmentValidAndExtractCheck {
         if ($usesImplicitClaimSetName) {
             $overrideActions = Get-ValueOrNull -Hashtable $resourceClaim -Key "authorizationStrategyOverridesForCRUD"
             if ($null -ne $overrideActions -and $overrideActions -isnot [System.Collections.IList]) {
-                throw "Claimset fragment '$(Format-LogSafePath $Path)' has an authorizationStrategyOverridesForCRUD value that is not a JSON array."
+                throw "Claims fragment '$(Format-LogSafePath $Path)' has an authorizationStrategyOverridesForCRUD value that is not a JSON array."
             }
             foreach ($action in @($overrideActions)) {
                 $actionName = Get-ValueOrNull -Hashtable $action -Key "actionName"
                 if ([string]::IsNullOrWhiteSpace($actionName)) {
-                    throw "Claimset fragment '$(Format-LogSafePath $Path)' has an authorizationStrategyOverridesForCRUD entry missing 'actionName'."
+                    throw "Claims fragment '$(Format-LogSafePath $Path)' has an authorizationStrategyOverridesForCRUD entry missing 'actionName'."
                 }
 
                 $null = $implicitVerificationChecks.Add(
@@ -361,11 +375,11 @@ function Assert-FragmentValidAndExtractCheck {
 
     if ($usesTopLevelNameAsClaimSet) {
         if ([string]::IsNullOrWhiteSpace($fragmentName)) {
-            throw "Claimset fragment '$(Format-LogSafePath $Path)' is missing top-level name required by non-parent resource claims."
+            throw "Claims fragment '$(Format-LogSafePath $Path)' is missing top-level name required by non-parent resource claims."
         }
 
         if (-not $EffectiveClaimSetNames.Contains($fragmentName)) {
-            throw "Claimset fragment '$(Format-LogSafePath $Path)' uses unknown effective claim set '$(Format-LogSafeText $fragmentName)'."
+            throw "Claims fragment '$(Format-LogSafePath $Path)' uses unknown effective claim set '$(Format-LogSafeText $fragmentName)'."
         }
 
         if (-not $SkipImplicitVerificationCheck) {
@@ -430,7 +444,7 @@ $extensionProjects = @(
 )
 
 $repoRoot = Get-BootstrapRepoRoot
-$shippedClaimsDirectory = Join-Path $repoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets"
+$shippedClaimsDirectory = Join-Path $repoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaims"
 $targetSources = [System.Collections.Generic.Dictionary[string, string]]::new(
     [System.StringComparer]::OrdinalIgnoreCase
 )
@@ -486,7 +500,7 @@ foreach ($extensionProject in $extensionProjects) {
     if ($knownExtension.ContainsKey("FragmentFileName")) {
         $fragmentPath = Join-Path $shippedClaimsDirectory $knownExtension["FragmentFileName"]
         if (-not (Test-Path -LiteralPath $fragmentPath -PathType Leaf)) {
-            throw "Shipped claimset fragment was not found for extension '$(Format-LogSafeText $projectName)': $(Format-LogSafePath $fragmentPath)"
+            throw "Shipped claims fragment was not found for extension '$(Format-LogSafeText $projectName)': $(Format-LogSafePath $fragmentPath)"
         }
 
         Add-FragmentInput -TargetSources $targetSources -Fragments $fragments -SourcePath $fragmentPath
@@ -537,18 +551,18 @@ $e2eFragmentPaths = [System.Collections.Generic.HashSet[string]]::new([System.St
 if ($IncludeE2EClaimSets) {
     $e2eFragmentsDirectory = Get-E2EClaimsFragmentsDirectory
     if (-not (Test-Path -LiteralPath $e2eFragmentsDirectory -PathType Container)) {
-        throw "E2E claimset fragment directory does not exist: $(Format-LogSafePath $e2eFragmentsDirectory)"
+        throw "E2E claims fragment directory does not exist: $(Format-LogSafePath $e2eFragmentsDirectory)"
     }
 
-    $e2eFragmentFiles = @(Get-ChildItem -LiteralPath $e2eFragmentsDirectory -File -Filter "*-claimset.json" | Sort-Object -Property Name)
+    $e2eFragmentFiles = @(Get-ChildItem -LiteralPath $e2eFragmentsDirectory -File -Filter "*-claims.json" | Sort-Object -Property Name)
     if ($e2eFragmentFiles.Count -eq 0) {
-        throw "E2E claimset fragment directory '$(Format-LogSafePath $e2eFragmentsDirectory)' does not contain any *-claimset.json files."
+        throw "E2E claims fragment directory '$(Format-LogSafePath $e2eFragmentsDirectory)' does not contain any *-claims.json files."
     }
 
     foreach ($e2eFragmentFile in $e2eFragmentFiles) {
         Add-FragmentInput -TargetSources $targetSources -Fragments $fragments -SourcePath $e2eFragmentFile.FullName
         $null = $e2eFragmentPaths.Add($e2eFragmentFile.FullName)
-        $e2eFragment = Read-JsonHashtable -Path $e2eFragmentFile.FullName -ArtifactName "Claimset fragment"
+        $e2eFragment = Read-JsonHashtable -Path $e2eFragmentFile.FullName -ArtifactName "Claims fragment"
         Add-EffectiveClaimSetName `
             -ClaimSetNames $effectiveClaimSetNames `
             -Name (Get-ValueOrNull -Hashtable $e2eFragment -Key "name")

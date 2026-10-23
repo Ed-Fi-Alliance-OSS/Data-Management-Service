@@ -114,14 +114,9 @@ Start the DMS stack with your multi-tenancy configuration:
 ```powershell
 cd eng/docker-compose
 
-# Prepare the ApiSchema workspace used by provisioning. On a clean checkout,
-# publish the api-schema-tools tool first.
-$schemaToolProject = "../../src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj"
-$schemaToolOutput  = ".bootstrap/tools/api-schema-tools"
-dotnet publish $schemaToolProject -c Release -p:UseAppHost=true -o $schemaToolOutput
-$schemaToolExe = if ($IsWindows) { "$schemaToolOutput/api-schema-tools.exe" } else { "$schemaToolOutput/api-schema-tools" }
-
-pwsh ./prepare-dms-schema.ps1 -SchemaToolPath $schemaToolExe
+# Prepare the ApiSchema workspace used by provisioning. If no eligible schema tool
+# exists, prepare publishes it automatically using the host .NET 10 SDK.
+pwsh ./prepare-dms-schema.ps1
 pwsh ./prepare-dms-claims.ps1
 
 pwsh ./start-local-dms.ps1 `

@@ -300,6 +300,271 @@ SELECT @KeyId,
     }
 }
 
+# The dollar-quote tag around the PostgreSQL key-initialization block. The block is fixed text; no
+# configured or generated value is ever placed inside it.
+$script:OpenIddictKeyInitializationTag = '$openiddict_key_initialization$'
+
+# Builds the PL/pgSQL body that reads the newest active key, the one the Configuration Service signs
+# with, and sets key_state to 'active-ok' when it decrypts with this passphrase or
+# 'active-undecryptable' when pgcrypto rejects it (SQLSTATE 39000: wrong key or corrupt data). Any
+# other decrypt failure, such as a pgcrypto permission error, sets 'active-unverified', because it
+# says nothing about the key. $WhenNoActiveKey runs when no active key exists. A failure outside the
+# decrypt (the lookup, the lock or the insert) is caught by the block Join-OpenIddictKeyInitializationScript
+# wraps around this body, never classified here.
+function Get-OpenIddictNewestKeyStateBlock {
+    param(
+        [string]$WhenNoActiveKey = ""
+    )
+
+    $elseClause = ""
+    if ($WhenNoActiveKey) {
+        $elseClause = "    ELSE`n$WhenNoActiveKey"
+    }
+
+    return @"
+    SELECT "PrivateKey" INTO newest_private_key
+    FROM "dmscs"."OpenIddictKey"
+    WHERE "IsActive" = TRUE
+    ORDER BY "CreatedAt" DESC
+    LIMIT 1;
+    IF newest_private_key IS NOT NULL THEN
+        BEGIN
+            PERFORM pgp_sym_decrypt(newest_private_key::bytea, passphrase);
+            key_state := 'active-ok';
+        EXCEPTION
+            WHEN SQLSTATE '39000' THEN
+                key_state := 'active-undecryptable';
+            WHEN OTHERS THEN
+                key_state := 'active-unverified';
+        END;
+$elseClause
+    END IF;
+"@
+}
+
+# Wraps a key-initialization body in one DO block and supplies its inputs. Statement text can reach the
+# server log whether the statement succeeds or fails (log_statement, log_min_duration_statement,
+# log_min_error_statement), so the encryption key and the candidate key never appear in it. They travel
+# as the data of a COPY ... FROM STDIN, which none of those settings log, into a session temp table the
+# block reads. Each value is base64, which COPY's text format carries without escaping. psql must run
+# with ON_ERROR_STOP (Invoke-PostgresOpenIddictKeyScript): if the COPY itself were rejected, psql would
+# otherwise read the data line as a statement.
+#
+# Every runtime error in the body (the input read, the lookup, the advisory lock, the insert) is caught
+# and reported as the fixed state 'database-error <SQLSTATE>', and a cancellation (statement_timeout or
+# a cancel request), which WHEN OTHERS does not catch, as 'canceled'. Catching rolls back everything the
+# body did, so no key is changed.
+function Join-OpenIddictKeyInitializationScript {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Body,
+
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$EncryptionKey,
+
+        # The creation path's candidate key: KeyId, PublicKey and PrivateKey, each already base64.
+        [pscustomobject]$CandidateKey
+    )
+
+    $fields = @([Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($EncryptionKey)))
+    foreach ($name in @("KeyId", "PublicKey", "PrivateKey")) {
+        if ($null -eq $CandidateKey) {
+            $fields += '\N'
+            continue
+        }
+
+        # COPY's text format gives tabs, line breaks and backslashes a meaning; base64 has none of them.
+        $value = [string]$CandidateKey.$name
+        if ($value -match '[\t\r\n\\]') {
+            throw "The OpenIddict signing-key initialization script cannot be built: the candidate $name is not base64. The value is withheld."
+        }
+        $fields += $value
+    }
+    $inputRow = $fields -join "`t"
+
+    $tag = $script:OpenIddictKeyInitializationTag
+
+    return @"
+CREATE TEMP TABLE openiddict_key_initialization_input (encryption_key text NOT NULL, key_id text, public_key text, private_key text);
+COPY openiddict_key_initialization_input (encryption_key, key_id, public_key, private_key) FROM STDIN;
+$inputRow
+\.
+CREATE TEMP TABLE openiddict_key_initialization_state (state text NOT NULL);
+DO $tag
+DECLARE
+    passphrase text;
+    candidate_key_id text;
+    candidate_public_key text;
+    candidate_private_key text;
+    newest_private_key text;
+    key_state text := 'none';
+BEGIN
+    BEGIN
+        SELECT convert_from(decode(input.encryption_key, 'base64'), 'UTF8'), input.key_id, input.public_key, input.private_key
+        INTO STRICT passphrase, candidate_key_id, candidate_public_key, candidate_private_key
+        FROM openiddict_key_initialization_input AS input;
+$Body
+    EXCEPTION
+        WHEN query_canceled THEN
+            key_state := 'canceled';
+        WHEN OTHERS THEN
+            key_state := 'database-error ' || SQLSTATE;
+    END;
+    INSERT INTO openiddict_key_initialization_state (state) VALUES (key_state);
+END
+$tag;
+SELECT state FROM openiddict_key_initialization_state;
+"@
+}
+
+<#
+.SYNOPSIS
+    Builds the PostgreSQL script that classifies the existing OpenIddict signing key without changing it.
+
+.DESCRIPTION
+    The first of two setup-openiddict.ps1 -InitDb phases. The script prints one state:
+    'active-ok' when the newest active key decrypts with the configured encryption key,
+    'active-undecryptable' when it does not, 'active-unverified' when the check itself fails for
+    another reason, 'none' when no active key exists, or 'database-error <SQLSTATE>' / 'canceled'
+    when the lookup fails or is canceled. It carries the encryption key, as COPY data rather than
+    statement text, but no key material, and it changes no row.
+
+.PARAMETER EncryptionKey
+    Key the Configuration Service uses to decrypt the private key.
+
+.OUTPUTS
+    System.String. A psql script for stdin.
+#>
+function New-OpenIddictKeyStateCheckSql {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Generates SQL text in memory; callers decide whether to execute it.')]
+    [OutputType([string])]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$EncryptionKey
+    )
+
+    return Join-OpenIddictKeyInitializationScript -Body (Get-OpenIddictNewestKeyStateBlock) -EncryptionKey $EncryptionKey
+}
+
+<#
+.SYNOPSIS
+    Builds the PostgreSQL script that creates the initial OpenIddict signing key only when no active key exists.
+
+.DESCRIPTION
+    The second setup-openiddict.ps1 -InitDb phase, run only after the state check found no active key.
+    A transaction-scoped advisory lock serializes cooperating initializers, and the newest active key is
+    read again under it. The wait for that lock is bounded to 30 seconds by a transaction-local
+    lock_timeout; a timeout reports 'database-error 55P03'. Without an active key, the script inserts
+    a new key and prints 'created'. When another initializer created one in the meantime, nothing is inserted and that key is decrypt-checked with
+    this caller's encryption key: 'active-ok', 'active-undecryptable' or 'active-unverified'. A failed
+    or canceled lock, lookup or insert reports 'database-error <SQLSTATE>' or 'canceled' and inserts
+    nothing. No existing row is changed.
+
+.PARAMETER EncryptionKey
+    Key used to encrypt the private key in the database.
+
+.OUTPUTS
+    System.String. A psql script for stdin.
+#>
+function New-OpenIddictKeyInitializationSql {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Generates SQL text in memory; callers decide whether to execute it.')]
+    [OutputType([string])]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$EncryptionKey
+    )
+
+    # The same row New-OpenIddictKeyInsertSql writes: a base64 key id, the decoded public key and the
+    # base64 private key encrypted with the passphrase.
+    $keyPair = New-OpenIddictKeyPair
+    $candidateKey = [PSCustomObject]@{
+        KeyId = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes([guid]::NewGuid().ToString()))
+        PublicKey = $keyPair.PublicKey
+        PrivateKey = $keyPair.PrivateKey
+    }
+    $createInitialKey = @'
+        INSERT INTO "dmscs"."OpenIddictKey" ("KeyId", "PublicKey", "PrivateKey", "IsActive")
+        VALUES (candidate_key_id, decode(candidate_public_key, 'base64'), pgp_sym_encrypt(candidate_private_key, passphrase), TRUE);
+        key_state := 'created';
+'@
+    $stateBlock = Get-OpenIddictNewestKeyStateBlock -WhenNoActiveKey $createInitialKey
+
+    # The lock id is a fixed constant shared by every cooperating initializer of this table. The wait
+    # for it is bounded: set_config's third argument makes lock_timeout local to the DO statement's
+    # transaction, and a lock not granted in time raises SQLSTATE 55P03, reported as 'database-error 55P03'.
+    $body = @"
+    PERFORM set_config('lock_timeout', '30s', true);
+    PERFORM pg_advisory_xact_lock(1292000001);
+$stateBlock
+"@
+
+    return Join-OpenIddictKeyInitializationScript -Body $body -EncryptionKey $EncryptionKey -CandidateKey $candidateKey
+}
+
+<#
+.SYNOPSIS
+    Builds the parameterized SQL Server command that creates the initial OpenIddict signing key only when no active key exists.
+
+.DESCRIPTION
+    One transaction, serialized by a transaction-owned application lock. Without an active key, it
+    inserts one through the same bound parameters as New-OpenIddictKeyInsertCommand and returns
+    'created'. Otherwise it returns 'active-ok' or 'active-undecryptable' for the newest active key and
+    changes no row. The candidate key pair is always generated and bound, and is unused unless inserted.
+
+.PARAMETER EncryptionKey
+    Key used to encrypt the private key in the database.
+
+.OUTPUTS
+    System.Management.Automation.PSCustomObject with Sql and Parameters properties.
+#>
+function New-OpenIddictKeyInitializationCommand {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Pure generator: builds and returns SQL text and parameter values without executing them; no system state changes and no -WhatIf surface.')]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$EncryptionKey
+    )
+
+    $insertCommand = New-OpenIddictKeyInsertCommand -EncryptionKey $EncryptionKey -DbType "MSSQL"
+
+    $sql = @"
+SET XACT_ABORT ON;
+SET NOCOUNT ON;
+BEGIN TRANSACTION;
+DECLARE @lockResult INT;
+EXEC @lockResult = sp_getapplock @Resource = N'dmscs.OpenIddictKey.Initialize', @LockMode = N'Exclusive', @LockOwner = N'Transaction', @LockTimeout = 30000;
+IF @lockResult < 0
+    THROW 51292, N'Could not acquire the OpenIddict signing-key initialization lock.', 1;
+DECLARE @newestPrivateKey VARBINARY(MAX);
+DECLARE @keyState NVARCHAR(32);
+SELECT TOP 1 @newestPrivateKey = PrivateKey
+FROM dmscs.OpenIddictKey
+WHERE IsActive = 1
+ORDER BY CreatedAt DESC;
+IF @newestPrivateKey IS NULL
+BEGIN
+$($insertCommand.Sql.Trim())
+    SET @keyState = N'created';
+END
+ELSE IF DECRYPTBYPASSPHRASE(@EncryptionKey, @newestPrivateKey) IS NOT NULL
+    SET @keyState = N'active-ok';
+ELSE
+    SET @keyState = N'active-undecryptable';
+COMMIT TRANSACTION;
+SELECT @keyState;
+"@
+
+    return [PSCustomObject]@{
+        Sql = $sql
+        Parameters = $insertCommand.Parameters
+    }
+}
+
 <#
 .SYNOPSIS
     Updates a client secret in the OpenIddict database with proper hashing.
@@ -358,4 +623,4 @@ WHERE "ClientId" = $clientIdLiteral;
 }
 
 # Export module functions
-Export-ModuleMember -Function New-AspNetPasswordHash, New-OpenIddictKeyPair, New-OpenIddictKeyInsertSql, New-OpenIddictKeyInsertCommand, New-ClientSecretUpdateSql, ConvertTo-PostgresSqlLiteral
+Export-ModuleMember -Function New-AspNetPasswordHash, New-OpenIddictKeyPair, New-OpenIddictKeyInsertSql, New-OpenIddictKeyInsertCommand, New-OpenIddictKeyStateCheckSql, New-OpenIddictKeyInitializationSql, New-OpenIddictKeyInitializationCommand, New-ClientSecretUpdateSql, ConvertTo-PostgresSqlLiteral

@@ -363,3 +363,63 @@ Feature: Namespace Authorization
                     "errors": []
                   }
                   """
+
+    Rule: A 255-character namespace prefix authorizes only namespaces it fully matches
+
+        Background:
+            # N is a 255-character namespace. The denied scenarios authorize with N2, which shares
+            # the first 254 characters with N, so they only pass if all 255 characters are compared.
+            Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns255.example.org/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              And a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+                  """
+                  {
+                      "codeValue": "DMS-1626 Long Namespace",
+                      "description": "DMS-1626 Long Namespace",
+                      "effectiveBeginDate": "2024-05-14",
+                      "effectiveEndDate": "2024-05-14",
+                      "namespace": "uri://ns255.example.org/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      "shortDescription": "DMS-1626 Long Namespace"
+                  }
+                  """
+
+        @e2e-ci-shard-3 @MssqlRepresentative
+        Scenario: 21 Ensure client authorized with a 255-character namespace prefix can create a descriptor in that namespace
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+                  """
+                  {
+                      "codeValue": "DMS-1626 Long Namespace",
+                      "description": "DMS-1626 Long Namespace",
+                      "effectiveBeginDate": "2024-05-14",
+                      "effectiveEndDate": "2024-05-14",
+                      "namespace": "uri://ns255.example.org/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      "shortDescription": "DMS-1626 Long Namespace"
+                  }
+                  """
+             Then it should respond with 201 or 200
+
+        @e2e-ci-shard-3 @MssqlRepresentative
+        Scenario: 22 Ensure client authorized with a 255-character namespace prefix can get a descriptor in that namespace
+             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
+             Then it should respond with 200
+
+        @e2e-ci-shard-3 @MssqlRepresentative
+        Scenario: 23 Ensure client authorized with a prefix differing only in the last character cannot create a descriptor in the 255-character namespace
+            Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns255.example.org/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+                  """
+                  {
+                      "codeValue": "DMS-1626 Long Namespace",
+                      "description": "DMS-1626 Long Namespace",
+                      "effectiveBeginDate": "2024-05-14",
+                      "effectiveEndDate": "2024-05-14",
+                      "namespace": "uri://ns255.example.org/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      "shortDescription": "DMS-1626 Long Namespace"
+                  }
+                  """
+             Then it should respond with 403
+
+        @e2e-ci-shard-3 @MssqlRepresentative
+        Scenario: 24 Ensure client authorized with a prefix differing only in the last character cannot get a descriptor in the 255-character namespace
+            Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns255.example.org/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"
+             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
+             Then it should respond with 403

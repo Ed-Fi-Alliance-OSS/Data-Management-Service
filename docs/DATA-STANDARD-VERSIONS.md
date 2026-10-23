@@ -227,9 +227,14 @@ Adding a version is the same set of small edits regardless of which version:
 3. **Local overlay.** Add `eng/docker-compose/.env.ds<NN>` modeled on `.env.ds52`:
    `CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=<N.N>`, the version's `DATABASE_TEMPLATE_PACKAGE`,
    and a single-line `SCHEMA_PACKAGES` listing that version's packages.
-4. **Security metadata.** Add `Claims/Standards/ds<NN>/Claims.json` (authored from the
-   ODS API SecurityMetadata XML export via the `eng/CmsHierarchy` tool). No csproj
-   change is needed — the embedded-resource glob picks it up.
+4. **Security metadata.** Convert a supported ODS security metadata XML export with
+   the installed **Ed-Fi API Security Metadata Tools** command:
+   `security-metadata-tools convert-ods-xml --input export.xml --output Claims.json`.
+   Review the complete document, containing `claimSets` and `claimsHierarchy`, for
+   the target standard and add it at `Claims/Standards/ds<NN>/Claims.json`. No csproj
+   change is needed — the embedded-resource glob picks it up. See
+   [conversion and loading](#converting-ods-security-metadata) below for installation,
+   verified export scope, and the unchanged-file upload contract.
 5. **CI.** Add an `include` entry to the `standard_version` matrix in each per-version lane -
    `EdFi.Api.Populated.Template.PostgreSQL.yml`, `EdFi.Api.Minimal.Template.PostgreSQL.yml`, and
    the SDK callers `Pkg EdFi.Api.Sdk.yml` / `Pkg EdFi.Api.TestSdk.yml`.
@@ -254,6 +259,44 @@ Adding a version is the same set of small edits regardless of which version:
 Because Data Standard 5.2 is the default, none of these edits change 5.2 behavior:
 new folders, overlays, package entries, and matrix legs sit alongside the existing
 ones.
+
+### Converting ODS security metadata
+
+[Ed-Fi API Security Metadata Tools](../src/config/clis/EdFi.DmsConfigurationService.SecurityMetadataTools/README.md)
+requires .NET 10. Once the intended stable release is published, install its release
+line from the Ed-Fi feed (replace `<major>.<minor>` with that line):
+
+```sh
+dotnet tool install --global EdFi.Api.SecurityMetadataTools --version '<major>.<minor>.*' --add-source https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json
+security-metadata-tools convert-ods-xml --input export.xml --output Claims.json
+```
+
+The [acceptance fixture and reproduction instructions](../src/config/clis/EdFi.DmsConfigurationService.SecurityMetadataTools.Tests.Unit/Fixtures/OdsSecurityMetadata/README.md)
+identify the verified ODS/API 7.3.2 / Data Standard 5.2.0 seed and pinned SQL export
+format. They do not establish conversion support for every ODS or Data Standard
+version. Review other sources against that format before adding a standard.
+
+Claim-set normalization removes only literal spaces and hyphens, then rejects
+remaining whitespace (including nonbreaking spaces), controls, empty names, and
+names over 256 UTF-16 code units. Valid non-ASCII spelling and case are preserved;
+distinct source names colliding case-insensitively fail. URI mapping recognizes
+only the exact, case-sensitive leading `http://ed-fi.org/ods/identity/claims/`
+prefix and replaces it with `http://ed-fi.org/identity/claims/`. A nonempty suffix
+without `/` also gains `ed-fi/`, so legacy `academicWeek` becomes
+`http://ed-fi.org/identity/claims/ed-fi/academicWeek`. Domain, service, and
+already-namespaced suffixes retain their paths; already-current and external
+URIs remain unchanged. URI collisions fail.
+
+The converter validates a complete CMS document with top-level `claimSets` and
+`claimsHierarchy`. Upload the generated file unchanged to
+`POST /management/upload-claims`, without wrapping it or extracting its hierarchy.
+This requires an authorized administrative token and
+`ClaimsOptions:DangerouslyEnableUnrestrictedClaimsLoading=true` (compose variable
+`CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=true`); see the
+[Claims Loading Deployment Guide](./CLAIMS-LOADING-GUIDE.md) for configuration and
+authentication. Imported catalog entries have `isSystemReserved: false`; an existing
+reserved set with the same name retains its reserved status when uploaded. Conversion
+and loading do not establish runtime support for every imported authorization strategy.
 
 ## Dropping a Data Standard version
 

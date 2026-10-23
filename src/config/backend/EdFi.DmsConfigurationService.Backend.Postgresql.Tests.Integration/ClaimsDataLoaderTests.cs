@@ -902,7 +902,7 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
             try
             {
                 await File.WriteAllTextAsync(
-                    Path.Combine(tempPath, "002-nofurtherauth-claimset.json"),
+                    Path.Combine(tempPath, "002-nofurtherauth-claims.json"),
                     $$"""
                     {
                       "name": "{{fragmentClaimSetName}}",

@@ -739,7 +739,7 @@ function Resolve-BootstrapAdminClient {
     <#
     .SYNOPSIS
         Returns the bootstrap admin client id and secret used by configure-local-data-store.ps1
-        and provision-dms-schema.ps1 to acquire a CMS admin token. Reads
+        and provision-dms-schema.ps1 to acquire a Configuration Service admin token. Reads
         DMS_BOOTSTRAP_ADMIN_CLIENT_ID / DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET from the env file and
         falls back to the historical local-dev defaults so the standard developer flow needs no
         env-file changes. Single-sources the two values so configure (which registers) and
@@ -761,23 +761,23 @@ function Resolve-IdentityClientSecretConfiguration {
     <#
     .SYNOPSIS
         Returns the parameters used to register the local identity clients so that both the
-        secrets and the length-validation bounds match the env-file values DMS and CMS use.
+        secrets and the length-validation bounds match the env-file values DMS and the Configuration Service use.
 
         - DmsConfigurationService (full_access) is registered with
-          CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET (the CMS IdentitySettings:ClientSecret).
+          CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET (the Configuration Service IdentitySettings:ClientSecret).
         - CMSReadOnlyAccess (readonly_access) is registered with DMS_CONFIGURATION_SERVICE_CLIENT_SECRET
-          (the DMS ConfigurationServiceSettings:ClientSecret used at runtime to obtain CMS tokens).
+          (the DMS ConfigurationServiceSettings:ClientSecret used at runtime to obtain Configuration Service tokens).
         - ClientSecretMinimumLength / ClientSecretMaximumLength come from
           CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH / _MAXIMUM_LENGTH, which also configure
-          CMS IdentitySettings:ClientSecretValidation. They are passed to setup-keycloak.ps1 /
-          setup-openiddict.ps1 so a CMS-valid secret is not rejected by the setup scripts' own
+          Configuration Service IdentitySettings:ClientSecretValidation. They are passed to setup-keycloak.ps1 /
+          setup-openiddict.ps1 so a secret the Configuration Service accepts is not rejected by the setup scripts' own
           default 32/128 bounds.
 
         All values fall back to the historical local-dev defaults so the standard developer flow
         needs no env-file changes. Previously the setup scripts registered every client with the
         hard-coded default secret and validated against the default 32/128 bounds, so overriding
         DMS_CONFIGURATION_SERVICE_CLIENT_SECRET / CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET (or the length bounds)
-        produced a mismatch and CMS token acquisition or local registration failed. Single-sources
+        produced a mismatch and Configuration Service token acquisition or local registration failed. Single-sources
         the mapping so registration and runtime always agree.
     .PARAMETER EnvValues
         Hashtable returned by ReadValuesFromEnvFile.
@@ -799,7 +799,7 @@ Set-Alias -Name Resolve-IdentityClientSecrets -Value Resolve-IdentityClientSecre
 function Resolve-CmsBaseUrl {
     <#
     .SYNOPSIS
-        Returns the CMS base URL derived from the supplied env-file values.
+        Returns the Configuration Service base URL derived from the supplied env-file values.
     .PARAMETER EnvValues
         Hashtable returned by ReadValuesFromEnvFile.
     #>
@@ -818,6 +818,8 @@ function Resolve-DockerLocalDmsBaseUrl {
     <#
     .SYNOPSIS
         Returns the Docker-local DMS base URL derived from the supplied env-file values.
+        DMS_HTTP_PORTS is read as Compose interpolates it into the published port mapping, so a
+        value set in the shell wins over the env file.
     .PARAMETER EnvValues
         Hashtable returned by ReadValuesFromEnvFile.
     #>
@@ -825,11 +827,8 @@ function Resolve-DockerLocalDmsBaseUrl {
         [hashtable]$EnvValues
     )
 
-    $port = $EnvValues['DMS_HTTP_PORTS']
-    if (-not [string]::IsNullOrWhiteSpace($port)) {
-        return "http://localhost:$port"
-    }
-    return "http://localhost:8080"
+    $port = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvValues -Name "DMS_HTTP_PORTS" -DefaultValue "8080"
+    return "http://localhost:$port"
 }
 
 function Resolve-DmsRouteUrl {
@@ -1369,10 +1368,10 @@ function Get-MssqlComposedEnvContent {
     .PARAMETER ExcludeKey
         Overlay keys that must NOT be preserved from the base file even when declared there. The caller
         uses this to re-derive after discovering that a specific preserved connection string does not
-        resolve to an MSSQL-shaped value. It is per KEY, not per category: the admin and CMS connection
-        strings are independent settings, so a valid customized admin string must survive an invalid CMS
+        resolve to an MSSQL-shaped value. It is per KEY, not per category: the admin and Configuration Service connection
+        strings are independent settings, so a valid customized admin string must survive an invalid Configuration Service
         string, and a PostgreSQL-shaped admin string must not be carried into an MSSQL environment just
-        because the CMS string happens to be valid.
+        because the Configuration Service string happens to be valid.
     #>
     param(
         [Parameter(Mandatory)] [string]$BaseEnvironmentFile,
@@ -1457,7 +1456,7 @@ function Get-MssqlComposedEnvContent {
 function Test-PostgresCmsTargetNameAgreement {
     <#
     .SYNOPSIS
-        True when a POSTGRESQL CMS database-target name textually agrees with the expected topology
+        True when a POSTGRESQL Configuration Service database-target name textually agrees with the expected topology
         name - ordinal-exact, and PostgreSQL-ONLY by contract.
 
     .DESCRIPTION
@@ -1503,7 +1502,7 @@ function Resolve-DatabaseEngineEnvironmentFile {
         Composition goes through Get-MssqlComposedEnvContent, which returns exactly the lines that will
         be written, so DMS_DATASTORE and the SQL Server connection strings reach every phase - configure,
         provision, and the start scripts - from one canonical path. Without this, a run could provision
-        an MSSQL data store in CMS while the DMS container itself still starts on its postgresql default
+        an MSSQL data store in the Configuration Service while the DMS container itself still starts on its postgresql default
         (local-dms.yml AppSettings__Datastore), since that setting comes only from the env file.
 
         Validation and the write describe the SAME artifact: the prospective lines are evaluated
@@ -1527,9 +1526,9 @@ function Resolve-DatabaseEngineEnvironmentFile {
         credentials, database names, and ports are preserved. Connection strings are preserved only
         when they contain a SQL Server data-source keyword; PostgreSQL-shaped values inherited from
         a partially edited base file are replaced by the MSSQL overlay. This function renders NO
-        database-NAME verdict: whether the CMS target and the datastore are the same physical
-        database is decided by the running instance's collation, so every CMS-participating MSSQL
-        start verifies it live (Assert-MssqlTopologyPhysicalConsistency); this composition path
+        database-NAME verdict: whether the Configuration Service target and the datastore are the same physical
+        database is decided by the running instance's collation, so every MSSQL start that uses the Configuration Service
+        verifies it live (Assert-MssqlTopologyPhysicalConsistency); this composition path
         validates structure only. DMS_DATASTORE and CONFIGURATION_SERVICE_DATASTORE are always forced to
         mssql.
 
@@ -1544,11 +1543,11 @@ function Resolve-DatabaseEngineEnvironmentFile {
         directory (eng/docker-compose).
 
     .PARAMETER SkipMssqlCmsDatabaseValidation
-        Retained for call-site compatibility; a NO-OP. It used to skip the legacy CMS/OpenIddict
+        Retained for call-site compatibility; a NO-OP. It used to skip the legacy Configuration Service/OpenIddict
         shared-database NAME invariant, which is superseded: no pre-start MSSQL name verdict is
         rendered on this path anymore, because physical name equivalence is the running
-        instance's collation's call and every CMS-participating start verifies it live
-        (Assert-MssqlTopologyPhysicalConsistency). Callers that never start or consume CMS get
+        instance's collation's call and every start that uses the Configuration Service verifies it live
+        (Assert-MssqlTopologyPhysicalConsistency). Callers that never start or consume the Configuration Service get
         structural validation only, which this switch never affected.
     #>
     param(
@@ -2084,7 +2083,7 @@ function Move-EnvFileKeyBeforeAnotherKey {
         # NEVER render either value: an environment file carries credentials, and this message reaches
         # terminals and CI logs. The moved key, the affected key, and its line number are what make the
         # failure actionable anyway.
-        throw "CMS database topology: reordering '$KeyToMove' above '$BeforeKey' in '$Path' would change the value Docker Compose renders for '$($declaration.Key)' (line $($originalIndex + 1)), which the CMS database seam does not own. The reorder was not applied. Values are withheld because an environment file carries credentials. Declare '$KeyToMove' above '$BeforeKey' in the source environment file instead."
+        throw "Configuration Service database topology: reordering '$KeyToMove' above '$BeforeKey' in '$Path' would change the value Docker Compose renders for '$($declaration.Key)' (line $($originalIndex + 1)), which the Configuration Service database seam does not own. The reorder was not applied. Values are withheld because an environment file carries credentials. Declare '$KeyToMove' above '$BeforeKey' in the source environment file instead."
     }
 
     $content = ($candidateLines -join "`n") + "`n"
@@ -2149,7 +2148,7 @@ function Get-ComposeDatabaseServiceHostAlias {
         `container_name`, and by its `hostname`. Both postgresql.yml and mssql.yml deliberately name the
         service `db` - mssql.yml's own header says so, to make it a drop-in swap for postgresql.yml - while
         setting `container_name`/`hostname` to `dms-postgresql` / `dms-mssql`. All of those address the
-        same database, so a CMS connection string may legitimately use any of them.
+        same database, so a Configuration Service connection string may legitimately use any of them.
 
         The list is DERIVED, not hard-coded, so renaming the service, container, or hostname in a compose
         file cannot leave endpoint validation asserting a name the stack no longer answers to.
@@ -2583,7 +2582,7 @@ function Get-RegisteredDatastoreDatabaseValue {
 
     .DESCRIPTION
         A registered datastore name does not travel to the database server as text. Add-DataStore
-        serializes it into the CMS data-store record's connection string with DbConnectionStringBuilder
+        serializes it into the Configuration Service data-store record's connection string with DbConnectionStringBuilder
         (via New-DataStoreConnectionString), and SchemaTools reads the database back out with
         NpgsqlConnectionStringBuilder before quoting it into CREATE DATABASE. Judging a collision against
         the raw parameter is what let a trailing space through: serialized UNQUOTED by the previous
@@ -2742,7 +2741,7 @@ function New-MssqlTopologyConsistencyQuery {
         The single SQL-generation authority for the server-backed topology check; the strict
         parser consumes exactly what this emits, and no other production code may build this
         SQL. The batch reports the server's per-candidate relation; which relation each
-        candidate REQUIRES (equal for CMS-target agreement, distinct for datastore
+        candidate REQUIRES (equal for Configuration Service target agreement, distinct for datastore
         distinctness) is the calling authority's contract, not the batch's. Shape, in order:
 
         - `SET NOCOUNT ON` so row-count chatter never pollutes the token stream.
@@ -2985,9 +2984,9 @@ function New-MssqlTopologySqlcmdArgument {
 function Assert-MssqlTopologyPhysicalConsistency {
     <#
     .SYNOPSIS
-        The live boundary for EVERY CMS-participating MSSQL start: asks the RUNNING SQL Server,
+        The live boundary for EVERY MSSQL start that uses the Configuration Service: asks the RUNNING SQL Server,
         under its own collation, whether the effective topology's database names are physically
-        consistent - CMS targets equal to the mode's expected database, and (separate mode)
+        consistent - Configuration Service targets equal to the mode's expected database, and (separate mode)
         datastore candidates distinct from it - and throws unless every relation is verified.
 
     .DESCRIPTION
@@ -3002,13 +3001,13 @@ function Assert-MssqlTopologyPhysicalConsistency {
         (DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE), read RAW from the effective environment file's
         own declarations - the same source Confirm-CmsDatabaseTopologyAgreement uses - so an
         unrelated ambient variable cannot flip the mode. Shared mode verifies that the effective
-        CONFIGURATION_SERVICE_DATABASE_NAME seam and every parsed CMS connection-string database segment
+        CONFIGURATION_SERVICE_DATABASE_NAME seam and every parsed Configuration Service connection-string database segment
         are physically EQUAL to the effective MSSQL_DB_NAME. Separate mode verifies the same
         candidates are physically EQUAL to the dedicated 'edfi_configurationservice', and
         additionally that the effective MSSQL_DB_NAME - and the provider-parsed registered
         candidate, when supplied - are physically DISTINCT from it. Callers gate shape, engine,
-        and CMS participation; the placement contract (after the database readiness wait, before
-        OpenIddict/CMS/DMS/registration work) belongs to the calling scripts.
+        and Configuration Service participation; the placement contract (after the database readiness wait, before
+        OpenIddict/Configuration Service/DMS/registration work) belongs to the calling scripts.
 
         Every candidate is resolved with the same sequential Compose precedence the topology
         validator uses, so ambient overrides are checked as the values the stack will actually
@@ -3076,11 +3075,11 @@ function Assert-MssqlTopologyPhysicalConsistency {
     # connection-string segments below are the seam's real consumers either way.
     $ambientSeamValue = [System.Environment]::GetEnvironmentVariable("CONFIGURATION_SERVICE_DATABASE_NAME")
     if ($null -ne $ambientSeamValue -and [string]::IsNullOrWhiteSpace($ambientSeamValue)) {
-        throw "CMS database topology configuration error: the ambient environment supplies 'CONFIGURATION_SERVICE_DATABASE_NAME' as an empty or whitespace-only value, which Compose would hand to the container verbatim. Unset it or set a database name. The value is withheld."
+        throw "Configuration Service database topology configuration error: the ambient environment supplies 'CONFIGURATION_SERVICE_DATABASE_NAME' as an empty or whitespace-only value, which Compose would hand to the container verbatim. Unset it or set a database name. The value is withheld."
     }
     $seamName = Get-SequentialEffectiveValue -Evaluation $sequential -Name "CONFIGURATION_SERVICE_DATABASE_NAME"
     if ($null -ne $seamName -and [string]::IsNullOrWhiteSpace([string]$seamName)) {
-        throw "CMS database topology configuration error: 'CONFIGURATION_SERVICE_DATABASE_NAME' resolves to an empty or whitespace-only value in the effective environment. Set a database name or remove the declaration. The value is withheld."
+        throw "Configuration Service database topology configuration error: 'CONFIGURATION_SERVICE_DATABASE_NAME' resolves to an empty or whitespace-only value in the effective environment. Set a database name or remove the declaration. The value is withheld."
     }
 
     $cmsConnectionString = [string](Get-SequentialEffectiveValue -Evaluation $sequential -Name "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING")
@@ -3141,12 +3140,12 @@ function Assert-MssqlTopologyPhysicalConsistency {
         else { $null }
     if ($null -ne $transportProblem) {
         $failureDetail = if ([string]::IsNullOrEmpty($transport.FailureTypeName)) { "" } else { " [$($transport.FailureTypeName)]" }
-        throw "CMS database topology verification failed: the physical consistency of the database names resolved from $sourceKeyList against $expectedDescription could not be confirmed on the running SQL Server ($transportProblem$failureDetail). Startup does not proceed unverified. The resolved values are withheld."
+        throw "Configuration Service database topology verification failed: the physical consistency of the database names resolved from $sourceKeyList against $expectedDescription could not be confirmed on the running SQL Server ($transportProblem$failureDetail). Startup does not proceed unverified. The resolved values are withheld."
     }
 
     $parsed = ConvertFrom-MssqlTopologyConsistencyQueryOutput -OutputText $transport.StandardOutput -ExpectedSourceKey $sourceKeys
     if ($parsed.Category -ne "ok") {
-        throw "CMS database topology verification failed: the physical consistency of the database names resolved from $sourceKeyList against $expectedDescription could not be confirmed on the running SQL Server ($($parsed.Category)). Startup does not proceed unverified. The resolved values are withheld."
+        throw "Configuration Service database topology verification failed: the physical consistency of the database names resolved from $sourceKeyList against $expectedDescription could not be confirmed on the running SQL Server ($($parsed.Category)). Startup does not proceed unverified. The resolved values are withheld."
     }
 
     foreach ($sourceKey in $sourceKeys) {
@@ -3154,11 +3153,11 @@ function Assert-MssqlTopologyPhysicalConsistency {
         $required = [string]$requiredRelation[$sourceKey]
         if ([string]::Equals($required, "equal", [System.StringComparison]::Ordinal) -and
             -not [string]::Equals($verdict, "equal", [System.StringComparison]::Ordinal)) {
-            throw "CMS database topology mismatch: SQL Server reports that the database name resolved from '$sourceKey' denotes a DIFFERENT physical database than $expectedDescription (server-collation name comparison on the running instance). The effective topology requires them to be the same database. The resolved values are withheld. Align the names or change the -SeparateConfigDatabase selection."
+            throw "Configuration Service database topology mismatch: SQL Server reports that the database name resolved from '$sourceKey' denotes a DIFFERENT physical database than $expectedDescription (server-collation name comparison on the running instance). The effective topology requires them to be the same database. The resolved values are withheld. Align the names or change the -SeparateConfigDatabase selection."
         }
         if ([string]::Equals($required, "distinct", [System.StringComparison]::Ordinal) -and
             -not [string]::Equals($verdict, "distinct", [System.StringComparison]::Ordinal)) {
-            throw "CMS database topology mismatch: SQL Server reports that the datastore name resolved from '$sourceKey' denotes the SAME physical database as the dedicated 'edfi_configurationservice' (server-collation name comparison on the running instance). -SeparateConfigDatabase requires the Configuration Service database and the DMS datastore to be physically distinct. The resolved value is withheld. Rename the datastore database or use shared mode."
+            throw "Configuration Service database topology mismatch: SQL Server reports that the datastore name resolved from '$sourceKey' denotes the SAME physical database as the dedicated 'edfi_configurationservice' (server-collation name comparison on the running instance). -SeparateConfigDatabase requires the Configuration Service database and the DMS datastore to be physically distinct. The resolved value is withheld. Rename the datastore database or use shared mode."
         }
     }
 }
@@ -3166,8 +3165,8 @@ function Assert-MssqlTopologyPhysicalConsistency {
 function Resolve-CmsDatabaseTopologyEnvironmentFile {
     <#
     .SYNOPSIS
-        Returns the effective environment file path after applying the CMS database topology
-        contract (DMS-1270): shared mode leaves the CMS database aliased to the selected DMS
+        Returns the effective environment file path after applying the Configuration Service database topology
+        contract (DMS-1270): shared mode leaves the Configuration Service database aliased to the selected DMS
         datastore name; separate mode redirects it to the dedicated edfi_configurationservice
         database.
 
@@ -3396,7 +3395,7 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
             $lineNumbers = @($sequential.Declarations |
                 Where-Object { [string]::Equals($_.Key, $closureKey, [System.StringComparison]::Ordinal) } |
                 ForEach-Object { $_.LineIndex + 1 })
-            throw "CMS database topology: '$closureKey' is declared more than once in '$BaseEnvironmentFile' (lines $($lineNumbers -join ', ')), and the CMS database seam depends on it. Docker Compose resolves an --env-file sequentially, so lines between the declarations see the earlier value while the compose file itself sees the last one - the two can disagree. Remove the duplicate declaration and keep a single definition."
+            throw "Configuration Service database topology: '$closureKey' is declared more than once in '$BaseEnvironmentFile' (lines $($lineNumbers -join ', ')), and the Configuration Service database seam depends on it. Docker Compose resolves an --env-file sequentially, so lines between the declarations see the earlier value while the compose file itself sees the last one - the two can disagree. Remove the duplicate declaration and keep a single definition."
         }
     }
 
@@ -3419,7 +3418,7 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
         if ($null -eq $declaration) { continue }
         foreach ($referencedName in $declaration.References) {
             if (Test-DotenvReferenceResolvable -Evaluation $sequential -Name $referencedName -BeforeLineIndex $declaration.LineIndex) { continue }
-            throw "CMS database topology: CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING depends on '$closureKey', whose own value references '$referencedName' before it is declared in '$BaseEnvironmentFile' (dependency chain: CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING -> $closureKey -> $referencedName). Docker Compose resolves an --env-file sequentially, so '$closureKey' freezes with an empty '$referencedName' and the connection string inherits that. Declare '$referencedName' above '$closureKey'."
+            throw "Configuration Service database topology: CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING depends on '$closureKey', whose own value references '$referencedName' before it is declared in '$BaseEnvironmentFile' (dependency chain: CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING -> $closureKey -> $referencedName). Docker Compose resolves an --env-file sequentially, so '$closureKey' freezes with an empty '$referencedName' and the connection string inherits that. Declare '$referencedName' above '$closureKey'."
         }
     }
 
@@ -3474,7 +3473,7 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
             # correctly ordered where it currently sits. The references are the resolution-time trace,
             # so an escaped '$$' literal (a password like pa$$word) reports nothing and stays movable.
             if ($referencedDeclaration.References.Count -gt 0) {
-                throw "CMS database topology: CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING references '$referencedName', which is declared after it in '$BaseEnvironmentFile' and itself references $(($referencedDeclaration.References | ForEach-Object { "'$_'" }) -join ', '), so it cannot be moved above the connection string without breaking its own resolution order. Docker Compose resolves an --env-file sequentially; declare '$referencedName' (and the variables it references) above the connection string."
+                throw "Configuration Service database topology: CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING references '$referencedName', which is declared after it in '$BaseEnvironmentFile' and itself references $(($referencedDeclaration.References | ForEach-Object { "'$_'" }) -join ', '), so it cannot be moved above the connection string without breaking its own resolution order. Docker Compose resolves an --env-file sequentially; declare '$referencedName' (and the variables it references) above the connection string."
             }
 
             $declarationOrderBroken = $true
@@ -3553,7 +3552,7 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
         catch {
             # No snapshot means no way to undo the write below, so do not begin one. Nothing has been
             # written at this point, which is exactly why this has to fail here rather than later.
-            throw "CMS database topology: the existing derived environment file '$derivedPath' could not be read ($($_.Exception.Message)), so this run cannot guarantee it would be restorable if the topology repair were rejected. Nothing was written. Resolve the file access problem and re-run."
+            throw "Configuration Service database topology: the existing derived environment file '$derivedPath' could not be read ($($_.Exception.Message)), so this run cannot guarantee it would be restorable if the topology repair were rejected. Nothing was written. Resolve the file access problem and re-run."
         }
     }
 
@@ -3594,7 +3593,7 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
                 $differingSegments = Get-ConnectionStringSegmentDifference `
                     -Expected $intendedEffectiveConnectionString `
                     -Actual $derivedEffectiveConnectionString
-                throw "CMS database topology: the derived environment file '$derivedPath' does not render the intended CMS connection string. Segment(s) that disagree: $differingSegments. Values are withheld because the connection string contains credentials. This is a repair failure, not a configuration error - please report it with the source environment file."
+                throw "Configuration Service database topology: the derived environment file '$derivedPath' does not render the intended Configuration Service connection string. Segment(s) that disagree: $differingSegments. Values are withheld because the connection string contains credentials. This is a repair failure, not a configuration error - please report it with the source environment file."
             }
         }
     }
@@ -3623,7 +3622,7 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
         # environment file is still on disk and no longer means what its owner thinks it means. Report both,
         # naming the path and the I/O reason only - never a value from either file.
         if ($null -ne $rollbackFailure) {
-            throw "CMS database topology: the topology write failed AND the derived environment file '$derivedPath' could not be restored to its previous contents ($($rollbackFailure.Exception.Message)). That file is now in an indeterminate state - do not hand it to Docker; delete or re-create it. The underlying failure was: $($originalFailure.Exception.Message)"
+            throw "Configuration Service database topology: the topology write failed AND the derived environment file '$derivedPath' could not be restored to its previous contents ($($rollbackFailure.Exception.Message)). That file is now in an indeterminate state - do not hand it to Docker; delete or re-create it. The underlying failure was: $($originalFailure.Exception.Message)"
         }
 
         throw $originalFailure
@@ -3635,7 +3634,7 @@ function Resolve-CmsDatabaseTopologyEnvironmentFile {
 function Confirm-CmsDatabaseTopologyAgreement {
     <#
     .SYNOPSIS
-        Throws unless the CMS database connection string agrees with the effective CMS database
+        Throws unless the Configuration Service database connection string agrees with the effective Configuration Service database
         topology contract (DMS-1270): the database name, host, and port that
         CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING actually resolves to - as Docker Compose would
         resolve it, honoring an ambient shell override - must match the seam this invocation
@@ -3767,7 +3766,7 @@ function Confirm-CmsDatabaseTopologyAgreement {
         # container starts and before anything consumes it.
         $datastoreDatabaseName = [string](Get-SequentialEffectiveValue -Evaluation $sequential -Name $datastoreNameKey)
         if (Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine $DatabaseEngine -DatastoreDatabaseName $datastoreDatabaseName) {
-            throw "CMS database topology mismatch: -SeparateConfigDatabase requires the Configuration Service database and the DMS datastore to be physically distinct, but '$datastoreNameKey' resolves to the dedicated 'edfi_configurationservice' itself (postgresql-init.sh passes the name to createdb as a quoted identifier, so it names exactly that database). The resolved value is withheld. Rename the datastore database or use shared mode."
+            throw "Configuration Service database topology mismatch: -SeparateConfigDatabase requires the Configuration Service database and the DMS datastore to be physically distinct, but '$datastoreNameKey' resolves to the dedicated 'edfi_configurationservice' itself (postgresql-init.sh passes the name to createdb as a quoted identifier, so it names exactly that database). The resolved value is withheld. Rename the datastore database or use shared mode."
         }
     }
 
@@ -3808,14 +3807,14 @@ function Confirm-CmsDatabaseTopologyAgreement {
     if ($DatabaseEngine -eq "postgresql") {
         foreach ($actualDatabaseName in $actualDatabaseNames) {
             if (-not (Test-PostgresCmsTargetNameAgreement -ActualName $actualDatabaseName -ExpectedName $expectedDatabaseName)) {
-                throw "CMS database topology mismatch: CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING targets database '$actualDatabaseName', but the effective topology contract requires '$expectedDatabaseName'. Align the connection string or the -SeparateConfigDatabase selection."
+                throw "Configuration Service database topology mismatch: CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING targets database '$actualDatabaseName', but the effective topology contract requires '$expectedDatabaseName'. Align the connection string or the -SeparateConfigDatabase selection."
             }
         }
     }
 
     $actualEndpoints = @(Get-EndpointFromResolvedConnectionString -ConnectionString $actualConnectionString -DatabaseEngine $DatabaseEngine)
     if ($actualEndpoints.Count -eq 0) {
-        throw "Confirm-CmsDatabaseTopologyAgreement: CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING must include a host key recognized for '$DatabaseEngine' so the CMS database endpoint can be verified."
+        throw "Confirm-CmsDatabaseTopologyAgreement: CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING must include a host key recognized for '$DatabaseEngine' so the Configuration Service database endpoint can be verified."
     }
     # The database service is reachable under more than one name on the shared Compose network, and all of
     # them denote the SAME container: the service key under `services:` (deliberately `db` in both
@@ -3833,7 +3832,7 @@ function Confirm-CmsDatabaseTopologyAgreement {
             [string]::Equals($actualEndpoint.Host, $_, [System.StringComparison]::OrdinalIgnoreCase)
         }).Count -gt 0
         if (-not $hostIsAccepted) {
-            throw "CMS database topology mismatch: CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING targets host '$($actualEndpoint.Host)', but the effective topology contract requires the composed database service, addressable as $(($acceptedHosts | ForEach-Object { "'$_'" }) -join ' or ')."
+            throw "Configuration Service database topology mismatch: CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING targets host '$($actualEndpoint.Host)', but the effective topology contract requires the composed database service, addressable as $(($acceptedHosts | ForEach-Object { "'$_'" }) -join ' or ')."
         }
         # An omitted port still defaults to the engine's expected one, exactly as before.
         $actualPort = if ([string]::IsNullOrWhiteSpace($actualEndpoint.Port)) { $expectedPort } else { $actualEndpoint.Port }
@@ -3843,7 +3842,7 @@ function Confirm-CmsDatabaseTopologyAgreement {
         # comparison rejected a CMS connection string naming exactly the composed service on exactly the
         # right port. A value that is not a port, and a genuinely different port, still fail.
         if (-not (Test-PortNumberEquivalent -Left $actualPort -Right $expectedPort)) {
-            throw "CMS database topology mismatch: CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING targets port '$actualPort', but the effective topology contract requires '$expectedPort'."
+            throw "Configuration Service database topology mismatch: CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING targets port '$actualPort', but the effective topology contract requires '$expectedPort'."
         }
     }
 
@@ -3858,10 +3857,10 @@ function Confirm-CmsDatabaseTopologyAgreement {
     $ambientDatabaseName = [System.Environment]::GetEnvironmentVariable("CONFIGURATION_SERVICE_DATABASE_NAME")
     if ($null -ne $ambientDatabaseName) {
         if ([string]::IsNullOrWhiteSpace($ambientDatabaseName)) {
-            throw "CMS database topology configuration error: the ambient environment supplies 'CONFIGURATION_SERVICE_DATABASE_NAME' as an empty or whitespace-only value, which Compose would hand to the container verbatim. Unset it or set a database name. The value is withheld."
+            throw "Configuration Service database topology configuration error: the ambient environment supplies 'CONFIGURATION_SERVICE_DATABASE_NAME' as an empty or whitespace-only value, which Compose would hand to the container verbatim. Unset it or set a database name. The value is withheld."
         }
         if ($DatabaseEngine -eq "postgresql" -and -not (Test-PostgresCmsTargetNameAgreement -ActualName $ambientDatabaseName -ExpectedName $expectedDatabaseName)) {
-            throw "CMS database topology mismatch: an ambient CONFIGURATION_SERVICE_DATABASE_NAME='$ambientDatabaseName' conflicts with the effective topology contract, which requires '$expectedDatabaseName'. Unset it or align it before running."
+            throw "Configuration Service database topology mismatch: an ambient CONFIGURATION_SERVICE_DATABASE_NAME='$ambientDatabaseName' conflicts with the effective topology contract, which requires '$expectedDatabaseName'. Unset it or align it before running."
         }
     }
 }

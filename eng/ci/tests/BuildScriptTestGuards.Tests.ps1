@@ -94,6 +94,16 @@ Describe "Build script zero-test guards (DMS-1301)" {
             @($found.Name) | Sort-Object | Should -Be @("EdFi.Backend.Tests.Unit.dll", "EdFi.Core.Tests.Unit.dll")
         }
 
+        It "discovers the Security Metadata Tools CLI tests alongside service tests" {
+            Add-TestAssemblyFixture -SolutionRoot $script:solutionRoot -ProjectGroup "backend" -ProjectName "EdFi.Backend.Tests.Unit" -Configuration "Release" | Out-Null
+            $toolTests = "EdFi.DmsConfigurationService.SecurityMetadataTools.Tests.Unit"
+            Add-TestAssemblyFixture -SolutionRoot $script:solutionRoot -ProjectGroup "clis" -ProjectName $toolTests -Configuration "Release" | Out-Null
+
+            $found = @(Get-RequiredTestAssembly -SolutionRoot $script:solutionRoot -Filter "*.Tests.Unit" -Configuration "Release")
+
+            @($found.Name) | Sort-Object | Should -Be @("EdFi.Backend.Tests.Unit.dll", "$toolTests.dll")
+        }
+
         It "does not match a project whose assembly is outside the filter" {
             Add-TestAssemblyFixture -SolutionRoot $script:solutionRoot -ProjectGroup "core" -ProjectName "EdFi.Core.Tests.Integration" -Configuration "Release" | Out-Null
 

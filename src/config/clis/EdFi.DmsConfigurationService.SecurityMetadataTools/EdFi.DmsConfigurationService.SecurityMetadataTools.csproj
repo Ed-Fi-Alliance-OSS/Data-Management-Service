@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <AssemblyName>security-metadata-tools</AssemblyName>
+        <RootNamespace>EdFi.DmsConfigurationService.SecurityMetadataTools</RootNamespace>
+        <PackageId>EdFi.Api.SecurityMetadataTools</PackageId>
+        <!-- Shared calculation and release-line reset policy: VERSIONING.md -->
+        <SecurityMetadataToolsPatchVersion>0</SecurityMetadataToolsPatchVersion>
+        <PackageType>DotnetTool</PackageType>
+        <PackAsTool>true</PackAsTool>
+        <ToolCommandName>security-metadata-tools</ToolCommandName>
+        <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageProjectUrl>https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service</PackageProjectUrl>
+        <Title>Ed-Fi API Security Metadata Tools</Title>
+        <Description>Convert ODS security metadata XML exports to Ed-Fi API Configuration Service claims documents.</Description>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="System.CommandLine" />
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="../../backend/EdFi.DmsConfigurationService.Backend/EdFi.DmsConfigurationService.Backend.csproj" />
+    </ItemGroup>
+    <ItemGroup>
+        <InternalsVisibleTo Include="EdFi.DmsConfigurationService.SecurityMetadataTools.Tests.Unit" />
+    </ItemGroup>
+    <ItemGroup>
+        <None Include="README.md" Pack="true" PackagePath="/" />
+    </ItemGroup>
+</Project>

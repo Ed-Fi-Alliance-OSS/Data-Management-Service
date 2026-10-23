@@ -87,7 +87,7 @@ param (
     [string]
     $SchoolYearRange = "",
 
-    # Database name to use when creating CMS data stores. Defaults to POSTGRES_DB_NAME for
+    # Database name to use when creating Configuration Service data stores. Defaults to POSTGRES_DB_NAME for
     # PostgreSQL or MSSQL_DB_NAME for SQL Server from the effective environment file.
     [string]
     $DataStoreDatabaseName = "",
@@ -116,9 +116,9 @@ param (
 
     # Transitional non-bootstrap helper: when no bootstrap manifest is present,
     # passing this switch sets CONFIGURATION_SERVICE_CLAIMS_SOURCE=Hybrid and CONFIGURATION_SERVICE_CLAIMS_DIRECTORY=/app/additional-claims
-    # and stages the AdditionalClaimsets fragments plus the test-owned E2E fragments into
+    # and stages the AdditionalClaims fragments plus the test-owned E2E fragments into
     # eng/docker-compose/.e2e-claims, which published-config.yml mounts at /app/additional-claims. Extension
-    # claimset fragments (e.g. Sample, Homograph) and the E2E claim sets are therefore both loaded.
+    # claims fragments (e.g. Sample, Homograph) and the E2E claim sets are therefore both loaded.
     # This flag is intentionally kept as a transitional helper for non-bootstrap extension E2E setups.
     [Switch]
     $AddExtensionSecurityMetadata,
@@ -131,7 +131,7 @@ param (
 
     # Database engine for the whole stack. "postgresql" (default) uses postgresql.yml.
     # "mssql" swaps in mssql.yml: SQL Server hosts the DMS datastore, the Configuration
-    # Service (CMS SQL Server backend), and the self-contained OpenIddict identity stores -
+    # Service (its SQL Server backend), and the self-contained OpenIddict identity stores -
     # no PostgreSQL container runs. The relational backend has no Debezium CDC (Kafka is
     # PostgreSQL-only and omitted). The .env.mssql overlay (DMS_DATASTORE=mssql,
     # CONFIGURATION_SERVICE_DATASTORE=mssql, the MSSQL_* keys, and the SQL Server connection strings)
@@ -141,12 +141,12 @@ param (
     [string]
     $DatabaseEngine = "postgresql",
 
-    # Redirects the CMS (Configuration Service) database to a dedicated edfi_configurationservice
-    # database instead of sharing the DMS datastore database. Applies only when CMS actually
+    # Redirects the Configuration Service database to a dedicated edfi_configurationservice
+    # database instead of sharing the DMS datastore database. Applies only when the Configuration Service actually
     # participates (the default/-InfraOnly shape); has no effect with -DmsOnly/-DbOnly/-d, where
-    # CMS does not start. Also adds published-config.yml to the managed compose set even when no
+    # the Configuration Service does not start. Also adds published-config.yml to the managed compose set even when no
     # other condition would (e.g. -IdentityProvider keycloak without -EnableConfig/-InfraOnly),
-    # since CMS must actually run to create the separate database. Supported on both database
+    # since the Configuration Service must actually run to create the separate database. Supported on both database
     # engines.
     [Switch]
     $SeparateConfigDatabase
@@ -922,15 +922,9 @@ else {
         ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile -SkipLegacyEnvironmentVariableWarning @identityDbParams
     }
 
-    if($AddSmokeTestCredentials)
-    {
-        Import-Module ../smoke_test/modules/SmokeTest.psm1 -Force
-        Write-Output "Creating smoke test credentials..."
-        $null = Get-SmokeTestCredential -ConfigServiceUrl $cmsUrl
-
-        Write-Output "Smoke test credentials created successfully!"
-        Write-Output "Credential values were returned to the caller and were not written to logs."
-    }
+    # Data stores this run registers, so the smoke-test application below is associated with them.
+    $smokeTestDataStoreIds = @()
+    $smokeTestRouteContexts = @()
 
     if(-not $NoDataStore -or $SchoolYearRange)
     {
@@ -1012,6 +1006,8 @@ else {
                         -Tenant $tenant
 
                     Write-Output "Created $($dataStores.Count) school year data stores successfully"
+                    $smokeTestDataStoreIds = @($dataStores | ForEach-Object { [long]$_.DataStoreId })
+                    $smokeTestRouteContexts = @($dataStores | ForEach-Object { [pscustomobject]@{ DataStoreId = [long]$_.DataStoreId; ContextKey = "schoolYear"; ContextValue = [string]$_.Year } })
                 }
                 else {
                     Write-Warning "Invalid SchoolYearRange format. Expected format: StartYear-EndYear (e.g., 2022-2026)"
@@ -1025,11 +1021,62 @@ else {
                 $dataStoreId = Add-DataStore -CmsUrl $cmsUrl -AccessToken $configToken -PostgresCredential $postgresCredential -PostgresDbName $postgresDbName -ConnectionString $dataStoreConnectionString -DatabaseEngine $DatabaseEngine -Name "Local Development Data Store" -DataStoreType "Development" -Tenant $tenant
 
                 Write-Output "Data store created successfully with ID: $dataStoreId"
+                $smokeTestDataStoreIds = @([long]$dataStoreId)
             }
         }
         catch {
             throw "Failed to create data store(s): $($_.Exception.Message)"
         }
+    }
+
+    # Created after the data stores so the application is associated with the ones this run
+    # registered, in the same tenant; with -NoDataStore, Get-SmokeTestCredential keeps its fallback to
+    # the first data store in that tenant. The Configuration Service returns the secret only once,
+    # so the summary is the operator's only copy.
+    if($AddSmokeTestCredentials)
+    {
+        Import-Module ../smoke_test/modules/SmokeTest.psm1 -Force
+        # Under the registration block's own condition this run was asked to register the data stores,
+        # so an empty list means it registered none (an invalid -SchoolYearRange only warns above).
+        # Get-SmokeTestCredential would then fall back to the tenant's first data store, which this run
+        # did not register.
+        if ((-not $NoDataStore -or $SchoolYearRange) -and $smokeTestDataStoreIds.Count -eq 0) {
+            throw "No data store was registered by this run, so -AddSmokeTestCredentials has none to associate the smoke test credential with; no credential was created. Check -SchoolYearRange (format: StartYear-EndYear)."
+        }
+        # The summary formatter rejects a base URL with control characters; reject it before the
+        # credential exists, so it is never created without a way to print it.
+        if ($dmsUrl -match '\p{Cc}') {
+            throw "The DMS base URL for the -AddSmokeTestCredentials summary contains control characters; the value is withheld."
+        }
+        # A multi-tenant DMS serves only tenant-prefixed routes, so without a tenant the summary has no
+        # route to print. Reject it before the credential exists.
+        $smokeTestDmsMultiTenancy = (Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "DMS_MULTI_TENANCY") -eq "true"
+        if ($smokeTestDmsMultiTenancy -and [string]::IsNullOrWhiteSpace($configServiceTenant)) {
+            throw "-AddSmokeTestCredentials requires DMS_CONFIGURATION_SERVICE_TENANT when DMS_MULTI_TENANCY=true, because DMS then serves only tenant-qualified routes; no smoke test credential was created. Set DMS_CONFIGURATION_SERVICE_TENANT, or set DMS_MULTI_TENANCY=false."
+        }
+        Write-Output "Creating smoke test credentials..."
+        $smokeTestCredentialArgs = @{ ConfigServiceUrl = $cmsUrl; Tenant = $configServiceTenant }
+        if ($smokeTestDataStoreIds.Count -gt 0) {
+            $smokeTestCredentialArgs.DataStoreIds = $smokeTestDataStoreIds
+        }
+        $smokeTestCredential = Get-SmokeTestCredential @smokeTestCredentialArgs
+        # With -NoDataStore the helper selected the data store, so its route contexts come back with
+        # the credential.
+        if ($smokeTestDataStoreIds.Count -eq 0) {
+            $smokeTestRouteContexts = @($smokeTestCredential.RouteContexts)
+        }
+
+        # DMS prefixes its routes with the tenant only when its own multi-tenancy is enabled; the
+        # Configuration Service tenant above still scopes the credential.
+        $smokeTestRouteTenant = if ($smokeTestDmsMultiTenancy) { $configServiceTenant } else { "" }
+
+        Write-Output "Direct start does not provision the DMS schema; the database must already be provisioned (provision-dms-schema.ps1), or use bootstrap-published-dms.ps1."
+        Get-SmokeTestCredentialSummary `
+            -Credential $smokeTestCredential `
+            -DmsBaseUrl $dmsUrl `
+            -Tenant $smokeTestRouteTenant `
+            -RouteContexts $smokeTestRouteContexts `
+            -SelfContainedIdentity:($IdentityProvider -eq "self-contained")
     }
 
     Start-Sleep 20

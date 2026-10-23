@@ -118,7 +118,7 @@ internal class Given_RequestLoggingMiddleware
             .State.GetStructuredProperty("{OriginalFormat}")
             .Should()
             .Be(
-                "{EventName}: CMS request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}"
+                "{EventName}: Configuration Service request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}"
             );
         entry.State.ContainStructuredProperty("StatusCode", 204);
         entry
@@ -178,7 +178,7 @@ internal class Given_RequestLoggingMiddleware
             .State.GetStructuredProperty("{OriginalFormat}")
             .Should()
             .Be(
-                "{EventName}: CMS request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}"
+                "{EventName}: Configuration Service request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}"
             );
         entry.State.ContainStructuredProperty("StatusCode", 500);
         entry.State.ContainKey("DurationMs");
@@ -357,7 +357,7 @@ internal class Given_RequestLoggingMiddleware
     private const string Sentinel = "SECRET-LOGGING-SENTINEL";
 
     private const string TypeOnlyFailedTemplate =
-        "{EventName}: CMS request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId} ({ExceptionTypes})";
+        "{EventName}: Configuration Service request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId} ({ExceptionTypes})";
 
     private static readonly string _sentinelTypeChain =
         $"{typeof(InvalidOperationException).FullName} -> {typeof(TimeoutException).FullName}";
@@ -571,7 +571,7 @@ internal class Given_RequestLoggingMiddleware
         logger.Log(
             LogLevel.Information,
             RequestLoggingEventIds.HttpRequestCompleted,
-            "{EventName}: CMS request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
+            "{EventName}: Configuration Service request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
             RequestLoggingEventIds.HttpRequestCompleted.Name,
             "GET",
             "/v3/vendors",
@@ -594,7 +594,9 @@ internal class Given_RequestLoggingMiddleware
         (properties?["Path"]?.GetValue<string>()).Should().Be("/v3/vendors");
         (properties?["StatusCode"]?.GetValue<int>()).Should().Be(200);
         (properties?["DurationMs"]?.GetValue<long>()).Should().Be(42L);
-        (json?["RenderedMessage"]?.GetValue<string>()).Should().Contain("CMS request completed");
+        (json?["RenderedMessage"]?.GetValue<string>())
+            .Should()
+            .Contain("Configuration Service request completed");
         // JsonFormatter omits the Exception field when no exception is attached; the
         // docs/LOGGING.md collector contract documents the field as absent, not null.
         (json?.AsObject().ContainsKey("Exception"))
@@ -657,7 +659,7 @@ internal class Given_RequestLoggingMiddleware
             logger.Log(
                 LogLevel.Information,
                 RequestLoggingEventIds.HttpRequestCompleted,
-                "{EventName}: CMS request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
+                "{EventName}: Configuration Service request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
                 RequestLoggingEventIds.HttpRequestCompleted.Name,
                 "GET",
                 "/v3/vendors",
@@ -692,7 +694,9 @@ internal class Given_RequestLoggingMiddleware
         (properties?["Path"]?.GetValue<string>()).Should().Be("/v3/vendors");
         (properties?["StatusCode"]?.GetValue<int>()).Should().Be(200);
         (properties?["DurationMs"]?.GetValue<long>()).Should().Be(42L);
-        (json?["RenderedMessage"]?.GetValue<string>()).Should().Contain("CMS request completed");
+        (json?["RenderedMessage"]?.GetValue<string>())
+            .Should()
+            .Contain("Configuration Service request completed");
         // JsonFormatter omits the Exception field when no exception is attached; the
         // docs/LOGGING.md collector contract documents the field as absent, not null.
         (json?.AsObject().ContainsKey("Exception"))

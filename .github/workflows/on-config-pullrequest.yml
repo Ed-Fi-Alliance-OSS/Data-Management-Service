@@ -87,61 +87,9 @@ jobs:
       - name: Detect files that require a fresh rebuild
         id: detect
         shell: bash
-        run: |
-          # emit <fresh_build_required> <config_relevant>
-          emit() {
-            echo "fresh_build_required=$1" >> "$GITHUB_OUTPUT"
-            echo "config_relevant=$2" >> "$GITHUB_OUTPUT"
-          }
-
-          # Non-pull_request events (merge_group, workflow_dispatch) always run the full
-          # suite, so config_relevant is reported true and only fresh_build_required matters.
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            emit true true
-            exit 0
-          fi
-
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            git fetch --no-tags origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
-            changed_files="$(git diff --no-renames --name-only "origin/${{ github.base_ref }}...HEAD")"
-          elif [[ "${{ github.event_name }}" == "merge_group" ]]; then
-            base_sha="${{ github.event.merge_group.base_sha }}"
-
-            if [[ -z "$base_sha" ]] || ! changed_files="$(git diff --no-renames --name-only "$base_sha" "${{ github.sha }}")"; then
-              emit true true
-              exit 0
-            fi
-          else
-            # Unreachable with the current triggers: workflow_dispatch returned above and the
-            # only other events are pull_request and merge_group. Run the full suite rather
-            # than infer a diff base for an event this script does not model.
-            emit true true
-            exit 0
-          fi
-
-          fresh_build_required=false
-          # For merge_group, force config_relevant true so nothing is skipped when
-          # validating the merged result; only pull_request narrows to the changed area.
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            config_relevant=false
-          else
-            config_relevant=true
-          fi
-
-          while IFS= read -r file; do
-            case "$file" in
-              src/Directory.Packages.props|src/nuget.config|src/config/Dockerfile|src/plugins/*|eng/docker-compose/*)
-                fresh_build_required=true
-                ;;
-            esac
-            case "$file" in
-              .github/workflows/*|build-config.ps1|eng/*|src/Directory.Packages.props|src/nuget.config|src/config/*|src/plugins/*|src/dms/PluginFixtureStaging.targets)
-                config_relevant=true
-                ;;
-            esac
-          done <<< "$changed_files"
-
-          emit "$fresh_build_required" "$config_relevant"
+        env:
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: bash eng/ci/detect-config-changes.sh
 
   scan-actions-bidi:
     name: Scan Actions, scan all files for BIDI Trojan Attacks
@@ -247,6 +195,59 @@ jobs:
           if ($result.FailedCount -gt 0 -or $result.FailedContainersCount -gt 0 -or $result.FailedBlocksCount -gt 0) {
               throw "Secret resolution proof results Pester lane failed: $($result.FailedCount) test(s), $($result.FailedContainersCount) container(s), $($result.FailedBlocksCount) block(s)."
           }
+
+  verify-security-metadata-tools:
+    name: Verify Security Metadata Tools Package
+    needs: detect-fresh-build-changes
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.config_relevant == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Use the same MinVer source as releases, including tags and history.
+          fetch-depth: 0
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Set Version Numbers
+        id: versions
+        run: |
+          Import-Module ./package-helpers.psm1
+          Get-VersionNumber -projectPrefix "cs"
+
+      - name: Install Pester
+        run: Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force
+
+      - name: Run Security Metadata Tools Version and CI Tests
+        run: |
+          $ErrorActionPreference = "Stop"
+          $result = Invoke-Pester -Path @(
+              "eng/ci/tests/SecurityMetadataToolsVersioning.Tests.ps1",
+              "eng/ci/tests/ConfigPullRequestWorkflow.Tests.ps1"
+          ) -Output Detailed -PassThru
+          $nonPassing = @($result.Tests | Where-Object { $_.Result -ne "Passed" })
+          if ($null -eq $result -or $result.TotalCount -eq 0 -or
+              $result.FailedContainersCount -gt 0 -or $result.FailedBlocksCount -gt 0 -or
+              $nonPassing.Count -gt 0) {
+              throw "Security Metadata Tools version/CI tests did not all pass."
+          }
+
+      # Locked pack, inspect the bundled CMS validator/schema, install the exact local
+      # package in a fresh tool directory/cache, then compare the complete conversion.
+      # This script never pushes or promotes a package and requires no feed credentials.
+      - name: Pack Install and Convert Representative Security Metadata
+        run: ./eng/verification/Test-SecurityMetadataToolsPackage.ps1 -AppVersion '${{ steps.versions.outputs.dms-v }}' -Configuration ${{ env.CONFIGURATION }}
 
   run-unit-tests:
     name: Run Unit Tests
@@ -784,7 +785,7 @@ jobs:
   event_file:
     name: Upload Event File
     runs-on: ubuntu-latest
-    needs: [verify-lock-files, run-parity-pester-tests, verify-secrets-contract, run-unit-tests, run-e2e-tests, run-e2e-tests-mssql, run-e2e-tests-mssql-multitenant, run-integration-tests, fresh-rebuild-docker-image]
+    needs: [verify-lock-files, run-parity-pester-tests, verify-security-metadata-tools, verify-secrets-contract, run-unit-tests, run-e2e-tests, run-e2e-tests-mssql, run-e2e-tests-mssql-multitenant, run-integration-tests, fresh-rebuild-docker-image]
     # always() overrides the skip a draft inherits through needs, so the draft check is repeated.
     if: always() && github.event.pull_request.draft != true
     steps:
@@ -812,6 +813,7 @@ jobs:
       - verify-lock-files
       - run-parity-pester-tests
       - verify-secrets-contract
+      - verify-security-metadata-tools
       - run-unit-tests
       - run-integration-tests
       - run-e2e-tests

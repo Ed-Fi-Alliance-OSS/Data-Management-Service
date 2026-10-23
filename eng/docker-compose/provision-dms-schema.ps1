@@ -10,8 +10,8 @@
     Schema provisioning phase. Supports PostgreSQL and SQL Server data stores.
 .DESCRIPTION
     Invokes SchemaTools against each distinct effective target database from the
-    selected CMS instances. The dialect (--dialect pgsql|mssql) is auto-detected from
-    the shape of the data store connection string CMS hands back: PostgreSQL uses
+    selected Configuration Service data stores. The dialect (--dialect pgsql|mssql) is auto-detected from
+    the shape of the data store connection string the Configuration Service hands back: PostgreSQL uses
     host/database/username keys, SQL Server uses Server/Database/User Id keys. The
     Docker-internal database host is translated to the host-side mapped port before
     SchemaTools runs (dms-postgresql -> localhost:POSTGRES_PORT,
@@ -214,7 +214,7 @@ function ConvertTo-ConnectionStringBuilder {
     Parses a connection string into a [System.Data.Common.DbConnectionStringBuilder]. Unlike a
     naive ';' split, this correctly handles quoted values that themselves contain ';' or '=' (for
     example password="abc;123"). Returns $null instead of throwing when -AllowParseFailure is set
-    and the input is not a valid connection string (used to detect CMS-encrypted base64 blobs).
+    and the input is not a valid connection string (used to detect base64 blobs encrypted by the Configuration Service).
 
     Callers must use the explicit get_/set_ accessors on the returned builder: PowerShell's
     property/indexer sugar (.ConnectionString, ['key'], .Keys) misbehaves on this
@@ -237,7 +237,7 @@ function ConvertTo-ConnectionStringBuilder {
             return $null
         }
 
-        throw "CMS data store connection string is not a valid connection string."
+        throw "Configuration Service data store connection string is not a valid connection string."
     }
 
     return $builder
@@ -439,7 +439,7 @@ function New-MssqlProviderConnectionStringBuilder {
         return [Microsoft.Data.SqlClient.SqlConnectionStringBuilder]::new($ConnectionString)
     }
     catch {
-        throw "CMS data store connection string is not a valid SQL Server connection string for the Microsoft.Data.SqlClient provider SchemaTools parses it with. The resolved value is withheld."
+        throw "Configuration Service data store connection string is not a valid SQL Server connection string for the Microsoft.Data.SqlClient provider SchemaTools parses it with. The resolved value is withheld."
     }
 }
 
@@ -577,7 +577,7 @@ function Get-DatabaseNameFromConnectionString {
         return $null
     }
 
-    throw "CMS data store connection string did not contain a database name."
+    throw "Configuration Service data store connection string did not contain a database name."
 }
 
 function Resolve-TargetDialect {
@@ -619,7 +619,7 @@ function Resolve-TargetDialect {
         }
     }
 
-    throw "CMS data store connection string carries none of the PostgreSQL keys (host, username, port, sslmode) and no SQL Server key. Cannot determine the provisioning dialect."
+    throw "Configuration Service data store connection string carries none of the PostgreSQL keys (host, username, port, sslmode) and no SQL Server key. Cannot determine the provisioning dialect."
 }
 
 function Resolve-ExpectedProvisioningDialect {
@@ -937,8 +937,8 @@ function Test-ProvisionTargetIsLocalComposeDatabase {
 function Convert-MssqlCmsConnectionStringToHostSideTarget {
     <#
     .SYNOPSIS
-    Builds an effective host-side SQL Server provisioning target from a CMS-stored data store
-    connection string. Translates the Docker-internal server (Server=dms-mssql[,1433]) to the
+    Builds an effective host-side SQL Server provisioning target from a data store
+    connection string stored in the Configuration Service. Translates the Docker-internal server (Server=dms-mssql[,1433]) to the
     host-side 127.0.0.1,MSSQL_PORT while preserving the user, password, database, and every
     other stored option. A non-Docker server (e.g. an external SQL Server configured per
     instance) is preserved as-is.
@@ -994,7 +994,7 @@ function Convert-MssqlCmsConnectionStringToHostSideTarget {
         -ConnectionString $ConnectionString `
         -SchemaToolPath $SchemaToolPath
     if ([string]::IsNullOrWhiteSpace($databaseName)) {
-        throw "CMS data store connection string did not contain a database name."
+        throw "Configuration Service data store connection string did not contain a database name."
     }
 
     $server = Get-MssqlEffectiveConnectionStringValue `
@@ -1004,7 +1004,7 @@ function Convert-MssqlCmsConnectionStringToHostSideTarget {
         -ConnectionString $ConnectionString `
         -SchemaToolPath $SchemaToolPath
     if ([string]::IsNullOrWhiteSpace($server)) {
-        throw "CMS data store connection string is missing the server key."
+        throw "Configuration Service data store connection string is missing the server key."
     }
 
     # Collapsed like the other two families below, not merely resolved: leaving a losing user-id alias in
@@ -1016,7 +1016,7 @@ function Convert-MssqlCmsConnectionStringToHostSideTarget {
         -ConnectionString $ConnectionString `
         -SchemaToolPath $SchemaToolPath
     if ([string]::IsNullOrWhiteSpace($instanceUser)) {
-        throw "CMS data store connection string is missing the user id key."
+        throw "Configuration Service data store connection string is missing the user id key."
     }
 
     # The parsed host decides the Docker-internal translation, so "tcp:dms-mssql,1433" translates exactly
@@ -1087,8 +1087,8 @@ function Convert-MssqlCmsConnectionStringToHostSideTarget {
 function Convert-CmsConnectionStringToHostSideTarget {
     <#
     .SYNOPSIS
-    Builds an effective host-side provisioning target from a single CMS-stored data store
-    connection string. Translates the Docker-internal PostgreSQL hostname/port to the host-side
+    Builds an effective host-side provisioning target from a single data store
+    connection string stored in the Configuration Service. Translates the Docker-internal PostgreSQL hostname/port to the host-side
     mapped port while preserving the instance-specific username, password, and database name.
     Non-Docker hosts (e.g. external PostgreSQL servers configured per instance) are preserved
     as-is. SQL Server connection strings are dispatched to
@@ -1124,17 +1124,17 @@ function Convert-CmsConnectionStringToHostSideTarget {
     # PostgreSQL path: the surviving keys are database / host / username.
     $databaseName = Get-ConnectionStringValue -Builder $builder -Keys @("database")
     if ([string]::IsNullOrWhiteSpace($databaseName)) {
-        throw "CMS data store connection string did not contain a database name."
+        throw "Configuration Service data store connection string did not contain a database name."
     }
 
     $instanceHost = Get-ConnectionStringValue -Builder $builder -Keys @("host")
     if ([string]::IsNullOrWhiteSpace($instanceHost)) {
-        throw "CMS data store connection string is missing the host key."
+        throw "Configuration Service data store connection string is missing the host key."
     }
 
     $instanceUser = Get-ConnectionStringValue -Builder $builder -Keys @("username")
     if ([string]::IsNullOrWhiteSpace($instanceUser)) {
-        throw "CMS data store connection string is missing the username key."
+        throw "Configuration Service data store connection string is missing the username key."
     }
 
     # PostgreSQL canonically defaults to 5432 when port is omitted. Docker-internal targets
@@ -1188,62 +1188,8 @@ function Convert-CmsConnectionStringToHostSideTarget {
     }
 }
 
-function ConvertFrom-CmsEncryptedConnectionString {
-    param(
-        [string]
-        $ProtectedConnectionString,
-
-        [hashtable]
-        $EnvValues
-    )
-
-    $encryptionKey = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY"
-    if ([string]::IsNullOrWhiteSpace($encryptionKey)) {
-        throw "CMS data store connection string is encrypted, but CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY is not set in the environment file."
-    }
-
-    try {
-        $encryptedBytes = [Convert]::FromBase64String($ProtectedConnectionString)
-    }
-    catch {
-        throw "CMS data store connection string did not contain a database name and was not valid CMS encrypted base64."
-    }
-
-    if ($encryptedBytes.Length -le 16) {
-        throw "CMS data store encrypted connection string payload is invalid."
-    }
-
-    $keyText = $encryptionKey.PadRight(32, "0").Substring(0, 32)
-    $keyBytes = [System.Text.Encoding]::UTF8.GetBytes($keyText)
-    $iv = [byte[]]::new(16)
-    [Array]::Copy($encryptedBytes, 0, $iv, 0, 16)
-
-    $cipherText = [byte[]]::new($encryptedBytes.Length - 16)
-    [Array]::Copy($encryptedBytes, 16, $cipherText, 0, $cipherText.Length)
-
-    $aes = [System.Security.Cryptography.Aes]::Create()
-    # CMS encrypts connection strings with AES-CBC / PKCS7; set explicitly rather than relying on .NET defaults.
-    $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
-    $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
-    try {
-        $aes.Key = $keyBytes
-        $aes.IV = $iv
-        $decryptor = $aes.CreateDecryptor()
-        try {
-            $plainTextBytes = $decryptor.TransformFinalBlock($cipherText, 0, $cipherText.Length)
-            return [System.Text.Encoding]::UTF8.GetString($plainTextBytes)
-        }
-        finally {
-            $decryptor.Dispose()
-        }
-    }
-    catch {
-        throw "CMS data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY."
-    }
-    finally {
-        $aes.Dispose()
-    }
-}
+# ConvertFrom-CmsEncryptedConnectionString lives in database-safety.psm1 (imported above), shared with
+# the configure phase's restore reuse check so both decrypt a CMS-stored value the same way.
 
 function Resolve-CmsInstanceConnectionString {
     param(
@@ -1293,7 +1239,7 @@ function Resolve-ProvisionTargetInstances {
         foreach ($id in $DataStoreId) {
             $matchedInstances = @($Instances | Where-Object { [long](Get-ProvisionProperty -Object $_ -Names @("id", "Id")) -eq [long]$id })
             if ($matchedInstances.Count -eq 0) {
-                throw "Data store $(Format-LogSafeText $id) was not found in CMS for tenant '$(Format-LogSafeText $Tenant)'."
+                throw "Data store $(Format-LogSafeText $id) was not found in the Configuration Service for tenant '$(Format-LogSafeText $Tenant)'."
             }
 
             $null = $selected.Add($matchedInstances[0])
@@ -1324,7 +1270,7 @@ function Resolve-ProvisionTargetInstances {
 
             if ($matchedInstances.Count -gt 1) {
                 $ids = ($matchedInstances | ForEach-Object { Get-ProvisionProperty -Object $_ -Names @("id", "Id") }) -join ", "
-                throw "Multiple data stores found with route context schoolYear=$(Format-LogSafeText $year) (data store ids: $(Format-LogSafeText $ids)). Clean up duplicate CMS state before provisioning."
+                throw "Multiple data stores found with route context schoolYear=$(Format-LogSafeText $year) (data store ids: $(Format-LogSafeText $ids)). Clean up duplicate Configuration Service state before provisioning."
             }
 
             $null = $selected.Add($matchedInstances[0])
@@ -1334,7 +1280,7 @@ function Resolve-ProvisionTargetInstances {
     }
 
     if ($Instances.Count -eq 0) {
-        throw "No data stores found in CMS. Run configure-local-data-store.ps1 before provisioning schemas."
+        throw "No data stores found in the Configuration Service. Run configure-local-data-store.ps1 before provisioning schemas."
     }
 
     if ($Instances.Count -gt 1) {
@@ -1362,12 +1308,12 @@ function New-ProvisionTarget {
 
     $rawDataStoreId = Get-ProvisionProperty -Object $Instance -Names @("id", "Id")
     if ($null -eq $rawDataStoreId) {
-        throw "CMS data store is missing an id."
+        throw "Configuration Service data store is missing an id."
     }
     $dataStoreId = [long]$rawDataStoreId
     $connectionString = [string](Get-ProvisionProperty -Object $Instance -Names @("connectionString", "ConnectionString"))
     if ([string]::IsNullOrWhiteSpace($connectionString)) {
-        throw "CMS data store $(Format-LogSafeText $dataStoreId) does not include a connection string."
+        throw "Configuration Service data store $(Format-LogSafeText $dataStoreId) does not include a connection string."
     }
 
     $resolvedConnectionString = Resolve-CmsInstanceConnectionString `
@@ -1387,7 +1333,7 @@ function New-ProvisionTarget {
     $expectedProvisioningDialect = Resolve-ExpectedProvisioningDialect -EnvValues $EnvValues
     if ($target.Dialect -ne $expectedProvisioningDialect.ExpectedDialect) {
         $dataStoreName = [string](Get-ProvisionProperty -Object $Instance -Names @("name", "Name"))
-        throw "CMS data store $(Format-LogSafeText $dataStoreId) (name=$(Format-LogSafeText $dataStoreName), database=$(Format-LogSafeText $target.DatabaseName)) resolved to dialect '$(Format-LogSafeText $target.Dialect)', but the environment's DMS_DATASTORE is '$(Format-LogSafeText $expectedProvisioningDialect.EngineValue)' (expected dialect '$(Format-LogSafeText $expectedProvisioningDialect.ExpectedDialect)'). This usually means a stale data store from a previous run with the other database engine is being reused (commonly selected via -NoDataStore). Reset the local CMS state with start-local-dms.ps1 -d -v and rerun bootstrap-local-dms.ps1 -DatabaseEngine <engine>, or, when invoking the phase commands directly, make sure the effective environment file's DMS_DATASTORE matches the data store's engine (composed automatically by -DatabaseEngine)."
+        throw "Configuration Service data store $(Format-LogSafeText $dataStoreId) (name=$(Format-LogSafeText $dataStoreName), database=$(Format-LogSafeText $target.DatabaseName)) resolved to dialect '$(Format-LogSafeText $target.Dialect)', but the environment's DMS_DATASTORE is '$(Format-LogSafeText $expectedProvisioningDialect.EngineValue)' (expected dialect '$(Format-LogSafeText $expectedProvisioningDialect.ExpectedDialect)'). This usually means a stale data store from a previous run with the other database engine is being reused (commonly selected via -NoDataStore). Reset the local Configuration Service state with start-local-dms.ps1 -d -v and rerun bootstrap-local-dms.ps1 -DatabaseEngine <engine>, or, when invoking the phase commands directly, make sure the effective environment file's DMS_DATASTORE matches the data store's engine (composed automatically by -DatabaseEngine)."
     }
 
     $routeContexts = @(
@@ -1420,16 +1366,16 @@ function Assert-SeparateTopologyProvisionTarget {
 
     .DESCRIPTION
     The configure phase can only judge a name it is about to REGISTER. With -NoDataStore it
-    registers none - it selects an existing CMS data store - so the value that decides where DMS
+    registers none - it selects an existing Configuration Service data store - so the value that decides where DMS
     schema lands is the STORED connection string on that record, which only this phase resolves.
     This is that missing boundary, and it is the reason the switch reaches this phase at all: a
     reused data store pointing at edfi_configurationservice would otherwise receive DMS DDL in
     separate mode.
 
     Judged here rather than earlier because $Target is the first place the real database name
-    exists: New-ProvisionTarget has already resolved ${...} placeholders, decrypted a CMS-encrypted
+    exists: New-ProvisionTarget has already resolved ${...} placeholders, decrypted a Configuration Service encrypted
     connection string, detected the dialect, and extracted the database. Parsing the raw
-    connectionString CMS hands back would be false assurance - it is base64 ciphertext.
+    connectionString the Configuration Service hands back would be false assurance - it is base64 ciphertext.
 
     No new comparer, query, parser, or collation rule: each engine's established authority answers,
     on the value that engine's provider will actually receive.
@@ -1482,7 +1428,7 @@ function Assert-SeparateTopologyProvisionTarget {
     if (Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase `
             -DatabaseEngine "postgresql" `
             -DatastoreDatabaseName $Target.DatabaseName) {
-        throw "CMS data store $(Format-LogSafeText $Target.DataStoreId) resolves to the dedicated 'edfi_configurationservice' database, which -SeparateConfigDatabase reserves for the Configuration Service. Provisioning would deploy the DMS schema into it and reintroduce the shared topology the switch opts out of. The target database name came from 'CMS_DATA_STORE_CONNECTION_STRING' - the connection string stored on that data store record - so re-register or reset the data store rather than changing this phase's inputs. The resolved value is withheld."
+        throw "Configuration Service data store $(Format-LogSafeText $Target.DataStoreId) resolves to the dedicated 'edfi_configurationservice' database, which -SeparateConfigDatabase reserves for the Configuration Service. Provisioning would deploy the DMS schema into it and reintroduce the shared topology the switch opts out of. The target database name came from 'CMS_DATA_STORE_CONNECTION_STRING' - the connection string stored on that data store record - so re-register or reset the data store rather than changing this phase's inputs. The resolved value is withheld."
     }
 }
 
@@ -1805,6 +1751,10 @@ function Invoke-ProvisionDmsSchema {
         [long]$Generation = 1
     )
 
+    # Refuse to run under a leaked restore-candidate override: schema provisioning writes to the
+    # live data store, and must only ever see the ACTIVE .bootstrap workspace.
+    Assert-NoBootstrapRootOverride -PhaseName "provision-dms-schema.ps1"
+
     if ($DataStoreId.Count -gt 0 -and $SchoolYear.Count -gt 0) {
         throw "-DataStoreId and -SchoolYear are mutually exclusive. Pass only one selector."
     }
@@ -1862,7 +1812,7 @@ function Invoke-ProvisionDmsSchema {
 
     $instances = @(Get-DataStore -CmsUrl $cmsUrl -AccessToken $configToken -Tenant $tenant -Limit 500)
     if ($instances.Count -ge 500) {
-        throw "Data store count reached the CMS query page size (500); pagination is not implemented in this bootstrap provisioning path. Reduce data stores or implement paging before provisioning."
+        throw "Data store count reached the Configuration Service query page size (500); pagination is not implemented in this bootstrap provisioning path. Reduce data stores or implement paging before provisioning."
     }
     $selectedInstances = Resolve-ProvisionTargetInstances `
         -Instances $instances `

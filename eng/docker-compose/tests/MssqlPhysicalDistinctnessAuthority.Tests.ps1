@@ -527,7 +527,7 @@ Describe "Assert-MssqlTopologyPhysicalConsistency boundary" {
 
         $envFile = New-TopologyEnvFile -FileName "sep-collide.env" -Marker "true" -DatastoreName $script:reviewerName
         $thrown = { Assert-MssqlTopologyPhysicalConsistency -EnvironmentFile $envFile -ContainerName "dms-mssql" -SaPassword "pw" }
-        $thrown | Should -Throw "*CMS database topology mismatch*"
+        $thrown | Should -Throw "*Configuration Service database topology mismatch*"
         $thrown | Should -Throw "*'MSSQL_DB_NAME'*"
         try { & $thrown } catch { $failureMessage = $_.Exception.Message }
         $failureMessage | Should -Not -Match ([regex]::Escape($script:reviewerName))

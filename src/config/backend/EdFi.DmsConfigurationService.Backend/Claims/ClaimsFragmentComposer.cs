@@ -14,8 +14,8 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DmsConfigurationService.Backend.Claims;
 
 /// <summary>
-/// Service for composing claims from base Claims.json and fragment claimset files
-/// This is a port of the transformation logic from the CmsHierarchy tool
+/// Composes a complete claims document from base Claims.json and claim-set fragments,
+/// applying resource grants to the hierarchy and registering fragment-defined claim sets.
 /// </summary>
 public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IClaimsFragmentComposer
 {
@@ -69,8 +69,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
             foreach (string fragmentFile in fragmentFiles)
             {
                 logger.LogInformation("Applying fragment: {FragmentFile}", fragmentFile);
-                string? definedClaimSetName = ApplyFragmentTransformation(fragmentFile, baseClaims);
-                if (definedClaimSetName is not null)
+                if (ApplyFragmentTransformation(fragmentFile, baseClaims) is string definedClaimSetName)
                 {
                     // An invalid name is not registered, but the composition continues: failing it
                     // would make Hybrid mode fall back to the base claims and drop every fragment
@@ -111,7 +110,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
             );
 
             // Ensure both nodes are not null
-            if (transformedHierarchy == null)
+            if (transformedHierarchy is null)
             {
                 transformedHierarchy = JsonNode.Parse("[]")!;
             }
@@ -175,7 +174,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
     }
 
     /// <summary>
-    /// Discovers fragment files matching the pattern *-claimset.json in the specified directory
+    /// Discovers fragment files matching the pattern *-claims.json in the specified directory
     /// </summary>
     public List<string> DiscoverFragmentFiles(string fragmentsPath)
     {
@@ -188,10 +187,23 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
             }
 
             List<string> fragmentFiles = Directory
-                .GetFiles(fragmentsPath, "*-claimset.json", SearchOption.AllDirectories)
+                .GetFiles(fragmentsPath, "*-claims.json", SearchOption.AllDirectories)
                 .Where(f => !Path.GetFileName(f).Equals("Claims.json", StringComparison.OrdinalIgnoreCase))
                 .OrderBy(f => f)
                 .ToList();
+
+            // Fragments were named *-claimset.json before 8.1; they are not read, so say so
+            foreach (
+                string retiredFile in Directory
+                    .GetFiles(fragmentsPath, "*-claimset.json", SearchOption.AllDirectories)
+                    .OrderBy(f => f)
+            )
+            {
+                logger.LogWarning(
+                    "Claims fragment file {FilePath} is not read: fragment file names must end in -claims.json. Rename the file to apply it.",
+                    retiredFile
+                );
+            }
 
             logger.LogDebug(
                 "Discovered {Count} fragment files in {Path}",
@@ -230,16 +242,12 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
     }
 
     /// <summary>
-    /// Converts ClaimsHierarchy JSON to transformation model (ported from CmsHierarchy.GetBaseClaimHierarchy)
+    /// Converts hierarchy JSON to mutable models used while applying claim-set fragments.
     /// </summary>
     private static List<TransformationClaim> ConvertToTransformationModel(JsonNode claimsHierarchyNode)
     {
         string hierarchyJson = claimsHierarchyNode.ToJsonString();
-        List<TransformationClaim>? claims = JsonSerializer.Deserialize<List<TransformationClaim>>(
-            hierarchyJson,
-            _jsonOptions
-        );
-        return claims ?? [];
+        return JsonSerializer.Deserialize<List<TransformationClaim>>(hierarchyJson, _jsonOptions) ?? [];
     }
 
     /// <summary>
@@ -285,7 +293,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
     }
 
     /// <summary>
-    /// Applies fragment transformation to existing claims (ported from CmsHierarchy.TransformClaims).
+    /// Applies a fragment's parent claims and claim-set grants to the existing hierarchy.
     /// Returns the claim set name the fragment defines, or null when it defines none. A fragment
     /// defines its top-level name (or file name) as a claim set when it has a non-parent resource
     /// claim, because those grants are attached under that name.
@@ -296,18 +304,16 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
     )
     {
         string jsonData = File.ReadAllText(fragmentFilePath);
-        ClaimSetResourceClaims? claimSetData = JsonSerializer.Deserialize<ClaimSetResourceClaims>(
-            jsonData,
-            _jsonOptions
-        );
-        string claimSetName = claimSetData?.Name ?? Path.GetFileNameWithoutExtension(fragmentFilePath);
-
-        if (claimSetData?.ResourceClaims == null)
+        if (
+            JsonSerializer.Deserialize<ClaimSetResourceClaims>(jsonData, _jsonOptions)
+            is not { ResourceClaims: not null } claimSetData
+        )
         {
             logger.LogWarning("Fragment file {FilePath} has no resource claims", fragmentFilePath);
             return null;
         }
 
+        string claimSetName = claimSetData.Name ?? Path.GetFileNameWithoutExtension(fragmentFilePath);
         bool definesClaimSet = false;
         foreach (ResourceClaim resourceClaim in claimSetData.ResourceClaims)
         {
@@ -317,7 +323,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
             }
             else
             {
-                ApplyChildResourceClaim(resourceClaim, existingClaims, claimSetName);
+                ApplyChildResourceClaim(fragmentFilePath, resourceClaim, existingClaims, claimSetName);
                 definesClaimSet = true;
             }
         }
@@ -333,11 +339,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
         List<TransformationClaim> existingClaims
     )
     {
-        TransformationClaim? existingClaim = existingClaims
-            .SelectMany(x => SearchRecursive(x, resourceClaim.Name!))
-            .FirstOrDefault();
-
-        if (existingClaim != null)
+        if (FindClaim(existingClaims, resourceClaim.Name!) is TransformationClaim existingClaim)
         {
             // Add additional child claims
             List<TransformationClaim> childClaims = resourceClaim
@@ -401,30 +403,22 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
                             ? new TransformationDefaultAuthorization
                             {
                                 Actions = resourceClaim
-                                    .DefaultAuthorizationStrategiesForCRUD.Where(x => x != null)
-                                    .Select(x =>
+                                    .DefaultAuthorizationStrategiesForCRUD.OfType<ClaimSetResourceClaimActionAuthStrategies>()
+                                    .Select(x => new TransformationAction
                                     {
-                                        List<TransformationAuthorizationStrategy>? authStrategies = null;
-                                        if (
-                                            x!.AuthorizationStrategies != null
+                                        Name = x.ActionName,
+                                        AuthorizationStrategies =
+                                            x.AuthorizationStrategies is not null
                                             && x.AuthorizationStrategies.Any()
-                                        )
-                                        {
-                                            authStrategies = x
-                                                .AuthorizationStrategies.Select(
-                                                    auth => new TransformationAuthorizationStrategy
-                                                    {
-                                                        Name = auth.Name,
-                                                    }
-                                                )
-                                                .ToList();
-                                        }
-
-                                        return new TransformationAction
-                                        {
-                                            Name = x.ActionName,
-                                            AuthorizationStrategies = authStrategies,
-                                        };
+                                                ? x
+                                                    .AuthorizationStrategies.Select(
+                                                        auth => new TransformationAuthorizationStrategy
+                                                        {
+                                                            Name = auth.Name,
+                                                        }
+                                                    )
+                                                    .ToList()
+                                                : null,
                                     })
                                     .ToList(),
                             }
@@ -435,55 +429,50 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
     }
 
     /// <summary>
-    /// Applies child resource claim transformation
+    /// Applies child resource claim transformation. The grant name is resolved exactly as written
+    /// first, and only when no claim has that name is its singular form tried. When neither matches,
+    /// a warning is logged and the entry is skipped.
     /// </summary>
     private void ApplyChildResourceClaim(
+        string fragmentFilePath,
         ResourceClaim resourceClaim,
         List<TransformationClaim> existingClaims,
         string claimSetName
     )
     {
-        string singularName = PluralToSingular(resourceClaim.Name!);
-        TransformationClaim? existingClaim = existingClaims
-            .SelectMany(x => SearchRecursive(x, singularName))
-            .FirstOrDefault();
-
-        if (existingClaim != null)
+        string name = resourceClaim.Name!;
+        if (FindGrantClaim(existingClaims, name) is not TransformationClaim existingClaim)
+        {
+            logger.LogWarning(
+                "Fragment {FragmentFile} grants claim set {ClaimSetName} access to {ResourceClaimName}, which matches no resource claim by that name or its singular form; the entry is skipped",
+                fragmentFilePath,
+                claimSetName,
+                name
+            );
+        }
+        else
         {
             List<TransformationClaimSetAction> actions = new List<TransformationClaimSetAction>();
-            List<ClaimSetResourceClaimActionAuthStrategies?> actionsAndAuthStrategies =
-                resourceClaim.AuthorizationStrategyOverridesForCRUD;
-
-            if (actionsAndAuthStrategies != null)
+            foreach (
+                ClaimSetResourceClaimActionAuthStrategies actionAuthStrategy in resourceClaim.AuthorizationStrategyOverridesForCRUD?.OfType<ClaimSetResourceClaimActionAuthStrategies>()
+                    ?? []
+            )
             {
-                foreach (
-                    ClaimSetResourceClaimActionAuthStrategies? actionAuthStrategy in actionsAndAuthStrategies.Where(
-                        x => x != null
-                    )
-                )
-                {
-                    List<TransformationAuthorizationStrategy>? authOverrides = null;
-                    if (
-                        actionAuthStrategy!.AuthorizationStrategies != null
-                        && actionAuthStrategy.AuthorizationStrategies.Any()
-                    )
+                actions.Add(
+                    new TransformationClaimSetAction
                     {
-                        authOverrides = actionAuthStrategy
-                            .AuthorizationStrategies.Select(auth => new TransformationAuthorizationStrategy
-                            {
-                                Name = auth.Name,
-                            })
-                            .ToList();
+                        Name = actionAuthStrategy.ActionName!,
+                        AuthorizationStrategyOverrides =
+                            actionAuthStrategy.AuthorizationStrategies is not null
+                            && actionAuthStrategy.AuthorizationStrategies.Any()
+                                ? actionAuthStrategy
+                                    .AuthorizationStrategies.Select(
+                                        auth => new TransformationAuthorizationStrategy { Name = auth.Name }
+                                    )
+                                    .ToList()
+                                : null,
                     }
-
-                    actions.Add(
-                        new TransformationClaimSetAction
-                        {
-                            Name = actionAuthStrategy.ActionName!,
-                            AuthorizationStrategyOverrides = authOverrides,
-                        }
-                    );
-                }
+                );
             }
 
             // Only create ClaimSets array and add claimSet if there are actions to include
@@ -504,8 +493,20 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
         }
     }
 
+    // Exact name first; the singular form only when no claim has the exact name
+    private static TransformationClaim? FindGrantClaim(List<TransformationClaim> existingClaims, string name)
+    {
+        string singularName = PluralToSingular(name);
+        return FindClaim(existingClaims, name)
+            ?? (singularName == name ? null : FindClaim(existingClaims, singularName));
+    }
+
+    private static TransformationClaim? FindClaim(List<TransformationClaim> existingClaims, string name) =>
+        existingClaims.SelectMany(x => SearchRecursive(x, name)).FirstOrDefault();
+
     /// <summary>
-    /// Recursively searches for a claim with specified name (ported from CmsHierarchy.SearchRecursive)
+    /// Recursively finds claims by resource name, matching the final two URI path segments
+    /// case-insensitively when the claim name is an absolute URI.
     /// </summary>
     private static IEnumerable<TransformationClaim> SearchRecursive(
         TransformationClaim claim,
@@ -517,7 +518,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
             yield return claim;
         }
 
-        if (claim.Claims != null)
+        if (claim.Claims is not null)
         {
             foreach (TransformationClaim child in claim.Claims)
             {
@@ -546,7 +547,8 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
     }
 
     /// <summary>
-    /// Converts plural resource names to singular (ported from CmsHierarchy.PluralToSingular)
+    /// Normalizes fragment resource names for hierarchy lookup by replacing a trailing
+    /// "ies" with "y" or removing a trailing "s".
     /// </summary>
     private static string PluralToSingular(string resourceClaimName)
     {
@@ -589,13 +591,13 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
             }
 
             // If DefaultAuthorization has no actions, remove it entirely
-            if (claim.DefaultAuthorization?.Actions == null)
+            if (claim.DefaultAuthorization?.Actions is null)
             {
                 claim.DefaultAuthorization = null;
             }
 
             // Clean nested claims recursively
-            if (claim.Claims != null)
+            if (claim.Claims is not null)
             {
                 CleanupEmptyCollections(claim.Claims);
                 if (claim.Claims.Count == 0)
@@ -605,7 +607,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
             }
 
             // Clean claim set actions
-            if (claim.ClaimSets != null)
+            if (claim.ClaimSets is not null)
             {
                 foreach (TransformationClaimSet claimSet in claim.ClaimSets)
                 {
@@ -616,7 +618,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
                 }
 
                 // Remove claim sets that have no actions (violates schema requirements)
-                claim.ClaimSets.RemoveAll(cs => cs.Actions == null);
+                claim.ClaimSets.RemoveAll(cs => cs.Actions is null);
 
                 // If no claim sets remain, set to null
                 if (claim.ClaimSets.Count == 0)
@@ -627,7 +629,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
         }
     }
 
-    #region Transformation Model Classes (Ported from CmsHierarchy.Model)
+    #region Internal Hierarchy Models and Fragment Input Records
 
     private sealed class TransformationClaim
     {
@@ -665,7 +667,7 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
         public string? Name { get; set; }
     }
 
-    // Fragment file structure records (reused from CmsHierarchy.Model).
+    // Input records for fragment resource claims, CRUD strategies, and claim-set names.
     // Positional records — the primary constructor is what System.Text.Json calls during
     // deserialization, satisfying analyzers that don't track reflection-based property writes.
     private sealed record ResourceClaim(string? Name = null, bool IsParent = false)

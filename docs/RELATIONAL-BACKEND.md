@@ -294,7 +294,7 @@ remain in the release workflow. Rebuild from the final release commit/schema and
 eight source/restore gates before publication. Deploy compatible rebuilt Minimal and Populated
 packages on both engines, discard cached older artifacts, update fixed deployment pins to the
 verified release versions, and deliberately reprovision affected databases before serving traffic.
-No benchmark, full dataset run, engine upgrade, RI removal or future bootstrap-restore feature
+No benchmark, full dataset run, engine upgrade, RI removal or bootstrap template restore
 is a prerequisite for this story.
 
 The expected saving is roughly eight bytes of raw timestamp payload per document, about half

@@ -1,5 +1,10 @@
 # Claim Set Export / Import API Design
 
+> **Tooling update (DMS-1617):** The `CmsHierarchy` tool reference below is superseded;
+> that utility has been retired. Current ODS XML conversion uses
+> [security-metadata-tools convert-ods-xml](../../../src/config/clis/EdFi.DmsConfigurationService.SecurityMetadataTools/README.md).
+> That command does not implement the Admin API format adapter proposed in this design.
+
 - [Executive Summary](#executive-summary)
 - [Background](#background)
 - [Key Concepts](#key-concepts)

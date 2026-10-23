@@ -11,8 +11,8 @@
     provision-e2e-database.ps1 and the Instance Management E2E orchestration validate route-context
     database names with the same logic before any DROP/CREATE mutation. Assert-SafeDatabaseName rejects
     unsupported characters and reserved PostgreSQL/SQL Server system databases; Assert-E2EDatabaseIsDedicated
-    additionally rejects names that collide with the primary/CMS databases (by name or by the database
-    embedded in the admin/CMS connection strings), and conservatively refuses, offline and on either
+    additionally rejects names that collide with the primary/Configuration Service databases (by name or by the database
+    embedded in the admin/Configuration Service connection strings), and conservatively refuses, offline and on either
     engine, an E2E or protected name it cannot compare reliably: one with characters outside ASCII
     letters, digits and underscore, or longer than 63 characters, after explicit trailing characters
     are removed.
@@ -790,7 +790,7 @@ function Test-PortNumberEquivalent {
 
     .DESCRIPTION
         The single interpretation both endpoint boundaries use - the provisioning phase's local-target
-        classification and the CMS pre-start endpoint agreement - so neither can drift into its own
+        classification and the Configuration Service pre-start endpoint agreement - so neither can drift into its own
         reading of a port. Invariant NumberStyles::Integer (a leading sign and surrounding whitespace,
         but no thousands separator and no decimal point, both of which Npgsql rejects outright) plus a
         1-65535 range check, so '05432', '+5432' and '5432' are the same port while anything that is not
@@ -829,7 +829,7 @@ function Get-PostgresHostCandidateEndpoint {
 
     .DESCRIPTION
         The ONE parser for this grammar, shared by every caller that has to reason about a PostgreSQL
-        Host value, so the provisioning classifier and the CMS endpoint validator cannot drift into
+        Host value, so the provisioning classifier and the Configuration Service endpoint validator cannot drift into
         different readings of the same string again.
 
         Npgsql's Host is not a scalar hostname: it supports an ordered comma-separated host list with
@@ -855,7 +855,7 @@ function Get-PostgresHostCandidateEndpoint {
 
         Note what this does NOT decide: whether a candidate is acceptable. The provisioning classifier
         asks whether ANY candidate is the local Compose endpoint (a local member anywhere means the
-        reserved-database guard must run); CMS validation requires EVERY candidate to be the composed
+        reserved-database guard must run); Configuration Service validation requires EVERY candidate to be the composed
         service (Npgsql may fail over to any member, so one external member is a real misconfiguration).
         Same grammar, deliberately opposite quantifiers.
     #>
@@ -913,7 +913,7 @@ function Get-SqlServerDataSourceEndpoint {
 
     .DESCRIPTION
         Every MSSQL endpoint decision in this repository goes through here - the provisioning phase's
-        local-target classification and host-side translation, and the CMS pre-start endpoint agreement.
+        local-target classification and host-side translation, and the Configuration Service pre-start endpoint agreement.
         There were previously two independent readings of this one grammar, and they were not merely
         duplicated but UNEQUAL, so each review round found a spelling one of them mishandled. A single
         provider-derived grammar is what stops that: a form is either in the grammar or it is not, and
@@ -974,7 +974,7 @@ function Get-SqlServerDataSourceEndpoint {
         CONTEXT-NEUTRAL BY CONSTRUCTION. This function decides what SqlClient would parse, never whether
         the result is acceptable. Accepted-host policy differs by caller and stays with the caller: the
         provisioning phase may recognize host-side "localhost" as the published Compose listener, while
-        CMS validation must REJECT container-side "localhost" because that connection string has to name
+        Configuration Service validation must REJECT container-side "localhost" because that connection string has to name
         the composed database service. Baking either policy in here would recreate the divergence this
         function exists to remove.
 
@@ -1167,7 +1167,7 @@ function Get-EndpointFromResolvedConnectionString {
 
         An earlier revision of this function treated a comma-bearing PostgreSQL Host as a single
         malformed hostname. That was wrong about the provider - the syntax is valid and documented - and
-        it made a correctly configured multi-host CMS connection string unvalidatable. The concern behind
+        it made a correctly configured multi-host Configuration Service connection string unvalidatable. The concern behind
         it was real, though, and is preserved by the expansion: a candidate without its own port takes
         the standalone Port, so an explicit Port= can never be hidden behind a coincidental comma.
 
@@ -1264,6 +1264,74 @@ function Get-EndpointFromResolvedConnectionString {
     }
     catch {
         throw "Could not parse the resolved connection string to extract the endpoint: $($_.Exception.Message)"
+    }
+}
+
+function ConvertFrom-CmsEncryptedConnectionString {
+    <#
+    .SYNOPSIS
+        Decrypts a data store connection string as a Configuration Service response carries it: the Base64 of a 16-byte
+        IV followed by AES-CBC/PKCS7 cipher text, under CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY (the same key
+        the Configuration Service encrypts with) padded with '0' and cut to 32 characters.
+    .DESCRIPTION
+        Shared by the provisioning phase, which hands the decrypted target to SchemaTools, and by the
+        configure phase's restore reuse check, which compares it with the restored target. Every
+        failure is one of the fixed messages below; none carries the key, the cipher text, or the
+        decrypted text.
+    #>
+    param(
+        [string]
+        $ProtectedConnectionString,
+
+        [hashtable]
+        $EnvValues
+    )
+
+    $encryptionKey = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvValues -Name "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY"
+    if ([string]::IsNullOrWhiteSpace($encryptionKey)) {
+        throw "Configuration Service data store connection string is encrypted, but CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY is not set in the environment file."
+    }
+
+    try {
+        $encryptedBytes = [Convert]::FromBase64String($ProtectedConnectionString)
+    }
+    catch {
+        throw "Configuration Service data store connection string did not contain a database name and was not valid Configuration Service encrypted base64."
+    }
+
+    if ($encryptedBytes.Length -le 16) {
+        throw "Configuration Service data store encrypted connection string payload is invalid."
+    }
+
+    $keyText = $encryptionKey.PadRight(32, "0").Substring(0, 32)
+    $keyBytes = [System.Text.Encoding]::UTF8.GetBytes($keyText)
+    $iv = [byte[]]::new(16)
+    [Array]::Copy($encryptedBytes, 0, $iv, 0, 16)
+
+    $cipherText = [byte[]]::new($encryptedBytes.Length - 16)
+    [Array]::Copy($encryptedBytes, 16, $cipherText, 0, $cipherText.Length)
+
+    $aes = [System.Security.Cryptography.Aes]::Create()
+    # CMS encrypts connection strings with AES-CBC / PKCS7; set explicitly rather than relying on .NET defaults.
+    $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
+    $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
+    try {
+        $aes.Key = $keyBytes
+        $aes.IV = $iv
+        $decryptor = $aes.CreateDecryptor()
+        try {
+            $plainTextBytes = $decryptor.TransformFinalBlock($cipherText, 0, $cipherText.Length)
+            return [System.Text.Encoding]::UTF8.GetString($plainTextBytes)
+        }
+        finally {
+            $decryptor.Dispose()
+        }
+    }
+    catch {
+        throw "Configuration Service data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY."
+    }
+    finally {
+        $aes.Dispose()
     }
 }
 
@@ -1541,7 +1609,7 @@ function Assert-E2EDatabaseIsDedicated {
     <#
     .SYNOPSIS
         Throws unless an E2E route-context database name is safe and dedicated: it must not
-        match the primary/CMS database names or the database embedded in the admin/CMS
+        match the primary/Configuration Service database names or the database embedded in the admin/Configuration Service
         connection strings, so E2E provisioning can never drop shared state. It also refuses,
         offline and on either engine, any E2E or protected name that is not 1 to 63 ASCII letters,
         digits or underscores once explicit trailing characters are removed; that refusal is
@@ -1691,6 +1759,7 @@ Export-ModuleMember -Function `
     Get-DatabaseNameFromConnectionString, `
     Get-DatabaseNameFromResolvedConnectionString, `
     Get-EndpointFromResolvedConnectionString, `
+    ConvertFrom-CmsEncryptedConnectionString, `
     Get-SqlServerDataSourceEndpoint, `
     Get-PostgresHostCandidateEndpoint, `
     Test-PortNumberEquivalent, `
