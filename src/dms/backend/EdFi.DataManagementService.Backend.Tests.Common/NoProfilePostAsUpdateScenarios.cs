@@ -191,8 +191,6 @@ public static class NoProfilePostAsUpdateScenarios
         string IssuerName
     );
 
-    public sealed record ReferentialIdentityRow(Guid ReferentialId, long DocumentId, short ResourceKeyId);
-
     public sealed record AuthoritativePostAsUpdateSnapshot(
         AuthoritativeDocumentSnapshot Document,
         AuthoritativeAcademicRecordSnapshot AcademicRecord,
@@ -200,8 +198,7 @@ public static class NoProfilePostAsUpdateScenarios
         IReadOnlyList<AuthoritativeAcademicHonorSnapshot> AcademicHonors,
         IReadOnlyList<AuthoritativeDiplomaSnapshot> Diplomas,
         IReadOnlyList<AuthoritativeGradePointAverageSnapshot> GradePointAverages,
-        IReadOnlyList<AuthoritativeRecognitionSnapshot> Recognitions,
-        IReadOnlyList<ReferentialIdentityRow> ReferentialIdentities
+        IReadOnlyList<AuthoritativeRecognitionSnapshot> Recognitions
     );
 
     /// <summary>
@@ -404,9 +401,6 @@ public static class NoProfilePostAsUpdateScenarios
         snapshotAfterFirstPostAsUpdate
             .Recognitions.Should()
             .NotBeEmpty("the no-op snapshot must be non-vacuous");
-        snapshotAfterFirstPostAsUpdate
-            .ReferentialIdentities.Should()
-            .NotBeEmpty("the no-op snapshot must carry the full referential-identity state");
 
         snapshotAfterRepeatPostAsUpdate.Should().BeEquivalentTo(snapshotAfterFirstPostAsUpdate);
     }

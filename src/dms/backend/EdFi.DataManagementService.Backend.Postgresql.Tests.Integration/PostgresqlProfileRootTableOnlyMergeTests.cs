@@ -503,8 +503,8 @@ public class Given_A_Profiled_Post_Create_New_For_Root_Only_Resource
 
 /// <summary>
 /// Fixture 2: same preservation invariant as Fixture 1, but exercised through the
-/// POST-as-update flow (POST against an existing referential id that the executor
-/// resolves as an existing document).
+/// POST-as-update flow (POST whose natural key matches an existing document, which the
+/// executor resolves as an update).
 /// </summary>
 [TestFixture]
 [Category("DatabaseIntegration")]

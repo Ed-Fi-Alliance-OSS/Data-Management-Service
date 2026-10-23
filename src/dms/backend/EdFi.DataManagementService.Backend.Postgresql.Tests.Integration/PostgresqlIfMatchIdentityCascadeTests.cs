@@ -24,10 +24,10 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
-file static class PostgresqlIfMatchCascadeReferentialIdentityTestSupport
+file static class PostgresqlIfMatchIdentityCascadeTestSupport
 {
     public const string FixtureRelativePath =
-        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/referential-identity";
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/identity-references";
 
     private static readonly BaseResourceInfo StudentReferenceResourceInfo = new(
         new ProjectName("Ed-Fi"),
@@ -138,7 +138,7 @@ file static class PostgresqlIfMatchCascadeReferentialIdentityTestSupport
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
-public class Given_A_Postgresql_IfMatch_Cascade_Referential_Identity_Fixture
+public class Given_A_Postgresql_IfMatch_Cascade_Identity_References_Fixture
 {
     private const string OriginalStudentBodyJson = """
         {
@@ -178,7 +178,7 @@ public class Given_A_Postgresql_IfMatch_Cascade_Referential_Identity_Fixture
     public async Task OneTimeSetUp()
     {
         var fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            PostgresqlIfMatchCascadeReferentialIdentityTestSupport.FixtureRelativePath
+            PostgresqlIfMatchIdentityCascadeTestSupport.FixtureRelativePath
         );
         _mappingSet = fixture.MappingSet;
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(fixture.GeneratedDdl);
@@ -188,7 +188,7 @@ public class Given_A_Postgresql_IfMatch_Cascade_Referential_Identity_Fixture
     public async Task SetUp()
     {
         await _database.ResetAsync();
-        _serviceProvider = PostgresqlIfMatchCascadeReferentialIdentityTestSupport.CreateServiceProvider();
+        _serviceProvider = PostgresqlIfMatchIdentityCascadeTestSupport.CreateServiceProvider();
     }
 
     [TearDown]
@@ -215,7 +215,7 @@ public class Given_A_Postgresql_IfMatch_Cascade_Referential_Identity_Fixture
     public async Task It_returns_412_for_stale_IfMatch_after_a_student_identity_cascade_changes_resourcea_etag()
     {
         var createStudentResult = await ExecuteUpsertAsync(
-            PostgresqlIfMatchCascadeReferentialIdentityTestSupport.StudentResourceInfo,
+            PostgresqlIfMatchIdentityCascadeTestSupport.StudentResourceInfo,
             OriginalStudentBodyJson,
             StudentDocumentUuid,
             "pg-if-match-cascade-create-student"
@@ -223,7 +223,7 @@ public class Given_A_Postgresql_IfMatch_Cascade_Referential_Identity_Fixture
         createStudentResult.Should().BeOfType<UpsertResult.InsertSuccess>();
 
         var createResourceAResult = await ExecuteUpsertAsync(
-            PostgresqlIfMatchCascadeReferentialIdentityTestSupport.ResourceAResourceInfo,
+            PostgresqlIfMatchIdentityCascadeTestSupport.ResourceAResourceInfo,
             OriginalResourceABodyJson,
             ResourceADocumentUuid,
             "pg-if-match-cascade-create-resource-a"
@@ -231,7 +231,7 @@ public class Given_A_Postgresql_IfMatch_Cascade_Referential_Identity_Fixture
         createResourceAResult.Should().BeOfType<UpsertResult.InsertSuccess>();
 
         var getBeforeCascade = await ExecuteGetByIdAsync(
-            PostgresqlIfMatchCascadeReferentialIdentityTestSupport.ResourceAResourceInfo,
+            PostgresqlIfMatchIdentityCascadeTestSupport.ResourceAResourceInfo,
             ResourceADocumentUuid,
             "pg-if-match-cascade-get-before"
         );
@@ -242,7 +242,7 @@ public class Given_A_Postgresql_IfMatch_Cascade_Referential_Identity_Fixture
         await UpdateStudentUniqueIdAsync("10002");
 
         var getAfterCascade = await ExecuteGetByIdAsync(
-            PostgresqlIfMatchCascadeReferentialIdentityTestSupport.ResourceAResourceInfo,
+            PostgresqlIfMatchIdentityCascadeTestSupport.ResourceAResourceInfo,
             ResourceADocumentUuid,
             "pg-if-match-cascade-get-after"
         );
@@ -257,7 +257,7 @@ public class Given_A_Postgresql_IfMatch_Cascade_Referential_Identity_Fixture
         currentEtag.Should().NotBe(staleEtag);
 
         var staleIfMatchResult = await ExecuteUpdateAsync(
-            PostgresqlIfMatchCascadeReferentialIdentityTestSupport.ResourceAResourceInfo,
+            PostgresqlIfMatchIdentityCascadeTestSupport.ResourceAResourceInfo,
             UpdatedResourceABodyJson,
             ResourceADocumentUuid,
             "pg-if-match-cascade-update-resource-a-stale",
@@ -285,7 +285,7 @@ public class Given_A_Postgresql_IfMatch_Cascade_Referential_Identity_Fixture
         return await repository.UpsertDocument(
             new UpsertRequest(
                 ResourceInfo: resourceInfo,
-                DocumentInfo: PostgresqlIfMatchCascadeReferentialIdentityTestSupport.CreateDocumentInfo(
+                DocumentInfo: PostgresqlIfMatchIdentityCascadeTestSupport.CreateDocumentInfo(
                     resourceInfo,
                     requestBody
                 ),
@@ -321,7 +321,7 @@ public class Given_A_Postgresql_IfMatch_Cascade_Referential_Identity_Fixture
         return await repository.UpdateDocumentById(
             new UpdateRequest(
                 ResourceInfo: resourceInfo,
-                DocumentInfo: PostgresqlIfMatchCascadeReferentialIdentityTestSupport.CreateDocumentInfo(
+                DocumentInfo: PostgresqlIfMatchIdentityCascadeTestSupport.CreateDocumentInfo(
                     resourceInfo,
                     requestBody
                 ),
@@ -380,7 +380,7 @@ public class Given_A_Postgresql_IfMatch_Cascade_Referential_Identity_Fixture
                 new DataStore(
                     Id: 1,
                     DataStoreType: "test",
-                    Name: "PostgresqlIfMatchCascadeReferentialIdentity",
+                    Name: "PostgresqlIfMatchIdentityCascade",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )

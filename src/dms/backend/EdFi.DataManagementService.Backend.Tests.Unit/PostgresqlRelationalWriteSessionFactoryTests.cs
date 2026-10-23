@@ -34,13 +34,8 @@ public class Given_PostgresqlRelationalWriteSessionFactory
         await using var session = await sut.CreateAsync();
         await using var command = session.CreateCommand(
             new RelationalCommand(
-                "select * from dms.lookup where referential_id = @referentialId",
-                [
-                    new RelationalParameter(
-                        "@referentialId",
-                        Guid.Parse("00000000-0000-0000-0000-000000000111")
-                    ),
-                ]
+                "select * from dms.lookup where lookup_id = @lookupId",
+                [new RelationalParameter("@lookupId", Guid.Parse("00000000-0000-0000-0000-000000000111"))]
             )
         );
         await using var _ = await command.ExecuteReaderAsync();

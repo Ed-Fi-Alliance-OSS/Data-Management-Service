@@ -24,10 +24,10 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-file static class MssqlIfMatchCascadeReferentialIdentityTestSupport
+file static class MssqlIfMatchIdentityCascadeTestSupport
 {
     public const string FixtureRelativePath =
-        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/referential-identity";
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/identity-references";
 
     private static readonly BaseResourceInfo StudentReferenceResourceInfo = new(
         new ProjectName("Ed-Fi"),
@@ -137,7 +137,7 @@ file static class MssqlIfMatchCascadeReferentialIdentityTestSupport
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
 [Category(MssqlCiShards.Shard3)]
-public class Given_A_Mssql_IfMatch_Cascade_Referential_Identity_Fixture
+public class Given_A_Mssql_IfMatch_Cascade_Identity_References_Fixture
 {
     private const string OriginalStudentBodyJson = """
         {
@@ -185,11 +185,11 @@ public class Given_A_Mssql_IfMatch_Cascade_Referential_Identity_Fixture
         }
 
         var fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            MssqlIfMatchCascadeReferentialIdentityTestSupport.FixtureRelativePath
+            MssqlIfMatchIdentityCascadeTestSupport.FixtureRelativePath
         );
         _mappingSet = fixture.MappingSet;
         _databaseLease = await MssqlBackendBaselineCache.AcquireLeaseAsync(
-            MssqlIfMatchCascadeReferentialIdentityTestSupport.FixtureRelativePath,
+            MssqlIfMatchIdentityCascadeTestSupport.FixtureRelativePath,
             strict: false,
             fixture.GeneratedDdl
         );
@@ -200,7 +200,7 @@ public class Given_A_Mssql_IfMatch_Cascade_Referential_Identity_Fixture
     public async Task SetUp()
     {
         await _database.ResetAsync();
-        _serviceProvider = MssqlIfMatchCascadeReferentialIdentityTestSupport.CreateServiceProvider();
+        _serviceProvider = MssqlIfMatchIdentityCascadeTestSupport.CreateServiceProvider();
     }
 
     [TearDown]
@@ -227,7 +227,7 @@ public class Given_A_Mssql_IfMatch_Cascade_Referential_Identity_Fixture
     public async Task It_returns_412_for_stale_IfMatch_after_a_student_identity_cascade_changes_resourcea_etag()
     {
         var createStudentResult = await ExecuteUpsertAsync(
-            MssqlIfMatchCascadeReferentialIdentityTestSupport.StudentResourceInfo,
+            MssqlIfMatchIdentityCascadeTestSupport.StudentResourceInfo,
             OriginalStudentBodyJson,
             StudentDocumentUuid,
             "mssql-if-match-cascade-create-student"
@@ -235,7 +235,7 @@ public class Given_A_Mssql_IfMatch_Cascade_Referential_Identity_Fixture
         createStudentResult.Should().BeOfType<UpsertResult.InsertSuccess>();
 
         var createResourceAResult = await ExecuteUpsertAsync(
-            MssqlIfMatchCascadeReferentialIdentityTestSupport.ResourceAResourceInfo,
+            MssqlIfMatchIdentityCascadeTestSupport.ResourceAResourceInfo,
             OriginalResourceABodyJson,
             ResourceADocumentUuid,
             "mssql-if-match-cascade-create-resource-a"
@@ -243,7 +243,7 @@ public class Given_A_Mssql_IfMatch_Cascade_Referential_Identity_Fixture
         createResourceAResult.Should().BeOfType<UpsertResult.InsertSuccess>();
 
         var getBeforeCascade = await ExecuteGetByIdAsync(
-            MssqlIfMatchCascadeReferentialIdentityTestSupport.ResourceAResourceInfo,
+            MssqlIfMatchIdentityCascadeTestSupport.ResourceAResourceInfo,
             ResourceADocumentUuid,
             "mssql-if-match-cascade-get-before"
         );
@@ -254,7 +254,7 @@ public class Given_A_Mssql_IfMatch_Cascade_Referential_Identity_Fixture
         await UpdateStudentUniqueIdAsync("10002");
 
         var getAfterCascade = await ExecuteGetByIdAsync(
-            MssqlIfMatchCascadeReferentialIdentityTestSupport.ResourceAResourceInfo,
+            MssqlIfMatchIdentityCascadeTestSupport.ResourceAResourceInfo,
             ResourceADocumentUuid,
             "mssql-if-match-cascade-get-after"
         );
@@ -269,7 +269,7 @@ public class Given_A_Mssql_IfMatch_Cascade_Referential_Identity_Fixture
         currentEtag.Should().NotBe(staleEtag);
 
         var staleIfMatchResult = await ExecuteUpdateAsync(
-            MssqlIfMatchCascadeReferentialIdentityTestSupport.ResourceAResourceInfo,
+            MssqlIfMatchIdentityCascadeTestSupport.ResourceAResourceInfo,
             UpdatedResourceABodyJson,
             ResourceADocumentUuid,
             "mssql-if-match-cascade-update-resource-a-stale",
@@ -297,7 +297,7 @@ public class Given_A_Mssql_IfMatch_Cascade_Referential_Identity_Fixture
         return await repository.UpsertDocument(
             new UpsertRequest(
                 ResourceInfo: resourceInfo,
-                DocumentInfo: MssqlIfMatchCascadeReferentialIdentityTestSupport.CreateDocumentInfo(
+                DocumentInfo: MssqlIfMatchIdentityCascadeTestSupport.CreateDocumentInfo(
                     resourceInfo,
                     requestBody
                 ),
@@ -333,7 +333,7 @@ public class Given_A_Mssql_IfMatch_Cascade_Referential_Identity_Fixture
         return await repository.UpdateDocumentById(
             new UpdateRequest(
                 ResourceInfo: resourceInfo,
-                DocumentInfo: MssqlIfMatchCascadeReferentialIdentityTestSupport.CreateDocumentInfo(
+                DocumentInfo: MssqlIfMatchIdentityCascadeTestSupport.CreateDocumentInfo(
                     resourceInfo,
                     requestBody
                 ),
@@ -392,7 +392,7 @@ public class Given_A_Mssql_IfMatch_Cascade_Referential_Identity_Fixture
                 new DataStore(
                     Id: 1,
                     DataStoreType: "test",
-                    Name: "MssqlIfMatchCascadeReferentialIdentity",
+                    Name: "MssqlIfMatchIdentityCascade",
                     ConnectionString: _database.ConnectionString,
                     RouteContext: []
                 )

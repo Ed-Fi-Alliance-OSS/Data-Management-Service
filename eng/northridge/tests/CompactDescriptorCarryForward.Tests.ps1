@@ -58,6 +58,24 @@ CREATE SCHEMA auth; CREATE TABLE auth."CarryForwardWitness" ("DocumentId" bigint
         $documentKey = 'CONSTRAINT "PK_Document" PRIMARY KEY ("DocumentId")'
         if (($legacy.Length - $legacy.Replace($documentKey, '').Length) -ne $documentKey.Length) { throw "Fixture DDL must declare $documentKey exactly once" }
         $legacy = $legacy.Replace($documentKey, '"CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),' + "`n    " + $documentKey)
+        # Older dumps carry the retired dms.ReferentialIdentity table, which current provisioning omits.
+        $legacy += '
+CREATE TABLE dms."ReferentialIdentity" ("ReferentialId" uuid NOT NULL, "DocumentId" bigint NOT NULL REFERENCES dms."Document" ("DocumentId"),
+    "ResourceKeyId" smallint NOT NULL, CONSTRAINT "PK_ReferentialIdentity" PRIMARY KEY ("ReferentialId"));'
+        # Older dumps also predate ResourceKeyId on abstract identity tables: drop the column, the
+        # foreign key naming it and the trigger's insert of it.
+        $abstractStart = $legacy.IndexOf('CREATE TABLE IF NOT EXISTS "edfi"."DescriptorSubjectIdentity"')
+        $abstractEnd = $legacy.IndexOf(');', $abstractStart) + 2
+        $abstract = $legacy.Substring($abstractStart, $abstractEnd - $abstractStart).Replace("`n" + '    "ResourceKeyId" smallint NOT NULL,', '')
+        $legacy = $legacy.Substring(0, $abstractStart) + $abstract + $legacy.Substring($abstractEnd)
+        $abstractKey = [regex]::Matches($legacy, '(?s)DO \$\$\s*BEGIN\s*IF NOT EXISTS \(\s*SELECT 1 FROM pg_constraint\s*WHERE conname = ''FK_DescriptorSubjectIdentity_DocumentResourceKey''.*?END \$\$;')
+        if ($abstractKey.Count -ne 1) { throw 'Fixture DDL must declare FK_DescriptorSubjectIdentity_DocumentResourceKey exactly once' }
+        $legacy = $legacy.Remove($abstractKey[0].Index, $abstractKey[0].Length)
+        $abstractInsert = 'INSERT INTO "edfi"."DescriptorSubjectIdentity" ("DocumentId", "SchoolTypeDescriptor_DescriptorId", "ResourceKeyId", "Discriminator")' + "`n" +
+            '        VALUES (NEW."DocumentId", NEW."SchoolTypeDescriptor_DescriptorId", 4, ''Ed-Fi:Student'')'
+        if (($legacy.Length - $legacy.Replace($abstractInsert, '').Length) -ne $abstractInsert.Length) { throw 'Fixture DDL must insert into DescriptorSubjectIdentity exactly once' }
+        $legacy = $legacy.Replace($abstractInsert, 'INSERT INTO "edfi"."DescriptorSubjectIdentity" ("DocumentId", "SchoolTypeDescriptor_DescriptorId", "Discriminator")' + "`n" +
+            '        VALUES (NEW."DocumentId", NEW."SchoolTypeDescriptor_DescriptorId", ''Ed-Fi:Student'')')
         foreach ($db in $script:databases) {
             docker exec $script:container createdb -U $script:user $db
             if ($LASTEXITCODE -ne 0) { throw "Cannot create fixture $db" }
@@ -89,7 +107,7 @@ INSERT INTO dms."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceK
 ('00000000-0000-0000-0000-000000000009', 5000000103, 2);
 INSERT INTO edfi."Student" ("DocumentId", "SchoolTypeDescriptor_DescriptorId", "FirstName", "StudentUniqueId", "ContentVersion", "ContentLastModifiedAt") VALUES
 (5000000100, 5000000042, 'Test', 'student-100', 103, '2026-01-04Z');
-INSERT INTO edfi."DescriptorSubjectIdentity" ("DocumentId", "SchoolTypeDescriptor_DescriptorId", "ResourceKeyId", "Discriminator") VALUES (5000000100, 5000000042, 4, 'Ed-Fi:Student');
+INSERT INTO edfi."DescriptorSubjectIdentity" ("DocumentId", "SchoolTypeDescriptor_DescriptorId", "Discriminator") VALUES (5000000100, 5000000042, 'Ed-Fi:Student');
 INSERT INTO edfi."ProfileRootOnlyMergeItem" ("DocumentId", "ProfileRootOnlyMergeItemId", "PrimarySchoolTypeDescriptor_DescriptorId_Present", "PrimarySchoolTypeDescriptor_Unified_DescriptorId", "StudentReference_DocumentId", "StudentReference_StudentUniqueId", "StudentReference_SchoolTypeDescriptor_DescriptorId", "ContentVersion", "ContentLastModifiedAt") VALUES
 (5000000200, 200, true, 5000000042, 5000000100, 'student-100', 5000000042, 104, '2026-01-05Z'),
 (5000000101, 101, true, 5000000042, 5000000100, 'student-100', 5000000042, 107, '2026-01-03Z'),
@@ -182,11 +200,24 @@ COMMIT;
             (Query $script:target $sql) | Should -Be (Query $script:source $sql)
         }
     }
-    It 'Preserves exact document/RI/stamp values, source identity and cleanup and passes checkpoint' {
+    It 'Skips the retired legacy ReferentialIdentity rows and leaves the target without the table' {
+        $script:copyOutput -join "`n" | Should -Match 'PASS: copy complete'
+        (Query $script:source 'SELECT count(*) FROM dms."ReferentialIdentity";') | Should -Be @('9')
+        (Query $script:target 'SELECT to_regclass(''dms."ReferentialIdentity"'') IS NULL;') | Should -Be @('t')
+        @($script:copyOutput | Where-Object { $_ -like '*retired TABLE DATA*' } | ForEach-Object { $_.Trim() }) |
+            Should -Be @('retired TABLE DATA entr(ies) skipped: dms.ReferentialIdentity')
+        Get-Content -Raw (Join-Path $script:outputDir "restore-list.$script:target.txt") | Should -Not -Match 'ReferentialIdentity'
+    }
+    It 'Derives abstract identity ResourceKeyId from the owning document after remapping its descriptor key' {
+        $script:copyOutput -join "`n" | Should -Match 'PASS: copy complete'
+        (Query $script:source "SELECT count(*) FROM information_schema.columns WHERE table_schema = 'edfi' AND table_name = 'DescriptorSubjectIdentity' AND column_name = 'ResourceKeyId';") | Should -Be @('0')
+        (Query $script:target 'SELECT a."DocumentId" || ''|'' || a."SchoolTypeDescriptor_DescriptorId" || ''|'' || a."ResourceKeyId" || ''|'' || d."ResourceKeyId" || ''|'' || a."Discriminator" FROM edfi."DescriptorSubjectIdentity" a JOIN dms."Document" d ON d."DocumentId" = a."DocumentId";') |
+            Should -Be @('5000000100|41|4|4|Ed-Fi:Student')
+        Get-Content -Raw (Join-Path $script:outputDir "restore-list.$script:target.txt") | Should -Not -Match 'DescriptorSubjectIdentity' -Because 'the abstract identity table loads once, through staging'
+    }
+    It 'Preserves exact document/stamp values, source identity and cleanup and passes checkpoint' {
         # Every target dms.Document column, by name; the legacy source's extra ContentLastModifiedAt and CreatedAt are not copied.
         $sql = "SELECT json_agg(json_build_object($((Query $script:target "SELECT format('%L, %I', column_name, column_name) FROM information_schema.columns WHERE table_schema = 'dms' AND table_name = 'Document' ORDER BY ordinal_position;") -join ', ')) ORDER BY `"DocumentId`")::text FROM dms.`"Document`";"
-        (Query $script:target $sql) | Should -Be (Query $script:source $sql)
-        $sql = 'SELECT json_agg(t ORDER BY "DocumentId")::text FROM dms."ReferentialIdentity" t;'
         (Query $script:target $sql) | Should -Be (Query $script:source $sql)
         foreach ($table in @('dms.Descriptor', 'edfi.Student', 'edfi.ProfileRootOnlyMergeItem')) {
             $schema, $name = $table.Split('.')
@@ -210,7 +241,8 @@ COMMIT;
     }
     It 'Stops the actual copy on <name> and cleans its staging' -ForEach @(
         @{ Name = 'unmapped stored reference'; Mutation = 'UPDATE edfi."Student" SET "SchoolTypeDescriptor_DescriptorId" = 5000000999'; Error = '*Unmapped descriptor reference*' },
-        @{ Name = 'unknown deleted type'; Mutation = 'UPDATE tracked_changes_edfi."Descriptor" SET "Discriminator" = ''Missing.SchoolTypeDescriptor'' WHERE "ChangeVersion" = 201'; Error = '*Unknown or ambiguous descriptor history type*' },
+        @{ Name = 'abstract identity row with no owning document'; Mutation = 'UPDATE edfi."DescriptorSubjectIdentity" SET "DocumentId" = 5000000999'; Error = '*Abstract identity row without an owning document in edfi.DescriptorSubjectIdentity*' },
+        @{ Name = 'unknown deleted type';Mutation = 'UPDATE tracked_changes_edfi."Descriptor" SET "Discriminator" = ''Missing.SchoolTypeDescriptor'' WHERE "ChangeVersion" = 201'; Error = '*Unknown or ambiguous descriptor history type*' },
         @{ Name = 'unknown colon-qualified deleted type'; Mutation = 'UPDATE tracked_changes_edfi."Descriptor" SET "Discriminator" = ''Missing:SchoolTypeDescriptor'' WHERE "ChangeVersion" = 201'; Error = '*Unknown or ambiguous descriptor history type*' },
         @{ Name = 'colon-qualified live type from the wrong project'; Mutation = 'UPDATE dms."Descriptor" SET "Discriminator" = ''Sample:SchoolTypeDescriptor'' WHERE "DocumentId" = 5000000042'; Error = '*Legacy descriptor owner/type/whole URI mismatch*' },
         @{ Name = 'ambiguous unqualified deleted type'; Mutation = 'UPDATE tracked_changes_edfi."Descriptor" SET "Discriminator" = ''SchoolTypeDescriptor'' WHERE "ChangeVersion" = 201'; Error = '*Unknown or ambiguous descriptor history type*' }

@@ -21,15 +21,5 @@
     }
   ],
   "childRows": [],
-  "extensionRows": [],
-  "referentialIdentityRows": [
-    {
-      "referentialId": "22222222-2222-2222-2222-222222222222",
-      "documentId": 1001,
-      "resourceKeyId": 1,
-      "values": {
-        "identity": "schoolId=255901001"
-      }
-    }
-  ]
+  "extensionRows": []
 }

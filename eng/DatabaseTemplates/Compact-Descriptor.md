@@ -65,7 +65,10 @@ lowered whole-URI index `UX_Descriptor_UriLowered_ResourceKeyId`. On PostgreSQL 
 `lower(("Namespace" || '#' || "CodeValue") COLLATE "pg_c_utf8")` and then `ResourceKeyId`, with
 the `pg_c_utf8` collation pinned, and no `UriLowered` column may exist. On SQL Server it keys
 `(UriLowered, ResourceKeyId)`, where `UriLowered` is a non-persisted `nvarchar(306)` computed as
-`LOWER` over the stored components under the DMS identity collation.
+`LOWER` over the stored components under the DMS identity collation. The unlowered whole-URI index
+`UX_Descriptor_ResourceKeyId_Uri` is obsolete, and its presence fails verification on both
+providers. On PostgreSQL, `Namespace` and `CodeValue` must also carry the database-default
+collation.
 
 For the combined template gate, `verify-template-restore.ps1` requires
 `-ExpectedModelManifestPath $baseline`. It calls `Assert-TemplateSchema.ps1` on the source before
@@ -108,7 +111,8 @@ catalog mutations against the same reviewed focused manifest.
 
 The integration cases execute test-only mutations under `tests/fixtures`, including a legacy core
 descriptor table with bigint DocumentId primary key, physically stored URI and discriminator, a
-missing or cascading composite document FK, and a missing or stale lowered whole-URI index.
+missing or cascading composite document FK, a missing or stale lowered whole-URI index, and a
+leftover unlowered whole-URI index.
 Every mutation preserves the current schema fingerprint and is rolled back. Old schemas fail the
 same assertions even with a matching hash. Existing databases need deliberate reprovisioning
 from changed DDL or compatible rebuilt templates; retaining `v3` does not confer compatibility.

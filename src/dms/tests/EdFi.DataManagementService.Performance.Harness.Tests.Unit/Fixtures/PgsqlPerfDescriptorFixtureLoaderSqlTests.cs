@@ -56,17 +56,6 @@ public class Given_The_Pgsql_Descriptor_Loader_Sql
     }
 
     [Test]
-    public void It_derives_referential_identities_through_the_database_uuidv5_function()
-    {
-        string sql = PgsqlPerfDescriptorFixtureLoaderSql.ReferentialIdentityInsertSql;
-
-        sql.Should().Contain("\"dms\".\"uuidv5\"");
-        sql.Should().Contain("'edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid");
-        sql.Should().Contain("'Ed-FiAcademicSubjectDescriptor'");
-        sql.Should().Contain("'$.descriptor=' || LOWER(");
-    }
-
-    [Test]
     public void It_reseeds_so_the_next_id_follows_the_fixture()
     {
         PgsqlPerfDescriptorFixtureLoaderSql
@@ -94,9 +83,7 @@ public class Given_The_Pgsql_Descriptor_Loader_Sql
                 ("min-document-id", 1),
                 ("max-document-id", 25_000),
                 ("document-id-sum", 312_512_500),
-                ("referential-identity-count", 25_000),
-                ("referential-identity-pairing", 25_000),
-                ("uri-witness-count", 25_000)
+                ("uri-shape-count", 25_000)
             );
     }
 }

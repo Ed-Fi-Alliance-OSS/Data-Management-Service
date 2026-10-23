@@ -118,22 +118,15 @@ BEGIN
         AND NOT attisdropped AND attname IN ('Discriminator', 'UriLowered', 'NamespaceLowered', 'CodeValueLowered'))
        OR EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = relation AND NOT attisdropped AND attname = 'Uri')
        OR EXISTS (SELECT 1 FROM pg_class WHERE relnamespace = 'dms'::regnamespace
-        AND relname IN ('UX_Descriptor_Uri_Discriminator', 'IX_Descriptor_Discriminator_ContentVersion')) THEN
+        AND relname IN ('UX_Descriptor_Uri_Discriminator', 'IX_Descriptor_Discriminator_ContentVersion', 'UX_Descriptor_ResourceKeyId_Uri')) THEN
         RAISE EXCEPTION 'Compact descriptor baseline: obsolete descriptor storage/index remains';
     END IF;
     IF NOT EXISTS (
-        SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
-        JOIN pg_attribute n ON n.attrelid = relation AND n.attname = 'Namespace'
-        JOIN pg_attribute v ON v.attrelid = relation AND v.attname = 'CodeValue'
-        JOIN pg_attribute r ON r.attrelid = relation AND r.attname = 'ResourceKeyId'
-        WHERE i.indrelid = relation AND c.relname = 'UX_Descriptor_ResourceKeyId_Uri'
-          AND i.indisunique AND i.indisvalid AND i.indpred IS NULL AND i.indnkeyatts = 2
-          AND i.indkey[0] = r.attnum AND i.indkey[1] = 0
-          AND i.indcollation[1] = n.attcollation AND n.attcollation = v.attcollation
+        SELECT 1 FROM pg_attribute n JOIN pg_attribute v ON v.attrelid = relation AND v.attname = 'CodeValue'
+        WHERE n.attrelid = relation AND n.attname = 'Namespace' AND n.attcollation = v.attcollation
           AND n.attcollation = (SELECT typcollation FROM pg_type WHERE oid = 'varchar'::regtype)
-          AND regexp_replace(pg_get_expr(i.indexprs, i.indrelid), '\s+|::text|[()]', '', 'g') = '"Namespace"||''#''||"CodeValue"'
     ) THEN
-        RAISE EXCEPTION 'Compact descriptor baseline: required unlowered whole-URI expression index/collation missing';
+        RAISE EXCEPTION 'Compact descriptor baseline: URI components must carry the database-default collation';
     END IF;
     IF NOT EXISTS (
         SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid

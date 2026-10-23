@@ -12,9 +12,8 @@ namespace EdFi.DataManagementService.Performance.Harness.Fixtures;
 /// set-based with GENERATE_SERIES over the candidate index, enrolling student ordinal 2k, so
 /// the arithmetic must mirror <see cref="PerfAuthorizationSeedDefinition" /> exactly. Only
 /// durable source tables are written: the production triggers on edfi.School and
-/// edfi.StudentSchoolAssociation create the hierarchy self-edge, the abstract identity row,
-/// and every referential identity. Production triggers and constraints stay enabled
-/// throughout.
+/// edfi.StudentSchoolAssociation create the hierarchy self-edge and the abstract identity
+/// row. Production triggers and constraints stay enabled throughout.
 /// </summary>
 public static class MssqlPerfAuthorizationSeedSql
 {
@@ -29,8 +28,8 @@ public static class MssqlPerfAuthorizationSeedSql
             """;
 
     /// <summary>
-    /// Only the payload-backed columns are written; the AuthHierarchy, AbstractIdentity, and
-    /// ReferentialIdentity triggers do the rest, exactly as they do for a production POST.
+    /// Only the payload-backed columns are written; the AuthHierarchy and AbstractIdentity
+    /// triggers do the rest, exactly as they do for a production POST.
     /// </summary>
     public static string SchoolInsertSql(PerfAuthorizationSeedDefinition seed) =>
         $"""
@@ -79,7 +78,6 @@ public static class MssqlPerfAuthorizationSeedSql
         "UPDATE STATISTICS [edfi].[StudentSchoolAssociation];",
         "UPDATE STATISTICS [edfi].[School];",
         "UPDATE STATISTICS [auth].[EducationOrganizationIdToEducationOrganizationId];",
-        "UPDATE STATISTICS [dms].[ReferentialIdentity];",
     ];
 
     private const string SsaResourceKeyFilter = $"""
@@ -139,11 +137,6 @@ public static class MssqlPerfAuthorizationSeedSql
                 WHERE ((([Student_DocumentId] - 2) / 10) * 9 + (([Student_DocumentId] - 2) % 10) + 1) % 2 = 1;
                 """,
                 0
-            ),
-            new(
-                "ssa-referential-identity-count",
-                $"SELECT COUNT(*) FROM [dms].[ReferentialIdentity] WHERE {SsaResourceKeyFilter};",
-                seed.EnrolledStudentCount
             ),
             new("school-row-count", "SELECT COUNT(*) FROM [edfi].[School];", 1),
             new(

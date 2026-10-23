@@ -1011,7 +1011,7 @@ public class Given_Descriptor_Write_Preconditions
             dialect is SqlDialect.Pgsql ? "INSERT INTO dms.\"Document\"" : "INSERT INTO [dms].[Document]";
         sessionFactory.Session.Executor.CommandExceptionFactory = command =>
             command.CommandText.Contains(documentInsert, StringComparison.Ordinal)
-                ? new StubDbException("unique constraint UX_Descriptor_ResourceKeyId_Uri")
+                ? new StubDbException("unique constraint UX_Descriptor_UriLowered_ResourceKeyId")
                 : null;
         var classifier = A.Fake<IRelationalWriteExceptionClassifier>();
         A.CallTo(() => classifier.IsUniqueConstraintViolation(A<DbException>._)).Returns(true);

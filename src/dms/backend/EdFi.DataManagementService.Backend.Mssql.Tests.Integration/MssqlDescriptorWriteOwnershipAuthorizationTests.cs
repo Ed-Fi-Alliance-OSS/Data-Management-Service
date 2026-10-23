@@ -25,7 +25,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 /// Rows are seeded through a create under <c>NoFurtherAuthorizationRequired</c>, which stamps the creating
 /// client's token — or null for a client with none — exactly as a legacy or misconfigured create did. Every
 /// denied create counts <c>dms.Document</c> and <c>dms.Descriptor</c> and finds nothing; every denied update
-/// shows the document, descriptor row and referential identities unchanged; every denied delete finds both
+/// shows the document and descriptor row unchanged; every denied delete finds both
 /// rows still present.
 /// </remarks>
 [TestFixture]

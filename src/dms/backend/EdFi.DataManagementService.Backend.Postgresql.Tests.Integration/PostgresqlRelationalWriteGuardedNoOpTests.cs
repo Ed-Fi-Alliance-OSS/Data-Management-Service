@@ -222,15 +222,8 @@ internal sealed record GuardedNoOpPersistedState(
     GuardedNoOpSchoolRow School,
     IReadOnlyList<GuardedNoOpSchoolAddressRow> Addresses,
     IReadOnlyList<GuardedNoOpSchoolExtensionAddressRow> ExtensionAddresses,
-    IReadOnlyList<GuardedNoOpReferentialIdentityRow> ReferentialIdentities,
     long DocumentCount,
     long MaxChangeVersion
-);
-
-internal sealed record GuardedNoOpReferentialIdentityRow(
-    Guid ReferentialId,
-    long DocumentId,
-    short ResourceKeyId
 );
 
 file static class GuardedNoOpIntegrationTestSupport
@@ -364,7 +357,6 @@ file static class GuardedNoOpIntegrationTestSupport
         var school = await ReadSchoolAsync(database, document.DocumentId);
         var addresses = await ReadSchoolAddressesAsync(database, document.DocumentId);
         var extensionAddresses = await ReadSchoolExtensionAddressesAsync(database, document.DocumentId);
-        var referentialIdentities = await ReadAllReferentialIdentityRowsAsync(database);
         var documentCount = await ReadDocumentCountAsync(database);
         var maxChangeVersion = await ReadMaxChangeVersionAsync(database);
 
@@ -373,7 +365,6 @@ file static class GuardedNoOpIntegrationTestSupport
             school,
             addresses,
             extensionAddresses,
-            referentialIdentities,
             documentCount,
             maxChangeVersion
         );
@@ -413,15 +404,6 @@ file static class GuardedNoOpIntegrationTestSupport
                     )
                 ),
             ],
-            [
-                .. state.ReferentialIdentities.Select(
-                    referentialIdentity => new NoProfileGuardedNoOpScenarios.ReferentialIdentityRow(
-                        referentialIdentity.ReferentialId,
-                        referentialIdentity.DocumentId,
-                        referentialIdentity.ResourceKeyId
-                    )
-                ),
-            ],
             state.DocumentCount,
             state.MaxChangeVersion
         );
@@ -435,26 +417,6 @@ file static class GuardedNoOpIntegrationTestSupport
         );
 
         return GetInt64(rows[0], "MaxChangeVersion");
-    }
-
-    private static async Task<
-        IReadOnlyList<GuardedNoOpReferentialIdentityRow>
-    > ReadAllReferentialIdentityRowsAsync(PostgresqlGeneratedDdlTestDatabase database)
-    {
-        var rows = await database.QueryRowsAsync(
-            """
-            SELECT "ReferentialId", "DocumentId", "ResourceKeyId"
-            FROM "dms"."ReferentialIdentity"
-            ORDER BY "ReferentialId";
-            """
-        );
-
-        return rows.Select(row => new GuardedNoOpReferentialIdentityRow(
-                GetGuid(row, "ReferentialId"),
-                GetInt64(row, "DocumentId"),
-                GetInt16(row, "ResourceKeyId")
-            ))
-            .ToArray();
     }
 
     public static async Task<long> ReadDocumentCountAsync(

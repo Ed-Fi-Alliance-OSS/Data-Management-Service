@@ -16,16 +16,12 @@ namespace EdFi.DataManagementService.Backend.Tests.Common;
 /// <param name="BeginCount">Transactions begun, counted separately from commands.</param>
 /// <param name="CommitCount">Commits, counted separately from commands.</param>
 /// <param name="RollbackCount">Rollbacks, counted separately from commands.</param>
-/// <param name="ReferentialIdentityLookupCount">
-/// Commands that read <c>dms.ReferentialIdentity</c>. Resource writes never do: the POST target is captured
-/// by its own natural key, and only descriptor writes still resolve through the referential identity.
-/// </param>
 /// <param name="HydrationBatchCount">
 /// Current-state hydration batches. Also previously invisible to the session recorder.
 /// </param>
 /// <param name="DocumentUuidLookupCount">
 /// Commands that resolve a document by its external <c>DocumentUuid</c>: the in-session PUT target
-/// lookup. Counted separately from <paramref name="ReferentialIdentityLookupCount"/> because the two
+/// lookup. Counted separately from <paramref name="NaturalKeyCaptureCount"/> because the two
 /// verbs resolve their target through different keys.
 /// </param>
 /// <param name="NaturalKeyLookupCount">
@@ -42,7 +38,6 @@ public sealed record WriteSessionCommandStreamSummary(
     int BeginCount,
     int CommitCount,
     int RollbackCount,
-    int ReferentialIdentityLookupCount,
     int HydrationBatchCount,
     int DocumentUuidLookupCount,
     int NaturalKeyLookupCount,
@@ -66,8 +61,7 @@ public static class WriteSessionCommandStreamScenarios
     /// is built before create-vs-update is known, so one command serves both branches and the create
     /// branch pays the batch's empty result sets. With one capture, one lookup, one hydration batch and
     /// only two commands, only the first command can carry all three, so neither the capture nor the
-    /// lookup is a round trip of its own, and nothing observes the target again on the normal path. No
-    /// command reads <c>dms.ReferentialIdentity</c>.
+    /// lookup is a round trip of its own, and nothing observes the target again on the normal path.
     /// </summary>
     public static void AssertCreateStreamIsFullyObserved(
         WriteSessionCommandStreamSummary summary,
@@ -76,7 +70,6 @@ public static class WriteSessionCommandStreamScenarios
     {
         ArgumentNullException.ThrowIfNull(summary);
 
-        summary.ReferentialIdentityLookupCount.Should().Be(0);
         summary.NaturalKeyCaptureCount.Should().Be(1);
         summary.NaturalKeyLookupCount.Should().Be(1);
         summary.DocumentUuidLookupCount.Should().Be(0);
@@ -88,8 +81,7 @@ public static class WriteSessionCommandStreamScenarios
     /// <summary>
     /// A PUT against an existing target resolves it by external <c>DocumentUuid</c> in the capture
     /// statement of one composite first-phase command, which also carries the hydration batch. One
-    /// command classifies as both, and neither a <c>dms.ReferentialIdentity</c> read nor a natural-key
-    /// capture appears on this path. The request carries no reference, so no command classifies as a
+    /// command classifies as both, and no natural-key capture appears on this path. The request carries no reference, so no command classifies as a
     /// natural-key lookup.
     /// </summary>
     public static void AssertUpdateStreamIsFullyObserved(
@@ -101,7 +93,6 @@ public static class WriteSessionCommandStreamScenarios
 
         summary.HydrationBatchCount.Should().Be(1);
         summary.DocumentUuidLookupCount.Should().Be(1);
-        summary.ReferentialIdentityLookupCount.Should().Be(0);
         summary.NaturalKeyCaptureCount.Should().Be(0);
         summary.NaturalKeyLookupCount.Should().Be(0);
         summary.TotalCommandCount.Should().Be(expectedTotalCommandCount);
@@ -135,7 +126,6 @@ public static class WriteSessionCommandStreamScenarios
         ArgumentNullException.ThrowIfNull(summary);
 
         summary.DocumentUuidLookupCount.Should().Be(1);
-        summary.ReferentialIdentityLookupCount.Should().Be(0);
         summary.NaturalKeyCaptureCount.Should().Be(0);
         summary.NaturalKeyLookupCount.Should().Be(0);
         summary.HydrationBatchCount.Should().Be(1);
@@ -149,8 +139,7 @@ public static class WriteSessionCommandStreamScenarios
     /// A POST whose Create and Update policies differ takes the ordered-segments first phase: the capture
     /// runs alone as the first command, so the branch the target selects is known before any stored check,
     /// then the reference lookup runs as its own command. A create needs no hydration and goes straight to
-    /// the DML command (3 commands); an update hydrates the locked target first (4 commands). The counts
-    /// are the ones the referential-identity capture produced, so the cutover keeps every round trip.
+    /// the DML command (3 commands); an update hydrates the locked target first (4 commands).
     /// </summary>
     public static void AssertOrderedSegmentsPostStreamIsFullyObserved(
         WriteSessionCommandStreamSummary summary,
@@ -162,7 +151,6 @@ public static class WriteSessionCommandStreamScenarios
         ArgumentNullException.ThrowIfNull(summary);
         ArgumentNullException.ThrowIfNull(firstCommand);
 
-        summary.ReferentialIdentityLookupCount.Should().Be(0);
         summary.NaturalKeyCaptureCount.Should().Be(1);
         summary.NaturalKeyLookupCount.Should().Be(1);
         summary.DocumentUuidLookupCount.Should().Be(0);
@@ -174,7 +162,6 @@ public static class WriteSessionCommandStreamScenarios
         firstCommand.NaturalKeyCaptureCount.Should().Be(1);
         firstCommand.NaturalKeyLookupCount.Should().Be(0);
         firstCommand.HydrationBatchCount.Should().Be(0);
-        firstCommand.ReferentialIdentityLookupCount.Should().Be(0);
     }
 
     /// <summary>

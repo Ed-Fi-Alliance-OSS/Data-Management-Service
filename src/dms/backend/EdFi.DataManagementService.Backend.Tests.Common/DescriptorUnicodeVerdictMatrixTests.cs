@@ -33,7 +33,6 @@ public abstract class DescriptorUnicodeVerdictMatrixTests
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/ds-5.2";
     private const string LoweredUriIndex = "UX_Descriptor_UriLowered_ResourceKeyId";
-    private const string UnloweredUriIndex = "UX_Descriptor_ResourceKeyId_Uri";
 
     private static readonly QualifiedResourceName _descriptorResource = new("Ed-Fi", "ProgramTypeDescriptor");
     private static readonly QualifiedResourceName _requestResource = new(
@@ -231,8 +230,7 @@ public abstract class DescriptorUnicodeVerdictMatrixTests
     }
 
     /// <summary>
-    /// Inserts <c>b</c> beside <c>a</c>. Only the lowered index is left to decide: the unlowered URI index is
-    /// dropped inside the transaction, so a collision there cannot stand in for the lowered verdict.
+    /// Inserts <c>b</c> beside <c>a</c>. A collision on the lowered URI index is the verdict.
     /// </summary>
     private async Task<bool> MeasureCollationAsync(
         DbConnection connection,
@@ -240,13 +238,6 @@ public abstract class DescriptorUnicodeVerdictMatrixTests
         Uris uris
     )
     {
-        await ExecuteAsync(
-            connection,
-            transaction,
-            IsPgsql
-                ? $"DROP INDEX {Table("dms", UnloweredUriIndex)};"
-                : $"DROP INDEX {Q(UnloweredUriIndex)} ON {Table("dms", "Descriptor")};"
-        );
         await InsertDescriptorAsync(connection, transaction, uris.Namespace, uris.A, Guid.NewGuid());
 
         try

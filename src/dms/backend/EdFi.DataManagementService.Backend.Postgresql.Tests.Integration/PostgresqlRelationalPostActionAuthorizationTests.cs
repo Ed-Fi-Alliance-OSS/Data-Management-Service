@@ -755,7 +755,7 @@ public class Given_A_Postgresql_Post_With_Distinct_Create_And_Update_Authorizati
     /// <summary>
     /// Asserts the only document of the resource is the blocker's, under the blocker's document uuid and carrying
     /// its value and none of the loser's, and returns its full state so a later attempt can be shown to leave the
-    /// document row, version stamps, resource and child tables, and referential identities exactly as they are.
+    /// document row, version stamps, and resource and child tables exactly as they are.
     /// </summary>
     private async Task<AuthorizationWriteSideEffectState> AssertOnlyTheBlockerPersistedAsync(
         string project,
@@ -771,15 +771,6 @@ public class Given_A_Postgresql_Post_With_Distinct_Create_And_Update_Authorizati
             .Should()
             .Contain(expectedText)
             .And.NotContain("Loser");
-        // Resource triggers still maintain referential identity; descriptor writes no longer write any.
-        if (resource == DescriptorResource)
-        {
-            state.ReferentialIdentities.Should().BeEmpty();
-        }
-        else
-        {
-            state.ReferentialIdentities.Should().NotBeEmpty();
-        }
         return state;
     }
 

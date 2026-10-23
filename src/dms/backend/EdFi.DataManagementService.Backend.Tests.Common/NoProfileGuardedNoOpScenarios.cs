@@ -147,14 +147,11 @@ public static class NoProfileGuardedNoOpScenarios
         string Zone
     );
 
-    public sealed record ReferentialIdentityRow(Guid ReferentialId, long DocumentId, short ResourceKeyId);
-
     public sealed record PersistedState(
         DocumentRow Document,
         SchoolRow School,
         IReadOnlyList<SchoolAddressRow> Addresses,
         IReadOnlyList<SchoolExtensionAddressRow> ExtensionAddresses,
-        IReadOnlyList<ReferentialIdentityRow> ReferentialIdentities,
         long DocumentCount,
         long MaxChangeVersion
     );
@@ -291,9 +288,6 @@ public static class NoProfileGuardedNoOpScenarios
         state
             .ExtensionAddresses.Should()
             .HaveCount(2, "the focused snapshot contains the two aligned extension address rows");
-        state
-            .ReferentialIdentities.Should()
-            .HaveCount(1, "the focused snapshot contains the school referential identity row");
         state
             .MaxChangeVersion.Should()
             .BeGreaterThan(0, "the seeded write must have allocated change versions (non-vacuous)");

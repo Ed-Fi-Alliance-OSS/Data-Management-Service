@@ -172,8 +172,7 @@ The mapping for references/descriptors inside `_ext` is identical to core:
 Root/parent document locators, metadata, locks, cache work, and authorization-view membership
 retain `DocumentId`. Extension collection keys retain `bigint CollectionItemId`. Descriptor history
 captures namespace/code values through the compact join; reading those snapshots after deletion
-does not require a live descriptor. The proposed natural-key probes in
-[natural-key-resolution.md](natural-key-resolution.md) are later work and do not change this RI baseline.
+does not require a live descriptor.
 
 `documentPathsMapping` remains the authoritative source for “this is a reference/descriptor” and for identity mapping.
 

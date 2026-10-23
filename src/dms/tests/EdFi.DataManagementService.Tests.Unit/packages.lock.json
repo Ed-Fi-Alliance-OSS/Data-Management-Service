@@ -677,7 +677,6 @@
       "edfi.datamanagementservice.backend.tests.common": {
         "type": "Project",
         "dependencies": {
-          "Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic": "[4.0.0, )",
           "EdFi.DataManagementService.Backend": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.Ddl": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.External": "[1.0.0, )",
@@ -787,12 +786,6 @@
           "System.IdentityModel.Tokens.Jwt": "[8.12.0, )",
           "System.Security.Cryptography.Pkcs": "[9.0.21, )"
         }
-      },
-      "Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic": {
-        "type": "CentralTransitive",
-        "requested": "[4.0.0, )",
-        "resolved": "4.0.0",
-        "contentHash": "ssdML8g+JqdP2BbDxg/bqzUBz81RD3SCGAbop6qs+o1xCGPXnlCSNAOp22TDKTtFmHfp+sKSPuWL0JONf3fYYA=="
       },
       "Confluent.Kafka": {
         "type": "CentralTransitive",

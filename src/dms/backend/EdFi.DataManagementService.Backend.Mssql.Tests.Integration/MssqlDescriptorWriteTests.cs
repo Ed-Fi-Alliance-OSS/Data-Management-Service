@@ -167,59 +167,6 @@ public class Given_MssqlDescriptorWriteHandler
     }
 
     [Test]
-    public async Task It_writes_no_referential_identity_row_for_descriptor_creates_or_updates()
-    {
-        var handler = ResolveHandler();
-        var riRowsBefore = await CountReferentialIdentityRowsAsync();
-        var createRequest = CreatePostRequest(
-            _database.Fixture.SchoolTypeDescriptorResource,
-            """
-            {
-                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
-                "codeValue": "Regular",
-                "shortDescription": "Regular"
-            }
-            """
-        );
-
-        (await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest))
-            .Should()
-            .BeOfType<UpsertResult.InsertSuccess>();
-        (
-            await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(
-                CreatePostRequest(
-                    _database.Fixture.SchoolTypeDescriptorResource,
-                    """
-                    {
-                        "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
-                        "codeValue": "Regular",
-                        "shortDescription": "Regular School"
-                    }
-                    """
-                )
-            )
-        ).Should().BeOfType<UpsertResult.UpdateSuccess>();
-        (
-            await handler.HandlePutAsync(
-                CreatePutRequest(
-                    _database.Fixture.SchoolTypeDescriptorResource,
-                    createRequest.DocumentUuid,
-                    """
-                    {
-                        "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
-                        "codeValue": "Regular",
-                        "shortDescription": "Regular School",
-                        "description": "A regular school"
-                    }
-                    """
-                )
-            )
-        ).Should().BeOfType<UpdateResult.UpdateSuccess>();
-
-        (await CountReferentialIdentityRowsAsync()).Should().Be(riRowsBefore);
-    }
-
-    [Test]
     public async Task It_keeps_the_stored_descriptor_for_a_sql_server_collation_alias()
     {
         var handler = ResolveHandler();
@@ -609,16 +556,6 @@ public class Given_MssqlDescriptorWriteHandler
             .BeOfType<UpsertResult.UpdateSuccess>();
 
         (await ReadStoredOwnershipTokenAsync(createRequest.DocumentUuid)).Should().Be((short)42);
-    }
-
-    private async Task<long> CountReferentialIdentityRowsAsync()
-    {
-        await using var connection = new SqlConnection(_database.ConnectionString);
-        await connection.OpenAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT COUNT_BIG(*) FROM [dms].[ReferentialIdentity];";
-
-        return Convert.ToInt64(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
     }
 
     private async Task<short?> ReadStoredOwnershipTokenAsync(DocumentUuid documentUuid)

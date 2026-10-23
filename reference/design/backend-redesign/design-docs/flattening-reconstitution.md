@@ -382,7 +382,7 @@ Before writing resource tables:
   - the same command probes `UX_Descriptor_UriLowered_ResourceKeyId`, folding the raw URI in SQL,
     and returns both independent `int DescriptorId` and owning `bigint DocumentId`, without another
     round trip
-  - resource writes and filters bind `DescriptorId`; metadata, locks, RI, and authorization-view
+  - resource writes and filters bind `DescriptorId`; metadata, locks and authorization-view
     membership use the owning `DocumentId`
   - descriptor-valued identity parts of a target join `dms.Descriptor` inline on the lowered URI and
     the descriptor type's compile-time `ResourceKeyId`
@@ -398,7 +398,7 @@ and a StudentAcademicRecord that identifies itself using that descriptor have `D
 The resolver's descriptor result is `(42, 5000000042)`; the StudentAcademicRecord reference result is `9001`.
 A direct term binding and a copied `studentAcademicRecordReference.termDescriptor` binding each
 store `int 42`, while `StudentAcademicRecord_DocumentId` stores `bigint 9001`. A unified alias also projects `Int32`.
-Hydration and RI maintenance join the two compact bindings to `dms.Descriptor.DescriptorId = 42`.
+Hydration joins the two compact bindings to `dms.Descriptor.DescriptorId = 42`.
 Namespace authorization reads that row's `Namespace`; a descriptor custom view tests its
 `DocumentId = 5000000042`. Resource history captures the old/new namespace/code snapshots through
 the compact join, then serves them after deletion without requiring that live row. Descriptor history
@@ -423,8 +423,7 @@ DMS uses a single required approach: Core emits each reference instance *with it
 Core changes:
 - Add `JsonPath Path` to `Core.External.Model.DocumentReference` representing the **concrete reference-object path including indices**, e.g. `$.addresses[2].periods[0].calendarReference`.
 - Continue emitting the **wildcard reference-object path** via `DocumentReferenceArray.arrayPath`, e.g. `$.addresses[*].periods[*].calendarReference`.
-- Keep the ordered `DocumentIdentity` values on each `DocumentReference` for current RI verification
-  and later natural-key resolution.
+- Keep the ordered `DocumentIdentity` values on each `DocumentReference` for natural-key resolution.
 
 This is the same pattern already used for descriptor extraction (`DescriptorReference.Path`).
 
@@ -1499,7 +1498,7 @@ public sealed record ReferenceIdentityBinding(
 /// </param>
 /// <param name="IsIdentityComponent">
 /// True when this descriptor value participates in the parent document's identity (the descriptor URI is part of the parent's <c>identityJsonPaths</c>).
-/// Used when reconstructing whole-URI identity values and maintaining RI from compact storage.
+/// Used when reconstructing whole-URI identity values from compact storage.
 /// </param>
 public sealed record DescriptorEdgeSource(
     bool IsIdentityComponent,

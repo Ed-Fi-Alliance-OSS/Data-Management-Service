@@ -147,7 +147,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.identity_columns WHERE object_id = @relation AN
 IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id IN (@relation, OBJECT_ID(N'tracked_changes_edfi.Descriptor'))
     AND name IN (N'Discriminator', N'NamespaceLowered', N'CodeValueLowered'))
     OR EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'tracked_changes_edfi.Descriptor') AND name = N'UriLowered')
-    OR EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = @relation AND name IN (N'UX_Descriptor_Uri_Discriminator', N'IX_Descriptor_Discriminator_ContentVersion'))
+    OR EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = @relation AND name IN (N'UX_Descriptor_Uri_Discriminator', N'IX_Descriptor_Discriminator_ContentVersion', N'UX_Descriptor_ResourceKeyId_Uri'))
     THROW 51000, 'Compact descriptor baseline: obsolete descriptor storage/index remains', 1;
 IF NOT EXISTS (SELECT 1 FROM sys.computed_columns WHERE object_id = @relation AND name = N'Uri'
     AND is_persisted = 0 AND system_type_id = 231 AND max_length = 612
@@ -157,13 +157,6 @@ IF NOT EXISTS (SELECT 1 FROM sys.computed_columns WHERE object_id = @relation AN
 IF (SELECT COUNT(*) FROM sys.columns WHERE object_id = @relation AND name IN (N'Namespace', N'CodeValue')
     AND collation_name = N'SQL_Latin1_General_CP1_CI_AS') <> 2
     THROW 51000, 'Compact descriptor baseline: URI components must carry the DMS identity collation', 1;
-SET @index = NULL;
-SELECT @index = index_id FROM sys.indexes WHERE object_id = @relation AND name = N'UX_Descriptor_ResourceKeyId_Uri' AND is_unique = 1 AND is_disabled = 0 AND has_filter = 0;
-SELECT @actual = STRING_AGG(CONVERT(nvarchar(max), c.name), N',') WITHIN GROUP (ORDER BY k.key_ordinal)
-FROM sys.index_columns k JOIN sys.columns c ON c.object_id = k.object_id AND c.column_id = k.column_id
-WHERE k.object_id = @relation AND k.index_id = @index AND k.key_ordinal > 0;
-IF @index IS NULL OR @actual IS NULL OR @actual COLLATE Latin1_General_100_BIN2 <> N'ResourceKeyId,Uri'
-    THROW 51000, 'Compact descriptor baseline: required whole-URI unique index missing', 1;
 IF NOT EXISTS (SELECT 1 FROM sys.computed_columns WHERE object_id = @relation AND name = N'UriLowered'
     AND is_persisted = 0 AND system_type_id = 231 AND max_length = 612
     AND collation_name = N'SQL_Latin1_General_CP1_CI_AS'

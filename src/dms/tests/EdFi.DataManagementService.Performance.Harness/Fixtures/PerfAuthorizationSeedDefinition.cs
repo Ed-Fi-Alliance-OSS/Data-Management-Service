@@ -15,8 +15,8 @@ namespace EdFi.DataManagementService.Performance.Harness.Fixtures;
 /// that school. Only durable source tables are written — the generated authorization view
 /// over StudentSchoolAssociation and the education-organization hierarchy then makes exactly
 /// those students reachable by a principal holding the school's education organization id.
-/// The hierarchy self-edge and every referential identity come from the production triggers
-/// the inserts fire, never from direct writes.
+/// The hierarchy self-edge comes from the production trigger the school insert fires, never
+/// from a direct write.
 ///
 /// The seed runs strictly after the pristine measurement phase because its association
 /// documents change the dms.Document population the baseline-comparable cells measure.
