@@ -1,5 +1,10 @@
 # September 2024 Deadlock Analysis
 
+> [!NOTE]
+> Added 2026-10-23: this analysis predates the relational backend. The referential-id lookups in
+> the sequence below belong to the earlier document-store backend. They do not describe the
+> relational backend, nor its `dms.ReferentialIdentity` table, which has since been removed.
+
 Bulk upload of a large set of sample XML files has been consistently failing
 with deadlocks when it hits the `StudentSectionAttendanceEvent` files. What can
 we do to reduce these deadlocks? The following sequence diagram is for the

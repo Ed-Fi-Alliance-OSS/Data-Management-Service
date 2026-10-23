@@ -536,13 +536,14 @@ Describe "Invoke-DatabaseDump" {
     }
 
     Context "when -DatabaseEngine is postgresql (the default)" {
-        It "runs pg_dump scoped to the requested schemas, in order, and precedes the dump with a pgcrypto preamble" {
+        It "runs pg_dump scoped to the requested schemas, in order, and writes the dump with no pgcrypto preamble" {
             InModuleScope Template-Management -Parameters @{ backupDir = $TestDrive } {
                 param($backupDir)
                 $calls = [System.Collections.Generic.List[object]]::new()
                 Mock Invoke-TemplateCatalogQuery { @() }
                 Mock docker {
                     $calls.Add(@($args))
+                    "-- dump body"
                     $global:LASTEXITCODE = 0
                 }
 
@@ -551,10 +552,10 @@ Describe "Invoke-DatabaseDump" {
                 $calls.Count | Should -Be 1
                 ($calls[0] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'pg_dump', '-U', 'postgres', '--no-owner', 'edfi_datamanagementservice', '-n', 'dms', '-n', 'edfi') -join '|')
 
-                # Schema-scoped pg_dump never emits CREATE EXTENSION, but the dumped dms.uuidv5()
-                # function requires pgcrypto's digest(), so the preamble must precede the dump.
-                $content = Get-Content -LiteralPath (Join-Path $backupDir "test.sql") -Raw
-                $content | Should -Match ([regex]::Escape('CREATE EXTENSION IF NOT EXISTS "pgcrypto";'))
+                # No dumped object needs an extension, so the artifact starts with the dump itself.
+                $lines = @(Get-Content -LiteralPath (Join-Path $backupDir "test.sql") | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+                $lines[0] | Should -Be '-- dump body'
+                ($lines -join "`n") | Should -Not -Match 'pgcrypto'
             }
         }
 
@@ -617,7 +618,6 @@ Describe "Invoke-DatabaseDump" {
                 }
                 $lines = @(Get-Content -LiteralPath (Join-Path $backupDir "portable.sql") | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
                 $lines | Should -Be @(
-                    'CREATE EXTENSION IF NOT EXISTS "pgcrypto";',
                     '-- dump body',
                     '-- Ownership the --no-owner dump does not carry (DMS template finalization).',
                     'ALTER FUNCTION dms."TF_Document_EnqueueProjectionInsert"() OWNER TO "edfi_dms_enqueue_owner";',
@@ -1889,8 +1889,6 @@ Describe "Build-TemplateNuGetPackage PostgreSQL privilege gate" {
         # non-owner grants taken from a live PostgreSQL 18 provisioning of the generated DDL).
         $script:authoritativePrivilegeRows = @(
             'function|EXECUTE|edfi_dms_enqueue_owner|edfi_dms_enqueue_owner|dms."TF_Document_EnqueueProjectionInsert"()',
-            'function|EXECUTE|postgres|-|dms.uuidv5(namespace_uuid uuid, name_text text)',
-            'function|EXECUTE|postgres|postgres|dms.uuidv5(namespace_uuid uuid, name_text text)',
             'relation|INSERT|postgres|edfi_dms_enqueue_owner|dms."DocumentProjectionWork"',
             'relation|SELECT|postgres|edfi_dms_enqueue_owner|dms."DocumentCacheState"',
             'relation|SELECT|postgres|edfi_dms_enqueue_owner|dms."DocumentProjectionWork"',
@@ -2084,7 +2082,7 @@ Describe "Authoritative inventory table constraints and indexes against a live <
         Container          = $env:DMS_TEMPLATE_INVENTORY_PG_CONTAINER
         AdminDatabase      = "postgres"
         SourceHistory      = @()
-        # The unique expression index has the generated UX_Descriptor_ResourceKeyId_Uri shape.
+        # The unique expression index has the shape of a generated descriptor whole-URI index.
         SchemaBatches      = @(
             'CREATE SCHEMA dms;
              CREATE TABLE dms."Document" ("DocumentId" bigint PRIMARY KEY, "ResourceKeyId" smallint NOT NULL, CONSTRAINT "CK_Positive" CHECK ("DocumentId" > 0));
