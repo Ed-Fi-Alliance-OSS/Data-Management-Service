@@ -56,4 +56,41 @@ public class Given_Two_Token_Requests_In_The_Same_Log_Second
             )
             .Should()
             .BeTrue();
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_reads_the_requests_event_after_a_record_split_across_chunks(bool followEndOfFile)
+    {
+        // The first read ends inside the request event. Losing the incomplete line would lose
+        // correlation evidence when either the file sink or the Docker stream splits a write.
+        using StringReader reader = new(new string(' ', 4090) + SecondRequestLog + "\n");
+        // Only bounds a broken reader; the assertion has no dependency on elapsed time.
+        using CancellationTokenSource deadline = new(TimeSpan.FromMinutes(1));
+
+        bool found = await StepDefinitions.TokenRequestLogContainsAsync(
+            reader,
+            "request-b",
+            401,
+            followEndOfFile,
+            deadline.Token
+        );
+
+        found.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task It_rejects_a_stream_without_the_requests_own_event()
+    {
+        using StringReader reader = new(FirstRequestLog);
+
+        bool found = await StepDefinitions.TokenRequestLogContainsAsync(
+            reader,
+            "request-b",
+            401,
+            false,
+            CancellationToken.None
+        );
+
+        found.Should().BeFalse();
+    }
 }

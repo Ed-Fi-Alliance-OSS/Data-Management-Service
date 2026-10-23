@@ -142,6 +142,12 @@ The DocumentCache filter writes
 To debug the API while running the tests, change `ApiUrl` in `SearchContainerSetup.cs` to
 `http://localhost:5198/` and run `EdFi.DataManagementService.Frontend.AspNetCore` in debug mode.
 
+Set `AppSettings__DmsLogFilePath` for the test process to the absolute path of the running
+API's current JSON log file (the default file sink writes `logs/.log` with a daily date suffix).
+Token error assertions use this file instead of Docker logs to verify response-to-log
+correlation. The file must exist and remain the active log file during the run; update the path
+after daily rollover. Leave the setting unset for the normal container workflow.
+
 > [!WARNING]
 > Your database tables are truncated after each feature file runs. Double-check your
 > `DatabaseConnection` in `appsettings.json` and be aware of this before you run the tests.

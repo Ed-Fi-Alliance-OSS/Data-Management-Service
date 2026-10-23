@@ -93,7 +93,7 @@ public class OAuthManagerTests
         /// <summary>
         /// The <c>error_description</c> of the OAuth response OAuthManager returned.
         /// </summary>
-        protected async Task<string> ResponseDetail() =>
+        protected async Task<string> ResponseDescription() =>
             JsonNode.Parse(await _response.Content.ReadAsStringAsync())![
                 "error_description"
             ]!.GetValue<string>();
@@ -101,7 +101,7 @@ public class OAuthManagerTests
         /// <summary>
         /// The <c>error</c> code of the OAuth response OAuthManager returned.
         /// </summary>
-        protected async Task<string> ResponseTitle() =>
+        protected async Task<string> ResponseError() =>
             JsonNode.Parse(await _response.Content.ReadAsStringAsync())!["error"]!.GetValue<string>();
 
         protected async Task AssertOAuthErrorResponse(
@@ -277,13 +277,13 @@ public class OAuthManagerTests
             }
 
             [Test]
-            public void Then_It_Responds_With_Unauthorized()
+            public void It_Responds_With_Unauthorized()
             {
                 _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
             }
 
             [Test]
-            public void Then_The_Response_ContentType_Is_Problem_JSON()
+            public void It_Uses_The_JSON_Media_Type()
             {
                 _response
                     .Content.Headers.ContentType!.MediaType.Should()
@@ -292,19 +292,19 @@ public class OAuthManagerTests
             }
 
             [Test]
-            public async Task Then_The_Response_Carries_The_Invalid_Request_Error()
+            public async Task It_Carries_The_Invalid_Client_Error()
             {
-                (await ResponseTitle()).Should().Be(ExpectedInvalidClientError);
+                (await ResponseError()).Should().Be(ExpectedInvalidClientError);
             }
 
             [Test]
-            public async Task Then_The_Response_Content_Says_Credentials_Are_Required()
+            public async Task It_Says_Credentials_Are_Required()
             {
-                (await ResponseDetail()).Should().Be(ExpectedMissingCredentialsDetail);
+                (await ResponseDescription()).Should().Be(ExpectedMissingCredentialsDetail);
             }
 
             [Test]
-            public void Then_Nothing_Is_Sent_Upstream()
+            public void It_Sends_Nothing_Upstream()
             {
                 _upstreamRequest.Should().BeNull();
             }
@@ -339,7 +339,7 @@ public class OAuthManagerTests
             }
 
             [Test]
-            public void Then_The_Response_ContentType_Is_Problem_JSON()
+            public void It_Uses_The_JSON_Media_Type()
             {
                 _response
                     .Content.Headers.ContentType!.MediaType.Should()
@@ -348,14 +348,14 @@ public class OAuthManagerTests
             }
 
             [Test]
-            public async Task Then_The_Response_Content_Contains_Error_As_Title()
+            public async Task It_Contains_The_Invalid_Client_Error()
             {
                 var content = await _response.Content.ReadAsStringAsync();
                 content.Should().NotBeNull().And.Contain("\"error\":\"invalid_client\"");
             }
 
             [Test]
-            public async Task Then_The_Response_Content_Contains_ErrorDetail_As_Detail()
+            public async Task It_Contains_The_Provider_Error_Description()
             {
                 var content = await _response.Content.ReadAsStringAsync();
                 content
@@ -395,7 +395,7 @@ public class OAuthManagerTests
             }
 
             [Test]
-            public void Then_The_Response_ContentType_Is_Problem_JSON()
+            public void It_Uses_The_JSON_Media_Type()
             {
                 _response
                     .Content.Headers.ContentType!.MediaType.Should()
@@ -404,7 +404,7 @@ public class OAuthManagerTests
             }
 
             [Test]
-            public async Task Then_The_Response_Content_Contains_A_Title()
+            public async Task It_Contains_The_Server_Error_Code()
             {
                 var content = await _response.Content.ReadAsStringAsync();
                 content.Should().NotBeNull().And.Contain("\"error\":\"server_error\"");
@@ -442,7 +442,7 @@ public class OAuthManagerTests
             }
 
             [Test]
-            public void Then_The_Response_ContentType_Is_Problem_JSON()
+            public void It_Uses_The_JSON_Media_Type()
             {
                 _response
                     .Content.Headers.ContentType!.MediaType.Should()
@@ -451,7 +451,7 @@ public class OAuthManagerTests
             }
 
             [Test]
-            public async Task Then_The_Response_Content_Contains_A_Title()
+            public async Task It_Contains_The_Server_Error_Code()
             {
                 var content = await _response.Content.ReadAsStringAsync();
                 content.Should().NotBeNull().And.Contain("\"error\":\"server_error\"");
@@ -491,7 +491,7 @@ public class OAuthManagerTests
             }
 
             [Test]
-            public void Then_The_Response_ContentType_Is_Problem_JSON()
+            public void It_Uses_The_JSON_Media_Type()
             {
                 _response
                     .Content.Headers.ContentType!.MediaType.Should()
@@ -504,8 +504,8 @@ public class OAuthManagerTests
             {
                 var content = await _response.Content.ReadAsStringAsync();
                 content.Should().NotBeNull();
-                (await ResponseTitle()).Should().Be("unsupported_grant_type");
-                (await ResponseDetail()).Should().Be("Unsupported grant type");
+                (await ResponseError()).Should().Be("unsupported_grant_type");
+                (await ResponseDescription()).Should().Be("Unsupported grant type");
             }
         }
 
@@ -636,7 +636,7 @@ public class OAuthManagerTests
             }
 
             [Test]
-            public void Then_The_Response_ContentType_Is_Problem_JSON()
+            public void It_Uses_The_JSON_Media_Type()
             {
                 _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
             }
@@ -644,7 +644,7 @@ public class OAuthManagerTests
             [Test]
             public async Task Then_The_Response_Content_Says_Only_One_Mechanism_Is_Allowed()
             {
-                (await ResponseDetail()).Should().Be(ExpectedMixedMechanismsDetail);
+                (await ResponseDescription()).Should().Be(ExpectedMixedMechanismsDetail);
             }
 
             [Test]
@@ -762,7 +762,7 @@ public class OAuthManagerTests
             }
 
             [Test]
-            public void Then_The_Response_ContentType_Is_Problem_JSON()
+            public void It_Uses_The_JSON_Media_Type()
             {
                 _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
             }
@@ -770,13 +770,13 @@ public class OAuthManagerTests
             [Test]
             public async Task Then_The_Response_Carries_The_Invalid_Client_Error()
             {
-                (await ResponseTitle()).Should().Be(ExpectedInvalidClientError);
+                (await ResponseError()).Should().Be(ExpectedInvalidClientError);
             }
 
             [Test]
             public async Task Then_The_Response_Content_Says_The_Scheme_Must_Be_Basic()
             {
-                (await ResponseDetail()).Should().Be(ExpectedNonBasicDetail);
+                (await ResponseDescription()).Should().Be(ExpectedNonBasicDetail);
             }
 
             [Test]
@@ -830,9 +830,9 @@ public class OAuthManagerTests
             }
 
             [Test]
-            public async Task Then_The_Response_Carries_The_Invalid_Request_Error()
+            public async Task It_Carries_The_Error_For_Missing_Or_Partial_Credentials()
             {
-                (await ResponseTitle())
+                (await ResponseError())
                     .Should()
                     .Be(
                         string.IsNullOrWhiteSpace(clientId) && string.IsNullOrWhiteSpace(clientSecret)
@@ -844,7 +844,7 @@ public class OAuthManagerTests
             [Test]
             public async Task Then_The_Response_Content_Says_Credentials_Are_Required()
             {
-                (await ResponseDetail()).Should().Be(ExpectedMissingCredentialsDetail);
+                (await ResponseDescription()).Should().Be(ExpectedMissingCredentialsDetail);
             }
 
             [Test]
@@ -1016,15 +1016,17 @@ public class OAuthManagerTests
             _response.Headers.GetValues("X-Correlation-ID").Should().Equal(Uri.EscapeDataString("trace-id"));
 
         [Test]
-        public void It_challenges_only_for_401() =>
+        public void It_challenges_only_for_401()
+        {
+            string[] expectedChallenges =
+                expectedStatus is HttpStatusCode.Unauthorized
+                    ? ["Basic realm=\"EdFi.DataManagementService\""]
+                    : [];
             _response
                 .Headers.WwwAuthenticate.Select(challenge => challenge.ToString())
                 .Should()
-                .Equal(
-                    expectedStatus is HttpStatusCode.Unauthorized
-                        ? ["Basic realm=\"EdFi.DataManagementService\""]
-                        : []
-                );
+                .Equal(expectedChallenges);
+        }
 
         [Test]
         public void It_does_not_send_upstream() =>
@@ -1254,15 +1256,17 @@ public class OAuthManagerTests
             _response.Headers.GetValues("X-Correlation-ID").Should().Equal(Uri.EscapeDataString("trace-id"));
 
         [Test]
-        public void It_challenges_only_for_401() =>
+        public void It_challenges_only_for_401()
+        {
+            string[] expectedChallenges =
+                expectedStatus is HttpStatusCode.Unauthorized
+                    ? ["Basic realm=\"EdFi.DataManagementService\""]
+                    : [];
             _response
                 .Headers.WwwAuthenticate.Select(challenge => challenge.ToString())
                 .Should()
-                .Equal(
-                    expectedStatus is HttpStatusCode.Unauthorized
-                        ? ["Basic realm=\"EdFi.DataManagementService\""]
-                        : []
-                );
+                .Equal(expectedChallenges);
+        }
     }
 
     /// <summary>
@@ -1286,9 +1290,9 @@ public class OAuthManagerTests
         }
 
         [Test]
-        public async Task Then_The_Response_Carries_The_Invalid_Request_Error()
+        public async Task It_Carries_The_Invalid_Client_Error()
         {
-            (await ResponseTitle()).Should().Be(ExpectedInvalidClientError);
+            (await ResponseError()).Should().Be(ExpectedInvalidClientError);
         }
     }
 
@@ -1323,8 +1327,8 @@ public class OAuthManagerTests
         [Test]
         public async Task Then_The_Response_Content_Says_The_Grant_Type_Is_Missing()
         {
-            (await ResponseTitle()).Should().Be(ExpectedInvalidRequestError);
-            (await ResponseDetail()).Should().Be("The grant_type request parameter must be supplied");
+            (await ResponseError()).Should().Be(ExpectedInvalidRequestError);
+            (await ResponseDescription()).Should().Be("The grant_type request parameter must be supplied");
         }
 
         [Test]
@@ -1364,7 +1368,7 @@ public class OAuthManagerTests
         [Test]
         public async Task Then_The_Response_Content_Says_The_Header_Is_Empty()
         {
-            (await ResponseDetail()).Should().Be(ExpectedEmptyAuthorizationDetail);
+            (await ResponseDescription()).Should().Be(ExpectedEmptyAuthorizationDetail);
         }
 
         [Test]
@@ -1402,7 +1406,7 @@ public class OAuthManagerTests
         public async Task Then_The_Mixed_Mechanism_Rule_Answers()
         {
             _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            (await ResponseDetail()).Should().Be(ExpectedMixedMechanismsDetail);
+            (await ResponseDescription()).Should().Be(ExpectedMixedMechanismsDetail);
         }
     }
 
@@ -1427,8 +1431,8 @@ public class OAuthManagerTests
         public async Task Then_The_Missing_Credentials_Rule_Answers()
         {
             _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            (await ResponseTitle()).Should().Be(ExpectedInvalidRequestError);
-            (await ResponseDetail()).Should().Be(ExpectedMissingCredentialsDetail);
+            (await ResponseError()).Should().Be(ExpectedInvalidRequestError);
+            (await ResponseDescription()).Should().Be(ExpectedMissingCredentialsDetail);
         }
     }
 
@@ -1455,7 +1459,7 @@ public class OAuthManagerTests
         public async Task Then_The_Length_Cap_Answers()
         {
             _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            (await ResponseDetail()).Should().Be(ExpectedOversizedBodyCredentialDetail);
+            (await ResponseDescription()).Should().Be(ExpectedOversizedBodyCredentialDetail);
         }
     }
 
@@ -1476,7 +1480,7 @@ public class OAuthManagerTests
         public async Task Then_The_Non_Basic_Rule_Answers()
         {
             _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-            (await ResponseTitle()).Should().Be(ExpectedInvalidClientError);
+            (await ResponseError()).Should().Be(ExpectedInvalidClientError);
         }
     }
 
@@ -1504,7 +1508,7 @@ public class OAuthManagerTests
         public async Task Then_The_Mixed_Mechanism_Rule_Answers()
         {
             _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            (await ResponseDetail()).Should().Be(ExpectedMixedMechanismsDetail);
+            (await ResponseDescription()).Should().Be(ExpectedMixedMechanismsDetail);
         }
     }
 
@@ -1823,7 +1827,7 @@ public class OAuthManagerTests
     // ---------------------------------------------------------------------------------------
 
     /// <summary>
-    /// The exact client-facing <c>detail</c> of every 502 OAuthManager produces. Spelled out here
+    /// The exact client-facing <c>error_description</c> of every 502 OAuthManager produces. Spelled out here
     /// rather than read from the production constant so that changing the message has to be a
     /// deliberate two-sided edit.
     /// </summary>
@@ -1833,7 +1837,7 @@ public class OAuthManagerTests
         + "percent decoding, which identifies the corresponding server log entry.";
 
     /// <summary>
-    /// The exact client-facing <c>detail</c> of a 401 whose upstream body carried no
+    /// The exact client-facing <c>error_description</c> of a 401 whose upstream body carried no
     /// <c>error_description</c>. Spelled out for the same reason as
     /// <see cref="ExpectedGatewayDetail"/>.
     /// </summary>
@@ -2006,15 +2010,17 @@ public class OAuthManagerTests
             _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
 
         [Test]
-        public void It_challenges_only_for_header_authentication_failure() =>
+        public void It_challenges_only_for_header_authentication_failure()
+        {
+            string[] expectedChallenges =
+                expectedStatus is HttpStatusCode.Unauthorized
+                    ? ["Basic realm=\"EdFi.DataManagementService\""]
+                    : [];
             _response
                 .Headers.WwwAuthenticate.Select(challenge => challenge.ToString())
                 .Should()
-                .Equal(
-                    expectedStatus is HttpStatusCode.Unauthorized
-                        ? ["Basic realm=\"EdFi.DataManagementService\""]
-                        : []
-                );
+                .Equal(expectedChallenges);
+        }
 
         [Test]
         public void It_emits_the_provider_400_fallback_event_at_information() =>
@@ -2028,7 +2034,7 @@ public class OAuthManagerTests
         public void It_matches_the_decoded_response_correlation_to_the_summary() =>
             Uri.UnescapeDataString(_response.Headers.GetValues("X-Correlation-ID").Single())
                 .Should()
-                .Be(_summary.Properties["TraceId"]);
+                .Be((string)_summary.Properties["TraceId"]!);
 
         [Test]
         public void It_summarizes_only_safe_standard_values() =>
@@ -2160,6 +2166,10 @@ public class OAuthManagerTests
     [TestFixture(HttpStatusCode.TooManyRequests, false, "utf-7")]
     [TestFixture(HttpStatusCode.Unauthorized, true, "utf-7")]
     [TestFixture(HttpStatusCode.TooManyRequests, true, "utf-7")]
+    [TestFixture(HttpStatusCode.BadRequest, false, "not-a-real-charset")]
+    [TestFixture(HttpStatusCode.BadRequest, true, "not-a-real-charset")]
+    [TestFixture(HttpStatusCode.BadRequest, false, "utf-7")]
+    [TestFixture(HttpStatusCode.BadRequest, true, "utf-7")]
     public class Given_An_Upstream_Error_With_Unsupported_Charset(
         HttpStatusCode upstreamStatus,
         bool interruptedBody,
@@ -2184,14 +2194,20 @@ public class OAuthManagerTests
         }
 
         [Test]
-        public void It_preserves_the_status_only_when_the_body_was_received() =>
-            _response.StatusCode.Should().Be(interruptedBody ? HttpStatusCode.BadGateway : upstreamStatus);
+        public void It_uses_the_gateway_status_when_the_response_cannot_be_classified() =>
+            _response
+                .StatusCode.Should()
+                .Be(
+                    interruptedBody || upstreamStatus is HttpStatusCode.BadRequest
+                        ? HttpStatusCode.BadGateway
+                        : upstreamStatus
+                );
 
         [Test]
         public void It_returns_the_exact_safe_oauth_contract()
         {
             string expectedError;
-            if (interruptedBody)
+            if (interruptedBody || upstreamStatus is HttpStatusCode.BadRequest)
             {
                 expectedError = "server_error";
             }
@@ -2205,7 +2221,7 @@ public class OAuthManagerTests
             }
 
             string expectedDescription;
-            if (interruptedBody)
+            if (interruptedBody || upstreamStatus is HttpStatusCode.BadRequest)
             {
                 expectedDescription = ExpectedGatewayDetail;
             }
@@ -2243,6 +2259,16 @@ public class OAuthManagerTests
                 _logger
                     .Records.Should()
                     .NotContain(record => record.Properties.ContainsKey("StandardFields"));
+                return;
+            }
+
+            if (upstreamStatus is HttpStatusCode.BadRequest)
+            {
+                LogRecord warning = _logger.Records.Single(record => record.Level == LogLevel.Warning);
+                warning.Properties["TraceId"].Should().Be(CorrelationId);
+                warning.Properties["Content"].Should().Be(string.Empty);
+                warning.Exception.Should().BeNull();
+                _logger.Records.Should().NotContain(record => record.Level == LogLevel.Error);
                 return;
             }
 
@@ -2451,7 +2477,7 @@ public class OAuthManagerTests
         }
 
         [Test]
-        public void It_keeps_the_title()
+        public void It_returns_the_server_error_code()
         {
             _body["error"]!.GetValue<string>().Should().Be("server_error");
         }
@@ -2470,8 +2496,8 @@ public class OAuthManagerTests
         [Test]
         public void It_still_records_the_upstream_content_on_the_log_entry()
         {
-            // The detail is not discarded - it moves to the log, which is what makes
-            // correlationId a usable substitute for echoing the body back.
+            // The upstream content moves to the bounded Warning log. The response correlation
+            // header identifies that event without echoing the body back to the caller.
             LoggedUpstreamContent(_logger).Should().Contain(InternalHostSentinel);
         }
     }
@@ -2899,7 +2925,7 @@ public class OAuthManagerTests
         }
 
         [Test]
-        public void It_still_surfaces_the_parsed_oauth_error_as_the_title()
+        public void It_returns_the_invalid_client_error()
         {
             _body["error"]!.GetValue<string>().Should().Be("invalid_client");
         }
@@ -2949,9 +2975,8 @@ public class OAuthManagerTests
         [Test]
         public void It_records_the_standard_oauth_error_by_value()
         {
-            // `error` is allowlisted, and logging it discloses nothing that is not disclosed
-            // already: It_still_surfaces_the_parsed_oauth_error_as_the_title above shows the same
-            // string going to the unauthenticated caller as the problem-details `title`.
+            // The scalar `error` is allowlisted for the selected summary. The client receives
+            // DMS's status-classified invalid_client code independently of this upstream value.
             _logged.Should().NotBeNull();
             _logged!.Properties["StandardFields"]!.ToString().Should().Be("error=invalid_client");
         }
@@ -3282,7 +3307,7 @@ public class OAuthManagerTests
         }
 
         [Test]
-        public void It_still_surfaces_the_well_formed_error_as_the_title()
+        public void It_returns_the_invalid_client_error()
         {
             // The malformed member is contained: a sibling that did arrive as a string is still
             // forwarded, so the fix costs nothing on the fields that are well formed.
@@ -3369,10 +3394,9 @@ public class OAuthManagerTests
     }
 
     /// <summary>
-    /// Both container kinds, on the two standard fields whose values would otherwise be
-    /// forwarded. <c>error</c> reaches the client as the problem-details <c>title</c> and
-    /// <c>error_description</c> as its <c>detail</c>, so a container here is a disclosure to an
-    /// unauthenticated caller as well as to the log.
+    /// Both container kinds on the standard OAuth fields. Containers must reach neither the
+    /// client response nor selected-summary logs; the response uses invalid_client and a fixed
+    /// description, while the summary records malformed-field markers.
     /// </summary>
     [TestFixture]
     [Parallelizable]
@@ -3424,7 +3448,7 @@ public class OAuthManagerTests
         }
 
         [Test]
-        public void It_falls_back_to_the_fixed_title_rather_than_the_container()
+        public void It_returns_invalid_client_rather_than_the_container()
         {
             _body["error"]!.GetValue<string>().Should().Be("invalid_client");
         }

@@ -101,6 +101,25 @@ Feature: Client credentials at the token endpoint
     @DMS-1604
     @DMS-1606
     @e2e-ci-shard-1
+    Scenario Outline: 39 Requests with neither body credential nonblank are rejected
+      When a token request is made with content type "<contentType>" and body
+        """
+        <body>
+        """
+      Then the token error is 401 "invalid_client" with description "Client credentials must be supplied in an Authorization: Basic header or as client_id and client_secret in the request body"
+
+      Examples:
+        | contentType                       | body                                                                          |
+        | application/json                  | {"grant_type":"client_credentials"}                                           |
+        | application/json                  | {"grant_type":"client_credentials","client_id":null,"client_secret":null}     |
+        | application/json                  | {"grant_type":"client_credentials","client_id":"","client_secret":""}         |
+        | application/json                  | {"grant_type":"client_credentials","client_id":"  ","client_secret":"  "}     |
+        | application/x-www-form-urlencoded | grant_type=client_credentials&client_id=&client_secret=                        |
+        | application/x-www-form-urlencoded | grant_type=client_credentials&client_id=%20%20&client_secret=%20%20            |
+
+    @DMS-1604
+    @DMS-1606
+    @e2e-ci-shard-1
     Scenario: 06 A JSON body with a client_id and a null client_secret is rejected
       When a token request is made with content type "application/json" and body
         """

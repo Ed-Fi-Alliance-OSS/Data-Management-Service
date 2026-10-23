@@ -334,6 +334,7 @@ try {
                     '33 A present unsupported grant type',
                     '36 An unsupported JSON charset',
                     '38 Grant validation precedes malformed Basic header parsing',
+                    '39 Requests with neither body credential nonblank',
                     '18 A JSON provider 401', '19 An HTML provider 401', '20 A provider invalid_scope',
                     '21 A provider invalid_client response after Basic', '22 A provider invalid_client response after body',
                     '23 An unknown provider 400', '24 A canonical token limit', '25 A generic provider 429',

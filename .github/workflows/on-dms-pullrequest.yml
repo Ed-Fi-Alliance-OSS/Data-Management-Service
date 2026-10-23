@@ -2207,7 +2207,7 @@ jobs:
             -IdentityProvider ${{ matrix.identityprovider }} `
             -DatabaseEngine postgresql `
             -EnvironmentFile './.env.e2e' `
-            -Configuration Release `
+            -Configuration ${{ env.CONFIGURATION }} `
             -SkipDockerBuild `
             -UsePrebuiltOutput
 

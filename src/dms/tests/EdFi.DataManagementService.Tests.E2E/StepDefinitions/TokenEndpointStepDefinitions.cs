@@ -304,6 +304,22 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private async Task AssertDmsRequestLogContains(string traceId, int status)
         {
             using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(20));
+            if (AppSettings.DmsLogFilePath.Length > 0)
+            {
+                await using FileStream file = new(
+                    AppSettings.DmsLogFilePath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete
+                );
+                using StreamReader reader = new(file);
+                bool found = await TokenRequestLogContainsAsync(reader, traceId, status, true, timeout.Token);
+                found
+                    .Should()
+                    .BeTrue("the token response correlation identifier must appear in DMS request logs");
+                return;
+            }
+
             using Process process = new();
             process.StartInfo = new ProcessStartInfo("docker")
             {
@@ -321,17 +337,16 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             Task<string> stderr = process.StandardError.ReadToEndAsync();
             try
             {
-                while (await process.StandardOutput.ReadLineAsync(timeout.Token) is string line)
-                {
-                    if (TokenRequestLogContains(line, traceId, status))
-                    {
-                        return;
-                    }
-                }
-            }
-            catch (OperationCanceledException) when (timeout.IsCancellationRequested)
-            {
-                // The deadline bounds waiting for the request event; it is not a log-time cutoff.
+                bool found = await TokenRequestLogContainsAsync(
+                    process.StandardOutput,
+                    traceId,
+                    status,
+                    false,
+                    timeout.Token
+                );
+                found
+                    .Should()
+                    .BeTrue("the token response correlation identifier must appear in DMS request logs");
             }
             finally
             {
@@ -343,8 +358,54 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 await process.WaitForExitAsync();
                 _ = await stderr;
             }
+        }
 
-            Assert.Fail("The token response correlation identifier did not appear in DMS request logs.");
+        internal static async Task<bool> TokenRequestLogContainsAsync(
+            TextReader reader,
+            string traceId,
+            int status,
+            bool followEndOfFile,
+            CancellationToken cancellationToken
+        )
+        {
+            char[] buffer = new char[4096];
+            string pending = string.Empty;
+            try
+            {
+                while (true)
+                {
+                    int count = await reader.ReadAsync(buffer.AsMemory(), cancellationToken);
+                    if (count == 0)
+                    {
+                        if (!followEndOfFile)
+                        {
+                            return TokenRequestLogContains(pending, traceId, status);
+                        }
+
+                        // A host file can reach EOF before the sink flushes this request's event.
+                        // Poll for appended bytes, keeping the cursor and any incomplete JSON line.
+                        await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken);
+                        continue;
+                    }
+
+                    pending += new string(buffer, 0, count);
+                    int newline;
+                    while ((newline = pending.IndexOf('\n')) >= 0)
+                    {
+                        if (TokenRequestLogContains(pending[..newline], traceId, status))
+                        {
+                            return true;
+                        }
+
+                        pending = pending[(newline + 1)..];
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // The deadline bounds waiting for the event; it is not a log-time cutoff.
+                return false;
+            }
         }
 
         internal static bool TokenRequestLogContains(string logs, string traceId, int status)
