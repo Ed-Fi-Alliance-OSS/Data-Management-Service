@@ -39,6 +39,7 @@ internal sealed class CommandWorkspace : IDisposable
                 ArgumentList = { typeof(CommandHost).Assembly.Location },
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                StandardErrorEncoding = Encoding.UTF8,
                 UseShellExecute = false,
             },
         };
@@ -188,11 +189,11 @@ public class Given_a_failed_conversion_command(string failure, bool existingOutp
             case "unicode-validation":
                 xml = xml.Replace(
                     "name=\"parent\"",
-                    "name=\"École&#xA;Reader\" Échec=\"unsupported\"",
+                    "name=\"東京 École&#xA;Reader\" Échec=\"unsupported\"",
                     StringComparison.Ordinal
                 );
                 _expectedDiagnostic =
-                    "Unsupported attribute \"Échec\". At /SecurityMetadata/Claims/Claim[@name=\"École\\u000AReader\"]";
+                    "Unsupported attribute \"Échec\". At /SecurityMetadata/Claims/Claim[@name=\"東京 École\\u000AReader\"]";
                 break;
             case "missing-input":
             case "unreadable-input":
@@ -201,11 +202,11 @@ public class Given_a_failed_conversion_command(string failure, bool existingOutp
             case "control-name":
                 xml = xml.Replace(
                     "name=\"Reader\"",
-                    "name=\"École&#x9;&#xD;&#xA;&#x85;&#x2028;&#x2029;Reader\"",
+                    "name=\"École&#x9;&#xD;&#xA;&#x85;&#x2028;&#x2029;&#x202E;&#x200B;Reader\"",
                     StringComparison.Ordinal
                 );
                 _expectedDiagnostic =
-                    "Claim-set name \"École\\u0009\\u000D\\u000A\\u0085\\u2028\\u2029Reader\"";
+                    "Claim-set name \"École\\u0009\\u000D\\u000A\\u0085\\u2028\\u2029\\u202E\\u200BReader\"";
                 break;
             case "whitespace-name":
                 xml = xml.Replace("name=\"Reader\"", "name=\"Reader&#xA0;Name\"", StringComparison.Ordinal);

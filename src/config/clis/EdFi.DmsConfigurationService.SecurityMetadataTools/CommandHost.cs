@@ -101,10 +101,10 @@ internal static class CommandHost
                         or InvalidOperationException
             )
         {
-            // Escape controls and line separators once at the output boundary, preserving readable Unicode.
+            // Escape controls, format characters, and line separators once, preserving readable Unicode.
             string message = Regex.Replace(
                 exception.Message,
-                @"[\p{Cc}\u2028\u2029]",
+                @"[\p{Cc}\p{Cf}\u2028\u2029]",
                 match => $"\\u{(int)match.Value[0]:X4}"
             );
             error.WriteLine($"Conversion failed: {message}");
