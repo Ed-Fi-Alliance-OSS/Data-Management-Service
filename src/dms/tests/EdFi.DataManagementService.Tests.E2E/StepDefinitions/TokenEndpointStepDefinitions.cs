@@ -205,14 +205,13 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 actualDescription.Should().Be(expectedDescription);
             }
 
-            string? challenge = ResponseHeaderOrNull("www-authenticate");
             if (status == 401)
             {
-                challenge.Should().Be(BasicChallenge);
+                ResponseHeader("www-authenticate").Should().Be(BasicChallenge);
             }
             else
             {
-                challenge.Should().BeNull();
+                ResponseHeaderOrNull("www-authenticate").Should().BeNull();
             }
 
             string encodedTraceId = ResponseHeader(CorrelationHeaderName);

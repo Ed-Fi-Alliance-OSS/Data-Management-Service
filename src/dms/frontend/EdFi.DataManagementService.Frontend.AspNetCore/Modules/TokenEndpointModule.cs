@@ -165,33 +165,34 @@ public class TokenEndpointModule : IEndpointModule
 
         // Manually read the JSON body so the framework's binder never sees it: its parse errors
         // quote the body, and the framework logs them (or throws them into the error log).
-        TokenRequest? tokenRequest = null;
+        TokenRequest tokenRequest;
         try
         {
-            tokenRequest = await httpContext.Request.ReadFromJsonAsync<TokenRequest>(
-                jsonOptions.Value.SerializerOptions
-            );
+            if (
+                await httpContext.Request.ReadFromJsonAsync<TokenRequest>(jsonOptions.Value.SerializerOptions)
+                is not TokenRequest parsedRequest
+            )
+            {
+                await WriteMalformedJson();
+                return;
+            }
+            tokenRequest = parsedRequest;
         }
         catch (JsonException)
         {
             // Deliberately not logged or passed on: the exception message can contain body content.
-        }
-
-        if (tokenRequest is null)
-        {
-            var traceId = AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, appSettings);
-            logger.LogDebug("Token request body is not valid JSON - {TraceId}", traceId.Value);
-            using var response = OAuthErrorResponse.Create(
-                System.Net.HttpStatusCode.BadRequest,
-                "invalid_request",
-                MalformedJsonDescription,
-                traceId
-            );
-            await TokenErrorResponseWriter.WriteAsync(httpContext, response);
+            await WriteMalformedJson();
             return;
         }
 
         await GenerateToken(httpContext, tokenRequest, appSettings, oAuthManager, logger, httpClientFactory);
+
+        async Task WriteMalformedJson()
+        {
+            var traceId = AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, appSettings);
+            logger.LogDebug("Token request body is not valid JSON - {TraceId}", traceId.Value);
+            await WriteBadRequest(httpContext, appSettings, MalformedJsonDescription);
+        }
     }
 
     private static async Task GenerateToken(
@@ -226,17 +227,12 @@ public class TokenEndpointModule : IEndpointModule
 
         // null when the request carried no Authorization header at all, which the manager must
         // tell apart from a header that is present but empty.
-        string? authHeader = httpContext.Request.Headers.TryGetValue(
-            "Authorization",
-            out var authHeaderValues
-        )
-            ? authHeaderValues.ToString()
-            : null;
-
         using var response = await oAuthManager.GetAccessTokenAsync(
             client,
             tokenRequest.grant_type ?? string.Empty,
-            authHeader,
+            httpContext.Request.Headers.TryGetValue("Authorization", out var authHeaderValues)
+                ? authHeaderValues.ToString()
+                : null,
             new TokenRequestCredentials(tokenRequest.client_id, tokenRequest.client_secret),
             appSettings.Value.AuthenticationService,
             traceId

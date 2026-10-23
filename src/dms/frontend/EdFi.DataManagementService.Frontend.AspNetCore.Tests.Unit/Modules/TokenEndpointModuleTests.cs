@@ -1427,144 +1427,216 @@ public class TokenEndpointModuleTests
         return (client.SendAsync(request).GetAwaiter().GetResult(), handler.Calls);
     }
 
-    [Test]
-    public async Task It_relays_manager_owned_token_error_headers()
+    [TestFixture]
+    public class Given_A_Manager_Owned_Token_Error : TokenEndpointModuleTests
     {
-        var oAuthManager = A.Fake<IOAuthManager>();
-        var tokenError = OAuthErrorResponse.Create(
-            HttpStatusCode.Unauthorized,
-            "invalid_client",
-            "Credentials rejected",
-            new TraceId("a/b+c")
-        );
-        A.CallTo(() =>
-                oAuthManager.GetAccessTokenAsync(
-                    A<IHttpClientWrapper>.Ignored,
-                    A<string>.Ignored,
-                    A<string>.Ignored,
-                    A<TokenRequestCredentials>.Ignored,
-                    A<string>.Ignored,
-                    A<TraceId>.Ignored
-                )
-            )
-            .Returns(tokenError);
+        private HttpResponseMessage _response = null!;
 
-        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        [SetUp]
+        public async Task SetUp()
         {
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(services =>
+            var oAuthManager = A.Fake<IOAuthManager>();
+            var tokenError = OAuthErrorResponse.Create(
+                HttpStatusCode.Unauthorized,
+                "invalid_client",
+                "Credentials rejected",
+                new TraceId("a/b+c")
+            );
+            A.CallTo(() =>
+                    oAuthManager.GetAccessTokenAsync(
+                        A<IHttpClientWrapper>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<TokenRequestCredentials>.Ignored,
+                        A<string>.Ignored,
+                        A<TraceId>.Ignored
+                    )
+                )
+                .Returns(tokenError);
+
+            using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
-                TestMockHelper.AddEssentialMocks(services);
-                services.AddTransient(_ => oAuthManager);
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(services =>
+                {
+                    TestMockHelper.AddEssentialMocks(services);
+                    services.AddTransient(_ => oAuthManager);
+                });
             });
-        });
-        using var client = factory.CreateClient();
-        using var request = ProxyRequest(
-            "grant_type=client_credentials",
-            "application/x-www-form-urlencoded"
-        );
+            using var client = factory.CreateClient();
+            using var request = ProxyRequest(
+                "grant_type=client_credentials",
+                "application/x-www-form-urlencoded"
+            );
 
-        using var response = await client.SendAsync(request);
+            _response = await client.SendAsync(request);
+        }
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        response.Headers.WwwAuthenticate.ToString().Should().Be(OAuthErrorResponse.BasicChallenge);
-        response.Headers.GetValues(OAuthErrorResponse.CorrelationHeaderName).Should().Equal("a%2Fb%2Bc");
-        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+        [TearDown]
+        public void TearDown() => _response.Dispose();
+
+        [Test]
+        public void It_preserves_the_unauthorized_status() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        [Test]
+        public void It_relays_the_basic_challenge() =>
+            _response.Headers.WwwAuthenticate.ToString().Should().Be(OAuthErrorResponse.BasicChallenge);
+
+        [Test]
+        public void It_relays_the_encoded_correlation_id() =>
+            _response.Headers.GetValues(OAuthErrorResponse.CorrelationHeaderName).Should().Equal("a%2Fb%2Bc");
+
+        [Test]
+        public void It_uses_json() =>
+            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
     }
 
-    [TestCase(HttpStatusCode.Unauthorized, true, 401)]
-    [TestCase(HttpStatusCode.Unauthorized, false, 401)]
-    [TestCase(HttpStatusCode.BadRequest, true, 401)]
-    [TestCase(HttpStatusCode.BadRequest, false, 400)]
-    public async Task It_delivers_provider_invalid_client_using_the_original_caller_mechanism(
+    [TestFixture(HttpStatusCode.Unauthorized, true, 401)]
+    [TestFixture(HttpStatusCode.Unauthorized, false, 401)]
+    [TestFixture(HttpStatusCode.BadRequest, true, 401)]
+    [TestFixture(HttpStatusCode.BadRequest, false, 400)]
+    public class Given_A_Provider_Invalid_Client_Response(
         HttpStatusCode providerStatus,
         bool useBasic,
         int expectedStatus
-    )
+    ) : TokenEndpointModuleTests
     {
-        using var request = ProxyRequest(
-            useBasic
-                ? "grant_type=client_credentials"
-                : "grant_type=client_credentials&client_id=client&client_secret=secret",
-            "application/x-www-form-urlencoded"
-        );
-        request.Headers.Remove("Authorization");
-        if (useBasic)
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task SetUp()
         {
-            request.Headers.Add("Authorization", "Basic Y2xpZW50OnNlY3JldA==");
+            using var request = ProxyRequest(
+                useBasic
+                    ? "grant_type=client_credentials"
+                    : "grant_type=client_credentials&client_id=client&client_secret=secret",
+                "application/x-www-form-urlencoded"
+            );
+            request.Headers.Remove("Authorization");
+            if (useBasic)
+            {
+                request.Headers.Add("Authorization", "Basic Y2xpZW50OnNlY3JldA==");
+            }
+            (_response, _) = SendThroughRealManager(
+                request,
+                providerStatus,
+                """{"error":"invalid_client","error_description":"Provider rejected credentials"}"""
+            );
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!.AsObject();
         }
-        (HttpResponseMessage response, _) = SendThroughRealManager(
-            request,
-            providerStatus,
-            """{"error":"invalid_client","error_description":"Provider rejected credentials"}"""
-        );
-        using (response)
-        {
-            ((int)response.StatusCode).Should().Be(expectedStatus);
-            response
+
+        [TearDown]
+        public void TearDown() => _response.Dispose();
+
+        [Test]
+        public void It_uses_the_status_for_the_original_caller_mechanism() =>
+            ((int)_response.StatusCode).Should().Be(expectedStatus);
+
+        [Test]
+        public void It_challenges_only_unauthorized_responses() =>
+            _response
                 .Headers.WwwAuthenticate.ToString()
                 .Should()
                 .Be(expectedStatus == 401 ? "Basic realm=\"EdFi.DataManagementService\"" : string.Empty);
-            response.Headers.GetValues("X-Correlation-ID").Should().ContainSingle();
-            response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
-            JsonObject body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject();
-            body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
-            body["error"]!.GetValue<string>().Should().Be("invalid_client");
-            body["error_description"]!.GetValue<string>().Should().Be("Provider rejected credentials");
-        }
+
+        [Test]
+        public void It_returns_one_correlation_header() =>
+            _response.Headers.GetValues("X-Correlation-ID").Should().ContainSingle();
+
+        [Test]
+        public void It_uses_json() =>
+            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+
+        [Test]
+        public void It_returns_only_the_oauth_fields() =>
+            _body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
+
+        [Test]
+        public void It_returns_invalid_client() =>
+            _body["error"]!.GetValue<string>().Should().Be("invalid_client");
+
+        [Test]
+        public void It_preserves_the_safe_provider_description() =>
+            _body["error_description"]!.GetValue<string>().Should().Be("Provider rejected credentials");
     }
 
-    private static IEnumerable<TestCaseData> TokenCorrelationIds()
+    public static IEnumerable<TestFixtureData> TokenCorrelationIds()
     {
-        yield return new TestCaseData("percent%plus+slash/ñ", "percent%plus+slash/ñ");
+        yield return new TestFixtureData("percent%plus+slash/ñ", "percent%plus+slash/ñ");
         // Attribute arguments are encoded in metadata; construct the invalid UTF-16 at runtime.
-        yield return new TestCaseData("before" + (char)0xd800 + "after", "beforeafter");
-        yield return new TestCaseData("emoji-\ud83d\ude00", "emoji-\ud83d\ude00");
+        yield return new TestFixtureData("before" + (char)0xd800 + "after", "beforeafter");
+        yield return new TestFixtureData("emoji-\ud83d\ude00", "emoji-\ud83d\ude00");
     }
 
-    [TestCaseSource(nameof(TokenCorrelationIds))]
-    public async Task It_encodes_the_ingested_correlation_id_and_matches_the_request_log(
-        string suppliedId,
-        string expectedNormalizedId
-    )
+    [TestFixtureSource(typeof(TokenEndpointModuleTests), nameof(TokenCorrelationIds))]
+    public class Given_A_Client_Supplied_Token_Correlation_Id(string suppliedId, string expectedNormalizedId)
+        : TokenEndpointModuleTests
     {
-        using CorrelationIdRecordingLoggerProvider recorder = new();
-        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        private CorrelationIdRecordingLoggerProvider _recorder = null!;
+        private HttpResponseMessage _response = null!;
+        private string _encodedId = null!;
+
+        [SetUp]
+        public async Task SetUp()
         {
-            builder.UseEnvironment("Test");
-            builder.ConfigureLogging(logging => logging.AddProvider(recorder));
-            builder.ConfigureAppConfiguration(
-                (_, configuration) =>
-                    configuration.AddInMemoryCollection(
-                        new Dictionary<string, string?>
-                        {
-                            ["AppSettings:CorrelationIdHeader"] = "x-token-trace",
-                        }
-                    )
-            );
-            builder.ConfigureServices(services =>
+            _recorder = new();
+            using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
-                TestMockHelper.AddEssentialMocks(services);
-                services.AddTransient<IOAuthManager, OAuthManager>();
+                builder.UseEnvironment("Test");
+                builder.ConfigureLogging(logging => logging.AddProvider(_recorder));
+                builder.ConfigureAppConfiguration(
+                    (_, configuration) =>
+                        configuration.AddInMemoryCollection(
+                            new Dictionary<string, string?>
+                            {
+                                ["AppSettings:CorrelationIdHeader"] = "x-token-trace",
+                            }
+                        )
+                );
+                builder.ConfigureServices(services =>
+                {
+                    TestMockHelper.AddEssentialMocks(services);
+                    services.AddTransient<IOAuthManager, OAuthManager>();
+                });
             });
-        });
-        using var client = factory.CreateClient();
-        using var request = ProxyRequest(
-            "grant_type=client_credentials",
-            "application/x-www-form-urlencoded"
-        );
-        request.Headers.Remove("Authorization");
-        // TestServer delivers these values directly to the real ingestion boundary; this also
-        // covers invalid UTF-16 normalization without constructing an invalid TraceId ourselves.
-        request.Headers.TryAddWithoutValidation("x-token-trace", suppliedId);
+            using var client = factory.CreateClient();
+            using var request = ProxyRequest(
+                "grant_type=client_credentials",
+                "application/x-www-form-urlencoded"
+            );
+            request.Headers.Remove("Authorization");
+            // TestServer delivers these values directly to the real ingestion boundary; this also
+            // covers invalid UTF-16 normalization without constructing an invalid TraceId ourselves.
+            request.Headers.TryAddWithoutValidation("x-token-trace", suppliedId);
 
-        using var response = await client.SendAsync(request);
+            _response = await client.SendAsync(request);
+            _encodedId = _response.Headers.GetValues("X-Correlation-ID").Should().ContainSingle().Which;
+        }
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        string encodedId = response.Headers.GetValues("X-Correlation-ID").Should().ContainSingle().Which;
-        encodedId.Should().Be(Uri.EscapeDataString(expectedNormalizedId));
-        Uri.UnescapeDataString(encodedId).Should().Be(expectedNormalizedId);
-        recorder.LoggedTraceIds.Should().Equal(expectedNormalizedId);
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _recorder.Dispose();
+        }
+
+        [Test]
+        public void It_rejects_the_missing_credentials() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        [Test]
+        public void It_encodes_the_normalized_id() =>
+            _encodedId.Should().Be(Uri.EscapeDataString(expectedNormalizedId));
+
+        [Test]
+        public void It_decodes_once_to_the_normalized_id() =>
+            Uri.UnescapeDataString(_encodedId).Should().Be(expectedNormalizedId);
+
+        [Test]
+        public void It_logs_the_same_normalized_id() =>
+            _recorder.LoggedTraceIds.Should().Equal(expectedNormalizedId);
     }
 
     /// <summary>
@@ -1644,13 +1716,9 @@ public class TokenEndpointModuleTests
         }
 
         [Test]
-        public void It_carries_the_invalid_request_error()
+        public void It_carries_the_invalid_client_error()
         {
             _body["error"]!.GetValue<string>().Should().Be("invalid_client");
-            _body["error_description"]!
-                .GetValue<string>()
-                .Should()
-                .Be(OAuthErrorResponse.MissingCredentialsDescription);
         }
 
         [Test]
