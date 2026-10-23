@@ -237,8 +237,9 @@ public static class WebApplicationBuilderExtensions
     /// <summary>
     /// Serves the rejection produced by <see cref="GlobalRateLimitingMiddleware"/>, which sets the
     /// 429 status code before invoking this. Rejected requests never reach the DMS
-    /// core pipeline, so the Retry-After header and the problem-details body are written at this
-    /// boundary. The Retry-After value is the limiter's recommended retry delay rounded up to
+    /// core pipeline, so the Retry-After header and body are written at this
+    /// boundary: OAuth JSON for selected token endpoints, problem details otherwise. The
+    /// Retry-After value is the limiter's recommended retry delay rounded up to
     /// whole seconds so a client never retries sooner than recommended, and the body stays
     /// constant whether or not the limiter supplies retry-after metadata.
     /// </summary>

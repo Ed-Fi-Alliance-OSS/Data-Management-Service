@@ -57,40 +57,53 @@ public class Given_Two_Token_Requests_In_The_Same_Log_Second
             .Should()
             .BeTrue();
 
-    [TestCase(false)]
-    [TestCase(true)]
-    public async Task It_reads_the_requests_event_after_a_record_split_across_chunks(bool followEndOfFile)
+    [TestFixture(false)]
+    [TestFixture(true)]
+    public class Given_A_Request_Log_Record_Split_Across_Chunks(bool followEndOfFile)
     {
-        // The first read ends inside the request event. Losing the incomplete line would lose
-        // correlation evidence when either the file sink or the Docker stream splits a write.
-        using StringReader reader = new(new string(' ', 4090) + SecondRequestLog + "\n");
-        // Only bounds a broken reader; the assertion has no dependency on elapsed time.
-        using CancellationTokenSource deadline = new(TimeSpan.FromMinutes(1));
+        private bool _found;
 
-        bool found = await StepDefinitions.TokenRequestLogContainsAsync(
-            reader,
-            "request-b",
-            401,
-            followEndOfFile,
-            deadline.Token
-        );
+        [SetUp]
+        public async Task SetUp()
+        {
+            // The first read ends inside the request event. Losing the incomplete line would lose
+            // correlation evidence when either the file sink or the Docker stream splits a write.
+            using StringReader reader = new(new string(' ', 4090) + SecondRequestLog + "\n");
+            // Only bounds a broken reader; the assertion has no dependency on elapsed time.
+            using CancellationTokenSource deadline = new(TimeSpan.FromMinutes(1));
 
-        found.Should().BeTrue();
+            _found = await StepDefinitions.TokenRequestLogContainsAsync(
+                reader,
+                "request-b",
+                401,
+                followEndOfFile,
+                deadline.Token
+            );
+        }
+
+        [Test]
+        public void It_reads_the_requests_event() => _found.Should().BeTrue();
     }
 
-    [Test]
-    public async Task It_rejects_a_stream_without_the_requests_own_event()
+    [TestFixture]
+    public class Given_A_Log_Stream_Without_The_Requests_Own_Event
     {
-        using StringReader reader = new(FirstRequestLog);
+        private bool _found;
 
-        bool found = await StepDefinitions.TokenRequestLogContainsAsync(
-            reader,
-            "request-b",
-            401,
-            false,
-            CancellationToken.None
-        );
+        [SetUp]
+        public async Task SetUp()
+        {
+            using StringReader reader = new(FirstRequestLog);
+            _found = await StepDefinitions.TokenRequestLogContainsAsync(
+                reader,
+                "request-b",
+                401,
+                false,
+                CancellationToken.None
+            );
+        }
 
-        found.Should().BeFalse();
+        [Test]
+        public void It_rejects_the_stream() => _found.Should().BeFalse();
     }
 }

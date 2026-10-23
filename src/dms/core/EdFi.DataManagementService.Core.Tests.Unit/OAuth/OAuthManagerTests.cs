@@ -1804,7 +1804,7 @@ public class OAuthManagerTests
         }
 
         [Test]
-        public void It_puts_the_identical_correlation_id_in_the_gateway_error_body()
+        public void It_encodes_the_logged_correlation_id_in_the_gateway_error_header()
         {
             _response
                 .Headers.GetValues(OAuthErrorResponse.CorrelationHeaderName)
@@ -1823,7 +1823,7 @@ public class OAuthManagerTests
     // credentials, so that made the upstream's error taxonomy, internal hostnames, realm names and
     // any stack trace it emits readable by any caller, in a field whose length only the upstream
     // bounds. The upstream content now reaches the log only - sanitized and length-bounded - and
-    // the client correlates via `correlationId`.
+    // the client correlates via the once-decoded X-Correlation-ID response header.
     // ---------------------------------------------------------------------------------------
 
     /// <summary>
