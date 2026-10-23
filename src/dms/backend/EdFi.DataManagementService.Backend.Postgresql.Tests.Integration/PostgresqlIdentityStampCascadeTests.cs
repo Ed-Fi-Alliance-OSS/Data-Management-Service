@@ -17,7 +17,7 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 public class PostgresqlIdentityStampCascadeTests
 {
     private const string FixtureRelativePath =
-        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/referential-identity";
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/identity-references";
 
     private PostgresqlGeneratedDdlFixture _fixture = null!;
     private PostgresqlGeneratedDdlTestDatabase _database = null!;

@@ -18,7 +18,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 public class MssqlIdentityStampCascadeTests
 {
     private const string FixtureRelativePath =
-        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/referential-identity";
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/identity-references";
 
     private MssqlGeneratedDdlFixture _fixture = null!;
     private IMssqlGeneratedDdlBaselineLease _databaseLease = null!;

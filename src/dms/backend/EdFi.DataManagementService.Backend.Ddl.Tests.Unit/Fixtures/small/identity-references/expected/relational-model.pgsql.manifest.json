@@ -1,5 +1,5 @@
 {
-  "dialect": "mssql",
+  "dialect": "pgsql",
   "effective_schema_hash": "b9a983e51f4474731372243dbedb4d3a6cc272abef943da010ed924f17938e7d",
   "relational_mapping_version": "v3",
   "projects": [
@@ -383,7 +383,7 @@
       ]
     },
     {
-      "name": "IX_DecimalRefResource_DecimalKeyReference_DecimalKey_DecimalKeyReference_DocumentId",
+      "name": "IX_DecimalRefResource_DecimalKeyReference_DecimalKey_d031852f35",
       "table": {
         "schema": "edfi",
         "name": "DecimalRefResource"
@@ -433,7 +433,7 @@
       ]
     },
     {
-      "name": "IX_EdOrgDependentChildResource_EdOrgDependentResourceReference_EdOrgDependentResourceId_EdOrgDependentResourceReferen_3459d40e7c",
+      "name": "IX_EdOrgDependentChildResource_EdOrgDependentResourc_3459d40e7c",
       "table": {
         "schema": "edfi",
         "name": "EdOrgDependentChildResource"
@@ -484,7 +484,7 @@
       ]
     },
     {
-      "name": "IX_EdOrgDependentResource_EducationOrganization_EducationOrganizationId_EducationOrganization_DocumentId",
+      "name": "IX_EdOrgDependentResource_EducationOrganization_Educ_18a40a602a",
       "table": {
         "schema": "edfi",
         "name": "EdOrgDependentResource"
@@ -585,7 +585,7 @@
       ]
     },
     {
-      "name": "IX_KeyUnifiedResource_ResourceAReference_ResourceAId_StudentUniqueId_Unified_ResourceAReference_DocumentId",
+      "name": "IX_KeyUnifiedResource_ResourceAReference_ResourceAId_858ee7fc27",
       "table": {
         "schema": "edfi",
         "name": "KeyUnifiedResource"
@@ -599,7 +599,7 @@
       ]
     },
     {
-      "name": "IX_KeyUnifiedResource_ResourceBReference_ResourceBId_StudentUniqueId_Unified_ResourceBReference_DocumentId",
+      "name": "IX_KeyUnifiedResource_ResourceBReference_ResourceBId_4a44a79720",
       "table": {
         "schema": "edfi",
         "name": "KeyUnifiedResource"
@@ -651,7 +651,7 @@
       ]
     },
     {
-      "name": "IX_ResourceA_StudentReference_StudentUniqueId_StudentReference_DocumentId",
+      "name": "IX_ResourceA_StudentReference_StudentUniqueId_Studen_01f592da4e",
       "table": {
         "schema": "edfi",
         "name": "ResourceA"
@@ -715,7 +715,7 @@
       ]
     },
     {
-      "name": "IX_ResourceB_StudentReference_StudentUniqueId_StudentReference_DocumentId",
+      "name": "IX_ResourceB_StudentReference_StudentUniqueId_Studen_a5dd41ea49",
       "table": {
         "schema": "edfi",
         "name": "ResourceB"
@@ -877,7 +877,7 @@
       ]
     },
     {
-      "name": "IX_StudentSchoolAssociation_SchoolReference_SchoolId_SchoolReference_DocumentId",
+      "name": "IX_StudentSchoolAssociation_SchoolReference_SchoolId_d4059e9cc0",
       "table": {
         "schema": "edfi",
         "name": "StudentSchoolAssociation"
@@ -933,29 +933,6 @@
       }
     },
     {
-      "name": "TR_DateTimeKeyResource_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "DateTimeKeyResource"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "EventTimestamp"
-      ],
-      "resource_key_id": 1,
-      "project_name": "Ed-Fi",
-      "resource_name": "DateTimeKeyResource",
-      "identity_elements": [
-        {
-          "column": "EventTimestamp",
-          "identity_json_path": "$.eventTimestamp"
-        }
-      ]
-    },
-    {
       "name": "TR_DateTimeKeyResource_Stamp",
       "table": {
         "schema": "edfi",
@@ -978,29 +955,6 @@
           "name": "DateTimeKeyResource"
         }
       }
-    },
-    {
-      "name": "TR_DecimalKeyResource_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "DecimalKeyResource"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "DecimalKey"
-      ],
-      "resource_key_id": 2,
-      "project_name": "Ed-Fi",
-      "resource_name": "DecimalKeyResource",
-      "identity_elements": [
-        {
-          "column": "DecimalKey",
-          "identity_json_path": "$.decimalKey"
-        }
-      ]
     },
     {
       "name": "TR_DecimalKeyResource_Stamp",
@@ -1027,34 +981,6 @@
       }
     },
     {
-      "name": "TR_DecimalRefResource_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "DecimalRefResource"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "RefResourceId",
-        "DecimalKeyReference_DecimalKey"
-      ],
-      "resource_key_id": 3,
-      "project_name": "Ed-Fi",
-      "resource_name": "DecimalRefResource",
-      "identity_elements": [
-        {
-          "column": "RefResourceId",
-          "identity_json_path": "$.refResourceId"
-        },
-        {
-          "column": "DecimalKeyReference_DecimalKey",
-          "identity_json_path": "$.decimalKeyReference.decimalKey"
-        }
-      ]
-    },
-    {
       "name": "TR_DecimalRefResource_Stamp",
       "table": {
         "schema": "edfi",
@@ -1078,39 +1004,6 @@
           "name": "DecimalRefResource"
         }
       }
-    },
-    {
-      "name": "TR_EdOrgDependentChildResource_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "EdOrgDependentChildResource"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "EdOrgDependentChildResourceId",
-        "EdOrgDependentResourceReference_EdOrgDependentResourceId",
-        "EdOrgDependentResourceReference_EducationOrganizationId"
-      ],
-      "resource_key_id": 4,
-      "project_name": "Ed-Fi",
-      "resource_name": "EdOrgDependentChildResource",
-      "identity_elements": [
-        {
-          "column": "EdOrgDependentChildResourceId",
-          "identity_json_path": "$.edOrgDependentChildResourceId"
-        },
-        {
-          "column": "EdOrgDependentResourceReference_EdOrgDependentResourceId",
-          "identity_json_path": "$.edOrgDependentResourceReference.edOrgDependentResourceId"
-        },
-        {
-          "column": "EdOrgDependentResourceReference_EducationOrganizationId",
-          "identity_json_path": "$.edOrgDependentResourceReference.educationOrganizationId"
-        }
-      ]
     },
     {
       "name": "TR_EdOrgDependentChildResource_Stamp",
@@ -1139,34 +1032,6 @@
       }
     },
     {
-      "name": "TR_EdOrgDependentResource_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "EdOrgDependentResource"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "EdOrgDependentResourceId",
-        "EducationOrganization_EducationOrganizationId"
-      ],
-      "resource_key_id": 5,
-      "project_name": "Ed-Fi",
-      "resource_name": "EdOrgDependentResource",
-      "identity_elements": [
-        {
-          "column": "EdOrgDependentResourceId",
-          "identity_json_path": "$.edOrgDependentResourceId"
-        },
-        {
-          "column": "EducationOrganization_EducationOrganizationId",
-          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
-        }
-      ]
-    },
-    {
       "name": "TR_EdOrgDependentResource_Stamp",
       "table": {
         "schema": "edfi",
@@ -1190,48 +1055,6 @@
           "name": "EdOrgDependentResource"
         }
       }
-    },
-    {
-      "name": "TR_KeyUnifiedResource_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "KeyUnifiedResource"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "KeyUnifiedResourceId",
-        "ResourceAReference_ResourceAId",
-        "StudentUniqueId_Unified",
-        "ResourceBReference_ResourceBId"
-      ],
-      "resource_key_id": 7,
-      "project_name": "Ed-Fi",
-      "resource_name": "KeyUnifiedResource",
-      "identity_elements": [
-        {
-          "column": "KeyUnifiedResourceId",
-          "identity_json_path": "$.keyUnifiedResourceId"
-        },
-        {
-          "column": "ResourceAReference_ResourceAId",
-          "identity_json_path": "$.resourceAReference.resourceAId"
-        },
-        {
-          "column": "ResourceAReference_StudentUniqueId",
-          "identity_json_path": "$.resourceAReference.studentUniqueId"
-        },
-        {
-          "column": "ResourceBReference_ResourceBId",
-          "identity_json_path": "$.resourceBReference.resourceBId"
-        },
-        {
-          "column": "ResourceBReference_StudentUniqueId",
-          "identity_json_path": "$.resourceBReference.studentUniqueId"
-        }
-      ]
     },
     {
       "name": "TR_KeyUnifiedResource_Stamp",
@@ -1261,34 +1084,6 @@
       }
     },
     {
-      "name": "TR_ResourceA_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "ResourceA"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "ResourceAId",
-        "StudentReference_StudentUniqueId"
-      ],
-      "resource_key_id": 8,
-      "project_name": "Ed-Fi",
-      "resource_name": "ResourceA",
-      "identity_elements": [
-        {
-          "column": "ResourceAId",
-          "identity_json_path": "$.resourceAId"
-        },
-        {
-          "column": "StudentReference_StudentUniqueId",
-          "identity_json_path": "$.studentReference.studentUniqueId"
-        }
-      ]
-    },
-    {
       "name": "TR_ResourceA_Stamp",
       "table": {
         "schema": "edfi",
@@ -1312,34 +1107,6 @@
           "name": "ResourceA"
         }
       }
-    },
-    {
-      "name": "TR_ResourceB_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "ResourceB"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "ResourceBId",
-        "StudentReference_StudentUniqueId"
-      ],
-      "resource_key_id": 9,
-      "project_name": "Ed-Fi",
-      "resource_name": "ResourceB",
-      "identity_elements": [
-        {
-          "column": "ResourceBId",
-          "identity_json_path": "$.resourceBId"
-        },
-        {
-          "column": "StudentReference_StudentUniqueId",
-          "identity_json_path": "$.studentReference.studentUniqueId"
-        }
-      ]
     },
     {
       "name": "TR_ResourceB_Stamp",
@@ -1421,40 +1188,6 @@
       "parent_fks": []
     },
     {
-      "name": "TR_School_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "School"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "SchoolId"
-      ],
-      "resource_key_id": 10,
-      "project_name": "Ed-Fi",
-      "resource_name": "School",
-      "identity_elements": [
-        {
-          "column": "SchoolId",
-          "identity_json_path": "$.schoolId"
-        }
-      ],
-      "superclass_alias": {
-        "resource_key_id": 6,
-        "project_name": "Ed-Fi",
-        "resource_name": "EducationOrganization",
-        "identity_elements": [
-          {
-            "column": "SchoolId",
-            "identity_json_path": "$.educationOrganizationId"
-          }
-        ]
-      }
-    },
-    {
       "name": "TR_School_Stamp",
       "table": {
         "schema": "edfi",
@@ -1479,29 +1212,6 @@
       }
     },
     {
-      "name": "TR_Student_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "Student"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "StudentUniqueId"
-      ],
-      "resource_key_id": 11,
-      "project_name": "Ed-Fi",
-      "resource_name": "Student",
-      "identity_elements": [
-        {
-          "column": "StudentUniqueId",
-          "identity_json_path": "$.studentUniqueId"
-        }
-      ]
-    },
-    {
       "name": "TR_Student_Stamp",
       "table": {
         "schema": "edfi",
@@ -1524,34 +1234,6 @@
           "name": "Student"
         }
       }
-    },
-    {
-      "name": "TR_StudentSchoolAssociation_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentSchoolAssociation"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "StudentUniqueId",
-        "SchoolReference_SchoolId"
-      ],
-      "resource_key_id": 12,
-      "project_name": "Ed-Fi",
-      "resource_name": "StudentSchoolAssociation",
-      "identity_elements": [
-        {
-          "column": "StudentUniqueId",
-          "identity_json_path": "$.studentUniqueId"
-        },
-        {
-          "column": "SchoolReference_SchoolId",
-          "identity_json_path": "$.schoolReference.schoolId"
-        }
-      ]
     },
     {
       "name": "TR_StudentSchoolAssociation_Stamp",
@@ -1739,8 +1421,7 @@
             "max_length": 64
           },
           "role": "Scalar",
-          "origin": "Identity",
-          "uses_sql_server_identity_collation": true
+          "origin": "Identity"
         },
         {
           "old_column": "OldDecimalKeyReference_DecimalKey",
@@ -1821,8 +1502,7 @@
             "max_length": 64
           },
           "role": "Scalar",
-          "origin": "Identity",
-          "uses_sql_server_identity_collation": true
+          "origin": "Identity"
         },
         {
           "old_column": "OldEdOrgDependentResourceReference_EdOrgDependentResourceId",
@@ -1835,8 +1515,7 @@
             "max_length": 64
           },
           "role": "Scalar",
-          "origin": "Identity",
-          "uses_sql_server_identity_collation": true
+          "origin": "Identity"
         },
         {
           "old_column": "OldEdOrgDependentResourceReference_EducationOrganizationId",
@@ -1915,8 +1594,7 @@
             "max_length": 64
           },
           "role": "Scalar",
-          "origin": "Identity",
-          "uses_sql_server_identity_collation": true
+          "origin": "Identity"
         },
         {
           "old_column": "OldEducationOrganization_EducationOrganizationId",
@@ -1995,8 +1673,7 @@
             "max_length": 64
           },
           "role": "Scalar",
-          "origin": "Identity",
-          "uses_sql_server_identity_collation": true
+          "origin": "Identity"
         },
         {
           "old_column": "OldResourceAReference_ResourceAId",
@@ -2009,8 +1686,7 @@
             "max_length": 64
           },
           "role": "Scalar",
-          "origin": "Identity",
-          "uses_sql_server_identity_collation": true
+          "origin": "Identity"
         },
         {
           "old_column": "OldStudentUniqueId_Unified",
@@ -2024,8 +1700,7 @@
             "max_length": 32
           },
           "role": "Scalar",
-          "origin": "Identity",
-          "uses_sql_server_identity_collation": true
+          "origin": "Identity"
         },
         {
           "old_column": "OldResourceBReference_ResourceBId",
@@ -2038,8 +1713,7 @@
             "max_length": 64
           },
           "role": "Scalar",
-          "origin": "Identity",
-          "uses_sql_server_identity_collation": true
+          "origin": "Identity"
         }
       ],
       "system_columns": [
@@ -2106,8 +1780,7 @@
             "max_length": 64
           },
           "role": "Scalar",
-          "origin": "Identity",
-          "uses_sql_server_identity_collation": true
+          "origin": "Identity"
         },
         {
           "old_column": "OldStudentReference_StudentUniqueId",
@@ -2120,8 +1793,7 @@
             "max_length": 32
           },
           "role": "Scalar",
-          "origin": "Identity",
-          "uses_sql_server_identity_collation": true
+          "origin": "Identity"
         }
       ],
       "system_columns": [
@@ -2188,8 +1860,7 @@
             "max_length": 64
           },
           "role": "Scalar",
-          "origin": "Identity",
-          "uses_sql_server_identity_collation": true
+          "origin": "Identity"
         },
         {
           "old_column": "OldStudentReference_StudentUniqueId",
@@ -2202,8 +1873,7 @@
             "max_length": 32
           },
           "role": "Scalar",
-          "origin": "Identity",
-          "uses_sql_server_identity_collation": true
+          "origin": "Identity"
         }
       ],
       "system_columns": [
@@ -2336,8 +2006,7 @@
             "max_length": 32
           },
           "role": "Scalar",
-          "origin": "Identity",
-          "uses_sql_server_identity_collation": true
+          "origin": "Identity"
         }
       ],
       "system_columns": [
@@ -2404,8 +2073,7 @@
             "max_length": 32
           },
           "role": "Scalar",
-          "origin": "Identity",
-          "uses_sql_server_identity_collation": true
+          "origin": "Identity"
         },
         {
           "old_column": "OldSchoolReference_SchoolId",
@@ -2828,8 +2496,7 @@
               "source_path": "$.refResourceId",
               "storage": {
                 "kind": "Stored"
-              },
-              "uses_sql_server_identity_collation": true
+              }
             }
           ],
           "key_unification_classes": [],
@@ -3011,8 +2678,7 @@
               "source_path": "$.edOrgDependentResourceReference.edOrgDependentResourceId",
               "storage": {
                 "kind": "Stored"
-              },
-              "uses_sql_server_identity_collation": true
+              }
             },
             {
               "name": "EdOrgDependentResourceReference_EducationOrganizationId",
@@ -3037,8 +2703,7 @@
               "source_path": "$.edOrgDependentChildResourceId",
               "storage": {
                 "kind": "Stored"
-              },
-              "uses_sql_server_identity_collation": true
+              }
             }
           ],
           "key_unification_classes": [],
@@ -3081,7 +2746,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_EdOrgDependentChildResource_EdOrgDependentResourceReference_RefKey",
+              "name": "FK_EdOrgDependentChildResource_EdOrgDependentResourc_6a74c7e5ff",
               "columns": [
                 "EdOrgDependentResourceReference_EdOrgDependentResourceId",
                 "EdOrgDependentResourceReference_EducationOrganizationId",
@@ -3101,7 +2766,7 @@
             },
             {
               "kind": "AllOrNoneNullability",
-              "name": "CK_EdOrgDependentChildResource_EdOrgDependentResourceReference_AllNone",
+              "name": "CK_EdOrgDependentChildResource_EdOrgDependentResourc_eef3efb07d",
               "fk_column": "EdOrgDependentResourceReference_DocumentId",
               "dependent_columns": [
                 "EdOrgDependentResourceReference_EdOrgDependentResourceId",
@@ -3240,8 +2905,7 @@
               "source_path": "$.edOrgDependentResourceId",
               "storage": {
                 "kind": "Stored"
-              },
-              "uses_sql_server_identity_collation": true
+              }
             }
           ],
           "key_unification_classes": [],
@@ -3420,8 +3084,7 @@
               "source_path": null,
               "storage": {
                 "kind": "Stored"
-              },
-              "uses_sql_server_identity_collation": true
+              }
             },
             {
               "name": "ResourceAReference_DocumentId",
@@ -3446,8 +3109,7 @@
               "source_path": "$.resourceAReference.resourceAId",
               "storage": {
                 "kind": "Stored"
-              },
-              "uses_sql_server_identity_collation": true
+              }
             },
             {
               "name": "ResourceAReference_StudentUniqueId",
@@ -3462,8 +3124,7 @@
                 "kind": "UnifiedAlias",
                 "canonical_column": "StudentUniqueId_Unified",
                 "presence_column": "ResourceAReference_DocumentId"
-              },
-              "uses_sql_server_identity_collation": true
+              }
             },
             {
               "name": "ResourceBReference_DocumentId",
@@ -3488,8 +3149,7 @@
               "source_path": "$.resourceBReference.resourceBId",
               "storage": {
                 "kind": "Stored"
-              },
-              "uses_sql_server_identity_collation": true
+              }
             },
             {
               "name": "ResourceBReference_StudentUniqueId",
@@ -3504,8 +3164,7 @@
                 "kind": "UnifiedAlias",
                 "canonical_column": "StudentUniqueId_Unified",
                 "presence_column": "ResourceBReference_DocumentId"
-              },
-              "uses_sql_server_identity_collation": true
+              }
             },
             {
               "name": "KeyUnifiedResourceId",
@@ -3518,8 +3177,7 @@
               "source_path": "$.keyUnifiedResourceId",
               "storage": {
                 "kind": "Stored"
-              },
-              "uses_sql_server_identity_collation": true
+              }
             }
           ],
           "key_unification_classes": [
@@ -3607,7 +3265,7 @@
                 "DocumentId"
               ],
               "on_delete": "NoAction",
-              "on_update": "NoAction"
+              "on_update": "Cascade"
             },
             {
               "kind": "AllOrNoneNullability",
@@ -3786,8 +3444,7 @@
               "source_path": "$.studentReference.studentUniqueId",
               "storage": {
                 "kind": "Stored"
-              },
-              "uses_sql_server_identity_collation": true
+              }
             },
             {
               "name": "ResourceAId",
@@ -3800,8 +3457,7 @@
               "source_path": "$.resourceAId",
               "storage": {
                 "kind": "Stored"
-              },
-              "uses_sql_server_identity_collation": true
+              }
             }
           ],
           "key_unification_classes": [],
@@ -3992,8 +3648,7 @@
               "source_path": "$.studentReference.studentUniqueId",
               "storage": {
                 "kind": "Stored"
-              },
-              "uses_sql_server_identity_collation": true
+              }
             },
             {
               "name": "ResourceBId",
@@ -4006,8 +3661,7 @@
               "source_path": "$.resourceBId",
               "storage": {
                 "kind": "Stored"
-              },
-              "uses_sql_server_identity_collation": true
+              }
             }
           ],
           "key_unification_classes": [],
@@ -4351,8 +4005,7 @@
               "source_path": "$.studentUniqueId",
               "storage": {
                 "kind": "Stored"
-              },
-              "uses_sql_server_identity_collation": true
+              }
             }
           ],
           "key_unification_classes": [],
@@ -4504,8 +4157,7 @@
               "source_path": "$.studentUniqueId",
               "storage": {
                 "kind": "Stored"
-              },
-              "uses_sql_server_identity_collation": true
+              }
             }
           ],
           "key_unification_classes": [],

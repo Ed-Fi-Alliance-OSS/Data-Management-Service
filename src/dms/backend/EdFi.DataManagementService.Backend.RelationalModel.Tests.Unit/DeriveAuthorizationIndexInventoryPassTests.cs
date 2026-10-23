@@ -256,7 +256,7 @@ public class Given_PrimaryAssociation_With_UnifiedAlias_Key
 /// <summary>
 /// Test fixture asserting the pass silently skips a PrimaryAssociation in default mode when
 /// the resource is present but its root table is missing the expected literal key column.
-/// Synthetic test fixtures (e.g. <c>small/referential-identity</c>) reuse PA names without
+/// Synthetic test fixtures (e.g. <c>small/identity-references</c>) reuse PA names without
 /// carrying the post-key-unification PA columns; in default mode the pass tolerates that and
 /// relies on the strict-mode pipeline to catch real schema drift.
 /// </summary>
