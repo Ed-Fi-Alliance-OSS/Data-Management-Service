@@ -4858,7 +4858,7 @@ public class TokenEndpointInvalidScopeTests
 /// costly and every request is independent of the others.
 /// </summary>
 [TestFixture]
-public class TokenEndpointAuthenticationFailureTests
+public class Given_TokenEndpoint_requests_that_fail_client_authentication
 {
     private const string AbsentClientId = "absent-client";
     private const string KnownClientId = "known-client";
@@ -5074,7 +5074,7 @@ public class TokenEndpointAuthenticationFailureTests
 /// assumes nothing about the built-in hasher's format.
 /// </summary>
 [TestFixture]
-public class TokenEndpointReplacementHasherTests
+public class Given_TokenEndpoint_requests_with_a_replacement_client_secret_hasher
 {
     private const string AbsentClientId = "absent-client";
     private const string PresentedSecret = "absent-client-secret";
