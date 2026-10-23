@@ -24,8 +24,8 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 /// <c>Access-Control-Expose-Headers</c> including <c>Location</c> on the async 202 and on the
 /// incomplete results 200, exercised through the real <c>UseCors</c> pipeline rather than the
 /// policy object directly. A request without an <c>Origin</c> header carries no CORS headers. The
-/// ignored-query-parameter warning is exposed whatever the toggle, and with the toggle off it is the
-/// only header exposed.
+/// ignored-query-parameter warning, <c>X-Correlation-ID</c>, and <c>WWW-Authenticate</c> are exposed
+/// regardless of the toggle; <c>Location</c> is exposed only when the toggle is on.
 /// </summary>
 [TestFixture]
 [NonParallelizable]
