@@ -2069,7 +2069,7 @@ Describe "PostgreSQL CMS-target agreement predicate (ordinal-exact, PostgreSQL-O
         $enclosingNames | Should -Be @(
             'Confirm-CmsDatabaseTopologyAgreement',
             'Confirm-CmsDatabaseTopologyAgreement'
-        ) -Because "both Confirm comparisons (segments and ambient) are the only adopters; MSSQL renders no offline name verdict anywhere"
+        ) -Because "both Confirm comparisons (segments and ambient) are the only adopters; the CMS topology checks render no offline MSSQL name verdict"
 
         foreach ($call in $adopterCalls) {
             $guarded = $false

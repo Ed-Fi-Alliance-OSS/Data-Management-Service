@@ -625,7 +625,7 @@ Describe "Dedicated E2E database guard" {
             }
         ) {
             { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = $RawValue } -HelperVariables @("GUARD_MATRIX_UNDEFINED") } |
-                Should -Throw -ExpectedMessage "E2E database safety check could not resolve $Key in '$script:environmentFileLabel' (blank, or an unresolved or cyclic reference)*"
+                Should -Throw -ExpectedMessage "E2E database safety check could not resolve $Key in '$script:environmentFileLabel' to a comparable database name (it is blank, or contains '`$': a literal '`$', or an unresolved or cyclic reference); refusing a destructive reset that cannot be proven dedicated."
         }
 
         It "accepts a dedicated E2E name when no protected key is configured" {
@@ -652,6 +652,40 @@ Describe "Dedicated E2E database guard" {
             @{ Key = "POSTGRES_DB_NAME" }
         ) {
             { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = "`"edfi_dms `"" } -E2EDatabaseName "edfi_dms_e2e" } | Should -Not -Throw
+        }
+    }
+
+    # postgresql.yml gives the container edfi_datamanagementservice when POSTGRES_DB_NAME is absent from
+    # the file and the shell. The refusals are regression rows: without the default the guard skips the
+    # absent key and accepts. The file and shell overrides and the configured blank are preservation rows.
+    Context "absent POSTGRES_DB_NAME: the postgresql.yml default (regression: default unprotected)" {
+        BeforeAll {
+            function Get-PostgresDefaultDiagnostic {
+                param([string]$E2EDatabaseName)
+                "E2E database '$E2EDatabaseName' in '$script:environmentFileLabel' must be dedicated and cannot match edfi_datamanagementservice, the database postgresql.yml uses when POSTGRES_DB_NAME is absent."
+            }
+        }
+
+        It "rejects the E2E name '<E2EDatabaseName>' when <Label>" -ForEach @(
+            @{ E2EDatabaseName = "edfi_datamanagementservice"; Label = "no protected key is configured"; EnvironmentValues = @{} }
+            @{ E2EDatabaseName = "EDFI_DataManagementService"; Label = "no protected key is configured"; EnvironmentValues = @{} }
+            @{ E2EDatabaseName = "edfi_datamanagementservice"; Label = "only MSSQL_DB_NAME is configured"; EnvironmentValues = @{ MSSQL_DB_NAME = "edfi_dms_mssql" } }
+        ) {
+            { Invoke-IsolatedGuard -EnvironmentValues $EnvironmentValues -E2EDatabaseName $E2EDatabaseName } |
+                Should -Throw -ExpectedMessage (Get-PostgresDefaultDiagnostic -E2EDatabaseName $E2EDatabaseName)
+        }
+
+        It "accepts the E2E name 'edfi_datamanagementservice' when the <Source> sets POSTGRES_DB_NAME = 'edfi_dms_primary'" -ForEach @(
+            @{ Source = "environment file"; EnvironmentValues = @{ POSTGRES_DB_NAME = "edfi_dms_primary" }; AmbientValues = @{} }
+            @{ Source = "shell"; EnvironmentValues = @{}; AmbientValues = @{ POSTGRES_DB_NAME = "edfi_dms_primary" } }
+        ) {
+            { Invoke-IsolatedGuard -EnvironmentValues $EnvironmentValues -AmbientValues $AmbientValues -E2EDatabaseName "edfi_datamanagementservice" } |
+                Should -Not -Throw
+        }
+
+        It "fails closed on a configured blank POSTGRES_DB_NAME instead of comparing the default" {
+            { Invoke-IsolatedGuard -EnvironmentValues @{ POSTGRES_DB_NAME = "''" } -E2EDatabaseName "edfi_datamanagementservice" } |
+                Should -Throw -ExpectedMessage "E2E database safety check could not resolve POSTGRES_DB_NAME in '$script:environmentFileLabel' to a comparable database name*"
         }
     }
 
@@ -995,10 +1029,12 @@ Describe "Dedicated E2E database guard" {
     # Get-EnvironmentValueMap keeps the last value of each name, compared case-insensitively, while
     # Compose resolves the file line by line with case-sensitive names. Each refused file below is one
     # the guard accepts from that map, so the refusals are regression rows for
-    # Assert-UnambiguousProtectedDeclaration; the accepted files are positive controls.
+    # Assert-UnambiguousProtectedDeclaration: the repeated declarations for its duplicate check, the
+    # forward, case-variant and lowercase-only rows for its value-agreement check. The accepted files
+    # are positive controls.
     Context "provisioning reader: repeated or case-variant declarations (regression: ambiguity check removed)" {
         BeforeAll {
-            $script:declarationHelperNames = @("PRIMARY_NAME", "LOG_LEVEL")
+            $script:declarationHelperNames = @("PRIMARY_NAME", "LOG_LEVEL", "DB_ALIAS", "db_alias", "DB_PASSWORD")
 
             function Write-DeclarationFile {
                 param([string[]]$Lines)
@@ -1021,7 +1057,9 @@ Describe "Dedicated E2E database guard" {
                         [System.Environment]::SetEnvironmentVariable($name, $AmbientValues[$name])
                     }
 
-                    Assert-UnambiguousProtectedDeclaration -EnvironmentFilePath $EnvironmentFile
+                    Assert-UnambiguousProtectedDeclaration `
+                        -EnvironmentFilePath $EnvironmentFile `
+                        -EnvironmentValues (Get-EnvironmentValueMap -EnvironmentFilePath $EnvironmentFile)
                 }
                 finally {
                     foreach ($savedVariable in $savedVariables) {
@@ -1075,10 +1113,94 @@ Describe "Dedicated E2E database guard" {
                 Lines = @('MSSQL_DB_NAME=EDFI_DMS', 'DATABASE_CONNECTION_STRING_ADMIN=Server=s;Database=${MSSQL_DB_NAME};User Id=sa', 'MSSQL_DB_NAME=edfi_dms_primary')
                 AmbientValues = @{ MSSQL_DB_NAME = "edfi_dms_ambient" }
             }
+            @{
+                Label = "MSSQL_DB_NAME references DB_ALIAS after its declaration"
+                Lines = @('DB_ALIAS=edfi_other', 'MSSQL_DB_NAME=${DB_ALIAS:-edfi_dms}')
+                AmbientValues = @{}
+            }
+            @{
+                Label = "the ambient environment supplies DB_ALIAS, which MSSQL_DB_NAME references before its declaration"
+                Lines = @('MSSQL_DB_NAME=${DB_ALIAS:-edfi_dms}', 'DB_ALIAS=edfi_other')
+                AmbientValues = @{ DB_ALIAS = "edfi_dms_ambient" }
+            }
+            @{
+                Label = "the ambient environment supplies MSSQL_DB_NAME, whose declaration references DB_ALIAS before its declaration"
+                Lines = @('MSSQL_DB_NAME=${DB_ALIAS:-edfi_dms}', 'DB_ALIAS=edfi_other')
+                AmbientValues = @{ MSSQL_DB_NAME = "edfi_dms_ambient" }
+            }
+            @{
+                Label = "a connection string references a later name only outside its database name"
+                Lines = @('CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=h;database=edfi_dms_primary;username=u;password=${DB_PASSWORD}', 'DB_PASSWORD=guard-matrix-pass')
+                AmbientValues = @{}
+            }
         ) {
             $environmentFile = Write-DeclarationFile -Lines $Lines
 
             { Invoke-IsolatedDeclarationCheck -EnvironmentFile $environmentFile -AmbientValues $AmbientValues } | Should -Not -Throw
+        }
+
+        It "refuses a file where <Label>, which the guard accepts against the E2E name '<E2EDatabaseName>'" -ForEach @(
+            @{
+                Label = "MSSQL_DB_NAME references DB_ALIAS before its declaration"
+                Lines = @('MSSQL_DB_NAME=${DB_ALIAS:-edfi_dms}', 'DB_ALIAS=edfi_other')
+                Key = "MSSQL_DB_NAME"; E2EDatabaseName = "edfi_dms"
+            }
+            @{
+                Label = "DATABASE_CONNECTION_STRING_ADMIN references DB_ALIAS before its declaration"
+                Lines = @('DATABASE_CONNECTION_STRING_ADMIN=Server=s;Database=${DB_ALIAS:-edfi_dms};User Id=sa', 'DB_ALIAS=edfi_other')
+                Key = "DATABASE_CONNECTION_STRING_ADMIN"; E2EDatabaseName = "edfi_dms"
+            }
+            @{
+                Label = "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING references DB_ALIAS before its declaration"
+                Lines = @('CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=h;database=${DB_ALIAS:-edfi_dms};username=u', 'DB_ALIAS=edfi_other')
+                Key = "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"; E2EDatabaseName = "edfi_dms"
+            }
+            @{
+                Label = "MSSQL_DB_NAME references db_alias, declared only as DB_ALIAS"
+                Lines = @('DB_ALIAS=edfi_other', 'MSSQL_DB_NAME=${db_alias:-edfi_dms}')
+                Key = "MSSQL_DB_NAME"; E2EDatabaseName = "edfi_dms"
+            }
+            @{
+                Label = "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING references db_alias, declared only as DB_ALIAS"
+                Lines = @('DB_ALIAS=edfi_other', 'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=h;database=${db_alias:-edfi_dms};username=u')
+                Key = "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"; E2EDatabaseName = "edfi_dms"
+            }
+            @{
+                Label = "POSTGRES_DB_NAME is declared only as postgres_db_name"
+                Lines = @('postgres_db_name=edfi_other')
+                Key = "POSTGRES_DB_NAME"; E2EDatabaseName = "edfi_datamanagementservice"
+            }
+            @{
+                Label = "DATABASE_CONNECTION_STRING_ADMIN is declared only in lowercase"
+                Lines = @('database_connection_string_admin=Server=s;Database=edfi_other;User Id=sa')
+                Key = "DATABASE_CONNECTION_STRING_ADMIN"; E2EDatabaseName = "edfi_dms"
+            }
+        ) {
+            $environmentFile = Write-DeclarationFile -Lines $Lines
+
+            { Invoke-IsolatedGuard -EnvironmentValues (Get-EnvironmentValueMap -EnvironmentFilePath $environmentFile) -HelperVariables $script:declarationHelperNames -E2EDatabaseName $E2EDatabaseName } |
+                Should -Not -Throw -Because "the guard compares the map's value, not the one Compose uses"
+            { Invoke-IsolatedDeclarationCheck -EnvironmentFile $environmentFile } |
+                Should -Throw -ExpectedMessage "E2E database safety check: '$environmentFile' gives $Key a different value or presence under Docker Compose's line-by-line, case-sensitive resolution than the one this check compares. A reference sees only earlier declarations of the same letter case, and a declaration in another letter case is a different name; refusing a destructive reset. Declare each name once, in one letter case, before any line that references it. The values are withheld."
+        }
+
+        It "leaves the guard comparing the value Compose uses once the file is accepted (<Label>)" -ForEach @(
+            @{
+                Label = "a preceding DB_ALIAS"
+                Lines = @('DB_ALIAS=edfi_other', 'MSSQL_DB_NAME=${DB_ALIAS:-edfi_dms}')
+                AmbientValues = @{}; E2EDatabaseName = "edfi_other"
+            }
+            @{
+                Label = "an ambient MSSQL_DB_NAME over an inert forward reference"
+                Lines = @('MSSQL_DB_NAME=${DB_ALIAS:-edfi_dms}', 'DB_ALIAS=edfi_other')
+                AmbientValues = @{ MSSQL_DB_NAME = "edfi_dms_ambient" }; E2EDatabaseName = "edfi_dms_ambient"
+            }
+        ) {
+            $environmentFile = Write-DeclarationFile -Lines $Lines
+
+            { Invoke-IsolatedDeclarationCheck -EnvironmentFile $environmentFile -AmbientValues $AmbientValues } | Should -Not -Throw
+            { Invoke-IsolatedGuard -EnvironmentValues (Get-EnvironmentValueMap -EnvironmentFilePath $environmentFile) -AmbientValues $AmbientValues -HelperVariables $script:declarationHelperNames -E2EDatabaseName $E2EDatabaseName } |
+                Should -Throw -ExpectedMessage (Get-DedicatedDiagnostic -Key "MSSQL_DB_NAME" -E2EDatabaseName $E2EDatabaseName)
         }
     }
 
@@ -1248,17 +1370,18 @@ catch {
 # a JSON record of the outcome and both logs, which these tests assert on:
 # - env-utility.psm1 (stub): Resolve-DatabaseEngineEnvironmentFile returns the base file;
 #   Test-NativeCommandWithTimeout logs the readiness probe and succeeds, so readiness ends on the
-#   first probe. The real Get-DotenvLastDeclaration and Get-DotenvDependencyClosure are copied in.
+#   first probe. The real Assert-UnambiguousProtectedDeclaration and the env-utility functions it
+#   calls are copied in.
 # - schema-package-utility.psm1 (stub): Resolve-SchemaFilesFromEnvironmentFile logs and throws a
 #   sentinel, so a control run stops before any reset.
 # - docker and dotnet: child functions that log to the destructive log and throw.
 # The collision runs are regression rows. Every one fails if the guard runs after readiness. The
 # plain runs and the exported PostgreSQL run fail if the guard compares with -ieq alone; the exported
 # SQL Server 'EDFI_DMS' differs from 'edfi_dms' only by case, which -ieq already rejects. The exported
-# runs fail if Get-EnvironmentValueMap keeps the export prefix. The ambiguous-declaration runs are
-# regression rows for Assert-UnambiguousProtectedDeclaration: without it the guard reads the last,
-# distinct value and the run reaches schema resolution. The control runs are positive controls; they
-# show the harness reaches readiness and schema resolution.
+# runs fail if Get-EnvironmentValueMap keeps the export prefix. The ambiguous-declaration and
+# disagreeing-value runs are regression rows for Assert-UnambiguousProtectedDeclaration: without it the
+# guard reads a distinct value from the map and the run reaches schema resolution. The control runs
+# are positive controls; they show the harness reaches readiness and schema resolution.
 Describe "Dedicated E2E database guard in the provisioning flow" {
     BeforeAll {
         $sourceDockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
@@ -1271,15 +1394,20 @@ Describe "Dedicated E2E database guard in the provisioning flow" {
         }
         $script:provisionScript = Join-Path $flowDockerComposeRoot "provision-e2e-database.ps1"
 
-        # The ambiguous-declaration check walks dependencies with these, so the stub carries the real
-        # definitions rather than stand-ins.
+        # The script's declaration check and the env-utility functions it calls, so the stub carries
+        # the real definitions rather than stand-ins.
         $environmentUtilityAst = [System.Management.Automation.Language.Parser]::ParseFile(
             (Join-Path $sourceDockerComposeRoot "env-utility.psm1"), [ref]$null, [ref]$null)
         $realEnvironmentFunctions = @(
             $environmentUtilityAst.FindAll({
                     param($node)
                     $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-                        $node.Name -in @("Get-DotenvLastDeclaration", "Get-DotenvDependencyClosure")
+                        $node.Name -in @(
+                            "Get-DotenvLastDeclaration",
+                            "Get-DotenvDependencyClosure",
+                            "Get-SequentialEffectiveValue",
+                            "Assert-UnambiguousProtectedDeclaration"
+                        )
                 }, $false) | ForEach-Object { $_.Extent.Text }
         ) -join "`n`n"
 
@@ -1297,7 +1425,7 @@ function Test-NativeCommandWithTimeout {
 
 #REAL-FUNCTIONS#
 
-Export-ModuleMember -Function Resolve-DatabaseEngineEnvironmentFile, Test-NativeCommandWithTimeout, Get-DotenvLastDeclaration, Get-DotenvDependencyClosure
+Export-ModuleMember -Function Resolve-DatabaseEngineEnvironmentFile, Test-NativeCommandWithTimeout, Get-DotenvLastDeclaration, Get-DotenvDependencyClosure, Get-SequentialEffectiveValue, Assert-UnambiguousProtectedDeclaration
 '@.Replace("#REAL-FUNCTIONS#", $realEnvironmentFunctions) |
             Set-Content -LiteralPath (Join-Path $flowDockerComposeRoot "env-utility.psm1") -Encoding utf8
 
@@ -1331,7 +1459,7 @@ $ErrorActionPreference = "Stop"
 foreach ($name in @(
         "POSTGRES_DB_NAME", "MSSQL_DB_NAME", "DATABASE_CONNECTION_STRING_ADMIN",
         "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING", "E2E_DATABASE_NAME", "POSTGRES_PORT",
-        "POSTGRES_PASSWORD", "POSTGRES_USER", "MSSQL_PORT", "MSSQL_SA_PASSWORD"
+        "POSTGRES_PASSWORD", "POSTGRES_USER", "MSSQL_PORT", "MSSQL_SA_PASSWORD", "DB_ALIAS"
     )) {
     Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
 }
@@ -1443,6 +1571,24 @@ catch {
         $record.DestructiveLogExists | Should -BeFalse -Because "no docker or dotnet command may run after a refusal"
     }
 
+    It "stops a <Engine> run whose <Key> <Disagreement> before any readiness probe, schema resolution or reset" -ForEach @(
+        @{
+            Engine = "mssql"; Key = "MSSQL_DB_NAME"; Disagreement = "references DB_ALIAS before its declaration"
+            Lines = @('MSSQL_PORT=1433', 'MSSQL_SA_PASSWORD=guard-flow-pass', 'MSSQL_DB_NAME=${DB_ALIAS:-edfi_dms}', 'DB_ALIAS=edfi_other')
+        }
+        @{
+            Engine = "postgresql"; Key = "POSTGRES_DB_NAME"; Disagreement = "is declared only in lowercase"
+            Lines = @('POSTGRES_PORT=5432', 'POSTGRES_PASSWORD=guard-flow-pass', 'postgres_db_name=edfi_other')
+        }
+    ) {
+        $record = Invoke-ProvisionFlow -Name "disagreeing-$Engine" -DatabaseEngine $Engine -EnvironmentLines $Lines
+
+        $record.Outcome | Should -Be "threw"
+        $record.Message | Should -BeExactly "E2E database safety check: '$($record.EnvironmentFile)' gives $Key a different value or presence under Docker Compose's line-by-line, case-sensitive resolution than the one this check compares. A reference sees only earlier declarations of the same letter case, and a declaration in another letter case is a different name; refusing a destructive reset. Declare each name once, in one letter case, before any line that references it. The values are withheld."
+        $record.BoundaryLogExists | Should -BeFalse -Because "the refusal must come before the readiness probe and schema resolution"
+        $record.DestructiveLogExists | Should -BeFalse -Because "no docker or dotnet command may run after a refusal"
+    }
+
     It "lets a <Engine> run with a distinct <Spelling> <Key> reach readiness and schema resolution, then stop before reset" -ForEach @(
         @{ Engine = "postgresql"; Key = "POSTGRES_DB_NAME"; Spelling = "plain"; Lines = @("POSTGRES_PORT=5432", "POSTGRES_PASSWORD=guard-flow-pass", "POSTGRES_DB_NAME='edfi_dms_primary '") }
         @{ Engine = "mssql"; Key = "MSSQL_DB_NAME"; Spelling = "plain"; Lines = @("MSSQL_PORT=1433", "MSSQL_SA_PASSWORD=guard-flow-pass", "MSSQL_DB_NAME=`"EDFI_DMS_PRIMARY$([char]0x3000)`"") }
@@ -1474,7 +1620,9 @@ catch {
 # - docker: a child function that records its arguments and sets $global:LASTEXITCODE to 0, so the
 #   setup's 'docker version' check passes. That check runs before the guard by design.
 # The collision runs are regression rows: they fail if the guard compares with -ieq alone or the names
-# are validated after the first start. The control runs are positive controls; they show the harness
+# are validated after the first start. The disagreeing-value run is a regression row for the setup's
+# Assert-UnambiguousProtectedDeclaration call: without it the guard accepts the map's distinct value
+# and the run reaches the first start. The control runs are positive controls; they show the harness
 # reaches the first start.
 Describe "Dedicated E2E database guard in the Instance Management setup" {
     BeforeAll {
@@ -1521,7 +1669,7 @@ param(
 foreach ($name in @(
         "POSTGRES_DB_NAME", "MSSQL_DB_NAME", "DATABASE_CONNECTION_STRING_ADMIN",
         "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING", "INSTANCE_E2E_DATABASE_1_NAME",
-        "INSTANCE_E2E_DATABASE_2_NAME", "INSTANCE_E2E_DATABASE_3_NAME", "POSTGRES_USER"
+        "INSTANCE_E2E_DATABASE_2_NAME", "INSTANCE_E2E_DATABASE_3_NAME", "POSTGRES_USER", "DB_ALIAS"
     )) {
     Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
 }
@@ -1626,6 +1774,20 @@ $record | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $RunDire
         $record.StartLogExists | Should -BeFalse -Because "infrastructure must not start after a rejection"
         $record.ProvisionLogExists | Should -BeFalse -Because "route database 1 must never be provisioned before a later name fails"
         ($record.DockerLog -join "`n") | Should -BeExactly "version" -Because "only the read-only docker version check precedes the guard"
+    }
+
+    It "rejects an mssql setup whose MSSQL_DB_NAME references DB_ALIAS before its declaration, before any start or provisioning" {
+        $record = Invoke-InstanceSetup -Name "disagreeing-mssql" -DatabaseEngine "mssql" -EnvironmentLines ($script:routeNameLines + @(
+                'MSSQL_DB_NAME=${DB_ALIAS:-edfi_route_d3}',
+                'DB_ALIAS=edfi_other'
+            ))
+
+        $record.Outcome | Should -Be "threw"
+        $record.Message | Should -BeExactly "E2E database safety check: '$($record.EnvironmentFile)' gives MSSQL_DB_NAME a different value or presence under Docker Compose's line-by-line, case-sensitive resolution than the one this check compares. A reference sees only earlier declarations of the same letter case, and a declaration in another letter case is a different name; refusing a destructive reset. Declare each name once, in one letter case, before any line that references it. The values are withheld."
+        $record.AuthorityLogExists | Should -BeFalse -Because "no guarded phase may begin after a refusal"
+        $record.StartLogExists | Should -BeFalse -Because "infrastructure must not start after a refusal"
+        $record.ProvisionLogExists | Should -BeFalse -Because "no route database may be provisioned after a refusal"
+        ($record.DockerLog -join "`n") | Should -BeExactly "version" -Because "only the read-only docker version check precedes the declaration check"
     }
 
     It "lets a <Engine> setup with a distinct <Key> reach the first -InfraOnly start, then stop" -ForEach @(

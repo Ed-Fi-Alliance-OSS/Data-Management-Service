@@ -36,6 +36,7 @@ Describe 'CDC E2E setup failure export' {
             SkipDockerBuild = $true; UsePrebuiltTools = $true; Configuration = 'Release'
         }
         Mock ReadValuesFromEnvFile -ModuleName e2e-cdc { return @{ E2E_DATABASE_NAME = 'primary_e2e'; E2E_SNAPSHOT_DATABASE_NAME = 'snapshot_e2e' } }
+        Mock Assert-UnambiguousProtectedDeclaration -ModuleName e2e-cdc {}
         Mock Assert-E2EDatabaseIsDedicated -ModuleName e2e-cdc {}
         Mock Assert-E2ECdcWorkspaceAvailable -ModuleName e2e-cdc {}
         Mock Read-BootstrapCdcSettings -ModuleName e2e-cdc { return @{ ConfigurationServiceSettings = @{ BaseUrl = 'http://localhost:8081' } } }
@@ -127,6 +128,7 @@ Describe 'Shared CDC E2E setup handoff' {
             SkipDockerBuild = $true; UsePrebuiltTools = $true; Configuration = 'Release'
         }
         Mock ReadValuesFromEnvFile -ModuleName e2e-cdc { return @{ E2E_DATABASE_NAME = 'primary_e2e'; E2E_SNAPSHOT_DATABASE_NAME = 'snapshot_e2e' } }
+        Mock Assert-UnambiguousProtectedDeclaration -ModuleName e2e-cdc {}
         Mock Assert-E2EDatabaseIsDedicated -ModuleName e2e-cdc {}
         Mock Assert-E2ECdcWorkspaceAvailable -ModuleName e2e-cdc {}
         Mock Read-BootstrapCdcSettings -ModuleName e2e-cdc { return @{ ConfigurationServiceSettings = @{ BaseUrl = 'http://localhost:8081' } } }
@@ -143,6 +145,17 @@ Describe 'Shared CDC E2E setup handoff' {
     }
 
     AfterEach { $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY = $script:savedDiagnosticDirectory }
+
+    It 'refuses an ambiguous environment file before the dedicated-database guard, workspace check or bootstrap' {
+        Mock Assert-UnambiguousProtectedDeclaration -ModuleName e2e-cdc { throw 'declaration-check refusal' }
+        { Invoke-E2ECdcSetup @script:arguments } | Should -Throw 'declaration-check refusal'
+        Should -Invoke Assert-UnambiguousProtectedDeclaration -ModuleName e2e-cdc -Times 1 -Exactly -ParameterFilter {
+            $EnvironmentFilePath -eq $script:arguments.EnvironmentFile -and $EnvironmentValues.E2E_DATABASE_NAME -eq 'primary_e2e'
+        }
+        Should -Invoke Assert-E2EDatabaseIsDedicated -ModuleName e2e-cdc -Times 0 -Exactly
+        Should -Invoke Assert-E2ECdcWorkspaceAvailable -ModuleName e2e-cdc -Times 0 -Exactly
+        Should -Invoke Invoke-BootstrapWrapper -ModuleName e2e-cdc -Times 0 -Exactly
+    }
 
     It 'writes setup failure diagnostics outside the checkout' {
         Mock Invoke-BootstrapWrapper -ModuleName e2e-cdc { throw 'private-setup-failure' }

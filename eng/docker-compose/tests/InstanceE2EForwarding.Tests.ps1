@@ -57,6 +57,8 @@ Describe "Get-InstanceE2ETestEnvironmentContext resolves engine, databases, and 
         Mock Resolve-DataStandardEnvironmentFile { $BaseEnvironmentFile }
         Mock Resolve-DatabaseEngineEnvironmentFile { $BaseEnvironmentFile }
         Mock ReadValuesFromEnvFile { $script:contextEnvValues }
+        # The mocked map has no file behind it; the row that refuses a disagreeing file runs the real check.
+        Mock Assert-UnambiguousProtectedDeclaration { }
         Mock New-E2EDataStoreConnectionStrings {
             [pscustomobject]@{
                 AdminConnectionString        = "admin:${DatabaseEngine}:$DatabaseName"
@@ -175,6 +177,52 @@ Describe "Get-InstanceE2ETestEnvironmentContext resolves engine, databases, and 
     It "builds all three registration strings when every route name is safe and dedicated" {
         Get-InstanceE2ETestEnvironmentContext -EnvironmentFile "./.env.routeContext.e2e" -DatabaseEngine "postgresql" | Out-Null
         Should -Invoke New-E2EDataStoreConnectionStrings -Times 3 -Exactly
+    }
+
+    It "refuses a resolved file whose MSSQL_DB_NAME references DB_ALIAS before its declaration, before building any connection string" {
+        # Compose gives MSSQL_DB_NAME the third route name; the guard's map gives it edfi_other.
+        $script:disagreeingEnvironmentFile = Join-Path $TestDrive "disagreeing.env"
+        [System.IO.File]::WriteAllLines($script:disagreeingEnvironmentFile, [string[]]@(
+                "INSTANCE_E2E_DATABASE_1_NAME=edfi_datamanagementservice_d255901_sy2024",
+                "INSTANCE_E2E_DATABASE_2_NAME=edfi_datamanagementservice_d255901_sy2025",
+                "INSTANCE_E2E_DATABASE_3_NAME=edfi_datamanagementservice_d255902_sy2024",
+                'MSSQL_DB_NAME=${DB_ALIAS:-edfi_datamanagementservice_d255902_sy2024}',
+                "DB_ALIAS=edfi_other"
+            ))
+        $script:contextEnvValues = & (Get-Module env-utility) { param($path) ReadValuesFromEnvFile $path } $script:disagreeingEnvironmentFile
+        Mock Resolve-LocalSettingsEnvironmentFile { $script:disagreeingEnvironmentFile }
+        Mock Assert-UnambiguousProtectedDeclaration {
+            & (Get-Module env-utility) {
+                param($path, $values)
+                Assert-UnambiguousProtectedDeclaration -EnvironmentFilePath $path -EnvironmentValues $values
+            } $EnvironmentFilePath $EnvironmentValues
+        }
+
+        $savedVariables = foreach ($name in @("POSTGRES_DB_NAME", "MSSQL_DB_NAME", "DATABASE_CONNECTION_STRING_ADMIN", "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING", "DB_ALIAS")) {
+            @{ Name = $name; Exists = (Test-Path -LiteralPath "Env:$name"); Value = [System.Environment]::GetEnvironmentVariable($name) }
+            Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+        }
+        try {
+            {
+                Assert-E2EDatabaseIsDedicated `
+                    -EnvironmentValues $script:contextEnvValues `
+                    -EnvironmentFilePath $script:disagreeingEnvironmentFile `
+                    -E2EDatabaseName "edfi_datamanagementservice_d255902_sy2024"
+            } | Should -Not -Throw -Because "the guard alone compares the map's value"
+            { Get-InstanceE2ETestEnvironmentContext -EnvironmentFile "./.env.routeContext.e2e" -DatabaseEngine "mssql" } |
+                Should -Throw -ExpectedMessage "E2E database safety check: '$script:disagreeingEnvironmentFile' gives MSSQL_DB_NAME a different value or presence under Docker Compose's line-by-line, case-sensitive resolution than the one this check compares.*"
+            Should -Invoke New-E2EDataStoreConnectionStrings -Times 0 -Exactly
+        }
+        finally {
+            foreach ($savedVariable in $savedVariables) {
+                if ($savedVariable.Exists) {
+                    [System.Environment]::SetEnvironmentVariable($savedVariable.Name, $savedVariable.Value)
+                }
+                else {
+                    Remove-Item -LiteralPath "Env:$($savedVariable.Name)" -ErrorAction SilentlyContinue
+                }
+            }
+        }
     }
 }
 

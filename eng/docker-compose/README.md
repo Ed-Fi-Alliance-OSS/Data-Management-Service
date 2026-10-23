@@ -151,11 +151,19 @@ that share their first 63 characters are one PostgreSQL database. Connection-str
 checked as the connection-string parser reads them, without env-file rules applied a second time.
 Provisioning also refuses an environment file that declares a protected key, or a name one of
 them references, more than once or in more than one letter case, because Compose could then use a
-different value than the one checked.
+different value than the one checked. It likewise refuses a file where Compose, which resolves the
+file line by line with case-sensitive names, would give a protected key a different value or
+presence than the check reads: for example a reference to a name declared on a later line, a
+reference spelled in another letter case than its declaration, or a protected key declared only in
+lowercase. The Instance Management route of `build-dms.ps1`, the Instance Management
+`setup-local-dms.ps1` and the CDC E2E setup run these declaration checks before they start
+infrastructure, and provisioning repeats them before any reset. A value set in the shell overrides
+the file, so the file's declarations of that name are not checked; the shell value is still
+compared with the E2E name.
 
-The check covers only protected keys set in the environment file or the shell. When a key is
-absent, Compose can still give a container a database name the check never sees: `postgresql.yml`
-defaults `POSTGRES_DB_NAME` to `edfi_datamanagementservice`, and without
+When `POSTGRES_DB_NAME` is absent from both the environment file and the shell, the check protects
+`edfi_datamanagementservice`, the name `postgresql.yml` uses by default. Other absent keys are
+skipped, so Compose can still give a container a database name the check never sees: without
 `CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING` the Configuration Service builds its connection
 from `CONFIGURATION_SERVICE_DATABASE_NAME` or `POSTGRES_DB_NAME`. Declare the engine's database-name
 key and both connection strings in any environment file used for E2E provisioning, especially when

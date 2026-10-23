@@ -671,7 +671,7 @@ function Test-ProtectedKeyConfigured {
         value still counts as configured: Compose's ${VAR:-default} substitutes the default for a
         blank value, so the running container can be on the compose-file default database while the
         configured value resolves to nothing - the dedicated-E2E guard must then fail closed rather
-        than skip the collision check. Only a genuinely absent key is skippable.
+        than skip the collision check. Only a genuinely absent key skips the configured-value check.
     #>
     param(
         [hashtable]$EnvironmentValues,
@@ -1646,17 +1646,24 @@ function Assert-E2EDatabaseIsDedicated {
 
     foreach ($databaseNameKey in @("POSTGRES_DB_NAME", "MSSQL_DB_NAME")) {
         if (-not (Test-ProtectedKeyConfigured -EnvironmentValues $EnvironmentValues -Name $databaseNameKey)) {
+            # postgresql.yml gives the container edfi_datamanagementservice when POSTGRES_DB_NAME is
+            # absent from both the file and the shell, so that default is protected. An absent
+            # MSSQL_DB_NAME is skipped.
+            if ($databaseNameKey -ceq "POSTGRES_DB_NAME" -and
+                (Test-E2EDatabaseNameCollidesWithProtectedName -E2EDatabaseName $E2EDatabaseName -ProtectedDatabaseName "edfi_datamanagementservice")) {
+                throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must be dedicated and cannot match edfi_datamanagementservice, the database postgresql.yml uses when POSTGRES_DB_NAME is absent."
+            }
             continue
         }
 
-        # A protected database name that is empty (explicitly blank, or an undefined reference) or
-        # still contains a '$' (an unresolved or cyclic reference the resolver could not expand)
-        # cannot be proven distinct from the reset target, so fail closed. A blank value is not
-        # skippable because Compose's ${VAR:-default} would give the running container the compose
-        # default database. A real database name never contains '$'.
+        # A protected database name that is blank (explicitly, or through an undefined reference) or
+        # contains a '$' cannot be proven distinct from the reset target, so fail closed. The '$' is
+        # either a literal '$' or a reference the resolver could not expand because it is unresolved
+        # or cyclic. A blank value is not skippable because Compose's ${VAR:-default} would give the
+        # running container the compose default database.
         $protectedDatabaseName = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvironmentValues -Name $databaseNameKey
         if ([string]::IsNullOrWhiteSpace($protectedDatabaseName) -or $protectedDatabaseName -match '\$') {
-            throw "E2E database safety check could not resolve $databaseNameKey in '$EnvironmentFilePath' (blank, or an unresolved or cyclic reference); refusing a destructive reset that cannot be proven dedicated."
+            throw "E2E database safety check could not resolve $databaseNameKey in '$EnvironmentFilePath' to a comparable database name (it is blank, or contains '`$': a literal '`$', or an unresolved or cyclic reference); refusing a destructive reset that cannot be proven dedicated."
         }
 
         if (Test-E2EDatabaseNameCollidesWithProtectedName -E2EDatabaseName $E2EDatabaseName -ProtectedDatabaseName $protectedDatabaseName) {
@@ -1756,6 +1763,7 @@ Export-ModuleMember -Function `
     Get-ComposeResolvedEnvValue, `
     Get-RequiredComposeResolvedEnvValue, `
     Assert-SafeDatabaseName, `
+    Test-ProtectedKeyConfigured, `
     Get-DatabaseNameFromConnectionString, `
     Get-DatabaseNameFromResolvedConnectionString, `
     Get-EndpointFromResolvedConnectionString, `
