@@ -114,8 +114,12 @@ including nonbreaking spaces. Package usage and maintainer guidance describe the
 implemented behavior without temporary development claims. The 8.1 changelog
 records the new package/command and removal of the retired commands/options and
 hierarchy-array output. Version allocation and promotion recovery policy are
-unchanged. R2-F5 diagnostic-readability polish remains deferred and is not marked
-complete.
+unchanged. Diagnostic readability was deferred at this checkpoint and subsequently
+completed: stderr now preserves printable Unicode and escapes controls and line
+separators once, at the command boundary. The Release tool suite passes all 253
+tests, including real-process Unicode collision, XML-path, control-character, and
+failed-output preservation checks. The strengthened diagnostic assertions failed
+in all six expected cases before the fix.
 
 Combined verification on 2026-10-22, reused for R2-F1/R2-F2/R2-F3:
 

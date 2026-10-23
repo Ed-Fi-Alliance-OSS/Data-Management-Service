@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Xml;
@@ -42,7 +41,7 @@ internal static class OdsXmlToClaimsConverter
         catch (XmlException exception)
         {
             throw new InvalidOperationException(
-                $"Invalid security metadata XML at line {exception.LineNumber}, column {exception.LinePosition}: {JsonSerializer.Serialize(exception.Message)}",
+                $"Invalid security metadata XML at line {exception.LineNumber}, column {exception.LinePosition}: {exception.Message}",
                 exception
             );
         }
@@ -68,7 +67,7 @@ internal static class OdsXmlToClaimsConverter
                     + string.Join(
                         "; ",
                         failures.Select(failure =>
-                            $"{failure.FailurePath.Value}: {JsonSerializer.Serialize(failure.FailureMessages)}"
+                            $"{failure.FailurePath.Value}: {string.Join("; ", failure.FailureMessages)}"
                         )
                     )
             );
@@ -186,14 +185,14 @@ internal static class OdsXmlToClaimsConverter
             )
             {
                 throw new InvalidOperationException(
-                    $"Claim-set name {JsonSerializer.Serialize(sourceName)} must contain 1 to {ValidationConstants.ClaimSetNameMaxLength} characters after removing literal spaces and hyphens, and must not contain whitespace or control characters."
+                    $"Claim-set name \"{sourceName}\" must contain 1 to {ValidationConstants.ClaimSetNameMaxLength} characters after removing literal spaces and hyphens, and must not contain whitespace or control characters."
                 );
             }
 
             if (_claimSetSources.TryGetValue(mappedName, out var previousSource))
             {
                 throw new InvalidOperationException(
-                    $"Claim-set names {JsonSerializer.Serialize(previousSource)} and {JsonSerializer.Serialize(sourceName)} collide after normalization to {JsonSerializer.Serialize(mappedName)} (case-insensitive comparison)."
+                    $"Claim-set names \"{previousSource}\" and \"{sourceName}\" collide after normalization to \"{mappedName}\" (case-insensitive comparison)."
                 );
             }
 
@@ -220,7 +219,7 @@ internal static class OdsXmlToClaimsConverter
             if (_claimSources.TryGetValue(mappedName, out var previousSource) && previousSource != sourceName)
             {
                 throw new InvalidOperationException(
-                    $"Claim URIs {JsonSerializer.Serialize(previousSource)} and {JsonSerializer.Serialize(sourceName)} collide after legacy prefix migration to {JsonSerializer.Serialize(mappedName)}."
+                    $"Claim URIs \"{previousSource}\" and \"{sourceName}\" collide after legacy prefix migration to \"{mappedName}\"."
                 );
             }
 

@@ -115,10 +115,10 @@ public class Given_an_invalid_normalized_claim_set_name(string sourceName)
     }
 
     [Test]
-    public void It_rejects_the_name_with_an_escaped_source_and_the_name_rules()
+    public void It_rejects_the_name_with_the_source_and_the_name_rules()
     {
         string message = _convert.Should().Throw<InvalidOperationException>().Which.Message;
-        message.Should().Contain(JsonSerializer.Serialize(sourceName));
+        message.Should().Contain($"\"{sourceName}\"");
         message.Should().Contain("1 to 256").And.Contain("control characters");
     }
 }
@@ -143,10 +143,10 @@ public class Given_a_claim_set_name_with_remaining_unicode_whitespace(string sou
     }
 
     [Test]
-    public void It_rejects_the_name_with_an_escaped_source_and_the_whitespace_rule()
+    public void It_rejects_the_name_with_the_source_and_the_whitespace_rule()
     {
         string message = _convert.Should().Throw<InvalidOperationException>().Which.Message;
-        message.Should().Contain(JsonSerializer.Serialize(sourceName)).And.Contain("whitespace");
+        message.Should().Contain($"\"{sourceName}\"").And.Contain("whitespace");
     }
 }
 
@@ -198,10 +198,7 @@ public class Given_distinct_claim_set_names_that_collide(string firstName, strin
     public void It_rejects_the_document_and_identifies_both_source_names()
     {
         string message = _convert.Should().Throw<InvalidOperationException>().Which.Message;
-        message
-            .Should()
-            .Contain(JsonSerializer.Serialize(firstName))
-            .And.Contain(JsonSerializer.Serialize(secondName));
+        message.Should().Contain($"\"{firstName}\"").And.Contain($"\"{secondName}\"");
         message.Should().Contain("collide").And.Contain("case-insensitive");
     }
 }

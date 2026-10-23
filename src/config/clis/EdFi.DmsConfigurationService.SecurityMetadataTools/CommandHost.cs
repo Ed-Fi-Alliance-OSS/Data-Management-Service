@@ -5,6 +5,7 @@
 
 using System.CommandLine;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace EdFi.DmsConfigurationService.SecurityMetadataTools;
 
@@ -100,8 +101,13 @@ internal static class CommandHost
                         or InvalidOperationException
             )
         {
-            // Escape paths and source-derived diagnostics before writing a single stderr line.
-            error.WriteLine($"Conversion failed: {JsonSerializer.Serialize(exception.Message)}");
+            // Escape controls and line separators once at the output boundary, preserving readable Unicode.
+            string message = Regex.Replace(
+                exception.Message,
+                @"[\p{Cc}\u2028\u2029]",
+                match => $"\\u{(int)match.Value[0]:X4}"
+            );
+            error.WriteLine($"Conversion failed: {message}");
             return 1;
         }
     }

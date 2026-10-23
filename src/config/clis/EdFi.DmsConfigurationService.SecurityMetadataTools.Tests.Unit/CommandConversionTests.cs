@@ -118,6 +118,8 @@ public class Given_a_successful_conversion_command(bool overwrite)
 [TestFixture("validationRuleSetOverride", true)]
 [TestFixture("name-collision", false)]
 [TestFixture("name-collision", true)]
+[TestFixture("unicode-validation", false)]
+[TestFixture("unicode-validation", true)]
 [TestFixture("control-name", false)]
 [TestFixture("control-name", true)]
 [TestFixture("whitespace-name", false)]
@@ -174,20 +176,36 @@ public class Given_a_failed_conversion_command(string failure, bool existingOutp
                 _expectedDiagnostic = "validationRuleSetOverride";
                 break;
             case "name-collision":
+                xml = xml.Replace("name=\"Reader\"", "name=\"École Reader\"", StringComparison.Ordinal)
+                    .Replace(
+                        "<ClaimSets />",
+                        "<ClaimSets><ClaimSet name=\"écoleReader\"><Actions><Action name=\"Read\" /></Actions></ClaimSet></ClaimSets>",
+                        StringComparison.Ordinal
+                    );
+                _expectedDiagnostic =
+                    "Claim-set names \"École Reader\" and \"écoleReader\" collide after normalization to \"écoleReader\" (case-insensitive comparison).";
+                break;
+            case "unicode-validation":
                 xml = xml.Replace(
-                    "<ClaimSets />",
-                    "<ClaimSets><ClaimSet name=\"Read-er\"><Actions><Action name=\"Read\" /></Actions></ClaimSet></ClaimSets>",
+                    "name=\"parent\"",
+                    "name=\"École&#xA;Reader\" Échec=\"unsupported\"",
                     StringComparison.Ordinal
                 );
-                _expectedDiagnostic = "collide after normalization";
+                _expectedDiagnostic =
+                    "Unsupported attribute \"Échec\". At /SecurityMetadata/Claims/Claim[@name=\"École\\u000AReader\"]";
                 break;
             case "missing-input":
             case "unreadable-input":
                 _expectedDiagnostic = "input export.xml";
                 break;
             case "control-name":
-                xml = xml.Replace("name=\"Reader\"", "name=\"Reader&#xA;forged\"", StringComparison.Ordinal);
-                _expectedDiagnostic = "control characters";
+                xml = xml.Replace(
+                    "name=\"Reader\"",
+                    "name=\"École&#x9;&#xD;&#xA;&#x85;&#x2028;&#x2029;Reader\"",
+                    StringComparison.Ordinal
+                );
+                _expectedDiagnostic =
+                    "Claim-set name \"École\\u0009\\u000D\\u000A\\u0085\\u2028\\u2029Reader\"";
                 break;
             case "whitespace-name":
                 xml = xml.Replace("name=\"Reader\"", "name=\"Reader&#xA0;Name\"", StringComparison.Ordinal);

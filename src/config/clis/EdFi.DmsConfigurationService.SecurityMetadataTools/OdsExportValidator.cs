@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
 using System.Xml;
 using System.Xml.Linq;
 
@@ -124,10 +123,7 @@ internal static class OdsExportValidator
         {
             if (!Array.Exists(attributes, name => attributeName == name))
             {
-                throw Error(
-                    element,
-                    $"Unsupported attribute {JsonSerializer.Serialize(attributeName.ToString())}."
-                );
+                throw Error(element, $"Unsupported attribute \"{attributeName}\".");
             }
         }
 
@@ -135,7 +131,7 @@ internal static class OdsExportValidator
         {
             if (!repeatedChildren.Concat(singleChildren).Any(name => child.Name == name))
             {
-                throw Error(child, $"Unsupported element {JsonSerializer.Serialize(child.Name.ToString())}.");
+                throw Error(child, $"Unsupported element \"{child.Name}\".");
             }
         }
 
@@ -180,7 +176,7 @@ internal static class OdsExportValidator
                 .Reverse()
                 .Select(ancestor =>
                     ancestor.Attribute("name") is XAttribute name
-                        ? $"{ancestor.Name}[@name={JsonSerializer.Serialize(name.Value)}]"
+                        ? $"{ancestor.Name}[@name=\"{name.Value}\"]"
                         : ancestor.Name.ToString()
                 )
         );
