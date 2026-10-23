@@ -10,10 +10,16 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 
 public class IdentitySettings
 {
+    /// <summary>
+    /// Applied when the section omits RequireHttpsMetadata. The startup diagnostic falls back to the same
+    /// value, so a missing key never makes the warning and authentication disagree.
+    /// </summary>
+    internal const bool RequireHttpsMetadataDefault = true;
+
     public required string Authority { get; set; }
     public required string ClientId { get; set; }
     public required string ClientSecret { get; set; }
-    public bool RequireHttpsMetadata { get; set; }
+    public bool RequireHttpsMetadata { get; set; } = RequireHttpsMetadataDefault;
     public bool AllowRegistration { get; set; }
     public required string Audience { get; set; }
     public required string RoleClaimType { get; set; }

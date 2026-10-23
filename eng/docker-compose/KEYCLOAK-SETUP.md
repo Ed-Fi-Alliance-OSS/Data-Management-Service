@@ -401,7 +401,7 @@ Please refer "Creating a Configuration Service Client" section above
             "Authority": "http://your-keycloak-url:port/realms/<your-realm>",
             "MetadataAddress": "http://your-keycloak-url:port/realms/<your-realm>/.well-known/openid-configuration",
             "Audience": "account",
-            "RequireHttpsMetadata": false,
+            "RequireHttpsMetadata": false, // local http Keycloak only; the application default is true (docs/CONFIGURATION.md)
             "RoleClaimType": "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
         ```
 

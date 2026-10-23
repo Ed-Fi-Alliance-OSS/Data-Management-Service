@@ -31,6 +31,16 @@ cd ../
 ./build-dms.ps1 run
 ```
 
+The shipped DMS `appsettings.json` sets `JwtAuthentication:RequireHttpsMetadata`
+to `true`, so DMS does not start when `JwtAuthentication:MetadataAddress` is a
+plain `http://` address. The DMS starter file
+`src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/appsettings.Development.json.example`
+sets it to `false` because the local Configuration Service is reached over
+http. If you already have an `appsettings.Development.json`, add
+`"RequireHttpsMetadata": false` under `JwtAuthentication`. Keep the value `true`
+for any identity provider reachable over an untrusted network; see
+[Configuration](./CONFIGURATION.md#jwtauthentication-parameters-in-appsettingsjson-dms-api-service).
+
 ## Selecting a Data Standard version
 
 The local start/build scripts run **Data Standard 5.2 by default**. To run a
@@ -63,6 +73,16 @@ If you already have an `appsettings.Development.json`, add the missing values to
 it instead of copying over it. Replacing the file changes the derived encryption
 key, which orphans any connection strings already stored in your local
 Configuration Service database.
+
+The shipped `appsettings.json` sets `IdentitySettings:RequireHttpsMetadata` to
+`true`, and the starter file sets it to `false` because a local identity
+provider is reached over http. If you already have an
+`appsettings.Development.json`, add `"RequireHttpsMetadata": false` under
+`IdentitySettings`. In self-contained mode the Configuration Service fetches no
+metadata, so the setting has no effect there, but a local run against a plain
+http Keycloak fails at the first authenticated request without it. Keep the
+value `true` for any identity provider reachable over an untrusted network; see
+[Configuration](./CONFIGURATION.md#relevant-parameters-in-appsettingsjson-configuration-service).
 
 `appsettings.Development.json` is gitignored, so the values stay on your
 machine. `DatabaseSettings:EncryptionKey` must be at least 32 ASCII characters;
