@@ -27,7 +27,9 @@ internal sealed record TimingRunFiles(string SamplesPath, string HeaderPath, int
 
 /// <summary>
 /// The settings of one run, read from <c>TIMING_EVIDENCE_*</c> environment variables and recorded
-/// in the run's header, so every run can be repeated exactly.
+/// in the run's header, so every run can be repeated exactly. <see cref="Commit"/> is the build of
+/// the collector itself; a run labelled <c>smoke</c> is a tooling check, never evidence, and is the
+/// only kind of run that may leave declarations unset.
 /// </summary>
 internal sealed record TimingRunSettings(
     string OutputDirectory,
@@ -38,15 +40,28 @@ internal sealed record TimingRunSettings(
     string Commit
 )
 {
-    public static TimingRunSettings FromEnvironment() =>
-        new(
+    private const string SmokeLabel = "smoke";
+
+    public bool IsSmoke => string.Equals(RunLabel, SmokeLabel, StringComparison.Ordinal);
+
+    public static TimingRunSettings FromEnvironment()
+    {
+        string runLabel = Optional("TIMING_EVIDENCE_RUN_LABEL", "pilot");
+        string commitName = "TIMING_EVIDENCE_COMMIT";
+        return new(
             Required("TIMING_EVIDENCE_OUTPUT_DIR"),
-            Optional("TIMING_EVIDENCE_RUN_LABEL", "pilot"),
+            runLabel,
             PositiveInteger("TIMING_EVIDENCE_WARMUP_ROUNDS", 50),
             PositiveInteger("TIMING_EVIDENCE_ROUNDS", 200),
             Integer("TIMING_EVIDENCE_SEED", 1),
-            Optional("TIMING_EVIDENCE_COMMIT", "unrecorded")
+            string.Equals(runLabel, SmokeLabel, StringComparison.Ordinal)
+                ? Optional(commitName, "smoke-undeclared")
+                : Required(commitName)
         );
+    }
+
+    /// <summary>A setting every evidence run must declare; a smoke run may leave it unset.</summary>
+    public string Declared(string name) => IsSmoke ? Optional(name, "smoke-undeclared") : Required(name);
 
     public static string Required(string name) =>
         Environment.GetEnvironmentVariable(name) is { Length: > 0 } value
@@ -137,7 +152,7 @@ internal static class TimingEvidenceRecorder
             ["schema"] = "timing-evidence/1",
             ["boundary"] = boundary,
             ["run_label"] = settings.RunLabel,
-            ["commit"] = settings.Commit,
+            ["collector_commit"] = settings.Commit,
             ["seed"] = settings.Seed,
             ["warmup_rounds"] = settings.WarmupRounds,
             ["rounds"] = settings.Rounds,

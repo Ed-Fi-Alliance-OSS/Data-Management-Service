@@ -27,12 +27,17 @@ Commands (numpy is the only dependency):
     simulate --rounds N --delta D ...  decision rates on synthetic data with known effects
     observer --csv F                   supplementary: one median-of-Q observer's true-positive rate
 
-Every command prints JSON. `analyze` and `observer` include the SHA-256 of the input file.
+Every command prints JSON. `analyze`, `plan`, `fit` and `observer` include the SHA-256 of the
+input file. Invalid input (an arm compared with itself, a missing arm, too few rounds, a
+non-positive or non-finite bound or count, a negative or non-finite sample) is refused with exit
+code 2 and no verdict; output never contains NaN or Infinity.
 """
 
 import argparse
+import contextlib
 import csv
 import hashlib
+import io
 import json
 import math
 import os
@@ -45,6 +50,36 @@ METHOD_VERSION = "1"
 DEFAULT_RESAMPLES = 5000
 DEFAULT_SEED = 1
 BATCH = 250
+MIN_INTERVAL_ROUNDS = 20
+
+
+# --------------------------------------------------------------------------------------------
+# Input validation
+
+
+def positive_finite(name, value):
+    if not (isinstance(value, (int, float)) and math.isfinite(value) and value > 0):
+        raise ValueError(f"{name} must be a positive finite number, not {value!r}")
+    return float(value)
+
+
+def positive_count(name, value):
+    if not (isinstance(value, int) and value > 0):
+        raise ValueError(f"{name} must be a positive integer, not {value!r}")
+    return value
+
+
+def comparison(arms, arm_a, arm_b, minimum_rounds=MIN_INTERVAL_ROUNDS):
+    """The two arms an interval compares: distinct, present, and with enough rounds."""
+    if arm_a == arm_b:
+        raise ValueError(f"an arm cannot be compared with itself ({arm_a!r})")
+    for arm in (arm_a, arm_b):
+        if arm not in arms:
+            raise ValueError(f"arm {arm!r} is not in the input; it has {sorted(arms)}")
+    rounds = len(arms[arm_a])
+    if rounds < minimum_rounds:
+        raise ValueError(f"{rounds} rounds is too few for an interval; at least {minimum_rounds} are required")
+    return arms[arm_a], arms[arm_b]
 
 
 # --------------------------------------------------------------------------------------------
@@ -72,7 +107,10 @@ def load_rounds(path):
             samples = by_round.setdefault(round_index, {})
             if arm in samples:
                 raise ValueError(f"round {round_index} has two samples for arm {arm!r}")
-            samples[arm] = float(row["elapsed_us"])
+            elapsed = float(row["elapsed_us"])
+            if not (math.isfinite(elapsed) and elapsed >= 0):
+                raise ValueError(f"round {round_index} arm {arm!r} has an invalid sample {elapsed!r}")
+            samples[arm] = elapsed
 
     rounds = sorted(by_round)
     if rounds != list(range(len(rounds))):
@@ -176,8 +214,10 @@ def halves(values):
 
 
 def analyze(path, arm_a, arm_b, delta, resamples, seed):
+    delta = positive_finite("delta", delta)
+    positive_count("resamples", resamples)
     arms = load_rounds(path)
-    a, b = arms[arm_a], arms[arm_b]
+    a, b = comparison(arms, arm_a, arm_b)
     rounds = len(a)
     length = block_length(rounds)
     low, high = bootstrap_interval(a, b, length, resamples, seed)
@@ -209,8 +249,12 @@ def analyze(path, arm_a, arm_b, delta, resamples, seed):
 
 def plan(path, arm_a, arm_b, delta, candidates, resamples, seed):
     """Spec rule: smallest N whose pilot half-width scaled by sqrt(R/N) is <= delta/2. Planning only."""
+    delta = positive_finite("delta", delta)
+    positive_count("resamples", resamples)
+    for candidate in candidates:
+        positive_count("candidate rounds", candidate)
     arms = load_rounds(path)
-    a, b = arms[arm_a], arms[arm_b]
+    a, b = comparison(arms, arm_a, arm_b)
     rounds = len(a)
     low, high = bootstrap_interval(a, b, block_length(rounds), resamples, seed)
     half_width = (high - low) / 2.0
@@ -234,10 +278,12 @@ def plan(path, arm_a, arm_b, delta, candidates, resamples, seed):
 def fit(path, arm_b, arm_a):
     """Parameters for `simulate`, taken from a pilot. Approximations for planning, stated as such."""
     arms = load_rounds(path)
-    b = arms[arm_b]
+    a, b = comparison(arms, arm_a, arm_b)
     positive = b[b > 0]
+    if positive.size < 2:
+        raise ValueError(f"arm {arm_b!r} needs at least two positive samples for a lognormal fit")
     logs = np.log(positive)
-    round_means = (arms[arm_a] + b) / 2.0
+    round_means = (a + b) / 2.0
     rho = autocorrelation(round_means, 1)[0] if len(round_means) > 2 else 0.0
     rho = max(0.0, min(rho, 0.99))
     return {
@@ -265,6 +311,21 @@ def synthetic(rng, rounds, effect, mu, sigma, rho, drift_sd):
 
 
 def simulate(rounds, delta, mu, sigma, rho, drift_sd, replicates, resamples, seed, multiples):
+    if positive_count("rounds", rounds) < MIN_INTERVAL_ROUNDS:
+        raise ValueError(f"rounds must be at least {MIN_INTERVAL_ROUNDS}")
+    delta = positive_finite("delta", delta)
+    positive_count("replicates", replicates)
+    positive_count("resamples", resamples)
+    if not math.isfinite(mu):
+        raise ValueError(f"mu must be finite, not {mu!r}")
+    if not (math.isfinite(sigma) and sigma >= 0):
+        raise ValueError(f"sigma must be a non-negative finite number, not {sigma!r}")
+    if not (math.isfinite(rho) and 0 <= rho < 1):
+        raise ValueError(f"rho must be in [0, 1), not {rho!r}")
+    if not (math.isfinite(drift_sd) and drift_sd >= 0):
+        raise ValueError(f"drift_sd must be a non-negative finite number, not {drift_sd!r}")
+    if not all(math.isfinite(m) for m in multiples):
+        raise ValueError("every effect multiple must be finite")
     rng = np.random.default_rng(seed)
     length = block_length(rounds)
     rows = []
@@ -321,8 +382,11 @@ def observer(path, arm_a, arm_b, qs, draws, seed):
     """Supplementary. H0: candidate and reference both from A. H1: candidate from B, reference from A.
     Score |median(candidate_Q) - median(reference_Q)|; threshold = 95th percentile under H0; the
     true-positive rate is measured directly under H1. One statistic, no claim it is the strongest."""
+    positive_count("draws", draws)
+    for q in qs:
+        positive_count("q", q)
     arms = load_rounds(path)
-    a, b = arms[arm_a], arms[arm_b]
+    a, b = comparison(arms, arm_a, arm_b)
     rng = np.random.default_rng(seed)
 
     def medians(source, q, n):
@@ -365,6 +429,14 @@ def observer(path, arm_a, arm_b, qs, draws, seed):
 # Self-test
 
 
+def raises(action):
+    try:
+        action()
+    except ValueError:
+        return True
+    return False
+
+
 def selftest():
     checks = []
 
@@ -404,6 +476,27 @@ def selftest():
     check("shift 7 inside bound 10 is EQUIVALENT", decide(low, high, 10.0) == "EQUIVALENT")
     check("shift 7 outside bound 5 is NOT EQUIVALENT", decide(low, high, 5.0) == "NOT EQUIVALENT")
 
+    # Fixed references for bootstrap_interval itself, established without its resampling code. With
+    # one block as long as the series the only resample is the series, so the interval is the point
+    # estimate. With blocks of 5 over 6 rounds there are exactly four equally likely resamples
+    # (block starts 0 or 1, the second block truncated to its first round), each holding 25% of the
+    # mass, so the 2.5th and 97.5th percentiles are the smallest and largest of the four. IID
+    # resampling of rounds gives about [-3, 13] here instead, so a switch to it fails both checks.
+    ref_a = np.array([3.0, 9.0, 4.0, 12.0, 5.0, 20.0])
+    ref_b = np.array([6.0, 2.0, 7.0, 1.0, 8.0, 3.0])
+    check(
+        "a block as long as the series gives the point estimate",
+        bootstrap_interval(ref_a, ref_b, 6, 500, 5) == (estimate(ref_a, ref_b), estimate(ref_a, ref_b)),
+    )
+    enumerated = [
+        estimate(ref_a[rows], ref_b[rows])
+        for rows in ([0, 1, 2, 3, 4, 0], [0, 1, 2, 3, 4, 1], [1, 2, 3, 4, 5, 0], [1, 2, 3, 4, 5, 1])
+    ]
+    check(
+        "blocks of 5 over 6 rounds span exactly the four enumerated resamples",
+        bootstrap_interval(ref_a, ref_b, 5, 4000, 5) == (min(enumerated), max(enumerated)) == (-1.5, 6.5),
+    )
+
     noisy_rng = np.random.default_rng(11)
     na, nb = noisy_rng.normal(100, 5, 300), noisy_rng.normal(100, 5, 300)
     check("same seed, same interval", bootstrap_interval(na, nb, 7, 300, 5) == bootstrap_interval(na, nb, 7, 300, 5))
@@ -424,11 +517,38 @@ def selftest():
         bad = os.path.join(directory, "bad.csv")
         with open(bad, "w", newline="", encoding="utf-8") as handle:
             handle.write("round,arm,position,elapsed_us\n0,x,0,1.0\n0,y,1,2.0\n1,x,0,3.0\n")
-        try:
-            load_rounds(bad)
-            check("a round missing an arm is rejected", False)
-        except ValueError:
-            check("a round missing an arm is rejected", True)
+        check("a round missing an arm is rejected", raises(lambda: load_rounds(bad)))
+
+        for label, value in (("negative", "-1.0"), ("NaN", "nan"), ("infinite", "inf")):
+            invalid = os.path.join(directory, f"{label}.csv")
+            with open(invalid, "w", newline="", encoding="utf-8") as handle:
+                handle.write(f"round,arm,position,elapsed_us\n0,x,0,{value}\n0,y,1,2.0\n")
+            check(f"a {label} sample is rejected", raises(lambda path=invalid: load_rounds(path)))
+
+        valid = os.path.join(directory, "valid.csv")
+        with open(valid, "w", newline="", encoding="utf-8") as handle:
+            handle.write("round,arm,position,elapsed_us\n")
+            for r in range(MIN_INTERVAL_ROUNDS):
+                handle.write(f"{r},x,0,{100 + r}.0\n{r},y,1,{101 + r}.0\n")
+
+        check("an arm compared with itself is refused", raises(lambda: analyze(valid, "x", "x", 25.0, 100, 1)))
+        check("an unknown arm is refused", raises(lambda: analyze(valid, "x", "z", 25.0, 100, 1)))
+        for bad_delta in (0.0, -1.0, float("nan"), float("inf")):
+            check(f"a bound of {bad_delta} is refused", raises(lambda d=bad_delta: analyze(valid, "x", "y", d, 100, 1)))
+        check("zero resamples are refused", raises(lambda: analyze(valid, "x", "y", 25.0, 0, 1)))
+        check("an observer self-comparison is refused", raises(lambda: observer(valid, "x", "x", [10], 10, 1)))
+        check("a plan self-comparison is refused", raises(lambda: plan(valid, "y", "y", 25.0, [500], 100, 1)))
+
+        few = os.path.join(directory, "few.csv")
+        with open(few, "w", newline="", encoding="utf-8") as handle:
+            handle.write("round,arm,position,elapsed_us\n0,x,0,1.0\n0,y,1,2.0\n")
+        check("too few rounds for an interval are refused", raises(lambda: analyze(few, "x", "y", 25.0, 100, 1)))
+
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            refused = main(["analyze", "--csv", valid, "--delta", "25", "--arm-a", "x", "--arm-b", "x"])
+            accepted = main(["analyze", "--csv", valid, "--delta", "25", "--arm-a", "x", "--arm-b", "y", "--resamples", "100"])
+        check("the command line refuses a self-comparison with exit code 2", refused == 2)
+        check("the command line accepts a valid comparison", accepted == 0)
 
     smoke = simulate(200, 10.0, math.log(1000.0), 0.1, 0.5, 5.0, 10, 100, 9, (0.0, 1.0, 3.0))
     check("simulate runs and returns rates", all(abs(sum(r["rates"].values()) - 1.0) < 1e-9 for r in smoke["rows"]))
@@ -491,6 +611,18 @@ def main(argv):
     p.add_argument("--seed", type=int, default=DEFAULT_SEED)
 
     args = parser.parse_args(argv)
+    try:
+        result = run(args)
+        text = json.dumps(result, indent=2, allow_nan=False)
+    except ValueError as error:
+        sys.stderr.write(f"error: {error}\n")
+        return 2
+
+    sys.stdout.write(text + "\n")
+    return 0
+
+
+def run(args):
     if args.command == "selftest":
         result = selftest()
     elif args.command == "analyze":
@@ -514,10 +646,7 @@ def main(argv):
         )
     else:
         result = observer(args.csv, args.arm_a, args.arm_b, args.q, args.draws, args.seed)
-
-    json.dump(result, sys.stdout, indent=2)
-    sys.stdout.write("\n")
-    return 0
+    return result
 
 
 if __name__ == "__main__":

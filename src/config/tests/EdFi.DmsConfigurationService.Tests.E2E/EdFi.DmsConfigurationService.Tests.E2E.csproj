@@ -46,6 +46,10 @@
             Include="..\..\backend\EdFi.DmsConfigurationService.Backend.Tests.Unit\TimingEvidenceRecorder.cs"
             Link="Timing\TimingEvidenceRecorder.cs"
         />
+        <Compile
+            Include="..\..\backend\EdFi.DmsConfigurationService.Backend.Tests.Unit\TokenEndpointTimingContract.cs"
+            Link="Timing\TokenEndpointTimingContract.cs"
+        />
     </ItemGroup>
     <ItemGroup>
         <Folder Include="Extensions\" />

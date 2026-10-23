@@ -18,13 +18,18 @@ namespace EdFi.DmsConfigurationService.Tests.E2E.Timing;
 /// to end over HTTP, with one keep-alive client and no concurrency. It records samples and asserts
 /// nothing about them: the offline analysis decides. Explicit, so it never runs in an ordinary E2E
 /// run; run it only in the documented controlled environment, against a freshly provisioned stack,
-/// with the <c>TIMING_EVIDENCE_*</c> settings and <c>TIMING_EVIDENCE_BACKEND</c> naming the
-/// database the stack uses.
+/// with the <c>TIMING_EVIDENCE_*</c> settings: <c>TIMING_EVIDENCE_BACKEND</c> names the database the
+/// stack uses, <c>TIMING_EVIDENCE_TARGET_BUILD</c> the build the stack runs (distinct from the
+/// collector's own <c>TIMING_EVIDENCE_COMMIT</c>), <c>TIMING_EVIDENCE_DECLARED_ITERATIONS</c> its
+/// configured hashing count, and <c>TIMING_EVIDENCE_CONTRACT</c> (<c>current</c>, the default, or
+/// <c>pre-fix</c>) the error contract that build answers with. These are declarations; the run
+/// submission verifies them against the deployment.
 /// <para>
 /// Arms: an absent client id; a client registered for the run, presented with a wrong secret; and
-/// an unapproved API client created for the run, presented with its own secret. Each request's time
-/// covers sending it and reading the whole response body. The clients the run creates are left in
-/// place.
+/// an unapproved API client created for the run, presented with its own secret. Each arm must
+/// receive the response its contract names (<see cref="TokenEndpointTimingContract"/>); anything
+/// else aborts the run. Each request's time covers building the form, sending it, reading the whole
+/// response body and disposing the response. The clients the run creates are left in place.
 /// </para>
 /// </summary>
 [TestFixture]
@@ -33,7 +38,6 @@ namespace EdFi.DmsConfigurationService.Tests.E2E.Timing;
 [NonParallelizable]
 public class Given_token_endpoint_requests_measured_for_timing_evidence
 {
-    private const string ExpectedError = "invalid_client. Invalid client or Invalid client credentials";
     private const string AdminScope = "edfi_admin_api/full_access";
 
     private HttpClient _client = null!;
@@ -55,10 +59,6 @@ public class Given_token_endpoint_requests_measured_for_timing_evidence
         using HttpResponseMessage response = await _client.PostAsync("connect/token", form);
         return (response.StatusCode, await response.Content.ReadAsStringAsync());
     }
-
-    private static bool IsInvalidClient((HttpStatusCode Status, string Body) response) =>
-        response.Status == HttpStatusCode.Unauthorized
-        && JsonNode.Parse(response.Body)?["errors"]?[0]?.GetValue<string>() == ExpectedError;
 
     private async Task<string> AdminTokenAsync()
     {
@@ -165,6 +165,11 @@ public class Given_token_endpoint_requests_measured_for_timing_evidence
     {
         _settings = TimingRunSettings.FromEnvironment();
         string backend = TimingRunSettings.Required("TIMING_EVIDENCE_BACKEND");
+        TokenEndpointContract contract = TokenEndpointTimingContract.Parse(
+            Environment.GetEnvironmentVariable("TIMING_EVIDENCE_CONTRACT")
+        );
+        string targetBuild = _settings.Declared("TIMING_EVIDENCE_TARGET_BUILD");
+        string declaredIterations = _settings.Declared("TIMING_EVIDENCE_DECLARED_ITERATIONS");
         string apiUrl = new PlaywrightContext().ApiUrl;
         _client = new HttpClient(
             new SocketsHttpHandler { PooledConnectionLifetime = Timeout.InfiniteTimeSpan }
@@ -187,14 +192,21 @@ public class Given_token_endpoint_requests_measured_for_timing_evidence
         string absentClientId = $"timing-absent-{runId}";
         string wrongSecret = $"Wr0ng!Timing{runId}";
 
+        Func<(HttpStatusCode Status, string Body), bool> Expects(string arm) =>
+            response => TokenEndpointTimingContract.IsExpected(contract, arm, response.Status, response.Body);
+
         TimingArm<(HttpStatusCode, string)>[] arms =
         [
-            new("absent", () => RequestTokenAsync(absentClientId, wrongSecret), IsInvalidClient),
-            new("wrong_secret", () => RequestTokenAsync(knownClientId, wrongSecret), IsInvalidClient),
+            new("absent", () => RequestTokenAsync(absentClientId, wrongSecret), Expects("absent")),
+            new(
+                TokenEndpointTimingContract.WrongSecretArm,
+                () => RequestTokenAsync(knownClientId, wrongSecret),
+                Expects(TokenEndpointTimingContract.WrongSecretArm)
+            ),
             new(
                 "unapproved_correct_secret",
                 () => RequestTokenAsync(unapprovedKey, unapprovedSecret),
-                IsInvalidClient
+                Expects("unapproved_correct_secret")
             ),
         ];
         _arms = arms.Length;
@@ -202,12 +214,14 @@ public class Given_token_endpoint_requests_measured_for_timing_evidence
         Dictionary<string, string> context = new()
         {
             ["backend"] = backend,
+            ["contract"] = TokenEndpointTimingContract.Name(contract),
+            ["target_build"] = targetBuild,
             ["api_authority"] = new Uri(apiUrl).Authority,
-            ["declared_iterations"] =
-                Environment.GetEnvironmentVariable("TIMING_EVIDENCE_DECLARED_ITERATIONS") ?? "not declared",
+            ["declared_iterations"] = declaredIterations,
             ["bound_us"] = "250",
             ["estimand"] = "median(absent) - median(wrong_secret)",
-            ["timed_span"] = "HttpClient.PostAsync through reading the whole response body",
+            ["timed_span"] =
+                "form construction, HttpClient.PostAsync, reading the whole response body, response disposal",
         };
 
         _files = await TimingEvidenceRecorder.RunAsync(_settings, $"endpoint-{backend}", context, arms);

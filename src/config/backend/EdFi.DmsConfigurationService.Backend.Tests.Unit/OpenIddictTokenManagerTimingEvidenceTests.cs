@@ -218,6 +218,7 @@ public class Given_in_process_token_requests_measured_for_timing_evidence
             ),
             ["estimand"] = "median(absent) - median(wrong_secret)",
             ["repository"] = "fixed-cost in-memory stub; no database",
+            ["target_build"] = "the collector's own build: the token manager under test is compiled into it",
         };
 
         _files = await TimingEvidenceRecorder.RunAsync(_settings, "in-process", context, arms);
