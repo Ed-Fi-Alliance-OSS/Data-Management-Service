@@ -21,14 +21,21 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 /// <para>
 /// Program.cs calls this before the DatabaseOptions gate, the token-revocation check and
 /// ReportInvalidConfiguration, so a host that goes on to run in configuration-reporting mode still logs
-/// the warning.
+/// the warning. That covers options-validation failures, which surface only when ReportInvalidConfiguration
+/// resolves the options after this call.
 /// </para>
 /// <para>
 /// The flag is read as one raw key and parsed with <see cref="bool.TryParse(string?, out bool)"/>, which
 /// accepts what the options binder accepts, rather than by binding <see cref="IdentitySettings"/>, so it
-/// is available even when another IdentitySettings value is invalid and nothing here can throw on a
-/// configuration value. A value that does not parse logs a notice and skips the check; the binder still
-/// reports it where the section is bound.
+/// is available even when another IdentitySettings value fails validation and nothing here can throw on a
+/// configuration value. A value that does not parse logs a notice and skips the check.
+/// </para>
+/// <para>
+/// During host startup that notice is not guaranteed to be reached: AddServices binds IdentitySettings
+/// (ConfigureIdentityProvider) before Program.cs calls this, and a value the binder cannot convert, the
+/// flag included, throws there and aborts startup before this runs. The unreadable-value branch is a
+/// defensive guard for direct callers, not a startup diagnostic, and that earlier binding failure never
+/// reaches configuration-reporting mode.
 /// </para>
 /// </remarks>
 internal static class RequireHttpsMetadataStartupWarning
