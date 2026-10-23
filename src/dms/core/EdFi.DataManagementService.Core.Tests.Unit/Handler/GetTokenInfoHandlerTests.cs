@@ -417,6 +417,23 @@ public class Given_GetTokenInfoHandler
     }
 
     [Test]
+    public async Task It_marks_the_successful_response_as_no_store()
+    {
+        var clientAuthorizations = CreateClientAuthorizations([]);
+        ConfigureJwtValidation(clientAuthorizations);
+
+        RequestInfo requestInfo = CreateRequestInfo(
+            clientAuthorizations,
+            CreateScopedServiceProvider(relationalLookup: null)
+        );
+
+        await Execute(requestInfo);
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(200);
+        requestInfo.FrontendResponse.Headers["Cache-Control"].Should().Be("no-store");
+    }
+
+    [Test]
     public async Task It_resolves_mapping_set_for_relational_lookup()
     {
         var relationalLookup = A.Fake<IRelationalTokenInfoEducationOrganizationLookup>();

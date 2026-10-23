@@ -144,6 +144,10 @@ app.UseRouting();
 // exception middleware can log it, endpoint parameter binding included (DMS-1327 D-15, D-17).
 app.UseMiddleware<ExceptionContentBoundaryMiddleware>();
 
+// Marks OAuth and authorization-required responses no-store. Placed right after routing, so the endpoint is
+// known and the authentication and authorization short-circuits further down are covered.
+app.UseMiddleware<ResponseCachePolicyMiddleware>();
+
 // Shape framework-generated bodiless error responses into the Ed-Fi contract. Placed after routing
 // but before CORS/authentication/authorization so it wraps the auth short-circuits and the endpoint
 // terminal, independent of route and authentication scheme.
