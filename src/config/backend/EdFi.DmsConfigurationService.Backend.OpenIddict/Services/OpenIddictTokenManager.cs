@@ -672,7 +672,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         /// <see cref="InvalidClientError"/> as the error code: an unknown client, a wrong secret and
         /// an unapproved client are reported identically, so the code does not reveal whether the
         /// client id exists. An unknown client's secret is still verified, against a placeholder
-        /// hash, before it is rejected, so the response time does not reveal it either.
+        /// hash, so its rejection does not return before a secret verification has been performed.
         /// </summary>
         /// <param name="preserveVerificationFailures">
         /// <c>false</c> for the token endpoint, which keeps the hasher's established behaviour of
@@ -723,7 +723,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         /// answer is the same either way. Without a placeholder, because the hasher could not
         /// produce one, the client is rejected without the verification, which leaves the timing
         /// difference until a later request generates one. Cancellation is not absorbed: it reaches
-        /// the caller's own handling, as it would from a known client's verification.
+        /// the caller's own handling, as it would from a known client's verification, but as a new
+        /// exception with a fixed message, the original token and no inner exception: the
+        /// hasher's own exception may carry the secret it was given, and the caller's handling
+        /// logs and returns whatever exception reaches it.
         /// </para>
         /// </summary>
         private async Task VerifyAgainstPlaceholderAsync(string presentedSecret)
@@ -732,6 +735,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
             try
             {
                 placeholderHash = await GetPlaceholderHashAsync();
+            }
+            catch (OperationCanceledException ex)
+            {
+                throw SanitizedCancellation(ex);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -743,11 +750,19 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
             {
                 _ = await _secretHasher.VerifySecretAsync(presentedSecret, placeholderHash);
             }
+            catch (OperationCanceledException ex)
+            {
+                throw SanitizedCancellation(ex);
+            }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 LogPlaceholderVerificationFailure(ex);
             }
         }
+
+        private static OperationCanceledException SanitizedCancellation(
+            OperationCanceledException exception
+        ) => new("The secret verification for an unknown client was canceled.", exception.CancellationToken);
 
         /// <summary>
         /// Returns this manager's placeholder hash, generating it on first use. The holder is
@@ -759,17 +774,15 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         /// </summary>
         private Task<string> GetPlaceholderHashAsync()
         {
-            Task<string>? published = Volatile.Read(ref _placeholderHash);
-            if (published is not null)
+            if (Volatile.Read(ref _placeholderHash) is { } published)
             {
                 return published;
             }
 
             TaskCompletionSource<string> holder = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            published = Interlocked.CompareExchange(ref _placeholderHash, holder.Task, null);
-            if (published is not null)
+            if (Interlocked.CompareExchange(ref _placeholderHash, holder.Task, null) is { } winner)
             {
-                return published;
+                return winner;
             }
 
             _ = GeneratePlaceholderHashAsync(holder);

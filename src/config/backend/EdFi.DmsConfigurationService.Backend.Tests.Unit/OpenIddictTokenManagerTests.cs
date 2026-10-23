@@ -2785,9 +2785,9 @@ public class OpenIddictTokenManagerTests
         [Test]
         public void It_attaches_no_exception_to_the_log() =>
             Fake.GetCalls(_logger)
-                .Where(call => call.Method.Name == nameof(ILogger.Log))
+                .Where(call => call.Method.Name == nameof(ILogger.Log) && call.Arguments[3] is not null)
                 .Should()
-                .OnlyContain(call => call.Arguments[3] == null);
+                .BeEmpty();
     }
 
     // Cancellation is not absorbed by the placeholder verification: an unknown client's request
@@ -2916,6 +2916,138 @@ public class OpenIddictTokenManagerTests
         [Test]
         public async Task It_propagates_the_cancellation() =>
             await _act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    // A cancellation from a placeholder operation keeps its classification, but the hasher's own
+    // exception never reaches the token endpoint's log or result: a replacement hasher's message or
+    // inner exceptions may carry the secret it was given, and the endpoint's error handling logs
+    // and returns whatever exception reaches it.
+    [TestFixture("generation")]
+    [TestFixture("verification")]
+    public class Given_GetAccessTokenAsync_WhenAPlaceholderOperationIsCancelledWithSecretsInItsException(
+        string stage
+    ) : OpenIddictTokenManagerTests
+    {
+        private ILogger<OpenIddictTokenManager> _logger = null!;
+        private TokenResult _result = null!;
+        private string _generatedSecret = string.Empty;
+
+        private static OperationCanceledException SecretBearingCancellation(string secrets) =>
+            new(
+                $"cancelled while holding {secrets}",
+                new InvalidOperationException($"inner detail {secrets}")
+            );
+
+        private string[] Sentinels() =>
+            stage == "generation"
+                ? [_generatedSecret, PresentedSecret]
+                : [PresentedSecret, DefaultPlaceholderHash];
+
+        [SetUp]
+        public async Task Act()
+        {
+            _logger = A.Fake<ILogger<OpenIddictTokenManager>>();
+            StubUnknownClient();
+            if (stage == "generation")
+            {
+                A.CallTo(() => _secretHasher.HashSecretAsync(A<string>._))
+                    .ReturnsLazily(
+                        (string secret) =>
+                        {
+                            _generatedSecret = secret;
+                            return Task.FromException<string>(SecretBearingCancellation(secret));
+                        }
+                    );
+            }
+            else
+            {
+                A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._))
+                    .ReturnsLazily(
+                        (string presented, string hashed) =>
+                            Task.FromException<bool>(SecretBearingCancellation($"{presented} {hashed}"))
+                    );
+            }
+
+            _result = await NewTokenManager(new IdentityOptions(), _logger)
+                .GetAccessTokenAsync(UnknownClientCredentials());
+        }
+
+        [Test]
+        public void It_plants_non_empty_sentinels() => Sentinels().Should().OnlyContain(s => s.Length > 0);
+
+        [Test]
+        public void It_still_returns_an_unknown_failure() =>
+            _result.Should().BeOfType<TokenResult.FailureUnknown>();
+
+        [Test]
+        public void It_keeps_the_secrets_out_of_the_failure_detail() =>
+            _result
+                .Should()
+                .BeOfType<TokenResult.FailureUnknown>()
+                .Which.FailureMessage.Should()
+                .NotContainAny(Sentinels());
+
+        [Test]
+        public void It_keeps_the_secrets_out_of_every_log_message() =>
+            LogMessagesAt(_logger, LogLevel.Warning)
+                .Concat(LogMessagesAt(_logger, LogLevel.Error))
+                .Should()
+                .OnlyContain(message => !Sentinels().Any(message.Contains));
+
+        [Test]
+        public void It_keeps_the_secrets_out_of_every_logged_exception() =>
+            Fake.GetCalls(_logger)
+                .Where(call => call.Method.Name == nameof(ILogger.Log))
+                .Select(call => call.Arguments[3] as Exception)
+                .OfType<Exception>()
+                .Should()
+                .OnlyContain(exception => !Sentinels().Any(exception.ToString().Contains));
+    }
+
+    [TestFixture]
+    public class Given_RevokeTokenAsync_WhenAnUnknownCallersCancellationCarriesSecrets
+        : OpenIddictTokenManagerTests
+    {
+        private CancellationToken _token;
+        private Func<Task> _act = null!;
+
+        [SetUp]
+        public void Arrange()
+        {
+            using var cancellation = new CancellationTokenSource();
+            cancellation.Cancel();
+            _token = cancellation.Token;
+            CancellationToken token = _token;
+            StubUnknownClient();
+            A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._))
+                .ReturnsLazily(
+                    (string presented, string hashed) =>
+                        Task.FromException<bool>(
+                            new OperationCanceledException(
+                                $"cancelled while holding {presented} {hashed}",
+                                new InvalidOperationException($"inner detail {presented}"),
+                                token
+                            )
+                        )
+                );
+
+            _act = () => CreateConfiguredTokenManager().RevokeTokenAsync(UnknownCallerRevocation(), token);
+        }
+
+        private async Task<OperationCanceledException> Thrown() =>
+            (await _act.Should().ThrowAsync<OperationCanceledException>()).Which;
+
+        [Test]
+        public async Task It_propagates_a_cancellation_for_the_callers_token() =>
+            (await Thrown()).CancellationToken.Should().Be(_token);
+
+        [Test]
+        public async Task It_does_not_carry_the_hashers_exception() =>
+            (await Thrown()).InnerException.Should().BeNull();
+
+        [Test]
+        public async Task It_keeps_the_secrets_out_of_the_message() =>
+            (await Thrown()).Message.Should().NotContainAny(PresentedSecret, DefaultPlaceholderHash);
     }
 
     [TestFixture]
