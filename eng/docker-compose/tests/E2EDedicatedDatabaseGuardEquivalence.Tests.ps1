@@ -11,11 +11,13 @@
 # call it through InModuleScope.
 #
 # Each row is one of four kinds. The baseline is the guard as it was before the behaviors these tests
-# cover: it compared with bare -ieq, had no domain or length check, ran each connection-string value
-# through the dotenv conversion again, and its provisioning reader kept an 'export ' prefix in the key.
+# cover: it compared with bare -ieq, had no domain or length check, ran the whole resolved connection
+# string and then each value parsed from it through the dotenv conversion again, and its provisioning
+# reader kept an 'export ' prefix in the key.
 # - Regression: the row fails if one named behavior is reverted to that baseline. Contexts say which:
 #   the comparer reduced to -ieq (the context named for what -ieq misses), the domain check removed,
-#   the length bound removed, the per-value conversion restored, or the export prefix kept.
+#   the length bound removed, the whole-string or per-value conversion restored, or the export prefix
+#   kept.
 # - Preservation: the baseline already rejected the configuration, and the row keeps that verdict
 #   (the contexts named for verdicts the guard already gives).
 # - Positive control: an accepted configuration. It passes with or without the fix and is not
@@ -312,7 +314,9 @@ BeforeDiscovery {
     # Kind follows the file header, judged with only the per-value dotenv conversion restored. With it,
     # the guard accepted the two regression rows, because the conversion turned 'edfi$dms' into 'edfi'
     # and 'other #x' into 'other'; it still rejected every preservation row, some with another
-    # diagnostic, and those rows then fail only their Candidates assertion. The in-domain rows are 63
+    # diagnostic, and those rows then fail only their Candidates assertion. The full-width U+FF45 row
+    # is judged against the domain check instead: the conversion leaves it unchanged, -ieq calls it
+    # distinct from 'edfi_dms', and only the domain check rejects it. The in-domain rows are 63
     # characters long, the longest name the guard accepts.
     $inDomainName = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_"
     $script:connectionStringStageSpellings = @(
@@ -333,7 +337,7 @@ BeforeDiscovery {
         @{ Label = "unquoted Database of every in-domain character"; Raw = "Server=s;Database=$inDomainName;User Id=sa"; Parsed = @($inDomainName); Verdict = "Accepted"; Kind = "positive control" }
         @{ Label = "double-quoted DB of every in-domain character"; Raw = "Host=h;DB=`"$inDomainName`";Username=u"; Parsed = @($inDomainName); Verdict = "Accepted"; Kind = "positive control" }
         @{ Label = "single-quoted Initial Catalog of every in-domain character"; Raw = "Server=s;Initial Catalog='$inDomainName';User Id=sa"; Parsed = @($inDomainName); Verdict = "Accepted"; Kind = "positive control" }
-        @{ Label = "double-quoted Database with full-width U+FF45"; Raw = "Server=s;Database=`"$([char]0xFF45)dfi_dms`";User Id=sa"; Parsed = @("$([char]0xFF45)dfi_dms"); Verdict = "Domain"; Kind = "preservation" }
+        @{ Label = "double-quoted Database with full-width U+FF45"; Raw = "Server=s;Database=`"$([char]0xFF45)dfi_dms`";User Id=sa"; Parsed = @("$([char]0xFF45)dfi_dms"); Verdict = "Domain"; Kind = "regression: domain check removed" }
         @{ Label = "Database 'first' then Initial Catalog 'edfi_dms', which SqlClient uses"; Raw = "Server=s;Database=first;Initial Catalog=edfi_dms;User Id=sa"; Parsed = @("first", "edfi_dms"); Verdict = "Collision"; Kind = "preservation" }
         @{ Label = "Database 'edfi_dms' then DB 'other', which Npgsql uses"; Raw = "Host=h;Database=edfi_dms;DB=other;Username=u"; Parsed = @("edfi_dms", "other"); Verdict = "Collision"; Kind = "preservation" }
     )
@@ -440,10 +444,14 @@ Describe "Dedicated E2E database guard" {
 
         $script:removedTrailingCharacters = "U+0020, U+3000, U+0009, U+000A, U+000D and U+000C"
 
+        function Get-ProtectedNameSource {
+            param([string]$Key)
+            if ($Key -in @("POSTGRES_DB_NAME", "MSSQL_DB_NAME")) { "the protected setting $Key" } else { "the connection-string database name from $Key" }
+        }
+
         function Get-DomainDiagnostic {
             param([string]$Key)
-            $source = if ($Key -in @("POSTGRES_DB_NAME", "MSSQL_DB_NAME")) { $Key } else { "the database name from $Key" }
-            "E2E database safety check cannot prove $source in '$script:environmentFileLabel' dedicated: after trailing $script:removedTrailingCharacters are removed it contains characters outside the guard's supported comparison domain (ASCII letters, digits, underscore); refusing a destructive reset. The value is withheld."
+            "E2E database safety check refuses $(Get-ProtectedNameSource -Key $Key) in '$script:environmentFileLabel' as an unsupported protected database name: after trailing $script:removedTrailingCharacters are removed, a protected name must be 1 to 63 ASCII letters, digits or underscores, and this one contains another character; refusing a destructive reset. The value is withheld."
         }
 
         function Get-E2EDomainDiagnostic {
@@ -453,8 +461,7 @@ Describe "Dedicated E2E database guard" {
 
         function Get-LengthDiagnostic {
             param([string]$Key)
-            $source = if ($Key -in @("POSTGRES_DB_NAME", "MSSQL_DB_NAME")) { $Key } else { "the database name from $Key" }
-            "E2E database safety check cannot prove $source in '$script:environmentFileLabel' dedicated: after trailing $script:removedTrailingCharacters are removed it is longer than 63 characters, and PostgreSQL keeps only the first 63 bytes of a database name; refusing a destructive reset. The value is withheld."
+            "E2E database safety check refuses $(Get-ProtectedNameSource -Key $Key) in '$script:environmentFileLabel' as an unsupported protected database name: after trailing $script:removedTrailingCharacters are removed, a protected name must be 1 to 63 ASCII letters, digits or underscores, and this one is longer than 63 characters (PostgreSQL keeps only the first 63 bytes of a database name); refusing a destructive reset. The value is withheld."
         }
 
         function Get-E2ELengthDiagnostic {
@@ -486,7 +493,7 @@ Describe "Dedicated E2E database guard" {
             try {
                 $environmentValues = @{ $Key = $RawValue }
                 $connectionString = Get-ComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name $Key
-                Get-DatabaseNameFromConnectionString -ConnectionString $connectionString -EnvironmentValues $environmentValues
+                Get-DatabaseNameFromConnectionString -ConnectionString $connectionString
             }
             finally {
                 foreach ($savedVariable in $savedVariables) {
@@ -518,7 +525,7 @@ Describe "Dedicated E2E database guard" {
                             }
                         }
                     )
-                    Candidates = @(Get-DatabaseNameFromConnectionString -ConnectionString $connectionString -EnvironmentValues $EnvironmentValues)
+                    Candidates = @(Get-DatabaseNameFromConnectionString -ConnectionString $connectionString)
                 }
             }
             finally {
@@ -663,6 +670,12 @@ Describe "Dedicated E2E database guard" {
     # Compose keeps a ' #' inside a quoted value, so the resolved string still carries every keyword
     # after it. The extractor parses that string as given; converting it again as a dotenv value would
     # read ' #' as a comment and drop the later Initial Catalog or DB the provider uses.
+    # The two "keeps" tests are regression rows for the whole-string conversion: restored, it ends the
+    # string at ' #', only 'x' or 'safe' remains, and the guard accepts. With only the per-value
+    # conversion restored, the 'Database=x #y' rows still reject but fail their candidate assertion
+    # ('x' for 'x #y'), and the password rows pass. The "accepts" tests and the unquoted rejection are
+    # positive controls and a preservation row; the password control also fails its candidate
+    # assertion under the whole-string conversion, while its verdict holds.
     Context "connection-string keys: a ' #' that Compose keeps inside a quoted value" {
         It "keeps the later <Alias> = 'edfi_dms' after 'Database=x #y' in <Key>, <Quote>-quoted" -ForEach @(
             foreach ($key in @("DATABASE_CONNECTION_STRING_ADMIN", "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING")) {
@@ -979,6 +992,96 @@ Describe "Dedicated E2E database guard" {
         }
     }
 
+    # Get-EnvironmentValueMap keeps the last value of each name, compared case-insensitively, while
+    # Compose resolves the file line by line with case-sensitive names. Each refused file below is one
+    # the guard accepts from that map, so the refusals are regression rows for
+    # Assert-UnambiguousProtectedDeclaration; the accepted files are positive controls.
+    Context "provisioning reader: repeated or case-variant declarations (regression: ambiguity check removed)" {
+        BeforeAll {
+            $script:declarationHelperNames = @("PRIMARY_NAME", "LOG_LEVEL")
+
+            function Write-DeclarationFile {
+                param([string[]]$Lines)
+                $environmentFile = Join-Path $TestDrive "declarations-$([guid]::NewGuid().ToString('N')).env"
+                [System.IO.File]::WriteAllLines($environmentFile, $Lines, [System.Text.UTF8Encoding]::new($false))
+                return $environmentFile
+            }
+
+            function Invoke-IsolatedDeclarationCheck {
+                param([string]$EnvironmentFile, [hashtable]$AmbientValues = @{})
+
+                $isolatedNames = @($script:protectedKeys + $script:declarationHelperNames + @($AmbientValues.Keys)) | Select-Object -Unique
+                $savedVariables = foreach ($name in $isolatedNames) {
+                    Save-AmbientVariable -Name $name
+                    Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+                }
+
+                try {
+                    foreach ($name in $AmbientValues.Keys) {
+                        [System.Environment]::SetEnvironmentVariable($name, $AmbientValues[$name])
+                    }
+
+                    Assert-UnambiguousProtectedDeclaration -EnvironmentFilePath $EnvironmentFile
+                }
+                finally {
+                    foreach ($savedVariable in $savedVariables) {
+                        Restore-AmbientVariable -Saved $savedVariable
+                    }
+                }
+            }
+        }
+
+        It "refuses a file where <Label>" -ForEach @(
+            @{
+                Label = "a reference freezes 'EDFI_DMS' before an exported MSSQL_DB_NAME redeclares it"
+                Lines = @('MSSQL_DB_NAME=EDFI_DMS', 'DATABASE_CONNECTION_STRING_ADMIN=Server=s;Database=${MSSQL_DB_NAME};User Id=sa', 'export MSSQL_DB_NAME=edfi_dms_primary')
+                Name = "MSSQL_DB_NAME"
+                Locations = "MSSQL_DB_NAME on line 1, MSSQL_DB_NAME on line 3"
+            }
+            @{
+                Label = "a lowercase postgres_db_name follows POSTGRES_DB_NAME 'edfi_dms'"
+                Lines = @('POSTGRES_DB_NAME=edfi_dms', 'postgres_db_name=edfi_dms_primary')
+                Name = "POSTGRES_DB_NAME"
+                Locations = "POSTGRES_DB_NAME on line 1, postgres_db_name on line 2"
+            }
+            @{
+                Label = "a name a connection string references is declared twice"
+                Lines = @('PRIMARY_NAME=edfi_dms', 'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=h;database=${PRIMARY_NAME};username=u', 'PRIMARY_NAME=edfi_dms_primary')
+                Name = "PRIMARY_NAME"
+                Locations = "PRIMARY_NAME on line 1, PRIMARY_NAME on line 3"
+            }
+        ) {
+            $environmentFile = Write-DeclarationFile -Lines $Lines
+
+            { Invoke-IsolatedGuard -EnvironmentValues (Get-EnvironmentValueMap -EnvironmentFilePath $environmentFile) -HelperVariables $script:declarationHelperNames } |
+                Should -Not -Throw -Because "the guard reads the last value from the collapsed map"
+            { Invoke-IsolatedDeclarationCheck -EnvironmentFile $environmentFile } |
+                Should -Throw -ExpectedMessage "E2E database safety check: '$environmentFile' declares $Name more than once or in more than one letter case ($Locations), and a protected database setting depends on it. Docker Compose resolves the file line by line with case-sensitive names, so the value it uses can differ from the one this check compares; refusing a destructive reset. Keep a single declaration."
+        }
+
+        It "accepts a file where <Label>" -ForEach @(
+            @{
+                Label = "each protected name is declared once, exported and quoted"
+                Lines = @("export POSTGRES_DB_NAME='edfi_dms_primary '", 'DATABASE_CONNECTION_STRING_ADMIN="host=h;database=${POSTGRES_DB_NAME};username=u"', 'MSSQL_DB_NAME="edfi_dms_mssql"')
+                AmbientValues = @{}
+            }
+            @{
+                Label = "only a name no protected setting depends on is declared twice"
+                Lines = @('LOG_LEVEL=Debug', 'POSTGRES_DB_NAME=edfi_dms_primary', 'LOG_LEVEL=Information')
+                AmbientValues = @{}
+            }
+            @{
+                Label = "the ambient environment supplies the repeated MSSQL_DB_NAME"
+                Lines = @('MSSQL_DB_NAME=EDFI_DMS', 'DATABASE_CONNECTION_STRING_ADMIN=Server=s;Database=${MSSQL_DB_NAME};User Id=sa', 'MSSQL_DB_NAME=edfi_dms_primary')
+                AmbientValues = @{ MSSQL_DB_NAME = "edfi_dms_ambient" }
+            }
+        ) {
+            $environmentFile = Write-DeclarationFile -Lines $Lines
+
+            { Invoke-IsolatedDeclarationCheck -EnvironmentFile $environmentFile -AmbientValues $AmbientValues } | Should -Not -Throw
+        }
+    }
+
     # -ieq folds U+212A to k only when the process has culture data. The globalization mode is fixed
     # when the runtime starts, so each row runs the guard in a child pwsh launched with
     # DOTNET_SYSTEM_GLOBALIZATION_INVARIANT set (or removed) beforehand. The child records whether -ieq
@@ -1145,13 +1248,17 @@ catch {
 # a JSON record of the outcome and both logs, which these tests assert on:
 # - env-utility.psm1 (stub): Resolve-DatabaseEngineEnvironmentFile returns the base file;
 #   Test-NativeCommandWithTimeout logs the readiness probe and succeeds, so readiness ends on the
-#   first probe.
+#   first probe. The real Get-DotenvLastDeclaration and Get-DotenvDependencyClosure are copied in.
 # - schema-package-utility.psm1 (stub): Resolve-SchemaFilesFromEnvironmentFile logs and throws a
 #   sentinel, so a control run stops before any reset.
 # - docker and dotnet: child functions that log to the destructive log and throw.
-# The collision runs are regression rows: they fail if the guard compares with -ieq alone or runs
-# after readiness, and the exported runs also if Get-EnvironmentValueMap keeps the export prefix. The
-# control runs are positive controls; they show the harness reaches readiness and schema resolution.
+# The collision runs are regression rows. Every one fails if the guard runs after readiness. The
+# plain runs and the exported PostgreSQL run fail if the guard compares with -ieq alone; the exported
+# SQL Server 'EDFI_DMS' differs from 'edfi_dms' only by case, which -ieq already rejects. The exported
+# runs fail if Get-EnvironmentValueMap keeps the export prefix. The ambiguous-declaration runs are
+# regression rows for Assert-UnambiguousProtectedDeclaration: without it the guard reads the last,
+# distinct value and the run reaches schema resolution. The control runs are positive controls; they
+# show the harness reaches readiness and schema resolution.
 Describe "Dedicated E2E database guard in the provisioning flow" {
     BeforeAll {
         $sourceDockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
@@ -1163,6 +1270,18 @@ Describe "Dedicated E2E database guard in the provisioning flow" {
             Copy-Item -LiteralPath (Join-Path $sourceDockerComposeRoot $fileName) -Destination (Join-Path $flowDockerComposeRoot $fileName)
         }
         $script:provisionScript = Join-Path $flowDockerComposeRoot "provision-e2e-database.ps1"
+
+        # The ambiguous-declaration check walks dependencies with these, so the stub carries the real
+        # definitions rather than stand-ins.
+        $environmentUtilityAst = [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $sourceDockerComposeRoot "env-utility.psm1"), [ref]$null, [ref]$null)
+        $realEnvironmentFunctions = @(
+            $environmentUtilityAst.FindAll({
+                    param($node)
+                    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                        $node.Name -in @("Get-DotenvLastDeclaration", "Get-DotenvDependencyClosure")
+                }, $false) | ForEach-Object { $_.Extent.Text }
+        ) -join "`n`n"
 
         @'
 function Resolve-DatabaseEngineEnvironmentFile {
@@ -1176,8 +1295,11 @@ function Test-NativeCommandWithTimeout {
     return $true
 }
 
-Export-ModuleMember -Function Resolve-DatabaseEngineEnvironmentFile, Test-NativeCommandWithTimeout
-'@ | Set-Content -LiteralPath (Join-Path $flowDockerComposeRoot "env-utility.psm1") -Encoding utf8
+#REAL-FUNCTIONS#
+
+Export-ModuleMember -Function Resolve-DatabaseEngineEnvironmentFile, Test-NativeCommandWithTimeout, Get-DotenvLastDeclaration, Get-DotenvDependencyClosure
+'@.Replace("#REAL-FUNCTIONS#", $realEnvironmentFunctions) |
+            Set-Content -LiteralPath (Join-Path $flowDockerComposeRoot "env-utility.psm1") -Encoding utf8
 
         @'
 function Resolve-SchemaFilesFromEnvironmentFile {
@@ -1301,10 +1423,31 @@ catch {
         $record.DestructiveLogExists | Should -BeFalse -Because "no docker or dotnet command may run after a rejection"
     }
 
+    It "stops a <Engine> run whose <Name> is <Ambiguity> before any readiness probe, schema resolution or reset" -ForEach @(
+        @{
+            Engine = "mssql"; Name = "MSSQL_DB_NAME"; Ambiguity = "redeclared by an export after a reference froze 'EDFI_DMS'"
+            Lines = @('MSSQL_PORT=1433', 'MSSQL_SA_PASSWORD=guard-flow-pass', 'MSSQL_DB_NAME=EDFI_DMS', 'DATABASE_CONNECTION_STRING_ADMIN=Server=s;Database=${MSSQL_DB_NAME};User Id=sa', 'export MSSQL_DB_NAME=edfi_dms_primary')
+            Locations = "MSSQL_DB_NAME on line 3, MSSQL_DB_NAME on line 5"
+        }
+        @{
+            Engine = "postgresql"; Name = "POSTGRES_DB_NAME"; Ambiguity = "redeclared in lowercase after 'edfi_dms'"
+            Lines = @('POSTGRES_PORT=5432', 'POSTGRES_PASSWORD=guard-flow-pass', 'POSTGRES_DB_NAME=edfi_dms', 'postgres_db_name=edfi_dms_primary')
+            Locations = "POSTGRES_DB_NAME on line 3, postgres_db_name on line 4"
+        }
+    ) {
+        $record = Invoke-ProvisionFlow -Name "ambiguous-$Engine" -DatabaseEngine $Engine -EnvironmentLines $Lines
+
+        $record.Outcome | Should -Be "threw"
+        $record.Message | Should -BeExactly "E2E database safety check: '$($record.EnvironmentFile)' declares $Name more than once or in more than one letter case ($Locations), and a protected database setting depends on it. Docker Compose resolves the file line by line with case-sensitive names, so the value it uses can differ from the one this check compares; refusing a destructive reset. Keep a single declaration."
+        $record.BoundaryLogExists | Should -BeFalse -Because "the refusal must come before the readiness probe and schema resolution"
+        $record.DestructiveLogExists | Should -BeFalse -Because "no docker or dotnet command may run after a refusal"
+    }
+
     It "lets a <Engine> run with a distinct <Spelling> <Key> reach readiness and schema resolution, then stop before reset" -ForEach @(
         @{ Engine = "postgresql"; Key = "POSTGRES_DB_NAME"; Spelling = "plain"; Lines = @("POSTGRES_PORT=5432", "POSTGRES_PASSWORD=guard-flow-pass", "POSTGRES_DB_NAME='edfi_dms_primary '") }
         @{ Engine = "mssql"; Key = "MSSQL_DB_NAME"; Spelling = "plain"; Lines = @("MSSQL_PORT=1433", "MSSQL_SA_PASSWORD=guard-flow-pass", "MSSQL_DB_NAME=`"EDFI_DMS_PRIMARY$([char]0x3000)`"") }
         @{ Engine = "postgresql"; Key = "POSTGRES_DB_NAME"; Spelling = "exported"; Lines = @("POSTGRES_PORT=5432", "POSTGRES_PASSWORD=guard-flow-pass", "export POSTGRES_DB_NAME='edfi_dms_primary '") }
+        @{ Engine = "postgresql"; Key = "POSTGRES_DB_NAME"; Spelling = "referenced"; Lines = @('LOG_LEVEL=Debug', 'POSTGRES_PORT=5432', 'POSTGRES_PASSWORD=guard-flow-pass', 'POSTGRES_DB_NAME=edfi_dms_primary', 'DATABASE_CONNECTION_STRING_ADMIN=host=h;database=${POSTGRES_DB_NAME};username=u', 'LOG_LEVEL=Information') }
     ) {
         $record = Invoke-ProvisionFlow -Name "control-$Spelling-$Engine" -DatabaseEngine $Engine -EnvironmentLines $Lines
 

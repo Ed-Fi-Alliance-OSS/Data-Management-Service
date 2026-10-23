@@ -147,6 +147,17 @@ provisioning, on either engine, because the check cannot compare it reliably. Th
 exists because PostgreSQL keeps only the first 63 bytes of a database name, so two longer names
 that share their first 63 characters are one PostgreSQL database. Connection-string values are
 checked as the connection-string parser reads them, without env-file rules applied a second time.
+Provisioning also refuses an environment file that declares a protected key, or a name one of
+them references, more than once or in more than one letter case, because Compose could then use a
+different value than the one checked.
+
+The check covers only protected keys set in the environment file or the shell. When a key is
+absent, Compose can still give a container a database name the check never sees: `postgresql.yml`
+defaults `POSTGRES_DB_NAME` to `edfi_datamanagementservice`, and without
+`CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING` the Configuration Service builds its connection
+from `CONFIGURATION_SERVICE_DATABASE_NAME` or `POSTGRES_DB_NAME`. Declare the engine's database-name
+key and both connection strings in any environment file used for E2E provisioning, especially when
+running `provision-e2e-database.ps1` directly.
 
 If DMS starts before provisioning has run (or against a database missing
 `dms.EffectiveSchema`), DMS will start successfully but requests to the

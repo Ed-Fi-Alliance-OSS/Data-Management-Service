@@ -119,11 +119,47 @@ function Get-EnvironmentValueMap {
 
         # Compose accepts an optional `export ` prefix, so the key is stored without it, as
         # ReadValuesFromEnvFile stores it; a later declaration of the same key still wins.
+        # Assert-UnambiguousProtectedDeclaration refuses a file where that collapse could change a
+        # protected value.
         $key = [regex]::Replace($line.Substring(0, $separatorIndex).Trim(), '^export[ \t]+', '')
         $environmentValues[$key] = $line.Substring($separatorIndex + 1).Trim()
     }
 
     return $environmentValues
+}
+
+function Assert-UnambiguousProtectedDeclaration {
+    param([string]$EnvironmentFilePath)
+
+    # Get-EnvironmentValueMap keeps the last value of each name, compared case-insensitively. Docker
+    # Compose resolves the file line by line with case-sensitive names, so a reference between two
+    # declarations keeps the earlier value, and 'mssql_db_name' is not MSSQL_DB_NAME on Linux. When a
+    # protected setting depends on a name declared twice or in two letter cases, the dedicated-E2E
+    # guard could compare a value Compose never used, so the file is refused. Only those names are
+    # refused; this does not make the map a model of sequential resolution. A name the ambient
+    # environment supplies is skipped: Compose uses the ambient value, so its file declarations are
+    # inert.
+    $evaluation = Resolve-DotenvFileSequentially -Path $EnvironmentFilePath
+    $dependencies = Get-DotenvDependencyClosure -Evaluation $evaluation -RootKey @(
+        "POSTGRES_DB_NAME",
+        "MSSQL_DB_NAME",
+        "DATABASE_CONNECTION_STRING_ADMIN",
+        "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"
+    )
+
+    foreach ($name in $dependencies) {
+        if ($null -ne [System.Environment]::GetEnvironmentVariable($name)) {
+            continue
+        }
+
+        $declarations = @($evaluation.Declarations | Where-Object {
+                [string]::Equals($_.Key, $name, [System.StringComparison]::OrdinalIgnoreCase)
+            })
+        if ($declarations.Count -gt 1) {
+            $locations = ($declarations | ForEach-Object { "$($_.Key) on line $($_.LineIndex + 1)" }) -join ", "
+            throw "E2E database safety check: '$EnvironmentFilePath' declares $name more than once or in more than one letter case ($locations), and a protected database setting depends on it. Docker Compose resolves the file line by line with case-sensitive names, so the value it uses can differ from the one this check compares; refusing a destructive reset. Keep a single declaration."
+        }
+    }
 }
 
 function Get-RequiredEnvValue {
@@ -326,6 +362,7 @@ $environmentFilePath = Resolve-DatabaseEngineEnvironmentFile `
     -BaseEnvironmentFile $environmentFilePath `
     -DockerComposeRoot $PSScriptRoot
 
+Assert-UnambiguousProtectedDeclaration -EnvironmentFilePath $environmentFilePath
 $environmentValues = Get-EnvironmentValueMap $environmentFilePath
 # Fixed container name for the single-engine MSSQL stack (mirrors the "dms-mssql" literal used
 # by start-local-dms.ps1's Wait-MssqlReady call site); -PostgresContainerName stays parameterized

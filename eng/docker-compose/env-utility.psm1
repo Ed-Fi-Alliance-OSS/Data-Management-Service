@@ -2538,11 +2538,14 @@ function Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase {
         create that database: they create databases literally named that way. An offline verdict stays
         sound because the identifier now travels verbatim.
 
-        SQL Server has NO offline verdict, here or anywhere: database names inherit the INSTANCE
-        collation, and the equivalence class differs between instances (measured: a case variant that
-        collides under the default collation is a genuinely distinct database on a case-sensitive
-        instance), so no fixed rule answers for every server. MSSQL physical distinctness is decided by
-        the server-backed authority, Assert-MssqlTopologyPhysicalConsistency, against the RUNNING
+        The CMS topology checks render NO offline SQL Server verdict: database names inherit the
+        INSTANCE collation, and the equivalence class differs between instances (measured: a case
+        variant that collides under the default collation is a genuinely distinct database on a
+        case-sensitive instance), so no fixed rule answers for every server. The dedicated-E2E guard
+        in database-safety.psm1 is separate: before a destructive reset it compares and refuses SQL
+        Server names offline with a fixed rule built to over-reject, and it is not a physical-identity
+        authority. MSSQL physical distinctness for the CMS topology is decided by the server-backed
+        authority, Assert-MssqlTopologyPhysicalConsistency, against the RUNNING
         instance - which is why -DatabaseEngine refuses "mssql" at parameter binding instead of handing
         back a silent non-verdict.
 

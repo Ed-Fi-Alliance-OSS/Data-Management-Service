@@ -12,7 +12,10 @@
     database names with the same logic before any DROP/CREATE mutation. Assert-SafeDatabaseName rejects
     unsupported characters and reserved PostgreSQL/SQL Server system databases; Assert-E2EDatabaseIsDedicated
     additionally rejects names that collide with the primary/CMS databases (by name or by the database
-    embedded in the admin/CMS connection strings).
+    embedded in the admin/CMS connection strings), and conservatively refuses, offline and on either
+    engine, an E2E or protected name it cannot compare reliably: one with characters outside ASCII
+    letters, digits and underscore, or longer than 63 characters, after explicit trailing characters
+    are removed.
 #>
 
 Set-StrictMode -Version Latest
@@ -688,14 +691,17 @@ function Get-DatabaseNameFromResolvedConnectionString {
         Parses every database / initial-catalog value out of an already-fully-resolved ADO.NET
         connection string, with no further ${VAR} resolution on the extracted values.
     .DESCRIPTION
-        Unlike Get-DatabaseNameFromConnectionString, this function performs no secondary reference
+        Like Get-DatabaseNameFromConnectionString, this function performs no secondary reference
         resolution: it assumes the caller already resolved the whole connection string with full
         Docker Compose precedence (e.g. via Get-ComposeResolvedEnvValue) before calling this, so an
         entirely-ambient connection string that happens to contain literal, un-interpolated
         "${...}"-shaped text - which Compose itself never reinterpolates for a value it already
         took verbatim from the shell - is returned as-is rather than incorrectly resolved a second
-        time. Every database-name candidate present is returned so a caller can require all of them
-        to agree rather than guessing which one wins (DbConnectionStringBuilder does not preserve
+        time. The two differ in keyword handling: this one recognizes only the selected engine's
+        synonyms and refuses the other engine's, while Get-DatabaseNameFromConnectionString takes no
+        engine and returns candidates from both families. Every database-name candidate present is
+        returned so a caller can require all of them to agree rather than guessing which one wins
+        (DbConnectionStringBuilder does not preserve
         which alias appeared later in the source text). Returns an empty array when the string is
         blank or carries no database keyword for the given engine.
 
@@ -1401,14 +1407,9 @@ function Get-DatabaseNameFromConnectionString {
         references are settled, and the string is parsed as given. Converting it again would read a
         ' #' that Compose kept inside a quoted value as a comment and drop every keyword after it,
         including a later Initial Catalog or DB the provider uses.
-
-    .PARAMETER EnvironmentValues
-        Not used: every reference was resolved with the whole string.
     #>
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'EnvironmentValues', Justification = 'Kept for existing callers; parsed values are returned without a second env-file resolution.')]
     param(
-        [string]$ConnectionString,
-        [hashtable]$EnvironmentValues
+        [string]$ConnectionString
     )
 
     if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
@@ -1541,7 +1542,10 @@ function Assert-E2EDatabaseIsDedicated {
     .SYNOPSIS
         Throws unless an E2E route-context database name is safe and dedicated: it must not
         match the primary/CMS database names or the database embedded in the admin/CMS
-        connection strings, so E2E provisioning can never drop shared state.
+        connection strings, so E2E provisioning can never drop shared state. It also refuses,
+        offline and on either engine, any E2E or protected name that is not 1 to 63 ASCII letters,
+        digits or underscores once explicit trailing characters are removed; that refusal is
+        conservative and can reject a name the server would treat as distinct.
     #>
     param(
         [hashtable]$EnvironmentValues,
@@ -1591,7 +1595,7 @@ function Assert-E2EDatabaseIsDedicated {
             throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must be dedicated and cannot match $databaseNameKey."
         }
 
-        $comparisonDomainCandidates.Add([pscustomobject]@{ Source = $databaseNameKey; DatabaseName = $protectedDatabaseName })
+        $comparisonDomainCandidates.Add([pscustomobject]@{ Source = "the protected setting $databaseNameKey"; DatabaseName = $protectedDatabaseName })
     }
 
     foreach ($connectionStringKey in @(
@@ -1607,9 +1611,7 @@ function Assert-E2EDatabaseIsDedicated {
             throw "E2E database safety check could not resolve $connectionStringKey in '$EnvironmentFilePath'; refusing a destructive reset that cannot be proven dedicated."
         }
 
-        $connectionStringDatabaseNames = @(Get-DatabaseNameFromConnectionString `
-            -ConnectionString $connectionString `
-            -EnvironmentValues $EnvironmentValues)
+        $connectionStringDatabaseNames = @(Get-DatabaseNameFromConnectionString -ConnectionString $connectionString)
 
         if ($connectionStringDatabaseNames.Count -eq 0) {
             throw "E2E database safety check could not determine a database name from $connectionStringKey in '$EnvironmentFilePath'."
@@ -1634,7 +1636,7 @@ function Assert-E2EDatabaseIsDedicated {
                 throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must stay separate from $connectionStringKey."
             }
 
-            $comparisonDomainCandidates.Add([pscustomobject]@{ Source = "the database name from $connectionStringKey"; DatabaseName = $connectionStringDatabaseName })
+            $comparisonDomainCandidates.Add([pscustomobject]@{ Source = "the connection-string database name from $connectionStringKey"; DatabaseName = $connectionStringDatabaseName })
         }
     }
 
@@ -1668,10 +1670,10 @@ function Assert-E2EDatabaseIsDedicated {
     foreach ($candidate in $comparisonDomainCandidates) {
         $normalizedCandidate = $candidate.DatabaseName.TrimEnd($script:E2EGuardTrailingCharacters)
         if (-not (Test-E2EGuardComparisonDomain -DatabaseName $normalizedCandidate)) {
-            throw "E2E database safety check cannot prove $($candidate.Source) in '$EnvironmentFilePath' dedicated: after trailing $script:E2EGuardTrailingCharacterNames are removed it contains characters outside the guard's supported comparison domain (ASCII letters, digits, underscore); refusing a destructive reset. The value is withheld."
+            throw "E2E database safety check refuses $($candidate.Source) in '$EnvironmentFilePath' as an unsupported protected database name: after trailing $script:E2EGuardTrailingCharacterNames are removed, a protected name must be 1 to $script:E2EGuardMaximumNameLength ASCII letters, digits or underscores, and this one contains another character; refusing a destructive reset. The value is withheld."
         }
         if ($normalizedCandidate.Length -gt $script:E2EGuardMaximumNameLength) {
-            throw "E2E database safety check cannot prove $($candidate.Source) in '$EnvironmentFilePath' dedicated: after trailing $script:E2EGuardTrailingCharacterNames are removed it is longer than $script:E2EGuardMaximumNameLength characters, and PostgreSQL keeps only the first 63 bytes of a database name; refusing a destructive reset. The value is withheld."
+            throw "E2E database safety check refuses $($candidate.Source) in '$EnvironmentFilePath' as an unsupported protected database name: after trailing $script:E2EGuardTrailingCharacterNames are removed, a protected name must be 1 to $script:E2EGuardMaximumNameLength ASCII letters, digits or underscores, and this one is longer than $script:E2EGuardMaximumNameLength characters (PostgreSQL keeps only the first 63 bytes of a database name); refusing a destructive reset. The value is withheld."
         }
     }
 }
