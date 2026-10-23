@@ -309,6 +309,7 @@ public static class DmsCoreServiceExtensions
         Uri configurationServiceBaseAddress = ValidateConfigurationServiceBaseAddress(
             configurationServiceSettings
         );
+        bool allowLegacyConnectionStrings = ReadAllowLegacyConnectionStrings(configurationServiceSettings);
 
         services.AddHybridCache();
         if (!services.Any(descriptor => descriptor.ServiceType == typeof(IConfigureOptions<CacheSettings>)))
@@ -373,7 +374,8 @@ public static class DmsCoreServiceExtensions
         );
         services.TryAddSingleton<IConnectionStringDecryptionService>(
             new ConnectionStringDecryptionService(
-                configurationServiceSettings["EncryptionKey"] ?? string.Empty
+                configurationServiceSettings["EncryptionKey"] ?? string.Empty,
+                allowLegacyConnectionStrings
             )
         );
         services.TryAddSingleton<ConfigurationServiceDataStoreProvider>();
@@ -385,6 +387,31 @@ public static class DmsCoreServiceExtensions
         services.TryAddSingleton<IdentityTenantSnapshot>();
 
         return services;
+    }
+
+    /// <summary>
+    /// Absent keeps legacy AES-CBC connection strings readable, the compatible default. A present value
+    /// must be a boolean, as the Configuration Service's options binding requires: a blank or malformed
+    /// one fails startup rather than silently re-enabling legacy reads, and the message names the
+    /// setting without echoing its value.
+    /// </summary>
+    private static bool ReadAllowLegacyConnectionStrings(IConfigurationSection configurationServiceSettings)
+    {
+        string? rawValue = configurationServiceSettings["AllowLegacyConnectionStrings"];
+
+        if (rawValue is null)
+        {
+            return true;
+        }
+
+        if (!bool.TryParse(rawValue, out bool allowLegacyConnectionStrings))
+        {
+            throw new InvalidOperationException(
+                "ConfigurationServiceSettings:AllowLegacyConnectionStrings must be true or false."
+            );
+        }
+
+        return allowLegacyConnectionStrings;
     }
 
     private static Uri ValidateConfigurationServiceBaseAddress(

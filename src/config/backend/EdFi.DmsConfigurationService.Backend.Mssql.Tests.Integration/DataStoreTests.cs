@@ -368,7 +368,7 @@ public class DataStoreTests : DatabaseTest
         }
 
         /// <summary>
-        /// Same plaintext, but a different key and a fresh random IV: the stored bytes must change.
+        /// Same plaintext, but a different key and a fresh random nonce: the stored bytes must change.
         /// </summary>
         [Test]
         public void It_replaces_the_stored_cipher_text() =>
@@ -381,26 +381,18 @@ public class DataStoreTests : DatabaseTest
                 .Should()
                 .Be(ResubmittedConnectionString);
 
+        /// <summary>
+        /// The rewritten value is an AES-GCM envelope, so the previous key always fails authentication.
+        /// </summary>
         [Test]
-        public void It_no_longer_yields_the_connection_string_under_the_previous_key()
+        public void It_fails_authentication_under_the_previous_key()
         {
-            // AES-CBC with PKCS7 padding is unauthenticated, so the previous key either throws on
-            // invalid padding or returns unrelated bytes, and both outcomes prove the row was
-            // re-keyed. Requiring the throw would make this intermittent, because a wrong key lands
-            // on structurally valid padding often enough to matter.
-            string? decryptedWithPreviousKey = null;
-            try
-            {
-                decryptedWithPreviousKey = new ConnectionStringEncryptionService(
-                    MssqlTestConfiguration.DatabaseOptions
-                ).Decrypt(Convert.FromBase64String(_storedCipherTextAfterRotation));
-            }
-            catch (CryptographicException)
-            {
-                // Left null: the assertion below holds either way.
-            }
+            var act = () =>
+                new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions).Decrypt(
+                    Convert.FromBase64String(_storedCipherTextAfterRotation)
+                );
 
-            decryptedWithPreviousKey.Should().NotBe(ResubmittedConnectionString);
+            act.Should().ThrowExactly<AuthenticationTagMismatchException>();
         }
     }
 
@@ -1404,5 +1396,136 @@ public class DataStoreTests : DatabaseTest
             dataStoreFromDb.Name.Should().Be("Renamed Instance");
             dataStoreFromDb.DataStoreType.Should().Be("Production");
         }
+    }
+
+    /// <summary>
+    /// A row written by a release that stored legacy AES-CBC cipher text, read and then updated by this
+    /// one. The legacy value is built here, independently of the encryption service, and written to the
+    /// table directly. A metadata-only update runs before the replacement: it must keep the legacy bytes,
+    /// so the replacement is what upgrades the row.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_legacy_connection_string_that_is_later_replaced : DataStoreTests
+    {
+        private const string LegacyConnectionString = "Server=legacy;Database=LegacyDb;";
+        private const string ReplacementConnectionString = "Server=replacement;Database=ReplacementDb;";
+
+        /// <summary>
+        /// ASCII "EdFi.CS.Envelope" and version 1.
+        /// </summary>
+        private static readonly byte[] EnvelopeHeader = [.. "EdFi.CS.Envelope"u8, 0x01];
+
+        private byte[] _legacyValue = null!;
+        private string _storedAfterLegacyWrite = null!;
+        private string _storedAfterMetadataUpdate = null!;
+        private string _storedAfterReplacement = null!;
+
+        private static byte[] LegacyCipherText(string plainText)
+        {
+            string key = MssqlTestConfiguration.DatabaseOptions.Value.EncryptionKey;
+            using var aes = Aes.Create();
+            aes.Key = System.Text.Encoding.UTF8.GetBytes(key.PadRight(32, '0')[..32]);
+            byte[] iv = RandomNumberGenerator.GetBytes(16);
+            return
+            [
+                .. iv,
+                .. aes.EncryptCbc(System.Text.Encoding.UTF8.GetBytes(plainText), iv, PaddingMode.PKCS7),
+            ];
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var insertResult = await _repository.InsertDataStore(
+                new DataStoreInsertCommand
+                {
+                    DataStoreType = "Staging",
+                    Name = "Legacy Instance",
+                    ConnectionString = "Server=original;Database=OriginalDb;",
+                }
+            );
+            insertResult.Should().BeOfType<DataStoreInsertResult.Success>();
+            int id = ((DataStoreInsertResult.Success)insertResult).Id;
+
+            _legacyValue = LegacyCipherText(LegacyConnectionString);
+            await using (var command = Connection!.CreateCommand())
+            {
+                command.CommandText =
+                    "UPDATE dmscs.DataStore SET ConnectionString = @ConnectionString WHERE Id = @Id";
+                command.Parameters.Add(
+                    new Microsoft.Data.SqlClient.SqlParameter("ConnectionString", _legacyValue)
+                );
+                command.Parameters.Add(new Microsoft.Data.SqlClient.SqlParameter("Id", id));
+                (await command.ExecuteNonQueryAsync()).Should().Be(1);
+            }
+
+            _storedAfterLegacyWrite = await StoredConnectionString(id);
+
+            var metadataUpdate = await _repository.UpdateDataStore(
+                new DataStoreUpdateCommand
+                {
+                    Id = id,
+                    DataStoreType = "Production",
+                    Name = "Renamed Legacy Instance",
+                    ConnectionString = null,
+                }
+            );
+            metadataUpdate.Should().BeOfType<DataStoreUpdateResult.Success>();
+
+            _storedAfterMetadataUpdate = await StoredConnectionString(id);
+
+            var replacement = await _repository.UpdateDataStore(
+                new DataStoreUpdateCommand
+                {
+                    Id = id,
+                    DataStoreType = "Production",
+                    Name = "Renamed Legacy Instance",
+                    ConnectionString = ReplacementConnectionString,
+                }
+            );
+            replacement.Should().BeOfType<DataStoreUpdateResult.Success>();
+
+            _storedAfterReplacement = await StoredConnectionString(id);
+        }
+
+        /// <summary>
+        /// A get returns the stored bytes as Base64 when the value carries no secret reference, so
+        /// these are the bytes as persisted.
+        /// </summary>
+        private async Task<string> StoredConnectionString(int id)
+        {
+            var getResult = await _repository.GetDataStore(id);
+            getResult.Should().BeOfType<DataStoreGetResult.Success>();
+
+            string storedValue =
+                ((DataStoreGetResult.Success)getResult).DataStoreResponse.ConnectionString ?? string.Empty;
+            storedValue.Should().NotBeEmpty("a get returns the stored connection string");
+            return storedValue;
+        }
+
+        [Test]
+        public void It_reads_the_legacy_row() =>
+            AssertIsValidEncryptedBase64(_storedAfterLegacyWrite, LegacyConnectionString);
+
+        [Test]
+        public void It_returns_the_legacy_bytes_as_stored() =>
+            _storedAfterLegacyWrite.Should().Be(Convert.ToBase64String(_legacyValue));
+
+        [Test]
+        public void It_keeps_the_legacy_bytes_on_a_metadata_only_update() =>
+            _storedAfterMetadataUpdate.Should().Be(Convert.ToBase64String(_legacyValue));
+
+        [Test]
+        public void It_stores_the_replacement_as_an_envelope()
+        {
+            byte[] stored = Convert.FromBase64String(_storedAfterReplacement);
+
+            stored[..EnvelopeHeader.Length].Should().Equal(EnvelopeHeader);
+            (stored.Length % 16).Should().Be(13);
+        }
+
+        [Test]
+        public void It_decrypts_the_replacement() =>
+            AssertIsValidEncryptedBase64(_storedAfterReplacement, ReplacementConnectionString);
     }
 }

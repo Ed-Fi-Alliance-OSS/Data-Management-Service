@@ -184,6 +184,27 @@ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey12345678901234567
                 Set-Content -LiteralPath (Join-Path $bootstrapRoot "bootstrap-manifest.json") -Encoding utf8
         }
 
+        # The fixed vectors CMS, DMS and the provisioning reader all have to read, generated
+        # independently of each reader. They live with the CMS tests that own the format.
+        function script:Get-TestConnectionStringEncryptionVectors {
+            $path = Join-Path $script:sourceRepoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/connection-string-encryption-vectors.json"
+            return Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+        }
+
+        # A legacy value with a fixed IV, changed through its IV alone (as someone who can write the data
+        # store tables could) so that it decrypts, with valid padding, to another host.
+        function script:New-TestLegacyValueWithRedirectedHost {
+            $original = "host=dbhost;port=5432;database=edfi;"
+            $redirected = "host=evil.exampl=5432;database=edfi;"
+            $value = [Convert]::FromBase64String((New-CmsEncryptedConnectionString -PlainText $original -InitializationVector ([byte[]]::new(16))))
+            $originalBytes = [System.Text.Encoding]::UTF8.GetBytes($original.Substring(0, 16))
+            $redirectedBytes = [System.Text.Encoding]::UTF8.GetBytes($redirected.Substring(0, 16))
+            for ($index = 0; $index -lt 16; $index++) {
+                $value[$index] = $value[$index] -bxor $originalBytes[$index] -bxor $redirectedBytes[$index]
+            }
+            return [Convert]::ToBase64String($value)
+        }
+
         function script:New-CmsEncryptedConnectionString {
             param(
                 [string]$PlainText,
@@ -263,6 +284,9 @@ exit $ExitCode
 
     BeforeEach {
         $script:repo = New-IsolatedBootstrapRepo
+        # The env resolver lets an ambient value win (as Compose does), so none may leak in.
+        $script:ambientAllowLegacy = [System.Environment]::GetEnvironmentVariable("CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS")
+        Remove-Item Env:CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS -ErrorAction SilentlyContinue
     }
 
     AfterEach {
@@ -280,9 +304,70 @@ exit $ExitCode
         # newer pwsh/.NET on Unix stores as a present-but-blank variable instead of removing it.
         Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue
         Remove-Item Env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK -ErrorAction SilentlyContinue
+        Remove-Item Env:CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS -ErrorAction SilentlyContinue
+        if ($null -ne $script:ambientAllowLegacy) {
+            [System.Environment]::SetEnvironmentVariable("CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS", $script:ambientAllowLegacy)
+        }
     }
 
     Context "public script contracts" {
+        # The connection string readers construct AesGcm(byte[], int), which PowerShell 7.4 (.NET 8)
+        # introduced, so every script that decrypts declares that floor.
+        It "<file> requires PowerShell 7.4" -ForEach @(
+            @{ File = "eng/docker-compose/provision-dms-schema.ps1" }
+            @{ File = "eng/docker-compose/configure-local-data-store.ps1" }
+            @{ File = "eng/docker-compose/tests/RestoreSmokeProbes.psm1" }
+            @{ File = "eng/docker-compose/tests/Invoke-BootstrapRestoreSmoke.ps1" }
+            @{ File = "eng/docker-compose/tests/RestoreSmokeProbes.Tests.ps1" }
+        ) {
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:sourceRepoRoot $File), [ref]$null, [ref]$null)
+
+            $ast.ScriptRequirements.RequiredPSVersion | Should -Be ([version]"7.4")
+        }
+
+        # The shared module is imported by every Compose entry point, most of which never decrypt, so
+        # it keeps their floor and its decrypting function checks for 7.4 itself.
+        It "database-safety.psm1 requires only PowerShell 7 and checks for 7.4 where it decrypts" {
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:sourceRepoRoot "eng/docker-compose/database-safety.psm1"), [ref]$null, [ref]$null)
+            $function = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq "ConvertFrom-CmsEncryptedConnectionString" }, $true)
+
+            $ast.ScriptRequirements.RequiredPSVersion | Should -Be ([version]"7.0")
+            $function.Body.Extent.Text | Should -Match ([regex]::Escape('$PSVersionTable.PSVersion -lt [version]"7.4"'))
+        }
+
+        # A runtime that cannot derive the key or construct AesGcm must fail with the reader's fixed
+        # text, never raw overload or platform text, and only a tag mismatch counts as an
+        # authentication failure.
+        It "<function> constructs AesGcm inside a try that catches a tag mismatch separately" -ForEach @(
+            @{ File = "eng/docker-compose/database-safety.psm1"; Function = "ConvertFrom-CmsEncryptedConnectionString" }
+            @{ File = "eng/docker-compose/tests/RestoreSmokeProbes.psm1"; Function = "ConvertFrom-RestoreSmokeDataStoreCipherText" }
+        ) {
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:sourceRepoRoot $File), [ref]$null, [ref]$null)
+            $function = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $Function }, $true)
+            $constructions = @($function.FindAll({
+                        param($node)
+                        $node -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and
+                        $node.Member.Extent.Text -eq "new" -and
+                        $node.Expression.Extent.Text -in @("[System.Security.Cryptography.AesGcm]", "[System.Security.Cryptography.HKDF]")
+                    }, $true)) + @($function.FindAll({
+                        param($node)
+                        $node -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and
+                        $node.Member.Extent.Text -eq "DeriveKey"
+                    }, $true))
+
+            $constructions.Count | Should -Be 2
+            foreach ($construction in $constructions) {
+                $parent = $construction.Parent
+                while ($null -ne $parent -and $parent -isnot [System.Management.Automation.Language.TryStatementAst]) {
+                    $parent = $parent.Parent
+                }
+                $parent | Should -Not -BeNullOrEmpty -Because "$($construction.Extent.Text) has to be inside a try"
+                @($parent.CatchClauses | ForEach-Object { $_.CatchTypes.TypeName.FullName }) |
+                    Should -Contain "System.Security.Cryptography.AuthenticationTagMismatchException"
+                @($parent.CatchClauses | Where-Object { $_.IsCatchAll }).Count | Should -Be 1
+            }
+        }
+
         It "provision-dms-schema.ps1 exposes selectors, environment, topology, and managed provenance parameters" {
             $params = Get-DeclaredScriptParameters -Path $script:repo.ProvisionScript
 
@@ -792,6 +877,124 @@ exit $ExitCode
                 Should -Throw -ExpectedMessage "*CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY is not set*"
         }
 
+        It "reads CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS <case> as <expected>" -ForEach @(
+            @{ Case = "absent"; EnvValues = @{}; Expected = $true }
+            @{ Case = "empty"; EnvValues = @{ CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = "" }; Expected = $true }
+            @{ Case = "true"; EnvValues = @{ CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = "true" }; Expected = $true }
+            @{ Case = "false"; EnvValues = @{ CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = "false" }; Expected = $false }
+            @{ Case = "FALSE"; EnvValues = @{ CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = "FALSE" }; Expected = $false }
+            @{ Case = "quoted false"; EnvValues = @{ CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = '"false"' }; Expected = $false }
+        ) {
+            . $script:repo.ProvisionScript
+
+            $allowed = Test-LegacyConnectionStringAllowed -EnvValues $EnvValues
+
+            $allowed | Should -BeOfType [bool]
+            $allowed | Should -Be $Expected
+        }
+
+        It "rejects a malformed CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS '<value>' without echoing it" -ForEach @(
+            @{ Value = "flase" }
+            @{ Value = "0" }
+            @{ Value = "no" }
+            # Compose's ${VAR:-true} passes whitespace through, and the services refuse it at startup.
+            @{ Value = '" "' }
+            @{ Value = "' '" }
+        ) {
+            . $script:repo.ProvisionScript
+
+            { Test-LegacyConnectionStringAllowed -EnvValues @{ CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = $Value } } |
+                Should -Throw -ExpectedMessage "CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS must be true or false."
+        }
+
+        It "rejects a whitespace-only ambient CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS, which Compose passes through" {
+            . $script:repo.ProvisionScript
+            $env:CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = " "
+
+            { Test-LegacyConnectionStringAllowed -EnvValues @{} } |
+                Should -Throw -ExpectedMessage "CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS must be true or false."
+        }
+
+        It "lets an ambient CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS win over the environment file, as Compose does" {
+            . $script:repo.ProvisionScript
+            $env:CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = "false"
+
+            Test-LegacyConnectionStringAllowed -EnvValues @{ CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = "true" } |
+                Should -BeFalse
+        }
+
+        It "returns the redirected host of a legacy value changed through its IV while legacy values are allowed" {
+            . $script:repo.ProvisionScript
+
+            ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString (New-TestLegacyValueWithRedirectedHost) -EnvValues @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = "TestEncryptionKey123456789012345678901234567890" } |
+                Should -BeExactly "host=evil.exampl=5432;database=edfi;"
+        }
+
+        It "rejects <case> when legacy values are disallowed" -ForEach @(
+            @{ Case = "the shared legacy vector"; Kind = "vector" }
+            @{ Case = "a legacy value changed through its IV"; Kind = "redirected" }
+            @{ Case = "a legacy-length value with invalid padding"; Kind = "padding" }
+        ) {
+            . $script:repo.ProvisionScript
+            $vectors = Get-TestConnectionStringEncryptionVectors
+            $key = if ($Kind -eq "vector") { $vectors.keyText } else { "TestEncryptionKey123456789012345678901234567890" }
+            $value = switch ($Kind) {
+                "vector" { $vectors.legacyCbc }
+                "redirected" { New-TestLegacyValueWithRedirectedHost }
+                "padding" { [Convert]::ToBase64String([byte[]]::new(32)) }
+            }
+
+            { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $value -EnvValues @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = $key; CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = "false" } } |
+                Should -Throw -ExpectedMessage "Configuration Service data store encrypted connection string is in the legacy AES-CBC format, which is rejected because CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS is false."
+        }
+
+        It "decrypts the shared envelope vector when legacy values are disallowed" {
+            . $script:repo.ProvisionScript
+            $vectors = Get-TestConnectionStringEncryptionVectors
+
+            ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $vectors.envelopeV1 -EnvValues @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = $vectors.keyText; CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = "false" } |
+                Should -BeExactly $vectors.plainText
+        }
+
+        It "still rejects a tampered envelope by authentication when legacy values are disallowed" {
+            . $script:repo.ProvisionScript
+            $vectors = Get-TestConnectionStringEncryptionVectors
+            $payload = [Convert]::FromBase64String($vectors.envelopeV1)
+            $payload[$payload.Length - 1] = $payload[$payload.Length - 1] -bxor 1
+
+            { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString ([Convert]::ToBase64String($payload)) -EnvValues @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = $vectors.keyText; CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = "false" } } |
+                Should -Throw -ExpectedMessage "Configuration Service data store encrypted connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY."
+        }
+
+        It "refuses to provision a legacy connection string when the environment file disallows legacy values" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+            Add-Content -LiteralPath $script:repo.EnvFile -Value "CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS=false"
+            $encryptedConnectionString = New-CmsEncryptedConnectionString `
+                -PlainText 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=encrypted_db;'
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DataStore {
+                return @(
+                    [pscustomobject]@{
+                        id = 3
+                        name = "Encrypted"
+                        connectionString = $encryptedConnectionString
+                        dataStoreContexts = @()
+                    }
+                )
+            }
+
+            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(3) } |
+                Should -Throw -ExpectedMessage "*legacy AES-CBC format, which is rejected because CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS is false*"
+            Test-Path -LiteralPath $capturePath | Should -BeFalse -Because "nothing is provisioned"
+        }
+
         It "rejects an encrypted connection string payload that is not valid base64" {
             . $script:repo.ProvisionScript
 
@@ -809,15 +1012,85 @@ exit $ExitCode
                 Should -Throw -ExpectedMessage "*payload is invalid*"
         }
 
+        It "rejects an encrypted connection string payload whose length fits neither CMS form" {
+            . $script:repo.ProvisionScript
+
+            $envValues = @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = "TestEncryptionKey123456789012345678901234567890" }
+            # 33 bytes is neither whole AES blocks (legacy) nor 13 bytes past them (envelope).
+            $misshapen = [Convert]::ToBase64String([byte[]]::new(33))
+            { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $misshapen -EnvValues $envValues } |
+                Should -Throw -ExpectedMessage "Configuration Service data store encrypted connection string payload is invalid."
+        }
+
         It "rejects an encrypted connection string that cannot be decrypted with the configured key" {
             . $script:repo.ProvisionScript
 
             $envValues = @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = "TestEncryptionKey123456789012345678901234567890" }
-            # 16-byte IV plus a 17-byte ciphertext is not a whole AES block, so PKCS7 decryption
-            # fails deterministically rather than relying on a wrong-key padding collision.
-            $undecryptable = [Convert]::ToBase64String([byte[]]::new(33))
+            # Legacy CMS cipher text under a different key: the padding check fails for this fixed value.
+            $undecryptable = New-CmsEncryptedConnectionString -PlainText "host=localhost;database=encrypted_db;" -EncryptionKey "Rk3pQ8sT2vW9xZ4bC6dE1gH5jL7mN0rY" -InitializationVector ([byte[]](0..15))
             { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $undecryptable -EnvValues $envValues } |
                 Should -Throw -ExpectedMessage "*could not be decrypted*"
+        }
+
+        It "decrypts the shared interoperability vector <vector>" -ForEach @(
+            @{ Vector = "envelopeV1"; PlainTextField = "plainText" }
+            @{ Vector = "blockAlignedEnvelopeV1"; PlainTextField = "blockAlignedPlainText" }
+            @{ Vector = "legacyCbc"; PlainTextField = "plainText" }
+        ) {
+            . $script:repo.ProvisionScript
+            $vectors = Get-TestConnectionStringEncryptionVectors
+
+            ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $vectors.$Vector -EnvValues @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = $vectors.keyText } |
+                Should -BeExactly $vectors.$PlainTextField
+        }
+
+        It "decrypts the shared envelope vector with any key that shares its first 32 characters" {
+            . $script:repo.ProvisionScript
+            $vectors = Get-TestConnectionStringEncryptionVectors
+
+            ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $vectors.envelopeV1 -EnvValues @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = $vectors.keyText + "-ignored-suffix" } |
+                Should -BeExactly $vectors.plainText
+        }
+
+        # Each change keeps the envelope on the envelope path: a changed marker byte keeps the length
+        # class, so it is refused there rather than decrypted as legacy CBC.
+        It "rejects the shared envelope vector with <case>" -ForEach (
+            @(0..15 | ForEach-Object { @{ Case = "marker byte $_ changed"; Index = $_; Value = $null; Expected = "Configuration Service data store encrypted connection string envelope is not recognized." } }) + @(
+                @{ Case = "version 0"; Index = 16; Value = 0; Expected = "Configuration Service data store encrypted connection string uses an unsupported envelope format version." }
+                @{ Case = "version 2"; Index = 16; Value = 2; Expected = "Configuration Service data store encrypted connection string uses an unsupported envelope format version." }
+                @{ Case = "a changed nonce"; Index = 17; Value = $null; Expected = "Configuration Service data store encrypted connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY." }
+                @{ Case = "a changed tag"; Index = 29; Value = $null; Expected = "Configuration Service data store encrypted connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY." }
+                @{ Case = "changed cipher text"; Index = 45; Value = $null; Expected = "Configuration Service data store encrypted connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY." }
+            )
+        ) {
+            . $script:repo.ProvisionScript
+            $vectors = Get-TestConnectionStringEncryptionVectors
+            $payload = [Convert]::FromBase64String($vectors.envelopeV1)
+            $payload[$Index] = if ($null -eq $Value) { $payload[$Index] -bxor 1 } else { $Value }
+
+            { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString ([Convert]::ToBase64String($payload)) -EnvValues @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = $vectors.keyText } } |
+                Should -Throw -ExpectedMessage $Expected
+        }
+
+        It "rejects the shared envelope vector <case>" -ForEach @(
+            @{ Case = "truncated by one byte"; Length = -1 }
+            @{ Case = "without cipher text"; Length = 45 }
+        ) {
+            . $script:repo.ProvisionScript
+            $vectors = Get-TestConnectionStringEncryptionVectors
+            $payload = [Convert]::FromBase64String($vectors.envelopeV1)
+            $kept = if ($Length -lt 0) { $payload.Length + $Length } else { $Length }
+
+            { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString ([Convert]::ToBase64String([byte[]]$payload[0..($kept - 1)])) -EnvValues @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = $vectors.keyText } } |
+                Should -Throw -ExpectedMessage "Configuration Service data store encrypted connection string payload is invalid."
+        }
+
+        It "rejects the shared envelope vector under another key" {
+            . $script:repo.ProvisionScript
+            $vectors = Get-TestConnectionStringEncryptionVectors
+
+            { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $vectors.envelopeV1 -EnvValues @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = "Rk3pQ8sT2vW9xZ4bC6dE1gH5jL7mN0rY" } } |
+                Should -Throw -ExpectedMessage "Configuration Service data store encrypted connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY."
         }
 
         It "fails fast when CMS instance results reach the query page size" {
@@ -2953,6 +3226,18 @@ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey12345678901234567
 
             ($lines -join "`n") | Should -Match "ConfigurationServiceSettings__ClientId = CMSReadOnlyAccess"
             ($lines -join "`n") | Should -Match "ConfigurationServiceSettings__ClientSecret = \(present in environment file\)"
+            ($lines -join "`n") | Should -Match "ConfigurationServiceSettings__AllowLegacyConnectionStrings = true "
+        }
+
+        It "Get-ProvisionCmsReadOnlyAccessGuidance passes CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS on to an IDE-run Ed-Fi API" {
+            . $script:repo.ProvisionScript
+
+            $lines = Get-ProvisionCmsReadOnlyAccessGuidance -EnvValues @{
+                DMS_CONFIGURATION_SERVICE_CLIENT_SECRET = "explicit-secret"
+                CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = "false"
+            }
+
+            ($lines -join "`n") | Should -Match "ConfigurationServiceSettings__AllowLegacyConnectionStrings = false "
         }
     }
 
@@ -5158,6 +5443,27 @@ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey12345678901234567
             $script:reuseTrace | Should -Not -Contain "Add-DataStore" -Because "a refusal registers nothing"
             @($script:reuseTrace | Where-Object { $_ -like "Invoke-Api*" }) | Should -BeNullOrEmpty
             Assert-ReuseRefusalSecretFree -Message $message -AlsoWithheld $withheld
+        }
+
+        It "refuses a legacy data store when the environment file <case> (<engine>)" -ForEach @(
+            @{ Engine = "postgresql"; Case = "disallows legacy values"; Setting = "false"; Expected = "*could not be read (Configuration Service data store encrypted connection string is in the legacy AES-CBC format, which is rejected because CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS is false.)*" }
+            @{ Engine = "mssql"; Case = "disallows legacy values"; Setting = "false"; Expected = "*could not be read (Configuration Service data store encrypted connection string is in the legacy AES-CBC format, which is rejected because CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS is false.)*" }
+            @{ Engine = "postgresql"; Case = "has a malformed legacy setting"; Setting = "flase"; Expected = "*could not be read (CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS must be true or false.)*" }
+        ) {
+            # The same matching legacy store is reused when the setting is absent (tests above).
+            $engine = $Engine
+            $envFile = New-ReuseEnvFile -Engine $Engine
+            Add-Content -LiteralPath $envFile -Value "CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS=$Setting"
+            $factory = {
+                New-ReuseDataStore -Id 77 -Provider (Get-ReuseProvider -Engine $engine) -ConnectionString (New-CmsEncryptedConnectionString -PlainText (New-ReusePlainConnectionString -Engine $engine) -EncryptionKey $script:reuseCmsKey)
+            }
+
+            $thrown = { Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseEnvFile $envFile -ReuseStoreFactory $factory } | Should -Throw -PassThru
+            $message = $thrown.Exception.Message
+
+            $message | Should -BeLike $Expected
+            $script:reuseTrace | Should -Not -Contain "Add-DataStore" -Because "a refusal registers nothing"
+            Assert-ReuseRefusalSecretFree -Message $message -AlsoWithheld @("flase")
         }
 
         It "refuses a wrong-key value whose padding happens to validate, reading its garbage as no target (<engine>)" -ForEach @(

@@ -12,20 +12,29 @@ namespace EdFi.DmsConfigurationService.Backend
     {
         public required string DatabaseConnection { get; set; }
         public required string EncryptionKey { get; set; }
+
+        /// <summary>
+        /// Whether legacy AES-CBC connection strings are still read. True keeps values stored by
+        /// earlier releases readable; they have no integrity protection. False rejects every legacy
+        /// value before decryption, once every stored connection string has been re-encrypted.
+        /// </summary>
+        public bool AllowLegacyConnectionStrings { get; set; } = true;
     }
 
     public class DatabaseOptionsValidator : IValidateOptions<DatabaseOptions>
     {
         /// <summary>
-        /// Only the first 32 characters of the configured key contribute to the AES-256 key, so the
-        /// rules below govern that prefix.
+        /// Only the first 32 characters of the configured key are used: they are the key material
+        /// for both connection string formats (the HKDF input for AES-GCM envelopes, and the AES-256
+        /// key itself for legacy AES-CBC values), so the rules below govern that prefix. Deriving
+        /// the envelope key adds no entropy, so key strength still rests on the configured value.
         /// </summary>
         private const int RequiredEncryptionKeyLength = 32;
 
         /// <summary>
         /// The value formerly shipped in appsettings.json. It is public in an open-source repository,
         /// so any deployment left on it has decryptable connection strings. Only its significant
-        /// 32-character prefix is compared: every value sharing that prefix derives the same key, so
+        /// 32-character prefix is compared: every value sharing that prefix yields the same keys, so
         /// rejecting the full string alone would leave the published key reachable.
         /// </summary>
         private const string ShippedDefaultEncryptionKey = "YourSecureEncryptionKey32Characters";

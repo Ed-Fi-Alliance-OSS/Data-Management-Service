@@ -350,6 +350,96 @@ public class ConnectionStringReaderTests
         public void It_does_not_call_the_resolver() => Resolver.Calls.Should().BeEmpty();
     }
 
+    [TestFixture]
+    public class Given_a_legacy_value_while_legacy_values_are_allowed : ConnectionStringReaderTests
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            Tenant.Context = new TenantContext.Multitenant(42, "district-a");
+            await CreateReader().ReadAsync(Convert.FromBase64String(TokenFreeCipherText), DataStoreRow);
+        }
+
+        [Test]
+        public void It_logs_one_warning_naming_the_row_and_the_tenant() =>
+            Logger
+                .Entries.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Match<LogEntry>(entry =>
+                    entry.Level == LogLevel.Warning
+                    && Equals(entry.Field("Row"), "data store 5")
+                    && Equals(entry.Field("Tenant"), "district-a")
+                    && entry.Message.Contains("legacy AES-CBC format")
+                );
+
+        [Test]
+        public void It_logs_nothing_of_the_value() =>
+            LoggedText().Should().NotContain(text => text.Contains(TokenFreeCipherText));
+    }
+
+    [TestFixture]
+    public class Given_an_envelope_value : ConnectionStringReaderTests
+    {
+        [SetUp]
+        public async Task Act() =>
+            await CreateReader().ReadAsync(Stored("host=current;database=edfi;"), DataStoreRow);
+
+        [Test]
+        public void It_logs_nothing() => Logger.Entries.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// A legacy value left behind once legacy values are disallowed reports the setting, not a key
+    /// problem, on both paths.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_legacy_value_while_legacy_values_are_disallowed : ConnectionStringReaderTests
+    {
+        private const string Reason =
+            "is in the legacy AES-CBC format, which is rejected because DatabaseSettings:AllowLegacyConnectionStrings is false";
+
+        private ConnectionStringReadException _failure = null!;
+        private string? _nested = "unset";
+
+        [SetUp]
+        public async Task Act()
+        {
+            Encryption = new CountingEncryptionService(
+                new ConnectionStringEncryptionService(
+                    Options.Create(
+                        new DatabaseOptions
+                        {
+                            DatabaseConnection = "Server=test;",
+                            EncryptionKey = EncryptionKey,
+                            AllowLegacyConnectionStrings = false,
+                        }
+                    )
+                )
+            );
+            byte[] legacy = Convert.FromBase64String(TokenFreeCipherText);
+            _failure = await ReadFailure(() => CreateReader().ReadAsync(legacy, DataStoreRow));
+            _nested = await CreateReader().ReadAsync(legacy, NestedDerivativeRow);
+        }
+
+        [Test]
+        public void It_fails_a_resource_read_naming_the_setting() =>
+            _failure.Message.Should().Be($"The stored connection string for {DataStoreRow} {Reason}.");
+
+        [Test]
+        public void It_reads_a_nested_derivative_as_not_configured() => _nested.Should().BeNull();
+
+        [Test]
+        public void It_logs_the_setting_for_a_nested_derivative() =>
+            Logger
+                .Entries.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Match<LogEntry>(entry =>
+                    entry.Level == LogLevel.Error && (string)entry.Field("Problem")! == Reason
+                );
+    }
+
     /// <summary>
     /// The measured cases from the design: each value must reach the driver exactly, which a rewrite
     /// that reintroduced textual substitution would fail. What textual substitution does to the same

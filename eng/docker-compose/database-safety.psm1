@@ -3,6 +3,11 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
+# 7 for the module as a whole. ConvertFrom-CmsEncryptedConnectionString alone needs 7.4, for the
+# AesGcm(byte[], int) constructor, and checks for it itself, so only the scripts that decrypt carry
+# that floor.
+#Requires -Version 7
+
 <#
 .SYNOPSIS
     Shared database-name safety guards for E2E provisioning.
@@ -586,11 +591,14 @@ function Get-ComposeResolvedEnvValue {
         Falls back to the documented default when the key is absent, blank, or resolves to empty. This
         is the single Compose-equivalent resolver shared by the connection-string factory, the
         destructive-safety guard, and the E2E startup/provision phases. Never logs the value.
+        With -KeepWhitespace, a whitespace-only value is returned as it is, as Compose's ${VAR:-default}
+        passes it through; only an absent or empty value falls back to the default.
     #>
     param(
         [hashtable]$EnvironmentValues,
         [Parameter(Mandatory)][string]$Name,
-        [string]$DefaultValue = ""
+        [string]$DefaultValue = "",
+        [switch]$KeepWhitespace
     )
 
     # Docker Compose interpolation gives a value set in the process/shell environment precedence over
@@ -610,7 +618,7 @@ function Get-ComposeResolvedEnvValue {
             Resolve-ComposeEnvRawValue -EnvironmentValues $EnvironmentValues -RawValue ([string]$EnvironmentValues[$Name])
         }
 
-    if ([string]::IsNullOrWhiteSpace($resolved)) {
+    if ($KeepWhitespace ? [string]::IsNullOrEmpty($resolved) : [string]::IsNullOrWhiteSpace($resolved)) {
         return $DefaultValue
     }
 
@@ -1261,17 +1269,50 @@ function Get-EndpointFromResolvedConnectionString {
     }
 }
 
+function Test-LegacyConnectionStringAllowed {
+    <#
+    .SYNOPSIS
+        Reads CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS the way Docker Compose passes it to
+        the Configuration Service and the Ed-Fi API: absent or empty is true, the compatible default.
+        Any other value must be true or false (case-insensitive); a malformed one, including a
+        whitespace-only one, which Compose passes through and the services refuse, throws a fixed
+        message that names the setting without echoing its value, so it never silently re-enables
+        legacy reads. Parsed with [bool]::TryParse, not a [bool] cast, which would make "false" true.
+    #>
+    param(
+        [hashtable]
+        $EnvValues
+    )
+
+    $value = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvValues -Name "CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS" -DefaultValue "true" -KeepWhitespace
+    $allowLegacyConnectionStrings = $false
+    if (-not [bool]::TryParse($value, [ref]$allowLegacyConnectionStrings)) {
+        throw "CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS must be true or false."
+    }
+    return $allowLegacyConnectionStrings
+}
+
 function ConvertFrom-CmsEncryptedConnectionString {
     <#
     .SYNOPSIS
-        Decrypts a data store connection string as a Configuration Service response carries it: the Base64 of a 16-byte
-        IV followed by AES-CBC/PKCS7 cipher text, under CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY (the same key
-        the Configuration Service encrypts with) padded with '0' and cut to 32 characters.
+        Decrypts a data store connection string as a Configuration Service response carries it, in
+        either stored form (ConnectionStringCipherText in the Configuration Service describes both):
+        - envelope: "EdFi.CS.Envelope" (16 bytes), version 1 (1), nonce (12), tag (16), then AES-256-GCM
+          cipher text of the PKCS7-padded UTF-8 text, with marker and version as associated data, under a
+          key derived by HKDF-SHA256 from the key material;
+        - legacy: a 16-byte IV followed by AES-CBC/PKCS7 cipher text under the key material itself.
+        The key material is CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY (the same key the
+        Configuration Service encrypts with) padded with '0' and cut to 32 characters, as UTF-8.
     .DESCRIPTION
         Shared by the provisioning phase, which hands the decrypted target to SchemaTools, and by the
         configure phase's restore reuse check, which compares it with the restored target. Every
         failure is one of the fixed messages below; none carries the key, the cipher text, or the
-        decrypted text.
+        decrypted text. An envelope is 13 bytes past a 16-byte block multiple and legacy cipher text is
+        a whole number of blocks, so a value with that length class or the marker is held to the
+        envelope rules and never retried as legacy. When CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS
+        is false, a legacy-length value is rejected before any CBC decryption, so a value altered
+        through its IV is never returned and padding validity cannot be probed. Requires PowerShell
+        7.4 or later (.NET 8 AesGcm).
     #>
     param(
         [string]
@@ -1281,10 +1322,15 @@ function ConvertFrom-CmsEncryptedConnectionString {
         $EnvValues
     )
 
+    if ($PSVersionTable.PSVersion -lt [version]"7.4") {
+        throw "Decrypting a Configuration Service data store connection string requires PowerShell 7.4 or later."
+    }
+
     $encryptionKey = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvValues -Name "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY"
     if ([string]::IsNullOrWhiteSpace($encryptionKey)) {
         throw "Configuration Service data store connection string is encrypted, but CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY is not set in the environment file."
     }
+    $allowLegacyConnectionStrings = Test-LegacyConnectionStringAllowed -EnvValues $EnvValues
 
     try {
         $encryptedBytes = [Convert]::FromBase64String($ProtectedConnectionString)
@@ -1293,20 +1339,90 @@ function ConvertFrom-CmsEncryptedConnectionString {
         throw "Configuration Service data store connection string did not contain a database name and was not valid Configuration Service encrypted base64."
     }
 
-    if ($encryptedBytes.Length -le 16) {
-        throw "Configuration Service data store encrypted connection string payload is invalid."
-    }
-
     $keyText = $encryptionKey.PadRight(32, "0").Substring(0, 32)
     $keyBytes = [System.Text.Encoding]::UTF8.GetBytes($keyText)
+    $length = $encryptedBytes.Length
+    $hasMarker = $length -ge 16 -and [Convert]::ToHexString($encryptedBytes, 0, 16) -eq "456446692E43532E456E76656C6F7065"
+
+    if (($length % 16) -eq 13 -or $hasMarker) {
+        if ($length -lt 61 -or ($length % 16) -ne 13) {
+            throw "Configuration Service data store encrypted connection string payload is invalid."
+        }
+        if (-not $hasMarker) {
+            throw "Configuration Service data store encrypted connection string envelope is not recognized."
+        }
+        if ($encryptedBytes[16] -ne 1) {
+            throw "Configuration Service data store encrypted connection string uses an unsupported envelope format version."
+        }
+
+        $header = [byte[]]::new(17)
+        $nonce = [byte[]]::new(12)
+        $tag = [byte[]]::new(16)
+        $cipherText = [byte[]]::new($length - 45)
+        [Array]::Copy($encryptedBytes, 0, $header, 0, 17)
+        [Array]::Copy($encryptedBytes, 17, $nonce, 0, 12)
+        [Array]::Copy($encryptedBytes, 29, $tag, 0, 16)
+        [Array]::Copy($encryptedBytes, 45, $cipherText, 0, $cipherText.Length)
+        $padded = [byte[]]::new($cipherText.Length)
+
+        # Key derivation and construction sit inside the try, so a runtime without them fails with a
+        # fixed message rather than raw overload or platform text. Only a tag mismatch is reported as
+        # an authentication failure.
+        $aesGcm = $null
+        try {
+            $envelopeKey = [System.Security.Cryptography.HKDF]::DeriveKey(
+                [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+                $keyBytes,
+                32,
+                [byte[]]::new(0),
+                [System.Text.Encoding]::ASCII.GetBytes("EdFi.ConnectionString.AES-256-GCM.v1"))
+            $aesGcm = [System.Security.Cryptography.AesGcm]::new($envelopeKey, 16)
+            # Authentication comes first: nothing is read from the plain text unless it passes.
+            $aesGcm.Decrypt($nonce, $cipherText, $tag, $padded, $header)
+        }
+        catch [System.Security.Cryptography.AuthenticationTagMismatchException] {
+            throw "Configuration Service data store encrypted connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY."
+        }
+        catch {
+            throw "Configuration Service data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY."
+        }
+        finally {
+            if ($null -ne $aesGcm) {
+                $aesGcm.Dispose()
+            }
+        }
+
+        $paddingLength = [int]$padded[$padded.Length - 1]
+        $paddingValid = $paddingLength -ge 1 -and $paddingLength -le 16
+        for ($index = $padded.Length - $paddingLength; $paddingValid -and $index -lt $padded.Length; $index++) {
+            $paddingValid = $padded[$index] -eq $paddingLength
+        }
+        if (-not $paddingValid) {
+            throw "Configuration Service data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY."
+        }
+        try {
+            return [System.Text.UTF8Encoding]::new($false, $true).GetString($padded, 0, $padded.Length - $paddingLength)
+        }
+        catch {
+            throw "Configuration Service data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY."
+        }
+    }
+
+    if ($length -lt 32 -or ($length % 16) -ne 0) {
+        throw "Configuration Service data store encrypted connection string payload is invalid."
+    }
+    if (-not $allowLegacyConnectionStrings) {
+        throw "Configuration Service data store encrypted connection string is in the legacy AES-CBC format, which is rejected because CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS is false."
+    }
+
     $iv = [byte[]]::new(16)
     [Array]::Copy($encryptedBytes, 0, $iv, 0, 16)
 
-    $cipherText = [byte[]]::new($encryptedBytes.Length - 16)
+    $cipherText = [byte[]]::new($length - 16)
     [Array]::Copy($encryptedBytes, 16, $cipherText, 0, $cipherText.Length)
 
     $aes = [System.Security.Cryptography.Aes]::Create()
-    # CMS encrypts connection strings with AES-CBC / PKCS7; set explicitly rather than relying on .NET defaults.
+    # Legacy Configuration Service values are AES-CBC / PKCS7; set explicitly rather than relying on .NET defaults.
     $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
     $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
     try {
@@ -1614,6 +1730,7 @@ Export-ModuleMember -Function `
     Get-DatabaseNameFromConnectionString, `
     Get-DatabaseNameFromResolvedConnectionString, `
     Get-EndpointFromResolvedConnectionString, `
+    Test-LegacyConnectionStringAllowed, `
     ConvertFrom-CmsEncryptedConnectionString, `
     Get-SqlServerDataSourceEndpoint, `
     Get-PostgresHostCandidateEndpoint, `

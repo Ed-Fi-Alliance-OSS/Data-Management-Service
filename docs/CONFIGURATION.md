@@ -31,6 +31,9 @@ settings from environment variables under two prefixes:
 passes its single value to the Configuration Service's `DatabaseSettings__EncryptionKey` and to the
 Ed-Fi API's `ConfigurationServiceSettings__EncryptionKey`; see the shared-key note under
 [ConfigurationServiceSettings](#configurationservicesettings).
+`CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS` is shared the same way: Compose passes it
+to `DatabaseSettings__AllowLegacyConnectionStrings` and `ConfigurationServiceSettings__AllowLegacyConnectionStrings`,
+and the setup scripts read it too. It defaults to `true`.
 
 ### Migrating from the earlier variable names
 
@@ -447,6 +450,7 @@ These settings configure how the DMS API connects to the Configuration Service t
 | ClientId               | The client identifier (client ID) used to access the Configuration Service endpoints.                                                                                    |
 | ClientSecret           | The client secret associated with the client ID for accessing the Configuration Service endpoints. Set via the `DMS_CONFIGURATION_SERVICE_CLIENT_SECRET` environment variable. Must satisfy the Configuration Service client-secret rules described in [IdentitySettings.ClientSecretValidation](#identitysettingsclientsecretvalidation). |
 | EncryptionKey         | Key used to encrypt and decrypt Configuration Service connection strings. Set via the `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` environment variable and must match the Configuration Service `DatabaseSettings:EncryptionKey`. Used by `provision-dms-schema.ps1` to decrypt protected Configuration Service datastore connection strings. DMS requires only a non-empty value; the Configuration Service rejects its `DatabaseSettings:EncryptionKey` at startup unless the value is at least 32 characters, ASCII, and does not derive the same key as the former shipped `appsettings.json` default. See the note below for valid-value semantics. |
+| AllowLegacyConnectionStrings | Whether legacy AES-CBC connection strings are still read. Default: `true`. Set via the `CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS` environment variable, which also sets the Configuration Service `DatabaseSettings:AllowLegacyConnectionStrings` and governs the setup scripts. Also read by the `dms-document-cache` tool. When set, it must be `true` or `false`; any other value, including an empty or whitespace-only one, fails startup. Compose treats an empty `CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS` as unset, but passes a whitespace-only one through, which the services and the setup scripts refuse. See **Migrating to authenticated values** in the note below. |
 | Scope                  | The authorization scope required for accessing the Configuration Service endpoints. Example: `edfi_admin_api/authMetadata_readonly_access`. With multi-tenancy enabled, use `edfi_admin_api/readonly_access`: DMS also reads `/v3/tenants`, which the limited scope does not grant (see [ROLES-SCOPES.md](ROLES-SCOPES.md)). |
 
 > [!NOTE]
@@ -467,21 +471,149 @@ These settings configure how the DMS API connects to the Configuration Service t
 > its `ConfigurationServiceSettings:EncryptionKey` is non-empty, so it must be
 > given the same value the Configuration Service accepted.
 >
-> The AES-256 key is derived from the UTF-8 bytes of the configured text,
-> right-padded with `0` to 32 characters and then truncated to the first 32
-> characters (see Configuration Service `ConnectionStringEncryptionService`, DMS
-> `ConnectionStringDecryptionService`, and `provision-dms-schema.ps1`). That
-> derivation is unchanged, so its consequences still apply wherever the startup
-> rules are not enforced — a DMS configured on its own, or one reading connection
-> strings written by a Configuration Service that predates this validation:
+> The key material is the UTF-8 bytes of the configured text, right-padded with
+> `0` to 32 characters and then truncated to the first 32 characters (see
+> Configuration Service `ConnectionStringEncryptionService`, DMS
+> `ConnectionStringDecryptionService`, and `provision-dms-schema.ps1`). Every
+> reader and writer uses that same material, so its consequences still apply
+> wherever the startup rules are not enforced — a DMS configured on its own, or
+> one reading connection strings written by a Configuration Service that predates
+> this validation:
 > - Only the first 32 characters are significant; any characters beyond 32 are ignored.
 > - Values shorter than 32 characters are zero-padded, which weakens the key. A
 >   weak value that both sides share still decrypts successfully, with no warning.
 > - Multi-byte (non-ASCII) characters within the first 32 push the UTF-8 length
->   past 32 bytes and break AES key initialization.
+>   past 32 bytes. Legacy AES-CBC values (below) cannot be read with such a key,
+>   because their AES key must be exactly 32 bytes.
 >
 > Required by the Configuration Service, and therefore the value to use
 > everywhere: a 32-character ASCII string.
+>
+> **Stored format.** The Configuration Service encrypts each connection string as a
+> versioned envelope: the 16-byte marker `EdFi.CS.Envelope`, a version byte (`1`),
+> a random 12-byte nonce, a 16-byte authentication tag, and the AES-256-GCM cipher
+> text of the UTF-8 connection string padded to whole 16-byte blocks. The marker
+> and version are authenticated with the cipher text. A value recognized as an
+> envelope, by its marker or by its length, is validated and authenticated before
+> any plain text is returned: an invalid marker, version or length is rejected,
+> and a changed nonce, tag or cipher text, or a different key, fails
+> authentication. It is never retried as legacy. The AES-GCM key is derived
+> from the key material with HKDF-SHA256. HKDF gives the envelope its own key,
+> separate from the legacy one; it adds no entropy, so the strength of the key is
+> still that of the configured value.
+>
+> Connection strings stored by earlier releases use the legacy format: a 16-byte
+> IV followed by AES-CBC cipher text, keyed by the key material directly. The
+> Configuration Service, DMS and the setup scripts still read it. A legacy value is
+> upgraded to an envelope when its connection string is next replaced, by a create
+> or an update that supplies a connection string. An update that omits the
+> connection string keeps the stored value as it is, so a legacy value stays
+> legacy until it is re-submitted. To upgrade every stored value at once, run the
+> re-encryption pass described under **Migrating to authenticated values** below.
+>
+> Legacy values have no integrity protection. While they remain readable, anyone
+> who can write the data store tables can alter a legacy value, or replace an
+> envelope with a legacy-format value (for example, an older one from a backup, or
+> an envelope with its marker altered and cut down to a legacy length), and readers
+> cannot detect it. Only
+> values that are read as envelopes are authenticated. An envelope is
+> also not bound to its row, so swapping two valid envelopes between rows goes
+> undetected. Binding it would add little: anyone who can write the data store
+> tables can normally write `ApiClientDataStore` too, and re-point a client to
+> another data store directly through its `DataStoreId`.
+>
+> **Upgrading.** Earlier releases of the Ed-Fi API, the separately installed
+> `dms-document-cache` tool, `provision-dms-schema.ps1` and
+> `configure-local-data-store.ps1` read only the legacy format, and fail on any
+> connection string this release of the Configuration Service writes. Upgrade
+> them together with the Configuration Service; do not run a newer Configuration
+> Service with an older Ed-Fi API or tool. `provision-dms-schema.ps1` and
+> `configure-local-data-store.ps1` require PowerShell 7.4 or later to decrypt
+> them, and so does every flow that runs one of them, such as
+> `setup-local-dms.ps1` and `build-dms.ps1 E2ETest`.
+>
+> **Rolling back.** Nothing converts an envelope back to the legacy format. Once
+> this release has written a connection string, through a create, an update or
+> the re-encryption pass, earlier releases cannot read that row. To roll the
+> Configuration Service back, restore its database from a backup taken before
+> the upgrade. The restore discards every Configuration Service change made
+> since that backup, not only connection strings, so repeat those changes after
+> restoring. Without a restore, re-submit through the earlier release every
+> connection string written since the upgrade.
+>
+> **Migrating to authenticated values.** Legacy values are read while
+> `AllowLegacyConnectionStrings` is `true`, the default, and the exposure above
+> remains for as long as it is. Each legacy value read logs a warning naming its
+> row: the Configuration Service logs the data store or derivative and the tenant,
+> and the Ed-Fi API logs the data store or derivative Id and the tenant, each
+> time it loads data stores. A deployment without the .NET SDK can tell whether
+> legacy values remain from the Configuration Service's warnings, once every
+> tenant's data stores have been read since it started, for example after the
+> Ed-Fi API restarts and loads them. The Ed-Fi API's warnings alone are not
+> enough: a legacy row that holds a `${secret:...}` reference reaches it as a
+> new envelope. To remove the exposure:
+>
+> 1. Upgrade every consumer, as described under **Upgrading**.
+> 2. Stop every Configuration Service instance, so that nothing writes data
+>    stores during the pass, and back up the Configuration Service database.
+> 3. Run the re-encryption pass from a checkout of this release (it needs the
+>    .NET 10 SDK), with the key the Configuration Service uses:
+>
+>    ```sh
+>    export DatabaseSettings__EncryptionKey='<DatabaseSettings:EncryptionKey>'
+>    dotnet run --project src/config/backend/EdFi.DmsConfigurationService.Backend.Installer -- \
+>      --engine postgresql --connectionString '<Configuration Service database connection string>' \
+>      --reencrypt-connection-strings
+>    ```
+>
+>    Use `--engine mssql` for SQL Server. The pass checks the key with the
+>    Configuration Service's own rules. It then rewrites every legacy value in
+>    `DataStore` and `DataStoreDerivative`, for every tenant, as an envelope, and
+>    authenticates every envelope already there. Each value keeps its exact text,
+>    including secret references, and no other column changes. On success it
+>    prints converted and already-current counts per table and exits with status
+>    0. A value it cannot migrate (an envelope that fails authentication, a value
+>    in neither format, or a legacy value the key does not decrypt) stops it: it
+>    names the table and row, exits with status 1, and commits nothing, because
+>    the pass runs in one transaction. A rerun rewrites nothing. Interrupting it
+>    (Ctrl+C) before the final commit begins also commits nothing.
+>
+>    To confirm no legacy values remain, before step 4 or at any later time, run
+>    the same command with `--check-connection-strings` in place of
+>    `--reencrypt-connection-strings`. It verifies every value the same way and
+>    prints legacy and current counts per table, but writes nothing and takes no
+>    update locks, so the Configuration Service may keep running. It exits with
+>    status 0 when no legacy values remain, 2 when some do, and 1 when a value
+>    cannot be verified. Neither switch takes a value: `=true`, `=false` or a
+>    value after the switch is refused with status 1, as is any argument the
+>    installer does not recognize.
+> 4. Set `CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS=false` in the
+>    Compose environment, or, outside Compose, set
+>    `DatabaseSettings:AllowLegacyConnectionStrings` on the Configuration Service
+>    and `ConfigurationServiceSettings:AllowLegacyConnectionStrings` on the Ed-Fi
+>    API and the `dms-document-cache` tool to `false`. Set the variable in the
+>    setup scripts' environment file too.
+> 5. Start the Configuration Service and restart the Ed-Fi API, which caches
+>    data store connection strings.
+>
+> Each of them then rejects every legacy-format value before decrypting it, so an
+> altered legacy value is never used and its padding cannot be probed. Set both
+> services. The Ed-Fi API's setting alone does not cover a legacy row that holds
+> a `${secret:...}` reference: the Configuration Service decrypts that row,
+> resolves the reference and returns the result as a new envelope, which the
+> Ed-Fi API accepts. Only the Configuration Service's setting rejects such a row.
+> Compose sets both from the one variable.
+>
+> A legacy value read after legacy values are disallowed fails with a message
+> saying it is in the legacy format and that `AllowLegacyConnectionStrings` is
+> false, not that it could not be decrypted. Run the re-encryption pass, or set
+> the setting back to `true`.
+>
+> The pass cannot tell whether a legacy value was altered before it ran: the
+> format has no integrity check, so the pass re-encrypts what it reads, and the
+> new envelope authenticates whatever that was. Run it on data you trust. It
+> changes nothing about row binding: the substitution and swapping limits above
+> still apply to envelopes.
 >
 > **Changing the encryption key.** Connection strings already stored by the
 > Configuration Service were encrypted with the previous key and are not
@@ -493,10 +625,10 @@ These settings configure how the DMS API connects to the Configuration Service t
 > - A data store still under the previous key fails every data store read that
 >   includes it, the collection as well as the single row, with an HTTP 500 whose
 >   log entry says the stored connection string could not be decrypted. DMS
->   therefore cannot load that tenant's data stores. The stored format is not
->   authenticated, so about one value in 256 decrypts under the wrong key into
->   unreadable text instead of failing; that read succeeds, and returns a
->   connection string DMS cannot use.
+>   therefore cannot load that tenant's data stores. An envelope under the wrong
+>   key always fails authentication. A legacy value is not authenticated, so
+>   about one in 256 decrypts under the wrong key into unreadable text instead of
+>   failing; that read succeeds, and returns a connection string DMS cannot use.
 > - A derivative still under the previous key fails the data store derivative
 >   reads the same way. Read as part of its data store, it is returned with a null
 >   connection string, which DMS treats as not configured, and the data store and
