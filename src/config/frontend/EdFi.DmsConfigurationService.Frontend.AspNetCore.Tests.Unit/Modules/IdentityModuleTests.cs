@@ -13,6 +13,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend;
+using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
@@ -5312,7 +5313,7 @@ public class IntrospectionRequestContractTests
             1893456000,
             1893455100,
             "subject-1",
-            "audience-1",
+            ["audience-1"],
             "issuer-1"
         );
 
@@ -5388,28 +5389,40 @@ public class IntrospectionRequestContractTests
             Logs?.Dispose();
         }
 
-        protected void AssertOAuthError(HttpStatusCode status, string error, string description)
-        {
-            Response.StatusCode.Should().Be(status, Content);
-            Response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
-            JsonObject body = JsonNode.Parse(Content)!.AsObject();
-            body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
-            body["error"]!.GetValue<string>().Should().Be(error);
-            body["error_description"]!.GetValue<string>().Should().Be(description);
-        }
+        protected void AssertOAuthError(HttpStatusCode status, string error, string description) =>
+            IntrospectionRequestContractTests.AssertOAuthErrorBody(
+                Response,
+                Content,
+                status,
+                error,
+                description
+            );
 
-        protected void AssertChallenge() =>
-            Response
-                .Headers.GetValues("WWW-Authenticate")
-                .Should()
-                .ContainSingle()
-                .Which.Should()
-                .Be(Challenge);
+        protected void AssertChallenge() => IntrospectionRequestContractTests.AssertBasicChallenge(Response);
 
         protected void AssertNoChallenge() => Response.Headers.WwwAuthenticate.Should().BeEmpty();
 
         protected void AssertManagerNotCalled() => Manager.Requests.Should().BeEmpty();
     }
+
+    private static void AssertOAuthErrorBody(
+        HttpResponseMessage response,
+        string content,
+        HttpStatusCode status,
+        string error,
+        string description
+    )
+    {
+        response.StatusCode.Should().Be(status, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        JsonObject body = JsonNode.Parse(content)!.AsObject();
+        body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
+        body["error"]!.GetValue<string>().Should().Be(error);
+        body["error_description"]!.GetValue<string>().Should().Be(description);
+    }
+
+    private static void AssertBasicChallenge(HttpResponseMessage response) =>
+        response.Headers.GetValues("WWW-Authenticate").Should().ContainSingle().Which.Should().Be(Challenge);
 
     // ----- D-03 rows 1-7: one case per row, each rejected before the manager -----
 
@@ -5668,6 +5681,51 @@ public class IntrospectionRequestContractTests
         [Test]
         public void It_reports_the_bearer_token_type() =>
             Body_().GetProperty("token_type").GetString().Should().Be("Bearer");
+
+        [Test]
+        public void It_answers_a_single_audience_as_a_string_in_the_established_byte_form() =>
+            Content
+                .Should()
+                .Be(
+                    """{"active":true,"client_id":"introspect-client","scope":"edfi_admin_api/full_access","exp":1893456000,"iat":1893455100,"sub":"subject-1","aud":"audience-1","iss":"issuer-1","token_type":"Bearer"}"""
+                );
+    }
+
+    [TestFixture]
+    public class Given_an_introspection_the_manager_reports_active_without_an_audience
+        : IntrospectionRequestFixture
+    {
+        protected override TokenIntrospectionResult Respond() =>
+            new TokenIntrospectionResult.Active(ActiveToken with { Aud = [] });
+
+        protected override HttpContent? Body => Form(WithFormCredentials(("token", Token)));
+
+        [Test]
+        public void It_answers_the_audience_as_null_in_the_established_byte_form() =>
+            Content
+                .Should()
+                .Be(
+                    """{"active":true,"client_id":"introspect-client","scope":"edfi_admin_api/full_access","exp":1893456000,"iat":1893455100,"sub":"subject-1","aud":null,"iss":"issuer-1","token_type":"Bearer"}"""
+                );
+    }
+
+    /// <summary>RFC 7662 §2.2 and RFC 7519 §4.1.3: several audiences are an array, in the manager's order.</summary>
+    [TestFixture]
+    public class Given_an_introspection_the_manager_reports_active_with_several_audiences
+        : IntrospectionRequestFixture
+    {
+        protected override TokenIntrospectionResult Respond() =>
+            new TokenIntrospectionResult.Active(ActiveToken with { Aud = ["introspect-client", "account"] });
+
+        protected override HttpContent? Body => Form(WithFormCredentials(("token", Token)));
+
+        [Test]
+        public void It_answers_the_audiences_as_an_array() =>
+            Content
+                .Should()
+                .Be(
+                    """{"active":true,"client_id":"introspect-client","scope":"edfi_admin_api/full_access","exp":1893456000,"iat":1893455100,"sub":"subject-1","aud":["introspect-client","account"],"iss":"issuer-1","token_type":"Bearer"}"""
+                );
     }
 
     [TestFixture]
@@ -5735,33 +5793,100 @@ public class IntrospectionRequestContractTests
                 .Be(new TokenIntrospectionRequest(ClientId, ClientSecret, Token, TokenTypeHint.None));
     }
 
-    // ----- Keycloak mode: no manager is registered -----
+    // ----- Keycloak mode: the shipped Keycloak manager, with Keycloak's answers scripted -----
 
+    private const string KeycloakInactiveAnswer = """{"active":false}""";
+
+    /// <summary>
+    /// What Keycloak answers an active access token (I-01 on 26.1.4 and 26.7.5), Keycloak-only members
+    /// included, for a token whose <c>azp</c> and <c>client_id</c> name <paramref name="azp"/>.
+    /// </summary>
+    private static string KeycloakActiveAnswer(string azp) =>
+        $$$"""{"exp":1792607774,"iat":1792605974,"jti":"0f1e2d3c-jti","iss":"http://keycloak.test/realms/edfi","aud":"account","sub":"9f0c5a1e-subject","typ":"Bearer","azp":"{{{azp}}}","acr":"1","realm_access":{"roles":["offline_access"]},"resource_access":{"account":{"roles":["manage-account"]}},"scope":"profile email","namespacePrefixes":"uri://ed-fi.org","email_verified":false,"preferred_username":"service-account-{{{azp}}}","client_id":"{{{azp}}}","username":"service-account-{{{azp}}}","token_type":"Bearer","active":true}""";
+
+    internal sealed record DelegatedRequest(
+        Uri? Uri,
+        string? Authorization,
+        IReadOnlyList<KeyValuePair<string, string>> FormFields
+    );
+
+    /// <summary>
+    /// Stands in for Keycloak's transport under the introspection manager's named client: records each
+    /// delegated request, then answers it with the next scripted answer, repeating the last.
+    /// </summary>
+    internal sealed class ScriptedKeycloak(params (int Status, string Body)[] answers) : HttpMessageHandler
+    {
+        public List<DelegatedRequest> Requests { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        )
+        {
+            string body = request.Content is null
+                ? ""
+                : await request.Content.ReadAsStringAsync(cancellationToken);
+            Requests.Add(
+                new DelegatedRequest(
+                    request.RequestUri,
+                    request.Headers.Authorization?.ToString(),
+                    [
+                        .. body.Split('&', StringSplitOptions.RemoveEmptyEntries)
+                            .Select(pair => pair.Split('=', 2))
+                            .Select(parts => new KeyValuePair<string, string>(
+                                WebUtility.UrlDecode(parts[0]),
+                                WebUtility.UrlDecode(parts.Length > 1 ? parts[1] : "")
+                            )),
+                    ]
+                )
+            );
+            (int status, string answer) = answers[Math.Min(Requests.Count, answers.Length) - 1];
+            return new HttpResponseMessage((HttpStatusCode)status)
+            {
+                Content = new StringContent(answer, Encoding.UTF8, "application/json"),
+            };
+        }
+    }
+
+    /// <summary>
+    /// A Keycloak-mode host running the shipped <see cref="KeycloakTokenIntrospectionManager"/>; only the
+    /// transport of its named client is replaced, by a <see cref="ScriptedKeycloak"/> answering as Keycloak
+    /// did in the characterization (rows I-01 to I-21). The shared client-authentication seam, the
+    /// delegation, the ownership filter and the endpoint's status and challenge rules are the production
+    /// ones.
+    /// </summary>
     public abstract class KeycloakIntrospectionFixture
     {
-        private const string UnreachableDatabase =
-            "host=127.0.0.1;port=1;database=unreachable;username=none;timeout=1";
-
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
+
+        private protected ScriptedKeycloak Keycloak { get; private set; } = null!;
         protected HttpResponseMessage Response { get; private set; } = null!;
         protected string Content { get; private set; } = null!;
 
+        /// <summary>Keycloak's answers, one per delegated request, the last repeating.</summary>
+        protected virtual (int Status, string Body)[] KeycloakAnswers => [(200, KeycloakInactiveAnswer)];
+
         protected abstract HttpContent Body { get; }
+
+        protected virtual IEnumerable<string> AuthorizationValues => [];
 
         [SetUp]
         public async Task Setup()
         {
+            Keycloak = new ScriptedKeycloak(KeycloakAnswers);
             _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
                 builder.UseSetting("AppSettings:IdentityProvider", "keycloak");
-                builder.UseSetting("DatabaseSettings:DatabaseConnection", UnreachableDatabase);
-                builder.ConfigureServices(collection => collection.RemoveAll<ITokenIntrospectionManager>());
+                builder.ConfigureServices(collection =>
+                    collection
+                        .AddHttpClient(KeycloakTokenIntrospectionManager.HttpClientName)
+                        .ConfigurePrimaryHttpMessageHandler(() => Keycloak)
+                );
             });
             _client = _factory.CreateClient();
-            Response = await _client.PostAsync("/connect/introspect", Body);
-            Content = await Response.Content.ReadAsStringAsync();
+            (Response, Content) = await SendAsync(Body);
         }
 
         [TearDown]
@@ -5770,20 +5895,224 @@ public class IntrospectionRequestContractTests
             Response?.Dispose();
             _client?.Dispose();
             _factory?.Dispose();
+            Keycloak?.Dispose();
         }
+
+        protected async Task<(HttpResponseMessage Response, string Content)> SendAsync(HttpContent body)
+        {
+            using HttpRequestMessage request = new(HttpMethod.Post, "/connect/introspect") { Content = body };
+            string[] authorization = [.. AuthorizationValues];
+            if (authorization.Length > 0)
+            {
+                request.Headers.TryAddWithoutValidation("Authorization", authorization).Should().BeTrue();
+            }
+
+            HttpResponseMessage response = await _client.SendAsync(request);
+            return (response, await response.Content.ReadAsStringAsync());
+        }
+
+        protected void AssertOAuthError(HttpStatusCode status, string error, string description) =>
+            IntrospectionRequestContractTests.AssertOAuthErrorBody(
+                Response,
+                Content,
+                status,
+                error,
+                description
+            );
+
+        protected void AssertChallenge() => IntrospectionRequestContractTests.AssertBasicChallenge(Response);
+
+        protected void AssertNoChallenge() => Response.Headers.WwwAuthenticate.Should().BeEmpty();
     }
 
     [TestFixture]
-    public class Given_keycloak_mode_and_a_credential_less_introspection_with_a_token
+    public class Given_keycloak_mode_and_an_introspection_without_client_credentials
         : KeycloakIntrospectionFixture
     {
         protected override HttpContent Body => Form(("token", Token));
 
         [Test]
+        public void It_answers_400_invalid_client() =>
+            AssertOAuthError(
+                HttpStatusCode.BadRequest,
+                "invalid_client",
+                "Client authentication is required."
+            );
+
+        [Test]
+        public void It_does_not_send_a_challenge() => AssertNoChallenge();
+
+        [Test]
+        public void It_does_not_ask_keycloak() => Keycloak.Requests.Should().BeEmpty();
+    }
+
+    /// <summary>Keycloak 26.7.5 refuses a wrong secret with <c>invalid_client</c> (I-06).</summary>
+    [TestFixture]
+    public class Given_keycloak_mode_and_a_wrong_basic_secret : KeycloakIntrospectionFixture
+    {
+        protected override (int Status, string Body)[] KeycloakAnswers =>
+            [(401, """{"error":"invalid_client","error_description":"Client authentication failed."}""")];
+
+        protected override HttpContent Body => Form(("token", Token));
+
+        protected override IEnumerable<string> AuthorizationValues =>
+            [$"Basic {Convert.ToBase64String(Encoding.UTF8.GetBytes($"{ClientId}:wrong-secret"))}"];
+
+        [Test]
+        public void It_answers_401_invalid_client() =>
+            AssertOAuthError(HttpStatusCode.Unauthorized, "invalid_client", InvalidCredentialsDescription);
+
+        [Test]
+        public void It_sends_the_basic_challenge() => AssertChallenge();
+
+        [Test]
+        public void It_lets_keycloak_judge_the_credentials_it_was_given() =>
+            Keycloak
+                .Requests.Should()
+                .ContainSingle()
+                .Which.FormFields.Should()
+                .Contain(new KeyValuePair<string, string>("client_secret", "wrong-secret"));
+    }
+
+    /// <summary>Keycloak 26.1.4 refuses every authentication failure with <c>invalid_request</c> (I-06).</summary>
+    [TestFixture]
+    public class Given_keycloak_mode_and_a_wrong_form_secret : KeycloakIntrospectionFixture
+    {
+        protected override (int Status, string Body)[] KeycloakAnswers =>
+            [(401, """{"error":"invalid_request","error_description":"Authentication failed."}""")];
+
+        protected override HttpContent Body =>
+            Form(("client_id", ClientId), ("client_secret", "wrong-secret"), ("token", Token));
+
+        [Test]
+        public void It_answers_400_invalid_client() =>
+            AssertOAuthError(HttpStatusCode.BadRequest, "invalid_client", InvalidCredentialsDescription);
+
+        [Test]
+        public void It_does_not_send_a_challenge() => AssertNoChallenge();
+    }
+
+    /// <summary>Keycloak refuses a public client itself, on both characterized versions (I-10).</summary>
+    [TestFixture]
+    public class Given_keycloak_mode_and_a_public_client : KeycloakIntrospectionFixture
+    {
+        protected override (int Status, string Body)[] KeycloakAnswers =>
+            [(403, """{"error":"invalid_request","error_description":"Client not allowed."}""")];
+
+        protected override HttpContent Body => Form(WithFormCredentials(("token", Token)));
+
+        [Test]
+        public void It_answers_400_invalid_client() =>
+            AssertOAuthError(HttpStatusCode.BadRequest, "invalid_client", InvalidCredentialsDescription);
+    }
+
+    [TestFixture]
+    public class Given_keycloak_mode_and_the_owners_own_token : KeycloakIntrospectionFixture
+    {
+        protected override (int Status, string Body)[] KeycloakAnswers =>
+            [(200, KeycloakActiveAnswer(ClientId))];
+
+        protected override HttpContent Body => Form(("token", Token), ("token_type_hint", "access_token"));
+
+        protected override IEnumerable<string> AuthorizationValues => [_validBasic];
+
+        [Test]
         public void It_answers_200() => Response.StatusCode.Should().Be(HttpStatusCode.OK, Content);
 
         [Test]
-        public void It_answers_exactly_active_false() => Content.Should().Be("""{"active":false}""");
+        public void It_answers_only_the_rfc_7662_members_with_azp_as_the_client_id() =>
+            Content
+                .Should()
+                .Be(
+                    """{"active":true,"client_id":"introspect-client","scope":"profile email","exp":1792607774,"iat":1792605974,"sub":"9f0c5a1e-subject","aud":"account","iss":"http://keycloak.test/realms/edfi","token_type":"Bearer"}"""
+                );
+
+        [Test]
+        public void It_delegates_once_to_the_realms_introspection_endpoint() =>
+            Keycloak
+                .Requests.Should()
+                .ContainSingle()
+                .Which.Uri.Should()
+                .Be(new Uri("http://localhost/realms/dms/protocol/openid-connect/token/introspect"));
+
+        [Test]
+        public void It_delegates_the_basic_credentials_as_form_fields_with_the_token_only() =>
+            Keycloak
+                .Requests.Single()
+                .FormFields.Should()
+                .BeEquivalentTo([
+                    new KeyValuePair<string, string>("client_id", ClientId),
+                    new KeyValuePair<string, string>("client_secret", ClientSecret),
+                    new KeyValuePair<string, string>("token", Token),
+                ]);
+
+        [Test]
+        public void It_sends_keycloak_no_authorization_header() =>
+            Keycloak.Requests.Single().Authorization.Should().BeNull();
+    }
+
+    /// <summary>
+    /// Keycloak checks no ownership (I-03, I-04), so it answers another client's live token in full. CMS
+    /// answers it exactly as it answers a token Keycloak does not know.
+    /// </summary>
+    [TestFixture]
+    public class Given_keycloak_mode_and_another_clients_token : KeycloakIntrospectionFixture
+    {
+        private HttpResponseMessage _unknownTokenResponse = null!;
+        private string _unknownTokenContent = null!;
+
+        protected override (int Status, string Body)[] KeycloakAnswers =>
+            [(200, KeycloakActiveAnswer("another-client")), (200, KeycloakInactiveAnswer)];
+
+        protected override HttpContent Body => Form(("token", Token));
+
+        protected override IEnumerable<string> AuthorizationValues => [_validBasic];
+
+        [SetUp]
+        public async Task IntrospectAnUnknownToken() =>
+            (_unknownTokenResponse, _unknownTokenContent) = await SendAsync(Form(("token", "unknown-token")));
+
+        [TearDown]
+        public void DisposeUnknownTokenResponse() => _unknownTokenResponse?.Dispose();
+
+        [Test]
+        public void It_answers_200_with_exactly_active_false()
+        {
+            Response.StatusCode.Should().Be(HttpStatusCode.OK, Content);
+            Content.Should().Be(KeycloakInactiveAnswer);
+        }
+
+        [Test]
+        public void It_answers_byte_for_byte_what_an_unknown_token_gets()
+        {
+            Response.StatusCode.Should().Be(_unknownTokenResponse.StatusCode);
+            Response
+                .Content.Headers.ContentType.Should()
+                .Be(_unknownTokenResponse.Content.Headers.ContentType);
+            Content.Should().Be(_unknownTokenContent);
+        }
+
+        [Test]
+        public void It_asked_keycloak_about_both_tokens() => Keycloak.Requests.Should().HaveCount(2);
+    }
+
+    [TestFixture]
+    public class Given_keycloak_mode_and_keycloak_unusable : KeycloakIntrospectionFixture
+    {
+        protected override (int Status, string Body)[] KeycloakAnswers => [(500, "")];
+
+        protected override HttpContent Body => Form(WithFormCredentials(("token", Token)));
+
+        [Test]
+        public void It_answers_503_temporarily_unavailable() =>
+            AssertOAuthError(
+                HttpStatusCode.ServiceUnavailable,
+                "temporarily_unavailable",
+                "Token introspection is temporarily unavailable. Retry the request."
+            );
+
+        [Test]
+        public void It_does_not_claim_the_token_is_inactive() => Content.Should().NotContain("active");
     }
 
     [TestFixture]
@@ -5792,22 +6121,18 @@ public class IntrospectionRequestContractTests
         protected override HttpContent Body => Form();
 
         [Test]
-        public void It_answers_400() => Response.StatusCode.Should().Be(HttpStatusCode.BadRequest, Content);
+        public void It_answers_400_invalid_request() =>
+            AssertOAuthError(HttpStatusCode.BadRequest, "invalid_request", "The token parameter is missing.");
 
         [Test]
-        public void It_answers_the_oauth_invalid_request_body()
-        {
-            JsonObject body = JsonNode.Parse(Content)!.AsObject();
-            body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
-            body["error"]!.GetValue<string>().Should().Be("invalid_request");
-            body["error_description"]!.GetValue<string>().Should().Be("The token parameter is missing.");
-        }
+        public void It_does_not_ask_keycloak() => Keycloak.Requests.Should().BeEmpty();
     }
 
-    // ----- Route metadata -----
+    // ----- Route metadata, the same under both identity providers -----
 
-    [TestFixture]
-    public class Given_the_introspect_route
+    [TestFixture("self-contained")]
+    [TestFixture("keycloak")]
+    public class Given_the_introspect_route(string identityProvider)
     {
         private WebApplicationFactory<Program> _factory = null!;
         private IReadOnlyList<object> _metadata = null!;
@@ -5816,8 +6141,10 @@ public class IntrospectionRequestContractTests
         public void Setup()
         {
             _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-                builder.UseEnvironment("Test")
-            );
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("AppSettings:IdentityProvider", identityProvider);
+            });
             _metadata =
             [
                 .. _factory
@@ -5844,6 +6171,10 @@ public class IntrospectionRequestContractTests
         [Test]
         public void It_is_exempt_from_bearer_authentication() =>
             _metadata.Should().Contain(BearerAuthenticationExemptMetadata.Instance);
+
+        [Test]
+        public void It_is_described_as_requiring_client_credentials() =>
+            _metadata.Should().Contain(ClientCredentialAuthenticationMetadata.Instance);
     }
 }
 

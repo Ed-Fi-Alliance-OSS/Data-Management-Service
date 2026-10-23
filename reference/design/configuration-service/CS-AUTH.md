@@ -25,7 +25,7 @@ The CMS exposes standard OAuth 2.0 endpoints:
 | Endpoint | Purpose | Caller authentication |
 | --- | --- | --- |
 | `POST /connect/token` | Issue an access token (client credentials grant only) | Anonymous (client credentials in the request) |
-| `POST /connect/introspect` | Introspect a token (RFC 7662) | `self-contained`: client credentials (HTTP Basic or form body, exactly one of them); `keycloak`: none, and every token is reported inactive [^introspect] |
+| `POST /connect/introspect` | Introspect a token (RFC 7662) | Client credentials (HTTP Basic or form body, exactly one of them) [^introspect] |
 | `POST /connect/revoke` | Revoke a token (RFC 7009) | Client credentials (HTTP Basic or form body, exactly one of them) [^revoke] |
 
 [^revoke]: RFC 7009 §2.1 requires the revocation caller to authenticate the same
@@ -36,8 +36,8 @@ and not a bearer access token. Both identity provider modes enforce it and both 
 
 [^introspect]: RFC 7662 §2.1 requires some form of authorization to call the introspection endpoint, such as client
 authentication or a bearer access token, so that it cannot be used to scan for valid tokens.
-In `self-contained` mode the Configuration Service uses client credentials, as at `/connect/revoke`; a bearer access
-token is not accepted. In `keycloak` mode it makes no credential check (see [Token introspection](#token-introspection)).
+The Configuration Service uses client credentials in both identity provider modes, as at `/connect/revoke`; a bearer
+access token is not accepted. In `keycloak` mode Keycloak checks them (see [Token introspection](#token-introspection)).
 RFC 7662 §2.3 answers invalid client credentials with `401`, "as described in Section 5.2" of RFC 6749.
 The endpoint sends that `401`, with a `WWW-Authenticate: Basic` challenge, when HTTP Basic was attempted.
 Failed form credentials get `400 invalid_client`, as at `/connect/revoke`: RFC 6749 §5.2 requires the `401` only for
@@ -72,8 +72,7 @@ Both `/openapi/v1.json` and `/metadata/specifications` declare an `oauth2_client
 The token URL follows the address the document was requested on, as the server URL and the DMS OpenAPI token URL do; the discovery document instead builds its endpoints from `IdentitySettings:Authority`, because services fetch it to validate tokens.
 The scheme lists the scopes `edfi_admin_api/full_access`, `edfi_admin_api/readonly_access` and `edfi_admin_api/authMetadata_readonly_access`.
 Operations that need no token (`/connect/register`, `/connect/token`, `GET /`, `GET /tenancy`, `GET /health` and discovery) declare an empty `security` array.
-`/connect/revoke`, and `/connect/introspect` in `self-contained` mode, instead require a `client_secret_basic` HTTP Basic scheme, whose description notes that the credentials may be sent as form fields instead.
-In `keycloak` mode `/connect/introspect` makes no credential check and declares an empty `security` array.
+`/connect/revoke` and `/connect/introspect` instead require a `client_secret_basic` HTTP Basic scheme, whose description notes that the credentials may be sent as form fields instead.
 A stock Swagger UI can therefore authorize against the Configuration Service in both modes.
 
 ## Token revocation
@@ -308,8 +307,11 @@ path:
   before treating the answer as confirmation.
   A protected CMS request with the token
   answers `401`.
-- **`keycloak`**: CMS `/connect/introspect` cannot observe Keycloak tokens (it always
-  answers `{"active": false}` in this mode). Use Keycloak's own endpoint,
+- **`keycloak`**: CMS `/connect/introspect` passes the owner's credentials to Keycloak's
+  introspection and reports only an access token's state, only to its owner (see
+  [Token introspection](#token-introspection)). From Keycloak 26.4.12 it answers
+  `{"active": false}` for a live token unless the owner is in the token's `aud`, which a
+  client the Configuration Service creates is not, so there it proves nothing. Use Keycloak's own endpoint,
   `POST {Keycloak base URL}/realms/{realm}/protocol/openid-connect/token/introspect`,
   authenticated as a **confidential** client:
   - Access tokens. From Keycloak 26.4.12 (Red Hat's statement; observed on 26.7.5, not on
@@ -512,23 +514,35 @@ ordinally, so a case variant is an unknown client (`invalid_client`).
   This is an exception to the problem-details format DMS-1218 gave that response, as it is for revoke.
   Failed credentials answer `invalid_client`: `401` with a `WWW-Authenticate: Basic` challenge when HTTP Basic was attempted, `400` otherwise.
 - **Only the token's own client receives metadata.**
-  Ownership compares the token's `client_id` claim with the caller's stored client id, ordinally, and the token's status
-  is read only from a row stored for the calling application, as revocation's update is.
   For the owner's valid token the answer is `200` with `active` true, `client_id`, `scope`, `exp`, `iat`, `sub`, `aud`, `iss` and `token_type` `Bearer`.
   `exp` and `iat` are JSON integers.
+  `aud` is a string for one audience and an array for several, as RFC 7662 §2.2 allows.
 - **Every other outcome is exactly `{"active": false}`.**
   That covers another client's token and an unknown, malformed, unverifiable, expired or revoked token.
-  A token the service could not decide because the signing-key store or the token-status store failed is also `{"active": false}`, and logs the Error in [Log signals](#log-signals).
-- **A client-store failure while authenticating the caller is `503 temporarily_unavailable`.**
-  The request was not judged, so an outage cannot read as rejected credentials.
-  Retrying is safe.
-- **A `self-contained` host refuses to start without an introspection implementation.**
-  Without one, the endpoint would make no credential checks, which is right only in `keycloak` mode.
+- **A host refuses to start without an introspection implementation.**
+  Without one, the endpoint could not authenticate its callers.
   As for revocation, the startup error names only the exception types.
-- **`keycloak` mode is unchanged.**
-  The Configuration Service cannot observe Keycloak tokens.
-  In this mode the endpoint makes no credential checks and answers `{"active": false}` for any request that carries a token.
-  A request without a token receives the OAuth `400 invalid_request`, as in `self-contained` mode.
+- **`self-contained` mode.**
+  Ownership compares the token's `client_id` claim with the caller's stored client id, ordinally, and the token's status
+  is read only from a row stored for the calling application, as revocation's update is.
+  A token the service could not decide because the signing-key store or the token-status store failed is `{"active": false}`, and logs the Error in [Log signals](#log-signals).
+  A client-store failure while authenticating the caller is `503 temporarily_unavailable`: the request was not judged, so an outage cannot read as rejected credentials.
+  Retrying is safe.
+- **`keycloak` mode.**
+  The Configuration Service forwards the caller's credentials, as form fields, and the token to
+  `POST {Keycloak base URL}/realms/{realm}/protocol/openid-connect/token/introspect`, so Keycloak authenticates the caller and decides the token's state.
+  `token_type_hint` is not forwarded: the token is always looked up as an access token, and Keycloak's other token types (refresh, ID) are never described.
+  Keycloak does not check ownership: any confidential client it authenticates may introspect any token in the realm.
+  The Configuration Service therefore describes a token only when Keycloak reports it active and its `azp` equals the caller's client id, ordinally, and copies only the members listed above, never Keycloak's other claims.
+  Credentials Keycloak rejects, and a public client (which Keycloak refuses at introspection), answer `invalid_client` by the same rules as `self-contained` mode.
+  Any other Keycloak answer, a timeout (`AppSettings:TokenRequestTimeoutSeconds`) or an unreachable Keycloak is `503 temporarily_unavailable`.
+  Unlike an undecided token in `self-contained` mode it is not `{"active": false}`, because the same Keycloak call authenticates the caller: without a usable answer the caller is not authenticated either.
+  Retrying is safe.
+- **From Keycloak 26.4.12, an owner may see its own live token as inactive.**
+  From that version (Red Hat's statement; observed on 26.7.5, not on 26.1.4) Keycloak answers `active:false` to an introspecting client that is not in the token's `aud`.
+  A client the Configuration Service creates is not in its own tokens' audience, so on those versions its own live token answers `{"active": false}`.
+  The compose files pin Keycloak 26.1.4; the Azure VM reference deployment runs 26.7.
+  Keycloak's own introspection endpoint, called by a client placed in the token's audience, is the way to observe such a token (see [Confirming that a revocation actually took effect](#confirming-that-a-revocation-actually-took-effect)).
 - **Discovery.**
   `introspection_endpoint_auth_methods_supported` and `revocation_endpoint_auth_methods_supported` are both `["client_secret_basic", "client_secret_post"]`.
 
@@ -984,6 +998,9 @@ Clients holding tokens signed with the old certificate must obtain new ones.
 | Revocation could not decide (answers `503`) | Error | `Revocation could not be completed: …` |
 | Introspection could not authenticate the caller (answers `503`) | Error | `Introspection could not be completed: {Boundary} failed ({ExceptionTypes})`, followed by the Warning `Introspection for client {ClientId} could not be completed ({Reason}); answering 503` |
 | Introspection answered inactive for another client's token | Debug | `Introspection answered inactive: the supplied token does not belong to the calling client {CallerClientId}` |
+| Keycloak introspection could not be completed (`keycloak`, answers `503`) | Error | `Introspection for client {ClientId} could not be completed: Keycloak answered HTTP {StatusCode} …` or `…: the Keycloak introspection request failed ({Reason}, {ExceptionTypes})`, followed by the same Warning as above |
+| Keycloak refused the caller's credentials (`keycloak`) | Information | `Keycloak refused the introspection request for client {ClientId} (HTTP {StatusCode}, {ProviderError})` |
+| Keycloak reported another client's token (`keycloak`, answers `{"active": false}`) | Debug | `Introspection answered inactive: the supplied token was not issued to the calling client {ClientId}` |
 | Introspection Basic credentials malformed | Information | `Introspection Basic credentials were malformed at the {Stage} stage` |
 
 A snapshot publication labelled `Request` is a normal background reload started by a

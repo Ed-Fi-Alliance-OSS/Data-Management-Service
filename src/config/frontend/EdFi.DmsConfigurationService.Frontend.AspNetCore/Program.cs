@@ -138,8 +138,7 @@ await InitializeClientSecretPlaceholder(app);
 // DatabaseOptions, because the self-contained manager's repository reads those options when it is
 // constructed: a rejected key must stop startup with the validator's text, not as a manager that could
 // not be constructed. Before ReportInvalidConfiguration and the database work, so a host that cannot
-// revoke tokens, or a self-contained host that could not authenticate introspection callers, never
-// starts serving (DMS-1327 D-12).
+// revoke tokens, or cannot authenticate introspection callers, never starts serving (DMS-1327 D-12).
 EnsureTokenRevocationSupport(app);
 EnsureTokenIntrospectionSupport(app);
 
@@ -388,24 +387,21 @@ void EnsureTokenRevocationSupport(WebApplication app)
 }
 
 /// <summary>
-/// Under the self-contained identity provider, stops startup unless an ITokenIntrospectionManager can be
-/// constructed. POST /connect/introspect answers without any credential check when no manager is
-/// registered, which is the intended keycloak behavior, so a self-contained host missing its manager
-/// would otherwise serve introspection unauthenticated. Keycloak registers none, so it is not checked.
-/// Construction only, and failures are reported by exception type names alone, as for revocation.
+/// Stops startup unless an ITokenIntrospectionManager can be constructed for the configured identity
+/// provider, so POST /connect/introspect, which resolves the manager for every request, is never served
+/// by a host that cannot authenticate its callers. The same rules as revocation: construction only, so
+/// no database or identity provider availability requirement, and a construction failure reported by
+/// exception type names alone, neither logged nor wrapped (DMS-1327 D-12, D-15).
 /// </summary>
 void EnsureTokenIntrospectionSupport(WebApplication app)
 {
-    if (TokenRevocationProviderName(app.Configuration["AppSettings:IdentityProvider"]) != "self-contained")
-    {
-        return;
-    }
-
+    string provider = TokenRevocationProviderName(app.Configuration["AppSettings:IdentityProvider"]);
     Exception? constructionFailure = null;
     ITokenIntrospectionManager? introspectionManager = null;
 
     try
     {
+        // In a scope: the Keycloak manager depends on the scoped KeycloakContext.
         using IServiceScope scope = app.Services.CreateScope();
         introspectionManager = scope.ServiceProvider.GetService<ITokenIntrospectionManager>();
     }
@@ -418,27 +414,27 @@ void EnsureTokenIntrospectionSupport(WebApplication app)
     {
         string exceptionTypes = ExceptionTypeNames.Chain(constructionFailure);
         app.Logger.LogCritical(
-            "The token introspection manager for AppSettings:IdentityProvider 'self-contained' could "
-                + "not be constructed ({ExceptionTypes}). Correct the registration or its dependencies, "
-                + "then restart.",
+            "The token introspection manager for AppSettings:IdentityProvider '{Provider}' could not be "
+                + "constructed ({ExceptionTypes}). Correct the registration or its dependencies, then restart.",
+            provider,
             exceptionTypes
         );
         throw new InvalidOperationException(
-            "The token introspection manager for AppSettings:IdentityProvider 'self-contained' could "
-                + $"not be constructed ({exceptionTypes}). Correct the registration or its dependencies, "
-                + "then restart."
+            $"The token introspection manager for AppSettings:IdentityProvider '{provider}' could not be "
+                + $"constructed ({exceptionTypes}). Correct the registration or its dependencies, then restart."
         );
     }
 
     if (introspectionManager is null)
     {
         app.Logger.LogCritical(
-            "No token introspection manager is registered for AppSettings:IdentityProvider "
-                + "'self-contained'. Register one or correct the setting, then restart."
+            "No token introspection manager is registered for AppSettings:IdentityProvider '{Provider}'. "
+                + "Register one for this provider or correct the setting, then restart.",
+            provider
         );
         throw new InvalidOperationException(
-            "No token introspection manager is registered for AppSettings:IdentityProvider "
-                + "'self-contained'. Register one or correct the setting, then restart."
+            $"No token introspection manager is registered for AppSettings:IdentityProvider '{provider}'. "
+                + "Register one for this provider or correct the setting, then restart."
         );
     }
 }

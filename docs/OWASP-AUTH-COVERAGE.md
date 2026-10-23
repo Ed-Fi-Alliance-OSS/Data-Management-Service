@@ -126,7 +126,8 @@ must not treat `200 OK` as proof that a leaked credential was contained** — co
 `POST /connect/introspect` (self-contained) authenticated as the token's owner, which reports `{"active": false}` once
 revocation has taken effect (or when it could not decide the token because a key or token-status store failed, which it
 logs as the Error `Token validation could not reach a decision`), or with Keycloak's own introspection endpoint in
-`keycloak` mode (see the Keycloak section below). A `503` is not a "not revoked" answer
+`keycloak` mode (see the Keycloak section below; from Keycloak 26.4.12 the Configuration Service endpoint answers
+`{"active": false}` to an owner outside its token's audience, so it cannot confirm there). A `503` is not a "not revoked" answer
 either: it means the outcome could not be confirmed, and the caller should retry (which is
 safe) and confirm the same way.
 
@@ -179,8 +180,10 @@ Revocation at Keycloak does not change the stateless posture above: Configuratio
 Keycloak tokens locally and keep accepting a revoked token until it expires (plus their
 clock skew). Confirm a revocation through Keycloak's introspection endpoint with a
 confidential client that is in the token's audience (from Keycloak 26.4.12, per Red Hat's
-migration guide, and observed on 26.7.5, any other client is answered `active:false`) —
-Configuration Service `/connect/introspect` cannot observe Keycloak tokens (it makes no credential checks in that mode and answers `{"active": false}`). Details: [CS-AUTH.md § Token revocation](../reference/design/configuration-service/CS-AUTH.md#token-revocation).
+migration guide, and observed on 26.7.5, any other client is answered `active:false`).
+Configuration Service `/connect/introspect` passes the owner's credentials to that same endpoint and describes only the
+owner's access tokens, so from Keycloak 26.4.12 it answers `{"active": false}` unless the owner is in its token's
+audience, which a client the Configuration Service creates is not. Details: [CS-AUTH.md § Token revocation](../reference/design/configuration-service/CS-AUTH.md#token-revocation).
 
 ## `jti` handling matrix
 

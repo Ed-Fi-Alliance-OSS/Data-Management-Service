@@ -40,7 +40,7 @@ public sealed class KeycloakTokenRevocationManager(
     internal const string OwnershipMismatchDescription = "Unmatching clients";
 
     /// <summary>The largest error body read; a larger one is treated as unparseable (D-09).</summary>
-    internal const int MaxResponseBodyBytes = 64 * 1024;
+    internal const int MaxResponseBodyBytes = KeycloakProviderAnswer.MaxResponseBodyBytes;
 
     /// <summary>
     /// The named client for the delegated revoke request, registered with automatic redirects off:
@@ -62,18 +62,6 @@ public sealed class KeycloakTokenRevocationManager(
     private const string UnexpectedReason = "unexpected";
     private const string ProviderStatusReason = "provider-status";
     private const string UnrecognizedResponseReason = "unrecognized-response";
-
-    /// <summary>The provider <c>error</c> values that may be logged verbatim; every other value is <c>unrecognized</c> (D-15).</summary>
-    private static readonly HashSet<string> _loggableProviderErrors = new(StringComparer.Ordinal)
-    {
-        "invalid_request",
-        "invalid_client",
-        "unauthorized_client",
-        "unsupported_token_type",
-        "invalid_token",
-        "server_error",
-        "temporarily_unavailable",
-    };
 
     public async Task<TokenRevocationResult> RevokeTokenAsync(
         TokenRevocationRequest request,
@@ -264,7 +252,9 @@ public sealed class KeycloakTokenRevocationManager(
         catch (HttpRequestException ex)
         {
             return RevocationFailed(
-                IsUndelivered(ex.HttpRequestError) ? UnreachableReason : ResponseLostReason,
+                KeycloakProviderAnswer.IsUndelivered(ex.HttpRequestError)
+                    ? UnreachableReason
+                    : ResponseLostReason,
                 request.ClientId,
                 ex
             );
@@ -293,7 +283,7 @@ public sealed class KeycloakTokenRevocationManager(
             {
                 using var bodyBudget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 bodyBudget.CancelAfter(httpClient.Timeout);
-                body = await ReadBoundedAsync(response.Content, bodyBudget.Token);
+                body = await KeycloakProviderAnswer.ReadBoundedAsync(response.Content, bodyBudget.Token);
             }
             catch (Exception) when (cancellationToken.IsCancellationRequested)
             {
@@ -319,7 +309,7 @@ public sealed class KeycloakTokenRevocationManager(
     /// </summary>
     private TokenRevocationResult MapErrorResponse(int statusCode, ProviderErrorBody body, string clientId)
     {
-        string category = ProviderErrorCategory(body);
+        string category = KeycloakProviderAnswer.ProviderErrorCategory(body.Error);
 
         if (statusCode is not (400 or 401))
         {
@@ -357,37 +347,6 @@ public sealed class KeycloakTokenRevocationManager(
             default:
                 return ProviderAnswerNotUsable(UnrecognizedResponseReason, clientId, statusCode, category);
         }
-    }
-
-    /// <summary>
-    /// Reads at most <see cref="MaxResponseBodyBytes"/>; null when the body is larger, so an
-    /// oversized answer is unparseable without being buffered.
-    /// </summary>
-    private static async Task<byte[]?> ReadBoundedAsync(
-        HttpContent content,
-        CancellationToken cancellationToken
-    )
-    {
-        if (content.Headers.ContentLength > MaxResponseBodyBytes)
-        {
-            return null;
-        }
-
-        await using Stream stream = await content.ReadAsStreamAsync(cancellationToken);
-        byte[] buffer = new byte[MaxResponseBodyBytes + 1];
-        int total = 0;
-        while (total < buffer.Length)
-        {
-            int read = await stream.ReadAsync(buffer.AsMemory(total), cancellationToken);
-            if (read == 0)
-            {
-                break;
-            }
-
-            total += read;
-        }
-
-        return total > MaxResponseBodyBytes ? null : buffer[..total];
     }
 
     /// <summary>
@@ -525,17 +484,6 @@ public sealed class KeycloakTokenRevocationManager(
         }
     }
 
-    private static string ProviderErrorCategory(ProviderErrorBody body) =>
-        body.Error is not null && _loggableProviderErrors.Contains(body.Error) ? body.Error : "unrecognized";
-
-    /// <summary>Connection, name resolution, TLS or proxy failures: the request never reached Keycloak.</summary>
-    private static bool IsUndelivered(HttpRequestError error) =>
-        error
-            is HttpRequestError.ConnectionError
-                or HttpRequestError.NameResolutionError
-                or HttpRequestError.SecureConnectionError
-                or HttpRequestError.ProxyTunnelError;
-
     private void LogProviderRefusal(string clientId, int statusCode, string category) =>
         logger.LogInformation(
             "Keycloak refused the revocation request for client {ClientId} (HTTP {StatusCode}, {ProviderError})",
@@ -589,7 +537,7 @@ public sealed class KeycloakTokenRevocationManager(
             "Revocation for client {ClientId} could not establish the client type: the Keycloak admin read failed (HTTP {StatusCode}, {ExceptionTypes})",
             LoggingUtility.SanitizeForLog(clientId),
             (exception as FlurlHttpException)?.StatusCode,
-            ExceptionTypeChain(exception)
+            KeycloakProviderAnswer.ExceptionTypeChain(exception)
         );
         return new TokenRevocationResult.TemporarilyUnavailable(reason);
     }
@@ -603,7 +551,7 @@ public sealed class KeycloakTokenRevocationManager(
             "Revocation for client {ClientId} could not establish the client type: the Keycloak admin API refused the read (HTTP {StatusCode}). The Configuration Service client lacks permission to read clients in the realm, or its own credentials were rejected ({ExceptionTypes})",
             LoggingUtility.SanitizeForLog(clientId),
             exception.StatusCode,
-            ExceptionTypeChain(exception)
+            KeycloakProviderAnswer.ExceptionTypeChain(exception)
         );
         return new TokenRevocationResult.TemporarilyUnavailable(ClientTypeReadRefusedReason);
     }
@@ -618,20 +566,9 @@ public sealed class KeycloakTokenRevocationManager(
             "Revocation for client {ClientId} could not be confirmed: the Keycloak revoke request failed ({Reason}, {ExceptionTypes})",
             LoggingUtility.SanitizeForLog(clientId),
             reason,
-            ExceptionTypeChain(exception)
+            KeycloakProviderAnswer.ExceptionTypeChain(exception)
         );
         return new TokenRevocationResult.TemporarilyUnavailable(reason);
-    }
-
-    private static string ExceptionTypeChain(Exception exception)
-    {
-        var names = new List<string>();
-        for (Exception? current = exception; current is not null; current = current.InnerException)
-        {
-            names.Add(current.GetType().FullName ?? current.GetType().Name);
-        }
-
-        return string.Join(" -> ", names);
     }
 
     private sealed record ProviderErrorBody(bool Parsed, string? Error, string? Description)

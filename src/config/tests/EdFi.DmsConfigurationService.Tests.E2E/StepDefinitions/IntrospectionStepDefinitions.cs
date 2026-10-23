@@ -81,6 +81,27 @@ public partial class StepDefinitions
             authorization: null
         );
 
+    // Keycloak refuses a public client at introspection whatever secret it sends (403 "Client not
+    // allowed."), which the Configuration Service answers as invalid_client.
+    [When("the public client attempts to introspect its token with an arbitrary form client secret")]
+    public async Task WhenThePublicClientAttemptsToIntrospectItsTokenWithAnArbitraryFormClientSecret() =>
+        await PostIntrospection(
+            new()
+            {
+                { "token", PublicClient.AccessToken },
+                { "client_id", PublicClient.ClientId },
+                { "client_secret", ArbitraryPublicClientSecret },
+            },
+            authorization: null
+        );
+
+    [When("the public client attempts to introspect its token with an arbitrary Basic client secret")]
+    public async Task WhenThePublicClientAttemptsToIntrospectItsTokenWithAnArbitraryBasicClientSecret() =>
+        await PostIntrospection(
+            new() { { "token", PublicClient.AccessToken } },
+            BasicAuthorization(PublicClient.ClientId, ArbitraryPublicClientSecret)
+        );
+
     [When("the current token is introspected with the credentials captured as {string}")]
     public async Task WhenTheCurrentTokenIsIntrospectedWithTheCredentialsCapturedAs(string slot)
     {

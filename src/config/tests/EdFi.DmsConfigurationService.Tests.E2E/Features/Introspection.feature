@@ -1,9 +1,11 @@
-@SelfContainedOnly
+@KeycloakRevocationObserver
 Feature: Token introspection endpoint
     RFC 7662 token introspection at /connect/introspect. The caller must authenticate as a client
-    with HTTP Basic or form credentials. A client introspecting its own token receives the token's
+    with HTTP Basic or form credentials; under keycloak the Configuration Service passes them to
+    Keycloak's own introspection endpoint. A client introspecting its own token receives the token's
     claims; any other client receives only {"active":false}. Every error is an RFC 6749 §5.2 JSON
-    object.
+    object. The KeycloakRevocationObserver tag provides the Keycloak public client of scenarios 09 and
+    10; it provisions nothing under the self-contained provider.
 
         Background:
             Given valid credentials
@@ -92,5 +94,26 @@ Feature: Token introspection endpoint
                   """
                   {
                     "active": false
+                  }
+                  """
+
+        @KeycloakOnly
+        Scenario: 09 A Keycloak public client presenting an arbitrary form secret is rejected as invalid_client
+            Given a Keycloak public client holds a user-flow access token
+             When the public client attempts to introspect its token with an arbitrary form client secret
+             Then it should respond with 400
+              And the response is the OAuth error "invalid_client" with description "Invalid client or Invalid client credentials"
+              And the response header "WWW-Authenticate" is not present
+
+        @KeycloakOnly
+        Scenario: 10 A Keycloak public client presenting an arbitrary Basic secret is rejected with a challenge
+            Given a Keycloak public client holds a user-flow access token
+             When the public client attempts to introspect its token with an arbitrary Basic client secret
+             Then it should respond with 401
+              And the response is the OAuth error "invalid_client" with description "Invalid client or Invalid client credentials"
+              And the response headers include
+                  """
+                  {
+                    "WWW-Authenticate": "Basic realm=\"EdFi.DmsConfigurationService\""
                   }
                   """

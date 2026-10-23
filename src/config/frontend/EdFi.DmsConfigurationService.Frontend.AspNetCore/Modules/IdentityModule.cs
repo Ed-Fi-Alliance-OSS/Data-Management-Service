@@ -17,7 +17,6 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -27,7 +26,7 @@ using static EdFi.DmsConfigurationService.Backend.IdentityProviderError;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
-public class IdentityModule(IConfiguration configuration) : IEndpointModule
+public class IdentityModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
@@ -63,34 +62,24 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
                 ConnectRateLimitMetadata.Instance
             );
         // The same contract as /connect/revoke. RFC 7662 §2.1 requires some form of authorization
-        // to call the endpoint; in self-contained mode CMS uses client credentials (RFC 6749 §2.3),
-        // as at /connect/revoke. Keycloak mode registers no introspection manager, and the endpoint
-        // then makes no credential check. In both modes a bearer header neither authenticates the
-        // caller nor reaches bearer processing.
+        // to call the endpoint; CMS uses client credentials (RFC 6749 §2.3), as at /connect/revoke,
+        // under both identity providers. The self-contained manager checks them itself; the Keycloak
+        // manager has Keycloak's introspection endpoint check them and then decides ownership. A
+        // bearer header neither authenticates the caller nor reaches bearer processing.
         // Failures are answered in the OAuth error format. The manager the handler resolves can be
         // constructed by a plugin, so failures are logged by exception type names only
-        // (DMS-1327 D-03, D-15, D-17, CS-AUTH.md). The OpenAPI document describes the client
-        // credentials only in self-contained mode, the mode that checks them.
-        RouteHandlerBuilder introspection = endpoints
+        // (DMS-1327 D-03, D-15, D-17, CS-AUTH.md).
+        endpoints
             .MapPost("connect/introspect/{**contextPath}", IntrospectToken)
             .DisableAntiforgery()
             .WithMetadata(
                 OAuthErrorContractMetadata.Introspection,
                 ExceptionTypeOnlyLoggingMetadata.Instance,
                 BearerAuthenticationExemptMetadata.Instance,
+                ClientCredentialAuthenticationMetadata.Instance,
                 OAuthEndpointMetadata.Instance,
                 ConnectRateLimitMetadata.Instance
             );
-        if (
-            string.Equals(
-                configuration["AppSettings:IdentityProvider"],
-                "self-contained",
-                StringComparison.OrdinalIgnoreCase
-            )
-        )
-        {
-            introspection.WithMetadata(ClientCredentialAuthenticationMetadata.Instance);
-        }
     }
 
     private async Task<IResult> RegisterClient(
@@ -398,31 +387,18 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
     }
 
     /// <summary>
-    /// RFC 7662 token introspection. Under the self-contained provider the request shape and client
+    /// RFC 7662 token introspection, under either identity provider. The request shape and client
     /// credentials are read by <see cref="ReadClientAuthenticatedFormAsync"/>, the same seam as
-    /// <c>/connect/revoke</c>, and the manager's outcome maps to the response. Without a manager
-    /// (Keycloak), the endpoint keeps its long-standing behavior of answering
-    /// <c>{"active":false}</c> for any token, with no credential checks.
+    /// <c>/connect/revoke</c>, and the manager's outcome maps to the response. Startup refuses a host
+    /// that cannot construct the manager, so it is always resolved here.
     /// </summary>
     private static async Task<IResult> IntrospectToken(
         [FromServices] ILogger<IdentityModule> logger,
-        [FromServices] ITokenIntrospectionManager? introspectionManager,
+        [FromServices] ITokenIntrospectionManager introspectionManager,
         [FromServices] ConnectRateLimiter rateLimiter,
         HttpContext httpContext
     )
     {
-        if (introspectionManager is null)
-        {
-            // Manually read form data to handle empty form bodies in .NET 10
-            string formToken = httpContext.Request.HasFormContentType
-                ? (await httpContext.Request.ReadFormAsync(httpContext.RequestAborted))["token"].ToString()
-                : string.Empty;
-
-            return formToken.Length == 0
-                ? InvalidRequest("The token parameter is missing.")
-                : Results.Json(new { active = false });
-        }
-
         ClientAuthenticatedForm form = await ReadClientAuthenticatedFormAsync(
             logger,
             httpContext,
@@ -466,7 +442,7 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
                     exp = active.Token.Exp,
                     iat = active.Token.Iat,
                     sub = active.Token.Sub,
-                    aud = active.Token.Aud,
+                    aud = AudienceMember(active.Token.Aud),
                     iss = active.Token.Iss,
                     token_type = "Bearer",
                 }
@@ -486,6 +462,18 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
             _ => throw new InvalidOperationException("The introspection manager returned an unknown result."),
         };
     }
+
+    /// <summary>
+    /// RFC 7662 §2.2 (RFC 7519 §4.1.3): a single audience is a string and several are an array, in
+    /// the manager's order. No audience keeps the endpoint's established <c>null</c>.
+    /// </summary>
+    private static object? AudienceMember(IReadOnlyList<string> audience) =>
+        audience.Count switch
+        {
+            0 => null,
+            1 => audience[0],
+            _ => audience,
+        };
 
     private static readonly string[] _clientAuthenticatedFormParameters =
     [
@@ -1156,10 +1144,12 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
     /// <summary>
     /// The caller could not be authenticated because a dependency failed, so the request was not
     /// judged. This answers 503, not <c>invalid_client</c>, so an outage cannot read as rejected
-    /// credentials. A dependency failure after authentication, while deciding the token, still
-    /// answers <c>{"active": false}</c> (CS-AUTH.md). The manager has already logged the boundary and
-    /// exception types at Error; this records only the sanitized caller and the fixed boundary label,
-    /// at Warning like the revocation endpoint's line, so one outage request is one Error event.
+    /// credentials. Under the self-contained provider a dependency failure after authentication,
+    /// while deciding the token, still answers <c>{"active": false}</c> (CS-AUTH.md); under Keycloak
+    /// one provider call both authenticates and decides, so an unusable answer is this 503. The
+    /// manager has already logged the boundary and exception types at Error; this records only the
+    /// sanitized caller and the fixed boundary label, at Warning like the revocation endpoint's line,
+    /// so one outage request is one Error event.
     /// </summary>
     private static IResult IntrospectionUnavailable(
         ILogger<IdentityModule> logger,

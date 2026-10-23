@@ -139,8 +139,9 @@ Keycloak needs the following for this to work:
 ### Confirming a revocation at Keycloak
 
 A `200 OK` from `/connect/revoke` does not prove the token was revoked (RFC 7009 answers
-`200` for unknown and foreign tokens too), and Configuration Service `/connect/introspect` cannot observe
-Keycloak tokens. Confirm through Keycloak's introspection endpoint,
+`200` for unknown and foreign tokens too). Configuration Service `/connect/introspect` passes the owner's
+credentials to Keycloak and describes only the owner's access tokens, so it is subject to the audience rule
+below and cannot observe a public client's or a refresh token. Confirm through Keycloak's introspection endpoint,
 `POST http://localhost:8045/realms/edfi/protocol/openid-connect/token/introspect`, with
 `token=<the token>` and the credentials of a **confidential** client:
 
