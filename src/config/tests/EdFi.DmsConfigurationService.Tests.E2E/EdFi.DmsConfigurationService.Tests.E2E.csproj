@@ -41,6 +41,13 @@
         <Using Include="NUnit.Framework" />
     </ItemGroup>
     <ItemGroup>
+        <!-- The timing evidence collectors share one recorder with the backend unit tests. -->
+        <Compile
+            Include="..\..\backend\EdFi.DmsConfigurationService.Backend.Tests.Unit\TimingEvidenceRecorder.cs"
+            Link="Timing\TimingEvidenceRecorder.cs"
+        />
+    </ItemGroup>
+    <ItemGroup>
         <Folder Include="Extensions\" />
     </ItemGroup>
     <ItemGroup>
