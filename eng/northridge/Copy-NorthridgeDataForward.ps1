@@ -17,17 +17,26 @@
 
     Triggers. The current schema carries more than a thousand triggers. A plain data-only restore fires
     the per-row projection stamping triggers, which rewrite ContentVersion and ContentLastModifiedAt on
-    every copied row and burn the change-version sequence millions of times; fires the
-    referential-identity triggers, which rewrite dms.ReferentialIdentity; and fires the statement-level
-    document enqueue trigger, which floods dms.DocumentProjectionWork. The copy therefore runs with
-    --disable-triggers for unchanged tables and replica-mode inserts for staged tables. Both suppress
-    foreign-key enforcement, so integrity is re-established afterwards by explicit assertions.
+    every copied row and burn the change-version sequence millions of times, and fires the
+    statement-level document enqueue trigger, which floods dms.DocumentProjectionWork. The copy
+    therefore runs with --disable-triggers for unchanged tables and replica-mode inserts for staged
+    tables. Both suppress foreign-key enforcement, so integrity is re-established afterwards by
+    explicit assertions.
 
     dms.Descriptor. Legacy rows are staged with their stored Uri and Discriminator, then inserted
     without those columns or a supplied DescriptorId. The target allocates native int identities;
     a document-key-to-descriptor-key map converts every stored descriptor column selected by the
     reviewed relational-model manifest. Generated aliases are derived by PostgreSQL. Descriptor
     history resolves qualified type keys through the provisioned catalog, including deleted owners.
+
+    Abstract identity tables. The manifest's abstract identity tables now carry ResourceKeyId, which
+    a legacy archive lacks. They load through the same staged path as the descriptor-bearing tables,
+    exactly once each: the archive's columns are staged, descriptor keys are remapped, ResourceKeyId
+    is taken from the owning dms.Document, and a row with no owning document stops the run.
+
+    Retired tables. dms.ReferentialIdentity is no longer provisioned. An older archive may still
+    carry it: its archive entry is skipped and logged, never restored, shape-checked or reconciled,
+    and the target must not have the table.
 
     dms.Document. The archive's COPY header carries the SOURCE column list, and pg_restore straight into
     the target replays it, so a stamp column the target has since dropped fails the load under
@@ -263,7 +272,10 @@ $script:ProvisioningOwnedTable = @(
 # rather than by pg_restore straight into the target: Descriptor because of its independent key, and
 # Document because the archive's COPY header names the source's columns, which a target that has since
 # dropped one of them cannot accept.
-$script:DmsDataTable = @("ReferentialIdentity")
+$script:DmsDataTable = @()
+# dms tables an older archive still carries but current provisioning no longer creates: allowed in the
+# source, required absent from the target, and never restored, shape-checked or reconciled.
+$script:DmsRetiredSourceTable = @("ReferentialIdentity")
 $script:DmsStagedTable = "Document"
 $script:DmsDerivedTable = "Descriptor"
 $script:BulkSchema = @("edfi", "tracked_changes_edfi", "auth")
@@ -405,8 +417,8 @@ function Get-BulkSchemaCoverageFailure {
 }
 
 # The dms schema is not discovered the way the bulk schemas are: its tables are named in the lists at
-# the top, because each is handled differently -- never copied, copied, or derived. A list is an
-# allow-list only while it is complete. A dms base table that exists in the catalog and is on none of
+# the top, because each is handled differently -- never copied, copied, derived, or retired. A list is
+# an allow-list only while it is complete. A dms base table that exists in the catalog and is on none of
 # the lists is neither restored nor reconciled: the copy skips it, the row-count reconciliation never
 # asks about it, and the run prints PASS over a dataset with a hole in it. So the lists are held to
 # the catalog of both databases before anything is loaded: every dms base table in either must be on
@@ -428,6 +440,7 @@ function Get-DmsTableClassificationFailure {
         "copied data"        = @($script:DmsDataTable | ForEach-Object { "dms.$_" })
         "staged"             = @("dms.$script:DmsStagedTable")
         "derived"            = @("dms.$script:DmsDerivedTable")
+        "retired"            = @($script:DmsRetiredSourceTable | ForEach-Object { "dms.$_" })
     }
 
     # A name on two lists would be excluded by one and copied by the other, and which wins is not a
@@ -466,6 +479,12 @@ function Get-DmsTableClassificationFailure {
     foreach ($table in @($classification["copied data"]) + @($classification["staged"]) + @($classification["derived"])) {
         if (-not $sourceSet.Contains($table)) { $failure.Add("$table is not a base table in the source, so there is nothing to copy") }
         if (-not $targetSet.Contains($table)) { $failure.Add("$table is not a base table in the target, so the copy has nowhere to land") }
+    }
+
+    # A retired table may linger in an older source and is skipped there. In the target it means the
+    # database was not provisioned from the current schema.
+    foreach ($table in $classification["retired"]) {
+        if ($targetSet.Contains($table)) { $failure.Add("$table is retired and must not be a base table in the target; provision the target from the current schema") }
     }
 
     # Comma operator: PowerShell unrolls an empty collection to $null on return, so a caller doing
@@ -846,9 +865,9 @@ WHERE column_name = 'CollectionItemId' AND table_schema IN ('edfi', 'tracked_cha
 }
 
 # --disable-triggers also suppresses foreign-key enforcement, so referential integrity is not a
-# property the loader established. Three references are named explicitly because they are the ones
-# whose breakage would ruin the dataset silently: a document with no resource key, a descriptor with
-# no document, an identity with no owner. Naming three leaves every other foreign key in the schema
+# property the loader established. Two references are named explicitly because they are the ones
+# whose breakage would ruin the dataset silently: a document with no resource key and a descriptor
+# with no document. Naming two leaves every other foreign key in the schema
 # unproven, though, and the relational projection declares them across hundreds of tables -- so every
 # constraint is then re-checked from the catalog rather than by hand.
 function Test-ReferentialIntegrity {
@@ -873,7 +892,6 @@ function Test-ReferentialIntegrity {
     $check = [ordered]@{
         "Document -> ResourceKey"            = 'SELECT COUNT(*) FROM dms."Document" d LEFT JOIN dms."ResourceKey" rk ON rk."ResourceKeyId" = d."ResourceKeyId" WHERE rk."ResourceKeyId" IS NULL;'
         "Descriptor -> Document"             = 'SELECT COUNT(*) FROM dms."Descriptor" x LEFT JOIN dms."Document" d ON d."DocumentId" = x."DocumentId" WHERE d."DocumentId" IS NULL;'
-        "ReferentialIdentity -> Document"    = 'SELECT COUNT(*) FROM dms."ReferentialIdentity" r LEFT JOIN dms."Document" d ON d."DocumentId" = r."DocumentId" WHERE d."DocumentId" IS NULL;'
     }
 
     foreach ($name in $check.Keys) {
@@ -1308,6 +1326,13 @@ function Select-ArchiveEntry {
     $requestedTable = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
     foreach ($table in $QualifiedTable) { [void]$requestedTable.Add($table) }
 
+    # A retired table has nowhere to land in the target, so no caller may ask for its rows.
+    $retiredName = @($script:DmsRetiredSourceTable | ForEach-Object { "dms.$_" })
+    $retiredRequest = @($QualifiedTable | Where-Object { $retiredName -ccontains $_ })
+    if ($retiredRequest.Count -gt 0) {
+        throw "The restore request names retired table(s) whose rows are never restored: $($retiredRequest -join ', ')."
+    }
+
     $requestedSequence = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
     foreach ($sequence in $QualifiedSequence) { [void]$requestedSequence.Add($sequence) }
 
@@ -1321,6 +1346,7 @@ function Select-ArchiveEntry {
     $selectedSequence = [System.Collections.Generic.List[string]]::new()
     $seenTable = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
     $seenSequence = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    $skippedRetired = [System.Collections.Generic.List[string]]::new()
 
     foreach ($line in $tocLine) {
         $text = [string]$line
@@ -1330,6 +1356,8 @@ function Select-ArchiveEntry {
         #   "15158; 0 0 SEQUENCE SET dms ChangeVersionSequence postgres"
         if ($text -match '^\s*\d+;\s+\d+\s+\d+\s+TABLE DATA\s+(?<schema>\S+)\s+(?<name>\S+)\s') {
             $qualified = "$($Matches['schema']).$($Matches['name'])"
+            # Reported back so the caller can log the skip; a silent skip looks like an absent table.
+            if ($retiredName -ccontains $qualified) { $skippedRetired.Add($qualified); continue }
             if (-not $requestedTable.Contains($qualified)) { continue }
             if (-not $seenTable.Add($qualified)) {
                 throw "The archive holds more than one TABLE DATA entry for '$qualified'; refusing to guess which to restore."
@@ -1382,6 +1410,7 @@ function Select-ArchiveEntry {
         Line     = $selectedLine
         Table    = $selectedTable
         Sequence = $selectedSequence
+        Retired  = $skippedRetired
     }
 }
 
@@ -1543,10 +1572,18 @@ WHERE n.nspname = '$($schema.Replace("'", "''"))' AND c.relname = '$($table.Repl
 function Assert-CopyColumnShape {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$QualifiedTable, [Parameter(Mandatory)][object[]]$Source,
-        [Parameter(Mandatory)][object[]]$Target, [Parameter(Mandatory)][System.Collections.IDictionary]$Inventory)
+        [Parameter(Mandatory)][object[]]$Target, [Parameter(Mandatory)][System.Collections.IDictionary]$Inventory,
+        [string[]]$AbstractIdentityTable = @())
     # Document staging omits source-only columns and lets the target supply missing columns.
     # Resolve-StagedInsertColumn validates the actual COPY header against the target catalog.
     if ($QualifiedTable -ceq 'dms.Document') { return }
+
+    # An abstract identity table's ResourceKeyId is derived from the owning document during the
+    # staged load, so it is the one expected target-only column, and a source carrying it is not legacy.
+    $abstractIdentity = $QualifiedTable -cin $AbstractIdentityTable
+    if ($abstractIdentity -and 'ResourceKeyId' -cin @($Source.Name)) {
+        throw "Source $QualifiedTable already has ResourceKeyId; this conversion requires a legacy abstract identity table without it."
+    }
 
     $descriptorNames = @($Inventory.columns | Where-Object { "$($_.schema).$($_.table)" -ceq $QualifiedTable } | ForEach-Object { $_.name })
     $descriptorAliasNames = @($Inventory.aliases | Where-Object { "$($_.schema).$($_.table)" -ceq $QualifiedTable } | ForEach-Object { $_.name })
@@ -1564,6 +1601,7 @@ function Assert-CopyColumnShape {
             continue
         }
         if ($QualifiedTable -ceq 'tracked_changes_edfi.Descriptor' -and $column.Name -ceq 'ResourceKeyId') { continue }
+        if ($abstractIdentity -and $column.Name -ceq 'ResourceKeyId') { continue }
         if ($match.Count -ne 1 -or $match[0].Generated -ne $column.Generated) { throw "Missing/mismatched source-shape coverage: $QualifiedTable/$($column.Name)." }
         if ($column.Name -cin $descriptorAliasNames -and (-not $column.Generated -or $column.Type -cne 'integer')) {
             throw "Missing/noncompact generated descriptor alias in target: $QualifiedTable/$($column.Name)."
@@ -1652,10 +1690,29 @@ FROM dms."ResourceKey" k WHERE (k."ProjectName" || ':' || k."ResourceName" = s."
 "@
 }
 
+# Same pattern as the history conversion: legacy abstract identity rows lack ResourceKeyId, and the
+# owning document's is the only value the target's (DocumentId, ResourceKeyId) foreign key accepts.
+function Get-AbstractIdentityResourceKeySql {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][string]$StagedTable, [Parameter(Mandatory)][string]$QualifiedTable)
+    return @"
+ALTER TABLE $StagedTable ADD COLUMN "ResourceKeyId" smallint;
+DO `$owner`$
+BEGIN
+    IF EXISTS (SELECT 1 FROM $StagedTable s WHERE NOT EXISTS (SELECT 1 FROM dms."Document" d WHERE d."DocumentId" = s."DocumentId"))
+    THEN RAISE EXCEPTION 'Abstract identity row without an owning document in $($QualifiedTable.Replace("'", "''"))'; END IF;
+END `$owner`$;
+UPDATE $StagedTable s SET "ResourceKeyId" = d."ResourceKeyId"
+FROM dms."Document" d WHERE d."DocumentId" = s."DocumentId";
+"@
+}
+
 function Copy-StagedDescriptorTable {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$QualifiedTable, [Parameter(Mandatory)][object[]]$SourceShape,
-        [Parameter(Mandatory)][System.Collections.IDictionary]$Inventory, [Parameter(Mandatory)][string]$ArchivePath)
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Inventory, [Parameter(Mandatory)][string]$ArchivePath,
+        [switch]$AbstractIdentity)
     $schema, $table = $QualifiedTable.Split('.', 2)
     # Separate schema/table stage name prevents extension tables of the same name colliding.
     $stageName = "t_$([guid]::NewGuid().ToString('N'))"
@@ -1695,20 +1752,34 @@ END { if (count != 1) exit 2 }
             Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser -DatabaseName $TargetDatabase `
                 -Sql (Get-DescriptorRemapSql -StagedTable $stage -Column $remap) | Out-Null
         }
+        $sourceColumns = @($columns.Name)
         if ($QualifiedTable -ceq 'tracked_changes_edfi.Descriptor') {
             Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser -DatabaseName $TargetDatabase `
                 -Sql (Get-DescriptorHistoryConversionSql -StagedTable $stage -Inventory $Inventory) | Out-Null
+            $sourceColumns += 'ResourceKeyId'
         }
-        $sourceColumns = @($columns.Name)
-        if ($QualifiedTable -ceq 'tracked_changes_edfi.Descriptor') { $sourceColumns += 'ResourceKeyId' }
+        # After the remap, and registered before the insert plan, which refuses a NOT NULL target
+        # column the source list lacks.
+        if ($AbstractIdentity) {
+            Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser -DatabaseName $TargetDatabase `
+                -Sql (Get-AbstractIdentityResourceKeySql -StagedTable $stage -QualifiedTable $QualifiedTable) | Out-Null
+            $sourceColumns += 'ResourceKeyId'
+        }
         $plan = Resolve-StagedInsertColumn -SourceColumn $sourceColumns `
             -TargetColumn (Get-TargetColumnList -DatabaseName $TargetDatabase -QualifiedTable $QualifiedTable) -QualifiedTable $QualifiedTable
         $names = ($plan.Insert | ForEach-Object { '"' + $_.Replace('"', '""') + '"' }) -join ', '
         $overriding = if ($plan.OverridingSystemValue) { 'OVERRIDING SYSTEM VALUE ' } else { '' }
+        # The target is fresh and each table loads once, so its count after the insert is the
+        # inserted count; a trigger or a second load of the same table would show up here.
         Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser -DatabaseName $TargetDatabase -Sql @"
 BEGIN;
 SET LOCAL session_replication_role = replica;
 INSERT INTO $target ($names) ${overriding}SELECT $names FROM $stage;
+DO `$count`$
+BEGIN
+    IF (SELECT COUNT(*) FROM $target) <> (SELECT COUNT(*) FROM $stage)
+    THEN RAISE EXCEPTION 'Staged and inserted row counts differ for $($QualifiedTable.Replace("'", "''"))'; END IF;
+END `$count`$;
 DROP TABLE $stage;
 COMMIT;
 "@ | Out-Null
@@ -1783,8 +1854,10 @@ Write-Output "  source database   : $SourceDatabase"
 Write-Output "  target database   : $TargetDatabase"
 Write-Output "  model baseline    : $ExpectedModelManifestPath"
 Write-Output "  bulk schemas      : resource/history table schemas from baseline and auth"
-Write-Output "  dms tables copied : $($script:DmsDataTable -join ', '), $script:DmsStagedTable (staged) and $script:DmsDerivedTable (derived)"
+Write-Output "  dms tables copied : $(@(@($script:DmsDataTable) + "$script:DmsStagedTable (staged)" + "$script:DmsDerivedTable (derived)") -join ', ')"
 Write-Output "  never copied      : $($script:ProvisioningOwnedTable -join ', ')"
+Write-Output "  retired, skipped  : $($script:DmsRetiredSourceTable -join ', ') (allowed in the source archive, required absent from the target)"
+Write-Output "  abstract identity : the baseline's abstract identity tables, staged once each; ResourceKeyId from the owning dms.Document"
 Write-Output "  dms table check   : every dms base table in source and target on exactly one of the lists above, before the load"
 Write-Output "  trigger handling  : pg_restore --data-only --disable-triggers (requires superuser); session_replication_role = replica for the staged inserts"
 Write-Output "  staged columns    : dms.$script:DmsStagedTable inserted by the columns the archive header and the target catalog share, via $script:StagingSchema"
@@ -1805,6 +1878,9 @@ if (-not (Test-Path -LiteralPath $DumpPath)) {
 $script:DescriptorInventory = Read-CompactDescriptorInventory -Dialect pgsql -ExpectedModelManifestPath $ExpectedModelManifestPath
 $script:BulkSchema = @($script:DescriptorInventory.data_schemas) + @('auth')
 $script:DmsOwnedSchema = @('dms') + $script:BulkSchema
+# The reader above has already validated these entries; only their physical names are needed here.
+$script:AbstractIdentityTable = @((Get-Content -LiteralPath $ExpectedModelManifestPath -Raw | ConvertFrom-Json -AsHashtable).abstract_identity_tables |
+        ForEach-Object { "$($_.table.schema).$($_.table.name)" })
 Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser -DatabaseName $TargetDatabase `
     -Sql (Get-CompactDescriptorAssertionSql -Dialect pgsql -ExpectedModelManifestPath $ExpectedModelManifestPath) | Out-Null
 Assert-DescriptorInventoryCoverage -DatabaseName $TargetDatabase -Inventory $script:DescriptorInventory
@@ -1888,16 +1964,20 @@ $sourceDmsTable = Get-DataTableList -DatabaseName $SourceDatabase -Schema @("dms
 $targetDmsTable = Get-DataTableList -DatabaseName $TargetDatabase -Schema @("dms")
 $classificationFailure = Get-DmsTableClassificationFailure -SourceTable $sourceDmsTable -TargetTable $targetDmsTable
 if ($classificationFailure.Count -gt 0) {
-    throw "dms base tables are not fully classified between source '$SourceDatabase' and target '$TargetDatabase': $($classificationFailure -join '; '). Every dms base table must be named in this script as provisioning-owned, copied data or derived before the copy can be trusted."
+    throw "dms base tables are not fully classified between source '$SourceDatabase' and target '$TargetDatabase': $($classificationFailure -join '; '). Every dms base table must be named in this script as provisioning-owned, copied data, staged, derived or retired before the copy can be trusted."
 }
 Write-Output "  dms base tables classified exactly once: $($targetDmsTable.Count) in target, $($sourceDmsTable.Count) in source"
 
-$stagedDescriptorTable = @($script:DescriptorInventory.columns | ForEach-Object { "$($_.schema).$($_.table)" } | Sort-Object -Unique -CaseSensitive) + @('tracked_changes_edfi.Descriptor')
+# Descriptor-bearing tables, descriptor history and abstract identity tables, deduplicated: an abstract
+# identity table with a descriptor key is on two of these, and each table must load exactly once.
+$stagedDescriptorTable = @(@($script:DescriptorInventory.columns | ForEach-Object { "$($_.schema).$($_.table)" }) +
+    @('tracked_changes_edfi.Descriptor') + $script:AbstractIdentityTable | Sort-Object -Unique -CaseSensitive)
 $copyShape = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::Ordinal)
-foreach ($table in @('dms.Document', 'dms.Descriptor', 'dms.ReferentialIdentity') + $bulkTable) {
+foreach ($table in @('dms.Document', 'dms.Descriptor') + $bulkTable) {
     $sourceShape = Get-CopyColumnShape -DatabaseName $SourceDatabase -QualifiedTable $table
     $targetShape = Get-CopyColumnShape -DatabaseName $TargetDatabase -QualifiedTable $table
-    Assert-CopyColumnShape -QualifiedTable $table -Source $sourceShape -Target $targetShape -Inventory $script:DescriptorInventory
+    Assert-CopyColumnShape -QualifiedTable $table -Source $sourceShape -Target $targetShape -Inventory $script:DescriptorInventory `
+        -AbstractIdentityTable $script:AbstractIdentityTable
     $copyShape[$table] = $sourceShape
 }
 Assert-DescriptorInventoryCoverage -DatabaseName $SourceDatabase -Inventory $script:DescriptorInventory
@@ -1932,6 +2012,7 @@ try {
     Write-Output "Requested $($requestedTable.Count) table(s); selected $($selection.Table.Count) TABLE DATA entr(ies)."
     Write-Output "Requested $($script:DmsSequence.Count) sequence(s); selected $($selection.Sequence.Count) SEQUENCE SET entr(ies): $($selection.Sequence -join ', ')."
     Write-Output "  dms.$script:DmsStagedTable and dms.$script:DmsDerivedTable excluded from the bulk list (loaded through staging below)."
+    Write-Output "  retired TABLE DATA entr(ies) skipped: $(if ($selection.Retired.Count -gt 0) { $selection.Retired -join ', ' } else { 'none in this archive' })"
 
     if ($selection.Table.Count -ne $requestedTable.Count) {
         throw "Selected $($selection.Table.Count) archive entries for $($requestedTable.Count) requested tables."
@@ -2182,7 +2263,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Cannot stage dump for descriptor reference conversion.' }
     foreach ($table in $stagedDescriptorTable) {
         Copy-StagedDescriptorTable -QualifiedTable $table -SourceShape $copyShape[$table] `
-            -Inventory $script:DescriptorInventory -ArchivePath $containerDumpPath
+            -Inventory $script:DescriptorInventory -ArchivePath $containerDumpPath `
+            -AbstractIdentity:($table -cin $script:AbstractIdentityTable)
     }
 } finally { docker exec -u 0 $Container rm -f $containerDumpPath | Out-Null }
 
