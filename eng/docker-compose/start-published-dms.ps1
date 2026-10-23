@@ -217,14 +217,16 @@ $EnvironmentFile = Resolve-DataStandardEnvironmentFile -DataStandardVersion $Dat
 # DMS_DATASTORE=mssql and returns the file unchanged, avoiding a derived-of-derived file).
 # DbOnly and teardown skip the CMS/OpenIddict invariant because neither initializes identity data.
 #
-# Whether published-config.yml joins the managed compose set, i.e. whether the Configuration
-# Service actually runs. Unlike local-config.yml (unconditional in start-local-dms.ps1), the
-# published stack includes CMS only on an explicit request, for self-contained identity, for the
+# Whether published-config.yml joins the managed compose set. Unlike local-config.yml
+# (unconditional in start-local-dms.ps1), the published stack includes CMS on an explicit
+# request, for self-contained identity, for the
 # bootstrap claims mount, or - this story's own addition - for -SeparateConfigDatabase, since CMS
 # must run to create the dedicated database. Computed once here and consumed both by the
 # CMS-participation gate below and by the compose-file-set construction later, so the two can
-# never drift apart.
-$cmsIncludedInComposeSet = $EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained" -or $bootstrapMode -or $SeparateConfigDatabase
+# never drift apart. Teardown retains the combined definitions to remove any paired proxy network.
+# An otherwise unpaired DMS-only continuation checks the existing proxy network after offline
+# validation below, preserving both paired and external-CMS deployments without starting CMS.
+$cmsIncludedInComposeSet = $EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained" -or $bootstrapMode -or $SeparateConfigDatabase -or $d
 
 # CMS participates only when it is both a forward-starting non-DMS-only shape AND actually present
 # in the compose set - not -DmsOnly (CMS doesn't start), -DbOnly, or teardown (-d), and not a bare
@@ -479,6 +481,9 @@ if (-not $databaseOnlyStartup) {
     # condition itself is computed once, well above, and shared with the CMS-participation gate.
     if ($cmsIncludedInComposeSet) {
         $files += @("-f", "published-config.yml")
+        # Only the combined DMS/CMS topology needs reserved source attribution. Include it in
+        # every managed phase so infrastructure preparation and DMS-only startup stay aligned.
+        $files += @("-f", "dms-cms-proxy.yml")
     }
 
     if ($bootstrapMode) {
@@ -507,6 +512,19 @@ if ($CdcDmsComposeFile) {
 # Complete offline validation before inspecting Docker, and inspect before any stack changes.
 if (-not (Test-CdcInfrastructureInvocation)) {
     Assert-CdcUnregisteredInfrastructure -Project 'dms-published'
+}
+
+if ($DmsOnly -and -not $cmsIncludedInComposeSet) {
+    # -InfraOnly can prepare a paired stack without a bootstrap manifest. Preserve its topology
+    # on continuation, while leaving a bare Keycloak deployment's external CMS routing alone.
+    $proxyNetworks = @(docker network ls --filter 'label=com.docker.compose.project=dms-published' --filter 'label=com.docker.compose.network=cms-proxy' --format '{{.ID}}')
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to determine the existing DMS/CMS proxy topology. Docker network inventory failed."
+    }
+    if ($proxyNetworks.Count -gt 0) {
+        $cmsIncludedInComposeSet = $true
+        $files += @("-f", "published-config.yml", "-f", "dms-cms-proxy.yml")
+    }
 }
 
 if ($d) {

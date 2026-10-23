@@ -71,6 +71,17 @@ owns the opt-in boundary.
 Convenience PowerShell scripts have been included in the directory, which start
 the appropriate services.
 
+The local and published DMS launchers add `dms-cms-proxy.yml` when their Compose set includes
+both DMS and CMS, including the infrastructure and DMS-only phases. This overlay creates an internal
+`cms-proxy` network and explicitly enables forwarding with exact DMS peer trust, keeping public token
+callers separate from system-token refresh. Include it after both service files when composing a
+paired stack manually. The CMS-only launcher omits it, preserving
+`CONFIGURATION_SERVICE_USE_REVERSE_PROXY_HEADERS=false` and existing standalone proxy settings.
+If `172.30.148.0/29` overlaps
+another network, change `DMS_CMS_PROXY_SUBNET`, `DMS_CMS_PROXY_IP` and `CMS_PROXY_IP` together before
+starting. Parallel paired stacks need different subnets. See
+[ConnectRateLimit](../../docs/CONFIGURATION.md#connectratelimit) for defaults and custom topologies.
+
 * `start-all-services.ps1` launches `postgresql.yml`, without starting the DMS.
   Useful for running DMS in a local debugger.
 * `start-local-dms.ps1` launches the DMS local build along with all necessary

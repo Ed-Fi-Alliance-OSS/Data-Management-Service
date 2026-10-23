@@ -85,6 +85,9 @@ Import-Module (Join-Path $PSScriptRoot "secret-resolution-proof.psm1") -Force
 $project = "dms-secrets-e2e"
 $names = @{
     SECRETS_E2E_NETWORK = "dms-secrets-e2e"
+    DMS_CMS_PROXY_SUBNET = "172.30.150.0/29"
+    DMS_CMS_PROXY_IP = "172.30.150.2"
+    CMS_PROXY_IP = "172.30.150.3"
     SECRETS_E2E_POSTGRES_CONTAINER = "dms-secrets-e2e-postgresql"
     SECRETS_E2E_CONFIG_CONTAINER = "dms-secrets-e2e-config"
     SECRETS_E2E_DMS_CONTAINER = "dms-secrets-e2e-api"
@@ -105,6 +108,7 @@ $composeFiles = @(
     "-f", "postgresql.yml",
     "-f", "local-config.yml",
     "-f", "local-dms.yml",
+    "-f", "dms-cms-proxy.yml",
     "-f", "plugins-config.yml",
     "-f", "tests/secret-resolution/secret-resolution-isolation.yml"
 )
@@ -307,7 +311,7 @@ try {
     $configUrlInNetwork = "http://ed-fi-api-config:$configPort"
     $claimsMountSource = Initialize-E2EClaimsWorkspace
 
-    New-HarnessEnvironmentFile -Overrides @{
+    New-HarnessEnvironmentFile -Overrides (@{
         POSTGRES_PORT = $postgresPort
         DMS_HTTP_PORTS = $dmsPort
         CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS = $configPort
@@ -325,7 +329,7 @@ try {
         DMS_DOCKER_IMAGE = "ed-fi-api-secrets-e2e"
         CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE = $claimsMountSource
         CONFIGURATION_SERVICE_PLUGINS_MOUNT_SOURCE = $pluginRoot
-    }
+    } + $names)
 
     Write-Output "Publishing $pluginName framework-dependent into the plugin root..."
     & dotnet publish (Join-Path $repoRoot "src/plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/$pluginName/$pluginName.csproj") `

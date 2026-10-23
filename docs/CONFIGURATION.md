@@ -433,6 +433,10 @@ REVERSE_PROXY_KNOWN_NETWORKS=10.20.30.0/24
 For the Configuration Service, use the `CONFIGURATION_SERVICE_`-prefixed variables
 (`CONFIGURATION_SERVICE_USE_REVERSE_PROXY_HEADERS`, `CONFIGURATION_SERVICE_REVERSE_PROXY_KNOWN_PROXIES`,
 `CONFIGURATION_SERVICE_REVERSE_PROXY_KNOWN_NETWORKS`).
+Standalone CMS keeps the default `false` and honors these variables as before. The DMS launchers
+add `dms-cms-proxy.yml` when their Compose set includes both DMS and CMS. That overlay enables
+forwarding and adds an exactly trusted DMS peer independently of the standalone flag. See
+[ConnectRateLimit](#connectratelimit) for the paired topology.
 
 ### Security response headers
 
@@ -817,6 +821,7 @@ budgets apply, and a request must fit both:
 | `SourcePermitLimit` | `120` | Requests per source address in each window. Must be > 0 when enabled. |
 | `ClientPermitLimit` | `30` | Token and revocation requests per `client_id` in each window. Must be > 0 when enabled. |
 | `WindowSeconds` | `60` | Fixed-window length in seconds. Must be > 0 when enabled. |
+| `RequiredProxyAddress` | empty | When set and limiting is enabled, requires forwarded-header processing and this exact IP in `AppSettings:ReverseProxy:KnownProxies`. Compose sets this to its reserved DMS peer. Leave empty for direct deployments. |
 
 The Docker Compose stacks set these from `CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_ENABLED`,
 `CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_SOURCE_PERMIT_LIMIT`,
@@ -841,7 +846,8 @@ Sizing notes:
   Without this configuration, all proxied token requests and system refresh still share one budget:
   an unauthenticated caller can exhaust the default with 120 requests per minute and block other
   vendors. Raising that limit alone does not resolve the availability risk. The shipped Compose
-  profiles leave forwarded-header trust disabled; each deployment must set its actual trusted addresses.
+  stacks configure the dedicated link described below. Other deployments must configure their own
+  trusted proxy addresses and should set `RequiredProxyAddress` to detect missing trust at startup.
 - Encoded client sort keys are truncated to 256 characters **after** linguistic equivalence is
   established; inserting ignored characters before the bound cannot create another budget.
   Partitions are held in memory per process. The source budget limits new client keys from each source
@@ -852,16 +858,40 @@ Sizing notes:
 - The defaults come from expected traffic shape, not measured load. Real clients are already capped at
   15 active tokens (`IdentitySettings:BearerTokenPerClientLimit`) and should reuse them.
 
-For Docker Compose, set the existing variables in the stack's environment file and recreate the
-Configuration Service. For example, **only if `10.0.0.5` is the actual DMS proxy address**:
+The local and published DMS launchers add `dms-cms-proxy.yml` after both service files to reserve
+a dedicated internal `cms-proxy` network. It remains in the combined stack's infrastructure,
+DMS-only and teardown phases so successive phases use the same topology. For manual paired
+Compose invocations, include `-f dms-cms-proxy.yml` after the DMS and CMS files.
+The Ed-Fi API resolves `ed-fi-api-config` to the Configuration Service's address on this link, so both
+public token proxying and system-token refresh originate from the reserved DMS peer. CMS enables
+forwarding and trusts that exact peer; it does not trust the shared `dms` network. The defaults are:
 
 ```dotenv
-CONFIGURATION_SERVICE_USE_REVERSE_PROXY_HEADERS=true
-CONFIGURATION_SERVICE_REVERSE_PROXY_KNOWN_PROXIES=10.0.0.5
+DMS_CMS_PROXY_SUBNET=172.30.148.0/29
+DMS_CMS_PROXY_IP=172.30.148.2
+CMS_PROXY_IP=172.30.148.3
 ```
 
-Reserve stable proxy addresses in the deployment, and update this list when they change. Do not copy
-the example address or trust an entire shared Docker network containing untrusted workloads.
+Change all three values together if the subnet overlaps an existing network or another running stack.
+Both addresses must be distinct, usable IPv4 addresses in the subnet. Docker rejects addresses outside
+the configured subnet. Recreate both services and the `cms-proxy` network after changing them.
+Additional trusted ingress proxies can be listed in `CONFIGURATION_SERVICE_REVERSE_PROXY_KNOWN_PROXIES`;
+the reserved DMS peer is always added independently. Keep untrusted workloads off this link.
+
+**Standalone CMS and existing environment files:** keep
+`CONFIGURATION_SERVICE_USE_REVERSE_PROXY_HEADERS=false` unless the standalone deployment uses a
+trusted proxy. The CMS-only launcher omits the paired overlay, network and `RequiredProxyAddress`;
+enabled rate limiting does not require forwarding for direct requests. The paired overlay explicitly
+enables forwarding independently of that environment variable. If a later custom overlay disables it
+while retaining `RequiredProxyAddress` and enabled limits, configuration validation reports the missing
+trust and CMS answers every request, including health checks, with `500` until corrected.
+`RequiredProxyAddress` checks the configured trust, not network reachability. If you replace the
+Compose CMS hostname or topology, update routing and the required trusted peer together. If DMS is behind an ingress, it also needs its
+own trusted-forwarding configuration so distinct callers reach it with distinct addresses.
+
+An IDE-hosted DMS connecting through a published CMS port bypasses this container link. In that
+workflow, add the actual host/gateway address CMS sees to its exact trusted proxies; the reserved
+container address alone does not attribute those requests. Do not trust the entire bridge network.
 
 ### Rejection response
 

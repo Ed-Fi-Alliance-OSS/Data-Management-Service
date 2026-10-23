@@ -59,8 +59,9 @@ public class Given_the_shipped_connect_rate_limit_settings
 /// Invalid ConnectRateLimit values go through ReportInvalidConfiguration: the host keeps running and every
 /// request is answered with the generic Ed-Fi 500, so the limiter is never constructed.
 /// </summary>
-[TestFixture]
-public class Given_an_invalid_connect_rate_limit_setting_at_startup
+[TestFixture("ConnectRateLimit:ClientPermitLimit", "0")]
+[TestFixture("ConnectRateLimit:RequiredProxyAddress", "172.30.148.2")]
+public class Given_an_invalid_connect_rate_limit_setting_at_startup(string setting, string value)
 {
     private WebApplicationFactory<Program> _factory = null!;
     private HttpResponseMessage _response = null!;
@@ -75,7 +76,11 @@ public class Given_an_invalid_connect_rate_limit_setting_at_startup
             builder.ConfigureAppConfiguration(
                 (_, configuration) =>
                     configuration.AddInMemoryCollection(
-                        new Dictionary<string, string?> { ["ConnectRateLimit:ClientPermitLimit"] = "0" }
+                        new Dictionary<string, string?>
+                        {
+                            [setting] = value,
+                            ["AppSettings:ReverseProxy:UseForwardedHeaders"] = "false",
+                        }
                     )
             );
         });

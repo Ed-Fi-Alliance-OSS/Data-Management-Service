@@ -84,6 +84,10 @@ public static class WebApplicationBuilderExtensions
                 webApplicationBuilder.Configuration.GetSection(ConnectRateLimitSettings.SectionName)
             )
             .AddSingleton<IValidateOptions<ConnectRateLimitSettings>, ConnectRateLimitSettingsValidator>()
+            .AddSingleton<
+                IValidateOptions<ConnectRateLimitSettings>,
+                ConnectRateLimitProxySettingsValidator
+            >()
             .Configure<DatabaseOptions>(webApplicationBuilder.Configuration.GetSection("DatabaseSettings"))
             .AddSingleton<IValidateOptions<DatabaseOptions>, DatabaseOptionsValidator>()
             .Configure<ClientSecretValidationOptions>(

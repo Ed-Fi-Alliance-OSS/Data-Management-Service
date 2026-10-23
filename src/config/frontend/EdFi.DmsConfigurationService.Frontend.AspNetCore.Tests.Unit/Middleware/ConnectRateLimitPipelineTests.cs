@@ -329,6 +329,7 @@ public class ConnectRateLimitPipelineTests
     {
         private const string UseForwardedHeadersEnv = "AppSettings__ReverseProxy__UseForwardedHeaders";
         private const string KnownProxiesEnv = "AppSettings__ReverseProxy__KnownProxies";
+        private const string RequiredProxyEnv = "ConnectRateLimit__RequiredProxyAddress";
         private List<int> _viaTrustedProxy = null!;
         private List<int> _fromUntrustedPeer = null!;
 
@@ -351,7 +352,9 @@ public class ConnectRateLimitPipelineTests
             try
             {
                 Environment.SetEnvironmentVariable(UseForwardedHeadersEnv, "true");
-                Environment.SetEnvironmentVariable(KnownProxiesEnv, "10.0.0.5");
+                // The exact DMS peer reserved by both Compose variants, never the shared dms network.
+                Environment.SetEnvironmentVariable(KnownProxiesEnv, "172.30.148.2");
+                Environment.SetEnvironmentVariable(RequiredProxyEnv, "172.30.148.2");
                 await using WebApplicationFactory<Program> factory = Create(
                     sourcePermitLimit: 1,
                     clientPermitLimit: 1000
@@ -360,10 +363,10 @@ public class ConnectRateLimitPipelineTests
                 _viaTrustedProxy = await SendAll(
                     client,
                     [
-                        Forwarded("10.0.0.5", "198.51.100.1", "a"),
-                        Forwarded("10.0.0.5", "198.51.100.2", "b"),
-                        Forwarded("10.0.0.5", "198.51.100.1", "c"),
-                        () => Post("/connect/token", TokenForm("system-refresh"), "10.0.0.5"),
+                        Forwarded("172.30.148.2", "198.51.100.1", "a"),
+                        Forwarded("172.30.148.2", "198.51.100.1", "b"),
+                        Forwarded("172.30.148.2", "198.51.100.2", "c"),
+                        () => Post("/connect/token", TokenForm("system-refresh"), "172.30.148.2"),
                     ]
                 );
                 _fromUntrustedPeer = await SendAll(
@@ -388,11 +391,12 @@ public class ConnectRateLimitPipelineTests
         {
             Environment.SetEnvironmentVariable(UseForwardedHeadersEnv, null);
             Environment.SetEnvironmentVariable(KnownProxiesEnv, null);
+            Environment.SetEnvironmentVariable(RequiredProxyEnv, null);
         }
 
         [Test]
         public void It_keys_on_the_forwarded_client_behind_a_trusted_proxy() =>
-            _viaTrustedProxy.Should().Equal(200, 200, 429, 200);
+            _viaTrustedProxy.Should().Equal(200, 429, 200, 200);
 
         [Test]
         public void It_ignores_forwarded_headers_from_an_untrusted_peer() =>
