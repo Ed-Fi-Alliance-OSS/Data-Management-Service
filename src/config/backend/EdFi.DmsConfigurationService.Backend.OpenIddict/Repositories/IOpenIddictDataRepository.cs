@@ -152,6 +152,14 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
         Task<string?> GetTokenStatusAsync(Guid tokenId);
 
         /// <summary>
+        /// Gets the status of a token only when the token is stored for <paramref name="applicationId"/>.
+        /// </summary>
+        /// <param name="tokenId">The token ID.</param>
+        /// <param name="applicationId">The application the token must be stored for.</param>
+        /// <returns>The token status when it is stored for that application, null otherwise.</returns>
+        Task<string?> GetTokenStatusForApplicationAsync(Guid tokenId, Guid applicationId);
+
+        /// <summary>
         /// Marks the token revoked only when it is still unrevoked and stored for
         /// <paramref name="applicationId"/>; both conditions are enforced by the UPDATE itself, so a
         /// repeated revocation keeps the original redemption timestamp.

@@ -56,6 +56,14 @@ public interface IOpenIddictTokenRepository
     Task<string?> GetTokenStatusAsync(Guid tokenId);
 
     /// <summary>
+    /// Gets the status of a token only when the token is stored for <paramref name="applicationId"/>.
+    /// </summary>
+    /// <param name="tokenId">The token ID.</param>
+    /// <param name="applicationId">The application the token must be stored for.</param>
+    /// <returns>The token status when it is stored for that application, null otherwise.</returns>
+    Task<string?> GetTokenStatusForApplicationAsync(Guid tokenId, Guid applicationId);
+
+    /// <summary>
     /// Revokes a token by its ID, provided it is stored for the given application and not already
     /// revoked. The ownership and status conditions are part of the UPDATE, so no other
     /// application's token can change and a repeated revocation keeps the original redemption date.

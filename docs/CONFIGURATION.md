@@ -1327,9 +1327,12 @@ it covers verifying the change on every instance and refreshing each consumer.
 
 > [!NOTE]
 > **Connection capacity.** The snapshot removes key reads from the steady-state request path
-> (the exceptions are listed above). Bearer authentication and introspection still read the
-> status of every token that passes verification with a valid `jti` from the database,
-> uncached. Most endpoints then read their own data, so request concurrency still drives
+> (the exceptions are listed above). Bearer authentication still reads the status of every
+> token that passes verification with a valid `jti` from the database, uncached, and
+> introspection reads the status of the caller's own verified token.
+> Token, introspection and revocation requests also read the calling client and verify its
+> secret with `ClientSecretHashingIterations` PBKDF2 iterations, which costs CPU as well.
+> Most endpoints then read their own data, so request concurrency still drives
 > database connections. In local
 > stress testing (256 requests at 128 concurrent), the Configuration Service's default Npgsql
 > `Max Pool Size` (100) equalled PostgreSQL's `max_connections` (100) on a server that DMS also

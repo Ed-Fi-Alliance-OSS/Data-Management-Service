@@ -129,6 +129,150 @@ public class TokenRevocationStartupTests
             _boot.ProviderConnectionsAtStartup.Should().Be(0);
     }
 
+    /// <summary>
+    /// The introspection registration is pinned here because it shares this file's boot harness. The
+    /// self-contained shapes ship <see cref="OpenIddictTokenManager"/>; Keycloak ships none, so
+    /// introspection there answers inactive without any check.
+    /// </summary>
+    [TestFixtureSource(typeof(TokenRevocationStartupTests), nameof(Shapes))]
+    public class Given_a_boot_with_the_introspection_registration_its_provider_ships(
+        string provider,
+        string datastore
+    )
+    {
+        private RevocationBoot _boot = null!;
+
+        [OneTimeSetUp]
+        public void OneTimeSetUp() => _boot = RevocationBoot.Run(provider, datastore);
+
+        [OneTimeTearDown]
+        public void OneTimeTearDown() => _boot.Dispose();
+
+        [Test]
+        public void It_starts() => _boot.StartupException.Should().BeNull();
+
+        [Test]
+        public void It_resolves_the_providers_introspection_manager()
+        {
+            using IServiceScope scope = _boot.Factory.Services.CreateScope();
+            ITokenIntrospectionManager? manager =
+                scope.ServiceProvider.GetService<ITokenIntrospectionManager>();
+
+            if (provider == "keycloak")
+            {
+                manager.Should().BeNull();
+            }
+            else
+            {
+                manager.Should().BeOfType<OpenIddictTokenManager>();
+            }
+        }
+    }
+
+    /// <summary>
+    /// The datastores of the self-contained shapes, which must ship an introspection manager.
+    /// </summary>
+    public static readonly object[] SelfContainedDatastores =
+    [
+        new object[] { "postgresql" },
+        new object[] { "mssql" },
+    ];
+
+    /// <summary>
+    /// Without a manager, introspection answers without any credential check, which is right only for
+    /// Keycloak, so a self-contained host missing its manager refuses to start.
+    /// </summary>
+    [TestFixtureSource(typeof(TokenRevocationStartupTests), nameof(SelfContainedDatastores))]
+    public class Given_a_self_contained_boot_with_no_introspection_manager_registered(string datastore)
+    {
+        private const string NotRegisteredMessage =
+            "No token introspection manager is registered for AppSettings:IdentityProvider "
+            + "'self-contained'. Register one or correct the setting, then restart.";
+
+        private RevocationBoot _boot = null!;
+
+        [OneTimeSetUp]
+        public void OneTimeSetUp() =>
+            _boot = RevocationBoot.Run(
+                "self-contained",
+                datastore,
+                services => services.RemoveAll<ITokenIntrospectionManager>()
+            );
+
+        [OneTimeTearDown]
+        public void OneTimeTearDown() => _boot.Dispose();
+
+        [Test]
+        public void It_fails_to_start_with_the_not_registered_message() =>
+            _boot.FindByMessage(NotRegisteredMessage).Should().BeOfType<InvalidOperationException>();
+
+        [Test]
+        public void It_logs_the_same_message_as_critical_without_an_exception()
+        {
+            CapturedStartupLog critical = _boot
+                .Logs.Records.Should()
+                .ContainSingle(record => record.Level == LogLevel.Critical)
+                .Subject;
+            critical.Message.Should().Be(NotRegisteredMessage);
+            critical.Exception.Should().BeNull();
+        }
+    }
+
+    [TestFixtureSource(typeof(TokenRevocationStartupTests), nameof(SelfContainedDatastores))]
+    public class Given_a_self_contained_boot_whose_introspection_manager_factory_throws(string datastore)
+    {
+        private static string NotConstructedMessage(string exceptionTypes) =>
+            "The token introspection manager for AppSettings:IdentityProvider 'self-contained' could "
+            + $"not be constructed ({exceptionTypes}). Correct the registration or its dependencies, "
+            + "then restart.";
+
+        private RevocationBoot _boot = null!;
+
+        [OneTimeSetUp]
+        public void OneTimeSetUp() =>
+            _boot = RevocationBoot.Run(
+                "self-contained",
+                datastore,
+                services =>
+                {
+                    services.RemoveAll<ITokenIntrospectionManager>();
+                    services.AddTransient<ITokenIntrospectionManager>(_ => throw ThrowingFactoryFailure());
+                }
+            );
+
+        [OneTimeTearDown]
+        public void OneTimeTearDown() => _boot.Dispose();
+
+        [Test]
+        public void It_fails_to_start_with_the_message_naming_the_exception_type_chain() =>
+            _boot
+                .FindByMessage(NotConstructedMessage(_throwingFactoryTypeChain))
+                .Should()
+                .BeOfType<InvalidOperationException>();
+
+        [Test]
+        public void It_does_not_wrap_the_factory_exception() =>
+            _boot
+                .FindByMessage(NotConstructedMessage(_throwingFactoryTypeChain))!
+                .InnerException.Should()
+                .BeNull();
+
+        [Test]
+        public void It_logs_the_same_message_as_critical_without_an_exception()
+        {
+            CapturedStartupLog critical = _boot
+                .Logs.Records.Should()
+                .ContainSingle(record => record.Level == LogLevel.Critical)
+                .Subject;
+            critical.Message.Should().Be(NotConstructedMessage(_throwingFactoryTypeChain));
+            critical.Exception.Should().BeNull();
+        }
+
+        [Test]
+        public void It_keeps_the_factory_exception_text_out_of_every_log_field_and_the_startup_failure() =>
+            _boot.CapturedText().Should().NotContain(Sentinel);
+    }
+
     [TestFixtureSource(typeof(TokenRevocationStartupTests), nameof(Shapes))]
     public class Given_a_boot_with_no_revocation_manager_registered(string provider, string datastore)
     {

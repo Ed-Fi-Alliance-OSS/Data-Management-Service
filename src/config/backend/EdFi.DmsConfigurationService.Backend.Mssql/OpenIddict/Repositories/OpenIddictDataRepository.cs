@@ -582,6 +582,16 @@ UPDATE dmscs.OpenIddictApplication
             }
         }
 
+        public async Task<string?> GetTokenStatusForApplicationAsync(Guid tokenId, Guid applicationId)
+        {
+            await using var connection = new SqlConnection(_connectionString);
+            await OpenForTokenStatusAsync(connection);
+            return await connection.QuerySingleOrDefaultAsync<string>(
+                "SELECT Status FROM dmscs.OpenIddictToken WHERE Id = @Id AND ApplicationId = @ApplicationId",
+                new { Id = tokenId, ApplicationId = applicationId }
+            );
+        }
+
         public async Task<bool> RevokeTokenAsync(Guid tokenId, Guid applicationId)
         {
             await using var connection = new SqlConnection(_connectionString);
