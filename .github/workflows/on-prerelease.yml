@@ -17,7 +17,7 @@ on:
   # Nothing is published on a dispatch. The four contract publish jobs test event_name and skip,
   # which is where the package pushes live; the check jobs only read the feed. Every other job here
   # is either gated on github.event.release.tag_name, which a dispatch does not carry, or follows by
-  # needs from a job that is, so pack-dms, pack-schema-tools, pack-cs and everything downstream of
+  # needs from a job that is, so pack-dms, pack-schema-tools, pack-cs, pack-security-metadata-tools and everything downstream of
   # them - the EdFi.Api, SchemaTools and Configuration Service pushes, both image publications,
   # every release-asset upload and the host assembly manifest - are skipped rather than run against
   # a branch. The version steps still run: minver computes a height-based version from the nearest
@@ -37,6 +37,7 @@ env:
   CUSTOM_VALIDATION_PACKAGE_NAME: "EdFi.Api.CustomValidation"
   IDENTITY_PACKAGE_NAME: "EdFi.Api.Identity"
   SECRETS_PACKAGE_NAME: "EdFi.Api.Secrets"
+  SECURITY_METADATA_TOOLS_PACKAGE_NAME: "EdFi.Api.SecurityMetadataTools"
   CS_PACKAGE_NAME: "EdFi.Api.ConfigurationService"
   IMAGE_NAME: ${{ vars.IMAGE_NAME }}
   CONFIG_IMAGE_NAME: "edfialliance/ed-fi-api-configuration-service"
@@ -275,7 +276,7 @@ jobs:
         run: |
           # sha256sum returns "<hashcode>  <name of file". Split that and return only the <hashcode>.
           sbom_hash=$(sha256sum ./${{ env.MANIFEST_FILE }} | awk '{split($0,a); print a[1]}')
-          echo "sbom-hash-code=$sbom_hash" >> $GITHUB_OUTPUT
+          echo "sbom-hash-code=$sbom_hash" >> "$GITHUB_OUTPUT"
 
   sbom-create-schema-tools:
     name: Create SchemaTools SBOM
@@ -335,7 +336,7 @@ jobs:
         shell: bash
         run: |
           sbom_hash=$(sha256sum ./${{ env.MANIFEST_FILE }} | awk '{split($0,a); print a[1]}')
-          echo "sbom-hash-code=$sbom_hash" >> $GITHUB_OUTPUT
+          echo "sbom-hash-code=$sbom_hash" >> "$GITHUB_OUTPUT"
 
   provenance-create-dms:
     name: Create DMS Provenance
@@ -1443,7 +1444,7 @@ jobs:
           # Remove 'dms-pre-' prefix and add 'v' to match release format
           SEMVER="v${TAG_NAME#dms-pre-}"
 
-          echo "semver=$SEMVER" >> $GITHUB_OUTPUT
+          echo "semver=$SEMVER" >> "$GITHUB_OUTPUT"
           echo "Release version: $SEMVER"
 
       - name: Download DMS SBOM
@@ -2191,7 +2192,7 @@ jobs:
         run: |
           # sha256sum returns "<hashcode>  <name of file". Split that and return only the <hashcode>.
           sbom_hash=$(sha256sum ./${{ env.MANIFEST_FILE }} | awk '{split($0,a); print a[1]}')
-          echo "sbom-hash-code=$sbom_hash" >> $GITHUB_OUTPUT
+          echo "sbom-hash-code=$sbom_hash" >> "$GITHUB_OUTPUT"
 
   provenance-create-cs:
     name: Create Config Provenance
@@ -2269,7 +2270,7 @@ jobs:
           # Remove 'cs-pre-' prefix and add 'v' to match release format
           SEMVER="v${TAG_NAME#cs-pre-}"
 
-          echo "semver=$SEMVER" >> $GITHUB_OUTPUT
+          echo "semver=$SEMVER" >> "$GITHUB_OUTPUT"
           echo "Release version: $SEMVER"
 
       - name: Download CS SBOM
@@ -2394,3 +2395,242 @@ jobs:
           tags: ${{ steps.prepare-tags.outputs.DMSTAGS }}
           labels: ${{ steps.metadatamanagementservice.outputs.labels }}
           push: true
+
+  # Security Metadata Tools uses the cs- release source and its own committed patch.
+  pack-security-metadata-tools:
+    name: Build and Pack SecurityMetadataTools
+    # The CMS validator bundles Secrets; the same contract gate as pack-cs applies.
+    needs:
+      - check-secrets-contract
+    if: startsWith(github.event.release.tag_name, 'cs-')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    outputs:
+      hash-code: ${{ steps.hash-code.outputs.hash-code }}
+      tool-version: ${{ steps.tool-version.outputs.version }}
+      sha256: ${{ steps.hash-code.outputs.sha256 }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Set Config Version Numbers
+        id: versions
+        run: |
+          Import-Module ./package-helpers.psm1
+          Get-VersionNumber -projectPrefix "cs"
+
+      - name: Calculate SecurityMetadataTools Version
+        id: tool-version
+        run: |
+          Import-Module ./package-helpers.psm1
+          $version = Get-SecurityMetadataToolsVersion -AppVersion "${{ steps.versions.outputs.dms-v }}"
+          # NuGet package identity and filenames exclude build metadata.
+          "version=$($version.Split('+')[0])" >> $env:GITHUB_OUTPUT
+
+      - name: Pack and verify installed SecurityMetadataTools
+        run: ./eng/verification/Test-SecurityMetadataToolsPackage.ps1 -AppVersion "${{ steps.versions.outputs.dms-v }}"
+
+      - name: Generate SecurityMetadataTools hash for NuGet package
+        id: hash-code
+        run: |
+          $packageFile = "${{ env.SECURITY_METADATA_TOOLS_PACKAGE_NAME }}.${{ steps.tool-version.outputs.version }}.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected SecurityMetadataTools package was not found: $packageFile"
+          }
+
+          "sha256=$((Get-FileHash -LiteralPath $packageFile -Algorithm SHA256).Hash.ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "hash-code=$(sha256sum $packageFile | base64 -w0)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Upload SecurityMetadataTools Package as Artifact
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: "${{ env.SECURITY_METADATA_TOOLS_PACKAGE_NAME }}-NuGet"
+          path: ${{ github.workspace }}/${{ env.SECURITY_METADATA_TOOLS_PACKAGE_NAME }}.${{ steps.tool-version.outputs.version }}.nupkg
+          if-no-files-found: error
+          retention-days: 30
+
+  sbom-create-security-metadata-tools:
+    name: Create SecurityMetadataTools SBOM
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    needs: pack-security-metadata-tools
+    permissions:
+      actions: read
+      contents: write
+    outputs:
+      sbom-hash-code: ${{ steps.sbom-hash-code.outputs.sbom-hash-code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Get SecurityMetadataTools Artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.SECURITY_METADATA_TOOLS_PACKAGE_NAME }}-NuGet
+
+      - name: Generate SecurityMetadataTools Software Bill of Materials (SBOM)
+        run: |
+          ./eng/ci/New-SecurityMetadataToolsSbom.ps1 `
+            -PackageFile "${{ env.SECURITY_METADATA_TOOLS_PACKAGE_NAME }}.${{ needs.pack-security-metadata-tools.outputs.tool-version }}.nupkg" `
+            -Version "${{ needs.pack-security-metadata-tools.outputs.tool-version }}" `
+            -Sha256 "${{ needs.pack-security-metadata-tools.outputs.sha256 }}"
+
+      - name: Upload SecurityMetadataTools SBOM
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ env.SECURITY_METADATA_TOOLS_PACKAGE_NAME }}-SBOM
+          path: ${{ env.MANIFEST_FILE }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Generate SecurityMetadataTools hash code for SBOM
+        id: sbom-hash-code
+        shell: bash
+        run: |
+          sbom_hash=$(sha256sum ./${{ env.MANIFEST_FILE }} | awk '{split($0,a); print a[1]}')
+          echo "sbom-hash-code=$sbom_hash" >> "$GITHUB_OUTPUT"
+
+  provenance-create-security-metadata-tools:
+    name: Create SecurityMetadataTools Provenance
+    needs: pack-security-metadata-tools
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+    uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
+    with:
+      base64-subjects: ${{ needs.pack-security-metadata-tools.outputs.hash-code }}
+      provenance-name: edfiApiSecurityMetadataTools.intoto.jsonl
+      upload-assets: false
+      compile-generator: true
+
+  publish-package-security-metadata-tools:
+    name: Publish SecurityMetadataTools NuGet Package
+    # A checked but unpublished Secrets dependency must also block the tool push.
+    needs:
+      - pack-security-metadata-tools
+      - publish-package-secrets
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Get SecurityMetadataTools Artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.SECURITY_METADATA_TOOLS_PACKAGE_NAME }}-NuGet
+
+      - name: Install-credential-handler SecurityMetadataTools
+        run: |
+          Import-Module ./package-helpers.psm1
+          InstallCredentialHandler
+
+      - name: Push SecurityMetadataTools Package to Azure Artifacts
+        run: |
+          Import-Module ./package-helpers.psm1
+          $packageFile = "${{ env.SECURITY_METADATA_TOOLS_PACKAGE_NAME }}.${{ needs.pack-security-metadata-tools.outputs.tool-version }}.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected SecurityMetadataTools package was not found: $packageFile"
+          }
+
+          Publish-SecurityMetadataToolsPackage `
+              -Version "${{ needs.pack-security-metadata-tools.outputs.tool-version }}" `
+              -PackageFile $packageFile `
+              -Sha256 "${{ needs.pack-security-metadata-tools.outputs.sha256 }}" `
+              -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
+              -ApiKey "${{ env.ARTIFACTS_API_KEY }}"
+
+  attach-security-metadata-tools-artifacts-to-release:
+    name: Attach SecurityMetadataTools Artifacts to GitHub Release
+    runs-on: ubuntu-latest
+    needs:
+      - classify-release
+      - pack-security-metadata-tools
+      - publish-package-security-metadata-tools
+      - sbom-create-security-metadata-tools
+      - provenance-create-security-metadata-tools
+    if: ${{ startsWith(github.event.release.tag_name, 'cs-') && needs.classify-release.outputs.tagged-release == 'true' }}
+    permissions:
+      contents: write
+    steps:
+      - name: Prepare release version
+        id: prepare-version
+        run: |
+          TAG_NAME="${{ github.event.release.tag_name }}"
+
+          # Remove 'cs-pre-' prefix and add 'v' to match release format
+          SEMVER="v${TAG_NAME#cs-pre-}"
+
+          echo "semver=$SEMVER" >> "$GITHUB_OUTPUT"
+          echo "Release version: $SEMVER"
+
+      - name: Download SecurityMetadataTools SBOM
+        uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/actions/secure-download-artifact@v2.0.0
+        with:
+          name: "${{ env.SECURITY_METADATA_TOOLS_PACKAGE_NAME }}-SBOM"
+          path: ${{ env.MANIFEST_FILE }}
+          sha256: "${{ needs.sbom-create-security-metadata-tools.outputs.sbom-hash-code }}"
+
+      - name: Download SecurityMetadataTools Provenance
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: edfiApiSecurityMetadataTools.intoto.jsonl
+
+      - name: Attach SecurityMetadataTools SBOM and Provenance to release
+        shell: pwsh
+        run: |
+          $release = "${{ steps.prepare-version.outputs.semver }}"
+          $repo = "${{ github.repository }}"
+          $token = "${{ secrets.GITHUB_TOKEN }}"
+
+          $url = "https://api.github.com/repos/$repo/releases/tags/$release"
+          $gh_headers = @{
+              "Accept"        = "application/vnd.github+json"
+              "Authorization" = "Bearer $token"
+          }
+          $response = Invoke-RestMethod -Uri $url -Headers $gh_headers
+          $releaseId = $response.id
+
+          # Upload SBOM
+          $sbomFile = "${{ env.MANIFEST_FILE }}"
+          $sbomUploadName = "${{ env.SECURITY_METADATA_TOOLS_PACKAGE_NAME }}-SBOM.zip"
+
+          Compress-Archive $sbomFile -DestinationPath $sbomUploadName
+
+          $uploadUrl = "https://uploads.github.com/repos/$repo/releases/$releaseId/assets"
+          $gh_headers["Content-Type"] = "application/octet-stream"
+
+          Write-Host "Uploading SBOM as $sbomUploadName"
+          Invoke-RestMethod -Method POST `
+              -Uri "$($uploadUrl)?name=$($sbomUploadName)" `
+              -Headers $gh_headers `
+              -InFile $sbomUploadName
+
+          # Upload Provenance
+          $provenanceFile = "edfiApiSecurityMetadataTools.intoto.jsonl"
+          $provenanceUploadName = "edfiApiSecurityMetadataTools.intoto.jsonl"
+
+          Write-Host "Uploading Provenance as $provenanceUploadName"
+          Invoke-RestMethod -Method POST `
+              -Uri "$($uploadUrl)?name=$($provenanceUploadName)" `
+              -Headers $gh_headers `
+              -InFile $provenanceFile

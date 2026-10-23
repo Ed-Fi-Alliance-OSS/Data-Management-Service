@@ -74,6 +74,10 @@ jobs:
     steps:
       - name: Checkout the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Read the committed tool patch and MinVer history from the release source.
+          ref: ${{ github.ref }}
+          fetch-depth: 0
 
       # The four contract promotions below compare feed-listed versions through NuGet's own parsers,
       # which package-helpers.psm1 loads from the installed .NET SDK. The runner image ships some
@@ -128,7 +132,31 @@ jobs:
           Import-Module ./package-helpers.psm1
           Invoke-Promote @arguments
 
-      # The four contract packages, and none can be a copy of the three above. Those derive the
+      - name: Calculate SecurityMetadataTools Release Version
+        if: ${{ github.ref_type == 'tag' && startsWith(github.ref_name, 'v') }}
+        id: tool-release-source
+        shell: pwsh
+        run: |
+          Import-Module ./package-helpers.psm1
+          Get-VersionNumber -projectPrefix "cs"
+
+      - name: Promote EdFi.Api.SecurityMetadataTools Package
+        if: ${{ github.ref_type == 'tag' && startsWith(github.ref_name, 'v') }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Import-Module ./package-helpers.psm1
+          $version = Get-SecurityMetadataToolsVersion -AppVersion "${{ steps.tool-release-source.outputs.dms-v }}" -StableRelease
+          Invoke-ContractPromotion `
+              -PackagesURL "${{ env.ARTIFACTS_PACKAGES_URL }}" `
+              -Username "${{ env.ARTIFACTS_USERNAME }}" `
+              -Password (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force) `
+              -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
+              -ApiKey "${{ env.ARTIFACTS_API_KEY }}" `
+              -PackageName "EdFi.Api.SecurityMetadataTools" `
+              -Version $version
+
+      # The four contract packages differ from the three app-versioned packages above. Those derive the
       # version to promote from the release tag; a contract's version deliberately does not move
       # with the release, so promoting it at the release version would ask the feed for a version
       # that does not exist. Each reads its own declared version instead, and has three outcomes:
@@ -239,14 +267,16 @@ jobs:
           IMAGE_NAME="${{ vars.IMAGE_NAME }}"
           MAJOR_TAG="${{ github.ref_name }}"
           MAJOR_TAG=${MAJOR_TAG#v}
-          MINOR_TAG=`echo $MAJOR_TAG | cut -d '.' -f 1,2`
+          MINOR_TAG=$(echo "$MAJOR_TAG" | cut -d '.' -f 1,2)
           PRE_IMAGE="${IMAGE_NAME}:dms-pre-${MAJOR_TAG}"
           RELEASE_MAJOR="${IMAGE_NAME}:${MAJOR_TAG}"
           RELEASE_MINOR="${IMAGE_NAME}:${MINOR_TAG}"
 
-          echo "PRE_IMAGE=$PRE_IMAGE" >> $GITHUB_OUTPUT
-          echo "RELEASE_MAJOR=$RELEASE_MAJOR" >> $GITHUB_OUTPUT
-          echo "RELEASE_MINOR=$RELEASE_MINOR" >> $GITHUB_OUTPUT
+          {
+            echo "PRE_IMAGE=$PRE_IMAGE"
+            echo "RELEASE_MAJOR=$RELEASE_MAJOR"
+            echo "RELEASE_MINOR=$RELEASE_MINOR"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Pull DMS Prerelease Image
         uses: ./.github/actions/pull-ci-images
@@ -283,14 +313,16 @@ jobs:
           IMAGE_NAME="edfialliance/ed-fi-api-configuration-service"
           MAJOR_TAG="${{ github.ref_name }}"
           MAJOR_TAG=${MAJOR_TAG#v}
-          MINOR_TAG=`echo $MAJOR_TAG | cut -d '.' -f 1,2`
+          MINOR_TAG=$(echo "$MAJOR_TAG" | cut -d '.' -f 1,2)
           PRE_IMAGE="${IMAGE_NAME}:cs-pre-${MAJOR_TAG}"
           RELEASE_MAJOR="${IMAGE_NAME}:${MAJOR_TAG}"
           RELEASE_MINOR="${IMAGE_NAME}:${MINOR_TAG}"
 
-          echo "PRE_IMAGE=$PRE_IMAGE" >> $GITHUB_OUTPUT
-          echo "RELEASE_MAJOR=$RELEASE_MAJOR" >> $GITHUB_OUTPUT
-          echo "RELEASE_MINOR=$RELEASE_MINOR" >> $GITHUB_OUTPUT
+          {
+            echo "PRE_IMAGE=$PRE_IMAGE"
+            echo "RELEASE_MAJOR=$RELEASE_MAJOR"
+            echo "RELEASE_MINOR=$RELEASE_MINOR"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Pull Configuration Prerelease Image
         uses: ./.github/actions/pull-ci-images

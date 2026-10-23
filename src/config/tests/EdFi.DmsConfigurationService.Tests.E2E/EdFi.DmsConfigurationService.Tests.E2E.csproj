@@ -29,6 +29,13 @@
     <ItemGroup>
         <!-- The secret resolution proofs decrypt what the Configuration Service returns with its own encryption service. -->
         <ProjectReference Include="..\..\backend\EdFi.DmsConfigurationService.Backend\EdFi.DmsConfigurationService.Backend.csproj" />
+        <!-- Build the CLI independently; its runtime closure is staged below, outside the test host's graph. -->
+        <ProjectReference
+            Include="..\..\clis\EdFi.DmsConfigurationService.SecurityMetadataTools\EdFi.DmsConfigurationService.SecurityMetadataTools.csproj"
+            ReferenceOutputAssembly="false"
+            PrivateAssets="all"
+            ExcludeAssets="all"
+        />
     </ItemGroup>
     <ItemGroup>
         <Using Include="NUnit.Framework" />
@@ -51,5 +58,34 @@
         <None Update="TestData\Claims\**\*">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>
+        <None
+            Include="..\..\clis\EdFi.DmsConfigurationService.SecurityMetadataTools.Tests.Unit\Fixtures\OdsSecurityMetadata\representative.xml"
+            Link="TestData\Claims\OdsSecurityMetadata\representative.xml"
+            CopyToOutputDirectory="PreserveNewest"
+        />
     </ItemGroup>
+    <!-- The E2E host uses ASP.NET Core shared-framework dependencies which the standalone CLI
+         does not. Copying just the executable into the host output can omit required assemblies. -->
+    <Target Name="StageSecurityMetadataTools" AfterTargets="Build">
+        <MSBuild
+            Projects="..\..\clis\EdFi.DmsConfigurationService.SecurityMetadataTools\EdFi.DmsConfigurationService.SecurityMetadataTools.csproj"
+            Targets="GetTargetPath"
+            Properties="Configuration=$(Configuration);TargetFramework=net10.0"
+        >
+            <Output TaskParameter="TargetOutputs" ItemName="_SecurityMetadataToolsTargetPath" />
+        </MSBuild>
+        <PropertyGroup>
+            <_SecurityMetadataToolsOutputDirectory>@(_SecurityMetadataToolsTargetPath->'%(RootDir)%(Directory)')</_SecurityMetadataToolsOutputDirectory>
+        </PropertyGroup>
+        <ItemGroup>
+            <_SecurityMetadataToolsFiles Include="$(_SecurityMetadataToolsOutputDirectory)**/*" />
+        </ItemGroup>
+        <RemoveDir Directories="$(OutDir)SecurityMetadataTools" />
+        <Copy
+            SourceFiles="@(_SecurityMetadataToolsFiles)"
+            DestinationFiles="@(_SecurityMetadataToolsFiles->'$(OutDir)SecurityMetadataTools/%(RecursiveDir)%(Filename)%(Extension)')"
+        >
+            <Output TaskParameter="CopiedFiles" ItemName="FileWrites" />
+        </Copy>
+    </Target>
 </Project>

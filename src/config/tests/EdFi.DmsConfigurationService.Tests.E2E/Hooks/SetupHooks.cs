@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using EdFi.DmsConfigurationService.Tests.E2E.Keycloak;
 using EdFi.DmsConfigurationService.Tests.E2E.Management;
 using Microsoft.Data.SqlClient;
@@ -42,12 +43,23 @@ public static class SetupHooks
             ? $"mssql localhost:{MssqlDbPortExternal}/{DatabaseName}"
             : $"postgresql localhost:{DbPortExternal}/{DatabaseName}";
 
-    private static bool UseMssql =>
+    internal static bool UseMssql =>
         string.Equals(
             Environment.GetEnvironmentVariable("CONFIGURATION_SERVICE_DATASTORE"),
             "mssql",
             StringComparison.OrdinalIgnoreCase
         );
+
+    private static string PostgresqlConnectionString =>
+        $"host=localhost;port={DbPortExternal};username={PgAdminUser};password={PgAdminPassword};database={DatabaseName};";
+
+    private static string MssqlConnectionString =>
+        $"Server=localhost,{MssqlDbPortExternal};User Id={MssqlSaUser};Password={MssqlSaPassword};TrustServerCertificate=true;Database={DatabaseName};";
+
+    internal static DbConnection CreateDatabaseConnection() =>
+        UseMssql
+            ? new SqlConnection(MssqlConnectionString)
+            : new NpgsqlConnection(PostgresqlConnectionString);
 
     // Scenarios tagged @SelfContainedOnly depend on behavior only the self-contained (OpenIddict)
     // identity provider has, such as token revocation semantics or claim shapes Keycloak does not
@@ -159,9 +171,7 @@ public static class SetupHooks
         {
             if (!UseMssql)
             {
-                var hostConnectionString =
-                    $"host=localhost;port={DbPortExternal};username={PgAdminUser};password={PgAdminPassword};database={DatabaseName};";
-                using var conn = new NpgsqlConnection(hostConnectionString);
+                using var conn = new NpgsqlConnection(PostgresqlConnectionString);
                 await conn.OpenAsync();
 
                 // Delete in reverse dependency order
@@ -200,9 +210,7 @@ public static class SetupHooks
             }
             else
             {
-                var mssqlConnectionString =
-                    $"Server=localhost,{MssqlDbPortExternal};User Id={MssqlSaUser};Password={MssqlSaPassword};TrustServerCertificate=true;Database={DatabaseName};";
-                using var conn = new SqlConnection(mssqlConnectionString);
+                using var conn = new SqlConnection(MssqlConnectionString);
                 await conn.OpenAsync();
 
                 // Delete in reverse dependency order

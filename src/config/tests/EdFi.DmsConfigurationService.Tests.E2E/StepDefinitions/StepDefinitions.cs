@@ -28,6 +28,7 @@ public partial class StepDefinitions(
     private const string SystemClientSecret = "ValidClientSecret1234567890!Abcd";
 
     private IAPIResponse _apiResponse = null!;
+    internal IAPIResponse LastApiResponse => _apiResponse;
     private string _token = string.Empty;
 
     // The client_id/client_secret last used to obtain _token, so a step revoking "the current
@@ -326,6 +327,15 @@ public partial class StepDefinitions(
             url,
             new() { Headers = _authHeaders, Data = body }
         )!;
+    }
+
+    /// <summary>POSTs file bytes without decoding, reserialization or placeholder substitution.</summary>
+    public async Task PostVerbatimBodyAsync(string url, byte[] body)
+    {
+        _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync(
+            url,
+            new() { Headers = _authHeaders, DataByte = body }
+        );
     }
 
     [When("an unauthenticated POST request is made to {string} with header {string} value {string} and")]
