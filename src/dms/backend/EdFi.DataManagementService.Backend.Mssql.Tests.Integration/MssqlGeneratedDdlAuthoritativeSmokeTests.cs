@@ -1370,6 +1370,38 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             );
     }
 
+    [Test]
+    public async Task It_should_not_install_any_referential_identity_artifact()
+    {
+        // DMS-1456 acceptance criterion: the provisioned schema carries no referential-identity table,
+        // constraint, function or trigger, no uuidv5 helper and no unlowered descriptor URI index. This
+        // asserts against the live catalog because the golden DDL is a regenerable snapshot, not an
+        // independent guarantee.
+        var retiredArtifacts = await _database.QueryRowsAsync(
+            """
+            SELECT objects.name AS [Artifact]
+            FROM sys.objects objects
+            WHERE objects.name LIKE N'%ReferentialIdentity%' OR objects.name = N'uuidv5'
+            UNION ALL
+            SELECT indexes.name
+            FROM sys.indexes indexes
+            WHERE indexes.name LIKE N'%ReferentialIdentity%'
+               OR indexes.name = N'UX_Descriptor_ResourceKeyId_Uri';
+            """
+        );
+        retiredArtifacts.Should().BeEmpty("no referential-identity artifact may be installed");
+
+        var loweredUriIndexes = await _database.ExecuteScalarAsync<int>(
+            """
+            SELECT COUNT(*)
+            FROM sys.indexes indexes
+            WHERE indexes.[object_id] = OBJECT_ID(N'dms.Descriptor')
+              AND indexes.name = N'UX_Descriptor_UriLowered_ResourceKeyId';
+            """
+        );
+        loweredUriIndexes.Should().Be(1);
+    }
+
     private async Task AssertForeignKeysEnabledTrustedAndValidAsync(string schemaName, string tableName)
     {
         var compromisedForeignKeys = await _database.QueryRowsAsync(

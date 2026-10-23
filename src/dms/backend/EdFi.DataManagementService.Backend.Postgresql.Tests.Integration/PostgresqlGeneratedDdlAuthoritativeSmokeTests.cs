@@ -294,6 +294,40 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     }
 
     [Test]
+    public async Task It_should_not_install_any_referential_identity_artifact()
+    {
+        // DMS-1456 acceptance criterion: the provisioned schema carries no referential-identity table,
+        // constraint, routine or trigger, no uuidv5 helper, no unlowered descriptor URI index, and no
+        // pgcrypto extension on this fresh database. This asserts against the live catalog because the
+        // golden DDL is a regenerable snapshot, not an independent guarantee.
+        var retiredArtifacts = await _database.QueryRowsAsync(
+            """
+            SELECT 'relation ' || relname AS "Artifact" FROM pg_class
+            WHERE relname LIKE '%ReferentialIdentity%' OR relname = 'UX_Descriptor_ResourceKeyId_Uri'
+            UNION ALL
+            SELECT 'constraint ' || conname FROM pg_constraint WHERE conname LIKE '%ReferentialIdentity%'
+            UNION ALL
+            SELECT 'routine ' || proname FROM pg_proc
+            WHERE proname = 'uuidv5' OR proname LIKE '%ReferentialIdentity%'
+            UNION ALL
+            SELECT 'trigger ' || tgname FROM pg_trigger WHERE tgname LIKE '%ReferentialIdentity%'
+            UNION ALL
+            SELECT 'extension ' || extname FROM pg_extension WHERE extname = 'pgcrypto';
+            """
+        );
+        retiredArtifacts.Should().BeEmpty("no referential-identity artifact may be installed");
+
+        var loweredUriIndexes = await _database.ExecuteScalarAsync<long>(
+            """
+            SELECT COUNT(*) FROM pg_indexes
+            WHERE schemaname = 'dms' AND tablename = 'Descriptor'
+              AND indexname = 'UX_Descriptor_UriLowered_ResourceKeyId';
+            """
+        );
+        loweredUriIndexes.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_should_allocate_collection_item_ids_via_defaults_for_representative_real_ds_sample_collection_tables()
     {
         (await _database.SequenceExistsAsync("dms", "CollectionItemIdSequence")).Should().BeTrue();

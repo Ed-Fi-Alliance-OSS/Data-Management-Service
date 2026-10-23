@@ -99,16 +99,16 @@ public class Given_A_Mssql_CompactDescriptor_Uri_Index_On_Independent_Sessions
     [Test]
     public async Task It_should_maintain_the_computed_index_on_fresh_and_reused_runtime_connections()
     {
-        // Both computed-column indexes must exist, or the DML below could pass without maintaining one.
+        // The computed-column index must exist, or the DML below could pass without maintaining it.
         var computedColumnIndexes = await _database.ExecuteScalarAsync<int>(
             """
             SELECT COUNT(*)
             FROM sys.indexes
             WHERE [object_id] = OBJECT_ID(N'dms.Descriptor') AND is_unique = 1
-                AND [name] IN (N'UX_Descriptor_ResourceKeyId_Uri', N'UX_Descriptor_UriLowered_ResourceKeyId');
+                AND [name] = N'UX_Descriptor_UriLowered_ResourceKeyId';
             """
         );
-        computedColumnIndexes.Should().Be(2);
+        computedColumnIndexes.Should().Be(1);
 
         // No SET statements: the runtime acquisition boundary opens SqlClient connections directly.
         // A separate pool, limited to one connection, proves reuse without inheriting provisioner state.

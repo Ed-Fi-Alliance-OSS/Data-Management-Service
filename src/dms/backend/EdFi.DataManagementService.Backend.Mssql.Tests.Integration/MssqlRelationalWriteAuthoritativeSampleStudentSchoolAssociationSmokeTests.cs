@@ -452,7 +452,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         _database = _databaseLease.Database;
         _serviceProvider = MssqlStudentSchoolAssociationIntegrationTestSupport.CreateServiceProvider();
         await SeedReferenceDataAsync();
-        await DisableStudentSchoolAssociationReferentialIdentityTriggerAsync();
 
         var requestBody =
             JsonNode.Parse(CreateRequestBodyJson)
@@ -1011,16 +1010,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         );
 
         return new(studentDocumentId, graduationPlanTypeDescriptorId);
-    }
-
-    private async Task DisableStudentSchoolAssociationReferentialIdentityTriggerAsync()
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            DISABLE TRIGGER [TR_StudentSchoolAssociation_ReferentialIdentity]
-            ON [edfi].[StudentSchoolAssociation];
-            """
-        );
     }
 
     private async Task<MssqlStudentSchoolAssociationDocumentMetadata> ReadDocumentMetadataAsync(

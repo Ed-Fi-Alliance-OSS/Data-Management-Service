@@ -77,7 +77,6 @@ public class Given_MssqlReferenceResolverTestDatabase
                 "dms.Document",
                 "dms.DocumentCache",
                 "dms.EffectiveSchema",
-                "dms.ReferentialIdentity",
                 "dms.ResourceKey",
                 "dms.SchemaComponent",
                 "edfi.LocalEducationAgency",

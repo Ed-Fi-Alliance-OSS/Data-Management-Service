@@ -38,7 +38,7 @@ public abstract class RelationalChangeQueryRepositoryTestBase
     protected static IChangeQueryRepository CreateRepository()
     {
         var commandExecutor = new PostgresqlRelationalCommandExecutor(
-            static async ct => await Uuidv5ParityTestBase.DataSource.OpenConnectionAsync(ct),
+            static async ct => await IntegrationDatabase.DataSource.OpenConnectionAsync(ct),
             NullLogger<PostgresqlRelationalCommandExecutor>.Instance
         );
 

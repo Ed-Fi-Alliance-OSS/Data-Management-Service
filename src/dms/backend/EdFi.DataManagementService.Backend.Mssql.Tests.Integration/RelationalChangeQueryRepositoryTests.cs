@@ -38,7 +38,7 @@ public abstract class RelationalChangeQueryRepositoryTestBase
         var commandExecutor = new MssqlRelationalCommandExecutor(
             static async ct =>
             {
-                var connection = new SqlConnection(Uuidv5ParityTestBase.ConnectionString);
+                var connection = new SqlConnection(IntegrationDatabase.ConnectionString);
                 await connection.OpenAsync(ct);
                 return connection;
             },

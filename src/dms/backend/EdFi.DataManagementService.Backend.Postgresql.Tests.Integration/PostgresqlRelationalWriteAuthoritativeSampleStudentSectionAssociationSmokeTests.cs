@@ -1385,49 +1385,43 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         string localCourseCode
     )
     {
-        await RunWithDisabledTriggerAsync(
-            "edfi",
-            "CourseOffering",
-            "TR_CourseOffering_ReferentialIdentity",
-            async () =>
-                await _database.ExecuteNonQueryAsync(
-                    """
-                    INSERT INTO "edfi"."CourseOffering" (
-                        "DocumentId",
-                        "SchoolId_Unified",
-                        "Course_DocumentId",
-                        "Course_CourseCode",
-                        "Course_EducationOrganizationId",
-                        "School_DocumentId",
-                        "Session_DocumentId",
-                        "Session_SchoolYear",
-                        "Session_SessionName",
-                        "LocalCourseCode"
-                    )
-                    VALUES (
-                        @documentId,
-                        @schoolId,
-                        @courseDocumentId,
-                        @courseCode,
-                        @courseEducationOrganizationId,
-                        @schoolDocumentId,
-                        @sessionDocumentId,
-                        @schoolYear,
-                        @sessionName,
-                        @localCourseCode
-                    );
-                    """,
-                    new NpgsqlParameter("documentId", documentId),
-                    new NpgsqlParameter("schoolId", schoolId),
-                    new NpgsqlParameter("courseDocumentId", courseDocumentId),
-                    new NpgsqlParameter("courseCode", courseCode),
-                    new NpgsqlParameter("courseEducationOrganizationId", courseEducationOrganizationId),
-                    new NpgsqlParameter("schoolDocumentId", schoolDocumentId),
-                    new NpgsqlParameter("sessionDocumentId", sessionDocumentId),
-                    new NpgsqlParameter("schoolYear", schoolYear),
-                    new NpgsqlParameter("sessionName", sessionName),
-                    new NpgsqlParameter("localCourseCode", localCourseCode)
-                )
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."CourseOffering" (
+                "DocumentId",
+                "SchoolId_Unified",
+                "Course_DocumentId",
+                "Course_CourseCode",
+                "Course_EducationOrganizationId",
+                "School_DocumentId",
+                "Session_DocumentId",
+                "Session_SchoolYear",
+                "Session_SessionName",
+                "LocalCourseCode"
+            )
+            VALUES (
+                @documentId,
+                @schoolId,
+                @courseDocumentId,
+                @courseCode,
+                @courseEducationOrganizationId,
+                @schoolDocumentId,
+                @sessionDocumentId,
+                @schoolYear,
+                @sessionName,
+                @localCourseCode
+            );
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("schoolId", schoolId),
+            new NpgsqlParameter("courseDocumentId", courseDocumentId),
+            new NpgsqlParameter("courseCode", courseCode),
+            new NpgsqlParameter("courseEducationOrganizationId", courseEducationOrganizationId),
+            new NpgsqlParameter("schoolDocumentId", schoolDocumentId),
+            new NpgsqlParameter("sessionDocumentId", sessionDocumentId),
+            new NpgsqlParameter("schoolYear", schoolYear),
+            new NpgsqlParameter("sessionName", sessionName),
+            new NpgsqlParameter("localCourseCode", localCourseCode)
         );
     }
 
@@ -1441,43 +1435,37 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         string sectionIdentifier
     )
     {
-        await RunWithDisabledTriggerAsync(
-            "edfi",
-            "Section",
-            "TR_Section_ReferentialIdentity",
-            async () =>
-                await _database.ExecuteNonQueryAsync(
-                    """
-                    INSERT INTO "edfi"."Section" (
-                        "DocumentId",
-                        "SchoolId_Unified",
-                        "CourseOffering_DocumentId",
-                        "CourseOffering_LocalCourseCode",
-                        "CourseOffering_SchoolYear",
-                        "CourseOffering_SessionName",
-                        "SectionIdentifier",
-                        "SectionName"
-                    )
-                    VALUES (
-                        @documentId,
-                        @schoolId,
-                        @courseOfferingDocumentId,
-                        @localCourseCode,
-                        @schoolYear,
-                        @sessionName,
-                        @sectionIdentifier,
-                        @sectionName
-                    );
-                    """,
-                    new NpgsqlParameter("documentId", documentId),
-                    new NpgsqlParameter("schoolId", schoolId),
-                    new NpgsqlParameter("courseOfferingDocumentId", courseOfferingDocumentId),
-                    new NpgsqlParameter("localCourseCode", localCourseCode),
-                    new NpgsqlParameter("schoolYear", schoolYear),
-                    new NpgsqlParameter("sessionName", sessionName),
-                    new NpgsqlParameter("sectionIdentifier", sectionIdentifier),
-                    new NpgsqlParameter("sectionName", "Advanced Algebra I")
-                )
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "edfi"."Section" (
+                "DocumentId",
+                "SchoolId_Unified",
+                "CourseOffering_DocumentId",
+                "CourseOffering_LocalCourseCode",
+                "CourseOffering_SchoolYear",
+                "CourseOffering_SessionName",
+                "SectionIdentifier",
+                "SectionName"
+            )
+            VALUES (
+                @documentId,
+                @schoolId,
+                @courseOfferingDocumentId,
+                @localCourseCode,
+                @schoolYear,
+                @sessionName,
+                @sectionIdentifier,
+                @sectionName
+            );
+            """,
+            new NpgsqlParameter("documentId", documentId),
+            new NpgsqlParameter("schoolId", schoolId),
+            new NpgsqlParameter("courseOfferingDocumentId", courseOfferingDocumentId),
+            new NpgsqlParameter("localCourseCode", localCourseCode),
+            new NpgsqlParameter("schoolYear", schoolYear),
+            new NpgsqlParameter("sessionName", sessionName),
+            new NpgsqlParameter("sectionIdentifier", sectionIdentifier),
+            new NpgsqlParameter("sectionName", "Advanced Algebra I")
         );
     }
 
@@ -1620,29 +1608,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             new NpgsqlParameter("studentUniqueId", studentUniqueId),
             new NpgsqlParameter("discriminator", "Sample:StudentArtProgramAssociation")
         );
-    }
-
-    private async Task RunWithDisabledTriggerAsync(
-        string schema,
-        string tableName,
-        string triggerName,
-        Func<Task> action
-    )
-    {
-        await _database.ExecuteNonQueryAsync(
-            $"""ALTER TABLE "{schema}"."{tableName}" DISABLE TRIGGER "{triggerName}";"""
-        );
-
-        try
-        {
-            await action();
-        }
-        finally
-        {
-            await _database.ExecuteNonQueryAsync(
-                $"""ALTER TABLE "{schema}"."{tableName}" ENABLE TRIGGER "{triggerName}";"""
-            );
-        }
     }
 
     private async Task<AuthoritativeSampleStudentSectionAssociationPersistedState> ReadPersistedStateAsync(

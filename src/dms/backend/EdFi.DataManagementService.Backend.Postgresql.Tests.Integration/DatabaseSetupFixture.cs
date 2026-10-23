@@ -11,6 +11,32 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
 /// <summary>
+/// Holds the assembly-wide data source that <see cref="DatabaseSetupFixture"/> opens on the
+/// test database.
+/// </summary>
+internal static class IntegrationDatabase
+{
+    private static NpgsqlDataSource? _dataSource;
+
+    internal static NpgsqlDataSource DataSource =>
+        _dataSource
+        ?? throw new InvalidOperationException(
+            "DataSource has not been initialized. Ensure DatabaseSetupFixture has run."
+        );
+
+    internal static void InitializeDataSource(NpgsqlDataSource dataSource) => _dataSource = dataSource;
+
+    internal static async ValueTask DisposeDataSourceAsync()
+    {
+        if (_dataSource is not null)
+        {
+            await _dataSource.DisposeAsync();
+            _dataSource = null;
+        }
+    }
+}
+
+/// <summary>
 /// One-time setup fixture that provisions the dms schema, the change-version sequence and the
 /// dms.GetMaxChangeVersion() helper function.
 /// Runs once per test assembly before any test fixtures execute.
@@ -51,7 +77,7 @@ public class DatabaseSetupFixture
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            Uuidv5ParityTestBase.InitializeDataSource(dataSource);
+            IntegrationDatabase.InitializeDataSource(dataSource);
         }
         catch
         {
@@ -63,7 +89,7 @@ public class DatabaseSetupFixture
     [OneTimeTearDown]
     public async Task OneTimeTearDown()
     {
-        await Uuidv5ParityTestBase.DisposeDataSourceAsync();
+        await IntegrationDatabase.DisposeDataSourceAsync();
     }
 
     /// <summary>

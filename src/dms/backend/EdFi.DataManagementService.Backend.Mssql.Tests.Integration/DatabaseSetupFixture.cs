@@ -12,6 +12,24 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
 /// <summary>
+/// Holds the connection string of the assembly-wide test database that
+/// <see cref="DatabaseSetupFixture"/> creates.
+/// </summary>
+internal static class IntegrationDatabase
+{
+    private static string? _connectionString;
+
+    internal static string ConnectionString =>
+        _connectionString
+        ?? throw new InvalidOperationException(
+            "ConnectionString has not been initialized. Ensure DatabaseSetupFixture has run."
+        );
+
+    internal static void InitializeConnectionString(string connectionString) =>
+        _connectionString = connectionString;
+}
+
+/// <summary>
 /// One-time setup fixture that provisions the dms schema, the change-version sequence and the
 /// dms.GetMaxChangeVersion() helper function.
 /// Runs once per test assembly before any test fixtures execute.
@@ -61,7 +79,7 @@ public class DatabaseSetupFixture
             await cmd.ExecuteNonQueryAsync();
         }
 
-        Uuidv5ParityTestBase.InitializeConnectionString(connectionString);
+        IntegrationDatabase.InitializeConnectionString(connectionString);
     }
 
     [OneTimeTearDown]

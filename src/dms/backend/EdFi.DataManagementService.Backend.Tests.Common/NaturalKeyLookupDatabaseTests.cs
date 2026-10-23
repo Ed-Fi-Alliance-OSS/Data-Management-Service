@@ -594,11 +594,9 @@ public abstract class NaturalKeyLookupDatabaseTests
             IsPgsql
                 ? """
                 DROP INDEX "dms"."UX_Descriptor_UriLowered_ResourceKeyId";
-                DROP INDEX "dms"."UX_Descriptor_ResourceKeyId_Uri";
                 """
                 : $"""
                 DROP INDEX [UX_Descriptor_UriLowered_ResourceKeyId] ON {descriptor};
-                DROP INDEX [UX_Descriptor_ResourceKeyId_Uri] ON {descriptor};
                 """
         );
         await InsertDescriptorAsync(
@@ -669,11 +667,9 @@ public abstract class NaturalKeyLookupDatabaseTests
             IsPgsql
                 ? """
                 DROP INDEX "dms"."UX_Descriptor_UriLowered_ResourceKeyId";
-                DROP INDEX "dms"."UX_Descriptor_ResourceKeyId_Uri";
                 """
                 : $"""
                 DROP INDEX [UX_Descriptor_UriLowered_ResourceKeyId] ON {descriptor};
-                DROP INDEX [UX_Descriptor_ResourceKeyId_Uri] ON {descriptor};
                 """
         );
         await InsertDescriptorAsync(
@@ -756,12 +752,7 @@ public abstract class NaturalKeyLookupDatabaseTests
         await ExecuteAsync(
             _connection,
             _transaction,
-            $"""
-            ALTER TABLE {Table("edfi", "Program")} DROP CONSTRAINT {Q("UX_Program_NK")};
-            DELETE FROM {Table("dms", "ReferentialIdentity")} WHERE {Q("DocumentId")} = @documentId;
-            """,
-            // The duplicate's trigger-maintained referential id equals the original's.
-            ("documentId", _programDocumentId)
+            $"ALTER TABLE {Table("edfi", "Program")} DROP CONSTRAINT {Q("UX_Program_NK")};"
         );
         await InsertProgramAsync(_connection, ProgramName, CareerDescriptorId, _transaction);
 

@@ -66,7 +66,6 @@ public class Given_PostgresqlReferenceResolverTestDatabase
                 "dms.Document",
                 "dms.DocumentCache",
                 "dms.EffectiveSchema",
-                "dms.ReferentialIdentity",
                 "dms.ResourceKey",
                 "dms.SchemaComponent",
                 "edfi.LocalEducationAgency",

@@ -3899,10 +3899,6 @@ internal static class AllOrNoneCheckFixture
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// UUIDv5 Namespace Guard Test
-// ═══════════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════════
 // Child-collection identity propagation: MSSQL emits propagation
 // trigger including the child referrer, PG emits composite FK with
 // ON UPDATE CASCADE instead of any propagation trigger.
