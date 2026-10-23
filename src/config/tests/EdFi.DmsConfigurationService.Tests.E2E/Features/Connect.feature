@@ -185,7 +185,48 @@ Feature: Connect endpoints
               And the token response body is valid
               And the token has an empty namespacePrefixes claim
 
+        # The self-contained identity provider answers a wrong secret exactly as it answers an
+        # unknown client id (scenario 06), so the response does not reveal that the client exists.
+        @SelfContainedOnly
         Scenario: 05 Verify token creation with invalid client_secret value
+             When a Form URL Encoded POST request is made to "/connect/register" with
+                  | Key          | Value                                          |
+                  | ClientId     | _scenarioRunId                                 |
+                  | ClientSecret | S3cr3t!SuperLongSecretKeyWith$peci@lChar123456 |
+                  | DisplayName  | _scenarioRunId                                 |
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                    "title": "Registered client {scenarioRunId} successfully.",
+                    "status": 200
+                  }
+                  """
+             When a Form URL Encoded POST request is made to "/connect/token" with
+                  | Key           | Value                      |
+                  | client_id     | _scenarioRunId             |
+                  | client_secret | wrong                      |
+                  | grant_type    | client_credentials         |
+                  | scope         | edfi_admin_api/full_access |
+             Then it should respond with 401
+              And the response body is
+                  """
+                  {
+                    "detail": "The request could not be processed. See 'errors' for details.",
+                    "type":"urn:ed-fi:management-api:security:authentication",
+                    "title":"Authentication Failed",
+                    "status":401,
+                    "validationErrors":{},
+                     "errors": [
+                        "invalid_client. Invalid client or Invalid client credentials"
+                        ]
+                  }
+                  """
+
+        # Keycloak answers a wrong secret for a confidential client with its own
+        # unauthorized_client, which the Configuration Service passes through unchanged.
+        @KeycloakOnly
+        Scenario: 05b Keycloak reports an invalid client_secret value as unauthorized_client
              When a Form URL Encoded POST request is made to "/connect/register" with
                   | Key          | Value                                          |
                   | ClientId     | _scenarioRunId                                 |

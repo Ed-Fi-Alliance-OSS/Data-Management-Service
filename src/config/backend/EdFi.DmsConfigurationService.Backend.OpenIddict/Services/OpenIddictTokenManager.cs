@@ -189,7 +189,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     preserveVerificationFailures: false
                 );
 
-                if (applicationInfo == null)
+                if (applicationInfo is null)
                 {
                     return new TokenResult.FailureAuthentication(
                         credentialErrorCode,
@@ -285,7 +285,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     // The application row was deleted between the lookup above and the store, so
                     // answer exactly as the unknown-client case above answers.
                     return new TokenResult.FailureAuthentication(
-                        "invalid_client",
+                        InvalidClientError,
                         "Invalid client or Invalid client credentials"
                     );
                 }
@@ -653,9 +653,17 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
             string.IsNullOrEmpty(applicationInfo.ClientId) ? requestedClientId : applicationInfo.ClientId;
 
         /// <summary>
+        /// The OAuth error code for every failed client authentication, as RFC 6749 section 5.2
+        /// requires for invalid client credentials.
+        /// </summary>
+        private const string InvalidClientError = "invalid_client";
+
+        /// <summary>
         /// Looks up the application by client id and verifies the secret against the stored
-        /// (potentially hashed) value. Returns a null application on failure along with the OAuth
-        /// error code that describes why.
+        /// (potentially hashed) value. Returns a null application on failure, always with
+        /// <see cref="InvalidClientError"/> as the error code: an unknown client, a wrong secret and
+        /// an unapproved client are reported identically, so the code does not reveal whether the
+        /// client id exists.
         /// </summary>
         /// <param name="preserveVerificationFailures">
         /// <c>false</c> for the token endpoint, which keeps the hasher's established behaviour of
@@ -672,9 +680,9 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         )
         {
             var applicationInfo = await _tokenRepository.GetApplicationByClientIdAsync(clientId);
-            if (applicationInfo == null)
+            if (applicationInfo is null)
             {
-                return (null, "invalid_client");
+                return (null, InvalidClientError);
             }
 
             string storedSecret = applicationInfo.ClientSecret ?? string.Empty;
@@ -684,12 +692,12 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     : await _secretHasher.VerifySecretAsync(clientSecret, storedSecret);
             if (!isValidSecret)
             {
-                return (null, "unauthorized_client");
+                return (null, InvalidClientError);
             }
 
             if (!applicationInfo.IsApproved)
             {
-                return (null, "invalid_client");
+                return (null, InvalidClientError);
             }
 
             return (applicationInfo, string.Empty);

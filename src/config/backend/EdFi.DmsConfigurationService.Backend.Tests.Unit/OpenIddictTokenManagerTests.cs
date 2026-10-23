@@ -203,6 +203,48 @@ public class OpenIddictTokenManagerTests
     }
 
     [TestFixture]
+    public class Given_GetAccessTokenAsync_WhenApiClientIsNotApproved_WithAWrongSecret
+        : OpenIddictTokenManagerTests
+    {
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync("disabled-client"))
+                .Returns(
+                    new ApplicationInfo
+                    {
+                        ClientId = "disabled-client",
+                        ClientSecret = "hashed-secret",
+                        IsApproved = false,
+                    }
+                );
+
+            A.CallTo(() => _secretHasher.VerifySecretAsync("wrong-secret", "hashed-secret")).Returns(false);
+
+            var credentials = new List<KeyValuePair<string, string>>
+            {
+                new("client_id", "disabled-client"),
+                new("client_secret", "wrong-secret"),
+            };
+
+            _result = await _tokenManager.GetAccessTokenAsync(credentials);
+        }
+
+        [Test]
+        public void It_returns_an_invalid_client_authentication_failure() =>
+            _result
+                .Should()
+                .BeEquivalentTo(
+                    new TokenResult.FailureAuthentication(
+                        "invalid_client",
+                        "Invalid client or Invalid client credentials"
+                    )
+                );
+    }
+
+    [TestFixture]
     public class Given_GetAccessTokenAsync_WhenClientIsUnknown : OpenIddictTokenManagerTests
     {
         private TokenResult _result = null!;
@@ -264,12 +306,12 @@ public class OpenIddictTokenManagerTests
         }
 
         [Test]
-        public void It_returns_an_unauthorized_client_authentication_failure() =>
+        public void It_returns_an_invalid_client_authentication_failure() =>
             _result
                 .Should()
                 .BeEquivalentTo(
                     new TokenResult.FailureAuthentication(
-                        "unauthorized_client",
+                        "invalid_client",
                         "Invalid client or Invalid client credentials"
                     )
                 );
@@ -2583,9 +2625,10 @@ public class OpenIddictTokenManagerTests
             A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, A<Guid>._)).MustHaveHappenedOnceExactly();
     }
 
-    // The token endpoint is out of scope and keeps the hasher's established semantics: a
-    // verification that cannot run is still reported as unauthorized_client, and the hasher still
-    // logs it. Pinned so the revocation fix cannot silently change /connect/token.
+    // The token endpoint keeps the hasher's lenient semantics: a verification that cannot run is
+    // still a credential failure, reported as invalid_client like every other failed client
+    // authentication, and the hasher still logs it. Pinned so revocation's failure-preserving
+    // verification cannot silently change /connect/token.
     [TestFixture]
     public class Given_GetAccessTokenAsync_WithTheRealHasherWhenVerificationCannotRun
         : OpenIddictTokenManagerTests
@@ -2607,12 +2650,12 @@ public class OpenIddictTokenManagerTests
         }
 
         [Test]
-        public void It_still_answers_unauthorized_client() =>
+        public void It_answers_invalid_client() =>
             _result
                 .Should()
                 .BeOfType<TokenResult.FailureAuthentication>()
                 .Which.Error.Should()
-                .Be("unauthorized_client");
+                .Be("invalid_client");
 
         [Test]
         public void It_still_has_the_hasher_log_the_failure() =>
