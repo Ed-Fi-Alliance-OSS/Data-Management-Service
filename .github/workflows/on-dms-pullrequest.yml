@@ -261,6 +261,7 @@ jobs:
             "eng/docker-compose/tests/IdentityToggleWiring.Tests.ps1",
             "eng/docker-compose/tests/E2ETeardownSafety.Tests.ps1",
             "eng/docker-compose/tests/InstanceE2EForwarding.Tests.ps1",
+            "eng/docker-compose/tests/oauth-token-contract/TokenContractE2E.Tests.ps1",
             "eng/docker-compose/tests/ContainerEntryPointDatabaseWait.Tests.ps1",
             "eng/ci/tests/BuildScriptTestGuards.Tests.ps1",
             "eng/ci/tests/Sanitize-E2EArtifacts.Tests.ps1",
@@ -2197,8 +2198,20 @@ jobs:
         run: |
           ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter '(Category=@e2e-ci-shard-${{ matrix.shard }})&(Category!=@MssqlOnly)'
 
+      - name: Run DMS-1606 token contract E2E
+        id: token-contract
+        if: success() && matrix.shard == 1
+        run: |
+          ./eng/docker-compose/tests/oauth-token-contract/Invoke-TokenContractE2E.ps1 `
+            -IdentityProvider ${{ matrix.identityprovider }} `
+            -DatabaseEngine postgresql `
+            -EnvironmentFile './.env.e2e' `
+            -Configuration ${{ env.CONFIGURATION }} `
+            -SkipDockerBuild `
+            -UsePrebuiltOutput
+
       - name: Export DMS E2E Docker Logs
-        if: always() && steps.e2e.outcome == 'failure'
+        if: always() && (steps.e2e.outcome == 'failure' || steps.token-contract.outcome == 'failure')
         run: |
           $logDir = "${{ github.workspace }}/logs/e2e-shard-${{ matrix.shard }}"
           Remove-Item -Path $logDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -2226,7 +2239,7 @@ jobs:
         shell: pwsh
 
       - name: Upload DMS E2E Logs
-        if: always() && steps.e2e.outcome == 'failure'
+        if: always() && (steps.e2e.outcome == 'failure' || steps.token-contract.outcome == 'failure')
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: postgresql-${{ matrix.identityprovider }}-e2e-shard-${{ matrix.shard }}-test-logs
@@ -2244,6 +2257,28 @@ jobs:
           reporter: dotnet-trx
           list-tests: failed
           use-actions-summary: "true"
+
+      - name: Report DMS-1606 token contract results
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        if: always() && hashFiles('TestResults/token-contract-*.trx') != ''
+        with:
+          name: DMS-1606 token contract E2E
+          path: TestResults/token-contract-*.trx
+          path-replace-backslashes: "true"
+          reporter: dotnet-trx
+          list-tests: failed
+          use-actions-summary: "true"
+
+      - name: Upload DMS-1606 token contract artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always() && matrix.shard == 1
+        with:
+          name: dms-1606-token-contract-${{ matrix.identityprovider }}
+          path: |
+            TestResults/token-contract-*.trx
+            logs/e2e-shard-${{ matrix.shard }}/**
+          if-no-files-found: ignore
+          retention-days: 10
 
       - name: Summarize DMS E2E Test Timings
         if: always()

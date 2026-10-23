@@ -307,9 +307,15 @@ logged value.
 value itself; normalization is pure and idempotent, so the result would be the
 same.)
 
-Not every error response carries one. The `413` answer to an oversized request
-body writes no response body at all, and the management, metadata and XSD
-metadata endpoints answer an unrecognized path with a `404` that carries no
+Supported-content-type token POST errors, including qualified routes and writable
+`413`/`500` responses, return OAuth JSON instead of a problem-details body. Their
+`X-Correlation-ID` header contains the same normalized log ID, UTF-8
+percent-encoded. Decode it once, including `%25` for a literal percent sign, before
+searching the logs. See the [token error contract](../reference/adr-oauth-token-errors-DMS-1606.md).
+
+Not every error response carries one. Outside those token endpoints, the `413`
+answer to an oversized request body writes no response body at all, and the
+management, metadata and XSD metadata endpoints answer an unrecognized path with a `404` that carries no
 `correlationId`. What those three families *do* return differs, and the
 differences matter to whatever is parsing the response:
 

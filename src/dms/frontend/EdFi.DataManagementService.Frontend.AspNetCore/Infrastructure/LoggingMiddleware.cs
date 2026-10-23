@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Text.Json;
 using EdFi.DataManagementService.Core.External.Logging;
+using EdFi.DataManagementService.Core.OAuth;
 using EdFi.DataManagementService.Core.Utilities;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using Microsoft.Extensions.Options;
@@ -112,12 +113,34 @@ public class LoggingMiddleware
             }
             catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge)
             {
+                if (IsTokenEndpoint(context) && context.RequestAborted.IsCancellationRequested)
+                {
+                    throw;
+                }
+
                 stopwatch.Stop();
 
                 var response = context.Response;
                 if (!response.HasStarted)
                 {
-                    response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+                    if (IsTokenEndpoint(context))
+                    {
+                        using var tokenError = OAuthErrorResponse.Create(
+                            HttpStatusCode.RequestEntityTooLarge,
+                            "invalid_request",
+                            OAuthErrorResponse.PayloadTooLargeDescription,
+                            ingestion.TraceId
+                        );
+                        await TokenErrorResponseWriter.WriteAsync(
+                            context,
+                            tokenError,
+                            context.RequestAborted
+                        );
+                    }
+                    else
+                    {
+                        response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+                    }
                 }
 
                 // An oversized body is a client error the pipeline responded to, so it participates
@@ -166,7 +189,41 @@ public class LoggingMiddleware
                 );
 
                 var response = context.Response;
-                if (!response.HasStarted)
+                if (
+                    IsTokenEndpoint(context)
+                    && !response.HasStarted
+                    && !context.RequestAborted.IsCancellationRequested
+                )
+                {
+                    try
+                    {
+                        using var tokenError = OAuthErrorResponse.Create(
+                            HttpStatusCode.InternalServerError,
+                            "server_error",
+                            OAuthErrorResponse.ServerErrorDescription,
+                            ingestion.TraceId
+                        );
+                        await TokenErrorResponseWriter.WriteAsync(
+                            context,
+                            tokenError,
+                            context.RequestAborted
+                        );
+                        return;
+                    }
+                    catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception responseEx)
+                    {
+                        logger.LogError(
+                            responseEx,
+                            "Failed to write error response for TraceId: {TraceId}",
+                            traceId
+                        );
+                    }
+                }
+                else if (!response.HasStarted && !IsTokenEndpoint(context))
                 {
                     try
                     {
@@ -250,6 +307,9 @@ public class LoggingMiddleware
 
     private static int GetFailureStatusCode(HttpContext context) =>
         context.Response.HasStarted ? context.Response.StatusCode : StatusCodes.Status500InternalServerError;
+
+    private static bool IsTokenEndpoint(HttpContext context) =>
+        context.GetEndpoint()?.Metadata.GetMetadata<TokenEndpointMetadata>() is not null;
 
     /// <summary>
     /// Redacts an identity get-by-id or results-poll identifier from <paramref name="path"/>.
