@@ -11,8 +11,8 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
 /// <summary>
-/// One-time setup fixture that provisions the pgcrypto extension and the
-/// dms.uuidv5() helper function required by the parity tests.
+/// One-time setup fixture that provisions the dms schema, the change-version sequence and the
+/// dms.GetMaxChangeVersion() helper function.
 /// Runs once per test assembly before any test fixtures execute.
 /// </summary>
 [SetUpFixture]
@@ -27,9 +27,7 @@ public class DatabaseSetupFixture
         var schema = new DbSchemaName("dms");
 
         var createSchema = dialect.CreateSchemaIfNotExists(schema);
-        var createExtension = dialect.CreateExtensionIfNotExists("pgcrypto");
         var createSequence = dialect.CreateSequenceIfNotExists(schema, "ChangeVersionSequence");
-        var createUuidv5 = dialect.CreateUuidv5Function(schema);
         var createGetMax = dialect.CreateGetMaxChangeVersionFunction(schema);
 
         var dataSource = NpgsqlDataSource.Create(Configuration.DatabaseConnectionString);
@@ -43,17 +41,7 @@ public class DatabaseSetupFixture
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            await using (var cmd = new NpgsqlCommand(createExtension, connection))
-            {
-                await cmd.ExecuteNonQueryAsync();
-            }
-
             await using (var cmd = new NpgsqlCommand(createSequence, connection))
-            {
-                await cmd.ExecuteNonQueryAsync();
-            }
-
-            await using (var cmd = new NpgsqlCommand(createUuidv5, connection))
             {
                 await cmd.ExecuteNonQueryAsync();
             }

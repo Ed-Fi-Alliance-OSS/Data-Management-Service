@@ -12,8 +12,8 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
 /// <summary>
-/// One-time setup fixture that provisions the dms schema and the
-/// dms.uuidv5() helper function required by the parity tests.
+/// One-time setup fixture that provisions the dms schema, the change-version sequence and the
+/// dms.GetMaxChangeVersion() helper function.
 /// Runs once per test assembly before any test fixtures execute.
 /// </summary>
 [SetUpFixture]
@@ -39,7 +39,6 @@ public class DatabaseSetupFixture
         var createSchema = dialect.CreateSchemaIfNotExists(schema);
         var createSequence = dialect.CreateSequenceIfNotExists(schema, "ChangeVersionSequence");
         var createGetMax = dialect.CreateGetMaxChangeVersionFunction(schema);
-        var createUuidv5 = dialect.CreateUuidv5Function(schema);
 
         await using SqlConnection connection = new(connectionString);
         await connection.OpenAsync();
@@ -58,11 +57,6 @@ public class DatabaseSetupFixture
 
         // Each CREATE OR ALTER FUNCTION goes in its own SqlCommand (no GO in command text).
         await using (var cmd = new SqlCommand(createGetMax, connection))
-        {
-            await cmd.ExecuteNonQueryAsync();
-        }
-
-        await using (var cmd = new SqlCommand(createUuidv5, connection))
         {
             await cmd.ExecuteNonQueryAsync();
         }

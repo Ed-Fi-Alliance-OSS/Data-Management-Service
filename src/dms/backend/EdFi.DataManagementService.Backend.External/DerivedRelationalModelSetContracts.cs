@@ -292,24 +292,6 @@ public abstract record TriggerKindParameters
         : TriggerKindParameters;
 
     /// <summary>
-    /// Parameters for triggers that maintain referential identity for concrete resources.
-    /// </summary>
-    /// <param name="ResourceKeyId">The resource key ID for UUIDv5 computation.</param>
-    /// <param name="ProjectName">The project name for UUIDv5 computation.</param>
-    /// <param name="ResourceName">The resource name for UUIDv5 computation.</param>
-    /// <param name="IdentityElements">Identity element mappings for UUIDv5 computation.</param>
-    /// <param name="SuperclassAlias">
-    /// Superclass alias information for subclass resources. <c>null</c> for non-subclass resources.
-    /// </param>
-    public sealed record ReferentialIdentityMaintenance(
-        short ResourceKeyId,
-        string ProjectName,
-        string ResourceName,
-        IReadOnlyList<IdentityElementMapping> IdentityElements,
-        SuperclassAliasInfo? SuperclassAlias = null
-    ) : TriggerKindParameters;
-
-    /// <summary>
     /// Parameters for triggers that maintain abstract identity tables from concrete roots.
     /// </summary>
     /// <param name="TargetTable">The abstract identity table being maintained.</param>
@@ -345,36 +327,11 @@ public abstract record TriggerKindParameters
 public readonly record struct DbTriggerName(string Value);
 
 /// <summary>
-/// Maps a root table column to its identity JSON path for UUIDv5 computation.
+/// Maps a root table column to its canonical identity JSON path.
 /// </summary>
 /// <param name="Column">The physical column on the root table.</param>
-/// <param name="IdentityJsonPath">The canonical JSON path label used in the UUIDv5 hash string.</param>
-/// <param name="ScalarType">The scalar type metadata for type-aware string formatting in hash expressions.</param>
-/// <param name="IsDescriptorReference">
-/// Indicates that <paramref name="Column"/> stores a compact DescriptorId that must be converted back
-/// to the descriptor URI before UUIDv5 hash computation.
-/// </param>
-public sealed record IdentityElementMapping(
-    DbColumnName Column,
-    string IdentityJsonPath,
-    RelationalScalarType ScalarType,
-    bool IsDescriptorReference = false
-);
-
-/// <summary>
-/// Superclass alias information for subclass resources that must also maintain referential identity
-/// under their superclass resource key.
-/// </summary>
-/// <param name="ResourceKeyId">The superclass resource key ID.</param>
-/// <param name="ProjectName">The superclass project name.</param>
-/// <param name="ResourceName">The superclass resource name.</param>
-/// <param name="IdentityElements">Identity element mappings for the superclass identity.</param>
-public sealed record SuperclassAliasInfo(
-    short ResourceKeyId,
-    string ProjectName,
-    string ResourceName,
-    IReadOnlyList<IdentityElementMapping> IdentityElements
-);
+/// <param name="IdentityJsonPath">The canonical JSON path of the identity element.</param>
+public sealed record IdentityElementMapping(DbColumnName Column, string IdentityJsonPath);
 
 /// <summary>
 /// Maps a source column on the trigger's owning table to a target column on the maintenance table.
@@ -393,7 +350,6 @@ public sealed record TriggerColumnMapping(DbColumnName SourceColumn, DbColumnNam
 /// Columns whose change affects the resource identity projection. For
 /// <see cref="TriggerKindParameters.DocumentStamping"/> triggers on root tables, these determine
 /// key-change eligibility for Resource tracked-change attachments. For
-/// <see cref="TriggerKindParameters.ReferentialIdentityMaintenance"/> and
 /// <see cref="TriggerKindParameters.AbstractIdentityMaintenance"/> triggers, these are the columns that
 /// trigger recomputation. Empty for child/extension table stamping triggers.
 /// </param>
