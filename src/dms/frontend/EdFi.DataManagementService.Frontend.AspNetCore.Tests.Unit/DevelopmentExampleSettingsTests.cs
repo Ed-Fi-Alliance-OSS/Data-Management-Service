@@ -58,3 +58,51 @@ public class Given_the_shipped_development_example
             .BeFalse();
     }
 }
+
+/// <summary>
+/// The bootstrap design's IDE guidance example is copied to the same appsettings.Development.json and also
+/// points DMS at the localhost Configuration Service over plain http, so it needs the same override.
+/// </summary>
+[TestFixture]
+[Parallelizable]
+public class Given_the_bootstrap_development_example
+{
+    private IConfigurationRoot _configuration = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _configuration = new ConfigurationBuilder()
+            .SetBasePath(
+                Path.Combine(
+                    FrontendStagingProbe.RepositoryRoot,
+                    "..",
+                    "reference",
+                    "design",
+                    "backend-redesign",
+                    "design-docs",
+                    "bootstrap"
+                )
+            )
+            .AddJsonFile("appsettings.Development.json.example", optional: false)
+            .Build();
+    }
+
+    [Test]
+    public void It_points_metadata_at_a_plain_http_address()
+    {
+        new Uri(_configuration["JwtAuthentication:MetadataAddress"] ?? string.Empty)
+            .Scheme.Should()
+            .Be(Uri.UriSchemeHttp);
+    }
+
+    [Test]
+    public void It_disables_https_metadata_for_the_http_metadata_address()
+    {
+        // The fallback is the secure default, so an example without the key fails here.
+        _configuration
+            .GetValue("JwtAuthentication:RequireHttpsMetadata", defaultValue: true)
+            .Should()
+            .BeFalse();
+    }
+}
