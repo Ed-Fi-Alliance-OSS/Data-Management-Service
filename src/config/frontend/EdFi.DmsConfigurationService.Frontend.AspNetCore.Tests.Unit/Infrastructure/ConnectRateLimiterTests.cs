@@ -62,27 +62,72 @@ public class ConnectRateLimiterTests
     [TestFixture]
     public class Given_client_ids
     {
-        [Test]
-        public void It_keeps_a_short_id() =>
-            ConnectRateLimiter.ClientPartitionKey("ClientA").Should().Be("ClientA");
-
         [TestCase("ClientA ", "ClientA")]
         [TestCase("ClientA  ", "ClientA")]
-        [TestCase(" ClientA", " ClientA")]
-        [TestCase("ClientA\t", "ClientA\t")]
-        public void It_ignores_only_trailing_ascii_spaces(string clientId, string expectedKey) =>
-            ConnectRateLimiter.ClientPartitionKey(clientId).Should().Be(expectedKey);
+        [TestCase("ClientA\u3000", "ClientA")]
+        [TestCase("ClientA\u00A0", "ClientA")]
+        public void It_removes_trailing_space_aliases(string clientId, string expectedKey) =>
+            ConnectRateLimiter
+                .ClientPartitionKey(clientId)
+                .Should()
+                .Be(ConnectRateLimiter.ClientPartitionKey(expectedKey));
+
+        [TestCase(" ClientA")]
+        [TestCase("ClientA\t")]
+        public void It_preserves_significant_whitespace(string clientId) =>
+            ConnectRateLimiter
+                .ClientPartitionKey(clientId)
+                .Should()
+                .NotBe(ConnectRateLimiter.ClientPartitionKey("ClientA"));
 
         [Test]
         public void It_removes_trailing_spaces_before_truncating() =>
             ConnectRateLimiter
                 .ClientPartitionKey(new string('c', 255) + new string(' ', 30))
                 .Should()
-                .Be(new string('c', 255));
+                .Be(ConnectRateLimiter.ClientPartitionKey(new string('c', 255)));
 
         [Test]
         public void It_truncates_a_long_id_to_256_characters() =>
-            ConnectRateLimiter.ClientPartitionKey(new string('x', 300)).Should().Be(new string('x', 256));
+            ConnectRateLimiter.ClientPartitionKey(new string('x', 300)).Length.Should().Be(256);
+    }
+
+    [TestFixture]
+    public class Given_linguistic_aliases_of_a_client
+    {
+        [TestCase("ClientA", "\uFF23lientA")]
+        [TestCase("ClientA", "\uFF23\uFF4C\uFF49\uFF45\uFF4E\uFF54\uFF21")]
+        [TestCase("ClientA", "ClientA\u3000")]
+        [TestCase("ClientA", "Cli\u00E9ntA")]
+        [TestCase("Cli\u00E9ntA", "Clie\u0301ntA")]
+        [TestCase("\u30AB-client", "\u304B-client")]
+        [TestCase("\u30AB-client", "\uFF76-client")]
+        [TestCase("ClientA", "Client\uFE0FA")]
+        [TestCase("ClientA", "ClientA \0")]
+        public void It_spends_one_budget_for_both_spellings(string storedId, string alias)
+        {
+            using ConnectRateLimiter limiter = CreateLimiter(sourceLimit: 10, clientLimit: 1);
+            Admits(limiter.AttemptClient(storedId)).Should().BeTrue();
+            Admits(limiter.AttemptClient(alias)).Should().BeFalse();
+            Admits(limiter.AttemptClient("OtherClient")).Should().BeTrue();
+        }
+
+        [Test]
+        public void It_does_not_throw_on_unpaired_surrogates()
+        {
+            using ConnectRateLimiter limiter = CreateLimiter(sourceLimit: 10, clientLimit: 1);
+            string malformed = "Client" + (char)0xD800;
+            Admits(limiter.AttemptClient(malformed)).Should().BeTrue();
+            Admits(limiter.AttemptClient(malformed)).Should().BeFalse();
+        }
+
+        [Test]
+        public void It_compares_the_whole_id_before_bounding_the_key()
+        {
+            using ConnectRateLimiter limiter = CreateLimiter(sourceLimit: 10, clientLimit: 1);
+            Admits(limiter.AttemptClient("ClientA")).Should().BeTrue();
+            Admits(limiter.AttemptClient("Client" + new string('\0', 300) + "A")).Should().BeFalse();
+        }
     }
 
     [TestFixture]

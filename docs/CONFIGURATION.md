@@ -802,8 +802,12 @@ budgets apply, and a request must fit both:
   IPv6 address counts against its /64. Requests whose address is unknown share one budget.
 - **Per `client_id`**, across all sources, for `/connect/token` and `/connect/revoke` only, spent just
   before the client secret is verified. A request rejected earlier (malformed form, unsupported grant
-  type, missing token) does not spend it. For counting only, the comparison ignores case and trailing
-  ASCII spaces, matching SQL Server lookup aliases. Authentication receives the original client ID.
+  type, missing token) does not spend it. For counting only, an invariant linguistic sort key ignores
+  case, accents, character width and kana type; trailing spaces and linguistically ignored suffixes are
+  removed before key generation. This conservatively merges common SQL Server lookup aliases on every provider, so distinct
+  PostgreSQL or Keycloak clients with these spellings also share a budget. Authentication receives the
+  original client ID. This comparison does not reproduce every locale-specific SQL Server collation;
+  deployments using other linguistic equivalences must assess those against their client IDs.
   The budget is spent whether or not the client exists, so a `429` reveals nothing about which clients
   exist.
 
@@ -824,20 +828,22 @@ Sizing notes:
 
 - Limits are enforced **per Configuration Service process**. With several replicas behind a load
   balancer, a caller can reach up to replicas × limit requests per window.
-- Callers behind one NAT, and all requests proxied by the Ed-Fi API's `/oauth/token`, share **one
-  source budget**. Raise `SourcePermitLimit` if the Ed-Fi API serves many token requests.
-- For a self-contained Ed-Fi API, that source budget is a single bucket shared by all
-  Ed-Fi API-proxied `/oauth/token` traffic, because every such request reaches the Configuration
-  Service from the Ed-Fi API container's address, and by the Ed-Fi API's own Configuration Service
-  client (system-token refresh). Anyone who can reach the Ed-Fi API's `/oauth/token` can therefore
-  exhaust it, at about 2 junk requests per second against the default 120 per minute, and cause
-  `429` responses for every vendor's token issuance on that Configuration Service process. Size
-  `SourcePermitLimit` for the proxy path, or place a per-client-IP limiter in front of the Ed-Fi
-  API. Having the Ed-Fi API forward the caller's address, with the Configuration Service trusting
-  the Ed-Fi API's network through the existing
-  [reverse proxy settings](#reverse-proxy-and-forwarded-headers), would remove the shared bucket
-  but is not implemented.
-- Client keys are truncated to 256 characters for counting, after removing trailing ASCII spaces.
+- Callers behind one NAT still share **one source budget**. A higher `SourcePermitLimit` increases
+  capacity but does not isolate those callers.
+- The Ed-Fi API's `/oauth/token` proxy sends one `X-Forwarded-For` value derived from its trusted
+  connection address, replacing any caller-supplied value. **Before using this proxy with enabled
+  Configuration Service rate limiting**, enable `AppSettings:ReverseProxy:UseForwardedHeaders` on
+  the Configuration Service and set `KnownProxies` to the actual Ed-Fi API proxy addresses (or a network
+  containing only trusted proxies). If the Ed-Fi API itself sits behind an ingress, configure its own
+  [reverse proxy settings](#reverse-proxy-and-forwarded-headers) to trust only that ingress too.
+  System-token refresh sends no forwarded source, so it uses the Ed-Fi API's transport-address budget.
+  Do not allow external peers to originate connections from a trusted proxy's address.
+  Without this configuration, all proxied token requests and system refresh still share one budget:
+  an unauthenticated caller can exhaust the default with 120 requests per minute and block other
+  vendors. Raising that limit alone does not resolve the availability risk. The shipped Compose
+  profiles leave forwarded-header trust disabled; each deployment must set its actual trusted addresses.
+- Encoded client sort keys are truncated to 256 characters **after** linguistic equivalence is
+  established; inserting ignored characters before the bound cannot create another budget.
   Partitions are held in memory per process. The source budget limits new client keys from each source
   per window; it does not impose a global memory cap across sources. Idle enabled partitions are
   removed by the framework. Disabled limiting uses one shared partition per budget.
@@ -845,6 +851,17 @@ Sizing notes:
   limit. If it is ever refused, that request fails rather than retrying.
 - The defaults come from expected traffic shape, not measured load. Real clients are already capped at
   15 active tokens (`IdentitySettings:BearerTokenPerClientLimit`) and should reuse them.
+
+For Docker Compose, set the existing variables in the stack's environment file and recreate the
+Configuration Service. For example, **only if `10.0.0.5` is the actual DMS proxy address**:
+
+```dotenv
+CONFIGURATION_SERVICE_USE_REVERSE_PROXY_HEADERS=true
+CONFIGURATION_SERVICE_REVERSE_PROXY_KNOWN_PROXIES=10.0.0.5
+```
+
+Reserve stable proxy addresses in the deployment, and update this list when they change. Do not copy
+the example address or trust an entire shared Docker network containing untrusted workloads.
 
 ### Rejection response
 

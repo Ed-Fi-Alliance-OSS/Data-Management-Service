@@ -164,6 +164,70 @@ public class IdentityModuleRateLimitTests
     }
 
     [TestFixture]
+    public class Given_width_aliases_of_an_exhausted_client
+    {
+        private ITokenManager _tokenManager = null!;
+        private ITokenRevocationManager _revocationManager = null!;
+        private List<int> _statuses = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _tokenManager = SucceedingTokenManager();
+            _revocationManager = CompletingRevocationManager();
+            await using WebApplicationFactory<Program> factory = Create(
+                sourcePermitLimit: 1000,
+                clientPermitLimit: 1,
+                tokenManager: _tokenManager,
+                revocationManager: _revocationManager
+            );
+            using HttpClient client = factory.CreateClient();
+            _statuses = await SendAll(
+                client,
+                [
+                    () => Post("/connect/token", TokenForm("\uFF23lientA"), "198.51.100.1"),
+                    () => Post("/connect/token", TokenForm("ClientA"), "198.51.100.2"),
+                    () => Post("/connect/revoke", RevokeForm("\uFF23lientA"), "198.51.100.3"),
+                    () => Post("/connect/revoke", RevokeForm("\uFF23lientB"), "198.51.100.1"),
+                    () => Post("/connect/token", TokenForm("ClientB"), "198.51.100.2"),
+                ]
+            );
+        }
+
+        [Test]
+        public void It_shares_the_client_budget_across_routes_and_sources() =>
+            _statuses.Should().Equal(200, 429, 429, 200, 429);
+
+        [Test]
+        public void It_does_not_verify_rejected_token_secrets() => ManagerCalls(_tokenManager, 1);
+
+        [Test]
+        public void It_preserves_the_admitted_token_credential() =>
+            A.CallTo(() =>
+                    _tokenManager.GetAccessTokenAsync(
+                        A<IEnumerable<KeyValuePair<string, string>>>.That.Matches(parameters =>
+                            parameters.Any(pair => pair.Key == "client_id" && pair.Value == "\uFF23lientA")
+                        )
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_preserves_the_admitted_revocation_credential() =>
+            A.CallTo(() =>
+                    _revocationManager.RevokeTokenAsync(
+                        A<TokenRevocationRequest>.That.Matches(request => request.ClientId == "\uFF23lientB"),
+                        A<CancellationToken>._
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_does_not_verify_rejected_revocation_secrets() =>
+            RevocationCalls(_revocationManager, 1);
+    }
+
+    [TestFixture]
     public class Given_an_admitted_client_id_with_trailing_spaces
     {
         private ITokenManager _tokenManager = null!;

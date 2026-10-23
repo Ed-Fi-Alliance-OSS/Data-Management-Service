@@ -23,7 +23,7 @@ Original acceptance criteria (Jira, verified 2026-10-22):
 | D1 | **Approved deviation from REQ-2's wording:** token, register and introspect return an Ed-Fi 429. Revoke returns a 429 with an OAuth body. | Revoke's OAuth error contract is deliberate (DMS-1327 D-01/D-17, CS-AUTH). DMS-1491 (Open) will move the remaining `/connect/*` errors to OAuth. Reversing revoke for one status would be undone by DMS-1491. |
 | D2 | Two independent budgets, and both must admit a request: **per source address** and **per `client_id` across all sources**. | Stops enumeration (source) and distributed guessing against one client (client). Accepted tradeoff: someone who knows a `client_id` can exhaust that client's window. The window bounds the impact, and real clients cache tokens. |
 | D3 | **Backoff excluded.** The failed-attempt counter with exponential backoff that the story and comment say to "consider" is deferred, as a possible follow-up ticket. | It needs handler-to-limiter outcome feedback and new state, carries its own lockout-DoS tradeoff, and overlaps DMS-1490. |
-| D4 | Enabled by default. Source 120, client 30, per 60-second fixed window. No queueing. Enforcement is per process. | Real per-client traffic is already capped by `BearerTokenPerClientLimit` (15 active tokens per 30-minute token lifetime). The source limit is sized for aggregate DMS-proxy traffic from a single IP. |
+| D4 | Enabled by default. Source 120, client 30, per 60-second fixed window. No queueing. Enforcement is per process. | Real per-client traffic is already capped by `BearerTokenPerClientLimit` (15 active tokens per 30-minute token lifetime). Proxy deployments require trusted source attribution; aggregate capacity alone does not provide caller isolation. |
 | D5 | Split admission: a source gate in middleware, plus a client gate inside the token and revoke handlers. | Reuses each route's existing credential parser. Avoids early form reads, so revoke's percent-encoding and UTF-8 validation is preserved. Client admission remains inside the route exception boundary. |
 | D6 | Native IPv6 sources are keyed on their /64 prefix. | A subscriber normally owns a whole /64, so per-address keys would allow free address rotation. |
 
@@ -40,7 +40,7 @@ Rejected approaches: a single middleware that extracts `client_id` itself would 
 - DMS-1484 header and `Cache-Control` changes.
 - Backoff (D3).
 - Distributed or cross-replica enforcement.
-- DMS limiter or proxy changes, including forwarding `Retry-After` through the DMS proxy.
+- DMS limiter changes and forwarding `Retry-After` through the DMS proxy. Source-address forwarding is the narrow scope extension described in section 7.
 - Backend, persistence, collation or `RelationalMappingVersion` changes.
 - Unrelated cleanup.
 
@@ -100,9 +100,9 @@ Route-context suffixes, path base and path case are handled by endpoint routing,
   - Native IPv6 is masked to its /64 (D6).
   - A null address goes to one shared `"unknown"` partition, never exempt.
 - **Client:** the `client_id` produced by the route's existing parser.
-  - Compared with `StringComparer.OrdinalIgnoreCase`, so MSSQL's case-insensitive lookup can't be used to get fresh budgets with case variants (see `reference/adr-client-id-casing.md`). This matches `RegisterClient.IsUnique`.
-  - Trailing ASCII spaces are removed before truncation, because SQL Server equality ignores them. This conservatively merges limiter keys across providers; the original credential is still passed unchanged to authentication.
-  - Values longer than 256 characters are truncated for keying only. That only ever merges keys, which is the safe direction.
+  - An invariant linguistic sort key ignores case, accents, width and kana type. This merges common MSSQL lookup aliases, including full-width ASCII letters. It is deliberately conservative across providers and does not emulate every locale-specific SQL collation.
+  - Trailing spaces and linguistically ignored suffix characters are removed before key generation, because SQL Server equality pads with spaces. The original credential is still passed unchanged to authentication. No Unicode normalization is performed, avoiding exceptions on malformed UTF-16.
+  - The entire remaining ID is converted to a sort key, encoded as base64 and then truncated to 256 characters. Bounding after equivalence is established only merges keys; bounding raw input could split aliases containing inserted ignored characters.
   - The source budget limits how many new client partitions one source can create per window, and the framework removes idle partitions.
 - No database lookup or credential verification is used to build any key.
 
@@ -164,4 +164,4 @@ Regression surfaces to leave unchanged: `IdentityModuleTests` (`TokenEndpointBas
 - **DMS-1490 (Open)** is independent. The client budget is spent regardless of whether the client exists, so this work adds no new oracle.
 - **Follow-up candidate:** a per-source failed-attempt backoff ticket (D3), if the product owner wants it.
 - **Remaining assumptions (not blockers):** the D4 numbers come from repository evidence (token-count cap, DMS-proxy topology), not measured production load. Operators can tune them, and the documentation says so. Proxy trust in each deployment remains an operator responsibility under the existing `ReverseProxy` settings.
-- **Blockers:** none.
+- **Review follow-up (2026-10-23):** To close CAR-001, the implementation extends the original proxy exclusion narrowly: DMS replaces forwarded source values with its already-trusted connection address on token proxy requests. System refresh remains unforwarded. CMS deployments must enable the existing reverse-proxy support and trust only the actual DMS proxy addresses. The repository cannot supply deployment-specific trusted IPs; the default Compose profiles still leave trust disabled, so those deployments remain exposed until configured. A higher shared limit alone is not a correction. CAR-002 uses the conservative linguistic key above; locale-specific collation equivalences still require deployment assessment. Neither change revises the original acceptance criteria. D1 still explicitly deviates from REQ-2's literal wording.

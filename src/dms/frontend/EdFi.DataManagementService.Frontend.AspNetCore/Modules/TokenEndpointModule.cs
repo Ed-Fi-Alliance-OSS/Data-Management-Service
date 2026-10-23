@@ -159,7 +159,20 @@ public class TokenEndpointModule : IEndpointModule
             traceId.Value
         );
 
-        var client = new HttpClientWrapper(httpClientFactory.CreateClient());
+        using HttpClient upstreamClient = httpClientFactory.CreateClient();
+        // RemoteIpAddress has already passed through trusted forwarded-header processing. Replace,
+        // never append or relay, caller-supplied forwarding values so CMS can isolate source budgets.
+        // CMS must explicitly trust this DMS proxy via its ReverseProxy settings. System-token refresh
+        // uses a separate client and sends no forwarded source, retaining the DMS transport budget.
+        upstreamClient.DefaultRequestHeaders.Remove("X-Forwarded-For");
+        if (httpContext.Connection.RemoteIpAddress is { } source)
+        {
+            upstreamClient.DefaultRequestHeaders.Add(
+                "X-Forwarded-For",
+                (source.IsIPv4MappedToIPv6 ? source.MapToIPv4() : source).ToString()
+            );
+        }
+        var client = new HttpClientWrapper(upstreamClient);
 
         // null when the request carried no Authorization header at all, which the manager must
         // tell apart from a header that is present but empty.

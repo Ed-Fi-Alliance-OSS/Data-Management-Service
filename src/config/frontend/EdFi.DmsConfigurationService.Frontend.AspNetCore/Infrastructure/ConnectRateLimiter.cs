@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading.RateLimiting;
@@ -23,8 +24,14 @@ public sealed class ConnectRateLimiter : IDisposable
     /// <summary>The one partition for requests whose remote address is unknown; never exempt.</summary>
     internal const string UnknownSourceKey = "unknown";
 
-    /// <summary>Longer client ids are truncated for keying only, which can only merge partitions.</summary>
+    /// <summary>Bound the encoded linguistic key only after equivalence is established.</summary>
     internal const int MaxClientKeyLength = 256;
+
+    private const CompareOptions ClientComparison =
+        CompareOptions.IgnoreCase
+        | CompareOptions.IgnoreNonSpace
+        | CompareOptions.IgnoreWidth
+        | CompareOptions.IgnoreKanaType;
 
     private readonly PartitionedRateLimiter<string> _sourceLimiter;
     private readonly PartitionedRateLimiter<string> _clientLimiter;
@@ -34,13 +41,10 @@ public sealed class ConnectRateLimiter : IDisposable
         ConnectRateLimitSettings settings = options.Value;
         _sourceLimiter = CreateLimiter(settings, settings.SourcePermitLimit, StringComparer.Ordinal);
 
-        // Case-insensitive, matching RegisterClient.IsUnique and the MSSQL client lookup, so case variants
-        // of one client_id cannot buy fresh budgets (reference/adr-client-id-casing.md).
-        _clientLimiter = CreateLimiter(
-            settings,
-            settings.ClientPermitLimit,
-            StringComparer.OrdinalIgnoreCase
-        );
+        // SQL Server's linguistic lookups can ignore more than case. Conservatively merge width,
+        // accent and kana aliases for counting on every provider, without changing authentication.
+        // This is not an emulation of every locale-specific SQL collation.
+        _clientLimiter = CreateLimiter(settings, settings.ClientPermitLimit, StringComparer.Ordinal);
     }
 
     public RateLimitLease AttemptSource(HttpContext context) =>
@@ -84,9 +88,30 @@ public sealed class ConnectRateLimiter : IDisposable
 
     internal static string ClientPartitionKey(string clientId)
     {
-        // SQL Server equality ignores trailing ASCII spaces. Merge these aliases before truncating,
-        // without changing the credential passed to either identity provider for authentication.
-        string key = clientId.TrimEnd(' ');
+        CompareInfo comparison = CultureInfo.InvariantCulture.CompareInfo;
+        int length = clientId.Length;
+        while (length > 0)
+        {
+            int characterLength = length > 1 && char.IsSurrogatePair(clientId, length - 2) ? 2 : 1;
+            ReadOnlySpan<char> last = clientId.AsSpan(length - characterLength, characterLength);
+            // SQL pads with spaces. Also strip ignored suffix characters so adding a zero-weight
+            // character after a space cannot hide that padding from trimming.
+            if (
+                comparison.Compare(last, " ", ClientComparison) is not 0
+                && comparison.Compare(last, ReadOnlySpan<char>.Empty, ClientComparison) is not 0
+            )
+            {
+                break;
+            }
+            length -= characterLength;
+        }
+
+        // Canonicalize the entire ID before bounding retained state: truncating the input first
+        // would split equivalent IDs when an attacker inserts ignored characters before the bound.
+        // Sort keys handle malformed UTF-16 without the exceptions Unicode normalization can raise.
+        string key = Convert.ToBase64String(
+            comparison.GetSortKey(clientId[..length], ClientComparison).KeyData
+        );
         return key.Length > MaxClientKeyLength ? key[..MaxClientKeyLength] : key;
     }
 

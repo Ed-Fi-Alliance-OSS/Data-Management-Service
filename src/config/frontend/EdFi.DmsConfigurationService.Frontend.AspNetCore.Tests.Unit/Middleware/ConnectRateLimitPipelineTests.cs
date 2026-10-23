@@ -363,6 +363,7 @@ public class ConnectRateLimitPipelineTests
                         Forwarded("10.0.0.5", "198.51.100.1", "a"),
                         Forwarded("10.0.0.5", "198.51.100.2", "b"),
                         Forwarded("10.0.0.5", "198.51.100.1", "c"),
+                        () => Post("/connect/token", TokenForm("system-refresh"), "10.0.0.5"),
                     ]
                 );
                 _fromUntrustedPeer = await SendAll(
@@ -391,7 +392,7 @@ public class ConnectRateLimitPipelineTests
 
         [Test]
         public void It_keys_on_the_forwarded_client_behind_a_trusted_proxy() =>
-            _viaTrustedProxy.Should().Equal(200, 200, 429);
+            _viaTrustedProxy.Should().Equal(200, 200, 429, 200);
 
         [Test]
         public void It_ignores_forwarded_headers_from_an_untrusted_peer() =>
