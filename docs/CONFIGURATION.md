@@ -514,7 +514,8 @@ These settings configure how the DMS API connects to the Configuration Service t
 > Legacy values have no integrity protection. While they remain readable, anyone
 > who can write the data store tables can alter a legacy value, or replace an
 > envelope with a legacy-format value (for example, an older one from a backup, or
-> an envelope cut down to a legacy length), and readers cannot detect it. Only
+> an envelope with its marker altered and cut down to a legacy length), and readers
+> cannot detect it. Only
 > values that are read as envelopes are authenticated. An envelope is
 > also not bound to its row, so swapping two valid envelopes between rows goes
 > undetected. Binding it would add little: anyone who can write the data store

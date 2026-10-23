@@ -152,6 +152,11 @@ public class ConnectionStringEncryptionServiceTests
             byte[] encrypted1 = _service.Encrypt(TestConnectionString)!;
             byte[] encrypted2 = _service.Encrypt(TestConnectionString)!;
 
+            // The header pins the nonce to bytes 17-28 of an envelope. Without it, a random legacy
+            // IV would also vary those bytes and this test would pass against AES-CBC.
+            encrypted1[..ExpectedEnvelopeHeader.Length].Should().Equal(ExpectedEnvelopeHeader);
+            encrypted2[..ExpectedEnvelopeHeader.Length].Should().Equal(ExpectedEnvelopeHeader);
+
             encrypted1
                 .AsSpan(NonceOffset, NonceLength)
                 .ToArray()

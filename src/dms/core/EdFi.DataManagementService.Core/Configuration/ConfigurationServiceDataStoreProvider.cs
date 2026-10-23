@@ -62,6 +62,18 @@ public class ConfigurationServiceDataStoreProvider(
     /// <summary>Mutated only under <see cref="_publicationLock" />.</summary>
     private long _ownershipVersion;
 
+    /// <summary>
+    /// The legacy values already warned about, by row and stored value, so each is reported once per
+    /// process rather than on every tenant reload. A request that matches no data store reloads its
+    /// tenant, so warning on every load would let such requests flood the log while legacy rows remain.
+    /// A row whose stored value changes, such as a legacy value restored after re-encryption, is
+    /// reported again.
+    /// </summary>
+    private readonly ConcurrentDictionary<
+        (string Tenant, long DataStoreId, long? DerivativeId, string StoredValue),
+        byte
+    > _reportedLegacyValues = new();
+
     /// <inheritdoc />
     public bool IsLoaded(string? tenant = null) => _instancesByTenant.ContainsKey(GetTenantKey(tenant));
 
@@ -547,7 +559,10 @@ public class ConfigurationServiceDataStoreProvider(
             response.ConnectionString
         );
 
-        if (_connectionStringDecryptionService.IsLegacyFormat(response.ConnectionString))
+        if (
+            _connectionStringDecryptionService.IsLegacyFormat(response.ConnectionString)
+            && IsFirstLegacyReport(tenant, response.Id, null, response.ConnectionString!)
+        )
         {
             logger.LogWarning(
                 "The connection string for data store {DataStoreId} of tenant {Tenant} is in the legacy AES-CBC format, which has no integrity protection. Re-encrypt it in the Configuration Service before setting ConfigurationServiceSettings:AllowLegacyConnectionStrings to false",
@@ -663,7 +678,10 @@ public class ConfigurationServiceDataStoreProvider(
                 continue;
             }
 
-            if (_connectionStringDecryptionService.IsLegacyFormat(derivative.ConnectionString))
+            if (
+                _connectionStringDecryptionService.IsLegacyFormat(derivative.ConnectionString)
+                && IsFirstLegacyReport(tenant, response.Id, derivative.Id, derivative.ConnectionString)
+            )
             {
                 logger.LogWarning(
                     "The connection string for derivative {DerivativeId} ({DerivativeType}) of tenant {Tenant}, parent data store {DataStoreId}, is in the legacy AES-CBC format, which has no integrity protection. Re-encrypt it in the Configuration Service before setting ConfigurationServiceSettings:AllowLegacyConnectionStrings to false",
@@ -695,6 +713,13 @@ public class ConfigurationServiceDataStoreProvider(
 
         return derivatives;
     }
+
+    private bool IsFirstLegacyReport(
+        string? tenant,
+        long dataStoreId,
+        long? derivativeId,
+        string storedValue
+    ) => _reportedLegacyValues.TryAdd((GetTenantKey(tenant), dataStoreId, derivativeId, storedValue), 0);
 
     private static (
         RelationalProviderToken? Token,
