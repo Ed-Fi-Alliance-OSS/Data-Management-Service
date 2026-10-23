@@ -1778,7 +1778,9 @@ function Get-InstanceE2ETestEnvironmentContext {
     # in the admin/CMS connection strings) - BEFORE any registration connection string is built and
     # BEFORE the setup script provisions anything, so an unsafe or shared name fails fast and can never
     # reach a DROP/CREATE. provision-e2e-database.ps1 re-checks each name when it provisions (defense in
-    # depth); this is the earliest gate in the Instance flow.
+    # depth); this is the earliest gate in the Instance flow. The file is first refused if Compose could
+    # resolve a protected setting differently from the map the guard compares.
+    Assert-UnambiguousProtectedDeclaration -EnvironmentFilePath $resolvedEnvironmentFile -EnvironmentValues $environmentValues
     foreach ($databaseName in $databaseNames) {
         Assert-E2EDatabaseIsDedicated `
             -EnvironmentValues $environmentValues `

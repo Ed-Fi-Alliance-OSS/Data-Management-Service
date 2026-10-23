@@ -8,9 +8,13 @@
 # printable-ASCII scans that measured the class's shape still hold (the only equal pairs are the
 # 26 case pairs, no member is ignorable or folds onto a space, nothing expands to or from a
 # digraph). These are claims about the PINNED collation only. No offline predicate consumes this
-# table: production renders no offline MSSQL name verdict at all - the running instance, queried
-# by the stage-2 authority, is the sole authority - and no test here or anywhere asserts that any
-# name must be refused for MSSQL without asking the server.
+# table. The CMS topology checks render no offline MSSQL name verdict - the running instance,
+# queried by the stage-2 authority, is their sole authority - and no topology test asserts that a
+# name must be refused for MSSQL without asking the server. The dedicated-E2E guard
+# (database-safety.psm1) is the exception: before a destructive reset it conservatively refuses,
+# offline and on either engine, an E2E name that matches a protected name by case or explicit
+# trailing characters, and any name outside its 1-to-63-character ASCII letter, digit and
+# underscore domain; its comment cites these scans as support for that domain only.
 #
 # OPT-IN AND READ-ONLY BY CONSTRUCTION. The live probes run only when
 # DMS_MSSQL_COLLATION_FIXTURE_CONTAINER names a running SQL Server container (the sqlcmd inside
@@ -182,7 +186,7 @@ Describe "MSSQL collation parity: the measured-evidence record against a live se
         # image with three agreeing probes (explicit COLLATE equality, DB_ID resolution, CREATE
         # DATABASE duplicate/file behavior) as the SAME physical database as the reserved name;
         # every candidate NOT listed was measured DISTINCT there. No offline predicate consumes
-        # this table - production renders no offline MSSQL verdict - so its only job is to fail
+        # this table - the CMS topology renders no offline MSSQL verdict - so its only job is to fail
         # loudly if the fixture, the image, or the collation drifts from the recorded measurements.
         $script:measuredEqualLabels = @(
             'exact', 'case-upper', 'case-mixed', 'trail-space', 'trail-two-spaces', 'trail-ideo',

@@ -337,6 +337,7 @@ function Invoke-E2ECdcSetup {
     if ($DatabaseName -cne (Get-ComposeResolvedEnvValue -EnvironmentValues $values -Name 'E2E_DATABASE_NAME') -or
         $SnapshotDatabaseName -cne (Get-ComposeResolvedEnvValue -EnvironmentValues $values -Name 'E2E_SNAPSHOT_DATABASE_NAME') -or
         $DatabaseName -eq $SnapshotDatabaseName) { throw 'CDC E2E requires the actual, distinct primary and snapshot database names from the selected environment.' }
+    Assert-UnambiguousProtectedDeclaration -EnvironmentFilePath $EnvironmentFile -EnvironmentValues $values
     foreach ($name in @($DatabaseName, $SnapshotDatabaseName)) {
         Assert-E2EDatabaseIsDedicated -EnvironmentValues $values -EnvironmentFilePath $EnvironmentFile -E2EDatabaseName $name
     }
