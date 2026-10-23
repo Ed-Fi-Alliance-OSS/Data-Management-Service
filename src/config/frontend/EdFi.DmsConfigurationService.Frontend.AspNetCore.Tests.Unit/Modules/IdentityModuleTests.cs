@@ -1974,7 +1974,14 @@ public class RevocationOwnershipTests
         )
         {
             IOptions<OpenIddictIdentityOptions> options = Options.Create(
-                new OpenIddictIdentityOptions { Authority = TestIssuer, Audience = TestAudience }
+                // EncryptionKey lets the database signing-key path run, so the same manager can also
+                // issue a token. Only issuance reads it, and the faked repository ignores its value.
+                new OpenIddictIdentityOptions
+                {
+                    Authority = TestIssuer,
+                    Audience = TestAudience,
+                    EncryptionKey = "test-encryption-key",
+                }
             );
             _signingKeyProvider = new SigningKeySnapshotProvider(
                 new DatabaseSigningKeySource(tokenRepository, NullLogger<DatabaseSigningKeySource>.Instance),
@@ -2027,7 +2034,7 @@ public class RevocationOwnershipTests
     /// <paramref name="tokenRepository"/>. The owner is registered through a factory, so the host's container owns it
     /// and disposes it with the host.
     /// </summary>
-    private static WebApplicationFactory<Program> CreateFactory(
+    internal static WebApplicationFactory<Program> CreateFactory(
         IOpenIddictTokenRepository tokenRepository,
         IClientSecretHasher secretHasher,
         bool faultOwnershipComparison = false
@@ -2986,10 +2993,10 @@ public class RevocationOwnershipTests
             A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
-    private const int RealHasherIterations = 1000;
+    internal const int RealHasherIterations = 1000;
     private const string RealHasherSecret = "SECRET-CALLER-SENTINEL-http-real-hasher";
 
-    private static ClientSecretHasher CreateRealHasher(int iterations, ILogger<ClientSecretHasher> logger) =>
+    internal static ClientSecretHasher CreateRealHasher(int iterations, ILogger<ClientSecretHasher> logger) =>
         new(
             logger,
             Options.Create(new OpenIddictIdentityOptions { ClientSecretHashingIterations = iterations })
@@ -4841,4 +4848,316 @@ public class TokenEndpointInvalidScopeTests
         public void It_still_returns_502() =>
             Response.StatusCode.Should().Be(HttpStatusCode.BadGateway, Body);
     }
+}
+
+/// <summary>
+/// The token endpoint served by the real self-contained token manager and the real client secret
+/// hasher at a non-default iteration count. An unknown client, a wrong secret and an unapproved
+/// client, with credentials in the form or in HTTP Basic, all receive the same 401 body apart from
+/// the request's own correlation id. The requests share one host, because each host start is
+/// costly and every request is independent of the others.
+/// </summary>
+[TestFixture]
+public class TokenEndpointAuthenticationFailureTests
+{
+    private const string AbsentClientId = "absent-client";
+    private const string KnownClientId = "known-client";
+    private const string KnownSecret = "Known-Client-Secret-0123456789";
+    private const string UnapprovedClientId = "unapproved-client";
+    private const string UnapprovedSecret = "Unapproved-Client-Secret-0123456789";
+    private const string WrongSecret = "Wrong-Secret-0123456789";
+    private const string Scope = "edfi_admin_api/full_access";
+
+    private const string ExpectedBody = """
+        {
+          "detail": "The request could not be processed. See 'errors' for details.",
+          "type": "urn:ed-fi:management-api:security:authentication",
+          "title": "Authentication Failed",
+          "status": 401,
+          "correlationId": "{correlationId}",
+          "validationErrors": {},
+          "errors": [
+            "invalid_client. Invalid client or Invalid client credentials"
+          ]
+        }
+        """;
+
+    private static readonly (string Failure, string ClientId, string Secret)[] _failureCases =
+    [
+        ("an absent client", AbsentClientId, KnownSecret),
+        ("a wrong secret", KnownClientId, WrongSecret),
+        ("an unapproved client with its secret", UnapprovedClientId, UnapprovedSecret),
+        ("an unapproved client with a wrong secret", UnapprovedClientId, WrongSecret),
+    ];
+
+    private static readonly string[] _credentialPaths = ["form", "basic"];
+
+    public static IEnumerable<TestCaseData> FailureRequests() =>
+        from failureCase in _failureCases
+        from path in _credentialPaths
+        select new TestCaseData(failureCase.Failure, path);
+
+    private sealed record Observed(HttpStatusCode Status, string? MediaType, JsonNode Body);
+
+    private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+    private readonly Dictionary<(string Failure, string Path), Observed> _failures = [];
+    private WebApplicationFactory<Program> _factory = null!;
+    private HttpClient _client = null!;
+    private Observed _success = null!;
+
+    private static ApplicationInfo Application(string clientId, string storedHash, bool isApproved) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            ClientId = clientId,
+            ClientSecret = storedHash,
+            IsApproved = isApproved,
+            ProtocolMappers = "[]",
+            Permissions = [Scope],
+            Scopes = [Scope],
+        };
+
+    /// <summary>A usable signing key, no roles, and a store that accepts the token.</summary>
+    private void ArrangeIssuance()
+    {
+        using RSA rsa = RSA.Create(2048);
+        A.CallTo(() => _tokenRepository.GetActivePrivateKeyAsync(A<string>._))
+            .Returns(
+                new PrivateKeyInfo
+                {
+                    PrivateKey = Convert.ToBase64String(rsa.ExportPkcs8PrivateKey()),
+                    KeyId = Guid.NewGuid().ToString(),
+                }
+            );
+        A.CallTo(() => _tokenRepository.GetClientRolesAsync(A<Guid>._)).Returns(Enumerable.Empty<string>());
+        A.CallTo(() =>
+                _tokenRepository.StoreTokenAsync(
+                    A<Guid>._,
+                    A<Guid>._,
+                    A<string>._,
+                    A<DateTimeOffset>._,
+                    A<int>._
+                )
+            )
+            .Returns(TokenStoreOutcome.Stored);
+    }
+
+    private async Task<Observed> RequestToken(string clientId, string secret, string path)
+    {
+        using HttpRequestMessage request = new(HttpMethod.Post, "/connect/token");
+        List<KeyValuePair<string, string>> form =
+        [
+            new("grant_type", "client_credentials"),
+            new("scope", Scope),
+        ];
+        if (path == "basic")
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue(
+                "Basic",
+                Convert.ToBase64String(Encoding.UTF8.GetBytes($"{clientId}:{secret}"))
+            );
+        }
+        else
+        {
+            form.Add(new("client_id", clientId));
+            form.Add(new("client_secret", secret));
+        }
+
+        request.Content = new FormUrlEncodedContent(form);
+        using HttpResponseMessage response = await _client.SendAsync(request);
+        string content = await response.Content.ReadAsStringAsync();
+        return new Observed(
+            response.StatusCode,
+            response.Content.Headers.ContentType?.MediaType,
+            JsonNode.Parse(content)!
+        );
+    }
+
+    private static string WithoutCorrelationId(JsonNode body)
+    {
+        JsonObject copy = body.DeepClone().AsObject();
+        copy.Remove("correlationId");
+        return copy.ToJsonString();
+    }
+
+    [OneTimeSetUp]
+    public async Task Setup()
+    {
+        ClientSecretHasher hasher = RevocationOwnershipTests.CreateRealHasher(
+            RevocationOwnershipTests.RealHasherIterations,
+            NullLogger<ClientSecretHasher>.Instance
+        );
+        A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(AbsentClientId))
+            .Returns((ApplicationInfo?)null);
+        A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(KnownClientId))
+            .Returns(Application(KnownClientId, await hasher.HashSecretAsync(KnownSecret), isApproved: true));
+        A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(UnapprovedClientId))
+            .Returns(
+                Application(
+                    UnapprovedClientId,
+                    await hasher.HashSecretAsync(UnapprovedSecret),
+                    isApproved: false
+                )
+            );
+        ArrangeIssuance();
+
+        _factory = RevocationOwnershipTests.CreateFactory(_tokenRepository, hasher);
+        _client = _factory.CreateClient();
+
+        foreach ((string failure, string clientId, string secret) in _failureCases)
+        {
+            foreach (string path in _credentialPaths)
+            {
+                _failures[(failure, path)] = await RequestToken(clientId, secret, path);
+            }
+        }
+
+        _success = await RequestToken(KnownClientId, KnownSecret, "form");
+    }
+
+    [OneTimeTearDown]
+    public void TearDown()
+    {
+        _client?.Dispose();
+        _factory?.Dispose();
+    }
+
+    [TestCaseSource(nameof(FailureRequests))]
+    public void It_answers_401(string failure, string path) =>
+        _failures[(failure, path)].Status.Should().Be(HttpStatusCode.Unauthorized);
+
+    [TestCaseSource(nameof(FailureRequests))]
+    public void It_answers_with_problem_details(string failure, string path) =>
+        _failures[(failure, path)].MediaType.Should().Be("application/problem+json");
+
+    [TestCaseSource(nameof(FailureRequests))]
+    public void It_returns_the_exact_invalid_client_body(string failure, string path)
+    {
+        JsonNode actual = _failures[(failure, path)].Body;
+        JsonNode expected = JsonNode.Parse(
+            ExpectedBody.Replace("{correlationId}", actual["correlationId"]!.GetValue<string>())
+        )!;
+
+        JsonNode.DeepEquals(actual, expected).Should().BeTrue(actual.ToJsonString());
+    }
+
+    [Test]
+    public void It_gives_every_failure_its_own_correlation_id() =>
+        _failures
+            .Values.Select(observed => observed.Body["correlationId"]!.GetValue<string>())
+            .Should()
+            .HaveCount(_failureCases.Length * _credentialPaths.Length)
+            .And.OnlyHaveUniqueItems()
+            .And.NotContain(string.Empty);
+
+    [Test]
+    public void It_returns_one_body_for_every_failure_apart_from_the_correlation_id() =>
+        _failures
+            .Values.Select(observed => WithoutCorrelationId(observed.Body))
+            .Distinct()
+            .Should()
+            .ContainSingle();
+
+    [Test]
+    public void It_still_issues_a_token_to_an_approved_client_presenting_its_secret() =>
+        _success.Status.Should().Be(HttpStatusCode.OK, _success.Body.ToJsonString());
+
+    [Test]
+    public void It_returns_an_access_token_to_that_client() =>
+        _success.Body["access_token"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+}
+
+/// <summary>
+/// A replacement client secret hasher with its own stored format, behind the real token manager
+/// over HTTP. An unknown client is still answered invalid_client, and its presented secret is
+/// verified against a placeholder the replacement generated, in the replacement's format: the host
+/// assumes nothing about the built-in hasher's format.
+/// </summary>
+[TestFixture]
+public class TokenEndpointReplacementHasherTests
+{
+    private const string AbsentClientId = "absent-client";
+    private const string PresentedSecret = "absent-client-secret";
+
+    /// <summary>Stores "custom:" followed by the hex SHA-256 of the secret.</summary>
+    private sealed class PrefixedSha256Hasher : IClientSecretHasher
+    {
+        public const string Prefix = "custom:";
+
+        private static string Hash(string plainTextSecret) =>
+            Prefix + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(plainTextSecret)));
+
+        public Task<string> HashSecretAsync(string plainTextSecret) => Task.FromResult(Hash(plainTextSecret));
+
+        public Task<bool> VerifySecretAsync(string plainTextSecret, string hashedSecret) =>
+            Task.FromResult(
+                CryptographicOperations.FixedTimeEquals(
+                    Encoding.UTF8.GetBytes(Hash(plainTextSecret)),
+                    Encoding.UTF8.GetBytes(hashedSecret)
+                )
+            );
+
+        public bool IsSecretHashed(string secret) => secret.StartsWith(Prefix, StringComparison.Ordinal);
+    }
+
+    private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+    private IClientSecretHasher _hasher = null!;
+    private WebApplicationFactory<Program> _factory = null!;
+    private HttpClient _client = null!;
+    private HttpResponseMessage _response = null!;
+    private JsonNode _body = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _hasher = A.Fake<IClientSecretHasher>(options => options.Wrapping(new PrefixedSha256Hasher()));
+        A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(AbsentClientId))
+            .Returns((ApplicationInfo?)null);
+
+        _factory = RevocationOwnershipTests.CreateFactory(_tokenRepository, _hasher);
+        _client = _factory.CreateClient();
+        _response = await _client.PostAsync(
+            "/connect/token",
+            new FormUrlEncodedContent([
+                new KeyValuePair<string, string>("client_id", AbsentClientId),
+                new KeyValuePair<string, string>("client_secret", PresentedSecret),
+                new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
+            ])
+        );
+        _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!;
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _response?.Dispose();
+        _client?.Dispose();
+        _factory?.Dispose();
+    }
+
+    [Test]
+    public void It_answers_401() => _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+    [Test]
+    public void It_reports_invalid_client() =>
+        _body["errors"]!
+            .AsArray()
+            .Select(error => error!.GetValue<string>())
+            .Should()
+            .Equal("invalid_client. Invalid client or Invalid client credentials");
+
+    [Test]
+    public void It_generates_the_placeholder_through_the_replacement() =>
+        A.CallTo(() => _hasher.HashSecretAsync(A<string>._)).MustHaveHappenedOnceExactly();
+
+    [Test]
+    public void It_verifies_against_a_placeholder_in_the_replacements_format() =>
+        A.CallTo(() =>
+                _hasher.VerifySecretAsync(
+                    PresentedSecret,
+                    A<string>.That.StartsWith(PrefixedSha256Hasher.Prefix)
+                )
+            )
+            .MustHaveHappenedOnceExactly();
 }

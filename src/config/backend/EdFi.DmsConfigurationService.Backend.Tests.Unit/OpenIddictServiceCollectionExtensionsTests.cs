@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
@@ -11,6 +12,7 @@ using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.SigningKeys;
+using EdFi.DmsConfigurationService.Secrets;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
@@ -857,5 +859,110 @@ public class OpenIddictServiceCollectionExtensionsTests
                 .Should()
                 .Throw<OptionsValidationException>()
                 .WithMessage("*IdentitySettings:ClientSecretHashingIterations must be greater than zero*");
+    }
+
+    /// <summary>
+    /// A plugin replaces the client secret hasher with a plain <c>Add</c> after the host's own
+    /// registration. The managers resolved from the production store registrations must generate
+    /// and verify the unknown-client placeholder through that replacement, in its own format, and
+    /// each resolved manager instance generates its own placeholder. Only the token repository is
+    /// faked, so no database is contacted.
+    /// </summary>
+    [TestFixture("postgresql")]
+    [TestFixture("mssql")]
+    public class Given_a_replacement_hasher_registered_after_a_self_contained_store(string registration)
+    {
+        private const string UnknownClientId = "unknown-client";
+        private const string PresentedSecret = "presented-secret";
+        private const string ReplacementPlaceholder = "replacement-format-placeholder";
+
+        private ServiceProvider _provider = null!;
+        private IClientSecretHasher _replacement = null!;
+        private TokenResult _tokenResult = null!;
+        private TokenRevocationResult _revocationResult = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(
+                    new Dictionary<string, string?>
+                    {
+                        ["IdentitySettings:Authority"] = "http://localhost",
+                        ["IdentitySettings:Audience"] = "account",
+                    }
+                )
+                .Build();
+
+            ServiceCollection services = [];
+            services.AddLogging();
+            _ =
+                registration == "postgresql"
+                    ? services.AddPostgresOpenIddictStores(configuration, "http://localhost")
+                    : services.AddMssqlOpenIddictStores(configuration, "http://localhost");
+
+            IOpenIddictTokenRepository repository = A.Fake<IOpenIddictTokenRepository>();
+            A.CallTo(() => repository.GetApplicationByClientIdAsync(UnknownClientId))
+                .Returns((ApplicationInfo?)null);
+            services.AddSingleton(repository);
+
+            _replacement = A.Fake<IClientSecretHasher>();
+            A.CallTo(() => _replacement.HashSecretAsync(A<string>._)).Returns(ReplacementPlaceholder);
+            services.AddSingleton(_replacement);
+
+            _provider = services.BuildServiceProvider();
+            _tokenResult = await _provider
+                .GetRequiredService<ITokenManager>()
+                .GetAccessTokenAsync([
+                    new("client_id", UnknownClientId),
+                    new("client_secret", PresentedSecret),
+                ]);
+            _revocationResult = await _provider
+                .GetRequiredService<ITokenRevocationManager>()
+                .RevokeTokenAsync(
+                    new TokenRevocationRequest(
+                        UnknownClientId,
+                        PresentedSecret,
+                        "any-token",
+                        TokenTypeHint.None
+                    ),
+                    CancellationToken.None
+                );
+        }
+
+        [TearDown]
+        public void TearDown() => _provider.Dispose();
+
+        [Test]
+        public void It_resolves_the_replacement_hasher() =>
+            _provider.GetRequiredService<IClientSecretHasher>().Should().BeSameAs(_replacement);
+
+        [Test]
+        public void It_resolves_the_production_token_manager() =>
+            _provider.GetRequiredService<ITokenManager>().Should().BeOfType<OpenIddictTokenManager>();
+
+        [Test]
+        public void It_rejects_the_unknown_client_at_the_token_endpoint() =>
+            _tokenResult
+                .Should()
+                .BeEquivalentTo(
+                    new TokenResult.FailureAuthentication(
+                        "invalid_client",
+                        "Invalid client or Invalid client credentials"
+                    )
+                );
+
+        [Test]
+        public void It_rejects_the_unknown_caller_at_revocation() =>
+            _revocationResult.Should().BeOfType<TokenRevocationResult.InvalidClient>();
+
+        [Test]
+        public void It_generates_one_placeholder_per_resolved_manager_through_the_replacement() =>
+            A.CallTo(() => _replacement.HashSecretAsync(A<string>._)).MustHaveHappenedTwiceExactly();
+
+        [Test]
+        public void It_verifies_both_requests_against_the_replacements_placeholder() =>
+            A.CallTo(() => _replacement.VerifySecretAsync(PresentedSecret, ReplacementPlaceholder))
+                .MustHaveHappenedTwiceExactly();
     }
 }
