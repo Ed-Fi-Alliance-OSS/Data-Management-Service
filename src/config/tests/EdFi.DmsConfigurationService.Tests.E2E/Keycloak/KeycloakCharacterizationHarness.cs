@@ -180,6 +180,148 @@ public sealed record HttpOutcome(
         json[name] is JsonValue value && value.TryGetValue(out string? text) ? text : null;
 }
 
+/// <summary>
+/// The JSON kind of one response member and, where the evidence keeps it, its string values (one for
+/// a string, one per element for an array). Kind-only shapes keep no value at all.
+/// </summary>
+public sealed record MemberShape(JsonValueKind Kind, IReadOnlyList<string> Values)
+{
+    public static MemberShape Absent { get; } = new(JsonValueKind.Undefined, []);
+
+    public static MemberShape NumberKind { get; } = new(JsonValueKind.Number, []);
+
+    /// <summary>A string whose value is deliberately not recorded (for example <c>sub</c>).</summary>
+    public static MemberShape StringKind { get; } = new(JsonValueKind.String, []);
+
+    public static MemberShape OfString(string value) => new(JsonValueKind.String, [value]);
+
+    public static MemberShape OfArray(params string[] values) => new(JsonValueKind.Array, values);
+
+    /// <summary>
+    /// A space-delimited string such as <c>scope</c>, kept as its parts so it compares as a set
+    /// (RFC 6749 §3.3 gives scope tokens no order).
+    /// </summary>
+    public static MemberShape OfSpaceDelimited(string value) => new(JsonValueKind.String, value.Split(' '));
+
+    /// <summary>The shape of a member of <paramref name="json"/>, keeping string values and string array elements.</summary>
+    public static MemberShape Of(JsonObject json, string name)
+    {
+        if (!json.TryGetPropertyValue(name, out JsonNode? node))
+        {
+            return Absent;
+        }
+
+        return node switch
+        {
+            null => new MemberShape(JsonValueKind.Null, []),
+            JsonValue value when value.TryGetValue(out string? text) => OfString(text),
+            JsonArray array => new MemberShape(
+                JsonValueKind.Array,
+                [
+                    .. array.Select(static element =>
+                        element is JsonValue item && item.TryGetValue(out string? text)
+                            ? text
+                            : element?.ToJsonString() ?? "null"
+                    ),
+                ]
+            ),
+            _ => new MemberShape(node.GetValueKind(), []),
+        };
+    }
+
+    public MemberShape KindOnly() => new(Kind, []);
+
+    public MemberShape SplitOnSpaces() =>
+        Kind == JsonValueKind.String && Values.Count == 1 ? OfSpaceDelimited(Values[0]) : this;
+
+    /// <summary>Same kind and the same values; array elements compare as a set because <c>aud</c> order carries no meaning.</summary>
+    public bool Matches(MemberShape other) =>
+        Kind == other.Kind
+        && Values.Count == other.Values.Count
+        && Values.Order(StringComparer.Ordinal).SequenceEqual(other.Values.Order(StringComparer.Ordinal));
+}
+
+/// <summary>
+/// What the introspection endpoint answered, reduced to what the introspection evidence records:
+/// status, body category, the raw <c>Content-Type</c>, <c>Cache-Control</c> and
+/// <c>WWW-Authenticate</c> values, the OAuth error members, <c>active</c>, the sorted top-level
+/// member names and the shapes of <see cref="RecordedMembers"/>. The body is otherwise discarded;
+/// <c>sub</c>, <c>exp</c> and <c>iat</c> keep their kind only, and <c>scope</c> is kept as its
+/// space-delimited parts.
+/// </summary>
+public sealed record IntrospectionOutcome(
+    int Status,
+    BodyKind Body,
+    int BodyLength,
+    string? ContentType,
+    string? CacheControl,
+    string? WwwAuthenticate,
+    string? Error,
+    string? ErrorDescription,
+    bool? Active,
+    IReadOnlyList<string> MemberNames,
+    IReadOnlyDictionary<string, MemberShape> Members,
+    bool? ExpAfterIat
+)
+{
+    public static IReadOnlyList<string> RecordedMembers { get; } =
+    ["azp", "client_id", "aud", "scope", "token_type", "typ", "iss", "sub", "exp", "iat"];
+
+    private static readonly HashSet<string> _kindOnlyMembers = new(StringComparer.Ordinal)
+    {
+        "sub",
+        "exp",
+        "iat",
+    };
+
+    public static async Task<IntrospectionOutcome> FromResponseAsync(HttpResponseMessage response)
+    {
+        string body = await response.Content.ReadAsStringAsync();
+        (BodyKind kind, JsonObject? json) = HttpOutcome.Classify(body);
+
+        Dictionary<string, MemberShape> members = new(StringComparer.Ordinal);
+        foreach (string name in RecordedMembers)
+        {
+            MemberShape shape = json is null ? MemberShape.Absent : MemberShape.Of(json, name);
+            members[name] = name switch
+            {
+                _ when _kindOnlyMembers.Contains(name) => shape.KindOnly(),
+                "scope" => shape.SplitOnSpaces(),
+                _ => shape,
+            };
+        }
+
+        return new IntrospectionOutcome(
+            (int)response.StatusCode,
+            kind,
+            body.Length,
+            RawHeader(response.Content.Headers.NonValidated, "Content-Type"),
+            RawHeader(response.Headers.NonValidated, "Cache-Control"),
+            RawHeader(response.Headers.NonValidated, "WWW-Authenticate"),
+            json is null ? null : StringMember(json, "error"),
+            json is null ? null : StringMember(json, "error_description"),
+            json?["active"] is JsonValue active && active.TryGetValue(out bool isActive) ? isActive : null,
+            json is null ? [] : [.. json.Select(static member => member.Key).Order(StringComparer.Ordinal)],
+            members,
+            json is null ? null : ExpAfterIatOf(json)
+        );
+    }
+
+    private static bool? ExpAfterIatOf(JsonObject json) =>
+        json["exp"] is JsonValue exp
+        && exp.TryGetValue(out long expiry)
+        && json["iat"] is JsonValue iat
+        && iat.TryGetValue(out long issuedAt)
+            ? expiry > issuedAt
+            : null;
+
+    private static string? RawHeader(HttpHeadersNonValidated headers, string name) =>
+        headers.TryGetValues(name, out HeaderStringValues values) ? string.Join(", ", values) : null;
+
+    private static string? StringMember(JsonObject json, string name) =>
+        json[name] is JsonValue value && value.TryGetValue(out string? text) ? text : null;
+}
+
 /// <summary>Reads the unverified payload of a JWT. Used only to learn <c>exp</c>, <c>iat</c> and <c>azp</c>.</summary>
 public static class JwtPayload
 {
@@ -360,7 +502,12 @@ public sealed class KeycloakCharacterizationApi : IDisposable
             "client scope"
         );
 
-    public async Task AddDefaultClientScopeAsync(string adminToken, string clientUuid, string scopeUuid)
+    public async Task AddDefaultClientScopeAsync(
+        string adminToken,
+        string clientUuid,
+        string scopeUuid,
+        string scopeLabel = "observer audience scope"
+    )
     {
         using HttpRequestMessage request = AdminRequest(
             HttpMethod.Put,
@@ -371,7 +518,7 @@ public sealed class KeycloakCharacterizationApi : IDisposable
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException(
-                $"Attaching the observer audience scope answered HTTP {(int)response.StatusCode}."
+                $"Attaching the {scopeLabel} answered HTTP {(int)response.StatusCode}."
             );
         }
     }
@@ -433,6 +580,80 @@ public sealed class KeycloakCharacterizationApi : IDisposable
         }
 
         return RequireString(matches[0], "id", "client lookup");
+    }
+
+    /// <summary>A boolean member of a client's stored representation, or null when the member is absent.</summary>
+    public async Task<bool?> GetClientFlagAsync(string adminToken, string uuid, string member)
+    {
+        JsonObject representation = await GetClientRepresentationAsync(adminToken, uuid);
+        return representation[member] is JsonValue value && value.TryGetValue(out bool flag) ? flag : null;
+    }
+
+    /// <summary>
+    /// Enables or disables a client through a read-modify-write of its full representation and
+    /// returns the <c>enabled</c> value Keycloak reports afterwards.
+    /// </summary>
+    public async Task<bool?> SetClientEnabledAsync(string adminToken, string uuid, bool enabled)
+    {
+        JsonObject representation = await GetClientRepresentationAsync(adminToken, uuid);
+        representation["enabled"] = enabled;
+        using HttpRequestMessage request = AdminRequest(
+            HttpMethod.Put,
+            $"{_baseUrl}/admin/realms/{_realm}/clients/{uuid}",
+            adminToken
+        );
+        request.Content = new StringContent(representation.ToJsonString(), Encoding.UTF8, "application/json");
+        using HttpResponseMessage response = await _http.SendAsync(request);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"Updating the characterization client answered HTTP {(int)response.StatusCode}."
+            );
+        }
+
+        return await GetClientFlagAsync(adminToken, uuid, "enabled");
+    }
+
+    /// <summary>The names of a client's default client scopes, as the admin API lists them.</summary>
+    public async Task<IReadOnlyList<string>> GetDefaultClientScopeNamesAsync(string adminToken, string uuid)
+    {
+        using HttpRequestMessage request = AdminRequest(
+            HttpMethod.Get,
+            $"{_baseUrl}/admin/realms/{_realm}/clients/{uuid}/default-client-scopes",
+            adminToken
+        );
+        using HttpResponseMessage response = await _http.SendAsync(request);
+        string body = await response.Content.ReadAsStringAsync();
+        BodyKind kind = HttpOutcome.Classify(body).Kind;
+        if (!response.IsSuccessStatusCode || kind != BodyKind.JsonArray)
+        {
+            throw new InvalidOperationException(
+                $"The default client scope lookup answered HTTP {(int)response.StatusCode} with {Describe(kind)} instead of a JSON array."
+            );
+        }
+
+        return
+        [
+            .. JsonNode
+                .Parse(body)!
+                .AsArray()
+                .OfType<JsonObject>()
+                .Select(static scope => OptionalString(scope, "name") ?? "(unnamed)")
+                .Order(StringComparer.Ordinal),
+        ];
+    }
+
+    private async Task<JsonObject> GetClientRepresentationAsync(string adminToken, string uuid)
+    {
+        using HttpRequestMessage request = AdminRequest(
+            HttpMethod.Get,
+            $"{_baseUrl}/admin/realms/{_realm}/clients/{uuid}",
+            adminToken
+        );
+        using HttpResponseMessage response = await _http.SendAsync(request);
+        JsonObject representation = await ReadJsonObjectAsync(response, "client representation request");
+        Sensitive.Register(OptionalString(representation, "secret"));
+        return representation;
     }
 
     public Task DeleteClientScopeAsync(string adminToken, string uuid) =>
@@ -509,6 +730,22 @@ public sealed class KeycloakCharacterizationApi : IDisposable
             : throw new InvalidOperationException(
                 "The introspection response has no boolean 'active' member; the characterization prerequisite failed."
             );
+    }
+
+    /// <summary>
+    /// One introspection request exactly as the form and optional Basic header describe it, answered
+    /// with the detailed outcome the introspection characterization records.
+    /// </summary>
+    public async Task<IntrospectionOutcome> IntrospectDetailedAsync(
+        FormBody form,
+        AuthenticationHeaderValue? authorization = null
+    )
+    {
+        using HttpRequestMessage request = new(HttpMethod.Post, IntrospectionEndpoint);
+        request.Headers.Authorization = authorization is null ? null : RegisterBasic(authorization);
+        request.Content = form.ToContent();
+        using HttpResponseMessage response = await _http.SendAsync(request);
+        return await IntrospectionOutcome.FromResponseAsync(response);
     }
 
     public async Task<HttpOutcome> RevokeAsync(FormBody form, AuthenticationHeaderValue? authorization = null)
