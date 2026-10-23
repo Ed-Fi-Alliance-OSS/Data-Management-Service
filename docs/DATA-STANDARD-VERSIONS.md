@@ -285,8 +285,7 @@ prefix and replaces it with `http://ed-fi.org/identity/claims/`. A nonempty suff
 without `/` also gains `ed-fi/`, so legacy `academicWeek` becomes
 `http://ed-fi.org/identity/claims/ed-fi/academicWeek`. Domain, service, and
 already-namespaced suffixes retain their paths; already-current and external
-URIs remain unchanged. URI collisions fail. Prefix-only legacy resource mapping
-and nonbreaking-space acceptance are not supported.
+URIs remain unchanged. URI collisions fail.
 
 The converter validates a complete CMS document with top-level `claimSets` and
 `claimsHierarchy`. Upload the generated file unchanged to

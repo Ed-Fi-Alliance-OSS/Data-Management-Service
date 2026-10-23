@@ -63,5 +63,4 @@ comparison also run through this gate; the schema and acceptance oracle are unch
 Command tests exercise the actual CLI parsing/handler and process paths, including
 validate-before-write behavior, forced overwrite protection, and XML decoding.
 These examples do not establish broader export-format support or runtime strategy
-compatibility. Prefix-only legacy resource mapping and nonbreaking-space acceptance
-are not the supported conversion contract.
+compatibility.

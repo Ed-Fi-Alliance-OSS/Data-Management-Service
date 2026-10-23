@@ -12,7 +12,7 @@ rows rather than production converter output.
 | [Actual database export](representative.xml) | `2494968160141a1b88918d4a043fc8451e43fdb87e80e32fd0cf64160e447920` |
 | [Independent database rows](database-policy.json) | `ffba5a1b4c6e260113bfa026c65889f262d1bb52642e905520bf81ea428cf5dc` |
 
-Technical review: **Codex, 2026-10-22**, for the R2-F1 URI correction and exact
+Technical review: **Codex, 2026-10-22**, for the URI correction and exact
 hashes above. Derived the 342 corrected resource names from retained database
 claim names/parent IDs and corresponding XML nodes; verified all 342 against the
 existing ds52 claims document, with no other expected-policy changes. The source
@@ -90,8 +90,7 @@ Only the exact ordinal leading `http://ed-fi.org/ods/identity/claims/` becomes
 `ed-fi/`: legacy `academicWeek` becomes
 `http://ed-fi.org/identity/claims/ed-fi/academicWeek`. Domain, service, and already
 namespaced suffixes retain their paths; already-current and external URIs remain
-unchanged. The earlier prefix-only expectation omitted the project required by
-DMS and must not be restored.
+unchanged.
 
 This matches `ProjectEndpointNameExtensions.GetResourceClaimUri` in
 `src/dms/core/EdFi.DataManagementService.Core/Utilities/`: base URI, project

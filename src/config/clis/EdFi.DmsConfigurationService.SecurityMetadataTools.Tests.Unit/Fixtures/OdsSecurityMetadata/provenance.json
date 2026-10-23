@@ -187,6 +187,6 @@
     "reviewer": "Codex",
     "reviewedOn": "2026-10-22",
     "expectedClaimsSha256": "c087f3c3267b3223c6428c57759dcfb0db148270531ccea241804a1e8ed50b08",
-    "basis": "R2-F1 correction independently derived from retained database claim names/parent IDs and matching XML hierarchy; 342 core-resource names qualified with ed-fi and checked against existing ds52 Claims.json. Three-way policy audit and hash verification confirm unchanged policy and source captures. Original 2026-10-21 exporter, fresh-database reproduction, and schema review evidence remains in README.md."
+    "basis": "URI correction independently derived from retained database claim names/parent IDs and matching XML hierarchy; 342 core-resource names qualified with ed-fi and checked against existing ds52 Claims.json. Three-way policy audit and hash verification confirm unchanged policy and source captures. Original 2026-10-21 exporter, fresh-database reproduction, and schema review evidence remains in README.md."
   }
 }
