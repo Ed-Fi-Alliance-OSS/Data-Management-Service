@@ -1369,8 +1369,8 @@ function Test-MssqlDuplicateDatabaseError {
 function Get-DatabaseNameFromConnectionString {
     <#
     .SYNOPSIS
-        Parses every database-name value out of an ADO.NET connection string, resolving any env-file
-        indirection, so the dedicated-E2E guard can compare each one. Returns every candidate from
+        Parses every database-name value out of an ADO.NET connection string so the dedicated-E2E
+        guard can compare each one. Returns every candidate from
         the UNION of both providers' synonym families - PostgreSQL's Database and DB, SQL Server's
         Database and Initial Catalog - because this guard stands in front of a destructive reset and
         takes no engine argument. Recognizing the union is fail-closed: it can only add a candidate
@@ -1389,39 +1389,23 @@ function Get-DatabaseNameFromConnectionString {
         against a database the connection would never target.
 
     .DESCRIPTION
-        Each Database, DB or Initial Catalog value the parser returns goes through
-        Resolve-ComposeEnvRawValue before it is returned. That conversion trims Unicode whitespace from
-        both ends, removes one pair of surrounding quotes, cuts an unquoted value at ' #', and, unless
-        the value starts with a single quote, turns '$$' into '$' and expands ${NAME} and $NAME
-        references. A returned candidate is therefore the guard's reading of the value, not always the
-        name the provider uses: the pinned Microsoft.Data.SqlClient 6.1.4 and Npgsql 8.0.4 builders
-        were measured to trim an unquoted value and keep a quoted value verbatim, including trailing
-        U+0020, U+3000, TAB and LF and leading U+0020.
-
-        - A value made only of ASCII letters, digits and underscore passes through unchanged, so a
-          name inside the guard's comparison domain is compared as the provider receives it.
-        - A quoted trailing U+0020 or U+3000 is removed. SQL_Latin1_General_CP1_CI_AS treats that
-          name as the same database; PostgreSQL's createdb keeps it as a distinct one.
-        - Removing a quoted trailing TAB or U+00A0, leading whitespace, quotes inside the value or a
-          ' #' suffix, or expanding a defined ${NAME} the provider receives literally, can make the
-          guard reject a name the provider treats as distinct.
-        - A literal ${NAME} with NAME undefined becomes empty, and a '$' that survives a
-          single-quoted value stays in the candidate; the guard fails closed on both.
-        - A candidate still outside the comparison domain, such as one with a full-width letter, is
-          refused by the guard's domain check.
-
-        These transformations do not all reject, and not every provider value outside the comparison
-        domain reaches the domain check. The guard compares the candidate, so a value the conversion
-        maps into the domain is compared and can be accepted: 'edfi$dms' becomes 'edfi' when no
-        variable named dms is set, and 'other #x' becomes 'other'. That is a parsing limitation of
-        this reading, not an equivalence the guard claims.
+        Each Database, DB or Initial Catalog value is returned exactly as the parser reads it. Like the
+        pinned Microsoft.Data.SqlClient 6.1.4 and Npgsql 8.0.4 builders, the parser trims an unquoted
+        value and keeps a quoted value verbatim. No env-file rule is applied to a value: Compose has
+        already resolved the whole string, so a '$', ' #', quote, leading whitespace or non-ASCII
+        character in a value is part of the name the provider receives. The guard then removes its
+        explicit trailing characters and refuses any name left outside its comparison domain.
 
     .PARAMETER ConnectionString
         The connection string as Compose has already resolved it: quotes, inline comments and
         references are settled, and the string is parsed as given. Converting it again would read a
         ' #' that Compose kept inside a quoted value as a comment and drop every keyword after it,
         including a later Initial Catalog or DB the provider uses.
+
+    .PARAMETER EnvironmentValues
+        Not used: every reference was resolved with the whole string.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'EnvironmentValues', Justification = 'Kept for existing callers; parsed values are returned without a second env-file resolution.')]
     param(
         [string]$ConnectionString,
         [hashtable]$EnvironmentValues
@@ -1453,21 +1437,14 @@ function Get-DatabaseNameFromConnectionString {
         throw "Connection string configuration error: it carries a database-name keyword spelled like 'Initial Catalog' but separated by other whitespace, which no provider supports. Spell it 'Initial Catalog' with a single space. The value is withheld."
     }
 
-    try {
-        # Streamed (not comma-wrapped) so the caller's @(...) collects a flat string array.
-        return @(
-            foreach ($key in $presentKeys) {
-                if ($key -imatch '^(database|db|initial catalog)$') {
-                    Resolve-ComposeEnvRawValue `
-                        -EnvironmentValues $EnvironmentValues `
-                        -RawValue ([string]$connectionStringBuilder.PSBase.get_Item($key))
-                }
+    # Streamed (not comma-wrapped) so the caller's @(...) collects a flat string array.
+    return @(
+        foreach ($key in $presentKeys) {
+            if ($key -imatch '^(database|db|initial catalog)$') {
+                [string]$connectionStringBuilder.PSBase.get_Item($key)
             }
-        )
-    }
-    catch {
-        throw "Could not safely parse a protected database connection string: $($_.Exception.Message)"
-    }
+        }
+    )
 }
 
 # Trailing characters the dedicated-E2E guard removes from both names before comparing them. The guard
@@ -1483,6 +1460,13 @@ $script:SqlServerTrailingPaddingCharacters = [char[]]@(0x0020, 0x3000)
 # PostgreSQL 16's lexer ends an unquoted identifier at U+0020, TAB, LF, CR and FF.
 $script:PostgresUnquotedTrailingWhitespaceCharacters = [char[]]@(0x0020, 0x0009, 0x000A, 0x000D, 0x000C)
 $script:E2EGuardTrailingCharacters = [char[]]($script:SqlServerTrailingPaddingCharacters + $script:PostgresUnquotedTrailingWhitespaceCharacters)
+# Named in the guard's diagnostics so an operator can tell them from whitespace the guard keeps, such
+# as U+00A0.
+$script:E2EGuardTrailingCharacterNames = "U+0020, U+3000, U+0009, U+000A, U+000D and U+000C"
+# PostgreSQL keeps only the first 63 bytes of a database name, quoted or not, in createdb, CREATE and
+# DROP DATABASE and the connection's database, so two longer names that share those bytes are one
+# database. The comparison domain is ASCII, so a character is a byte.
+$script:E2EGuardMaximumNameLength = 63
 
 function Test-E2EDatabaseNameCollidesWithProtectedName {
     <#
@@ -1521,9 +1505,8 @@ function Test-E2EGuardComparisonDomain {
     <#
     .SYNOPSIS
         Returns true when a name is non-empty and made only of ASCII letters, digits and underscore,
-        the character domain the dedicated-E2E guard's comparison is built for. Length is not
-        checked, so two names in this domain can still be one PostgreSQL database; see
-        Assert-E2EDatabaseIsDedicated.
+        the character domain the dedicated-E2E guard's comparison is built for. Length is checked
+        separately by Assert-E2EDatabaseIsDedicated, so its diagnostic can name the cause.
 
     .DESCRIPTION
         Each character is tested by code point against explicit ranges, with no regex anchor, culture
@@ -1581,10 +1564,12 @@ function Assert-E2EDatabaseIsDedicated {
     # and ignores trailing U+0020 and U+3000, so those variants of a protected name ARE the same database
     # there. On PostgreSQL the E2E reset drops with `dropdb`, which takes the name literally, so the case
     # and suffix rules over-reject there; the repository's one unquoted drop, the template restore in
-    # Template-Management.psm1 (`DROP DATABASE IF EXISTS $DatabaseName;`), folds case and accepts only
-    # letters, digits and underscore. A false positive costs a rename; a false negative drops shared
-    # state. The guard fails closed: a protected key that is configured (in the file or the ambient
-    # environment) but cannot be resolved throws rather than silently skipping the collision check.
+    # Template-Management.psm1 (`DROP DATABASE IF EXISTS $DatabaseName;`), folds case and checks the
+    # name with its own case-insensitive `^[A-Za-z0-9_]+$` match, which is not this guard's domain:
+    # that match also admits the Kelvin sign, U+0130 and one trailing LF. A false positive costs a
+    # rename; a false negative drops shared state. The guard fails closed: a protected key that is
+    # configured (in the file or the ambient environment) but cannot be resolved throws rather than
+    # silently skipping the collision check.
     $comparisonDomainCandidates = [System.Collections.Generic.List[object]]::new()
 
     foreach ($databaseNameKey in @("POSTGRES_DB_NAME", "MSSQL_DB_NAME")) {
@@ -1639,10 +1624,10 @@ function Assert-E2EDatabaseIsDedicated {
                 throw "E2E database safety check could not determine a database name from $connectionStringKey in '$EnvironmentFilePath'."
             }
 
-            # A parsed database name that still contains a '$' came from an unresolved or cyclic reference
-            # the resolver could not expand; fail closed rather than compare an indeterminate value.
+            # A parsed database name that contains a '$' is either a literal '$' the provider receives or
+            # a reference the resolver could not expand; fail closed rather than compare it.
             if ($connectionStringDatabaseName -match '\$') {
-                throw "E2E database safety check could not fully resolve the database name from $connectionStringKey in '$EnvironmentFilePath' (unresolved or cyclic reference); refusing a destructive reset that cannot be proven dedicated."
+                throw "E2E database safety check could not fully resolve the database name from $connectionStringKey in '$EnvironmentFilePath' (it contains '`$': a literal '`$', or an unresolved or cyclic reference); refusing a destructive reset that cannot be proven dedicated."
             }
 
             if (Test-E2EDatabaseNameCollidesWithProtectedName -E2EDatabaseName $E2EDatabaseName -ProtectedDatabaseName $connectionStringDatabaseName) {
@@ -1654,35 +1639,39 @@ function Assert-E2EDatabaseIsDedicated {
     }
 
     # A protected name the comparer cannot fully model is refused rather than compared. Once the
-    # comparer's trailing characters are removed, every candidate must be made only of ASCII letters,
-    # digits and underscore. MssqlCollationParity.Tests.ps1 measures that, on the pinned
-    # SQL_Latin1_General_CP1_CI_AS collation, printable ASCII has no equal pair other than the 26 case
-    # pairs, no zero-weight character and no expansion, so two names in that domain are the same
-    # database there only when they differ by case, which -ieq covers. Outside it, forms such as
-    # full-width letters and trailing emoji compare equal there although -ieq calls them distinct.
-    # Other collations and servers are unmeasured. Length is not limited, here or by
-    # Assert-SafeDatabaseName: PostgreSQL keeps only the first 63 bytes of a database name, quoted or
-    # not, in createdb, CREATE and DROP DATABASE and the connection's database, so two names in the
-    # domain that share their first 63 characters are one PostgreSQL database although -ieq calls them
-    # distinct. The guard does not detect that. This runs after every key's collision check, so a
+    # comparer's trailing characters are removed, every candidate must be 1 to 63 ASCII letters,
+    # digits and underscores. On the pinned SQL_Latin1_General_CP1_CI_AS collation,
+    # MssqlCollationParity.Tests.ps1 measures that printable ASCII has no equal pair other than the 26
+    # case pairs and no zero-weight character, and that no digraph of underscore and lowercase a-z
+    # expands to or from one of those characters; other expansions are not scanned. Outside the
+    # domain, forms such as full-width letters and trailing emoji compare equal there although -ieq
+    # calls them distinct. Other collations and servers are unmeasured. The length bound stops
+    # PostgreSQL from truncating two distinct names to one database; it applies on both engines,
+    # which over-rejects on SQL Server. This runs after every key's collision check, so a
     # configuration rejected as a collision keeps that diagnostic. Compatibility cost: a protected
-    # name with punctuation, leading or embedded whitespace, or any non-ASCII character blocks E2E
-    # provisioning. The refused value is withheld from the message.
+    # name with punctuation, leading or embedded whitespace, any non-ASCII character or more than 63
+    # characters blocks E2E provisioning. The refused value is withheld from the message.
     #
-    # The E2E name is held to the same domain. Assert-SafeDatabaseName's case-insensitive match admits
-    # the Kelvin sign (U+212A) and, depending on the culture, U+0130 or U+0131, and whether -ieq folds
-    # those to ASCII letters depends on the process's globalization mode, so an E2E name carrying one
-    # could pass the collision checks beside the protected name it folds to. The trailing LF that
-    # Assert-SafeDatabaseName admits is removed first, as the comparer removes it.
+    # The E2E name is held to the same domain and length. Assert-SafeDatabaseName's case-insensitive
+    # match admits the Kelvin sign (U+212A) and, depending on the culture, U+0130 or U+0131, and
+    # whether -ieq folds those to ASCII letters depends on the process's globalization mode, so an E2E
+    # name carrying one could pass the collision checks beside the protected name it folds to. The
+    # trailing LF that Assert-SafeDatabaseName admits is removed first, as the comparer removes it.
     $normalizedE2EDatabaseName = $E2EDatabaseName.TrimEnd($script:E2EGuardTrailingCharacters)
     if (-not (Test-E2EGuardComparisonDomain -DatabaseName $normalizedE2EDatabaseName)) {
-        throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' cannot be proven dedicated: after trailing whitespace is removed it contains characters outside the guard's supported comparison domain (ASCII letters, digits, underscore); refusing a destructive reset."
+        throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' cannot be proven dedicated: after trailing $script:E2EGuardTrailingCharacterNames are removed it contains characters outside the guard's supported comparison domain (ASCII letters, digits, underscore); refusing a destructive reset."
+    }
+    if ($normalizedE2EDatabaseName.Length -gt $script:E2EGuardMaximumNameLength) {
+        throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' cannot be proven dedicated: after trailing $script:E2EGuardTrailingCharacterNames are removed it is longer than $script:E2EGuardMaximumNameLength characters, and PostgreSQL keeps only the first 63 bytes of a database name; refusing a destructive reset."
     }
 
     foreach ($candidate in $comparisonDomainCandidates) {
         $normalizedCandidate = $candidate.DatabaseName.TrimEnd($script:E2EGuardTrailingCharacters)
         if (-not (Test-E2EGuardComparisonDomain -DatabaseName $normalizedCandidate)) {
-            throw "E2E database safety check cannot prove $($candidate.Source) in '$EnvironmentFilePath' dedicated: after trailing whitespace is removed it contains characters outside the guard's supported comparison domain (ASCII letters, digits, underscore); refusing a destructive reset. The value is withheld."
+            throw "E2E database safety check cannot prove $($candidate.Source) in '$EnvironmentFilePath' dedicated: after trailing $script:E2EGuardTrailingCharacterNames are removed it contains characters outside the guard's supported comparison domain (ASCII letters, digits, underscore); refusing a destructive reset. The value is withheld."
+        }
+        if ($normalizedCandidate.Length -gt $script:E2EGuardMaximumNameLength) {
+            throw "E2E database safety check cannot prove $($candidate.Source) in '$EnvironmentFilePath' dedicated: after trailing $script:E2EGuardTrailingCharacterNames are removed it is longer than $script:E2EGuardMaximumNameLength characters, and PostgreSQL keeps only the first 63 bytes of a database name; refusing a destructive reset. The value is withheld."
         }
     }
 }

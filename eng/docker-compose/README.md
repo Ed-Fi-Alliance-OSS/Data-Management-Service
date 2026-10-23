@@ -141,14 +141,12 @@ name with each protected name: `POSTGRES_DB_NAME`, `MSSQL_DB_NAME`, and every `D
 `Initial Catalog` value it reads from `DATABASE_CONNECTION_STRING_ADMIN` and
 `CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING`. The comparison ignores case and trailing spaces,
 ideographic spaces (U+3000), tabs, line feeds, carriage returns and form feeds, so a protected
-`'edfi_dms '` blocks an E2E database named `edfi_dms`. An E2E or protected name that still contains
-anything other than ASCII letters, digits or underscore once that trailing whitespace is removed also
-stops provisioning, because the check cannot compare it reliably; keep database names to those
-characters. The check does not limit length: PostgreSQL uses only the first 63 bytes of a database
-name, so an E2E name and a protected name that share their first 63 characters are the same
-PostgreSQL database and the check does not catch them; keep database names to 63 characters or
-fewer. The check reads connection-string values with the env-file rules, which is not always
-the name the provider uses, so it does not catch every unsupported name a provider would accept.
+`'edfi_dms '` blocks an E2E database named `edfi_dms`. Once that trailing whitespace is removed,
+an E2E or protected name must be 1 to 63 ASCII letters, digits or underscores; any other name stops
+provisioning, on either engine, because the check cannot compare it reliably. The length limit
+exists because PostgreSQL keeps only the first 63 bytes of a database name, so two longer names
+that share their first 63 characters are one PostgreSQL database. Connection-string values are
+checked as the connection-string parser reads them, without env-file rules applied a second time.
 
 If DMS starts before provisioning has run (or against a database missing
 `dms.EffectiveSchema`), DMS will start successfully but requests to the

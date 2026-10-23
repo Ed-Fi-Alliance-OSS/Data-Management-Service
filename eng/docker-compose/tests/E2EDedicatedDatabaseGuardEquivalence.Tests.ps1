@@ -10,17 +10,25 @@
 # from two explicit engine sets, then compares with -ieq. The comparer is not exported, so these tests
 # call it through InModuleScope.
 #
-# Rows a bare -ieq comparison already decides the same way are preservation cases. Rows it gets wrong
-# are regression cases: comparer rows assert that -ieq alone returns false for them, and the guard
-# matrix keeps them in the context named for what -ieq misses, so they fail if either the comparer or
-# the guard's use of it is reduced to -ieq. Every other guard context is preservation. Characters are
-# written as code points; no literal non-ASCII text.
+# Each row is one of four kinds. The baseline is the guard as it was before the behaviors these tests
+# cover: it compared with bare -ieq, had no domain or length check, ran each connection-string value
+# through the dotenv conversion again, and its provisioning reader kept an 'export ' prefix in the key.
+# - Regression: the row fails if one named behavior is reverted to that baseline. Contexts say which:
+#   the comparer reduced to -ieq (the context named for what -ieq misses), the domain check removed,
+#   the length bound removed, the per-value conversion restored, or the export prefix kept.
+# - Preservation: the baseline already rejected the configuration, and the row keeps that verdict
+#   (the contexts named for verdicts the guard already gives).
+# - Positive control: an accepted configuration. It passes with or without the fix and is not
+#   regression evidence; it shows that a regression row's rejection is specific to its input.
+# - Harness check: module surface, ambient isolation and child-process plumbing; not regression
+#   evidence either.
+# Characters are written as code points; no literal non-ASCII text.
 #
-# Comparison-domain rows are classified by the verdict the guard gave before the domain check existed,
-# measured per key kind: a spelling it accepted is a regression row whose only rejection is the domain
-# refusal; a spelling -ieq already rejected is a preservation row that accepts either the collision or
-# the domain diagnostic for its key. E2E-name domain rows are classified the same way, by the verdict
-# the guard gave before it checked the E2E name's domain.
+# Comparison-domain rows are classified per key kind by the verdict the guard gives with only the
+# domain check removed: a spelling it would accept is a regression row whose only rejection is the
+# domain refusal; a spelling the collision check already rejects is a preservation row that accepts
+# either the collision or the domain diagnostic for its key. E2E-name domain rows are classified the
+# same way.
 
 Describe "Dedicated E2E database name comparer" {
     BeforeAll {
@@ -129,7 +137,7 @@ Describe "Dedicated E2E database name comparer" {
         }
     }
 
-    Context "module surface and source" {
+    Context "module surface and source (harness check)" {
         BeforeAll {
             $parseErrors = $null
             $moduleAst = [System.Management.Automation.Language.Parser]::ParseFile($script:databaseSafetyModulePath, [ref]$null, [ref]$parseErrors)
@@ -262,15 +270,15 @@ BeforeDiscovery {
         }
     }
 
-    # Spellings outside the comparison domain, with the verdict the guard gave each before the domain
-    # check, measured separately for direct keys (a double-quoted value) and connection-string keys (a
-    # provider-quoted Database). The extractor's secondary conversion trims the connection-string
-    # candidate, so a trailing U+00A0 or a leading U+0020 already collides there.
+    # Spellings outside the comparison domain, with the verdict the guard gives each with only the
+    # domain check removed, measured separately for direct keys (a double-quoted value) and
+    # connection-string keys (a provider-quoted Database). The extractor returns the parsed value
+    # unchanged, so a trailing U+00A0 or a leading U+0020 reaches the domain check on both.
     $script:outOfDomainSpellings = @(
         @{ Label = "full-width U+FF45 for the first letter"; Name = "$([char]0xFF45)dfi_dms"; Direct = "Accepted"; ConnectionString = "Accepted" }
         @{ Label = "edfi_dms + U+1F600"; Name = "edfi_dms$([char]::ConvertFromUtf32(0x1F600))"; Direct = "Accepted"; ConnectionString = "Accepted" }
-        @{ Label = "edfi_dms + U+00A0"; Name = "edfi_dms$([char]0x00A0)"; Direct = "Accepted"; ConnectionString = "Collision" }
-        @{ Label = "U+0020 + edfi_dms"; Name = " edfi_dms"; Direct = "Accepted"; ConnectionString = "Collision" }
+        @{ Label = "edfi_dms + U+00A0"; Name = "edfi_dms$([char]0x00A0)"; Direct = "Accepted"; ConnectionString = "Accepted" }
+        @{ Label = "U+0020 + edfi_dms"; Name = " edfi_dms"; Direct = "Accepted"; ConnectionString = "Accepted" }
         @{ Label = "edfi-dms"; Name = "edfi-dms"; Direct = "Accepted"; ConnectionString = "Accepted" }
         @{ Label = "edfi.dms"; Name = "edfi.dms"; Direct = "Accepted"; ConnectionString = "Accepted" }
         @{ Label = "edfi + U+0020 + dms"; Name = "edfi dms"; Direct = "Accepted"; ConnectionString = "Accepted" }
@@ -294,35 +302,40 @@ BeforeDiscovery {
     $script:alreadyRejectedRows = @($script:outOfDomainRows | Where-Object { $_.Verdict -eq "Collision" })
 
     # Connection-string stages: the raw env value, the value the generic DbConnectionStringBuilder
-    # parses from the Compose-resolved string, the candidate the extractor returns after its
-    # per-value conversion, and the guard's verdict against the E2E database 'edfi_dms'. The pinned
-    # SqlClient 6.1.4 and Npgsql 8.0.4 builders were measured outside CI (the lane has no restored
-    # NuGet cache) to trim an unquoted value and keep a quoted one verbatim, as the generic parse
-    # does in the whitespace rows; for two keywords SqlClient keeps the later Initial Catalog and
-    # Npgsql the later DB. Every row is preservation: the guard gave the same verdict before these
-    # tests existed.
+    # parses from the Compose-resolved string, the candidate the extractor returns, and the guard's
+    # verdict against the E2E database 'edfi_dms'. The extractor returns the parsed value unchanged,
+    # so Parsed and Candidates agree on every row. The pinned SqlClient 6.1.4 and Npgsql 8.0.4
+    # builders were measured outside CI (the lane has no restored NuGet cache) to trim an unquoted
+    # value and keep a quoted one verbatim, as the generic parse does in the whitespace rows; for two
+    # keywords SqlClient keeps the later Initial Catalog and Npgsql the later DB.
+    #
+    # Kind follows the file header, judged with only the per-value dotenv conversion restored. With it,
+    # the guard accepted the two regression rows, because the conversion turned 'edfi$dms' into 'edfi'
+    # and 'other #x' into 'other'; it still rejected every preservation row, some with another
+    # diagnostic, and those rows then fail only their Candidates assertion. The in-domain rows are 63
+    # characters long, the longest name the guard accepts.
     $inDomainName = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_"
     $script:connectionStringStageSpellings = @(
-        @{ Label = "unquoted Database 'edfi_dms' + U+0020"; Raw = "Server=s;Database=edfi_dms ;User Id=sa"; Parsed = @("edfi_dms"); Candidates = @("edfi_dms"); Verdict = "Collision" }
-        @{ Label = "double-quoted Database 'edfi_dms' + U+0020"; Raw = "Server=s;Database=`"edfi_dms `";User Id=sa"; Parsed = @("edfi_dms "); Candidates = @("edfi_dms"); Verdict = "Collision" }
-        @{ Label = "single-quoted Database 'edfi_dms' + U+0020"; Raw = "Server=s;Database='edfi_dms ';User Id=sa"; Parsed = @("edfi_dms "); Candidates = @("edfi_dms"); Verdict = "Collision" }
-        @{ Label = "double-quoted Database 'edfi_dms' + U+3000"; Raw = "Server=s;Database=`"edfi_dms$([char]0x3000)`";User Id=sa"; Parsed = @("edfi_dms$([char]0x3000)"); Candidates = @("edfi_dms"); Verdict = "Collision" }
-        @{ Label = "double-quoted Database 'edfi_dms' + TAB"; Raw = "Server=s;Database=`"edfi_dms`t`";User Id=sa"; Parsed = @("edfi_dms`t"); Candidates = @("edfi_dms"); Verdict = "Collision" }
-        @{ Label = "double-quoted Database 'edfi_dms' + U+00A0"; Raw = "Server=s;Database=`"edfi_dms$([char]0x00A0)`";User Id=sa"; Parsed = @("edfi_dms$([char]0x00A0)"); Candidates = @("edfi_dms"); Verdict = "Collision" }
-        @{ Label = "double-quoted Database U+0020 + 'edfi_dms'"; Raw = "Server=s;Database=`" edfi_dms`";User Id=sa"; Parsed = @(" edfi_dms"); Candidates = @("edfi_dms"); Verdict = "Collision" }
-        @{ Label = "Database with quotes inside the value"; Raw = "Server=s;Database=`"'edfi_dms'`";User Id=sa"; Parsed = @("'edfi_dms'"); Candidates = @("edfi_dms"); Verdict = "Collision" }
-        @{ Label = "Database 'edfi_dms #x' kept by single outer quotes"; Raw = "'Server=s;Database=`"edfi_dms #x`";User Id=sa'"; Parsed = @("edfi_dms #x"); Candidates = @("edfi_dms"); Verdict = "Collision" }
-        @{ Label = "Database literal `${GUARD_STAGE_NAME} with GUARD_STAGE_NAME = 'edfi_dms'"; Raw = "Server=s;Database=`$`${GUARD_STAGE_NAME};User Id=sa"; StageName = "edfi_dms"; Parsed = @("`${GUARD_STAGE_NAME}"); Candidates = @("edfi_dms"); Verdict = "Collision" }
-        @{ Label = "Database literal `${GUARD_STAGE_NAME} with GUARD_STAGE_NAME undefined"; Raw = "Server=s;Database=`$`${GUARD_STAGE_NAME};User Id=sa"; Parsed = @("`${GUARD_STAGE_NAME}"); Candidates = @(""); Verdict = "Undetermined" }
-        @{ Label = "Database with a '`$' a single-quoted value keeps"; Raw = "Server=s;Database=`"'edfi`$`$x'`";User Id=sa"; Parsed = @("'edfi`$x'"); Candidates = @("edfi`$x"); Verdict = "Unresolved" }
-        @{ Label = "Database 'edfi`$dms', a parsing limitation"; Raw = "Server=s;Database=edfi`$`$dms;User Id=sa"; Parsed = @("edfi`$dms"); Candidates = @("edfi"); Verdict = "Accepted" }
-        @{ Label = "Database 'other #x' kept by single outer quotes, a parsing limitation"; Raw = "'Server=s;Database=other #x;User Id=sa'"; Parsed = @("other #x"); Candidates = @("other"); Verdict = "Accepted" }
-        @{ Label = "unquoted Database of every in-domain character"; Raw = "Server=s;Database=$inDomainName;User Id=sa"; Parsed = @($inDomainName); Candidates = @($inDomainName); Verdict = "Accepted" }
-        @{ Label = "double-quoted DB of every in-domain character"; Raw = "Host=h;DB=`"$inDomainName`";Username=u"; Parsed = @($inDomainName); Candidates = @($inDomainName); Verdict = "Accepted" }
-        @{ Label = "single-quoted Initial Catalog of every in-domain character"; Raw = "Server=s;Initial Catalog='$inDomainName';User Id=sa"; Parsed = @($inDomainName); Candidates = @($inDomainName); Verdict = "Accepted" }
-        @{ Label = "double-quoted Database with full-width U+FF45"; Raw = "Server=s;Database=`"$([char]0xFF45)dfi_dms`";User Id=sa"; Parsed = @("$([char]0xFF45)dfi_dms"); Candidates = @("$([char]0xFF45)dfi_dms"); Verdict = "Domain" }
-        @{ Label = "Database 'first' then Initial Catalog 'edfi_dms', which SqlClient uses"; Raw = "Server=s;Database=first;Initial Catalog=edfi_dms;User Id=sa"; Parsed = @("first", "edfi_dms"); Candidates = @("first", "edfi_dms"); Verdict = "Collision" }
-        @{ Label = "Database 'edfi_dms' then DB 'other', which Npgsql uses"; Raw = "Host=h;Database=edfi_dms;DB=other;Username=u"; Parsed = @("edfi_dms", "other"); Candidates = @("edfi_dms", "other"); Verdict = "Collision" }
+        @{ Label = "unquoted Database 'edfi_dms' + U+0020"; Raw = "Server=s;Database=edfi_dms ;User Id=sa"; Parsed = @("edfi_dms"); Verdict = "Collision"; Kind = "preservation" }
+        @{ Label = "double-quoted Database 'edfi_dms' + U+0020"; Raw = "Server=s;Database=`"edfi_dms `";User Id=sa"; Parsed = @("edfi_dms "); Verdict = "Collision"; Kind = "preservation" }
+        @{ Label = "single-quoted Database 'edfi_dms' + U+0020"; Raw = "Server=s;Database='edfi_dms ';User Id=sa"; Parsed = @("edfi_dms "); Verdict = "Collision"; Kind = "preservation" }
+        @{ Label = "double-quoted Database 'edfi_dms' + U+3000"; Raw = "Server=s;Database=`"edfi_dms$([char]0x3000)`";User Id=sa"; Parsed = @("edfi_dms$([char]0x3000)"); Verdict = "Collision"; Kind = "preservation" }
+        @{ Label = "double-quoted Database 'edfi_dms' + TAB"; Raw = "Server=s;Database=`"edfi_dms`t`";User Id=sa"; Parsed = @("edfi_dms`t"); Verdict = "Collision"; Kind = "preservation" }
+        @{ Label = "double-quoted Database 'edfi_dms' + U+00A0"; Raw = "Server=s;Database=`"edfi_dms$([char]0x00A0)`";User Id=sa"; Parsed = @("edfi_dms$([char]0x00A0)"); Verdict = "Domain"; Kind = "preservation" }
+        @{ Label = "double-quoted Database U+0020 + 'edfi_dms'"; Raw = "Server=s;Database=`" edfi_dms`";User Id=sa"; Parsed = @(" edfi_dms"); Verdict = "Domain"; Kind = "preservation" }
+        @{ Label = "Database with quotes inside the value"; Raw = "Server=s;Database=`"'edfi_dms'`";User Id=sa"; Parsed = @("'edfi_dms'"); Verdict = "Domain"; Kind = "preservation" }
+        @{ Label = "Database 'edfi_dms #x' kept by single outer quotes"; Raw = "'Server=s;Database=`"edfi_dms #x`";User Id=sa'"; Parsed = @("edfi_dms #x"); Verdict = "Domain"; Kind = "preservation" }
+        @{ Label = "Database literal `${GUARD_STAGE_NAME} with GUARD_STAGE_NAME = 'edfi_dms'"; Raw = "Server=s;Database=`$`${GUARD_STAGE_NAME};User Id=sa"; StageName = "edfi_dms"; Parsed = @("`${GUARD_STAGE_NAME}"); Verdict = "Dollar"; Kind = "preservation" }
+        @{ Label = "Database literal `${GUARD_STAGE_NAME} with GUARD_STAGE_NAME undefined"; Raw = "Server=s;Database=`$`${GUARD_STAGE_NAME};User Id=sa"; Parsed = @("`${GUARD_STAGE_NAME}"); Verdict = "Dollar"; Kind = "preservation" }
+        @{ Label = "Database with a '`$' inside single quotes"; Raw = "Server=s;Database=`"'edfi`$`$x'`";User Id=sa"; Parsed = @("'edfi`$x'"); Verdict = "Dollar"; Kind = "preservation" }
+        @{ Label = "Database 'edfi`$dms'"; Raw = "Server=s;Database=edfi`$`$dms;User Id=sa"; Parsed = @("edfi`$dms"); Verdict = "Dollar"; Kind = "regression: per-value conversion" }
+        @{ Label = "Database 'other #x' kept by single outer quotes"; Raw = "'Server=s;Database=other #x;User Id=sa'"; Parsed = @("other #x"); Verdict = "Domain"; Kind = "regression: per-value conversion" }
+        @{ Label = "unquoted Database of every in-domain character"; Raw = "Server=s;Database=$inDomainName;User Id=sa"; Parsed = @($inDomainName); Verdict = "Accepted"; Kind = "positive control" }
+        @{ Label = "double-quoted DB of every in-domain character"; Raw = "Host=h;DB=`"$inDomainName`";Username=u"; Parsed = @($inDomainName); Verdict = "Accepted"; Kind = "positive control" }
+        @{ Label = "single-quoted Initial Catalog of every in-domain character"; Raw = "Server=s;Initial Catalog='$inDomainName';User Id=sa"; Parsed = @($inDomainName); Verdict = "Accepted"; Kind = "positive control" }
+        @{ Label = "double-quoted Database with full-width U+FF45"; Raw = "Server=s;Database=`"$([char]0xFF45)dfi_dms`";User Id=sa"; Parsed = @("$([char]0xFF45)dfi_dms"); Verdict = "Domain"; Kind = "preservation" }
+        @{ Label = "Database 'first' then Initial Catalog 'edfi_dms', which SqlClient uses"; Raw = "Server=s;Database=first;Initial Catalog=edfi_dms;User Id=sa"; Parsed = @("first", "edfi_dms"); Verdict = "Collision"; Kind = "preservation" }
+        @{ Label = "Database 'edfi_dms' then DB 'other', which Npgsql uses"; Raw = "Host=h;Database=edfi_dms;DB=other;Username=u"; Parsed = @("edfi_dms", "other"); Verdict = "Collision"; Kind = "preservation" }
     )
     $script:connectionStringStageRows = foreach ($spelling in $script:connectionStringStageSpellings) {
         foreach ($key in $script:connectionStringKeys) {
@@ -425,21 +438,34 @@ Describe "Dedicated E2E database guard" {
             }
         }
 
+        $script:removedTrailingCharacters = "U+0020, U+3000, U+0009, U+000A, U+000D and U+000C"
+
         function Get-DomainDiagnostic {
             param([string]$Key)
             $source = if ($Key -in @("POSTGRES_DB_NAME", "MSSQL_DB_NAME")) { $Key } else { "the database name from $Key" }
-            "E2E database safety check cannot prove $source in '$script:environmentFileLabel' dedicated: after trailing whitespace is removed it contains characters outside the guard's supported comparison domain (ASCII letters, digits, underscore); refusing a destructive reset. The value is withheld."
+            "E2E database safety check cannot prove $source in '$script:environmentFileLabel' dedicated: after trailing $script:removedTrailingCharacters are removed it contains characters outside the guard's supported comparison domain (ASCII letters, digits, underscore); refusing a destructive reset. The value is withheld."
         }
 
         function Get-E2EDomainDiagnostic {
             param([string]$E2EDatabaseName, [string]$EnvironmentFilePath = $script:environmentFileLabel)
-            "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' cannot be proven dedicated: after trailing whitespace is removed it contains characters outside the guard's supported comparison domain (ASCII letters, digits, underscore); refusing a destructive reset."
+            "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' cannot be proven dedicated: after trailing $script:removedTrailingCharacters are removed it contains characters outside the guard's supported comparison domain (ASCII letters, digits, underscore); refusing a destructive reset."
+        }
+
+        function Get-LengthDiagnostic {
+            param([string]$Key)
+            $source = if ($Key -in @("POSTGRES_DB_NAME", "MSSQL_DB_NAME")) { $Key } else { "the database name from $Key" }
+            "E2E database safety check cannot prove $source in '$script:environmentFileLabel' dedicated: after trailing $script:removedTrailingCharacters are removed it is longer than 63 characters, and PostgreSQL keeps only the first 63 bytes of a database name; refusing a destructive reset. The value is withheld."
+        }
+
+        function Get-E2ELengthDiagnostic {
+            param([string]$E2EDatabaseName)
+            "E2E database '$E2EDatabaseName' in '$script:environmentFileLabel' cannot be proven dedicated: after trailing $script:removedTrailingCharacters are removed it is longer than 63 characters, and PostgreSQL keeps only the first 63 bytes of a database name; refusing a destructive reset."
         }
 
         function Get-GuardRejectionMessage {
-            param([hashtable]$EnvironmentValues)
+            param([hashtable]$EnvironmentValues, [string]$E2EDatabaseName = "edfi_dms")
             try {
-                Invoke-IsolatedGuard -EnvironmentValues $EnvironmentValues
+                Invoke-IsolatedGuard -EnvironmentValues $EnvironmentValues -E2EDatabaseName $E2EDatabaseName
             }
             catch {
                 return $_.Exception.Message
@@ -622,8 +648,8 @@ Describe "Dedicated E2E database guard" {
         }
     }
 
-    # The extractor already trims each connection-string candidate, so the E2E name is the only side
-    # these rows leave untrimmed.
+    # The parser trims the unquoted Database value, so the E2E name is the only side with a trailing
+    # character.
     Context "connection-string keys: an E2E name a bare -ieq comparison misses" {
         It "rejects the E2E name with the one trailing LF Assert-SafeDatabaseName admits against <Key> naming 'edfi_dms'" -ForEach @(
             @{ Key = "DATABASE_CONNECTION_STRING_ADMIN" }
@@ -648,7 +674,7 @@ Describe "Dedicated E2E database guard" {
         ) {
             $rawValue = "$Quote$ConnectionString$Quote"
 
-            (@(Get-IsolatedConnectionStringDatabaseName -Key $Key -RawValue $rawValue) -join "|") | Should -BeExactly "x|edfi_dms"
+            (@(Get-IsolatedConnectionStringDatabaseName -Key $Key -RawValue $rawValue) -join "|") | Should -BeExactly "x #y|edfi_dms"
             { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = $rawValue } } |
                 Should -Throw -ExpectedMessage (Get-SeparateDiagnostic -Key $Key)
         }
@@ -704,29 +730,28 @@ Describe "Dedicated E2E database guard" {
     # The parsed value stands for what the provider receives and the candidate is what the guard
     # compares; asserting both keeps a row from passing on the wrong stage.
     Context "connection-string keys: parsed value, extractor candidate and verdict" {
-        It "reads <Label> in <Key>" -ForEach $script:connectionStringStageRows {
+        It "reads <Label> in <Key> (<Kind>)" -ForEach $script:connectionStringStageRows {
             $environmentValues = @{ $Key = $Raw }
             if ($null -ne $StageName) {
                 $environmentValues["GUARD_STAGE_NAME"] = $StageName
             }
-            # The rows reference GUARD_STAGE_NAME, and 'edfi$$dms' reaches the per-value conversion as
-            # 'edfi$dms', which expands a variable named dms; both are cleared from the process
-            # environment for the extraction and the guard run, then restored.
+            # GUARD_STAGE_NAME and dms are names a '$' in these rows could expand. They are cleared
+            # from the process environment for the extraction and the guard run, then restored, so
+            # an ambient value cannot change a row's outcome.
             $helperVariables = @("GUARD_STAGE_NAME", "dms")
 
             $stage = Get-IsolatedConnectionStringStage -Key $Key -EnvironmentValues $environmentValues -HelperVariables $helperVariables
 
             $stage.Parsed.Count | Should -Be $Parsed.Count
             ($stage.Parsed -join "|") | Should -BeExactly ($Parsed -join "|")
-            $stage.Candidates.Count | Should -Be $Candidates.Count
-            ($stage.Candidates -join "|") | Should -BeExactly ($Candidates -join "|")
+            $stage.Candidates.Count | Should -Be $Parsed.Count
+            ($stage.Candidates -join "|") | Should -BeExactly ($Parsed -join "|") -Because "the extractor returns the parsed value without a second dotenv conversion"
 
             $guard = { Invoke-IsolatedGuard -EnvironmentValues $environmentValues -HelperVariables $helperVariables }
             switch ($Verdict) {
                 "Collision" { $guard | Should -Throw -ExpectedMessage (Get-SeparateDiagnostic -Key $Key) }
                 "Domain" { $guard | Should -Throw -ExpectedMessage (Get-DomainDiagnostic -Key $Key) }
-                "Undetermined" { $guard | Should -Throw -ExpectedMessage "E2E database safety check could not determine a database name from $Key in '$script:environmentFileLabel'." }
-                "Unresolved" { $guard | Should -Throw -ExpectedMessage "E2E database safety check could not fully resolve the database name from $Key in '$script:environmentFileLabel' (unresolved or cyclic reference)*" }
+                "Dollar" { $guard | Should -Throw -ExpectedMessage "E2E database safety check could not fully resolve the database name from $Key in '$script:environmentFileLabel' (it contains '`$': a literal '`$', or an unresolved or cyclic reference)*" }
                 "Accepted" { $guard | Should -Not -Throw }
                 default { throw "Unknown verdict '$Verdict'." }
             }
@@ -861,11 +886,105 @@ Describe "Dedicated E2E database guard" {
         }
     }
 
+    # PostgreSQL keeps only the first 63 bytes of a database name, so two names that share them are one
+    # database although -ieq calls them distinct. Without the length bound the guard accepts every row
+    # here.
+    Context "length: names PostgreSQL truncates to one database (regression: length bound removed)" {
+        BeforeAll {
+            $script:prefix63 = "edfi_guard_" + ("a" * 52)
+        }
+
+        It "refuses the <Length>-character E2E name beside <Key> naming its 63-character prefix" -ForEach @(
+            @{ Length = 67; Suffix = "_e2e"; Key = "POSTGRES_DB_NAME"; Value = "edfi_guard_$("a" * 52)" }
+            @{ Length = 64; Suffix = "e"; Key = "DATABASE_CONNECTION_STRING_ADMIN"; Value = "Server=s;Database=edfi_guard_$("a" * 52);User Id=sa" }
+        ) {
+            $e2eDatabaseName = "$script:prefix63$Suffix"
+            $e2eDatabaseName.Length | Should -Be $Length
+            { Assert-SafeDatabaseName -DatabaseName $e2eDatabaseName } | Should -Not -Throw -Because "the name must reach the guard's comparison"
+
+            { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = $Value } -E2EDatabaseName $e2eDatabaseName } |
+                Should -Throw -ExpectedMessage (Get-E2ELengthDiagnostic -E2EDatabaseName $e2eDatabaseName)
+        }
+
+        It "refuses <Key> naming a <Length>-character database that starts with the 63-character E2E name, withholding it" -ForEach @(
+            @{ Length = 64; Key = "MSSQL_DB_NAME"; Value = "`"edfi_guard_$("a" * 52)x`"" }
+            @{ Length = 71; Key = "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"; Value = "Host=h;DB='edfi_guard_$("a" * 52)_primary';Username=u" }
+        ) {
+            $message = Get-GuardRejectionMessage -EnvironmentValues @{ $Key = $Value } -E2EDatabaseName $script:prefix63
+
+            $message | Should -BeExactly (Get-LengthDiagnostic -Key $Key)
+        }
+
+        It "refuses a 64-character E2E name with no protected key configured" {
+            $e2eDatabaseName = "$($script:prefix63)e"
+
+            { Invoke-IsolatedGuard -E2EDatabaseName $e2eDatabaseName } |
+                Should -Throw -ExpectedMessage (Get-E2ELengthDiagnostic -E2EDatabaseName $e2eDatabaseName)
+        }
+    }
+
+    # The bound applies after the trailing characters are removed, so a 63-character name with a
+    # removable suffix is accepted on either side.
+    Context "length: names of at most 63 characters (positive control)" {
+        It "accepts a <Length>-character E2E name beside <Key> naming a distinct <Length>-character database<Note>" -ForEach @(
+            @{ Length = 63; Key = "POSTGRES_DB_NAME"; Note = ""; E2ESuffix = ""; Value = "edfi_guard_$("b" * 52)" }
+            @{ Length = 63; Key = "MSSQL_DB_NAME"; Note = " followed by U+3000, double-quoted"; E2ESuffix = ""; Value = "`"edfi_guard_$("b" * 52)$([char]0x3000)`"" }
+            @{ Length = 63; Key = "DATABASE_CONNECTION_STRING_ADMIN"; Note = ", the E2E name followed by LF"; E2ESuffix = "`n"; Value = "Server=s;Database=edfi_guard_$("b" * 52);User Id=sa" }
+            @{ Length = 63; Key = "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"; Note = ""; E2ESuffix = ""; Value = "Host=h;DB='edfi_guard_$("b" * 52)';Username=u" }
+            @{ Length = 62; Key = "POSTGRES_DB_NAME"; Note = ""; E2ESuffix = ""; Value = "edfi_guard_$("b" * 51)" }
+            @{ Length = 62; Key = "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"; Note = ""; E2ESuffix = ""; Value = "Server=s;Database=edfi_guard_$("b" * 51);User Id=sa" }
+        ) {
+            $e2eDatabaseName = "edfi_guard_$("a" * ($Length - 11))$E2ESuffix"
+
+            { Invoke-IsolatedGuard -EnvironmentValues @{ $Key = $Value } -E2EDatabaseName $e2eDatabaseName } | Should -Not -Throw
+        }
+    }
+
+    # Get-EnvironmentValueMap is provision-e2e-database.ps1's reader. Compose accepts an 'export '
+    # prefix; a reader that kept it in the key left the protected key unset, and the guard accepted.
+    Context "provisioning reader: exported assignments (regression: export prefix kept)" {
+        It "rejects <Key> exported with <Separator> and read by Get-EnvironmentValueMap" -ForEach @(
+            @{ Key = "MSSQL_DB_NAME"; Separator = "a space"; RawValue = "'edfi_dms '"; Prefix = "export " }
+            @{ Key = "POSTGRES_DB_NAME"; Separator = "a TAB"; RawValue = "EDFI_DMS"; Prefix = "export`t" }
+            @{ Key = "DATABASE_CONNECTION_STRING_ADMIN"; Separator = "two spaces"; RawValue = "'Host=h;Database=edfi_dms;Username=u'"; Prefix = "export  " }
+            @{ Key = "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"; Separator = "a space"; RawValue = "`"Server=s;Database=edfi_dms;User Id=sa`""; Prefix = "export " }
+        ) {
+            $environmentFile = Join-Path $TestDrive "export-$([guid]::NewGuid().ToString('N')).env"
+            [System.IO.File]::WriteAllText($environmentFile, "$Prefix$Key=$RawValue`n", [System.Text.UTF8Encoding]::new($false))
+
+            $environmentValues = Get-EnvironmentValueMap -EnvironmentFilePath $environmentFile
+
+            @($environmentValues.Keys) | Should -Be @($Key)
+            $environmentValues[$Key] | Should -BeExactly $RawValue -Because "the reader stores the raw value for the Compose resolver"
+            { Invoke-IsolatedGuard -EnvironmentValues $environmentValues } |
+                Should -Throw -ExpectedMessage (Get-CollisionDiagnostic -Key $Key)
+        }
+
+        It "lets the last MSSQL_DB_NAME declaration win when <Label>" -ForEach @(
+            @{ Label = "an exported 'EDFI_DMS' follows a distinct plain value (regression)"; Lines = @("MSSQL_DB_NAME=edfi_dms_primary", "export MSSQL_DB_NAME=EDFI_DMS"); Rejected = $true }
+            @{ Label = "a distinct plain value follows an exported 'EDFI_DMS' (positive control)"; Lines = @("export MSSQL_DB_NAME=EDFI_DMS", "MSSQL_DB_NAME=edfi_dms_primary"); Rejected = $false }
+        ) {
+            $environmentFile = Join-Path $TestDrive "export-$([guid]::NewGuid().ToString('N')).env"
+            [System.IO.File]::WriteAllLines($environmentFile, [string[]]$Lines, [System.Text.UTF8Encoding]::new($false))
+
+            $environmentValues = Get-EnvironmentValueMap -EnvironmentFilePath $environmentFile
+
+            if ($Rejected) {
+                { Invoke-IsolatedGuard -EnvironmentValues $environmentValues } |
+                    Should -Throw -ExpectedMessage (Get-DedicatedDiagnostic -Key "MSSQL_DB_NAME")
+            }
+            else {
+                { Invoke-IsolatedGuard -EnvironmentValues $environmentValues } | Should -Not -Throw
+            }
+        }
+    }
+
     # -ieq folds U+212A to k only when the process has culture data. The globalization mode is fixed
     # when the runtime starts, so each row runs the guard in a child pwsh launched with
     # DOTNET_SYSTEM_GLOBALIZATION_INVARIANT set (or removed) beforehand. The child records whether -ieq
-    # folded the pair, so a row cannot pass under the wrong mode. The invariant collision row is the
-    # regression case; the others are preservation.
+    # folded the pair, so a row cannot pass under the wrong mode. The invariant U+212A row is a
+    # regression row for the E2E domain check, and the 'edfi_k' + LF row one for a comparer reduced to
+    # -ieq; the folding row is preservation and the ASCII row a positive control.
     Context "comparison domain: E2E names under each globalization mode" {
         BeforeAll {
             $script:globalizationChildScript = Join-Path $TestDrive "invoke-guard-globalization.ps1"
@@ -976,7 +1095,7 @@ catch {
         }
     }
 
-    Context "ambient isolation" {
+    Context "ambient isolation (harness check)" {
         It "restores a protected key's prior ambient value after a row sets it" {
             $savedVariable = Save-AmbientVariable -Name "MSSQL_DB_NAME"
             try {
@@ -1030,8 +1149,9 @@ catch {
 # - schema-package-utility.psm1 (stub): Resolve-SchemaFilesFromEnvironmentFile logs and throws a
 #   sentinel, so a control run stops before any reset.
 # - docker and dotnet: child functions that log to the destructive log and throw.
-# The collision runs fail if the guard compares with -ieq alone or runs after readiness; the
-# control runs are preservation.
+# The collision runs are regression rows: they fail if the guard compares with -ieq alone or runs
+# after readiness, and the exported runs also if Get-EnvironmentValueMap keeps the export prefix. The
+# control runs are positive controls; they show the harness reaches readiness and schema resolution.
 Describe "Dedicated E2E database guard in the provisioning flow" {
     BeforeAll {
         $sourceDockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
@@ -1167,11 +1287,13 @@ catch {
         }
     }
 
-    It "stops a <Engine> run at the <Key> collision before any readiness probe, schema resolution or reset" -ForEach @(
-        @{ Engine = "postgresql"; Key = "POSTGRES_DB_NAME"; Lines = @("POSTGRES_PORT=5432", "POSTGRES_PASSWORD=guard-flow-pass", "POSTGRES_DB_NAME='edfi_dms '") }
-        @{ Engine = "mssql"; Key = "MSSQL_DB_NAME"; Lines = @("MSSQL_PORT=1433", "MSSQL_SA_PASSWORD=guard-flow-pass", "MSSQL_DB_NAME=`"EDFI_DMS$([char]0x3000)`"") }
+    It "stops a <Engine> run at the <Spelling> <Key> collision before any readiness probe, schema resolution or reset" -ForEach @(
+        @{ Engine = "postgresql"; Key = "POSTGRES_DB_NAME"; Spelling = "plain"; Lines = @("POSTGRES_PORT=5432", "POSTGRES_PASSWORD=guard-flow-pass", "POSTGRES_DB_NAME='edfi_dms '") }
+        @{ Engine = "mssql"; Key = "MSSQL_DB_NAME"; Spelling = "plain"; Lines = @("MSSQL_PORT=1433", "MSSQL_SA_PASSWORD=guard-flow-pass", "MSSQL_DB_NAME=`"EDFI_DMS$([char]0x3000)`"") }
+        @{ Engine = "postgresql"; Key = "POSTGRES_DB_NAME"; Spelling = "exported"; Lines = @("POSTGRES_PORT=5432", "POSTGRES_PASSWORD=guard-flow-pass", "export POSTGRES_DB_NAME='edfi_dms '") }
+        @{ Engine = "mssql"; Key = "MSSQL_DB_NAME"; Spelling = "exported"; Lines = @("MSSQL_PORT=1433", "MSSQL_SA_PASSWORD=guard-flow-pass", "export MSSQL_DB_NAME=EDFI_DMS") }
     ) {
-        $record = Invoke-ProvisionFlow -Name "collision-$Engine" -DatabaseEngine $Engine -EnvironmentLines $Lines
+        $record = Invoke-ProvisionFlow -Name "collision-$Spelling-$Engine" -DatabaseEngine $Engine -EnvironmentLines $Lines
 
         $record.Outcome | Should -Be "threw"
         $record.Message | Should -BeExactly "E2E database 'edfi_dms' in '$($record.EnvironmentFile)' must be dedicated and cannot match $Key."
@@ -1179,15 +1301,19 @@ catch {
         $record.DestructiveLogExists | Should -BeFalse -Because "no docker or dotnet command may run after a rejection"
     }
 
-    It "lets a <Engine> run with a distinct <Key> reach readiness and schema resolution, then stop before reset" -ForEach @(
-        @{ Engine = "postgresql"; Key = "POSTGRES_DB_NAME"; Lines = @("POSTGRES_PORT=5432", "POSTGRES_PASSWORD=guard-flow-pass", "POSTGRES_DB_NAME='edfi_dms_primary '") }
-        @{ Engine = "mssql"; Key = "MSSQL_DB_NAME"; Lines = @("MSSQL_PORT=1433", "MSSQL_SA_PASSWORD=guard-flow-pass", "MSSQL_DB_NAME=`"EDFI_DMS_PRIMARY$([char]0x3000)`"") }
+    It "lets a <Engine> run with a distinct <Spelling> <Key> reach readiness and schema resolution, then stop before reset" -ForEach @(
+        @{ Engine = "postgresql"; Key = "POSTGRES_DB_NAME"; Spelling = "plain"; Lines = @("POSTGRES_PORT=5432", "POSTGRES_PASSWORD=guard-flow-pass", "POSTGRES_DB_NAME='edfi_dms_primary '") }
+        @{ Engine = "mssql"; Key = "MSSQL_DB_NAME"; Spelling = "plain"; Lines = @("MSSQL_PORT=1433", "MSSQL_SA_PASSWORD=guard-flow-pass", "MSSQL_DB_NAME=`"EDFI_DMS_PRIMARY$([char]0x3000)`"") }
+        @{ Engine = "postgresql"; Key = "POSTGRES_DB_NAME"; Spelling = "exported"; Lines = @("POSTGRES_PORT=5432", "POSTGRES_PASSWORD=guard-flow-pass", "export POSTGRES_DB_NAME='edfi_dms_primary '") }
     ) {
-        $record = Invoke-ProvisionFlow -Name "control-$Engine" -DatabaseEngine $Engine -EnvironmentLines $Lines
+        $record = Invoke-ProvisionFlow -Name "control-$Spelling-$Engine" -DatabaseEngine $Engine -EnvironmentLines $Lines
 
         $record.Outcome | Should -Be "threw"
         $record.Message | Should -BeExactly "guard-flow sentinel: schema resolution reached"
-        ($record.BoundaryLog -join "`n") | Should -BeExactly "readiness|docker|exec`nschema-resolution|.env.flow"
+        $events = @($record.BoundaryLog | ForEach-Object { ($_ -split "\|")[0] })
+        $events | Should -Contain "readiness"
+        $events[-1] | Should -Be "schema-resolution" -Because "schema resolution follows readiness and its sentinel ends the run"
+        $record.BoundaryLog[-1] | Should -BeExactly "schema-resolution|.env.flow" -Because "schema resolution reads the run's environment file"
         $record.DestructiveLogExists | Should -BeFalse -Because "the sentinel stops the run before Reset-* and SchemaTools"
     }
 }
@@ -1204,8 +1330,9 @@ catch {
 # - provision-e2e-database.ps1: records any call.
 # - docker: a child function that records its arguments and sets $global:LASTEXITCODE to 0, so the
 #   setup's 'docker version' check passes. That check runs before the guard by design.
-# The collision runs fail if the guard compares with -ieq alone or the names are validated after the
-# first start; the control runs are preservation.
+# The collision runs are regression rows: they fail if the guard compares with -ieq alone or the names
+# are validated after the first start. The control runs are positive controls; they show the harness
+# reaches the first start.
 Describe "Dedicated E2E database guard in the Instance Management setup" {
     BeforeAll {
         $sourceRepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
@@ -1367,7 +1494,11 @@ $record | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $RunDire
         $record.Outcome | Should -Be "threw"
         $record.Message | Should -BeExactly "guard-im sentinel: start-local-dms reached"
         ($record.AuthorityLog -join "`n") | Should -BeExactly "phase"
-        ($record.StartLog -join "`n") | Should -BeExactly "-InfraOnly -EnableConfig -EnvironmentFile $($record.EnvironmentFile) -DatabaseEngine $Engine -IdentityProvider self-contained -AddExtensionSecurityMetadata"
+        @($record.StartLog).Count | Should -Be 1 -Because "the start sentinel ends the run at the first start"
+        $startArguments = $record.StartLog[0]
+        $startArguments | Should -Match "(^| )-InfraOnly( |$)"
+        $startArguments | Should -Match ([regex]::Escape("-EnvironmentFile $($record.EnvironmentFile)"))
+        $startArguments | Should -Match "(^| )-DatabaseEngine $Engine( |$)"
         $record.ProvisionLogExists | Should -BeFalse -Because "the start sentinel stops the run before provisioning"
         ($record.DockerLog -join "`n") | Should -BeExactly "version"
     }

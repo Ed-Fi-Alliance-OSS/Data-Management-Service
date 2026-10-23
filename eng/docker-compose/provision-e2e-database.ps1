@@ -117,7 +117,9 @@ function Get-EnvironmentValueMap {
             continue
         }
 
-        $key = $line.Substring(0, $separatorIndex).Trim()
+        # Compose accepts an optional `export ` prefix, so the key is stored without it, as
+        # ReadValuesFromEnvFile stores it; a later declaration of the same key still wins.
+        $key = [regex]::Replace($line.Substring(0, $separatorIndex).Trim(), '^export[ \t]+', '')
         $environmentValues[$key] = $line.Substring($separatorIndex + 1).Trim()
     }
 
