@@ -66,6 +66,20 @@ public class ConnectRateLimiterTests
         public void It_keeps_a_short_id() =>
             ConnectRateLimiter.ClientPartitionKey("ClientA").Should().Be("ClientA");
 
+        [TestCase("ClientA ", "ClientA")]
+        [TestCase("ClientA  ", "ClientA")]
+        [TestCase(" ClientA", " ClientA")]
+        [TestCase("ClientA\t", "ClientA\t")]
+        public void It_ignores_only_trailing_ascii_spaces(string clientId, string expectedKey) =>
+            ConnectRateLimiter.ClientPartitionKey(clientId).Should().Be(expectedKey);
+
+        [Test]
+        public void It_removes_trailing_spaces_before_truncating() =>
+            ConnectRateLimiter
+                .ClientPartitionKey(new string('c', 255) + new string(' ', 30))
+                .Should()
+                .Be(new string('c', 255));
+
         [Test]
         public void It_truncates_a_long_id_to_256_characters() =>
             ConnectRateLimiter.ClientPartitionKey(new string('x', 300)).Should().Be(new string('x', 256));
@@ -177,15 +191,54 @@ public class ConnectRateLimiterTests
         {
             _results = [];
             using ConnectRateLimiter limiter = CreateLimiter(sourceLimit: 1, clientLimit: 1, enabled: false);
-            for (int i = 0; i < 5; i++)
+            for (int i = 0; i < 256; i++)
             {
-                _results.Add(Admits(limiter.AttemptClient("ClientA")));
-                _results.Add(Admits(limiter.AttemptSource(ContextFrom("198.51.100.7"))));
+                _results.Add(Admits(limiter.AttemptClient($"Client{i}")));
+                _results.Add(Admits(limiter.AttemptSource(ContextFrom($"198.51.100.{i}"))));
             }
         }
 
         [Test]
         public void It_admits_every_request() => _results.Should().OnlyContain(admitted => admitted);
+    }
+
+    [TestFixture]
+    public class Given_disabled_limiting_with_many_distinct_keys
+    {
+        private long _sourceSuccessfulLeases;
+        private long _clientSuccessfulLeases;
+
+        [SetUp]
+        public void Setup()
+        {
+            ConnectRateLimitSettings settings = new() { Enabled = false };
+            using PartitionedRateLimiter<string> sources = ConnectRateLimiter.CreateLimiter(
+                settings,
+                1,
+                StringComparer.Ordinal
+            );
+            using PartitionedRateLimiter<string> clients = ConnectRateLimiter.CreateLimiter(
+                settings,
+                1,
+                StringComparer.OrdinalIgnoreCase
+            );
+            for (int i = 0; i < 256; i++)
+            {
+                using RateLimitLease sourceLease = sources.AttemptAcquire($"198.51.100.{i}");
+                using RateLimitLease clientLease = clients.AttemptAcquire($"Client{i}");
+            }
+
+            // An unseen key must report all prior admissions: every resource used the same cached
+            // no-op limiter, rather than retaining a new partition for each caller-supplied key.
+            _sourceSuccessfulLeases = sources.GetStatistics("203.0.113.1")!.TotalSuccessfulLeases;
+            _clientSuccessfulLeases = clients.GetStatistics("UnseenClient")!.TotalSuccessfulLeases;
+        }
+
+        [Test]
+        public void It_reuses_one_source_partition() => _sourceSuccessfulLeases.Should().Be(256);
+
+        [Test]
+        public void It_reuses_one_client_partition() => _clientSuccessfulLeases.Should().Be(256);
     }
 
     [TestFixture]

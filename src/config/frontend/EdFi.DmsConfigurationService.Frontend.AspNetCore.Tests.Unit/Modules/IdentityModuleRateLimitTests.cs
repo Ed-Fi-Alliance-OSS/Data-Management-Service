@@ -118,6 +118,100 @@ public class IdentityModuleRateLimitTests
     }
 
     [TestFixture]
+    public class Given_trailing_space_aliases_of_an_exhausted_client
+    {
+        private ITokenManager _tokenManager = null!;
+        private ITokenRevocationManager _revocationManager = null!;
+        private List<int> _statuses = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _tokenManager = SucceedingTokenManager();
+            _revocationManager = CompletingRevocationManager();
+            await using WebApplicationFactory<Program> factory = Create(
+                sourcePermitLimit: 1000,
+                clientPermitLimit: 1,
+                tokenManager: _tokenManager,
+                revocationManager: _revocationManager
+            );
+            using HttpClient client = factory.CreateClient();
+            _statuses = await SendAll(
+                client,
+                [
+                    () => Post("/connect/token", TokenForm("ClientA")),
+                    () => Post("/connect/token", TokenForm("ClientA ")),
+                    () => Post("/connect/token", TokenForm("ClientA  ")),
+                    () => Post("/connect/revoke", RevokeForm("ClientA ")),
+                    () => Post("/connect/revoke", RevokeForm("ClientA  ")),
+                    () => Post("/connect/revoke", RevokeForm("ClientB")),
+                    () => Post("/connect/revoke", RevokeForm("ClientB ")),
+                    () => Post("/connect/token", TokenForm("ClientB  ")),
+                ]
+            );
+        }
+
+        [Test]
+        public void It_rejects_aliases_on_both_routes_and_keeps_other_clients_independent() =>
+            _statuses.Should().Equal(200, 429, 429, 429, 429, 200, 429, 429);
+
+        [Test]
+        public void It_does_not_verify_rejected_token_secrets() => ManagerCalls(_tokenManager, 1);
+
+        [Test]
+        public void It_does_not_verify_or_revoke_rejected_revocation_requests() =>
+            RevocationCalls(_revocationManager, 1);
+    }
+
+    [TestFixture]
+    public class Given_an_admitted_client_id_with_trailing_spaces
+    {
+        private ITokenManager _tokenManager = null!;
+        private ITokenRevocationManager _revocationManager = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _tokenManager = SucceedingTokenManager();
+            _revocationManager = CompletingRevocationManager();
+            await using WebApplicationFactory<Program> factory = Create(
+                sourcePermitLimit: 1000,
+                clientPermitLimit: 2,
+                tokenManager: _tokenManager,
+                revocationManager: _revocationManager
+            );
+            using HttpClient client = factory.CreateClient();
+            using HttpResponseMessage token = await client.SendAsync(
+                Post("/connect/token", TokenForm("ClientA "))
+            );
+            using HttpResponseMessage revoke = await client.SendAsync(
+                Post("/connect/revoke", RevokeForm("ClientA  "))
+            );
+        }
+
+        [Test]
+        public void It_preserves_the_token_authentication_input() =>
+            A.CallTo(() =>
+                    _tokenManager.GetAccessTokenAsync(
+                        A<IEnumerable<KeyValuePair<string, string>>>.That.Matches(parameters =>
+                            parameters.Any(pair => pair.Key == "client_id" && pair.Value == "ClientA ")
+                        )
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_preserves_the_revocation_authentication_input() =>
+            A.CallTo(() =>
+                    _revocationManager.RevokeTokenAsync(
+                        A<TokenRevocationRequest>.That.Matches(request => request.ClientId == "ClientA  "),
+                        A<CancellationToken>._
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+    }
+
+    [TestFixture]
     public class Given_a_client_authenticating_with_a_basic_header
     {
         private List<int> _statuses = null!;

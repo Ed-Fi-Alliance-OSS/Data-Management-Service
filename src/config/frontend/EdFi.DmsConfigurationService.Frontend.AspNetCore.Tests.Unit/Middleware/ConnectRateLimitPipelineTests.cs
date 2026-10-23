@@ -275,7 +275,7 @@ public class ConnectRateLimitPipelineTests
     /// <summary>
     /// Order of operations: the source gate runs before the revoke handler reads the body, so a malformed
     /// body past the limit is answered 429, while the same body within the limit still reaches the
-    /// handler's encoding check (review R08).
+    /// handler's percent-encoding and UTF-8 validation.
     /// </summary>
     [TestFixture]
     public class Given_a_malformed_revocation_body

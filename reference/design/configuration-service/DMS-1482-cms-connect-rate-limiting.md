@@ -1,13 +1,12 @@
 # DMS-1482 — Configuration Service `/connect/*` rate limiting
 
-**Status:** approved 2026-10-22 (design and written spec). Next step: `superpowers:writing-plans`.
+**Status:** approved 2026-10-22; implemented on branch `DMS-1482`.
 **Story:** [DMS-1482](https://edfi.atlassian.net/browse/DMS-1482) (parent DMS-1475), including comment 98735.
 **Baseline:** `DMS-1482` at `6bb7d328a` (equal to `origin/main` on 2026-10-22).
-**Supporting analysis (not requirements):** `.plans/DMS-1482-implementation-pre-spec.md`, `.plans/DMS-1482-implementation-pre-spec.nano.md`, `.plans/DMS-1482-implementation-pre-spec-review.md`. Their aliases (C.Identity, D.Limiter, R08, U1…) are used below without repeating their analysis.
 
 ## 1. Requirements
 
-Original acceptance criteria (Jira, verified 2026-10-22; this closes review blocker B1):
+Original acceptance criteria (Jira, verified 2026-10-22):
 
 | ID | Criterion |
 |---|---|
@@ -25,10 +24,10 @@ Original acceptance criteria (Jira, verified 2026-10-22; this closes review bloc
 | D2 | Two independent budgets, and both must admit a request: **per source address** and **per `client_id` across all sources**. | Stops enumeration (source) and distributed guessing against one client (client). Accepted tradeoff: someone who knows a `client_id` can exhaust that client's window. The window bounds the impact, and real clients cache tokens. |
 | D3 | **Backoff excluded.** The failed-attempt counter with exponential backoff that the story and comment say to "consider" is deferred, as a possible follow-up ticket. | It needs handler-to-limiter outcome feedback and new state, carries its own lockout-DoS tradeoff, and overlaps DMS-1490. |
 | D4 | Enabled by default. Source 120, client 30, per 60-second fixed window. No queueing. Enforcement is per process. | Real per-client traffic is already capped by `BearerTokenPerClientLimit` (15 active tokens per 30-minute token lifetime). The source limit is sized for aggregate DMS-proxy traffic from a single IP. |
-| D5 | Split admission: a source gate in middleware, plus a client gate inside the token and revoke handlers (approach A). | Reuses each route's existing credential parser. Avoids early form reads, so revoke's encoding validation (review R08) is preserved. Stays inside the route exception boundary (R14). |
+| D5 | Split admission: a source gate in middleware, plus a client gate inside the token and revoke handlers. | Reuses each route's existing credential parser. Avoids early form reads, so revoke's percent-encoding and UTF-8 validation is preserved. Client admission remains inside the route exception boundary. |
 | D6 | Native IPv6 sources are keyed on their /64 prefix. | A subscriber normally owns a whole /64, so per-address keys would allow free address rotation. |
 
-Rejected approaches: (B) a single middleware that extracts `client_id` itself. It would pre-read the form, bypassing revoke's `UrlEncodedFormValidatingStream` because `FormFeature` caches the result, and it would duplicate two deliberately different parsers. (C) ASP.NET `AddRateLimiter`/`UseRateLimiter` endpoint policies. These have the same form-read problem, plus the undisposed endpoint-limiter timer documented in D.Limiter.
+Rejected approaches: a single middleware that extracts `client_id` itself would pre-read the form, bypassing revoke's `UrlEncodedFormValidatingStream` because `FormFeature` caches the result, and duplicate two deliberately different parsers. ASP.NET `AddRateLimiter`/`UseRateLimiter` endpoint policies can provide source admission, but cannot replace the client gate without extracting credentials before the handler. Keeping client admission after the existing parsers preserves validation order; the singleton owns and disposes both partitioned limiters.
 
 ## 3. Scope
 
@@ -52,7 +51,7 @@ Rejected approaches: (B) a single middleware that extracts `client_id` itself. I
 | Component | Responsibility |
 |---|---|
 | `Configuration/ConnectRateLimitSettings` + validator | Binds the top-level `ConnectRateLimit` section: `Enabled` (bool, default `true`), `SourcePermitLimit` (120), `ClientPermitLimit` (30), `WindowSeconds` (60). When enabled, every number must be a positive integer. Added to the `ReportInvalidConfiguration` options check in `Program.cs`, beside `IdentitySettings`. |
-| `ConnectRateLimiter` (DI singleton, disposed by the host) | Holds two `PartitionedRateLimiter<string>` instances, each a `FixedWindowRateLimiter` with `QueueLimit = 0` and `AutoReplenishment = true`. `AttemptSource(HttpContext)` and `AttemptClient(string clientId)` return a `RateLimitLease` from the synchronous `AttemptAcquire`. When disabled, both return an acquired lease (`RateLimitPartition.GetNoLimiter` or equivalent). |
+| `ConnectRateLimiter` (DI singleton, disposed by the host) | Holds two `PartitionedRateLimiter<string>` instances, each a `FixedWindowRateLimiter` with `QueueLimit = 0` and `AutoReplenishment = true`. `AttemptSource(HttpContext)` and `AttemptClient(string clientId)` return a `RateLimitLease` from the synchronous `AttemptAcquire`. When disabled, each budget uses one shared `RateLimitPartition.GetNoLimiter` partition, independent of caller-supplied keys. |
 | `ConnectRateLimitMetadata` | Marker added with `.WithMetadata` to all four routes in `IdentityModule.MapEndpoints`. |
 | `Middleware/ConnectSourceRateLimitMiddleware` | Passes the request through unless the matched endpoint carries the marker. Otherwise it calls `AttemptSource` and, if rejected, writes the 429 (§4.4) and stops the pipeline. |
 | `FailureResponse.ForTooManyRequests(correlationId)` (data model) | Ed-Fi 429 body (§4.4). |
@@ -102,6 +101,7 @@ Route-context suffixes, path base and path case are handled by endpoint routing,
   - A null address goes to one shared `"unknown"` partition, never exempt.
 - **Client:** the `client_id` produced by the route's existing parser.
   - Compared with `StringComparer.OrdinalIgnoreCase`, so MSSQL's case-insensitive lookup can't be used to get fresh budgets with case variants (see `reference/adr-client-id-casing.md`). This matches `RegisterClient.IsUnique`.
+  - Trailing ASCII spaces are removed before truncation, because SQL Server equality ignores them. This conservatively merges limiter keys across providers; the original credential is still passed unchanged to authentication.
   - Values longer than 256 characters are truncated for keying only. That only ever merges keys, which is the safe direction.
   - The source budget limits how many new client partitions one source can create per window, and the framework removes idle partitions.
 - No database lookup or credential verification is used to build any key.
@@ -126,7 +126,7 @@ Route-context suffixes, path base and path case are handled by endpoint routing,
 
 - **`appsettings.json`:** adds the `ConnectRateLimit` section with the D4 defaults.
 - **Compose:** `eng/docker-compose/local-config.yml` and `published-config.yml` map `CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_{ENABLED,SOURCE_PERMIT_LIMIT,CLIENT_PERMIT_LIMIT,WINDOW_SECONDS}` with the same defaults. `.env.example` documents them.
-- **CI environment files:** the environment files that the E2E and smoke workflows actually load get generous permit limits, so the limiter stays enabled but never binds test traffic. The plan identifies the exact files from workflow and script usage.
+- **CI environment files:** E2E profiles and the local `.env.smoke` / `.env.smoke.ds61` profiles use generous permit limits with limiting enabled. The scheduled smoke workflow additionally disables limiting for its stack startup because the pinned smoke utility requests a token per resource GET. Focused HTTP tests exercise enforcement with small limits.
 - **`docs/CONFIGURATION.md`:** a new `ConnectRateLimit` section covering defaults, the units, per-process and per-replica scope, NAT and DMS-proxy sharing of one source budget, IPv6 /64, `Enabled=false`, and the two response formats.
 - **Other notes:** a short note in `reference/design/configuration-service/CS-AUTH.md`, and a changelog entry in the current unreleased changelog file.
 
@@ -149,7 +149,7 @@ Tests follow NUnit, FluentAssertions and FakeItEasy, with `Given_` fixtures that
 
 | AC | Design | Verification (each must fail if the feature is reverted) |
 |---|---|---|
-| REQ-1 | §4.2 source and client gates; §4.3 keys; D2, D6 | Source: N admitted and N+1 → 429 when only `client_id` varies, and when Host, `Tenant` header, route-context suffix or path case vary. A different remote IP (via `ForwardedHeadersTests.RemoteIpStartupFilter`) is still admitted. Untrusted `X-Forwarded-For` doesn't change the bucket; a trusted proxy's does. IPv6 addresses in one /64 share a budget. Client: client A exhausted while client B from the same IP is admitted; case variants of A share a budget. All four routes are source-limited. `/v3/*` and look-alike paths (for example `/connectx/token`) are never limited. |
+| REQ-1 | §4.2 source and client gates; §4.3 keys; D2, D6 | Source: N admitted and N+1 → 429 when only `client_id` varies, and when Host, `Tenant` header, route-context suffix or path case vary. A different remote IP (via `RemoteIpStartupFilter`) is still admitted. Untrusted `X-Forwarded-For` doesn't change the bucket; a trusted proxy's does. IPv6 addresses in one /64 share a budget. Client: client A exhausted while client B from the same IP is admitted; case and trailing-space variants of A share a budget across token and revoke. All four routes are source-limited. `/v3/*` and look-alike paths (for example `/connectx/token`) are never limited. |
 | REQ-2 | §4.4 | Exact Ed-Fi body, media type and status/body agreement on token, register and introspect, for both source and client rejection. Exact OAuth body on revoke. `Retry-After` present and rounded up. Security headers present. `FailureResponse.ForTooManyRequests` unit test. Existing too-many-tokens fixtures unchanged. |
 | REQ-3 | §4.2 gate positions | With a fake `ITokenManager` and `ITokenRevocationManager`: an admitted known client reaches the manager (control); a client-rejected request makes zero manager calls. A source-rejected revoke with a malformed body gets 429 (the body was not read), while an admitted malformed `%GG` revoke still gets 400 with limiting enabled. |
 | REQ-4 | §4.1 settings; §4.5 | Shipped `appsettings.json` values (enabled, 120/30/60) read as in `ClientSecretHashingIterationsSettingsTests`. Environment and in-memory overrides take effect. Invalid values (zero, negative) are reported at startup (pattern: `JobOptionsStartupTests`). `Enabled=false` means no 429 past the limits. Documentation updated. |

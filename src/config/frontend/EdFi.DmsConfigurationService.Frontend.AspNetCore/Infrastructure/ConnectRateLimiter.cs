@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
 /// <summary>
-/// The two independent <c>/connect/*</c> budgets (DMS-1482 D2): one per source address and one per
+/// The two independent <c>/connect/*</c> budgets: one per source address and one per
 /// <c>client_id</c> across all sources. A request must be admitted by every budget that applies to it.
 /// Each budget is a fixed window with no queue, so a rejection is immediate; enforcement is per process.
 /// Keys come from the transport address and the parsed <c>client_id</c> only, never from a lookup, so a
@@ -58,7 +58,7 @@ public sealed class ConnectRateLimiter : IDisposable
     /// <summary>
     /// The address after <c>UseForwardedHeaders</c>, so only a trusted proxy can change it. A native IPv6
     /// address is keyed on its /64, because a subscriber normally holds a whole /64 and could otherwise
-    /// rotate addresses for fresh budgets (D6).
+    /// rotate addresses for fresh budgets.
     /// </summary>
     internal static string SourcePartitionKey(IPAddress? address)
     {
@@ -82,10 +82,15 @@ public sealed class ConnectRateLimiter : IDisposable
         return address.ToString();
     }
 
-    internal static string ClientPartitionKey(string clientId) =>
-        clientId.Length > MaxClientKeyLength ? clientId[..MaxClientKeyLength] : clientId;
+    internal static string ClientPartitionKey(string clientId)
+    {
+        // SQL Server equality ignores trailing ASCII spaces. Merge these aliases before truncating,
+        // without changing the credential passed to either identity provider for authentication.
+        string key = clientId.TrimEnd(' ');
+        return key.Length > MaxClientKeyLength ? key[..MaxClientKeyLength] : key;
+    }
 
-    private static PartitionedRateLimiter<string> CreateLimiter(
+    internal static PartitionedRateLimiter<string> CreateLimiter(
         ConnectRateLimitSettings settings,
         int permitLimit,
         IEqualityComparer<string> comparer
@@ -103,7 +108,9 @@ public sealed class ConnectRateLimiter : IDisposable
                             AutoReplenishment = true,
                         }
                     )
-                    : RateLimitPartition.GetNoLimiter(key),
+                    // No-op partitions never expire. Reuse one key so disabled mode does not retain
+                    // state proportional to the number of source addresses or client ids seen.
+                    : RateLimitPartition.GetNoLimiter(string.Empty),
             comparer
         );
 }

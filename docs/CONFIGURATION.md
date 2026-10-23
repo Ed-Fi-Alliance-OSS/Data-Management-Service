@@ -802,8 +802,10 @@ budgets apply, and a request must fit both:
   IPv6 address counts against its /64. Requests whose address is unknown share one budget.
 - **Per `client_id`**, across all sources, for `/connect/token` and `/connect/revoke` only, spent just
   before the client secret is verified. A request rejected earlier (malformed form, unsupported grant
-  type, missing token) does not spend it. The comparison ignores case. The budget is spent whether or
-  not the client exists, so a `429` reveals nothing about which clients exist.
+  type, missing token) does not spend it. For counting only, the comparison ignores case and trailing
+  ASCII spaces, matching SQL Server lookup aliases. Authentication receives the original client ID.
+  The budget is spent whether or not the client exists, so a `429` reveals nothing about which clients
+  exist.
 
 | Parameter | Default | Description |
 | --- | --- | --- |
@@ -835,8 +837,10 @@ Sizing notes:
   the Ed-Fi API's network through the existing
   [reverse proxy settings](#reverse-proxy-and-forwarded-headers), would remove the shared bucket
   but is not implemented.
-- Client keys are truncated to 256 characters for counting. Partitions are held in memory per
-  process, and memory is bounded by the per-source budget.
+- Client keys are truncated to 256 characters for counting, after removing trailing ASCII spaces.
+  Partitions are held in memory per process. The source budget limits new client keys from each source
+  per window; it does not impose a global memory cap across sources. Idle enabled partitions are
+  removed by the framework. Disabled limiting uses one shared partition per budget.
 - The Ed-Fi API's own Configuration Service client caches its token, so it stays far below the client
   limit. If it is ever refused, that request fails rather than retrying.
 - The defaults come from expected traffic shape, not measured load. Real clients are already capped at
