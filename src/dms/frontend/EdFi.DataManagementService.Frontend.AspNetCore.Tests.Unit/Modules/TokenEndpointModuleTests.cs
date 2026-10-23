@@ -1800,7 +1800,7 @@ public class TokenEndpointModuleTests
         }
 
         [Test]
-        public void It_says_the_grant_type_is_unsupported()
+        public void It_says_the_grant_type_is_missing()
         {
             _body["error_description"]!
                 .GetValue<string>()

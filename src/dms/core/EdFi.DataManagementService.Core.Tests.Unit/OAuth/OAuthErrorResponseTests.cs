@@ -80,9 +80,12 @@ public class Given_An_OAuth_Error_Response(HttpStatusCode statusCode)
             .Be(Uri.EscapeDataString(TraceIdValue));
 
     [Test]
-    public void It_challenges_only_for_401() =>
+    public void It_challenges_only_for_401()
+    {
+        string[] expectedChallenges = statusCode is HttpStatusCode.Unauthorized ? [ExpectedChallenge] : [];
         _response
             .Headers.WwwAuthenticate.Select(challenge => challenge.ToString())
             .Should()
-            .Equal(statusCode is HttpStatusCode.Unauthorized ? [ExpectedChallenge] : []);
+            .Equal(expectedChallenges);
+    }
 }

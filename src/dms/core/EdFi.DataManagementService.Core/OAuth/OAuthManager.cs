@@ -479,7 +479,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             bool callerUsedAuthorization
         )
         {
-            string body = await response.Content.ReadAsStringAsync();
+            string body = await ReadStatusClassifiedBody(response.Content);
             if (
                 JsonObjectOrNull(body) is not JsonObject obj
                 || GetStringOrNull(obj["error"]) is not string error
@@ -599,7 +599,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             catch (InvalidOperationException ex) when (ex.InnerException is ArgumentException)
             {
                 // HttpContent wraps an unsupported charset this way. Treat the received body
-                // as unusable so the 401/429 branch still emits its safe fallback and summary.
+                // as unusable so the provider-error branch emits its safe fallback and diagnostics.
                 return string.Empty;
             }
             catch (NotSupportedException)
@@ -745,10 +745,9 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             {
                 if (_standardOAuthErrorFields.Contains(member.Key))
                 {
-                    // No branch of StandardFieldValueForLogging throws - this must not become a
-                    // second way out of this method, the first (JsonNode.Parse and AsObject on a
-                    // non-object body) being tracked as DMS-1549 - and none can disturb the
-                    // message template, because the result is bound as a parameter.
+                    // Keep summary extraction guarded like body parsing so malformed fields cannot
+                    // turn a classified provider response into a transport failure. Bind the result
+                    // as a parameter so it cannot disturb the message template.
                     standard.Add($"{member.Key}={StandardFieldValueForLogging(member.Key, member.Value)}");
                     continue;
                 }
