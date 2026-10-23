@@ -54,11 +54,9 @@ Relational tables store document references as `bigint DocumentId` FKs and descr
 
 The resolver consumes Core-extracted `DocumentIdentity` values and probes the compiled natural-key
 targets described in
-[natural-key-resolution.md](natural-key-resolution.md#the-natural-key-reference-resolver). It does
-not read `dms.ReferentialIdentity`. Resource POST upsert existence detection uses the generated
-own-natural-key capture instead of RI, and descriptor writes detect their target through the
-lowered-URI descriptor probe. No runtime path reads RI. Descriptor writes no longer write RI rows;
-resource RI rows stay trigger-maintained until RI removal (DMS-1456).
+[natural-key-resolution.md](natural-key-resolution.md#the-natural-key-reference-resolver).
+Resource POST upsert existence detection uses the generated own-natural-key capture, and
+descriptor writes detect their target through the lowered-URI descriptor probe.
 
 It is used for:
 - resolving extracted `DocumentReference` / `DescriptorReference` instances during writes, and

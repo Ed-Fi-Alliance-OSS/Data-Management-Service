@@ -6,8 +6,8 @@ Draft. This is an initial design proposal for replacing the current three-table 
 
 The DMS-1404 storage baseline uses compact descriptor keys. Reference resolution, resource
 POST matching and descriptor writes use the natural-key and lowered-URI probes linked below, and
-Core computes no referential ids. `dms.ReferentialIdentity` is still provisioned and
-trigger-maintained for resources until its removal, but no runtime path reads it.
+Core computes no referential ids, and DMS no longer provisions `dms.ReferentialIdentity` or its
+maintenance triggers.
 
 ## Table of Contents
 

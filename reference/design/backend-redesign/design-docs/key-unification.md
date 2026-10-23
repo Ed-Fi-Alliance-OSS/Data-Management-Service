@@ -1173,7 +1173,7 @@ Implications when descriptor identity parts participate in key unification:
   Descriptor writes keep the stored identity components (a probe-matched POST or identity-equal PUT
   never changes them). Unification prevents drift between duplicated bindings without changing either
   operation's behavior.
-- Hydration and RI maintenance join the canonical/alias compact value to `dms.Descriptor.DescriptorId`
+- Hydration joins the canonical/alias compact value to `dms.Descriptor.DescriptorId`
   and reconstruct the whole original-case URI before each consumer's existing transformation.
   History snapshots keep namespace/code values; authorization-view membership bridges to the descriptor's
   owning `DocumentId`. Document metadata, locks, version checks and cache work remain document-keyed;
