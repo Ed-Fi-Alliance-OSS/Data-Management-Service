@@ -49,18 +49,38 @@ public class OpenIddictTokenManagerTests
 
         // The real provider over the faked repository, so key reads go through the same snapshot, source and parser
         // as in production. Created per test: NUnit reuses fixture instances.
-        _signingKeyProvider = new SigningKeySnapshotProvider(
-            new DatabaseSigningKeySource(_tokenRepository, NullLogger<DatabaseSigningKeySource>.Instance),
-            Options.Create(new IdentityOptions()),
-            TimeProvider.System,
-            NullLogger<SigningKeySnapshotProvider>.Instance
-        );
+        _signingKeyProvider = NewSigningKeyProvider();
         _developmentCertificateStore = new DevelopmentCertificateStore(
             Options.Create(new IdentityOptions()),
             NullLogger<DevelopmentCertificateStore>.Instance
         );
 
         _tokenManager = NewTokenManager(new IdentityOptions());
+    }
+
+    private SigningKeySnapshotProvider NewSigningKeyProvider() =>
+        new(
+            new DatabaseSigningKeySource(_tokenRepository, NullLogger<DatabaseSigningKeySource>.Instance),
+            Options.Create(new IdentityOptions()),
+            TimeProvider.System,
+            NullLogger<SigningKeySnapshotProvider>.Instance
+        );
+
+    /// <summary>
+    /// Replaces the faked repository with one that also implements
+    /// <see cref="IClientCredentialReader"/>, reporting <paramref name="canReadClientCredentials"/>,
+    /// and rebuilds the key provider over it. Call before arranging anything on the repository.
+    /// </summary>
+    private IClientCredentialReader UseCredentialReadingRepository(bool canReadClientCredentials = true)
+    {
+        _signingKeyProvider.Dispose();
+        _tokenRepository = A.Fake<IOpenIddictTokenRepository>(options =>
+            options.Implements<IClientCredentialReader>()
+        );
+        var credentialReader = (IClientCredentialReader)_tokenRepository;
+        A.CallTo(() => credentialReader.CanReadClientCredentials).Returns(canReadClientCredentials);
+        _signingKeyProvider = NewSigningKeyProvider();
+        return credentialReader;
     }
 
     [TearDown]
@@ -4828,5 +4848,672 @@ public class OpenIddictTokenManagerTests
         [Test]
         public void It_validates_every_issued_token() =>
             _validated.Should().HaveCount(Callers).And.OnlyContain(valid => valid);
+    }
+
+    // The fixtures below cover the two ways a client authenticates. A repository that offers
+    // IClientCredentialReader is read for the credential alone, and the token endpoint loads the
+    // full application only after the secret is verified and the client is approved. Any other
+    // repository is read once, for the full application, which the token endpoint issues from.
+
+    private const string CredentialClientId = "credential-client";
+    private const string StoredCredentialClientId = "Credential-Client";
+    private const string StoredCredentialHash = "stored-hash";
+
+    private static readonly TokenResult.FailureAuthentication _invalidClient = new(
+        "invalid_client",
+        "Invalid client or Invalid client credentials"
+    );
+
+    private static List<KeyValuePair<string, string>> CredentialGrant() =>
+        [new("client_id", CredentialClientId), new("client_secret", CallerSecret)];
+
+    /// <summary>
+    /// The full application stored for the credential client. Everything authentication does not
+    /// read differs from the credential, so a test can tell which record a token was issued from.
+    /// </summary>
+    private static ApplicationInfo CredentialApplication(Guid applicationId, string storedClientId) =>
+        new()
+        {
+            Id = applicationId,
+            ClientId = storedClientId,
+            ClientSecret = StoredCredentialHash,
+            DisplayName = "Credential Client",
+            IsApproved = true,
+            Permissions = ["edfi_admin_api/full_access"],
+            Scopes = ["edfi_admin_api/full_access"],
+            DataStoreIds = [7, 3],
+            ProtocolMappers = "[]",
+        };
+
+    /// <summary>
+    /// Arranges, on a credential-reading repository, an approved client whose presented secret
+    /// matches, and the full application stored for it. Returns the reader and the application.
+    /// </summary>
+    private (IClientCredentialReader Reader, ApplicationInfo Application) ArrangeCredentialClient(
+        string storedClientId = StoredCredentialClientId
+    )
+    {
+        IClientCredentialReader reader = UseCredentialReadingRepository();
+        Guid applicationId = Guid.NewGuid();
+        A.CallTo(() => reader.GetClientCredentialAsync(CredentialClientId))
+            .Returns(
+                new ClientCredential(applicationId, storedClientId, StoredCredentialHash, IsApproved: true)
+            );
+
+        ApplicationInfo application = CredentialApplication(applicationId, storedClientId);
+        A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(CredentialClientId))
+            .Returns(application);
+        A.CallTo(() => _secretHasher.VerifySecretAsync(CallerSecret, StoredCredentialHash)).Returns(true);
+        A.CallTo(() => _tokenRepository.GetClientRolesAsync(applicationId)).Returns(["cms-client"]);
+        return (reader, application);
+    }
+
+    private static JwtSecurityToken MintedToken(TokenResult result)
+    {
+        string json = result.Should().BeOfType<TokenResult.Success>().Subject.Token;
+        string accessToken = System
+            .Text.Json.JsonDocument.Parse(json)
+            .RootElement.GetProperty("access_token")
+            .GetString()!;
+        return new JwtSecurityTokenHandler().ReadJwtToken(accessToken);
+    }
+
+    private static string? ClaimOf(JwtSecurityToken token, string type) =>
+        token.Claims.FirstOrDefault(claim => claim.Type == type)?.Value;
+
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_OnTheCredentialPath_ForAnApprovedClient
+        : OpenIddictTokenManagerTests
+    {
+        private IClientCredentialReader _reader = null!;
+        private ApplicationInfo _application = null!;
+        private StoredTokenCall _call = null!;
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            (_reader, _application) = ArrangeCredentialClient();
+            StubActiveKeyPair();
+            ArrangeStoreOutcome(TokenStoreOutcome.Stored, call => _call = call);
+
+            _result = await CreateMintingTokenManager().GetAccessTokenAsync(CredentialGrant());
+        }
+
+        [Test]
+        public void It_returns_a_success_result() => _result.Should().BeOfType<TokenResult.Success>();
+
+        [Test]
+        public void It_reads_the_credential_verifies_it_and_only_then_loads_the_application() =>
+            A.CallTo(() => _reader.GetClientCredentialAsync(CredentialClientId))
+                .MustHaveHappenedOnceExactly()
+                .Then(
+                    A.CallTo(() => _secretHasher.VerifySecretAsync(CallerSecret, StoredCredentialHash))
+                        .MustHaveHappenedOnceExactly()
+                )
+                .Then(
+                    A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(CredentialClientId))
+                        .MustHaveHappenedOnceExactly()
+                )
+                .Then(
+                    A.CallTo(() => _tokenRepository.GetClientRolesAsync(_application.Id))
+                        .MustHaveHappenedOnceExactly()
+                )
+                .Then(
+                    A.CallTo(() =>
+                            _tokenRepository.StoreTokenAsync(
+                                A<Guid>._,
+                                _application.Id,
+                                A<string>._,
+                                A<DateTimeOffset>._,
+                                A<int>._
+                            )
+                        )
+                        .MustHaveHappenedOnceExactly()
+                );
+
+        [Test]
+        public void It_mints_the_stored_spelling_of_the_client_id() =>
+            ClaimOf(MintedToken(_result), "client_id").Should().Be(StoredCredentialClientId);
+
+        [Test]
+        public void It_stores_the_token_under_the_stored_spelling() =>
+            _call.Subject.Should().Be(StoredCredentialClientId);
+
+        [Test]
+        public void It_mints_the_data_stores_of_the_full_application() =>
+            ClaimOf(MintedToken(_result), "dataStoreIds").Should().Be("3,7");
+
+        [Test]
+        public void It_mints_the_display_name_of_the_full_application() =>
+            ClaimOf(MintedToken(_result), "client_name").Should().Be("Credential Client");
+    }
+
+    // Absent, wrong secret and unapproved must be answered identically, and none of them may reach
+    // the full application, the roles or the token store: that is the work the credential path
+    // keeps off failed authentication.
+    [TestFixture("absent")]
+    [TestFixture("wrong_secret")]
+    [TestFixture("unapproved")]
+    public class Given_GetAccessTokenAsync_OnTheCredentialPath_WhenAuthenticationFails(string failure)
+        : OpenIddictTokenManagerTests
+    {
+        private IClientCredentialReader _reader = null!;
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _reader = UseCredentialReadingRepository();
+            Guid applicationId = Guid.NewGuid();
+            ClientCredential? credential = failure switch
+            {
+                "absent" => null,
+                "unapproved" => new(
+                    applicationId,
+                    CredentialClientId,
+                    StoredCredentialHash,
+                    IsApproved: false
+                ),
+                _ => new(applicationId, CredentialClientId, StoredCredentialHash, IsApproved: true),
+            };
+            A.CallTo(() => _reader.GetClientCredentialAsync(CredentialClientId)).Returns(credential);
+            A.CallTo(() => _secretHasher.VerifySecretAsync(CallerSecret, StoredCredentialHash))
+                .Returns(failure != "wrong_secret");
+
+            _result = await CreateConfiguredTokenManager().GetAccessTokenAsync(CredentialGrant());
+        }
+
+        [Test]
+        public void It_returns_an_invalid_client_authentication_failure() =>
+            _result.Should().BeEquivalentTo(_invalidClient);
+
+        [Test]
+        public void It_reads_the_credential_once() =>
+            A.CallTo(() => _reader.GetClientCredentialAsync(CredentialClientId))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_verifies_one_secret() =>
+            A.CallTo(() => _secretHasher.VerifySecretAsync(CallerSecret, A<string>._))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_does_not_load_the_full_application() =>
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(A<string>._)).MustNotHaveHappened();
+
+        [Test]
+        public void It_does_not_read_roles() =>
+            A.CallTo(() => _tokenRepository.GetClientRolesAsync(A<Guid>._)).MustNotHaveHappened();
+
+        [Test]
+        public void It_does_not_store_a_token() =>
+            A.CallTo(() =>
+                    _tokenRepository.StoreTokenAsync(
+                        A<Guid>._,
+                        A<Guid>._,
+                        A<string>._,
+                        A<DateTimeOffset>._,
+                        A<int>._
+                    )
+                )
+                .MustNotHaveHappened();
+    }
+
+    // Between reading the credential and loading the application, the application can be deleted,
+    // replaced under the same client id, denied, or given a new secret. Each is answered as an
+    // unknown client, before any token is minted or stored.
+    [TestFixture("gone")]
+    [TestFixture("replaced")]
+    [TestFixture("denied")]
+    [TestFixture("rotated")]
+    public class Given_GetAccessTokenAsync_OnTheCredentialPath_WhenTheApplicationChangedAfterAuthentication(
+        string change
+    ) : OpenIddictTokenManagerTests
+    {
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            (_, ApplicationInfo application) = ArrangeCredentialClient();
+            StubActiveKeyPair();
+            ApplicationInfo? reloaded = change switch
+            {
+                "gone" => null,
+                "replaced" => CredentialApplication(Guid.NewGuid(), StoredCredentialClientId),
+                "denied" => Denied(CredentialApplication(application.Id, StoredCredentialClientId)),
+                _ => WithRotatedSecret(CredentialApplication(application.Id, StoredCredentialClientId)),
+            };
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(CredentialClientId))
+                .Returns(reloaded);
+
+            _result = await CreateMintingTokenManager().GetAccessTokenAsync(CredentialGrant());
+        }
+
+        private static ApplicationInfo Denied(ApplicationInfo application)
+        {
+            application.IsApproved = false;
+            return application;
+        }
+
+        private static ApplicationInfo WithRotatedSecret(ApplicationInfo application)
+        {
+            application.ClientSecret = "rotated-hash";
+            return application;
+        }
+
+        [Test]
+        public void It_returns_an_invalid_client_authentication_failure() =>
+            _result.Should().BeEquivalentTo(_invalidClient);
+
+        [Test]
+        public void It_does_not_read_roles() =>
+            A.CallTo(() => _tokenRepository.GetClientRolesAsync(A<Guid>._)).MustNotHaveHappened();
+
+        [Test]
+        public void It_does_not_store_a_token() =>
+            A.CallTo(() =>
+                    _tokenRepository.StoreTokenAsync(
+                        A<Guid>._,
+                        A<Guid>._,
+                        A<string>._,
+                        A<DateTimeOffset>._,
+                        A<int>._
+                    )
+                )
+                .MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_OnTheCredentialPath_WhenLoadingTheApplicationFails
+        : OpenIddictTokenManagerTests
+    {
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeCredentialClient();
+            StubActiveKeyPair();
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(CredentialClientId))
+                .Throws(new InvalidOperationException("The application store could not be read."));
+
+            _result = await CreateMintingTokenManager().GetAccessTokenAsync(CredentialGrant());
+        }
+
+        [Test]
+        public void It_reports_the_failure_as_a_lookup_failure_is_reported() =>
+            _result
+                .Should()
+                .BeEquivalentTo(new TokenResult.FailureUnknown("The application store could not be read."));
+
+        [Test]
+        public void It_does_not_store_a_token() =>
+            A.CallTo(() =>
+                    _tokenRepository.StoreTokenAsync(
+                        A<Guid>._,
+                        A<Guid>._,
+                        A<string>._,
+                        A<DateTimeOffset>._,
+                        A<int>._
+                    )
+                )
+                .MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_OnTheCredentialPath_WhenTheStoredClientIdIsEmpty
+        : OpenIddictTokenManagerTests
+    {
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeCredentialClient(storedClientId: string.Empty);
+            StubActiveKeyPair();
+
+            _result = await CreateMintingTokenManager().GetAccessTokenAsync(CredentialGrant());
+        }
+
+        [Test]
+        public void It_mints_the_requested_client_id() =>
+            ClaimOf(MintedToken(_result), "client_id").Should().Be(CredentialClientId);
+    }
+
+    /// <summary>
+    /// Arranges a signed token for <paramref name="tokenClientId"/>, verifiable by the manager, and
+    /// returns it with its jti.
+    /// </summary>
+    private (string Token, Guid Jti) ArrangeRevocableToken(string tokenClientId)
+    {
+        var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+        StubActivePublicKey(keyId, publicKeySpki);
+        Guid jti = Guid.NewGuid();
+        string token = CreateSignedToken(
+            signingKey,
+            [new Claim(JwtRegisteredClaimNames.Jti, jti.ToString()), new Claim("client_id", tokenClientId)]
+        );
+        return (token, jti);
+    }
+
+    // Revocation reads only the application id and the client id, so the credential is all it
+    // loads. Ownership is decided on the stored spelling, as the token endpoint mints it.
+    [TestFixture]
+    public class Given_RevokeTokenAsync_OnTheCredentialPath_ForTheCallersOwnToken
+        : OpenIddictTokenManagerTests
+    {
+        private Guid _applicationId;
+        private Guid _jti;
+        private TokenRevocationResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            (_, ApplicationInfo application) = ArrangeCredentialClient();
+            _applicationId = application.Id;
+            (string token, Guid jti) = ArrangeRevocableToken(StoredCredentialClientId);
+            _jti = jti;
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(jti, _applicationId)).Returns(true);
+
+            _result = await CreateConfiguredTokenManager()
+                .RevokeTokenAsync(RevocationRequestFor(CredentialClientId, token), CancellationToken.None);
+        }
+
+        [Test]
+        public void It_reports_completed() => _result.Should().BeOfType<TokenRevocationResult.Completed>();
+
+        [Test]
+        public void It_revokes_the_token_of_the_authenticated_application() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, _applicationId))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_does_not_load_the_full_application() =>
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(A<string>._)).MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_RevokeTokenAsync_OnTheCredentialPath_WhenTheStoredClientIdIsEmpty
+        : OpenIddictTokenManagerTests
+    {
+        private Guid _applicationId;
+        private Guid _jti;
+        private TokenRevocationResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            (_, ApplicationInfo application) = ArrangeCredentialClient(storedClientId: string.Empty);
+            _applicationId = application.Id;
+            (string token, Guid jti) = ArrangeRevocableToken(CredentialClientId);
+            _jti = jti;
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(jti, _applicationId)).Returns(true);
+
+            _result = await CreateConfiguredTokenManager()
+                .RevokeTokenAsync(RevocationRequestFor(CredentialClientId, token), CancellationToken.None);
+        }
+
+        [Test]
+        public void It_reports_completed() => _result.Should().BeOfType<TokenRevocationResult.Completed>();
+
+        [Test]
+        public void It_falls_back_to_the_requested_client_id_for_ownership() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, _applicationId))
+                .MustHaveHappenedOnceExactly();
+    }
+
+    [TestFixture]
+    public class Given_RevokeTokenAsync_OnTheCredentialPath_WithAWrongSecret : OpenIddictTokenManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeCredentialClient();
+            A.CallTo(() => _secretHasher.VerifySecretAsync(CallerSecret, StoredCredentialHash))
+                .Returns(false);
+            (string token, _) = ArrangeRevocableToken(StoredCredentialClientId);
+
+            _result = await CreateConfiguredTokenManager()
+                .RevokeTokenAsync(RevocationRequestFor(CredentialClientId, token), CancellationToken.None);
+        }
+
+        [Test]
+        public void It_reports_an_invalid_client() =>
+            _result.Should().BeOfType<TokenRevocationResult.InvalidClient>();
+
+        [Test]
+        public void It_does_not_touch_the_token_store() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
+
+        [Test]
+        public void It_does_not_load_the_full_application() =>
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(A<string>._)).MustNotHaveHappened();
+    }
+
+    // A credential that cannot be read, or a secret that cannot be checked, is an outage at the
+    // client-authentication boundary, never a wrong-credentials answer.
+    [TestFixture("credential-read")]
+    [TestFixture("verification")]
+    public class Given_RevokeTokenAsync_OnTheCredentialPath_WhenAuthenticationCannotComplete(string fault)
+        : OpenIddictTokenManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _secretHasher = A.Fake<IClientSecretHasher>(options =>
+                options.Implements<IFailurePreservingSecretVerifier>()
+            );
+            (IClientCredentialReader reader, _) = ArrangeCredentialClient();
+            var verifier = (IFailurePreservingSecretVerifier)_secretHasher;
+            if (fault == "credential-read")
+            {
+                A.CallTo(() => reader.GetClientCredentialAsync(CredentialClientId))
+                    .Throws(new InvalidOperationException("The credential could not be read."));
+            }
+            else
+            {
+                A.CallTo(() =>
+                        verifier.VerifySecretPreservingFailuresAsync(CallerSecret, StoredCredentialHash)
+                    )
+                    .Throws(new InvalidOperationException("The secret could not be verified."));
+            }
+
+            (string token, _) = ArrangeRevocableToken(StoredCredentialClientId);
+
+            _result = await CreateConfiguredTokenManager()
+                .RevokeTokenAsync(RevocationRequestFor(CredentialClientId, token), CancellationToken.None);
+        }
+
+        [Test]
+        public void It_reports_the_client_authentication_boundary_unavailable() =>
+            _result
+                .Should()
+                .BeOfType<TokenRevocationResult.TemporarilyUnavailable>()
+                .Which.Reason.Should()
+                .Be("client-authentication");
+
+        [Test]
+        public void It_does_not_touch_the_token_store() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_RevokeTokenAsync_OnTheCredentialPath_WhenTheCallerCancels : OpenIddictTokenManagerTests
+    {
+        private Func<Task> _act = null!;
+
+        [SetUp]
+        public void Arrange()
+        {
+            using var cancellation = new CancellationTokenSource();
+            cancellation.Cancel();
+            CancellationToken token = cancellation.Token;
+            IClientCredentialReader reader = UseCredentialReadingRepository();
+            A.CallTo(() => reader.GetClientCredentialAsync(CredentialClientId))
+                .Throws(new OperationCanceledException(token));
+
+            _act = () =>
+                CreateConfiguredTokenManager()
+                    .RevokeTokenAsync(RevocationRequestFor(CredentialClientId, "any-token"), token);
+        }
+
+        [Test]
+        public async Task It_propagates_the_cancellation() =>
+            await _act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    // A repository without the capability, or one that reports it cannot read credentials, is read
+    // exactly once, for the full application, whatever the outcome; the token is issued from that
+    // one record.
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_OnTheLegacyPath_ForAnApprovedClient : OpenIddictTokenManagerTests
+    {
+        private Guid _applicationId;
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _applicationId = ArrangeGrantableClient();
+            ArrangeStoreOutcome(TokenStoreOutcome.Stored, _ => { });
+
+            _result = await CreateTokenManagerWithTokenLimit(3).GetAccessTokenAsync(GrantCredentials());
+        }
+
+        [Test]
+        public void It_returns_a_success_result() => _result.Should().BeOfType<TokenResult.Success>();
+
+        [Test]
+        public void It_loads_the_application_once_before_the_roles_and_the_store() =>
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(GrantClientId))
+                .MustHaveHappenedOnceExactly()
+                .Then(
+                    A.CallTo(() => _tokenRepository.GetClientRolesAsync(_applicationId))
+                        .MustHaveHappenedOnceExactly()
+                )
+                .Then(
+                    A.CallTo(() =>
+                            _tokenRepository.StoreTokenAsync(
+                                A<Guid>._,
+                                _applicationId,
+                                A<string>._,
+                                A<DateTimeOffset>._,
+                                A<int>._
+                            )
+                        )
+                        .MustHaveHappenedOnceExactly()
+                );
+    }
+
+    [TestFixture]
+    public class Given_RevokeTokenAsync_OnTheLegacyPath_ForTheCallersOwnToken : OpenIddictTokenManagerTests
+    {
+        private readonly Guid _applicationId = Guid.NewGuid();
+        private Guid _jti;
+        private TokenRevocationResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(OwnerClientId))
+                .Returns(
+                    new ApplicationInfo
+                    {
+                        Id = _applicationId,
+                        ClientId = OwnerClientId,
+                        ClientSecret = "hashed-secret",
+                        IsApproved = true,
+                    }
+                );
+            A.CallTo(() => _secretHasher.VerifySecretAsync(CallerSecret, "hashed-secret")).Returns(true);
+            (string token, Guid jti) = ArrangeRevocableToken(OwnerClientId);
+            _jti = jti;
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(jti, _applicationId)).Returns(true);
+
+            _result = await CreateConfiguredTokenManager()
+                .RevokeTokenAsync(RevocationRequestFor(OwnerClientId, token), CancellationToken.None);
+        }
+
+        [Test]
+        public void It_reports_completed() => _result.Should().BeOfType<TokenRevocationResult.Completed>();
+
+        [Test]
+        public void It_loads_the_application_once() =>
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(OwnerClientId))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_revokes_the_token_of_the_authenticated_application() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, _applicationId))
+                .MustHaveHappenedOnceExactly();
+    }
+
+    [TestFixture("approved")]
+    [TestFixture("absent")]
+    [TestFixture("wrong_secret")]
+    [TestFixture("unapproved")]
+    public class Given_GetAccessTokenAsync_WhenTheRepositoryCannotReadCredentials(string outcome)
+        : OpenIddictTokenManagerTests
+    {
+        private IClientCredentialReader _reader = null!;
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _reader = UseCredentialReadingRepository(canReadClientCredentials: false);
+            if (outcome == "absent")
+            {
+                A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(GrantClientId))
+                    .Returns((ApplicationInfo?)null);
+            }
+            else
+            {
+                Guid applicationId = ArrangeGrantableClient();
+                A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(GrantClientId))
+                    .Returns(
+                        new ApplicationInfo
+                        {
+                            Id = applicationId,
+                            ClientId = GrantClientId,
+                            ClientSecret = "hashed-secret",
+                            IsApproved = outcome != "unapproved",
+                            ProtocolMappers = "[]",
+                        }
+                    );
+                A.CallTo(() => _secretHasher.VerifySecretAsync(GrantClientSecret, "hashed-secret"))
+                    .Returns(outcome != "wrong_secret");
+            }
+
+            _result = await CreateTokenManagerWithTokenLimit(3).GetAccessTokenAsync(GrantCredentials());
+        }
+
+        [Test]
+        public void It_answers_as_without_the_capability()
+        {
+            if (outcome == "approved")
+            {
+                _result.Should().BeOfType<TokenResult.Success>();
+            }
+            else
+            {
+                _result.Should().BeEquivalentTo(_invalidClient);
+            }
+        }
+
+        [Test]
+        public void It_loads_the_application_exactly_once() =>
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(GrantClientId))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_never_reads_a_credential() =>
+            A.CallTo(() => _reader.GetClientCredentialAsync(A<string>._)).MustNotHaveHappened();
     }
 }
