@@ -201,7 +201,7 @@ python -B analyze_timing.py observer --csv <any of the above>
 `p3.2-final/analysis/commands.log` lists the analysis commands that produced the saved outputs; it does not record
 the collection invocations. `SHA256SUMS.txt` has 150 entries: the size and SHA-256 of `analyze_timing.py` and of
 every file under `p3.0-pilot/`, `p3.2-final/`, `a5-pilot/` and `a5-final/`. It does not list `README.md`,
-`.gitattributes`, `collection/` or itself.
+`.gitattributes`, `collection/`, `diagnostics.py` or itself.
 
 The files under `p3.0-pilot/`, `p3.2-final/`, `a5-pilot/` and `a5-final/` are stored without line-ending
 normalisation (`.gitattributes`), so the checksums hold for a checkout. Because the collectors, lanes and analysis
@@ -216,6 +216,55 @@ wrote CRLF line endings in some files, `git show --check` on each commit that ad
 
 With the CR removed, no line in any of them ends in a space or tab. The data is kept byte-exact rather than
 normalised to silence the check.
+
+## Warning diagnostics (`diagnostics.py`, protocol E1)
+
+`diagnostics.py` (spec §18.3, numpy only) reports warning flags and the mandatory diagnostics for one endpoint
+run. It reuses `analyze_timing.py` unchanged, for loading, the block length and the L and 2L intervals.
+
+| Flag | Raised when |
+| --- | --- |
+| D1, level | max / min of the 10 consecutive decile medians of the round level (the median of a round's three samples) is above 1.10 |
+| D2, dependence | the absolute autocorrelation of the round level at lag 2L, with L = ceil(N^(1/3)), is above 0.20 |
+| D-undefined | either cannot be computed (zero variance, a zero denominator, no pairs) |
+
+A value equal to a limit does not raise its flag. The constants were chosen after the historical runs were seen.
+
+**Exit codes:**
+
+| Exit | Meaning |
+| --- | --- |
+| 0 | Accepted, no flag raised |
+| 3 | Accepted, a flag raised: stop for review |
+| 2 | Refused input: missing columns, other arms, malformed, duplicate or gapped rounds, nonfinite or negative samples, or fewer than 20 rounds. No flags are reported. |
+
+The mandatory diagnostics are reported whatever the flags:
+
+- per-arm decile, quarter and half medians;
+- both declared differences by decile, quarter and half;
+- per-arm and per-round-difference autocorrelation at lags 1 to max(20, 2L), bounded by N − 1, with a zero-variance series undefined, never 0;
+- the round level by decile;
+- the `analyze_timing.py` intervals at L and 2L.
+
+**What a flag-free result does not mean:**
+
+- it is not a validity, admissibility or AC2 finding;
+- power and sampler coverage (R3) come from the lane's records;
+- every final still needs the independent validity review.
+
+**Stated limits:**
+
+- arm-specific changes can be invisible: when two arms share a round's base, the round level is that base. The `selftest` pins the `#X26` example, which passes D1 (1.000542) and D2 (0.038999) while its half differences are −600 / +600 µs;
+- decile medians can hide within-decile transitions;
+- one lag cannot show that all dependence decays within L.
+
+```
+python -B diagnostics.py selftest
+python -B diagnostics.py diagnose --csv a5-final/final-a5-endpoint-mssql-20261024T163740Z.csv --delta 250
+```
+
+The `selftest` reads the two A5 finals as observed fixtures and never changes them. Its other inputs are synthetic and
+generated in a temporary folder.
 
 ## Files
 

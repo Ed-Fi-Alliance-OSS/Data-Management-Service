@@ -218,6 +218,8 @@ Analysis per run uses the fixed method:
 - `..\p3.2-final\analysis\diagnostics-by-quarter.py`;
 - `observer`.
 
+Under protocol E1, every pilot and final also gets `python -B ..\diagnostics.py diagnose --csv <run csv> --delta 250`. Exit 3 (D1, D2 or D-undefined) stops the stage for review, and exit 2 is a failed diagnostic. A flag-free result is only that; it is not a validity finding.
+
 After the stage: the secret scan, then copy into `<Evidence>\a5-final`.
 
 **The gate is the A5 runs alone.** The baseline runs are a descriptive comparison under the same recorded conditions, not causal isolation.
