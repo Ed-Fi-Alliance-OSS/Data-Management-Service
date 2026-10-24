@@ -508,4 +508,629 @@ function Add-PowerRefusal {
     [System.IO.File]::AppendAllText($Path, $line + "`n", [System.Text.UTF8Encoding]::new($false))
 }
 
-Export-ModuleMember -Function Get-FingerprintedAssemblyName, Get-SettingAllowlist, Get-CollectorFixtureName, Resolve-LanePath, Assert-LaneRoot, Assert-OutsideWorktree, ConvertFrom-Sha256Listing, Assert-AssemblyFingerprint, Assert-RunSetting, Compare-LaneSnapshot, Assert-CollectorRun, Get-PowerSource, Get-PowerConditionFailure, ConvertTo-PowerCheckRecord, Add-PowerRefusal
+# The power sampler (spec section 18.2). A separate process observes the power source once a
+# second; the lane requires its readiness before the collector launch and judges its coverage of
+# the collection afterwards, on the system-wide QueryPerformanceCounter. Every function below that
+# waits or reads the host takes its clock, pause and readers as parameters, so that the tests can
+# drive it with synthetic signals instead of sleeps.
+
+# The columns of the power file. Each row is one mandatory power observation. The optional values
+# go to a second file, written after the power row of the same tick, so that no optional read can
+# hold back a power observation; a blocked read shows up as a gap in the power file instead.
+$script:SamplerPowerColumns = @('run_id', 'seq', 'qpc', 'utc', 'observation_error') + @($script:PowerReadingFields | Where-Object { $_ -ne 'utc' })
+
+# The optional host counters: column name, then category, counter and instance.
+$script:HostCounters = [ordered]@{
+    processor_time_pct        = @('Processor', '% Processor Time', '_Total')
+    processor_utility_pct     = @('Processor Information', '% Processor Utility', '_Total')
+    processor_performance_pct = @('Processor Information', '% Processor Performance', '_Total')
+    processor_frequency_mhz   = @('Processor Information', 'Processor Frequency', '_Total')
+    processor_queue_length    = @('System', 'Processor Queue Length', '')
+    available_mbytes          = @('Memory', 'Available MBytes', '')
+}
+
+# The roles whose CPU the sampler reports. No other process is named in its output.
+$script:SamplerRoles = @('cms', 'localdb', 'docker_vm')
+
+function ConvertTo-SamplerField($Value) {
+    if ($null -eq $Value) { return '' }
+    if ($Value -is [bool]) { return $(if ($Value) { 'true' } else { 'false' }) }
+    if ($Value -is [datetime]) { return $Value.ToUniversalTime().ToString('o', [cultureinfo]::InvariantCulture) }
+    if ($Value -is [double]) { return $Value.ToString('F3', [cultureinfo]::InvariantCulture) }
+    $text = [string]::Format([cultureinfo]::InvariantCulture, '{0}', $Value)
+    if ($text.IndexOfAny([char[]]@(',', '"', "`r", "`n")) -ge 0) { throw 'A sampler field holds a separator.' }
+    $text
+}
+
+function Add-SamplerLine([string] $Path, [object[]] $Value) {
+    $line = ($Value | ForEach-Object { ConvertTo-SamplerField $_ }) -join ','
+    [System.IO.File]::AppendAllText($Path, $line + "`n", [System.Text.UTF8Encoding]::new($false))
+}
+
+function ConvertFrom-SamplerBool([string] $Text) {
+    if ($Text -ceq 'true') { return $true }
+    if ($Text -ceq 'false') { return $false }
+    throw 'A sampler Boolean is malformed.'
+}
+
+function ConvertFrom-SamplerInteger([string] $Text, [switch] $AllowEmpty, [switch] $Long) {
+    if ($Text -eq '') {
+        if ($AllowEmpty) { return $null }
+        throw 'A required sampler number is missing.'
+    }
+    $style = [System.Globalization.NumberStyles]::None
+    if ($Long) {
+        $parsed = [long]0
+        if (-not [long]::TryParse($Text, $style, [cultureinfo]::InvariantCulture, [ref]$parsed)) { throw 'A sampler number is malformed.' }
+        return $parsed
+    }
+    $value = 0
+    if (-not [int]::TryParse($Text, $style, [cultureinfo]::InvariantCulture, [ref]$value)) { throw 'A sampler number is malformed.' }
+    $value
+}
+
+<#
+.SYNOPSIS
+    One power-file row from a tick's clock and power reading, in column order.
+.DESCRIPTION
+    A reading that could not be taken (null) is a row with observation_error set and every power
+    field empty, so that it can never satisfy condition P.
+#>
+function ConvertTo-PowerSampleValue {
+    param(
+        [Parameter(Mandatory)] [string] $RunId,
+        [Parameter(Mandatory)] [long] $Seq,
+        [Parameter(Mandatory)] [long] $Qpc,
+        [Parameter(Mandatory)] [datetime] $Utc,
+        [AllowNull()] [System.Collections.IDictionary] $Reading
+    )
+    $values = [System.Collections.Generic.List[object]]::new()
+    $values.AddRange([object[]]@($RunId, $Seq, $Qpc, $Utc, ($null -eq $Reading)))
+    foreach ($field in $script:SamplerPowerColumns | Select-Object -Skip 5) {
+        $values.Add($(if ($null -ne $Reading) { $Reading[$field] } else { $null }))
+    }
+    , $values.ToArray()
+}
+
+<#
+.SYNOPSIS
+    Parses one power-file line strictly into typed fields; anything malformed throws.
+.DESCRIPTION
+    Reads the raw line, not a CSV parser's view of it, so that a line cut short is malformed instead
+    of reading as empty trailing fields. No field holds a separator (the writer refuses one), so
+    the line must split into exactly one field per column.
+#>
+function ConvertFrom-PowerSampleRow {
+    param([Parameter(Mandatory)] [AllowEmptyString()] [string] $Line)
+    $fields = $Line.Split(',')
+    if ($fields.Count -ne $script:SamplerPowerColumns.Count) { throw 'A sampler line has the wrong number of fields.' }
+    $text = @{}
+    for ($i = 0; $i -lt $fields.Count; $i++) { $text[$script:SamplerPowerColumns[$i]] = $fields[$i] }
+    $utc = [datetime]::MinValue
+    if (-not [datetime]::TryParseExact($text.utc, 'o', [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind, [ref]$utc)) {
+        throw 'A sampler time is malformed.'
+    }
+    if ($text.run_id -eq '') { throw 'A sampler row has no run identity.' }
+    [ordered]@{
+        run_id                 = $text.run_id
+        seq                    = ConvertFrom-SamplerInteger $text.seq -Long
+        qpc                    = ConvertFrom-SamplerInteger $text.qpc -Long
+        utc                    = $utc.ToUniversalTime()
+        observation_error      = ConvertFrom-SamplerBool $text.observation_error
+        call_succeeded         = if ($text.call_succeeded -eq '') { $null } else { ConvertFrom-SamplerBool $text.call_succeeded }
+        win32_error            = ConvertFrom-SamplerInteger $text.win32_error -AllowEmpty
+        ac_line_status         = ConvertFrom-SamplerInteger $text.ac_line_status -AllowEmpty
+        battery_flag           = ConvertFrom-SamplerInteger $text.battery_flag -AllowEmpty
+        battery_life_percent   = ConvertFrom-SamplerInteger $text.battery_life_percent -AllowEmpty
+        system_status_flag     = ConvertFrom-SamplerInteger $text.system_status_flag -AllowEmpty
+        scheme_query_succeeded = if ($text.scheme_query_succeeded -eq '') { $null } else { ConvertFrom-SamplerBool $text.scheme_query_succeeded }
+        scheme_query_failure   = if ($text.scheme_query_failure -eq '') { $null } else { $text.scheme_query_failure }
+        scheme_guid            = if ($text.scheme_guid -eq '') { $null } else { $text.scheme_guid }
+    }
+}
+
+# The parts of P a parsed sampler row does not meet.
+function Get-SamplePowerFailure([System.Collections.IDictionary] $Row) {
+    if ($Row.observation_error) { return , @('observation_error') }
+    Get-PowerConditionFailure $Row
+}
+
+<#
+.SYNOPSIS
+    The coverage failures of a sampler's power file for one collection; none means coverage held.
+.DESCRIPTION
+    Takes the file's lines, header first. Judged on qpc only. The header must be exactly the power
+    columns. Over the whole file, every row must parse and carry this run's identity,
+    seq must run 1, 2, 3, ... without a break, qpc must increase, and the wall clock must agree with
+    qpc between consecutive rows (|delta utc - delta qpc| <= MaxClockStepSeconds). There must be a row
+    at or before the launch and one at or after the exit. From the last row at or before the launch
+    to the first row at or after the exit, no gap may exceed MaxGapSeconds and every row, those two
+    included, must meet condition P. Coverage detects gaps; it cannot show what the power source did
+    between two rows.
+#>
+function Test-SamplerCoverage {
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [AllowEmptyString()] [string[]] $Line,
+        [Parameter(Mandatory)] [string] $RunId,
+        [Parameter(Mandatory)] [long] $QpcFrequency,
+        [Parameter(Mandatory)] [long] $LaunchQpc,
+        [Parameter(Mandatory)] [long] $ExitQpc,
+        [double] $MaxGapSeconds = 3,
+        [double] $MaxClockStepSeconds = 1
+    )
+    if ($Line.Count -eq 0) { return , @('no_rows') }
+    if ($Line[0] -cne ($script:SamplerPowerColumns -join ',')) { return , @('header_malformed') }
+    if ($Line.Count -eq 1) { return , @('no_rows') }
+    try { $rows = @($Line | Select-Object -Skip 1 | ForEach-Object { ConvertFrom-PowerSampleRow $_ }) }
+    catch { return , @('row_malformed') }
+
+    $failures = [System.Collections.Generic.List[string]]::new()
+    $add = { param([string] $Code) if (-not $failures.Contains($Code)) { $failures.Add($Code) } }
+    for ($i = 0; $i -lt $rows.Count; $i++) {
+        if ($rows[$i].run_id -cne $RunId) { & $add 'identity_changed' }
+        if ($rows[$i].seq -ne $i + 1) { & $add 'seq_not_contiguous' }
+        if ($i -gt 0) {
+            $qpcSeconds = ($rows[$i].qpc - $rows[$i - 1].qpc) / $QpcFrequency
+            $utcSeconds = ($rows[$i].utc - $rows[$i - 1].utc).TotalSeconds
+            if ($qpcSeconds -le 0) { & $add 'qpc_not_increasing' }
+            if ([Math]::Abs($utcSeconds - $qpcSeconds) -gt $MaxClockStepSeconds) { & $add 'clock_step' }
+        }
+    }
+    $first = -1
+    $last = -1
+    for ($i = 0; $i -lt $rows.Count; $i++) {
+        if ($rows[$i].qpc -le $LaunchQpc) { $first = $i }
+        if ($last -lt 0 -and $rows[$i].qpc -ge $ExitQpc) { $last = $i }
+    }
+    if ($first -lt 0) { & $add 'no_row_before_launch' }
+    if ($last -lt 0) { & $add 'no_row_after_exit' }
+    if ($first -ge 0 -and $last -ge 0) {
+        for ($i = $first; $i -le $last; $i++) {
+            if ($i -gt $first -and ($rows[$i].qpc - $rows[$i - 1].qpc) / $QpcFrequency -gt $MaxGapSeconds) { & $add 'gap_exceeded' }
+            if ((Get-SamplePowerFailure $rows[$i]).Count -gt 0) { & $add 'power_unmet_in_window' }
+        }
+    }
+    , $failures.ToArray()
+}
+
+<#
+.SYNOPSIS
+    Picks a role's single process from candidates, or the reason it has none.
+.DESCRIPTION
+    No candidate is `process_absent`. Several, or one whose start time cannot be read, is
+    `process_ambiguous`: the identity cannot be fixed, so it is not guessed.
+#>
+function Resolve-RoleIdentity {
+    param([Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Candidate)
+    if ($Candidate.Count -eq 0) { return [ordered]@{ identity = $null; na = 'process_absent' } }
+    if ($Candidate.Count -gt 1 -or $null -eq $Candidate[0].start_ticks) { return [ordered]@{ identity = $null; na = 'process_ambiguous' } }
+    [ordered]@{ identity = [ordered]@{ pid = [int]$Candidate[0].pid; start_ticks = [long]$Candidate[0].start_ticks }; na = $null }
+}
+
+<#
+.SYNOPSIS
+    The sqlservr processes of one LocalDB instance, without their command lines.
+.DESCRIPTION
+    A LocalDB instance's command line names its folder, `...\Instances\<instance>\`. The command
+    line selects the process here and goes no further.
+#>
+function Select-LocalDbCandidate {
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Process,
+        [Parameter(Mandatory)] [string] $Instance
+    )
+    $pattern = '(?i)\\Instances\\' + [regex]::Escape($Instance) + '\\'
+    , @($Process | Where-Object { [string]$_.command_line -match $pattern } | ForEach-Object { [ordered]@{ pid = [int]$_.pid } })
+}
+
+# A process's start time and total CPU, or null when no process has that id.
+function Read-ProcessCpu([int] $ProcessId) {
+    try { $process = [System.Diagnostics.Process]::GetProcessById($ProcessId) }
+    catch [System.ArgumentException] { return $null }
+    try { [ordered]@{ start_ticks = $process.StartTime.ToUniversalTime().Ticks; cpu_seconds = $process.TotalProcessorTime.TotalSeconds } }
+    finally { $process.Dispose() }
+}
+
+# The candidate processes of one role on this host. Start times come from the same source as
+# Read-ProcessCpu, so that a later identity check compares like with like.
+function Find-RoleCandidate([string] $Name, [System.Collections.IDictionary] $Spec) {
+    $withStart = {
+        param([int] $ProcessId)
+        $start = $null
+        try { $start = (Read-ProcessCpu $ProcessId).start_ticks } catch { $start = $null }
+        [ordered]@{ pid = $ProcessId; start_ticks = $start }
+    }
+    switch ($Name) {
+        'cms' {
+            $found = & $withStart $Spec.pid
+            if ($null -eq $found.start_ticks -or $found.start_ticks -ne [long]$Spec.start_ticks) { return , @() }
+            return , @($found)
+        }
+        'localdb' {
+            $processes = @(Get-CimInstance -ClassName Win32_Process -Filter "Name = 'sqlservr.exe'" | ForEach-Object { [ordered]@{ pid = [int]$_.ProcessId; command_line = [string]$_.CommandLine } })
+            $selected = Select-LocalDbCandidate -Process $processes -Instance $Spec.instance
+            return , @($selected | ForEach-Object { & $withStart $_.pid })
+        }
+        'docker_vm' {
+            return , @(Get-Process -Name 'vmmemWSL', 'vmmem' -ErrorAction SilentlyContinue | ForEach-Object { & $withStart $_.Id })
+        }
+        default { throw "Unknown sampler role $Name." }
+    }
+}
+
+<#
+.SYNOPSIS
+    The sampler's optional-reading state: counters created once, role identities fixed, baselines.
+.DESCRIPTION
+    Called once, before the first tick, so that no tick waits on counter discovery and every role is
+    fixed at the ready handshake. A counter that cannot be created is `counter_unavailable` for the
+    whole run. The host access is injectable for tests.
+#>
+function Initialize-HostSampleState {
+    param(
+        [Parameter(Mandatory)] [System.Collections.IDictionary] $Role,
+        [Parameter(Mandatory)] [long] $Qpc,
+        [Parameter(Mandatory)] [long] $QpcFrequency,
+        [int] $LogicalCpus = [Environment]::ProcessorCount,
+        [int] $SamplerProcessId = $PID,
+        [scriptblock] $NewCounter = {
+            param([string] $Category, [string] $Counter, [string] $Instance)
+            $created = [System.Diagnostics.PerformanceCounter]::new($Category, $Counter, $Instance, $true)
+            [void]$created.NextValue()
+            $created
+        },
+        [scriptblock] $FindCandidate = { param([string] $Name, [System.Collections.IDictionary] $Spec) Find-RoleCandidate $Name $Spec },
+        [scriptblock] $ReadProcessCpu = { param([int] $ProcessId) Read-ProcessCpu $ProcessId }
+    )
+    foreach ($name in $Role.Keys) { if ($script:SamplerRoles -notcontains $name) { throw "Unknown sampler role $name." } }
+    $state = @{
+        LogicalCpus    = $LogicalCpus
+        QpcFrequency   = $QpcFrequency
+        ReadProcessCpu = $ReadProcessCpu
+        Counters       = [ordered]@{}
+        Roles          = [ordered]@{}
+    }
+    foreach ($name in $script:HostCounters.Keys) {
+        $definition = $script:HostCounters[$name]
+        try { $state.Counters[$name] = @{ Counter = (& $NewCounter $definition[0] $definition[1] $definition[2]); Na = $null } }
+        catch { $state.Counters[$name] = @{ Counter = $null; Na = 'counter_unavailable' } }
+    }
+    $tracked = [ordered]@{}
+    foreach ($name in $script:SamplerRoles) {
+        if ($Role.Contains($name)) {
+            # Assigned first: @() around a call that returns its list as one object would nest it.
+            $found = & $FindCandidate $name $Role[$name]
+            [object[]] $candidates = @()
+            if ($null -ne $found) { $candidates = @($found) }
+            $resolved = Resolve-RoleIdentity -Candidate $candidates
+            $tracked["cpu_$($name)_pct"] = @{ Identity = $resolved.identity; Na = $resolved.na }
+        }
+    }
+    $self = & $ReadProcessCpu $SamplerProcessId
+    $tracked['cpu_sampler_pct'] = @{ Identity = $(if ($null -ne $self) { [ordered]@{ pid = $SamplerProcessId; start_ticks = [long]$self.start_ticks } }); Na = $(if ($null -eq $self) { 'process_absent' }) }
+    foreach ($name in $tracked.Keys) {
+        $entry = $tracked[$name]
+        $entry.LastCpu = $null
+        $entry.LastQpc = $Qpc
+        if ($null -ne $entry.Identity) {
+            try {
+                $current = & $ReadProcessCpu $entry.Identity.pid
+                if ($null -eq $current -or [long]$current.start_ticks -ne $entry.Identity.start_ticks) { $entry.Na = 'process_changed' }
+                else { $entry.LastCpu = [double]$current.cpu_seconds }
+            }
+            catch { $entry.LastCpu = $null }
+        }
+        $state.Roles[$name] = $entry
+    }
+    $state
+}
+
+<#
+.SYNOPSIS
+    The optional columns, in order: each value column followed by its `_na` reason column, then
+    `cpu_background_floored`.
+#>
+function Get-HostSampleColumn {
+    param([Parameter(Mandatory)] [hashtable] $State)
+    $columns = [System.Collections.Generic.List[string]]::new()
+    foreach ($name in @($State.Counters.Keys) + @($State.Roles.Keys) + 'cpu_background_pct') {
+        $columns.Add($name)
+        $columns.Add("$($name)_na")
+    }
+    $columns.Add('cpu_background_floored')
+    , $columns.ToArray()
+}
+
+<#
+.SYNOPSIS
+    The public form of the fixed role identities: the id and start time, or the reason there is none.
+#>
+function Get-HostSampleRole {
+    param([Parameter(Mandatory)] [hashtable] $State)
+    $roles = [ordered]@{}
+    foreach ($name in $State.Roles.Keys) {
+        $entry = $State.Roles[$name]
+        $roles[($name -replace '^cpu_(.+)_pct$', '$1')] = if ($null -ne $entry.Identity) {
+            [ordered]@{ pid = $entry.Identity.pid; start_utc = ([datetime]::new($entry.Identity.start_ticks, [DateTimeKind]::Utc)).ToString('o'); na = $entry.Na }
+        }
+        else { [ordered]@{ pid = $null; start_utc = $null; na = $entry.Na } }
+    }
+    $roles
+}
+
+<#
+.SYNOPSIS
+    One tick's optional values, as column name to text. An unavailable value is `NA` with a reason
+    code, never 0.
+.DESCRIPTION
+    CPU % of a process is its TotalProcessorTime delta over the qpc interval since its last good
+    read, divided by the logical CPU count, times 100. A process whose id or start time changed is
+    `process_changed` from then on. Background CPU is total % Processor Time minus the roles and the
+    sampler, floored at 0 with the floor flagged; it is NA when any of its inputs is.
+#>
+function Read-HostSample {
+    param(
+        [Parameter(Mandatory)] [hashtable] $State,
+        [Parameter(Mandatory)] [long] $Qpc
+    )
+    $values = [ordered]@{}
+    $reasons = [ordered]@{}
+    foreach ($name in $State.Counters.Keys) {
+        $entry = $State.Counters[$name]
+        if ($null -ne $entry.Na) { $reasons[$name] = $entry.Na; continue }
+        try {
+            $value = [double]$entry.Counter.NextValue()
+            if ([double]::IsNaN($value) -or [double]::IsInfinity($value)) { $reasons[$name] = 'counter_error' }
+            else { $values[$name] = $value }
+        }
+        catch { $reasons[$name] = 'counter_error' }
+    }
+    foreach ($name in $State.Roles.Keys) {
+        $entry = $State.Roles[$name]
+        if ($null -ne $entry.Na) { $reasons[$name] = $entry.Na; continue }
+        try { $current = & $State.ReadProcessCpu $entry.Identity.pid }
+        catch { $reasons[$name] = 'counter_error'; continue }
+        if ($null -eq $current -or [long]$current.start_ticks -ne $entry.Identity.start_ticks) {
+            $entry.Na = 'process_changed'
+            $reasons[$name] = 'process_changed'
+            continue
+        }
+        $interval = ($Qpc - $entry.LastQpc) / $State.QpcFrequency
+        if ($null -eq $entry.LastCpu -or $interval -le 0) {
+            $reasons[$name] = 'counter_error'
+        }
+        else {
+            $values[$name] = ([double]$current.cpu_seconds - $entry.LastCpu) / $interval / $State.LogicalCpus * 100
+        }
+        $entry.LastCpu = [double]$current.cpu_seconds
+        $entry.LastQpc = $Qpc
+    }
+    $floored = $null
+    $inputs = @('processor_time_pct') + @($State.Roles.Keys)
+    $missing = @($inputs | Where-Object { -not $values.Contains($_) })
+    if ($missing.Count -gt 0) {
+        $reasons['cpu_background_pct'] = $reasons[$missing[0]]
+    }
+    else {
+        $background = $values['processor_time_pct']
+        foreach ($name in $State.Roles.Keys) { $background -= $values[$name] }
+        $floored = $background -lt 0
+        $values['cpu_background_pct'] = [Math]::Max(0.0, $background)
+    }
+    $row = [ordered]@{}
+    $columns = Get-HostSampleColumn -State $State
+    foreach ($column in $columns) {
+        if ($column -eq 'cpu_background_floored') { $row[$column] = $(if ($null -eq $floored) { 'NA' } else { ConvertTo-SamplerField $floored }) }
+        elseif ($column.EndsWith('_na')) { $name = $column.Substring(0, $column.Length - 3); $row[$column] = $(if ($reasons.Contains($name)) { $reasons[$name] } else { '' }) }
+        elseif ($values.Contains($column)) { $row[$column] = ConvertTo-SamplerField ([double]$values[$column]) }
+        else { $row[$column] = 'NA' }
+    }
+    $row
+}
+
+<#
+.SYNOPSIS
+    The sampler's loop: one power row, then one optional row, per tick, until the stop signal.
+.DESCRIPTION
+    Each tick reads the clock (qpc and UTC) and the power source first and appends the power row;
+    after the first row it writes the ready record. Only then does it read the optional values.
+    When the stop signal exists at the start of a tick, that tick is the last, so a row always
+    follows the signal. Refuses existing output files. The clock, pause, readers and an optional
+    tick limit are parameters, so that tests run the loop with synthetic signals and no sleeps.
+#>
+function Invoke-PowerSampler {
+    param(
+        [Parameter(Mandatory)] [string] $RunId,
+        [Parameter(Mandatory)] [System.Collections.IDictionary] $Identity,
+        [Parameter(Mandatory)] [System.Collections.IDictionary] $Role,
+        [Parameter(Mandatory)] [string[]] $OptionalColumn,
+        [Parameter(Mandatory)] [scriptblock] $ReadOptional,
+        [Parameter(Mandatory)] [string] $PowerPath,
+        [Parameter(Mandatory)] [string] $OptionalPath,
+        [Parameter(Mandatory)] [string] $ReadyPath,
+        [Parameter(Mandatory)] [string] $StopPath,
+        [long] $QpcFrequency = [System.Diagnostics.Stopwatch]::Frequency,
+        [double] $IntervalSeconds = 1,
+        [int] $MaxTicks = 0,
+        [scriptblock] $ReadClock = { [ordered]@{ qpc = [System.Diagnostics.Stopwatch]::GetTimestamp(); utc = [datetime]::UtcNow } },
+        [scriptblock] $ReadPower = { Get-PowerSource },
+        [scriptblock] $Pause = { param([int] $Milliseconds) Start-Sleep -Milliseconds $Milliseconds }
+    )
+    foreach ($path in $PowerPath, $OptionalPath, $ReadyPath) {
+        if (Test-Path -LiteralPath $path) { throw "The sampler output $(Split-Path -Leaf $path) already exists." }
+    }
+    Add-SamplerLine $PowerPath $script:SamplerPowerColumns
+    Add-SamplerLine $OptionalPath (@('run_id', 'seq', 'qpc') + $OptionalColumn)
+    $start = & $ReadClock
+    $seq = 0
+    while ($true) {
+        $stopping = Test-Path -LiteralPath $StopPath
+        $seq++
+        $clock = if ($seq -eq 1) { $start } else { & $ReadClock }
+        $reading = $null
+        try { $reading = & $ReadPower } catch { $reading = $null }
+        $powerValue = ConvertTo-PowerSampleValue -RunId $RunId -Seq $seq -Qpc $clock.qpc -Utc $clock.utc -Reading $reading
+        Add-SamplerLine $PowerPath $powerValue
+        if ($seq -eq 1) {
+            $ready = [ordered]@{
+                schema           = 'power-sampler-ready/1'
+                run_id           = $RunId
+                identity         = $Identity
+                qpc_frequency    = $QpcFrequency
+                interval_seconds = $IntervalSeconds
+                roles            = $Role
+                power_columns    = $script:SamplerPowerColumns
+                optional_columns = $OptionalColumn
+                first_row        = ($powerValue | ForEach-Object { ConvertTo-SamplerField $_ }) -join ','
+            }
+            $temporary = "$ReadyPath.tmp"
+            [System.IO.File]::WriteAllText($temporary, ($ready | ConvertTo-Json -Depth 5), [System.Text.UTF8Encoding]::new($false))
+            [System.IO.File]::Move($temporary, $ReadyPath)
+        }
+        $optionalQpc = (& $ReadClock).qpc
+        $optional = $null
+        try { $optional = & $ReadOptional $optionalQpc } catch { $optional = $null }
+        $optionalValue = @($RunId, $seq, $optionalQpc) + @($OptionalColumn | ForEach-Object {
+                if ($null -ne $optional -and $optional.Contains($_)) { $optional[$_] }
+                elseif ($_.EndsWith('_na')) { 'counter_error' }
+                else { 'NA' }
+            })
+        Add-SamplerLine $OptionalPath $optionalValue
+        if ($stopping -or ($MaxTicks -gt 0 -and $seq -ge $MaxTicks)) { break }
+        $next = $start.qpc + [long]($seq * $IntervalSeconds * $QpcFrequency)
+        $wait = [Math]::Floor(($next - (& $ReadClock).qpc) * 1000.0 / $QpcFrequency)
+        if ($wait -gt 0) { & $Pause ([int]$wait) }
+    }
+}
+
+# Quotes one argument for a Windows command line, as CommandLineToArgvW reads it back.
+function ConvertTo-CommandLineArgument([string] $Value) {
+    if ($Value -ne '' -and $Value -notmatch '[\s"]') { return $Value }
+    '"' + (($Value -replace '(\\*)"', '$1$1\"') -replace '(\\+)$', '$1$1') + '"'
+}
+
+<#
+.SYNOPSIS
+    Starts the sampler script in its own pwsh process, with its console output in the work folder.
+#>
+function Open-PowerSampler {
+    param(
+        [Parameter(Mandatory)] [string] $ScriptPath,
+        [Parameter(Mandatory)] [System.Collections.IDictionary] $Argument,
+        [Parameter(Mandatory)] [string] $StandardOutputPath,
+        [Parameter(Mandatory)] [string] $StandardErrorPath
+    )
+    $list = [System.Collections.Generic.List[string]]::new()
+    $list.AddRange([string[]]@('-NoProfile', '-NonInteractive', '-File', $ScriptPath))
+    foreach ($name in $Argument.Keys) {
+        $value = $Argument[$name]
+        if ($value -is [switch] -or $value -is [bool]) { if ($value) { $list.Add("-$name") } }
+        else { $list.Add("-$name"); $list.Add([string]$value) }
+    }
+    $process = Start-Process -FilePath ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName) -ArgumentList (($list | ForEach-Object { ConvertTo-CommandLineArgument $_ }) -join ' ') -RedirectStandardOutput $StandardOutputPath -RedirectStandardError $StandardErrorPath -NoNewWindow -PassThru
+    # Reading the handle now keeps the exit code readable after the process ends.
+    $null = $process.Handle
+    $process
+}
+
+<#
+.SYNOPSIS
+    Waits for the sampler's ready record and checks it, or returns why the sampler is not ready.
+.DESCRIPTION
+    Returns failure null and the parsed first row when the record exists within TimeoutSeconds,
+    names this run and this sampler process, holds row 1 of this run, and that row meets P.
+    Otherwise failure is one of sampler_exited_before_ready, sampler_ready_timeout,
+    sampler_ready_malformed, sampler_identity_mismatch or sampler_ready_not_p (with the unmet parts
+    of P). The clock and pause are parameters, so that tests reach the timeout without waiting.
+#>
+function Wait-PowerSamplerReady {
+    param(
+        [Parameter(Mandatory)] [psobject] $Process,
+        [Parameter(Mandatory)] [string] $ReadyPath,
+        [Parameter(Mandatory)] [string] $RunId,
+        [double] $TimeoutSeconds = 30,
+        [scriptblock] $Clock = { [datetime]::UtcNow },
+        [scriptblock] $Pause = { param([int] $Milliseconds) Start-Sleep -Milliseconds $Milliseconds }
+    )
+    $result = [ordered]@{ failure = $null; unmet = @(); ready = $null; first_row = $null }
+    $deadline = (& $Clock).AddSeconds($TimeoutSeconds)
+    while (-not (Test-Path -LiteralPath $ReadyPath)) {
+        if ($Process.HasExited) { $result.failure = 'sampler_exited_before_ready'; return $result }
+        if ((& $Clock) -ge $deadline) { $result.failure = 'sampler_ready_timeout'; return $result }
+        & $Pause 200
+    }
+    try {
+        $ready = Get-Content -LiteralPath $ReadyPath -Raw | ConvertFrom-Json -AsHashtable
+        $row = ConvertFrom-PowerSampleRow ([string]$ready.first_row)
+    }
+    catch {
+        $result.failure = 'sampler_ready_malformed'
+        return $result
+    }
+    $result.ready = $ready
+    $result.first_row = $row
+    if ($ready.run_id -cne $RunId -or [long]$ready.identity.sampler_pid -ne $Process.Id -or $row.run_id -cne $RunId -or $row.seq -ne 1) {
+        $result.failure = 'sampler_identity_mismatch'
+        return $result
+    }
+    $unmet = Get-SamplePowerFailure $row
+    if ($unmet.Count -gt 0) {
+        $result.failure = 'sampler_ready_not_p'
+        $result.unmet = $unmet
+    }
+    $result
+}
+
+<#
+.SYNOPSIS
+    A refusal record for a sampler that was not ready before the collector launch.
+#>
+function ConvertTo-SamplerRefusalRecord {
+    param([Parameter(Mandatory)] [System.Collections.IDictionary] $Ready)
+    if ($null -eq $Ready.failure) { throw 'A ready sampler is not a refusal.' }
+    $record = ConvertTo-PowerCheckRecord -Check before_launch -Reading $Ready.first_row
+    $record.condition_met = $false
+    $record.unmet = @($Ready.failure) + @($Ready.unmet)
+    $record
+}
+
+<#
+.SYNOPSIS
+    Signals the sampler to stop and waits for it; kills it if it does not stop in time.
+.DESCRIPTION
+    Records whether it was still alive when signalled, whether it stopped within the timeout, and
+    its exit code. Takes any object with the HasExited, Id and ExitCode properties and the
+    WaitForExit(int) and Kill(bool) methods of a process, so that tests use stand-ins.
+#>
+function Close-PowerSampler {
+    param(
+        [Parameter(Mandatory)] [psobject] $Process,
+        [Parameter(Mandatory)] [string] $StopPath,
+        [int] $TimeoutMilliseconds = 10000
+    )
+    $result = [ordered]@{ alive_at_stop = -not $Process.HasExited; stopped_in_time = $false; exit_code = $null; killed = $false }
+    [System.IO.File]::WriteAllText($StopPath, 'stop')
+    if ($Process.WaitForExit($TimeoutMilliseconds)) {
+        $result.stopped_in_time = $true
+        $result.exit_code = [int]$Process.ExitCode
+    }
+    else {
+        try { $Process.Kill($true); [void]$Process.WaitForExit(5000) } catch { $null = $_ }
+        $result.killed = $true
+    }
+    $result
+}
+
+<#
+.SYNOPSIS
+    The lifecycle failures in a Close-PowerSampler result; none means the sampler lived and stopped cleanly.
+#>
+function Get-SamplerLifecycleFailure([System.Collections.IDictionary] $Stop) {
+    $failures = [System.Collections.Generic.List[string]]::new()
+    if (-not $Stop.alive_at_stop) { $failures.Add('sampler_dead_at_exit') }
+    if (-not $Stop.stopped_in_time) { $failures.Add('sampler_slow_shutdown') }
+    elseif ($Stop.exit_code -ne 0) { $failures.Add('sampler_exit_nonzero') }
+    , $failures.ToArray()
+}
+
+Export-ModuleMember -Function Get-FingerprintedAssemblyName, Get-SettingAllowlist, Get-CollectorFixtureName, Resolve-LanePath, Assert-LaneRoot, Assert-OutsideWorktree, ConvertFrom-Sha256Listing, Assert-AssemblyFingerprint, Assert-RunSetting, Compare-LaneSnapshot, Assert-CollectorRun, Get-PowerSource, Get-PowerConditionFailure, ConvertTo-PowerCheckRecord, Add-PowerRefusal, ConvertTo-PowerSampleValue, ConvertFrom-PowerSampleRow, Test-SamplerCoverage, Resolve-RoleIdentity, Select-LocalDbCandidate, Initialize-HostSampleState, Get-HostSampleColumn, Get-HostSampleRole, Read-HostSample, Invoke-PowerSampler, Open-PowerSampler, Wait-PowerSamplerReady, ConvertTo-SamplerRefusalRecord, Close-PowerSampler, Get-SamplerLifecycleFailure

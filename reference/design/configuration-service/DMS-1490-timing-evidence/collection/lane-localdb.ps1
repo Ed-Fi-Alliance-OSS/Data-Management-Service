@@ -21,26 +21,29 @@
        Starts the target's Configuration Service as a host process, inserts the OpenIddict signing
        key and runs the target's setup-openiddict.ps1 -InsertData with `docker exec ... sqlcmd`
        routed to the host's sqlcmd, requiring each step to succeed.
-    4. Requires power condition P again immediately before the collector launches, then runs the
-       explicit endpoint timing collector once, from the collector checkout (Release, --no-build),
-       with its output and results file in the work folder, checks power condition P as soon as it
-       exits, whatever its outcome, and requires that it ran the collector fixture's two tests and
-       wrote this run's samples and header.
+    4. Starts the power sampler (power-sampler.ps1, roles cms and localdb), requires its ready
+       record within 30 s with a first row that meets power condition P, and checks P again
+       immediately before the collector launches. Then runs the explicit endpoint timing collector
+       once, from the collector checkout (Release, --no-build), with its output and results file in
+       the work folder. As soon as it exits, whatever its outcome, checks power condition P, stops
+       the sampler and requires its coverage of the collection; then requires that the collector
+       ran the fixture's two tests and wrote this run's samples and header.
     5. Requires the same live process, start time and assemblies after collection, then stops it.
 
     Any failed stage, including stopping the process, makes the script exit 1 after cleanup;
-    success exits 0. A power check that fails before the collector launch is a refusal, not an
-    attempt: it is appended to the staging folder's refusals.log, which is never rewritten, and the
-    run may be started again once the environment is corrected. From the launch on, the run is its
-    one attempt. Only the power snapshots of protocol E1 are implemented; its sampler coverage is
-    not, so no run of this script is a complete E1 run.
+    success exits 0. A power check that fails, or a sampler that is not ready, before the collector
+    launch is a refusal, not an attempt: it is appended to the staging folder's refusals.log, which
+    is never rewritten, and the run may be started again once the environment is corrected. From
+    the launch on, the run is its one attempt. Protocol E1's power checks and sampler coverage are
+    implemented; its diagnostics and collector timestamps are not, so no run of this script is a
+    complete E1 run.
 
     Written to -OutputDir (the evidence staging folder): the samples CSV and header JSON,
-    provenance-*.json, refusals.log and lane-localdb-*.log, which holds only status lines, checked
-    counts, unmet power condition codes and exception type names. Written to -WorkRoot (never
-    evidence): database files, the service's own
-    output, the collector's output and results file, setup logs and the full text of any
-    exception. Secrets come from the target's eng/docker-compose/.env.config.mssql.e2e and are
+    provenance-*.json, refusals.log, the sampler's host-power-*.csv, host-optional-*.csv and
+    host-ready-*.json, and lane-localdb-*.log, which holds only status lines, checked counts, unmet
+    power condition and coverage codes, and exception type names. Written to -WorkRoot (never
+    evidence): database files, the service's own output, the collector's output and results file,
+    setup logs, the sampler's console output and stop signal, and the full text of any exception. Secrets come from the target's eng/docker-compose/.env.config.mssql.e2e and are
     referenced in provenance by key name only.
 #>
 [CmdletBinding()]
@@ -92,6 +95,19 @@ $composeDirectory = Join-Path $TargetRoot 'eng\docker-compose'
 $cmsBin = Join-Path $TargetRoot 'src\config\frontend\EdFi.DmsConfigurationService.Frontend.AspNetCore\bin\Release\net10.0'
 $cmsDll = Join-Path $cmsBin 'EdFi.DmsConfigurationService.Frontend.AspNetCore.dll'
 $e2eProject = Join-Path $CollectorRoot 'src\config\tests\EdFi.DmsConfigurationService.Tests.E2E\EdFi.DmsConfigurationService.Tests.E2E.csproj'
+$samplerScript = Join-Path $PSScriptRoot 'power-sampler.ps1'
+$samplerRunId = [guid]::NewGuid().ToString('N')
+$samplerFiles = [ordered]@{
+    power       = Join-Path $OutputDir "host-power-mssql-$RunLabel-$stamp.csv"
+    optional    = Join-Path $OutputDir "host-optional-mssql-$RunLabel-$stamp.csv"
+    ready       = Join-Path $OutputDir "host-ready-mssql-$RunLabel-$stamp.json"
+    stop        = Join-Path $WorkRoot "sampler-stop-mssql-$RunLabel-$stamp"
+    stdout      = Join-Path $WorkRoot "sampler-mssql-$RunLabel-$stamp.out.log"
+    stderr      = Join-Path $WorkRoot "sampler-mssql-$RunLabel-$stamp.err.log"
+    diagnostics = Join-Path $WorkRoot "sampler-mssql-$RunLabel-$stamp.diagnostics.txt"
+}
+$sampler = $null
+$samplerStopped = $false
 
 function Write-LaneLog([string] $Message) {
     "[$((Get-Date).ToUniversalTime().ToString('o'))] $Message" | Out-File -LiteralPath $log -Append -Encoding utf8NoBOM
@@ -134,6 +150,61 @@ function Invoke-PowerCheck([string] $Check) {
     throw "Power condition P is not met at $Check."
 }
 
+# Starts the power sampler and requires its ready record before the collector launch. A sampler
+# that is not ready is a refusal, recorded like a failed power check.
+function Open-LaneSampler([System.Collections.IDictionary] $Role) {
+    $arguments = [ordered]@{
+        RunId           = $samplerRunId
+        RunLabel        = $RunLabel
+        LaneStamp       = $stamp
+        PowerPath       = $samplerFiles.power
+        OptionalPath    = $samplerFiles.optional
+        ReadyPath       = $samplerFiles.ready
+        StopPath        = $samplerFiles.stop
+        DiagnosticsPath = $samplerFiles.diagnostics
+    }
+    foreach ($name in $Role.Keys) { $arguments[$name] = $Role[$name] }
+    $script:sampler = Open-PowerSampler -ScriptPath $samplerScript -Argument $arguments -StandardOutputPath $samplerFiles.stdout -StandardErrorPath $samplerFiles.stderr
+    Write-LaneLog "SAMPLER started pid=$($script:sampler.Id)"
+    $ready = Wait-PowerSamplerReady -Process $script:sampler -ReadyPath $samplerFiles.ready -RunId $samplerRunId
+    $provenance.sampler.ready_failure = $ready.failure
+    if ($null -ne $ready.ready) {
+        $provenance.sampler.identity = $ready.ready.identity
+        $provenance.sampler.roles = $ready.ready.roles
+    }
+    if ($null -eq $ready.failure) {
+        Write-LaneLog 'SAMPLER ready; its first row meets condition P'
+        return
+    }
+    $record = ConvertTo-SamplerRefusalRecord -Ready $ready
+    Add-PowerRefusal -Path $refusalLog -Lane 'endpoint-mssql' -RunLabel $RunLabel -Record $record
+    $provenance.refused_at = 'before_launch'
+    Write-LaneLog "REFUSED before_launch, the sampler is not ready: $($record.unmet -join ', ')"
+    throw 'The power sampler is not ready.'
+}
+
+# Stops the sampler once the collector has exited and requires its coverage of the collection.
+function Complete-LaneSampler([long] $LaunchQpc, [long] $ExitQpc) {
+    $stop = Close-PowerSampler -Process $script:sampler -StopPath $samplerFiles.stop
+    $script:samplerStopped = $true
+    $lines = @(if (Test-Path -LiteralPath $samplerFiles.power) { Get-Content -LiteralPath $samplerFiles.power })
+    # Assigned first: @() around a call that returns its list as one object would nest it.
+    $lifecycle = Get-SamplerLifecycleFailure $stop
+    $covered = Test-SamplerCoverage -Line $lines -RunId $samplerRunId -QpcFrequency ([System.Diagnostics.Stopwatch]::Frequency) -LaunchQpc $LaunchQpc -ExitQpc $ExitQpc
+    $coverage = @($lifecycle) + @($covered)
+    $provenance.sampler.launch_qpc = $LaunchQpc
+    $provenance.sampler.exit_qpc = $ExitQpc
+    $provenance.sampler.qpc_frequency = [System.Diagnostics.Stopwatch]::Frequency
+    $provenance.sampler.stop = $stop
+    $provenance.sampler.power_rows = [Math]::Max(0, $lines.Count - 1)
+    $provenance.sampler.coverage_failures = $coverage
+    if ($coverage.Count -gt 0) {
+        Write-LaneLog "SAMPLER coverage failed: $($coverage -join ', ')"
+        throw 'The power sampler did not cover the collection.'
+    }
+    Write-LaneLog "SAMPLER coverage held rows=$($provenance.sampler.power_rows)"
+}
+
 function Get-AssemblyFingerprint {
     $fingerprints = [ordered]@{}
     foreach ($assembly in $fingerprintedAssemblies) {
@@ -163,10 +234,17 @@ $provenance = [ordered]@{
     environment_protocol     = [ordered]@{
         version         = 'E1'
         complete        = $false
-        implemented     = 'power condition P before setup, before the collector launch and after it exits'
-        not_implemented = 'sampler readiness and continuous coverage'
+        implemented     = 'power condition P before setup, before the collector launch and after it exits; sampler readiness and coverage'
+        not_implemented = 'offline diagnostics and collector round timestamps'
     }
     attempt_started          = $false
+    sampler                  = [ordered]@{
+        script_sha256 = (Get-FileHash -LiteralPath $samplerScript -Algorithm SHA256).Hash.ToLowerInvariant()
+        run_id        = $samplerRunId
+        power_file    = Split-Path -Leaf $samplerFiles.power
+        optional_file = Split-Path -Leaf $samplerFiles.optional
+        ready_file    = Split-Path -Leaf $samplerFiles.ready
+    }
     lane                     = 'endpoint-mssql (LocalDB, host-process Configuration Service)'
     lane_script              = Split-Path -Leaf $PSCommandPath
     lane_script_sha256       = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -411,17 +489,21 @@ try {
     $provenance.before = $before
     if ($before.alive -ne 'True') { throw 'The service process is not running.' }
     Write-LaneLog "BEFORE pid=$($before.pid) start=$($before.start_time) settings and five fingerprints verified"
+    Open-LaneSampler ([ordered]@{ CmsProcessId = $cms.Id; CmsStartTicks = $cms.StartTime.ToUniversalTime().Ticks; LocalDbInstance = $Instance })
     Invoke-PowerCheck 'before_launch'
     Write-LaneLog 'RUN collector (Release, --no-build; output and results file in the work folder); the launch starts the attempt'
     $provenance.attempt_started = $true
     $collectorStarted = (Get-Date).ToUniversalTime()
+    $launchQpc = [System.Diagnostics.Stopwatch]::GetTimestamp()
     try {
         & dotnet test $e2eProject -c Release --no-build --no-restore --nologo --filter "FullyQualifiedName~$(Get-CollectorFixtureName)" --logger "trx;LogFileName=$trxName" --results-directory $WorkRoot *> $runnerLog
         $collectorExit = $LASTEXITCODE
     }
     finally {
-        # Whatever the collector did; a failure here is recorded beside any failure of the run.
+        # Whatever the collector did; each failure here is recorded beside any failure of the run.
+        $exitQpc = [System.Diagnostics.Stopwatch]::GetTimestamp()
         try { Invoke-PowerCheck 'after_exit' } catch { Add-LaneFailure 'power-after-exit' $_ }
+        try { Complete-LaneSampler $launchQpc $exitQpc } catch { Add-LaneFailure 'sampler-coverage' $_ }
     }
     $provenance.collector_exit = $collectorExit
     $summary = Assert-CollectorRun -ExitCode $collectorExit -TrxPath (Join-Path $WorkRoot $trxName) -OutputDir $OutputDir -RunLabel $RunLabel -Backend mssql -Rounds $Rounds -Seed $Seed -StartedUtc $collectorStarted
@@ -441,6 +523,15 @@ catch {
 finally {
     if ($shimInstalled) { Remove-Item -LiteralPath Function:\global:docker -ErrorAction SilentlyContinue }
     if ($locationPushed) { Pop-Location }
+    if ($null -ne $sampler -and -not $samplerStopped) {
+        try {
+            $provenance.sampler.cleanup_stop = Close-PowerSampler -Process $sampler -StopPath $samplerFiles.stop
+            Write-LaneLog 'SAMPLER stopped during cleanup'
+        }
+        catch {
+            Add-LaneFailure 'sampler-stop' $_
+        }
+    }
     if ($cms -and -not $cms.HasExited) {
         try {
             $cms.Kill($true)

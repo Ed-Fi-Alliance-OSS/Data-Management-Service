@@ -15,6 +15,7 @@
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification = 'The command stand-ins run in the lane script scope and can only reach global state.')]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalFunctions', '', Justification = 'Stand-ins for native commands must be global to be resolved from the lane script.')]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', Justification = 'Pester shares BeforeAll and BeforeEach variables with the It blocks, which the analyzer does not follow.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Stand-ins keep the parameters of the commands and callbacks they replace, used or not.')]
 param()
 
 BeforeAll {
@@ -143,6 +144,65 @@ BeforeAll {
         $path = Join-Path $OutputDir 'refusals.log'
         if (-not (Test-Path -LiteralPath $path)) { return , @() }
         , @(Get-Content -LiteralPath $path | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json })
+    }
+
+    # Sampler stand-ins. The power file's columns are pinned here, independently of the module.
+    $global:SamplerColumns = @('run_id', 'seq', 'qpc', 'utc', 'observation_error', 'call_succeeded', 'win32_error', 'ac_line_status', 'battery_flag', 'battery_life_percent', 'system_status_flag', 'scheme_query_succeeded', 'scheme_query_failure', 'scheme_guid')
+    $global:QpcFrequency = [long]10000000
+
+    # One spec per row: seq, offset (seconds after the first row), power kind, run id, clock skew.
+    function global:New-TestSampleSpec([int] $Count, [double] $Step = 1, [string] $RunId = 'run-1') {
+        , @(0..($Count - 1) | ForEach-Object { @{ Seq = $_ + 1; Offset = $_ * $Step; Kind = 'online'; RunId = $RunId; Skew = 0.0 } })
+    }
+
+    function global:ConvertTo-TestSampleLine([object[]] $Spec, [long] $StartQpc = 1000000000, [datetime] $StartUtc = [datetime]::new(2026, 10, 24, 12, 0, 0, [DateTimeKind]::Utc)) {
+        , @($Spec | ForEach-Object {
+                $online = $_.Kind -ne 'observation_error'
+                $fields = @(
+                    $_.RunId,
+                    $_.Seq,
+                    ($StartQpc + [long]($_.Offset * $global:QpcFrequency)),
+                    $StartUtc.AddSeconds($_.Offset + $_.Skew).ToString('o'),
+                    $(if ($online) { 'false' } else { 'true' }),
+                    $(if ($online) { 'true' } else { '' }),
+                    '',
+                    $(if (-not $online) { '' } elseif ($_.Kind -eq 'offline') { '0' } else { '1' }),
+                    $(if ($online) { '8' } else { '' }),
+                    $(if ($online) { '80' } else { '' }),
+                    $(if ($online) { '0' } else { '' }),
+                    $(if ($online) { 'true' } else { '' }),
+                    '',
+                    $(if ($online) { $global:BalancedScheme } else { '' })
+                )
+                $fields -join ','
+            })
+    }
+
+    function global:Write-TestReady([string] $Path, [string] $RunId, [int] $ProcessId, [string] $FirstRow) {
+        [ordered]@{ schema = 'power-sampler-ready/1'; run_id = $RunId; identity = [ordered]@{ sampler_pid = $ProcessId }; first_row = $FirstRow } |
+            ConvertTo-Json | Set-Content -LiteralPath $Path -Encoding utf8NoBOM
+    }
+
+    # A process stand-in: HasExited and ExitCode come from its state; WaitForExit runs the state's
+    # OnWait action, then reports whether it exits on the stop signal; Kill marks it killed.
+    function global:New-TestProcess([hashtable] $State) {
+        foreach ($name in 'Exited', 'ExitCode', 'ExitsOnStop', 'Killed', 'OnWait') { if (-not $State.ContainsKey($name)) { $State[$name] = $null } }
+        if ($null -eq $State.ExitsOnStop) { $State.ExitsOnStop = $true }
+        if ($null -eq $State.ExitCode) { $State.ExitCode = 0 }
+        $State.WaitCalls = [System.Collections.Generic.List[int]]::new()
+        $process = [pscustomobject]@{ Id = $State.Id; State = $State }
+        $process | Add-Member -MemberType ScriptProperty -Name HasExited -Value { [bool]$this.State.Exited }
+        $process | Add-Member -MemberType ScriptProperty -Name ExitCode -Value { $this.State.ExitCode }
+        $process | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {
+            param([int] $Milliseconds)
+            $this.State.WaitCalls.Add($Milliseconds)
+            if ($null -ne $this.State.OnWait) { & $this.State.OnWait }
+            if ($this.State.Exited) { return $true }
+            if ($this.State.ExitsOnStop -and -not $this.State.Killed) { $this.State.Exited = $true; return $true }
+            $false
+        }
+        $process | Add-Member -MemberType ScriptMethod -Name Kill -Value { param([bool] $Tree) $this.State.Killed = $true }
+        $process
     }
 }
 
@@ -647,6 +707,502 @@ Describe 'ConvertTo-PowerCheckRecord and Add-PowerRefusal' {
     }
 }
 
+Describe 'Test-SamplerCoverage' {
+    BeforeAll {
+        # Rows every second from qpc 1000000000; the collection runs from 2.5 s to 6.5 s.
+        $start = [long]1000000000
+        $launch = $start + [long](2.5 * $global:QpcFrequency)
+        $exit = $start + [long](6.5 * $global:QpcFrequency)
+        $coverage = {
+            param([object[]] $Spec)
+            $lines = @($global:SamplerColumns -join ',') + (ConvertTo-TestSampleLine $Spec)
+            $failures = Test-SamplerCoverage -Line $lines -RunId 'run-1' -QpcFrequency $global:QpcFrequency -LaunchQpc $launch -ExitQpc $exit
+            , $failures
+        }
+    }
+
+    It 'holds for contiguous rows that bracket the collection and all meet P' {
+        $failures = & $coverage (New-TestSampleSpec 10)
+        $failures | Should -BeNullOrEmpty
+    }
+
+    It 'fails <Code> when <Name>' -ForEach @(
+        @{ Name = 'the file has no rows'; Code = 'no_rows'; Change = { param($s) , @() } }
+        @{ Name = 'the first row comes after the launch'; Code = 'no_row_before_launch'; Change = { param($s) , @($s | ForEach-Object { $_.Offset += 3; $_ }) } }
+        @{ Name = 'the last row comes before the exit'; Code = 'no_row_after_exit'; Change = { param($s) , @($s[0..5]) } }
+        @{ Name = 'a row is missing'; Code = 'seq_not_contiguous'; Change = { param($s) , @($s[0..3] + $s[5..9]) } }
+        @{ Name = 'a row repeats a seq'; Code = 'seq_not_contiguous'; Change = { param($s) $s[4].Seq = 4; , $s } }
+        @{ Name = 'a gap inside the window exceeds 3 s'; Code = 'gap_exceeded'; Change = { param($s) foreach ($row in $s[5..9]) { $row.Offset += 2.5 }; , $s } }
+        @{ Name = 'the wall clock steps 1.5 s against qpc'; Code = 'clock_step'; Change = { param($s) foreach ($row in $s[4..9]) { $row.Skew = 1.5 }; , $s } }
+        @{ Name = 'qpc does not increase'; Code = 'qpc_not_increasing'; Change = { param($s) $s[4].Offset = $s[3].Offset; , $s } }
+        @{ Name = 'a row names another run'; Code = 'identity_changed'; Change = { param($s) $s[7].RunId = 'run-2'; , $s } }
+        @{ Name = 'a row inside the window is offline'; Code = 'power_unmet_in_window'; Change = { param($s) $s[4].Kind = 'offline'; , $s } }
+        @{ Name = 'the bracketing row before the launch is offline'; Code = 'power_unmet_in_window'; Change = { param($s) $s[2].Kind = 'offline'; , $s } }
+        @{ Name = 'the bracketing row after the exit is offline'; Code = 'power_unmet_in_window'; Change = { param($s) $s[7].Kind = 'offline'; , $s } }
+        @{ Name = 'a row inside the window could not be observed'; Code = 'power_unmet_in_window'; Change = { param($s) $s[5].Kind = 'observation_error'; , $s } }
+    ) {
+        $spec = & $Change (New-TestSampleSpec 10)
+        $failures = & $coverage $spec
+        $failures | Should -Contain $Code
+    }
+
+    It 'accepts a gap of exactly 3 s and a clock difference of exactly 1 s' {
+        $spec = New-TestSampleSpec 10
+        foreach ($row in $spec[5..9]) { $row.Offset += 2 }
+        foreach ($row in $spec[6..9]) { $row.Skew = 1 }
+        $failures = & $coverage $spec
+        $failures | Should -BeNullOrEmpty
+    }
+
+    It 'ignores an offline row and a long gap before the bracketing row' {
+        $spec = New-TestSampleSpec 10
+        $spec[0].Kind = 'offline'
+        $spec[0].Offset = -10
+        $failures = & $coverage $spec
+        $failures | Should -BeNullOrEmpty
+    }
+
+    It 'refuses <Name> instead of reading it loosely' -ForEach @(
+        @{ Name = 'a capitalised Boolean'; Change = { param($l) $l -replace ',true,,1,', ',True,,1,' } }
+        @{ Name = 'a line cut short'; Change = { param($l) $l.Substring(0, $l.LastIndexOf(',')) } }
+        @{ Name = 'a line with an extra field'; Change = { param($l) "$l,extra" } }
+        @{ Name = 'an empty line'; Change = { param($l) '' } }
+    ) {
+        $lines = ConvertTo-TestSampleLine (New-TestSampleSpec 10)
+        $lines[4] = & $Change $lines[4]
+        $failures = Test-SamplerCoverage -Line (@($global:SamplerColumns -join ',') + $lines) -RunId 'run-1' -QpcFrequency $global:QpcFrequency -LaunchQpc $launch -ExitQpc $exit
+        $failures | Should -Be @('row_malformed')
+    }
+
+    It 'refuses a file whose header is not the power columns' {
+        $lines = @(($global:SamplerColumns | Select-Object -SkipLast 1) -join ',') + (ConvertTo-TestSampleLine (New-TestSampleSpec 10))
+        $failures = Test-SamplerCoverage -Line $lines -RunId 'run-1' -QpcFrequency $global:QpcFrequency -LaunchQpc $launch -ExitQpc $exit
+        $failures | Should -Be @('header_malformed')
+    }
+
+    It 'reads a row that could not be observed, with its empty trailing fields, as an observation error' {
+        $spec = New-TestSampleSpec 1
+        $spec[0].Kind = 'observation_error'
+        $row = ConvertFrom-PowerSampleRow (ConvertTo-TestSampleLine $spec)[0]
+        $row.observation_error | Should -BeTrue
+        $row.scheme_guid | Should -BeNullOrEmpty
+    }
+
+    It 'refuses a line of <Count> fields by its field count' -ForEach @(@{ Count = 13 }, @{ Count = 15 }) {
+        $fields = [System.Collections.Generic.List[string]](ConvertTo-TestSampleLine (New-TestSampleSpec 1))[0].Split(',')
+        if ($Count -lt $fields.Count) { $fields.RemoveAt($fields.Count - 1) } else { $fields.Add('extra') }
+        { ConvertFrom-PowerSampleRow ($fields -join ',') } | Should -Throw '*wrong number of fields*'
+    }
+
+    It 'parses <Value> in <Column> as malformed' -ForEach @(
+        @{ Column = 'seq'; Value = '-1' }
+        @{ Column = 'ac_line_status'; Value = '1.0' }
+        @{ Column = 'observation_error'; Value = 'False' }
+        @{ Column = 'utc'; Value = '2026-10-24 12:00:00' }
+    ) {
+        $fields = (ConvertTo-TestSampleLine (New-TestSampleSpec 1))[0].Split(',')
+        $fields[[array]::IndexOf($global:SamplerColumns, $Column)] = $Value
+        { ConvertFrom-PowerSampleRow ($fields -join ',') } | Should -Throw
+    }
+}
+
+Describe 'Wait-PowerSamplerReady' {
+    BeforeEach {
+        $folder = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $folder | Out-Null
+        $ready = Join-Path $folder 'ready.json'
+        $onlineRow = (ConvertTo-TestSampleLine (New-TestSampleSpec 1 -RunId 'run-1'))[0]
+        $clock = @{ Now = [datetime]::new(2026, 10, 24, 12, 0, 0, [DateTimeKind]::Utc); Pauses = 0; WriteAt = 0; Row = $onlineRow; ReadyPath = $ready }
+        $wait = @{
+            Clock = { $clock.Now }.GetNewClosure()
+            Pause = {
+                param([int] $Milliseconds)
+                $clock.Pauses++
+                # A wait that ignores its deadline must fail here, not loop for ever.
+                if ($clock.Pauses -gt 1000) { throw 'The wait did not end at its deadline.' }
+                $clock.Now = $clock.Now.AddMilliseconds($Milliseconds)
+                if ($clock.Pauses -eq $clock.WriteAt) { Write-TestReady $clock.ReadyPath 'run-1' 4242 $clock.Row }
+            }.GetNewClosure()
+        }
+        $process = New-TestProcess @{ Id = 4242 }
+    }
+
+    It 'returns the first row when the ready record arrives before the timeout' {
+        $clock.WriteAt = 3
+        $result = Wait-PowerSamplerReady -Process $process -ReadyPath $ready -RunId 'run-1' @wait
+        $result.failure | Should -BeNullOrEmpty
+        $result.first_row.seq | Should -Be 1
+        $clock.Pauses | Should -Be 3
+    }
+
+    It 'times out after 30 s of the injected clock, without sleeping' {
+        $started = [System.Diagnostics.Stopwatch]::StartNew()
+        $result = Wait-PowerSamplerReady -Process $process -ReadyPath $ready -RunId 'run-1' @wait
+        $result.failure | Should -Be 'sampler_ready_timeout'
+        $clock.Pauses | Should -Be 150
+        $started.Elapsed.TotalSeconds | Should -BeLessThan 10
+    }
+
+    It 'stops waiting as soon as the sampler has exited' {
+        $process.State.Exited = $true
+        $result = Wait-PowerSamplerReady -Process $process -ReadyPath $ready -RunId 'run-1' @wait
+        $result.failure | Should -Be 'sampler_exited_before_ready'
+        $clock.Pauses | Should -Be 0
+    }
+
+    It 'refuses a ready record for <Name>' -ForEach @(
+        @{ Name = 'another run'; RunId = 'run-2'; ProcessId = 4242; Seq = 1 }
+        @{ Name = 'another process'; RunId = 'run-1'; ProcessId = 1; Seq = 1 }
+        @{ Name = 'a first row that is not row 1'; RunId = 'run-1'; ProcessId = 4242; Seq = 2 }
+    ) {
+        $spec = New-TestSampleSpec 1 -RunId 'run-1'
+        $spec[0].Seq = $Seq
+        Write-TestReady $ready $RunId $ProcessId (ConvertTo-TestSampleLine $spec)[0]
+        (Wait-PowerSamplerReady -Process $process -ReadyPath $ready -RunId 'run-1' @wait).failure | Should -Be 'sampler_identity_mismatch'
+    }
+
+    It 'refuses a malformed ready record' {
+        '{ not json' | Set-Content -LiteralPath $ready
+        (Wait-PowerSamplerReady -Process $process -ReadyPath $ready -RunId 'run-1' @wait).failure | Should -Be 'sampler_ready_malformed'
+    }
+
+    It 'refuses a first row that does not meet P, and records it as a refusal' {
+        $spec = New-TestSampleSpec 1 -RunId 'run-1'
+        $spec[0].Kind = 'offline'
+        Write-TestReady $ready 'run-1' 4242 (ConvertTo-TestSampleLine $spec)[0]
+        $result = Wait-PowerSamplerReady -Process $process -ReadyPath $ready -RunId 'run-1' @wait
+        $result.failure | Should -Be 'sampler_ready_not_p'
+        $result.unmet | Should -Be @('ac_line_offline')
+        $record = ConvertTo-SamplerRefusalRecord -Ready $result
+        $record.check | Should -Be 'before_launch'
+        $record.unmet | Should -Be @('sampler_ready_not_p', 'ac_line_offline')
+        $record.reading.ac_line_status | Should -Be 0
+    }
+
+    It 'records a sampler that never became ready as a refusal without a reading' {
+        $process.State.Exited = $true
+        $record = ConvertTo-SamplerRefusalRecord -Ready (Wait-PowerSamplerReady -Process $process -ReadyPath $ready -RunId 'run-1' @wait)
+        $record.unmet | Should -Be @('sampler_exited_before_ready')
+        $record.reading | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Close-PowerSampler' {
+    BeforeEach {
+        $stop = Join-Path $TestDrive "stop-$([guid]::NewGuid().ToString('N'))"
+    }
+
+    It 'signals the sampler and records a clean stop' {
+        $process = New-TestProcess @{ Id = 1 }
+        $result = Close-PowerSampler -Process $process -StopPath $stop
+        Test-Path -LiteralPath $stop | Should -BeTrue
+        $process.State.WaitCalls | Should -Be @(10000)
+        $failures = Get-SamplerLifecycleFailure $result
+        $failures | Should -BeNullOrEmpty
+    }
+
+    It 'reports <Code> when <Name>' -ForEach @(
+        @{ Name = 'the sampler had already exited'; Code = 'sampler_dead_at_exit'; State = @{ Id = 1; Exited = $true } }
+        @{ Name = 'the sampler does not stop within the timeout'; Code = 'sampler_slow_shutdown'; State = @{ Id = 1; ExitsOnStop = $false } }
+        @{ Name = 'the sampler exits nonzero'; Code = 'sampler_exit_nonzero'; State = @{ Id = 1; ExitCode = 1 } }
+    ) {
+        $process = New-TestProcess $State.Clone()
+        $failures = Get-SamplerLifecycleFailure (Close-PowerSampler -Process $process -StopPath $stop)
+        $failures | Should -Contain $Code
+    }
+
+    It 'kills a sampler that does not stop in time' {
+        $process = New-TestProcess @{ Id = 1; ExitsOnStop = $false }
+        (Close-PowerSampler -Process $process -StopPath $stop).killed | Should -BeTrue
+        $process.State.Killed | Should -BeTrue
+    }
+}
+
+Describe 'Invoke-PowerSampler' {
+    BeforeEach {
+        $folder = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $folder | Out-Null
+        $paths = @{
+            PowerPath    = Join-Path $folder 'power.csv'
+            OptionalPath = Join-Path $folder 'optional.csv'
+            ReadyPath    = Join-Path $folder 'ready.json'
+            StopPath     = Join-Path $folder 'stop'
+        }
+        # Each clock read advances 0.1 ms; a pause advances by its length. Nothing sleeps.
+        $time = @{ Qpc = [long]1000000000; Utc = [datetime]::new(2026, 10, 24, 12, 0, 0, [DateTimeKind]::Utc); Pauses = [System.Collections.Generic.List[int]]::new(); StopAfter = 0; StopPath = $paths.StopPath; PowerKinds = @('online'); Reads = 0 }
+        $online = [ordered]@{ utc = 'x'; call_succeeded = $true; win32_error = $null; ac_line_status = 1; battery_flag = 8; battery_life_percent = 80; system_status_flag = 0; scheme_query_succeeded = $true; scheme_query_failure = $null; scheme_guid = $global:BalancedScheme }
+        $loop = @{
+            RunId          = 'run-1'
+            Identity       = [ordered]@{ run_label = 'pilot'; sampler_pid = 4242 }
+            Role           = [ordered]@{ docker_vm = [ordered]@{ pid = 7; start_utc = 'x'; na = $null } }
+            OptionalColumn = @('available_mbytes', 'available_mbytes_na', 'cpu_background_floored')
+            ReadOptional   = { param([long] $Qpc) [ordered]@{ available_mbytes = '512.000'; available_mbytes_na = ''; cpu_background_floored = 'false' } }
+            QpcFrequency   = $global:QpcFrequency
+            ReadClock      = { $time.Qpc += 1000; $time.Utc = $time.Utc.AddTicks(1000); [ordered]@{ qpc = $time.Qpc; utc = $time.Utc } }.GetNewClosure()
+            Pause          = {
+                param([int] $Milliseconds)
+                $time.Pauses.Add($Milliseconds)
+                # A loop that ignores its stop signal must fail here, not run for ever.
+                if ($time.Pauses.Count -gt 100) { throw 'The sampler loop did not stop.' }
+                $time.Qpc += [long]$Milliseconds * 10000
+                $time.Utc = $time.Utc.AddMilliseconds($Milliseconds)
+                if ($time.StopAfter -gt 0 -and $time.Pauses.Count -eq $time.StopAfter) { 'stop' | Set-Content -LiteralPath $time.StopPath }
+            }.GetNewClosure()
+            ReadPower      = {
+                $time.Reads++
+                $kind = $time.PowerKinds[[Math]::Min($time.Reads, $time.PowerKinds.Count) - 1]
+                if ($kind -eq 'throws') { throw 'power read failed' }
+                $reading = [ordered]@{}
+                foreach ($key in $online.Keys) { $reading[$key] = $online[$key] }
+                if ($kind -eq 'offline') { $reading.ac_line_status = 0 }
+                $reading
+            }.GetNewClosure()
+        }
+    }
+
+    It 'writes one power row and one optional row per tick, with contiguous seq' {
+        Invoke-PowerSampler @loop @paths -MaxTicks 4
+        $rows = @(Import-Csv -LiteralPath $paths.PowerPath)
+        @($rows.seq) | Should -Be @('1', '2', '3', '4')
+        (Get-Content -LiteralPath $paths.PowerPath -TotalCount 1) | Should -Be ($global:SamplerColumns -join ',')
+        @(Import-Csv -LiteralPath $paths.OptionalPath).Count | Should -Be 4
+        $failures = Test-SamplerCoverage -Line (Get-Content -LiteralPath $paths.PowerPath) -RunId 'run-1' -QpcFrequency $global:QpcFrequency -LaunchQpc ([long]$rows[0].qpc) -ExitQpc ([long]$rows[3].qpc)
+        $failures | Should -BeNullOrEmpty
+    }
+
+    It 'writes the ready record after the first row, with the identity, roles, columns and that row' {
+        Invoke-PowerSampler @loop @paths -MaxTicks 2
+        $ready = Get-Content -LiteralPath $paths.ReadyPath -Raw | ConvertFrom-Json
+        $ready.run_id | Should -Be 'run-1'
+        $ready.identity.sampler_pid | Should -Be 4242
+        $ready.roles.docker_vm.pid | Should -Be 7
+        @($ready.optional_columns) | Should -Be $loop.OptionalColumn
+        $ready.first_row | Should -Be (Get-Content -LiteralPath $paths.PowerPath)[1]
+    }
+
+    It 'appends the power row of a tick before reading its optional values' {
+        $seen = [System.Collections.Generic.List[int]]::new()
+        $power = $paths.PowerPath
+        $loop.ReadOptional = { param([long] $Qpc) $seen.Add(@(Import-Csv -LiteralPath $power).Count); $null }.GetNewClosure()
+        Invoke-PowerSampler @loop @paths -MaxTicks 3
+        @($seen) | Should -Be @(1, 2, 3)
+    }
+
+    It 'records NA with counter_error, never a number, when the optional read fails' {
+        $loop.ReadOptional = { param([long] $Qpc) throw 'counter read failed' }
+        Invoke-PowerSampler @loop @paths -MaxTicks 2
+        $optional = @(Import-Csv -LiteralPath $paths.OptionalPath)
+        @($optional.available_mbytes) | Should -Be @('NA', 'NA')
+        @($optional.available_mbytes_na) | Should -Be @('counter_error', 'counter_error')
+        @($optional.cpu_background_floored) | Should -Be @('NA', 'NA')
+        @(Import-Csv -LiteralPath $paths.PowerPath).Count | Should -Be 2
+    }
+
+    It 'records a power read that throws as an observation error, which cannot meet P' {
+        $time.PowerKinds = @('online', 'throws', 'online')
+        Invoke-PowerSampler @loop @paths -MaxTicks 3
+        $rows = @(Import-Csv -LiteralPath $paths.PowerPath)
+        $rows[1].observation_error | Should -Be 'true'
+        $rows[1].call_succeeded | Should -Be ''
+        $failures = Test-SamplerCoverage -Line (Get-Content -LiteralPath $paths.PowerPath) -RunId 'run-1' -QpcFrequency $global:QpcFrequency -LaunchQpc ([long]$rows[0].qpc) -ExitQpc ([long]$rows[2].qpc)
+        $failures | Should -Be @('power_unmet_in_window')
+    }
+
+    It 'takes one last tick after the stop signal, then ends' {
+        $time.StopAfter = 2
+        Invoke-PowerSampler @loop @paths
+        @(Import-Csv -LiteralPath $paths.PowerPath).Count | Should -Be 3
+        $time.Pauses.Count | Should -Be 2
+    }
+
+    It 'schedules each tick one interval after the first, on qpc' {
+        Invoke-PowerSampler @loop @paths -MaxTicks 4
+        $rows = @(Import-Csv -LiteralPath $paths.PowerPath)
+        foreach ($wait in $time.Pauses) { $wait | Should -BeGreaterThan 990; $wait | Should -BeLessOrEqual 1000 }
+        for ($i = 1; $i -lt $rows.Count; $i++) {
+            # The wait is floored to whole milliseconds, so a tick may start up to 1 ms early.
+            (([long]$rows[$i].qpc - [long]$rows[0].qpc) / $global:QpcFrequency) | Should -BeGreaterOrEqual ($i - 0.001)
+            (([long]$rows[$i].qpc - [long]$rows[0].qpc) / $global:QpcFrequency) | Should -BeLessThan ($i + 0.01)
+        }
+    }
+
+    It 'shows a blocked optional read as a coverage gap' {
+        $loop.ReadOptional = { param([long] $Qpc) $time.Qpc += 50000000; $time.Utc = $time.Utc.AddSeconds(5); $null }.GetNewClosure()
+        Invoke-PowerSampler @loop @paths -MaxTicks 3
+        $rows = @(Import-Csv -LiteralPath $paths.PowerPath)
+        $failures = Test-SamplerCoverage -Line (Get-Content -LiteralPath $paths.PowerPath) -RunId 'run-1' -QpcFrequency $global:QpcFrequency -LaunchQpc ([long]$rows[0].qpc) -ExitQpc ([long]$rows[2].qpc)
+        $failures | Should -Be @('gap_exceeded')
+    }
+
+    It 'refuses to overwrite an existing <File>' -ForEach @(@{ File = 'PowerPath' }, @{ File = 'OptionalPath' }, @{ File = 'ReadyPath' }) {
+        'earlier' | Set-Content -LiteralPath $paths[$File]
+        { Invoke-PowerSampler @loop @paths -MaxTicks 1 } | Should -Throw '*already exists*'
+        Get-Content -LiteralPath $paths[$File] | Should -Be 'earlier'
+    }
+}
+
+Describe 'Host sample state and optional values' {
+    BeforeEach {
+        # Counters return the values in $hostState.Counter; a missing name cannot be created. CPU
+        # readings come from $hostState.Cpu (process id -> start ticks and CPU seconds, or null).
+        $hostState = @{
+            Counter = @{ '% Processor Time' = 60.0; 'Available MBytes' = 512.0; '% Processor Utility' = 70.0; '% Processor Performance' = 90.0; 'Processor Frequency' = 2400.0; 'Processor Queue Length' = 1.0 }
+            Throws  = @{}
+            Cpu     = @{ 7 = @{ start_ticks = 70; cpu_seconds = 10.0 }; 9 = @{ start_ticks = 90; cpu_seconds = 1.0 } }
+            Candidates = @{ docker_vm = , @(@{ pid = 7; start_ticks = 70 }) }
+        }
+        $newState = {
+            param([System.Collections.IDictionary] $Role = [ordered]@{ docker_vm = @{} })
+            # A local copy of the reference: GetNewClosure captures this scope's variables only.
+            $hostState = $hostState
+            Initialize-HostSampleState -Role $Role -Qpc 0 -QpcFrequency $global:QpcFrequency -LogicalCpus 4 -SamplerProcessId 9 `
+                -NewCounter {
+                    param([string] $Category, [string] $Counter, [string] $Instance)
+                    if (-not $hostState.Counter.ContainsKey($Counter)) { throw 'no such counter' }
+                    $fake = [pscustomobject]@{ Name = $Counter; Host = $hostState }
+                    $fake | Add-Member -MemberType ScriptMethod -Name NextValue -Value { if ($this.Host.Throws.ContainsKey($this.Name)) { throw 'read failed' }; $this.Host.Counter[$this.Name] }
+                    $fake
+                }.GetNewClosure() `
+                -FindCandidate { param([string] $Name, $Spec) $found = $hostState.Candidates[$Name]; if ($null -eq $found) { , @() } else { , @($found) } }.GetNewClosure() `
+                -ReadProcessCpu { param([int] $ProcessId) $reading = $hostState.Cpu[$ProcessId]; if ($null -eq $reading) { $null } else { [ordered]@{ start_ticks = $reading.start_ticks; cpu_seconds = $reading.cpu_seconds } } }.GetNewClosure()
+        }.GetNewClosure()
+        $second = $global:QpcFrequency
+    }
+
+    It 'reports CPU as the share of all logical CPUs over the qpc interval' {
+        $state = & $newState
+        $hostState.Cpu[7].cpu_seconds = 12.0
+        $hostState.Cpu[9].cpu_seconds = 1.2
+        $row = Read-HostSample -State $state -Qpc $second
+        $row.cpu_docker_vm_pct | Should -Be '50.000'
+        $row.cpu_sampler_pct | Should -Be '5.000'
+        $row.cpu_background_pct | Should -Be '5.000'
+        $row.cpu_background_floored | Should -Be 'false'
+        $row.processor_time_pct | Should -Be '60.000'
+    }
+
+    It 'floors background CPU at 0 and flags it' {
+        $state = & $newState
+        $hostState.Cpu[7].cpu_seconds = 13.0
+        $row = Read-HostSample -State $state -Qpc $second
+        $row.cpu_background_pct | Should -Be '0.000'
+        $row.cpu_background_floored | Should -Be 'true'
+    }
+
+    It 'records a counter that cannot be created as counter_unavailable on every tick, never as 0' {
+        $hostState.Counter.Remove('Available MBytes')
+        $state = & $newState
+        foreach ($tick in 1, 2) {
+            $row = Read-HostSample -State $state -Qpc ($tick * $second)
+            $row.available_mbytes | Should -Be 'NA'
+            $row.available_mbytes_na | Should -Be 'counter_unavailable'
+        }
+    }
+
+    It 'records a counter read that fails, or returns <Value>, as counter_error' -ForEach @(@{ Value = 'NaN' }, @{ Value = 'Infinity' }, @{ Value = 'throws' }) {
+        $state = & $newState
+        if ($Value -eq 'throws') { $hostState.Throws['Available MBytes'] = $true } else { $hostState.Counter['Available MBytes'] = [double]::Parse($Value, [cultureinfo]::InvariantCulture) }
+        $row = Read-HostSample -State $state -Qpc $second
+        $row.available_mbytes | Should -Be 'NA'
+        $row.available_mbytes_na | Should -Be 'counter_error'
+    }
+
+    It 'makes background CPU NA, with the reason, when total CPU is unavailable' {
+        $hostState.Counter.Remove('% Processor Time')
+        $row = Read-HostSample -State (& $newState) -Qpc $second
+        $row.cpu_background_pct | Should -Be 'NA'
+        $row.cpu_background_pct_na | Should -Be 'counter_unavailable'
+        $row.cpu_background_floored | Should -Be 'NA'
+    }
+
+    It 'records a role with <Name> at the handshake as <Code> for the whole run' -ForEach @(
+        @{ Name = 'no process'; Code = 'process_absent'; Candidates = @() }
+        @{ Name = 'two processes'; Code = 'process_ambiguous'; Candidates = @(@{ pid = 7; start_ticks = 70 }, @{ pid = 8; start_ticks = 80 }) }
+        @{ Name = 'an unreadable start time'; Code = 'process_ambiguous'; Candidates = @(@{ pid = 7; start_ticks = $null }) }
+    ) {
+        $hostState.Candidates.docker_vm = $Candidates
+        $state = & $newState
+        foreach ($tick in 1, 2) {
+            $row = Read-HostSample -State $state -Qpc ($tick * $second)
+            $row.cpu_docker_vm_pct | Should -Be 'NA'
+            $row.cpu_docker_vm_pct_na | Should -Be $Code
+            $row.cpu_background_pct_na | Should -Be $Code
+        }
+        (Get-HostSampleRole -State $state).docker_vm.na | Should -Be $Code
+    }
+
+    It 'records a role whose <Name> as process_changed from then on' -ForEach @(
+        @{ Name = 'start time changed'; Change = { param($h) $h.Cpu[7] = @{ start_ticks = 71; cpu_seconds = 0.5 } } }
+        @{ Name = 'process is gone'; Change = { param($h) $h.Cpu.Remove(7) } }
+    ) {
+        $state = & $newState
+        & $Change $hostState
+        (Read-HostSample -State $state -Qpc $second).cpu_docker_vm_pct_na | Should -Be 'process_changed'
+        $hostState.Cpu[7] = @{ start_ticks = 70; cpu_seconds = 11.0 }
+        $row = Read-HostSample -State $state -Qpc (2 * $second)
+        $row.cpu_docker_vm_pct | Should -Be 'NA'
+        $row.cpu_docker_vm_pct_na | Should -Be 'process_changed'
+    }
+
+    It 'publishes each role as its id and start time only' {
+        $state = & $newState
+        $roles = Get-HostSampleRole -State $state
+        @($roles.Keys) | Should -Be @('docker_vm', 'sampler')
+        $roles.docker_vm.pid | Should -Be 7
+        $roles.docker_vm.start_utc | Should -Be ([datetime]::new(70, [DateTimeKind]::Utc).ToString('o'))
+        @($roles.docker_vm.Keys) | Should -Be @('pid', 'start_utc', 'na')
+    }
+
+    It 'lists every value column with its reason column, in a fixed order' {
+        $columns = Get-HostSampleColumn -State (& $newState ([ordered]@{ cms = @{}; localdb = @{} }))
+        $columns | Should -Be @(
+            'processor_time_pct', 'processor_time_pct_na', 'processor_utility_pct', 'processor_utility_pct_na',
+            'processor_performance_pct', 'processor_performance_pct_na', 'processor_frequency_mhz', 'processor_frequency_mhz_na',
+            'processor_queue_length', 'processor_queue_length_na', 'available_mbytes', 'available_mbytes_na',
+            'cpu_cms_pct', 'cpu_cms_pct_na', 'cpu_localdb_pct', 'cpu_localdb_pct_na', 'cpu_sampler_pct', 'cpu_sampler_pct_na',
+            'cpu_background_pct', 'cpu_background_pct_na', 'cpu_background_floored')
+    }
+
+    It 'refuses an unknown role' {
+        { & $newState ([ordered]@{ browser = @{} }) } | Should -Throw '*Unknown sampler role*'
+    }
+}
+
+Describe 'Role selection' {
+    It 'resolves <Name>' -ForEach @(
+        @{ Name = 'no candidate as absent'; Candidates = @(); Na = 'process_absent' }
+        @{ Name = 'two candidates as ambiguous'; Candidates = @(@{ pid = 1; start_ticks = 1 }, @{ pid = 2; start_ticks = 2 }); Na = 'process_ambiguous' }
+        @{ Name = 'a candidate without a start time as ambiguous'; Candidates = @(@{ pid = 1; start_ticks = $null }); Na = 'process_ambiguous' }
+        @{ Name = 'one candidate as its identity'; Candidates = @(@{ pid = 1; start_ticks = 5 }); Na = $null }
+    ) {
+        $resolved = Resolve-RoleIdentity -Candidate $Candidates
+        $resolved.na | Should -Be $Na
+        if ($null -eq $Na) { $resolved.identity.pid | Should -Be 1; $resolved.identity.start_ticks | Should -Be 5 }
+    }
+
+    It 'selects the sqlservr of the named LocalDB instance only, and drops its command line' {
+        $processes = @(
+            @{ pid = 1; command_line = "sqlservr.exe -c -d`"C:\Users\u\AppData\Local\Microsoft\Microsoft SQL Server Local DB\Instances\DMS1490\master.mdf`" $($global:LaneSentinel)" }
+            @{ pid = 2; command_line = 'sqlservr.exe -d"C:\Users\u\AppData\Local\Microsoft\Microsoft SQL Server Local DB\Instances\DMS14900\master.mdf"' }
+            @{ pid = 3; command_line = 'sqlservr.exe -d"C:\Users\u\AppData\Local\Microsoft\Microsoft SQL Server Local DB\Instances\MSSQLLocalDB\master.mdf"' }
+        )
+        $selected = Select-LocalDbCandidate -Process $processes -Instance 'DMS1490'
+        $selected.Count | Should -Be 1
+        $selected[0].pid | Should -Be 1
+        ($selected | ConvertTo-Json -Depth 3) | Should -Not -Match $global:LaneSentinel
+    }
+
+    It 'quotes <Value> for the sampler command line' -ForEach @(
+        @{ Value = 'plain'; Quoted = 'plain' }
+        @{ Value = 'C:\with space\host.csv'; Quoted = '"C:\with space\host.csv"' }
+        @{ Value = 'C:\with space\'; Quoted = '"C:\with space\\"' }
+        @{ Value = 'say "hi"'; Quoted = '"say \"hi\""' }
+        @{ Value = ''; Quoted = '""' }
+    ) {
+        & (Get-Module CollectionLane) { param($Text) ConvertTo-CommandLineArgument $Text } $Value | Should -BeExactly $Quoted
+    }
+}
+
 Describe 'lane-postgresql.ps1 with synthetic command output' {
     BeforeAll {
         $lane = Join-Path $PSScriptRoot 'lane-postgresql.ps1'
@@ -691,10 +1247,44 @@ Describe 'lane-postgresql.ps1 with synthetic command output' {
             }
             $global:LASTEXITCODE = $global:LaneScenario.CollectorExit
         }
+
+        # The sampler stand-in, reached through an alias as the power reader is. It writes the
+        # ready record and first row at once; when the lane signals stop (WaitForExit), it writes
+        # the rows up to that moment at $global:SamplerScenario.Step seconds apart, so that they
+        # bracket the collection as a real sampler's rows would. Nothing sleeps.
+        function global:Open-TestSampler {
+            param([string] $ScriptPath, [System.Collections.IDictionary] $Argument, [string] $StandardOutputPath, [string] $StandardErrorPath)
+            $scenario = $global:SamplerScenario
+            $scenario.Arguments = $Argument
+            $startQpc = [System.Diagnostics.Stopwatch]::GetTimestamp()
+            $startUtc = [datetime]::UtcNow
+            $state = @{ Id = 4242; ExitsOnStop = -not $scenario.SlowShutdown; ExitCode = $scenario.ExitCode; Exited = $scenario.ExitBeforeReady; Written = $false }
+            $process = New-TestProcess $state
+            $scenario.Process = $process
+            if ($scenario.ExitBeforeReady) { return $process }
+            $first = New-TestSampleSpec 1 -RunId $Argument.RunId
+            $first[0].Kind = $scenario.ReadyKind
+            $firstLine = (ConvertTo-TestSampleLine $first -StartQpc $startQpc -StartUtc $startUtc)[0]
+            Set-Content -LiteralPath $Argument.PowerPath -Value @(($global:SamplerColumns -join ','), $firstLine) -Encoding utf8NoBOM
+            Write-TestReady $Argument.ReadyPath $Argument.RunId 4242 $firstLine
+            if ($scenario.DeadAtExit) { $state.Exited = $true }
+            $state.OnWait = {
+                if ($state.Written) { return }
+                $state.Written = $true
+                $elapsed = ([System.Diagnostics.Stopwatch]::GetTimestamp() - $startQpc) / $global:QpcFrequency
+                $count = [int][Math]::Ceiling($elapsed / $scenario.Step) + 1
+                $spec = New-TestSampleSpec $count -Step $scenario.Step -RunId $Argument.RunId
+                $spec[$count - 1].Kind = $scenario.LastKind
+                $lines = ConvertTo-TestSampleLine $spec -StartQpc $startQpc -StartUtc $startUtc
+                Add-Content -LiteralPath $Argument.PowerPath -Value $lines[1..($count - 1)] -Encoding utf8NoBOM
+            }.GetNewClosure()
+            $process
+        }
+        Set-Alias -Name Open-PowerSampler -Value Open-TestSampler -Scope Global
     }
 
     AfterAll {
-        Remove-Item -LiteralPath Function:\global:git, Function:\global:Get-NetTCPConnection, Function:\global:Invoke-WebRequest, Function:\global:pwsh, Function:\global:docker, Function:\global:dotnet -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath Function:\global:git, Function:\global:Get-NetTCPConnection, Function:\global:Invoke-WebRequest, Function:\global:pwsh, Function:\global:docker, Function:\global:dotnet, Function:\global:Open-TestSampler, Alias:\Open-PowerSampler -ErrorAction SilentlyContinue
     }
 
     BeforeEach {
@@ -718,6 +1308,7 @@ Describe 'lane-postgresql.ps1 with synthetic command output' {
             Inspections    = 0
         }
         Set-PowerSequence 'online'
+        $global:SamplerScenario = @{ ExitBeforeReady = $false; ReadyKind = 'online'; LastKind = 'online'; Step = 1; DeadAtExit = $false; SlowShutdown = $false; ExitCode = 0; Arguments = $null; Process = $null }
         $arguments = @{ RunLabel = 'pilot-a5'; Rounds = 20; WarmupRounds = 0; Seed = 301; OutputDir = $stage; CollectorRoot = $collector; TargetRoot = $target; WorkRoot = $work }
         $readProvenance = { Get-Content (Get-ChildItem $stage -Filter 'provenance-*.json').FullName -Raw | ConvertFrom-Json }
         $setupCalls = { @($global:LaneScenario.Calls | Where-Object { $_ -like '*setup-local-cms.ps1*' }) }
@@ -898,6 +1489,75 @@ Describe 'lane-postgresql.ps1 with synthetic command output' {
         Get-EvidenceText $stage | Should -Not -Match $global:LaneSentinel
         (Get-ChildItem $work -Filter '*.diagnostics.txt' | Get-Content -Raw) | Should -Match $global:LaneSentinel
     }
+
+    It 'starts the sampler with the docker_vm role and requires its coverage of a successful run' {
+        & $lane @arguments
+        $LASTEXITCODE | Should -Be 0
+        $global:SamplerScenario.Arguments.DockerVm | Should -BeTrue
+        $global:SamplerScenario.Arguments.Contains('CmsProcessId') | Should -BeFalse
+        $global:SamplerScenario.Arguments.PowerPath | Should -BeLike (Join-Path $stage 'host-power-postgresql-pilot-a5-*.csv')
+        $global:SamplerScenario.Arguments.StopPath | Should -BeLike (Join-Path $work '*')
+        $sampler = (& $readProvenance).sampler
+        $sampler.ready_failure | Should -BeNullOrEmpty
+        @($sampler.coverage_failures) | Should -BeNullOrEmpty
+        $sampler.power_rows | Should -BeGreaterOrEqual 2
+        $sampler.stop.stopped_in_time | Should -BeTrue
+        $sampler.launch_qpc | Should -BeLessThan $sampler.exit_qpc
+        $global:SamplerScenario.Process.State.WaitCalls[0] | Should -Be 10000
+    }
+
+    It 'refuses before the launch, and tears down, when the sampler <Name>' -ForEach @(
+        @{ Name = 'exits before it is ready'; Change = @{ ExitBeforeReady = $true }; Unmet = @('sampler_exited_before_ready') }
+        @{ Name = 'reports a first row that does not meet P'; Change = @{ ReadyKind = 'offline' }; Unmet = @('sampler_ready_not_p', 'ac_line_offline') }
+    ) {
+        foreach ($key in $Change.Keys) { $global:SamplerScenario[$key] = $Change[$key] }
+        & $lane @arguments
+        $LASTEXITCODE | Should -Be 1
+        $global:LaneScenario.Calls | Should -Not -Contain 'dotnet test'
+        (& $teardownCalls).Count | Should -Be 1
+        $refusals = Get-RefusalLine $stage
+        $refusals.Count | Should -Be 1
+        $refusals[0].check | Should -Be 'before_launch'
+        @($refusals[0].unmet) | Should -Be $Unmet
+        $provenance = & $readProvenance
+        $provenance.attempt_started | Should -BeFalse
+        $provenance.sampler.ready_failure | Should -Be $Unmet[0]
+        $provenance.sampler.cleanup_stop | Should -Not -BeNullOrEmpty
+    }
+
+    It 'fails the attempt with <Code> when the sampler <Name>' -ForEach @(
+        @{ Name = 'leaves a gap over 3 s'; Change = @{ Step = 5 }; Code = 'gap_exceeded' }
+        @{ Name = 'reports power lost after the exit'; Change = @{ LastKind = 'offline' }; Code = 'power_unmet_in_window' }
+        @{ Name = 'has died by the exit'; Change = @{ DeadAtExit = $true }; Code = 'sampler_dead_at_exit' }
+        @{ Name = 'does not stop in time'; Change = @{ SlowShutdown = $true }; Code = 'sampler_slow_shutdown' }
+        @{ Name = 'exits nonzero'; Change = @{ ExitCode = 1 }; Code = 'sampler_exit_nonzero' }
+    ) {
+        foreach ($key in $Change.Keys) { $global:SamplerScenario[$key] = $Change[$key] }
+        & $lane @arguments
+        $LASTEXITCODE | Should -Be 1
+        $global:LaneScenario.Calls | Should -Contain 'dotnet test'
+        (& $teardownCalls).Count | Should -Be 1
+        $provenance = & $readProvenance
+        $provenance.attempt_started | Should -BeTrue
+        @($provenance.failures.stage) | Should -Be @('sampler-coverage')
+        @($provenance.sampler.coverage_failures) | Should -Contain $Code
+        Get-RefusalLine $stage | Should -BeNullOrEmpty
+    }
+
+    It 'kills a sampler that does not stop in time' {
+        $global:SamplerScenario.SlowShutdown = $true
+        & $lane @arguments
+        $global:SamplerScenario.Process.State.Killed | Should -BeTrue
+        (& $readProvenance).sampler.stop.killed | Should -BeTrue
+    }
+
+    It 'judges the sampler after a failed collector and records both failures' {
+        $global:SamplerScenario.Step = 5
+        $global:LaneScenario.CollectorExit = 1
+        & $lane @arguments
+        $LASTEXITCODE | Should -Be 1
+        @((& $readProvenance).failures.stage) | Should -Be @('sampler-coverage', 'run')
+    }
 }
 
 Describe 'lane-localdb.ps1 with synthetic command output, before the service starts' {
@@ -1021,5 +1681,6 @@ Export-ModuleMember -Function ReadValuesFromEnvFile
 AfterAll {
     Remove-Item -LiteralPath Function:\global:Get-TestHash, Function:\global:Get-ValidSetting, Function:\global:Get-ValidFingerprint, Function:\global:Write-TestTrx, Function:\global:Write-TestSample, Function:\global:Get-EvidenceText -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath Alias:\Read-SystemPowerStatus, Function:\global:Get-TestPowerStatus, Function:\global:powercfg, Function:\global:New-PowerStep, Function:\global:Set-PowerSequence, Function:\global:Get-PowerStep, Function:\global:Get-RefusalLine -ErrorAction SilentlyContinue
-    Remove-Variable -Name LaneScenario, LaneSentinel, LaneAssemblies, LaneFixtureClass, PowerScenario, BalancedScheme -Scope Global -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath Function:\global:New-TestSampleSpec, Function:\global:ConvertTo-TestSampleLine, Function:\global:Write-TestReady, Function:\global:New-TestProcess -ErrorAction SilentlyContinue
+    Remove-Variable -Name LaneScenario, LaneSentinel, LaneAssemblies, LaneFixtureClass, PowerScenario, BalancedScheme, SamplerScenario, SamplerColumns, QpcFrequency -Scope Global -ErrorAction SilentlyContinue
 }

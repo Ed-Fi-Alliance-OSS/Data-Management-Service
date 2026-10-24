@@ -11,10 +11,11 @@ The scripts here produce evidence. They are not part of the product, and no ordi
 | `prepare-target.ps1` | Extracts one pinned commit with `git archive` into an empty folder that neither lies inside nor contains any worktree, refusing before it creates anything. With `-BuildHostRelease`, it also builds the Configuration Service in Release there and fingerprints its production assemblies into `target.json`. |
 | `lane-postgresql.ps1` | One PostgreSQL run: builds the target's `cs-local` stack without cache, verifies the deployment, runs the collector once, verifies the run and the deployment again, then tears the stack down |
 | `lane-localdb.ps1` | One SQL Server run on LocalDB, with the target's Configuration Service as a host process: recreates the database, starts a new process with a controlled launch environment, verifies, runs the collector once, verifies again, then stops the process |
-| `CollectionLane.psm1` | The checks both lanes and the preparer rely on: path normalization, root and worktree separation, exact fingerprints, pre-registered settings, deployment comparison, collector-run verification, the power reader and power condition P |
-| `collection.Tests.ps1` | Pester checks of the lanes' failure paths, the power checks and the preparer's folder refusals, with synthetic command output and synthetic power readings. No deployment, database or collector is used, and no test calls the native power function; the native declaration is checked by its layout. |
+| `power-sampler.ps1` | The power sampler each lane starts in its own process: one power row a second, then the optional host values (see Power sampler) |
+| `CollectionLane.psm1` | The checks both lanes and the preparer rely on: path normalization, root and worktree separation, exact fingerprints, pre-registered settings, deployment comparison, collector-run verification, the power reader, power condition P, and the sampler's loop, readiness, coverage and shutdown |
+| `collection.Tests.ps1` | Pester checks of the lanes' failure paths, the power checks, the sampler and the preparer's folder refusals, with synthetic command output, power readings, clocks and processes. No deployment, database, collector or real sampler is used, nothing waits on a wall-clock timer, and no test calls the native power function; the native declaration is checked by its layout. |
 
-Each lane exits **0 only when every stage succeeded**. Any failure exits 1 after cleanup. Failure stages include: a power refusal, setup, an unhealthy service, an unexpected setting value, a missing or malformed fingerprint, a collector that failed or ran anything other than the fixture's two tests, power condition P unmet after the collector exits, missing or mismatched samples, a deployment that changed during collection, and a failed teardown or process stop.
+Each lane exits **0 only when every stage succeeded**. Any failure exits 1 after cleanup. Failure stages include: a power refusal, a sampler that is not ready, setup, an unhealthy service, an unexpected setting value, a missing or malformed fingerprint, a collector that failed or ran anything other than the fixture's two tests, power condition P unmet after the collector exits, a sampler that did not cover the collection, missing or mismatched samples, a deployment that changed during collection, and a failed teardown or process stop.
 
 ## Power condition P (protocol E1, partly implemented)
 
@@ -37,7 +38,43 @@ Unknown (255) and every failure are not P.
 - **The collector launch is the attempt boundary.** Provenance records `attempt_started`.
 - **Refusals are not attempts.** Each is appended as one JSON line to `refusals.log` in the run's staging folder (`<Stage>\pilot` or `<Stage>\final`), with the check, the unmet parts of P and the raw power fields. The file is never rewritten. After correcting the environment, for example by plugging in, the same run may be started again.
 - **What is recorded:** every check, met or not, in `power_checks` in provenance. The scheme query's own output is never recorded, only a fixed reason code for a failure. Exception text from a failed observation goes to `<Work>\runs` only.
-- **What is not yet implemented:** the sampler's readiness and continuous coverage (§18.2). Provenance therefore records `environment_protocol.complete = false`, and no run of these lanes is a complete E1 run. No collection is authorised with them.
+- **What is not yet implemented:** the offline diagnostics (§18.3) and the collector's round timestamps and warm-up file (§18.6 M2). Provenance therefore records `environment_protocol.complete = false`, and no run of these lanes is a complete E1 run. No collection is authorised with them.
+
+## Power sampler (spec §18.2)
+
+Each lane starts `power-sampler.ps1` once the deployment is verified, before the `before_launch` check.
+
+**Each tick (1 s, scheduled on the QueryPerformanceCounter):**
+
+1. Reads `qpc` and UTC, then the power source, and appends one row to `host-power-*.csv`: `run_id`, `seq`, `qpc`, `utc`, `observation_error` and the power fields.
+2. After the first row, writes `host-ready-*.json`: the run identity, the sampler's process id and start time, the role identities, the column lists and that first row.
+3. Only then reads the optional values and appends one row to `host-optional-*.csv`. A read that blocks therefore delays the next power row and shows up as a coverage gap; it cannot stand in for one.
+
+When the lane's stop signal appears, one last tick runs and the sampler exits 0.
+
+**Readiness, before the launch:** the lane waits at most 30 s for the ready record. It must name this run and this sampler process, hold row 1, and that row must meet P. Otherwise this is a **refusal** (`sampler_exited_before_ready`, `sampler_ready_timeout`, `sampler_ready_malformed`, `sampler_identity_mismatch` or `sampler_ready_not_p`), recorded like a failed power check, with cleanup.
+
+**Coverage, after the exit** (stage `sampler-coverage`, an attempt failure). Judged on `qpc`:
+
+- **The sampler itself:** it must be alive at the exit, then stop within 10 s with exit code 0; otherwise it is killed.
+- **The file:** the header is exact; every line splits into exactly the expected fields and parses strictly; every row carries this run's id; `seq` runs 1, 2, 3, … without a break; `qpc` increases; and the wall clock agrees with `qpc` to within 1 s between consecutive rows.
+- **The window:** there is a row at or before the launch and one at or after the exit. From the first of those to the second, no gap exceeds 3 s and every row meets P, both bracketing rows included.
+
+Coverage detects gaps. It cannot show what the power source did between two rows.
+
+**Optional values.** Each value column is followed by a `_na` reason column. An unavailable value is `NA` with `counter_unavailable`, `counter_error`, `process_absent`, `process_ambiguous` or `process_changed`, never 0.
+
+- **Counters**, created once at start: total `% Processor Time`, `% Processor Utility`, `% Processor Performance`, `Processor Frequency`, `Processor Queue Length`, `Available MBytes`.
+- **Role CPU:** `cms` and `localdb` (LocalDB lane) or `docker_vm` (PostgreSQL lane), plus the sampler itself. Each role is fixed at start by process id and start time:
+  - no candidate is `process_absent`;
+  - several candidates, or an unreadable start time, is `process_ambiguous`;
+  - a later change is `process_changed` from then on.
+
+  CPU % is the `TotalProcessorTime` delta over the `qpc` interval, divided by the logical CPU count, × 100.
+- **Background CPU:** total minus the roles and the sampler, floored at 0, with `cpu_background_floored` set when the floor applied.
+- **What is published:** no other process is named. The LocalDB process is selected by the instance folder in its command line, which is never written.
+
+The sampler's console output, stop signal and any exception text go to `<Work>\runs`.
 
 ## Identities
 
@@ -83,7 +120,8 @@ The lanes read secrets only from the target's `eng/docker-compose/.env.config.e2
 
 - timing samples and headers;
 - provenance with the exact settings allowlist (`AppSettings__Datastore`, `AppSettings__IdentityProvider`, `AppSettings__MultiTenancy`, `IdentitySettings__ClientSecretHashingIterations`, `IdentitySettings__AllowRegistration`), container or process identity, and the SHA-256 of `EdFi.DmsConfigurationService.Frontend.AspNetCore.dll`, `.Backend.dll`, `.Backend.OpenIddict.dll`, `.Backend.Postgresql.dll` and `.Backend.Mssql.dll` as measured;
-- status logs that hold fixed status lines, checked counts and exception type names.
+- status logs that hold fixed status lines, checked counts and exception type names;
+- `refusals.log` and the sampler's `host-power-*.csv`, `host-optional-*.csv` and `host-ready-*.json`, which hold power fields, counter values, reason codes, and the process ids and start times of the sampler and its roles.
 
 The collector's own output and results file, setup logs, service output and exception text go to `<Work>\runs`. Before staging files are copied into the repository, they are scanned for the env files' secret values and for credential patterns. That scan is an additional check; the folder separation is the primary one.
 
