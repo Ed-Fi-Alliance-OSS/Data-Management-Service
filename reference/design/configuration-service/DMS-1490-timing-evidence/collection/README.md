@@ -8,11 +8,11 @@ The scripts here produce evidence. They are not part of the product, and no ordi
 
 | File | Role |
 | --- | --- |
-| `prepare-target.ps1` | Extracts one pinned commit with `git archive` into an empty folder outside every worktree. With `-BuildHostRelease`, it also builds the Configuration Service in Release there and fingerprints its production assemblies into `target.json`. |
+| `prepare-target.ps1` | Extracts one pinned commit with `git archive` into an empty folder that neither lies inside nor contains any worktree, refusing before it creates anything. With `-BuildHostRelease`, it also builds the Configuration Service in Release there and fingerprints its production assemblies into `target.json`. |
 | `lane-postgresql.ps1` | One PostgreSQL run: builds the target's `cs-local` stack without cache, verifies the deployment, runs the collector once, verifies the run and the deployment again, then tears the stack down |
 | `lane-localdb.ps1` | One SQL Server run on LocalDB, with the target's Configuration Service as a host process: recreates the database, starts a new process with a controlled launch environment, verifies, runs the collector once, verifies again, then stops the process |
-| `CollectionLane.psm1` | The checks both lanes rely on: root separation, exact fingerprints, pre-registered settings, deployment comparison and collector-run verification |
-| `collection.Tests.ps1` | Pester checks of the lanes' failure paths with synthetic command output. No deployment, database or collector is used. |
+| `CollectionLane.psm1` | The checks both lanes and the preparer rely on: path normalization, root and worktree separation, exact fingerprints, pre-registered settings, deployment comparison and collector-run verification |
+| `collection.Tests.ps1` | Pester checks of the lanes' failure paths and the preparer's folder refusals with synthetic command output. No deployment, database or collector is used. |
 
 Each lane exits **0 only when every stage succeeded**. Any failure exits 1 after cleanup. Failure stages include: setup, an unhealthy service, an unexpected setting value, a missing or malformed fingerprint, a collector that failed or ran anything other than the fixture's two tests, missing or mismatched samples, a deployment that changed during collection, and a failed teardown or process stop.
 
@@ -36,7 +36,13 @@ Targets are always built from `git archive` extracts in their own folders. The c
 
 ## Folders
 
-The lanes refuse any staging, work or target folder that lies inside the collector checkout, or that contains another of them. Every run of a stage therefore leaves the checkout clean, and the source-cleanliness check stays meaningful for the next run.
+Before anything is created, the folders are checked as follows:
+
+- **Lanes:** each refuses a staging, work or target folder that equals, contains or lies inside the collector checkout. It also refuses a staging folder that equals, contains or lies inside the work folder or the target. The work folder and the target may share a parent, as `<Work>\runs` and `<Work>\targets\…` do.
+- **`prepare-target.ps1`:** refuses a destination that equals, contains or lies inside any worktree registered to the repository, as `git worktree list` reports them.
+- **Paths:** every folder is first resolved to its full path, relative to the current location. That form is used both for the checks and for every later file operation. The 8.3 short names of existing segments are expanded. A path through an existing junction or symbolic link is refused, because it lets two strings name the same folder.
+
+Every run of a stage therefore leaves the checkout clean, and the source-cleanliness check stays meaningful for the next run.
 
 | Name | Meaning |
 | --- | --- |

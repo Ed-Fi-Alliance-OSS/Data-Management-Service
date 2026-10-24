@@ -49,18 +49,52 @@ function Get-SettingAllowlist { $script:SettingsAllowlist }
 #>
 function Get-CollectorFixtureName { $script:CollectorFixture }
 
+<#
+.SYNOPSIS
+    The full, normalized form of a folder, as both the root checks and the later file operations use it.
+.DESCRIPTION
+    Resolves a relative path against the current PowerShell location, as New-Item and Join-Path do,
+    and removes `.` and `..` segments and trailing separators; GetFullPath also expands the 8.3
+    short names of existing segments. Refuses any existing segment that is a reparse point (a
+    junction or symbolic link), because it lets two different strings name the same folder and would
+    defeat the containment checks.
+#>
+function Resolve-LanePath {
+    param([Parameter(Mandatory)] [string] $Path)
+    $full = [System.IO.Path]::GetFullPath($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path))
+    $root = [System.IO.Path]::GetPathRoot($full)
+    if ($full.Length -gt $root.Length) { $full = $full.TrimEnd('\', '/') }
+    $segment = $full
+    while ($segment.Length -gt $root.Length) {
+        if (([System.IO.Directory]::Exists($segment) -or [System.IO.File]::Exists($segment)) -and
+            [System.IO.File]::GetAttributes($segment).HasFlag([System.IO.FileAttributes]::ReparsePoint)) {
+            throw "'$Path' passes through a junction or symbolic link at '$segment'."
+        }
+        $segment = [System.IO.Path]::GetDirectoryName($segment)
+    }
+    $full
+}
+
 function Test-PathWithin([string] $Path, [string] $Root) {
-    $full = [System.IO.Path]::GetFullPath($Path).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
-    $rootFull = [System.IO.Path]::GetFullPath($Root).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+    $separator = [System.IO.Path]::DirectorySeparatorChar
+    $full = (Resolve-LanePath $Path).TrimEnd($separator) + $separator
+    $rootFull = (Resolve-LanePath $Root).TrimEnd($separator) + $separator
     $full.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+# True when the two folders are the same, or one contains the other.
+function Test-PathOverlap([string] $Path, [string] $Other) {
+    (Test-PathWithin $Path $Other) -or (Test-PathWithin $Other $Path)
 }
 
 <#
 .SYNOPSIS
     Refuses roots that would let a run dirty the collector checkout or mix private and public files.
 .DESCRIPTION
-    The evidence staging folder, the private work folder and the prepared target must all lie outside
-    the collector checkout, and the staging and work folders must not contain each other or the target.
+    The evidence staging folder, the private work folder and the prepared target must each neither
+    equal, contain nor lie inside the collector checkout, and the staging folder must neither equal,
+    contain nor lie inside the work folder or the target. The work folder and the target may share a
+    parent.
 #>
 function Assert-LaneRoot {
     param(
@@ -70,13 +104,33 @@ function Assert-LaneRoot {
         [Parameter(Mandatory)] [string] $TargetRoot
     )
     foreach ($entry in @(@('OutputDir', $OutputDir), @('WorkRoot', $WorkRoot), @('TargetRoot', $TargetRoot))) {
-        if (Test-PathWithin $entry[1] $CollectorRoot) { throw "$($entry[0]) must be outside the collector checkout." }
+        if (Test-PathOverlap $entry[1] $CollectorRoot) { throw "$($entry[0]) must not equal, contain or lie inside the collector checkout." }
     }
-    if ((Test-PathWithin $OutputDir $WorkRoot) -or (Test-PathWithin $WorkRoot $OutputDir)) {
-        throw 'OutputDir and WorkRoot must not contain each other.'
+    if (Test-PathOverlap $OutputDir $WorkRoot) {
+        throw 'OutputDir and WorkRoot must not be the same folder or contain each other.'
     }
-    if ((Test-PathWithin $TargetRoot $OutputDir) -or (Test-PathWithin $OutputDir $TargetRoot)) {
-        throw 'OutputDir and TargetRoot must not contain each other.'
+    if (Test-PathOverlap $OutputDir $TargetRoot) {
+        throw 'OutputDir and TargetRoot must not be the same folder or contain each other.'
+    }
+}
+
+<#
+.SYNOPSIS
+    Refuses a folder that equals, contains or lies inside any worktree registered to a repository.
+.DESCRIPTION
+    Takes the output of `git worktree list --porcelain`, so every worktree of the repository counts,
+    not only the one a command was given.
+#>
+function Assert-OutsideWorktree {
+    param(
+        [Parameter(Mandatory)] [string] $Name,
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [AllowEmptyString()] [string[]] $WorktreeListing
+    )
+    $worktrees = @($WorktreeListing | Where-Object { $_ -like 'worktree *' } | ForEach-Object { $_.Substring('worktree '.Length) })
+    if ($worktrees.Count -eq 0) { throw 'The repository reported no worktrees.' }
+    foreach ($worktree in $worktrees) {
+        if (Test-PathOverlap $Path $worktree) { throw "$Name must not equal, contain or lie inside the worktree '$worktree'." }
     }
 }
 
@@ -216,9 +270,13 @@ function Assert-CollectorRun {
     }
     if (@($results.testName | Sort-Object -Unique).Count -ne $script:CollectorTests.Count) { throw 'A collector test is missing.' }
 
+    # File times come from a coarser clock than Get-Date and can read up to one timer tick (about
+    # 16 ms) earlier than a start taken just before the write. One second absorbs that; a run takes
+    # minutes, so an earlier run's files stay excluded, and the exactly-one check refuses any extra.
+    $notBefore = $StartedUtc.AddSeconds(-1)
     $pattern = "$RunLabel-endpoint-$Backend-*"
-    $csv = @(Get-ChildItem -LiteralPath $OutputDir -Filter "$pattern.csv" | Where-Object { $_.LastWriteTimeUtc -ge $StartedUtc })
-    $json = @(Get-ChildItem -LiteralPath $OutputDir -Filter "$pattern.json" | Where-Object { $_.LastWriteTimeUtc -ge $StartedUtc })
+    $csv = @(Get-ChildItem -LiteralPath $OutputDir -Filter "$pattern.csv" | Where-Object { $_.LastWriteTimeUtc -ge $notBefore })
+    $json = @(Get-ChildItem -LiteralPath $OutputDir -Filter "$pattern.json" | Where-Object { $_.LastWriteTimeUtc -ge $notBefore })
     if ($csv.Count -ne 1 -or $json.Count -ne 1) { throw "Expected one samples file and one header for this run, found $($csv.Count) and $($json.Count)." }
     $header = Get-Content -LiteralPath $json[0].FullName -Raw | ConvertFrom-Json
     if ($header.run_label -ne $RunLabel -or $header.boundary -ne "endpoint-$Backend" -or $header.rounds -ne $Rounds -or $header.seed -ne $Seed) {
@@ -236,4 +294,4 @@ function Assert-CollectorRun {
     }
 }
 
-Export-ModuleMember -Function Get-FingerprintedAssemblyName, Get-SettingAllowlist, Get-CollectorFixtureName, Assert-LaneRoot, ConvertFrom-Sha256Listing, Assert-AssemblyFingerprint, Assert-RunSetting, Compare-LaneSnapshot, Assert-CollectorRun
+Export-ModuleMember -Function Get-FingerprintedAssemblyName, Get-SettingAllowlist, Get-CollectorFixtureName, Resolve-LanePath, Assert-LaneRoot, Assert-OutsideWorktree, ConvertFrom-Sha256Listing, Assert-AssemblyFingerprint, Assert-RunSetting, Compare-LaneSnapshot, Assert-CollectorRun

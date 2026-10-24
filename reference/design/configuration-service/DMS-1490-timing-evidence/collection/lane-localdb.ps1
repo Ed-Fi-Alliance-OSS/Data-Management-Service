@@ -8,10 +8,10 @@
     One SQL Server endpoint timing run on LocalDB, with the Configuration Service as a host process.
 .DESCRIPTION
     For hosts that cannot run the SQL Server container (an ARM64 Windows host cannot). Steps:
-    1. Refuses to start unless the staging, work and target folders lie outside the collector
-       checkout, the collector checkout is clean, port 8081 is free, no cs-local container exists,
-       and the prepared target's Release assemblies still match the five fingerprints
-       prepare-target.ps1 recorded.
+    1. Refuses to start unless the staging, work and target folders neither equal, contain nor lie
+       inside the collector checkout (and the staging folder none of the others), the collector
+       checkout is clean, port 8081 is free, no cs-local container exists, and the prepared
+       target's Release assemblies still match the five fingerprints prepare-target.ps1 recorded.
     2. Starts the LocalDB instance, enables the sa login over its named pipe, and recreates the
        database with its files in -WorkRoot.
     3. Builds the service's launch environment as local-config.yml configures the container from
@@ -65,6 +65,11 @@ $secretSources = @(
 )
 $failures = [System.Collections.Generic.List[object]]::new()
 
+# Every later file operation uses these normalized forms, so it acts on exactly the folders checked.
+$CollectorRoot = Resolve-LanePath $CollectorRoot
+$OutputDir = Resolve-LanePath $OutputDir
+$WorkRoot = Resolve-LanePath $WorkRoot
+$TargetRoot = Resolve-LanePath $TargetRoot
 Assert-LaneRoot -CollectorRoot $CollectorRoot -OutputDir $OutputDir -WorkRoot $WorkRoot -TargetRoot $TargetRoot
 New-Item -ItemType Directory -Force -Path $OutputDir, $WorkRoot | Out-Null
 $stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMdd'T'HHmmss'Z'")

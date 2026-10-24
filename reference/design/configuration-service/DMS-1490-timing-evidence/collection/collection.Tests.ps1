@@ -90,6 +90,179 @@ Describe 'Assert-LaneRoot' {
     It 'accepts separate folders outside the checkout' {
         { Assert-LaneRoot -CollectorRoot $collector -OutputDir (Join-Path $TestDrive 'stage') -WorkRoot (Join-Path $TestDrive 'work') -TargetRoot (Join-Path $TestDrive 'target') } | Should -Not -Throw
     }
+
+    It 'refuses an evidence folder that contains the collector checkout' {
+        $outer = Join-Path $TestDrive 'outer'
+        $nested = Join-Path $outer 'collector'
+        New-Item -ItemType Directory -Force -Path $nested | Out-Null
+        { Assert-LaneRoot -CollectorRoot $nested -OutputDir $outer -WorkRoot (Join-Path $TestDrive 'private\runs') -TargetRoot (Join-Path $TestDrive 'private\target') } |
+            Should -Throw '*OutputDir must not equal, contain or lie inside the collector checkout*'
+    }
+
+    It 'refuses a work folder that contains the collector checkout' {
+        { Assert-LaneRoot -CollectorRoot $collector -OutputDir (Join-Path $TestDrive 'elsewhere\stage') -WorkRoot $TestDrive -TargetRoot (Join-Path $TestDrive 'elsewhere\target') } |
+            Should -Throw '*WorkRoot must not equal, contain or lie inside the collector checkout*'
+    }
+
+    It 'refuses a target that is the collector checkout itself' {
+        { Assert-LaneRoot -CollectorRoot $collector -OutputDir (Join-Path $TestDrive 'stage') -WorkRoot (Join-Path $TestDrive 'work') -TargetRoot "$collector\" } |
+            Should -Throw '*TargetRoot must not equal, contain or lie inside the collector checkout*'
+    }
+
+    It 'refuses an evidence folder that is the target' {
+        { Assert-LaneRoot -CollectorRoot $collector -OutputDir (Join-Path $TestDrive 'target') -WorkRoot (Join-Path $TestDrive 'work') -TargetRoot (Join-Path $TestDrive 'target') } |
+            Should -Throw '*OutputDir and TargetRoot*'
+    }
+
+    It 'resolves a relative folder against the current location, as the later file operations do' {
+        Push-Location -LiteralPath $collector
+        try {
+            { Assert-LaneRoot -CollectorRoot $collector -OutputDir 'stage' -WorkRoot (Join-Path $TestDrive 'work') -TargetRoot (Join-Path $TestDrive 'target') } | Should -Throw '*OutputDir*'
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    It 'refuses a folder that reaches the collector checkout through dot segments' {
+        { Assert-LaneRoot -CollectorRoot $collector -OutputDir (Join-Path $TestDrive 'stage\..\collector\a5-pilot') -WorkRoot (Join-Path $TestDrive 'work') -TargetRoot (Join-Path $TestDrive 'target') } | Should -Throw '*OutputDir*'
+    }
+
+    It 'refuses a folder that passes through a junction' {
+        $link = Join-Path $TestDrive 'link'
+        New-Item -ItemType Junction -Path $link -Target $collector | Out-Null
+        try {
+            { Assert-LaneRoot -CollectorRoot $collector -OutputDir (Join-Path $link 'stage') -WorkRoot (Join-Path $TestDrive 'work') -TargetRoot (Join-Path $TestDrive 'target') } | Should -Throw '*junction*'
+        }
+        finally {
+            # Removes the link only, never the folder it points to.
+            [System.IO.Directory]::Delete($link)
+        }
+    }
+
+    It 'refuses a folder inside the collector checkout named by its short name' {
+        $long = Join-Path $TestDrive 'collector with a long name'
+        New-Item -ItemType Directory -Force -Path $long | Out-Null
+        $short = (New-Object -ComObject Scripting.FileSystemObject).GetFolder($long).ShortPath
+        if ($short -eq $long) { Set-ItResult -Skipped -Because 'this volume does not generate short names' }
+        { Assert-LaneRoot -CollectorRoot $long -OutputDir (Join-Path $short 'stage') -WorkRoot (Join-Path $TestDrive 'work') -TargetRoot (Join-Path $TestDrive 'target') } | Should -Throw '*OutputDir*'
+    }
+
+    It 'accepts the documented layout, with the work folder and the targets under one private parent' {
+        $repository = Join-Path $TestDrive 'layout\repository'
+        New-Item -ItemType Directory -Force -Path $repository | Out-Null
+        { Assert-LaneRoot -CollectorRoot $repository -OutputDir (Join-Path $TestDrive 'layout\stage\pilot') -WorkRoot (Join-Path $TestDrive 'layout\work\runs') -TargetRoot (Join-Path $TestDrive 'layout\work\targets\a5') } |
+            Should -Not -Throw
+    }
+}
+
+Describe 'Resolve-LanePath' {
+    It 'returns the full path without dot segments or a trailing separator' {
+        Resolve-LanePath (Join-Path $TestDrive 'a\.\b\..\c\') | Should -Be (Join-Path $TestDrive 'a\c')
+    }
+
+    It 'keeps a drive root intact' {
+        Resolve-LanePath 'C:\' | Should -Be 'C:\'
+    }
+}
+
+Describe 'Assert-OutsideWorktree' {
+    BeforeAll {
+        # Shaped as git prints it: forward slashes, one block per worktree.
+        $first = Join-Path $TestDrive 'repository'
+        $second = Join-Path $TestDrive 'worktrees\other'
+        $listing = @(
+            "worktree $($first -replace '\\', '/')", 'HEAD 1111111111111111111111111111111111111111', 'branch refs/heads/main', '',
+            "worktree $($second -replace '\\', '/')", 'HEAD 2222222222222222222222222222222222222222', 'branch refs/heads/other', ''
+        )
+    }
+
+    It 'refuses a new folder inside a worktree other than the first' {
+        { Assert-OutsideWorktree -Name 'Destination' -Path (Join-Path $second 'targets\a5') -WorktreeListing $listing } | Should -Throw '*Destination*worktree*'
+    }
+
+    It 'refuses a folder that contains a worktree' {
+        { Assert-OutsideWorktree -Name 'Destination' -Path (Join-Path $TestDrive 'worktrees') -WorktreeListing $listing } | Should -Throw '*Destination*worktree*'
+    }
+
+    It 'refuses a worktree itself' {
+        { Assert-OutsideWorktree -Name 'Destination' -Path $first -WorktreeListing $listing } | Should -Throw '*Destination*worktree*'
+    }
+
+    It 'refuses an empty listing' {
+        { Assert-OutsideWorktree -Name 'Destination' -Path (Join-Path $TestDrive 'work\targets\a5') -WorktreeListing @() } | Should -Throw '*no worktrees*'
+    }
+
+    It 'accepts a sibling folder' {
+        { Assert-OutsideWorktree -Name 'Destination' -Path (Join-Path $TestDrive 'work\targets\a5') -WorktreeListing $listing } | Should -Not -Throw
+    }
+}
+
+Describe 'prepare-target.ps1 with synthetic command output' {
+    BeforeAll {
+        $prepare = Join-Path $PSScriptRoot 'prepare-target.ps1'
+        $commit = 'b2b8d5df47e5e48c46f9ca26fe0f2a58b787c399'
+
+        # git lists the scenario's worktrees and stops at archive; tar and dotnet only record a call.
+        function global:git {
+            $line = $args -join ' '
+            $global:LaneScenario.Calls.Add("git $line")
+            $global:LASTEXITCODE = 0
+            if ($line -like '*worktree list --porcelain') {
+                $global:LASTEXITCODE = $global:LaneScenario.ListExit
+                return $global:LaneScenario.Worktrees | ForEach-Object { "worktree $($_ -replace '\\', '/')"; 'HEAD 1111111111111111111111111111111111111111'; '' }
+            }
+            if ($line -like '*rev-parse*') { return '3333333333333333333333333333333333333333' }
+            if ($line -like '*archive*') { throw 'archive-reached' }
+        }
+        function global:tar { $global:LaneScenario.Calls.Add('tar') }
+        function global:dotnet { $global:LaneScenario.Calls.Add('dotnet') }
+    }
+
+    AfterAll {
+        Remove-Item -LiteralPath Function:\global:git, Function:\global:tar, Function:\global:dotnet -ErrorAction SilentlyContinue
+    }
+
+    BeforeEach {
+        $run = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        $repository = Join-Path $run 'repository'
+        $other = Join-Path $run 'worktrees\other'
+        New-Item -ItemType Directory -Force -Path $repository, $other | Out-Null
+        $global:LaneScenario = @{
+            Calls     = [System.Collections.Generic.List[string]]::new()
+            Worktrees = @($repository, $other)
+            ListExit  = 0
+        }
+    }
+
+    It 'refuses a new child of a registered worktree before creating it or extracting anything' {
+        $destination = Join-Path $other 'targets\a5'
+        { & $prepare -RepositoryRoot $repository -Commit $commit -Destination $destination -BuildHostRelease } | Should -Throw '*Destination*worktree*'
+        Test-Path -LiteralPath (Join-Path $other 'targets') | Should -BeFalse
+        $global:LaneScenario.Calls | Should -Be @("git -C $repository worktree list --porcelain")
+    }
+
+    It 'refuses a destination that contains a worktree, before creating it' {
+        $destination = Join-Path $run 'worktrees'
+        Remove-Item -LiteralPath $destination -Recurse -Force
+        { & $prepare -RepositoryRoot $repository -Commit $commit -Destination $destination } | Should -Throw '*Destination*worktree*'
+        Test-Path -LiteralPath $destination | Should -BeFalse
+        $global:LaneScenario.Calls | Should -Be @("git -C $repository worktree list --porcelain")
+    }
+
+    It 'stops before creating anything when the worktrees cannot be listed' {
+        $global:LaneScenario.ListExit = 128
+        $destination = Join-Path $run 'work\targets\a5'
+        { & $prepare -RepositoryRoot $repository -Commit $commit -Destination $destination } | Should -Throw '*Listing the worktrees*'
+        Test-Path -LiteralPath (Join-Path $run 'work') | Should -BeFalse
+    }
+
+    It 'lets an external sibling destination through to extraction' {
+        $destination = Join-Path $run 'work\targets\a5'
+        { & $prepare -RepositoryRoot $repository -Commit $commit -Destination $destination } | Should -Throw '*archive-reached*'
+        Test-Path -LiteralPath $destination | Should -BeTrue
+        $global:LaneScenario.Calls | Should -Not -Contain 'tar'
+    }
 }
 
 Describe 'ConvertFrom-Sha256Listing' {
@@ -191,6 +364,20 @@ Describe 'Assert-CollectorRun' {
         Write-TestTrx $trx $tests $fixture
         Write-TestSample $folder 'pilot-a5' 'postgresql' 20 301
         (Assert-CollectorRun -ExitCode 0 @arguments).sample_rows | Should -Be 60
+    }
+
+    It 'accepts samples whose file times read a timer tick before the recorded start' {
+        Write-TestTrx $trx $tests $fixture
+        Write-TestSample $folder 'pilot-a5' 'postgresql' 20 301
+        Get-ChildItem -LiteralPath $folder -Filter 'pilot-a5-*' | ForEach-Object { $_.LastWriteTimeUtc = $started.AddMilliseconds(-15) }
+        (Assert-CollectorRun -ExitCode 0 @arguments).sample_rows | Should -Be 60
+    }
+
+    It 'refuses samples written a minute before the run started' {
+        Write-TestTrx $trx $tests $fixture
+        Write-TestSample $folder 'pilot-a5' 'postgresql' 20 301
+        Get-ChildItem -LiteralPath $folder -Filter 'pilot-a5-*' | ForEach-Object { $_.LastWriteTimeUtc = $started.AddMinutes(-1) }
+        { Assert-CollectorRun -ExitCode 0 @arguments } | Should -Throw '*found 0 and 0*'
     }
 
     It 'refuses a nonzero exit' {

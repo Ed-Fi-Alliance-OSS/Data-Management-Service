@@ -8,9 +8,13 @@
     Prepares an isolated measurement target from one pinned commit.
 .DESCRIPTION
     Extracts the commit with `git archive` into an empty folder outside any worktree, so switching
-    targets never touches a working tree's source. With -BuildHostRelease it also builds the
-    Configuration Service frontend in Release there, for a lane that runs the service as a host
-    process, and fingerprints the production assemblies it produced.
+    targets never touches a working tree's source. Before creating anything it refuses a
+    destination that equals, contains or lies inside any worktree registered to the repository,
+    and every later operation uses the destination's normalized full path (Resolve-LanePath in
+    CollectionLane.psm1, which also refuses junctions and expands short names). With
+    -BuildHostRelease it also builds the Configuration Service frontend in Release there, for a
+    lane that runs the service as a host process, and fingerprints the production assemblies it
+    produced.
 
     Writes target.json into the destination: the commit, its tree, the commit id carried by the
     archive, the command used, the time, and the SHA-256 of each fingerprinted assembly. Nothing
@@ -20,7 +24,7 @@
 .PARAMETER Commit
     The full commit id to extract.
 .PARAMETER Destination
-    An empty or missing folder outside every worktree.
+    An empty or missing folder that neither lies inside nor contains any worktree of the repository.
 .PARAMETER BuildHostRelease
     Also build src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore in Release.
 #>
@@ -33,6 +37,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+Import-Module (Join-Path $PSScriptRoot 'CollectionLane.psm1') -Force
 
 $fingerprintedAssemblies = @(
     'EdFi.DmsConfigurationService.Frontend.AspNetCore.dll',
@@ -41,6 +46,12 @@ $fingerprintedAssemblies = @(
     'EdFi.DmsConfigurationService.Backend.Postgresql.dll',
     'EdFi.DmsConfigurationService.Backend.Mssql.dll'
 )
+
+$RepositoryRoot = Resolve-LanePath $RepositoryRoot
+$Destination = Resolve-LanePath $Destination
+$worktreeListing = @(git -C $RepositoryRoot worktree list --porcelain)
+if ($LASTEXITCODE -ne 0) { throw "Listing the worktrees of $RepositoryRoot failed." }
+Assert-OutsideWorktree -Name 'Destination' -Path $Destination -WorktreeListing $worktreeListing
 
 if ((Test-Path -LiteralPath $Destination) -and (Get-ChildItem -LiteralPath $Destination -Force | Select-Object -First 1)) {
     throw "Destination '$Destination' is not empty; prepare each target into a new folder."

@@ -7,9 +7,10 @@
 .SYNOPSIS
     One PostgreSQL endpoint timing run against a freshly built cs-local Docker stack.
 .DESCRIPTION
-    1. Refuses to start unless the staging, work and target folders lie outside the collector
-       checkout, the collector checkout is clean, port 8081 is free, and no cs-local container or
-       ed-fi-api-config-local image exists.
+    1. Refuses to start unless the staging, work and target folders neither equal, contain nor lie
+       inside the collector checkout (and the staging folder none of the others), the collector
+       checkout is clean, port 8081 is free, and no cs-local container or ed-fi-api-config-local
+       image exists.
     2. Builds and starts the stack from the prepared target (prepare-target.ps1) with that target's
        own setup-local-cms.ps1, which builds the image without cache.
     3. Before collection, requires the running container to carry the pre-registered values of the
@@ -51,6 +52,11 @@ $settingsAllowlist = Get-SettingAllowlist
 $fingerprintedAssemblies = Get-FingerprintedAssemblyName
 $failures = [System.Collections.Generic.List[object]]::new()
 
+# Every later file operation uses these normalized forms, so it acts on exactly the folders checked.
+$CollectorRoot = Resolve-LanePath $CollectorRoot
+$OutputDir = Resolve-LanePath $OutputDir
+$WorkRoot = Resolve-LanePath $WorkRoot
+$TargetRoot = Resolve-LanePath $TargetRoot
 Assert-LaneRoot -CollectorRoot $CollectorRoot -OutputDir $OutputDir -WorkRoot $WorkRoot -TargetRoot $TargetRoot
 New-Item -ItemType Directory -Force -Path $OutputDir, $WorkRoot | Out-Null
 $stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMdd'T'HHmmss'Z'")
