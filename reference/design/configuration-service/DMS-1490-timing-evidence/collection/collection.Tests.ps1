@@ -6,8 +6,7 @@
 # Checks of the collection lanes' failure paths with synthetic command output. Nothing here starts
 # Docker, LocalDB, SQL Server, a build, a deployment or the collector: the native commands the lanes
 # call are replaced by functions of the same name, which PowerShell resolves before executables.
-# Power readings are synthetic too; one test reads the host's power status once, to check only that
-# the native structure marshals, and records nothing.
+# Power readings are synthetic too; no test calls the native power function.
 #
 #   pwsh -NoProfile -Command "Import-Module Pester -RequiredVersion 5.7.1; Invoke-Pester -Path ./collection.Tests.ps1 -Output Detailed"
 #
@@ -581,11 +580,27 @@ Describe 'Get-PowerSource and power condition P' {
         @([System.AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $null -ne $_.GetType('DmsTimingEvidence.SystemPower', $false) }).Count | Should -Be 1
     }
 
-    It 'marshals the native status (one read of this host; only its shape is checked)' {
-        $native = [DmsTimingEvidence.SystemPower]::Read()
-        $native.Succeeded | Should -BeOfType [bool]
-        $native.ACLineStatus | Should -BeOfType [byte]
-        if ($native.Succeeded) { $native.Win32Error | Should -Be 0 }
+    # The declaration only; nothing calls the native function. SYSTEM_POWER_STATUS is four BYTEs
+    # and two DWORDs (12 bytes), and GetSystemPowerStatus returns a Win32 BOOL and sets the last error.
+    It 'declares SYSTEM_POWER_STATUS with the documented size and field offsets' {
+        $status = [DmsTimingEvidence.SystemPower].GetNestedType('SystemPowerStatus', [System.Reflection.BindingFlags]::NonPublic)
+        [System.Runtime.InteropServices.Marshal]::SizeOf([type]$status) | Should -Be 12
+        $offsets = [ordered]@{}
+        foreach ($field in 'ACLineStatus', 'BatteryFlag', 'BatteryLifePercent', 'SystemStatusFlag', 'BatteryLifeTime', 'BatteryFullLifeTime') {
+            $offsets[$field] = [int][System.Runtime.InteropServices.Marshal]::OffsetOf([type]$status, $field)
+        }
+        @($offsets.Values) | Should -Be @(0, 1, 2, 3, 4, 8)
+        @($status.GetFields() | ForEach-Object { $_.FieldType.Name }) | Should -Be @('Byte', 'Byte', 'Byte', 'Byte', 'UInt32', 'UInt32')
+    }
+
+    It 'declares GetSystemPowerStatus as a kernel32 call that returns a BOOL and sets the last error' {
+        $method = [DmsTimingEvidence.SystemPower].GetMethod('GetSystemPowerStatus', [System.Reflection.BindingFlags]'NonPublic, Static')
+        $import = [System.Reflection.CustomAttributeExtensions]::GetCustomAttribute[System.Runtime.InteropServices.DllImportAttribute]($method)
+        $import.Value | Should -Be 'kernel32.dll'
+        $import.SetLastError | Should -BeTrue
+        $method.ReturnParameter.GetCustomAttributes([System.Runtime.InteropServices.MarshalAsAttribute], $false)[0].Value |
+            Should -Be ([System.Runtime.InteropServices.UnmanagedType]::Bool)
+        $method.GetParameters()[0].IsOut | Should -BeTrue
     }
 }
 

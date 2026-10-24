@@ -55,49 +55,48 @@ if (-not ('DmsTimingEvidence.SystemPower' -as [type])) {
     Add-Type -TypeDefinition @'
 using System.Runtime.InteropServices;
 
-namespace DmsTimingEvidence
+namespace DmsTimingEvidence;
+
+public sealed class SystemPowerReading
 {
-    public sealed class SystemPowerReading
+    public bool Succeeded { get; init; }
+    public int Win32Error { get; init; }
+    public byte ACLineStatus { get; init; }
+    public byte BatteryFlag { get; init; }
+    public byte BatteryLifePercent { get; init; }
+    public byte SystemStatusFlag { get; init; }
+}
+
+public static class SystemPower
+{
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SystemPowerStatus
     {
-        public bool Succeeded { get; init; }
-        public int Win32Error { get; init; }
-        public byte ACLineStatus { get; init; }
-        public byte BatteryFlag { get; init; }
-        public byte BatteryLifePercent { get; init; }
-        public byte SystemStatusFlag { get; init; }
+        public byte ACLineStatus;
+        public byte BatteryFlag;
+        public byte BatteryLifePercent;
+        public byte SystemStatusFlag;
+        public uint BatteryLifeTime;
+        public uint BatteryFullLifeTime;
     }
 
-    public static class SystemPower
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetSystemPowerStatus(out SystemPowerStatus status);
+
+    public static SystemPowerReading Read()
     {
-        [StructLayout(LayoutKind.Sequential)]
-        private struct SystemPowerStatus
+        bool succeeded = GetSystemPowerStatus(out SystemPowerStatus status);
+        int error = succeeded ? 0 : Marshal.GetLastPInvokeError();
+        return new SystemPowerReading
         {
-            public byte ACLineStatus;
-            public byte BatteryFlag;
-            public byte BatteryLifePercent;
-            public byte SystemStatusFlag;
-            public uint BatteryLifeTime;
-            public uint BatteryFullLifeTime;
-        }
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool GetSystemPowerStatus(out SystemPowerStatus status);
-
-        public static SystemPowerReading Read()
-        {
-            bool succeeded = GetSystemPowerStatus(out SystemPowerStatus status);
-            int error = succeeded ? 0 : Marshal.GetLastPInvokeError();
-            return new SystemPowerReading
-            {
-                Succeeded = succeeded,
-                Win32Error = error,
-                ACLineStatus = status.ACLineStatus,
-                BatteryFlag = status.BatteryFlag,
-                BatteryLifePercent = status.BatteryLifePercent,
-                SystemStatusFlag = status.SystemStatusFlag,
-            };
-        }
+            Succeeded = succeeded,
+            Win32Error = error,
+            ACLineStatus = status.ACLineStatus,
+            BatteryFlag = status.BatteryFlag,
+            BatteryLifePercent = status.BatteryLifePercent,
+            SystemStatusFlag = status.SystemStatusFlag,
+        };
     }
 }
 '@
