@@ -20,9 +20,10 @@ test that runs in ordinary CI. The collectors are `[Explicit]` NUnit fixtures in
 | HTTP, SQL Server (LocalDB), 210,000 iterations | 250 | 4,000 | **−377.40** | **[−403.45, −353.95]** | **NOT EQUIVALENT** |
 | HTTP, PostgreSQL, pre-fix build `17e97ed6a` (control) | 250 | 500 | −19,792.85 | [−19,872.00, −19,689.64] | NOT EQUIVALENT |
 
-- The change removes the defect's signal: on PostgreSQL the absent-client time moves from about 19.8 ms faster than a wrong secret to about 0.18 ms faster.
-- **It does not remove all of it.** On both databases an absent client is still answered faster than an existing one. SQL Server exceeds the fixed bound; PostgreSQL is inside it, but its interval excludes zero.
-- The supplementary observer analysis below shows the remaining difference is resolvable on loopback with about 100 requests per candidate.
+- On PostgreSQL the measured median difference falls from about 19.8 ms (pre-fix build) to about 0.18 ms (fixed build).
+- **A difference remains.** In both endpoint runs the absent arm's median is lower than the wrong-secret arm's. SQL Server exceeds the fixed bound; PostgreSQL is inside it, but its interval excludes zero.
+- The in-process run bounds the specified median difference **in that experiment** (a fixed-cost in-memory repository and 20,000 iterations, against 210,000 over HTTP). It does not prove a zero residual and does not isolate the cause of the HTTP difference.
+- The supplementary observer analysis below is an IID empirical-resampling model. Under it, the fixed builds' remaining difference is separable with about 100 resampled observations per side. That is a model result, not an observed attack.
 - **AC2 is therefore not met** ("absent-client response times statistically indistinguishable from wrong-secret"). The ticket's engineering gate requires EQUIVALENT on both endpoint backends, and SQL Server is NOT EQUIVALENT.
 - Any acceptance of a measured residual is a separate product decision.
 
@@ -115,17 +116,21 @@ L and 2L agree on every decision. Both controls behave as required.
 | SQL Server | −342.0 | −352.8 | −344.8 | −340.4 |
 | pre-fix PostgreSQL | −19976.8 | −19814.0 | −19634.9 | −19685.2 |
 
-- **Direction:** the absent arm is faster in every quarter on both databases, so the residual is systematic, not drift.
+- **Direction:** the absent arm's quarter median is lower in every quarter on both databases. The SQL Server quarters agree closely. The PostgreSQL quarters vary substantially (−73 to −320 µs), so a shared sign over four quarters does not exclude time effects.
 - **SQL Server transient:** the first quarter is about 1 ms slower in all three arms than the rest, a common-mode settling the 200 warm-up rounds did not cover. The difference is unaffected.
 - **Dependence:** per-arm serial dependence is strong on SQL Server (lag-1 ACF 0.32–0.49). The per-round A − B series shows almost none on any boundary (|lag-1| ≤ 0.06 on the fixed builds; 0.16 on the pre-fix contrast).
-- **Lookup cost:** unapproved/correct-secret clients cost the same as wrong-secret clients within a few tens of µs. The residual is between "a client row exists" and "no client row", not between authentication outcomes.
+- **Unapproved clients:** unapproved/correct-secret clients measure within a few tens of µs of wrong-secret clients. That is consistent with the hypothesis below (a difference between "a client row exists" and "no client row"), but it does not establish it.
 
 ### Supplementary observer analysis (does not decide AC2)
 
-An observer compares the median of Q requests for a candidate against the median of Q requests for a known-absent
-reference, with the threshold set at a 5% false-positive rate under H0 (both drawn from the absent arm). The table
-gives the true-positive rate when the candidate exists (drawn from the wrong-secret arm). Draws are 2,000 resamples
-of this host's loopback data. This is one statistic; it is not the strongest attacker and it does not bound one.
+This is an **IID empirical-resampling model**, not an observed attack.
+
+- **Draws:** for each draw, Q observations are drawn with replacement from the candidate's arm and, independently, Q from the absent (reference) arm.
+- **Score and threshold:** the score is the absolute difference of their medians. The threshold is the 95th percentile of the score when both sides come from the absent arm, so FPR is about 5% under H0.
+- **Reported rate:** the table gives the true-positive rate when the candidate side comes from the wrong-secret arm, over 2,000 draws per Q (`analyze_timing.py`, `observer`).
+- **Ignored structure:** resampling individual observations ignores the runs' serial dependence, the round effects both arms share, and settling transients.
+- **Extrapolation:** Q = 1,000 and Q = 10,000 exceed the observations available per arm in some runs (500 per arm on PostgreSQL; 4,000 on SQL Server), so those columns are extrapolations of the empirical distributions.
+- **Scope:** one statistic; not the strongest attacker and not a bound on one.
 
 | Run | Q = 10 | Q = 100 | Q = 1,000 | Q = 10,000 |
 | --- | --- | --- | --- | --- |
@@ -134,23 +139,30 @@ of this host's loopback data. This is one statistic; it is not the strongest att
 | SQL Server (fixed) | 0.141 | **0.970** | 1.000 | 1.000 |
 | pre-fix PostgreSQL | **1.000** | 1.000 | 1.000 | 1.000 |
 
-The change raises the cost of telling an existing client from an absent one on loopback from about 10 requests to
-about 100. It does not remove the signal at either endpoint.
+Under this model, the pre-fix build's difference is separated at Q = 10, and the fixed builds' at roughly Q = 100
+and above. These figures describe the model applied to these samples. They are not a measured attack cost, and they
+do not show how many real requests an attacker would need.
 
 ## Where the remaining difference comes from
 
 This is a read-only source inspection: hypotheses grounded in source, not a demonstrated causal measurement.
 
-After the client lookup, `OpenIddictTokenManager.ValidateClientSecretAsync` does the same work on both paths: one
-verification, then rejection. The difference lies inside `GetApplicationByClientIdAsync`.
+After the client lookup, `OpenIddictTokenManager.ValidateClientSecretAsync` has the same code path for both cases:
+one verification, then rejection. The leading hypothesis is that the difference comes from
+`GetApplicationByClientIdAsync`, which does more work when a row exists. These experiments do not isolate it. The
+in-process run replaces the database with a fixed-cost repository and uses a different iteration count, so it
+cannot attribute the HTTP difference.
 
-- **SQL Server** (`Backend.Mssql/OpenIddict/Repositories/OpenIddictDataRepository.cs`, `GetApplicationInfoAsync`): an absent client ends after the first query returns no row. An existing client then runs two more queries on the same connection (scopes, data store ids) and deserialises four JSON arrays. Two extra round trips over the LocalDB named pipe fit the steady −340 to −380 µs.
-- **PostgreSQL** (`Backend.Postgresql/OpenIddict/Repositories/OpenIddictDataRepository.cs`): one statement, but only an existing client produces a row. The LEFT JOIN/`GROUP BY` aggregation does work and Dapper materialises the full `ApplicationInfo` (secret hash, permission/requirement/scope/data-store arrays, protocol mappers). For an absent client the statement matches nothing. This fits the −178 µs but has not been isolated.
+- **SQL Server** (`Backend.Mssql/OpenIddict/Repositories/OpenIddictDataRepository.cs`, `GetApplicationInfoAsync`): an absent client ends after the first query returns no row. An existing client then runs two more queries on the same connection (scopes, data store ids) and deserialises four JSON arrays. Two extra round trips over the LocalDB named pipe would be consistent with the −340 to −380 µs, but this has not been measured separately.
+- **PostgreSQL** (`Backend.Postgresql/OpenIddict/Repositories/OpenIddictDataRepository.cs`): one statement, but only an existing client produces a row. The LEFT JOIN/`GROUP BY` aggregation does work and Dapper materialises the full `ApplicationInfo` (secret hash, permission/requirement/scope/data-store arrays, protocol mappers). For an absent client the statement matches nothing. This would be consistent with the −178 µs but has not been isolated.
 
 ## Reproduction
 
-The collection lanes and their logs live with the working evidence (not in this repository). The `lane-*.log` and
-`provenance-*.json` files here record what each lane did. The analysis is reproduced from this folder:
+**Collection is not fully reproducible from this folder.** The collection lane scripts are kept with the working
+evidence outside this repository and are not committed. The `lane-*.log` and `provenance-*.json` files here record
+what each lane did and which deployment it measured, but they are not a complete, re-runnable collection recipe. The
+provenance records are author-produced: a host-process frontend DLL hash, for example, does not fingerprint every
+loaded backend assembly. The analysis is reproduced from this folder:
 
 ```
 python -B analyze_timing.py selftest
@@ -161,9 +173,15 @@ python -B analyze_timing.py analyze  --csv p3.2-final/contrast-prefix-endpoint-p
 python -B analyze_timing.py observer --csv <any of the above>
 ```
 
-`p3.2-final/analysis/commands.log` lists every command that produced a saved output. `SHA256SUMS.txt` lists the
-size and SHA-256 of every evidence file. These files are stored without line-ending normalisation
-(`.gitattributes`), so the checksums hold for a checkout.
+`p3.2-final/analysis/commands.log` lists the analysis commands that produced the saved outputs; it does not record
+the collection invocations. `SHA256SUMS.txt` has 84 entries: the size and SHA-256 of `analyze_timing.py` and of
+every file under `p3.0-pilot/` and `p3.2-final/`. It does not list `README.md`, `.gitattributes` or itself.
+
+The files under `p3.0-pilot/` and `p3.2-final/` are stored without line-ending normalisation (`.gitattributes`), so
+the checksums hold for a checkout. Because the collectors and the analysis wrote CRLF line endings, `git show --check`
+on the commit that added them exits 2 with 26,418 "trailing whitespace" notices across 78 files. Every notice is a
+CRLF line ending in the preserved data; with the CR removed, no line ends in a space or tab. The data is kept
+byte-exact rather than normalised to silence the check.
 
 ## Files
 
