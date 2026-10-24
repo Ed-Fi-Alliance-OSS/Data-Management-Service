@@ -1,0 +1,10 @@
+
+[2026-10-24T16:27:28.8555338Z] LANE label=final-a5 rounds=500 warmup=1200 seed=303 contract=current collector=0504d11c08390123dc169a9ba09434aef25c245d target=b2b8d5df47e5e48c46f9ca26fe0f2a58b787c399
+[2026-10-24T16:27:30.0022414Z] SETUP target's setup-local-cms.ps1 (log in the work folder)
+[2026-10-24T16:28:58.0937996Z] CMS HEALTHY
+[2026-10-24T16:28:58.6567055Z] BEFORE container=12c50f5f58f9dfb10bd3d058eb614200416540eeda5406f6b07967b738aaa487 image=sha256:e911780bf4e7100280af3da42792ca5edc73cce1db75021c463954c9117ad929 settings and five fingerprints verified
+[2026-10-24T16:28:59.7071473Z] RUN collector (Release, --no-build; output and results file in the work folder)
+[2026-10-24T16:31:02.0408725Z] RUN tests_passed=2 samples=final-a5-endpoint-postgresql-20261024T162905Z.csv rows=1500
+[2026-10-24T16:31:02.4806495Z] AFTER the same container, image, settings and assemblies served the whole collection
+[2026-10-24T16:31:07.6507239Z] TEARDOWN done
+[2026-10-24T16:31:07.6797850Z] DONE succeeded=True provenance=provenance-endpoint-postgresql-final-a5-20261024T162728Z.json

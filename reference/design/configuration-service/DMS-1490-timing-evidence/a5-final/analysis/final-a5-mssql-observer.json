@@ -1,0 +1,38 @@
+{
+  "method_version": "1",
+  "input": "final-a5-endpoint-mssql-20261024T163740Z.csv",
+  "input_sha256": "e9e46c8c39a2dc225ba824d009fc92fa4280d05b723586ea0cdb85d919e63cc7",
+  "arms": {
+    "reference_and_h0_candidate": "absent",
+    "h1_candidate": "wrong_secret"
+  },
+  "draws": 2000,
+  "seed": 1,
+  "results": [
+    {
+      "q": 10,
+      "threshold_us": 21091.634999999987,
+      "false_positive_rate": 0.05,
+      "true_positive_rate": 0.0565
+    },
+    {
+      "q": 100,
+      "threshold_us": 322.965000000002,
+      "false_positive_rate": 0.05,
+      "true_positive_rate": 0.0535
+    },
+    {
+      "q": 1000,
+      "threshold_us": 75.90499999999793,
+      "false_positive_rate": 0.05,
+      "true_positive_rate": 0.115
+    },
+    {
+      "q": 10000,
+      "threshold_us": 20.900000000001455,
+      "false_positive_rate": 0.047,
+      "true_positive_rate": 0.846
+    }
+  ],
+  "limits": "resamples of one host's loopback data; one statistic; concurrency, candidate selection and reference reuse are not modelled; describes the data, does not bound an attacker"
+}

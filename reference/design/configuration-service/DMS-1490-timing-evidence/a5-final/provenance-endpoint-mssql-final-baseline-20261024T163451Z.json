@@ -1,0 +1,123 @@
+{
+  "schema": "timing-provenance/3",
+  "lane": "endpoint-mssql (LocalDB, host-process Configuration Service)",
+  "lane_script": "lane-localdb.ps1",
+  "lane_script_sha256": "07b1962379f44f5d01868b7bfb6818a0a41c02501ef08cd13e93591f4fce149b",
+  "lane_module_sha256": "cd1a8c5afc1bcce33246224105f29f0ca25a8ce94fea09bdba1eeca823c53c77",
+  "parameters": {
+    "run_label": "final-baseline",
+    "rounds": 500,
+    "warmup_rounds": 1200,
+    "seed": 306,
+    "contract": "current",
+    "instance": "DMS1490"
+  },
+  "environment_file": "eng/docker-compose/.env.config.mssql.e2e (of the target)",
+  "secret_sources": [
+    "MSSQL_SA_PASSWORD",
+    "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY",
+    "CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY",
+    "CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET"
+  ],
+  "settings_allowlist": [
+    "AppSettings__Datastore",
+    "AppSettings__IdentityProvider",
+    "AppSettings__MultiTenancy",
+    "IdentitySettings__ClientSecretHashingIterations",
+    "IdentitySettings__AllowRegistration"
+  ],
+  "assemblies_fingerprinted": [
+    "EdFi.DmsConfigurationService.Frontend.AspNetCore.dll",
+    "EdFi.DmsConfigurationService.Backend.dll",
+    "EdFi.DmsConfigurationService.Backend.OpenIddict.dll",
+    "EdFi.DmsConfigurationService.Backend.Postgresql.dll",
+    "EdFi.DmsConfigurationService.Backend.Mssql.dll"
+  ],
+  "collector": {
+    "commit": "0504d11c08390123dc169a9ba09434aef25c245d",
+    "worktree_clean": true
+  },
+  "target": {
+    "schema": "timing-target/1",
+    "commit": "9a19802ddae9b23b103cd92dd6c27a8a48814cb7",
+    "tree": "d5d810184f6f34e8732e1ce2ad06d79509c0cf4f",
+    "archived_commit": "9a19802ddae9b23b103cd92dd6c27a8a48814cb7",
+    "command": "git -C <repository> archive --format=tar 9a19802ddae9b23b103cd92dd6c27a8a48814cb7 | tar -x -C <destination>",
+    "prepared_utc": "2026-10-24T15:19:32.4052727Z",
+    "host_release": {
+      "project": "src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore",
+      "output": "bin/Release/net10.0",
+      "fingerprints": {
+        "EdFi.DmsConfigurationService.Frontend.AspNetCore.dll": "8274406ffce148110f79a863904a7fb4fa0229ecf36a7f66373313a2094c4279",
+        "EdFi.DmsConfigurationService.Backend.dll": "ccc627d90e77cf005663f0cb78616ca2607967a034ab09b978dc0ef62ecdae0f",
+        "EdFi.DmsConfigurationService.Backend.OpenIddict.dll": "44b8801bad94d1d0a4e3b3884eb55f00ef40fc08b0a445d9656c659afd0c0e04",
+        "EdFi.DmsConfigurationService.Backend.Postgresql.dll": "893706f045bd2af15cda1bb251cd26704c42e3cbcc4b8b389a8d9b76e1730e4a",
+        "EdFi.DmsConfigurationService.Backend.Mssql.dll": "aa6c3edc858bca529e53957a4810f0985b1afd4264e56067c5e475a1e168272c"
+      }
+    }
+  },
+  "localdb": {
+    "instance": "DMS1490",
+    "version": "17.0.4025.3",
+    "database": "edfi_configurationservice"
+  },
+  "removed_inherited_configuration_variable_names": [],
+  "launch_settings": {
+    "AppSettings__Datastore": "mssql",
+    "AppSettings__IdentityProvider": "self-contained",
+    "AppSettings__MultiTenancy": "false",
+    "IdentitySettings__ClientSecretHashingIterations": "210000",
+    "IdentitySettings__AllowRegistration": "true"
+  },
+  "launch_settings_source": "explicit launch environment of the service process (ProcessStartInfo.Environment)",
+  "before": {
+    "utc": "2026-10-24T16:35:13.5105025Z",
+    "pid": "29892",
+    "alive": "True",
+    "start_time": "2026-10-24T16:34:54.4963944Z",
+    "settings": {
+      "AppSettings__Datastore": "mssql",
+      "AppSettings__IdentityProvider": "self-contained",
+      "AppSettings__MultiTenancy": "false",
+      "IdentitySettings__ClientSecretHashingIterations": "210000",
+      "IdentitySettings__AllowRegistration": "true"
+    },
+    "assemblies": {
+      "EdFi.DmsConfigurationService.Frontend.AspNetCore.dll": "8274406ffce148110f79a863904a7fb4fa0229ecf36a7f66373313a2094c4279",
+      "EdFi.DmsConfigurationService.Backend.dll": "ccc627d90e77cf005663f0cb78616ca2607967a034ab09b978dc0ef62ecdae0f",
+      "EdFi.DmsConfigurationService.Backend.OpenIddict.dll": "44b8801bad94d1d0a4e3b3884eb55f00ef40fc08b0a445d9656c659afd0c0e04",
+      "EdFi.DmsConfigurationService.Backend.Postgresql.dll": "893706f045bd2af15cda1bb251cd26704c42e3cbcc4b8b389a8d9b76e1730e4a",
+      "EdFi.DmsConfigurationService.Backend.Mssql.dll": "aa6c3edc858bca529e53957a4810f0985b1afd4264e56067c5e475a1e168272c"
+    }
+  },
+  "collector_exit": 0,
+  "collector_run": {
+    "tests_passed": 2,
+    "samples_file": "final-baseline-endpoint-mssql-20261024T163515Z.csv",
+    "header_file": "final-baseline-endpoint-mssql-20261024T163515Z.json",
+    "sample_rows": 1500
+  },
+  "after": {
+    "utc": "2026-10-24T16:37:00.2949964Z",
+    "pid": "29892",
+    "alive": "True",
+    "start_time": "2026-10-24T16:34:54.4963944Z",
+    "settings": {
+      "AppSettings__Datastore": "mssql",
+      "AppSettings__IdentityProvider": "self-contained",
+      "AppSettings__MultiTenancy": "false",
+      "IdentitySettings__ClientSecretHashingIterations": "210000",
+      "IdentitySettings__AllowRegistration": "true"
+    },
+    "assemblies": {
+      "EdFi.DmsConfigurationService.Frontend.AspNetCore.dll": "8274406ffce148110f79a863904a7fb4fa0229ecf36a7f66373313a2094c4279",
+      "EdFi.DmsConfigurationService.Backend.dll": "ccc627d90e77cf005663f0cb78616ca2607967a034ab09b978dc0ef62ecdae0f",
+      "EdFi.DmsConfigurationService.Backend.OpenIddict.dll": "44b8801bad94d1d0a4e3b3884eb55f00ef40fc08b0a445d9656c659afd0c0e04",
+      "EdFi.DmsConfigurationService.Backend.Postgresql.dll": "893706f045bd2af15cda1bb251cd26704c42e3cbcc4b8b389a8d9b76e1730e4a",
+      "EdFi.DmsConfigurationService.Backend.Mssql.dll": "aa6c3edc858bca529e53957a4810f0985b1afd4264e56067c5e475a1e168272c"
+    }
+  },
+  "deployment_differences": [],
+  "failures": [],
+  "succeeded": true
+}

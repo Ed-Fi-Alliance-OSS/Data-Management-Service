@@ -1,0 +1,13 @@
+[2026-10-24T16:27:24.4477618Z] dotnet build-server shutdown
+[2026-10-24T16:27:25.2492168Z] exit 0
+[2026-10-24T16:27:27.8263669Z] pwsh -NoProfile -File <Collection>\lane-postgresql.ps1 -RunLabel final-a5 -Rounds 500 -WarmupRounds 1200 -Seed 303 -OutputDir <Stage>\final -CollectorRoot <Repository> -TargetRoot <Work>\targets\a5 -WorkRoot <Work>\runs
+[2026-10-24T16:31:07.7216345Z] exit 0
+[2026-10-24T16:31:07.7350237Z] python -B ..\analyze_timing.py analyze --csv <Stage>\final\final-a5-endpoint-postgresql-20261024T162905Z.csv --delta 250   # gate, from <Collection>, between collections
+[2026-10-24T16:31:08.6563448Z] exit 0
+[2026-10-24T16:31:08.6886871Z] gate decision at L=8: EQUIVALENT; at 2L=16: EQUIVALENT
+[2026-10-24T16:31:08.6909397Z] pwsh -NoProfile -File <Collection>\lane-postgresql.ps1 -RunLabel final-baseline -Rounds 500 -WarmupRounds 1200 -Seed 305 -OutputDir <Stage>\final -CollectorRoot <Repository> -TargetRoot <Work>\targets\baseline -WorkRoot <Work>\runs
+[2026-10-24T16:34:51.1434080Z] exit 0
+[2026-10-24T16:34:51.1439417Z] pwsh -NoProfile -File <Collection>\lane-localdb.ps1 -RunLabel final-baseline -Rounds 500 -WarmupRounds 1200 -Seed 306 -OutputDir <Stage>\final -CollectorRoot <Repository> -TargetRoot <Work>\targets\baseline -WorkRoot <Work>\runs
+[2026-10-24T16:37:00.4157594Z] exit 0
+[2026-10-24T16:37:00.4166723Z] pwsh -NoProfile -File <Collection>\lane-localdb.ps1 -RunLabel final-a5 -Rounds 500 -WarmupRounds 1200 -Seed 304 -OutputDir <Stage>\final -CollectorRoot <Repository> -TargetRoot <Work>\targets\a5 -WorkRoot <Work>\runs
+[2026-10-24T16:41:47.5326848Z] exit 0

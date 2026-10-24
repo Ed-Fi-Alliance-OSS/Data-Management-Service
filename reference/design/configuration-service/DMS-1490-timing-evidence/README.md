@@ -174,19 +174,28 @@ python -B analyze_timing.py observer --csv <any of the above>
 ```
 
 `p3.2-final/analysis/commands.log` lists the analysis commands that produced the saved outputs; it does not record
-the collection invocations. `SHA256SUMS.txt` has 116 entries: the size and SHA-256 of `analyze_timing.py` and of
-every file under `p3.0-pilot/`, `p3.2-final/` and `a5-pilot/`. It does not list `README.md`, `.gitattributes`,
-`collection/` or itself.
+the collection invocations. `SHA256SUMS.txt` has 150 entries: the size and SHA-256 of `analyze_timing.py` and of
+every file under `p3.0-pilot/`, `p3.2-final/`, `a5-pilot/` and `a5-final/`. It does not list `README.md`,
+`.gitattributes`, `collection/` or itself.
 
-The files under `p3.0-pilot/`, `p3.2-final/` and `a5-pilot/` are stored without line-ending normalisation
-(`.gitattributes`), so the checksums hold for a checkout. Because the collectors and the analysis wrote CRLF line endings, `git show --check`
-on the commit that added them exits 2 with 26,418 "trailing whitespace" notices across 78 files. Every notice is a
-CRLF line ending in the preserved data; with the CR removed, no line ends in a space or tab. The data is kept
-byte-exact rather than normalised to silence the check.
+The files under `p3.0-pilot/`, `p3.2-final/`, `a5-pilot/` and `a5-final/` are stored without line-ending
+normalisation (`.gitattributes`), so the checksums hold for a checkout. Because the collectors, lanes and analysis
+wrote CRLF line endings in some files, `git show --check` on each commit that added evidence exits 2 with
+"trailing whitespace" notices, one per CRLF line ending in the preserved data:
+
+| Commit | Folder | Notices | Files |
+| --- | --- | --- | --- |
+| `2c534361e` | `p3.0-pilot/`, `p3.2-final/` | 26,418 | 78 |
+| `0504d11c0` | `a5-pilot/` | 1,673 | 14 |
+| The commit that added `a5-final/` | `a5-final/` | 6,793 | 19 |
+
+With the CR removed, no line in any of them ends in a space or tab. The data is kept byte-exact rather than
+normalised to silence the check.
 
 ## Files
 
 - `p3.0-pilot/`: the three 200-round pilots (planning only), the failed and successful LocalDB pilot lane logs, and the pilot analysis, planning, fit, C2 simulation and exploratory outputs. The PostgreSQL pilot's Docker setup and teardown logs are not included; their SHA-256 values are `fb81927d…` and `a1e42b24…`.
 - `p3.2-final/`: the final runs, the pre-fix contrast, their provenance and lane logs, and every analysis output.
 - `a5-pilot/`: the two 200-round endpoint pilots of the A5 target `b2b8d5df4`, collected with the `collection/` recipe at `d75e6e2f8` (planning only; excluded from any final decision). It holds the samples, headers, provenance, lane status logs, the environment record, both targets' `target.json`, the Stage 0 and Stage 1 command records, the secret-scan report, and the planning outputs in `analysis/` with their `commands.log`. Runner output, results files, setup logs and exception text stayed in the private work folder.
+- `a5-final/`: the four 500-round endpoint finals pre-registered in `#X24`, collected with the same recipe and the same prepared targets, in order: PostgreSQL A5 (seed 303), PostgreSQL baseline (305), SQL Server LocalDB baseline (306), SQL Server LocalDB A5 (304), each after 1,200 warm-up rounds. It holds the samples, headers, provenance and lane status logs, the environment record, the Stage 2 command record (including the PostgreSQL A5 gate analysis run between collections), the secret-scan report, and in `analysis/` both comparisons at L = 8 and 2L = 16, the observer outputs and the quarter diagnostics, with their `commands.log`. The A5 runs are the gate; the baseline runs are a descriptive, time-separated comparison, not causal isolation. These files report measurements and diagnostics; acceptance of any residual is the separate Q18 decision.
 - No file contains credentials, tokens, connection strings or client-identifying request content. All evidence files were scanned for the stack's configured secret values and for credential patterns before commit.

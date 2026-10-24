@@ -1,0 +1,38 @@
+{
+  "method_version": "1",
+  "input": "final-a5-endpoint-postgresql-20261024T162905Z.csv",
+  "input_sha256": "d8d6d458ce1e34bdd6213b53539fb5e380d6a97da232ea64f93f68b700570be6",
+  "arms": {
+    "reference_and_h0_candidate": "absent",
+    "h1_candidate": "wrong_secret"
+  },
+  "draws": 2000,
+  "seed": 1,
+  "results": [
+    {
+      "q": 10,
+      "threshold_us": 1057.2375000000006,
+      "false_positive_rate": 0.05,
+      "true_positive_rate": 0.0545
+    },
+    {
+      "q": 100,
+      "threshold_us": 390.68500000000165,
+      "false_positive_rate": 0.05,
+      "true_positive_rate": 0.0305
+    },
+    {
+      "q": 1000,
+      "threshold_us": 152.90500000000137,
+      "false_positive_rate": 0.05,
+      "true_positive_rate": 0.062
+    },
+    {
+      "q": 10000,
+      "threshold_us": 54.70000000000073,
+      "false_positive_rate": 0.047,
+      "true_positive_rate": 0.605
+    }
+  ],
+  "limits": "resamples of one host's loopback data; one statistic; concurrency, candidate selection and reference reuse are not modelled; describes the data, does not bound an attacker"
+}
