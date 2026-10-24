@@ -178,30 +178,57 @@ BeforeAll {
             })
     }
 
-    function global:Write-TestReady([string] $Path, [string] $RunId, [int] $ProcessId, [string] $FirstRow) {
-        [ordered]@{ schema = 'power-sampler-ready/1'; run_id = $RunId; identity = [ordered]@{ sampler_pid = $ProcessId }; first_row = $FirstRow } |
+    $global:TestStartUtc = [datetime]::new(2026, 10, 24, 11, 59, 0, [DateTimeKind]::Utc)
+
+    function global:Write-TestReady {
+        param(
+            [string] $Path, [string] $RunId, [int] $ProcessId, [string] $FirstRow,
+            [string] $RunLabel = 'pilot', [string] $LaneStamp = 'stamp', [datetime] $StartUtc = $global:TestStartUtc,
+            [string] $Schema = 'power-sampler-ready/1', [string[]] $Omit = @()
+        )
+        $identity = [ordered]@{ run_label = $RunLabel; lane_stamp = $LaneStamp; sampler_pid = $ProcessId; sampler_start_utc = $StartUtc.ToString('o') }
+        foreach ($field in $Omit) { $identity.Remove($field) }
+        [ordered]@{ schema = $Schema; run_id = $RunId; identity = $identity; first_row = $FirstRow } |
             ConvertTo-Json | Set-Content -LiteralPath $Path -Encoding utf8NoBOM
     }
 
-    # A process stand-in: HasExited and ExitCode come from its state; WaitForExit runs the state's
-    # OnWait action, then reports whether it exits on the stop signal; Kill marks it killed.
+    # A process stand-in that behaves like a process: HasExited and ExitCode come from its state
+    # (ExitAfterChecks makes it exit after that many HasExited reads); WaitForExit runs the state's
+    # OnWait action and reports whether it has exited, exiting on the first wait when ExitsOnStop is
+    # set. Kill terminates it, unless KillThrows (throws, as a kill of a protected or already exited
+    # process can), KillIneffective (returns, but the process lives on) or ExitsDuringKill (the
+    # process exits on its own and the kill throws).
     function global:New-TestProcess([hashtable] $State) {
-        foreach ($name in 'Exited', 'ExitCode', 'ExitsOnStop', 'Killed', 'OnWait') { if (-not $State.ContainsKey($name)) { $State[$name] = $null } }
+        foreach ($name in 'Exited', 'ExitCode', 'ExitsOnStop', 'Killed', 'OnWait', 'KillThrows', 'KillIneffective', 'ExitsDuringKill', 'ExitAfterChecks', 'StartTime') {
+            if (-not $State.ContainsKey($name)) { $State[$name] = $null }
+        }
         if ($null -eq $State.ExitsOnStop) { $State.ExitsOnStop = $true }
         if ($null -eq $State.ExitCode) { $State.ExitCode = 0 }
+        if ($null -eq $State.StartTime) { $State.StartTime = $global:TestStartUtc }
         $State.WaitCalls = [System.Collections.Generic.List[int]]::new()
-        $process = [pscustomobject]@{ Id = $State.Id; State = $State }
-        $process | Add-Member -MemberType ScriptProperty -Name HasExited -Value { [bool]$this.State.Exited }
+        $State.Checks = 0
+        $process = [pscustomobject]@{ Id = $State.Id; State = $State; StartTime = $State.StartTime }
+        $process | Add-Member -MemberType ScriptProperty -Name HasExited -Value {
+            $this.State.Checks++
+            if ($null -ne $this.State.ExitAfterChecks -and $this.State.Checks -gt $this.State.ExitAfterChecks) { $this.State.Exited = $true }
+            [bool]$this.State.Exited
+        }
         $process | Add-Member -MemberType ScriptProperty -Name ExitCode -Value { $this.State.ExitCode }
         $process | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {
             param([int] $Milliseconds)
             $this.State.WaitCalls.Add($Milliseconds)
             if ($null -ne $this.State.OnWait) { & $this.State.OnWait }
             if ($this.State.Exited) { return $true }
-            if ($this.State.ExitsOnStop -and -not $this.State.Killed) { $this.State.Exited = $true; return $true }
+            if ($this.State.ExitsOnStop -and $this.State.WaitCalls.Count -eq 1) { $this.State.Exited = $true; return $true }
             $false
         }
-        $process | Add-Member -MemberType ScriptMethod -Name Kill -Value { param([bool] $Tree) $this.State.Killed = $true }
+        $process | Add-Member -MemberType ScriptMethod -Name Kill -Value {
+            param([bool] $Tree)
+            $this.State.Killed = $true
+            if ($this.State.ExitsDuringKill) { $this.State.Exited = $true; throw [System.InvalidOperationException]::new('The process has already exited.') }
+            if ($this.State.KillThrows) { throw [System.ComponentModel.Win32Exception]::new(5) }
+            if (-not $this.State.KillIneffective) { $this.State.Exited = $true }
+        }
         $process
     }
 }
@@ -812,15 +839,19 @@ Describe 'Wait-PowerSamplerReady' {
         New-Item -ItemType Directory -Path $folder | Out-Null
         $ready = Join-Path $folder 'ready.json'
         $onlineRow = (ConvertTo-TestSampleLine (New-TestSampleSpec 1 -RunId 'run-1'))[0]
-        $clock = @{ Now = [datetime]::new(2026, 10, 24, 12, 0, 0, [DateTimeKind]::Utc); Pauses = 0; WriteAt = 0; Row = $onlineRow; ReadyPath = $ready }
+        # The injected clock is monotonic seconds; a pause advances it by its length.
+        $clock = @{ Seconds = 1000.0; Pauses = 0; WriteAt = 0; Row = $onlineRow; ReadyPath = $ready }
         $wait = @{
-            Clock = { $clock.Now }.GetNewClosure()
-            Pause = {
+            RunId     = 'run-1'
+            RunLabel  = 'pilot'
+            LaneStamp = 'stamp'
+            Clock     = { $clock.Seconds }.GetNewClosure()
+            Pause     = {
                 param([int] $Milliseconds)
                 $clock.Pauses++
                 # A wait that ignores its deadline must fail here, not loop for ever.
                 if ($clock.Pauses -gt 1000) { throw 'The wait did not end at its deadline.' }
-                $clock.Now = $clock.Now.AddMilliseconds($Milliseconds)
+                $clock.Seconds += $Milliseconds / 1000.0
                 if ($clock.Pauses -eq $clock.WriteAt) { Write-TestReady $clock.ReadyPath 'run-1' 4242 $clock.Row }
             }.GetNewClosure()
         }
@@ -829,48 +860,88 @@ Describe 'Wait-PowerSamplerReady' {
 
     It 'returns the first row when the ready record arrives before the timeout' {
         $clock.WriteAt = 3
-        $result = Wait-PowerSamplerReady -Process $process -ReadyPath $ready -RunId 'run-1' @wait
+        $result = Wait-PowerSamplerReady -Process $process -ReadyPath $ready @wait
         $result.failure | Should -BeNullOrEmpty
         $result.first_row.seq | Should -Be 1
         $clock.Pauses | Should -Be 3
     }
 
-    It 'times out after 30 s of the injected clock, without sleeping' {
-        $started = [System.Diagnostics.Stopwatch]::StartNew()
-        $result = Wait-PowerSamplerReady -Process $process -ReadyPath $ready -RunId 'run-1' @wait
+    It 'times out after 30 s of the injected clock' {
+        $result = Wait-PowerSamplerReady -Process $process -ReadyPath $ready @wait
         $result.failure | Should -Be 'sampler_ready_timeout'
         $clock.Pauses | Should -Be 150
-        $started.Elapsed.TotalSeconds | Should -BeLessThan 10
+    }
+
+    It 'refuses a ready record that appears only at the deadline' {
+        $clock.WriteAt = 150
+        $result = Wait-PowerSamplerReady -Process $process -ReadyPath $ready @wait
+        $result.failure | Should -Be 'sampler_ready_timeout'
+        Test-Path -LiteralPath $ready | Should -BeTrue
     }
 
     It 'stops waiting as soon as the sampler has exited' {
         $process.State.Exited = $true
-        $result = Wait-PowerSamplerReady -Process $process -ReadyPath $ready -RunId 'run-1' @wait
+        $result = Wait-PowerSamplerReady -Process $process -ReadyPath $ready @wait
         $result.failure | Should -Be 'sampler_exited_before_ready'
         $clock.Pauses | Should -Be 0
     }
 
-    It 'refuses a ready record for <Name>' -ForEach @(
-        @{ Name = 'another run'; RunId = 'run-2'; ProcessId = 4242; Seq = 1 }
-        @{ Name = 'another process'; RunId = 'run-1'; ProcessId = 1; Seq = 1 }
-        @{ Name = 'a first row that is not row 1'; RunId = 'run-1'; ProcessId = 4242; Seq = 2 }
-    ) {
-        $spec = New-TestSampleSpec 1 -RunId 'run-1'
-        $spec[0].Seq = $Seq
-        Write-TestReady $ready $RunId $ProcessId (ConvertTo-TestSampleLine $spec)[0]
-        (Wait-PowerSamplerReady -Process $process -ReadyPath $ready -RunId 'run-1' @wait).failure | Should -Be 'sampler_identity_mismatch'
+    It 'refuses a valid ready record when the sampler has already exited' {
+        Write-TestReady $ready 'run-1' 4242 $onlineRow
+        $process.State.Exited = $true
+        (Wait-PowerSamplerReady -Process $process -ReadyPath $ready @wait).failure | Should -Be 'sampler_exited_before_ready'
     }
 
-    It 'refuses a malformed ready record' {
-        '{ not json' | Set-Content -LiteralPath $ready
-        (Wait-PowerSamplerReady -Process $process -ReadyPath $ready -RunId 'run-1' @wait).failure | Should -Be 'sampler_ready_malformed'
+    It 'refuses a valid ready record when the sampler exits while it is read' {
+        Write-TestReady $ready 'run-1' 4242 $onlineRow
+        $process.State.ExitAfterChecks = 1
+        (Wait-PowerSamplerReady -Process $process -ReadyPath $ready @wait).failure | Should -Be 'sampler_exited_before_ready'
+        $process.State.Checks | Should -Be 2
+    }
+
+    It 'refuses a ready record for <Name>' -ForEach @(
+        @{ Name = 'another run'; Field = @{ RunId = 'run-2' } }
+        @{ Name = 'another process'; Field = @{ ProcessId = 1 } }
+        @{ Name = 'another process start time'; Field = @{ StartUtc = [datetime]::new(2026, 10, 24, 11, 59, 1, [DateTimeKind]::Utc) } }
+        @{ Name = 'another run label'; Field = @{ RunLabel = 'final' } }
+        @{ Name = 'another lane stamp'; Field = @{ LaneStamp = 'other' } }
+        @{ Name = 'a first row that is not row 1'; Field = @{}; Seq = 2 }
+    ) {
+        $spec = New-TestSampleSpec 1 -RunId 'run-1'
+        if ($null -ne $Seq) { $spec[0].Seq = $Seq }
+        $arguments = @{ Path = $ready; RunId = 'run-1'; ProcessId = 4242; FirstRow = (ConvertTo-TestSampleLine $spec)[0] }
+        foreach ($key in $Field.Keys) { $arguments[$key] = $Field[$key] }
+        Write-TestReady @arguments
+        (Wait-PowerSamplerReady -Process $process -ReadyPath $ready @wait).failure | Should -Be 'sampler_identity_mismatch'
+    }
+
+    It 'refuses a ready record that is <Name> as malformed' -ForEach @(
+        @{ Name = 'not JSON'; Text = '{ not json' }
+        @{ Name = 'of another schema'; Field = @{ Schema = 'power-sampler-ready/0' } }
+        @{ Name = 'missing the start time'; Field = @{ Omit = @('sampler_start_utc') } }
+        @{ Name = 'missing the process id'; Field = @{ Omit = @('sampler_pid') } }
+        @{ Name = 'missing the run label'; Field = @{ Omit = @('run_label') } }
+    ) {
+        if ($null -ne $Text) { $Text | Set-Content -LiteralPath $ready }
+        else {
+            $arguments = @{ Path = $ready; RunId = 'run-1'; ProcessId = 4242; FirstRow = $onlineRow }
+            foreach ($key in $Field.Keys) { $arguments[$key] = $Field[$key] }
+            Write-TestReady @arguments
+        }
+        (Wait-PowerSamplerReady -Process $process -ReadyPath $ready @wait).failure | Should -Be 'sampler_ready_malformed'
+    }
+
+    It 'refuses a sampler whose start time cannot be read' {
+        Write-TestReady $ready 'run-1' 4242 $onlineRow
+        $process | Add-Member -MemberType ScriptProperty -Name StartTime -Value { throw [System.ComponentModel.Win32Exception]::new(5) } -Force
+        (Wait-PowerSamplerReady -Process $process -ReadyPath $ready @wait).failure | Should -Be 'sampler_identity_mismatch'
     }
 
     It 'refuses a first row that does not meet P, and records it as a refusal' {
         $spec = New-TestSampleSpec 1 -RunId 'run-1'
         $spec[0].Kind = 'offline'
         Write-TestReady $ready 'run-1' 4242 (ConvertTo-TestSampleLine $spec)[0]
-        $result = Wait-PowerSamplerReady -Process $process -ReadyPath $ready -RunId 'run-1' @wait
+        $result = Wait-PowerSamplerReady -Process $process -ReadyPath $ready @wait
         $result.failure | Should -Be 'sampler_ready_not_p'
         $result.unmet | Should -Be @('ac_line_offline')
         $record = ConvertTo-SamplerRefusalRecord -Ready $result
@@ -881,7 +952,7 @@ Describe 'Wait-PowerSamplerReady' {
 
     It 'records a sampler that never became ready as a refusal without a reading' {
         $process.State.Exited = $true
-        $record = ConvertTo-SamplerRefusalRecord -Ready (Wait-PowerSamplerReady -Process $process -ReadyPath $ready -RunId 'run-1' @wait)
+        $record = ConvertTo-SamplerRefusalRecord -Ready (Wait-PowerSamplerReady -Process $process -ReadyPath $ready @wait)
         $record.unmet | Should -Be @('sampler_exited_before_ready')
         $record.reading | Should -BeNullOrEmpty
     }
@@ -892,29 +963,59 @@ Describe 'Close-PowerSampler' {
         $stop = Join-Path $TestDrive "stop-$([guid]::NewGuid().ToString('N'))"
     }
 
-    It 'signals the sampler and records a clean stop' {
+    It 'signals the sampler and records a clean, confirmed stop' {
         $process = New-TestProcess @{ Id = 1 }
         $result = Close-PowerSampler -Process $process -StopPath $stop
         Test-Path -LiteralPath $stop | Should -BeTrue
         $process.State.WaitCalls | Should -Be @(10000)
+        $result.terminated | Should -BeTrue
+        $result.kill_requested | Should -BeFalse
         $failures = Get-SamplerLifecycleFailure $result
         $failures | Should -BeNullOrEmpty
     }
 
-    It 'reports <Code> when <Name>' -ForEach @(
-        @{ Name = 'the sampler had already exited'; Code = 'sampler_dead_at_exit'; State = @{ Id = 1; Exited = $true } }
-        @{ Name = 'the sampler does not stop within the timeout'; Code = 'sampler_slow_shutdown'; State = @{ Id = 1; ExitsOnStop = $false } }
-        @{ Name = 'the sampler exits nonzero'; Code = 'sampler_exit_nonzero'; State = @{ Id = 1; ExitCode = 1 } }
+    It 'reports <Codes> when <Name>' -ForEach @(
+        @{ Name = 'the sampler had already exited'; Codes = @('sampler_dead_at_exit'); State = @{ Id = 1; Exited = $true } }
+        @{ Name = 'the sampler exits nonzero'; Codes = @('sampler_exit_nonzero'); State = @{ Id = 1; ExitCode = 1 } }
+        @{ Name = 'the sampler is killed after the timeout'; Codes = @('sampler_slow_shutdown'); State = @{ Id = 1; ExitsOnStop = $false } }
+        @{ Name = 'the kill throws and the sampler lives on'; Codes = @('sampler_slow_shutdown', 'sampler_not_terminated'); State = @{ Id = 1; ExitsOnStop = $false; KillThrows = $true } }
+        @{ Name = 'the kill returns but the sampler lives on'; Codes = @('sampler_slow_shutdown', 'sampler_not_terminated'); State = @{ Id = 1; ExitsOnStop = $false; KillIneffective = $true } }
+        @{ Name = 'the sampler exits on its own as the kill throws'; Codes = @('sampler_slow_shutdown'); State = @{ Id = 1; ExitsOnStop = $false; ExitsDuringKill = $true } }
     ) {
         $process = New-TestProcess $State.Clone()
         $failures = Get-SamplerLifecycleFailure (Close-PowerSampler -Process $process -StopPath $stop)
-        $failures | Should -Contain $Code
+        $failures | Should -Be $Codes
     }
 
-    It 'kills a sampler that does not stop in time' {
+    It 'confirms a forced termination by the wait after the kill' {
         $process = New-TestProcess @{ Id = 1; ExitsOnStop = $false }
-        (Close-PowerSampler -Process $process -StopPath $stop).killed | Should -BeTrue
-        $process.State.Killed | Should -BeTrue
+        $result = Close-PowerSampler -Process $process -StopPath $stop
+        $result.kill_requested | Should -BeTrue
+        $result.kill_error | Should -BeNullOrEmpty
+        $result.terminated | Should -BeTrue
+        $process.State.WaitCalls | Should -Be @(10000, 5000)
+    }
+
+    It 'records the kill error type and no termination when the kill fails' {
+        $process = New-TestProcess @{ Id = 1; ExitsOnStop = $false; KillThrows = $true }
+        $result = Close-PowerSampler -Process $process -StopPath $stop
+        $result.kill_requested | Should -BeTrue
+        $result.kill_error | Should -Be 'System.ComponentModel.Win32Exception'
+        $result.terminated | Should -BeFalse
+    }
+
+    It 'does not count a kill as termination when the wait after it reports the process alive' {
+        $process = New-TestProcess @{ Id = 1; ExitsOnStop = $false; KillIneffective = $true }
+        $result = Close-PowerSampler -Process $process -StopPath $stop
+        $result.kill_error | Should -BeNullOrEmpty
+        $result.terminated | Should -BeFalse
+    }
+
+    It 'confirms termination when the sampler exits on its own as the kill throws' {
+        $process = New-TestProcess @{ Id = 1; ExitsOnStop = $false; ExitsDuringKill = $true }
+        $result = Close-PowerSampler -Process $process -StopPath $stop
+        $result.kill_error | Should -Be 'System.InvalidOperationException'
+        $result.terminated | Should -BeTrue
     }
 }
 
@@ -1050,6 +1151,8 @@ Describe 'Host sample state and optional values' {
             Throws  = @{}
             Cpu     = @{ 7 = @{ start_ticks = 70; cpu_seconds = 10.0 }; 9 = @{ start_ticks = 90; cpu_seconds = 1.0 } }
             Candidates = @{ docker_vm = , @(@{ pid = 7; start_ticks = 70 }) }
+            DiscoveryThrows = $false
+            CpuThrows = @{}
         }
         $newState = {
             param([System.Collections.IDictionary] $Role = [ordered]@{ docker_vm = @{} })
@@ -1063,8 +1166,18 @@ Describe 'Host sample state and optional values' {
                     $fake | Add-Member -MemberType ScriptMethod -Name NextValue -Value { if ($this.Host.Throws.ContainsKey($this.Name)) { throw 'read failed' }; $this.Host.Counter[$this.Name] }
                     $fake
                 }.GetNewClosure() `
-                -FindCandidate { param([string] $Name, $Spec) $found = $hostState.Candidates[$Name]; if ($null -eq $found) { , @() } else { , @($found) } }.GetNewClosure() `
-                -ReadProcessCpu { param([int] $ProcessId) $reading = $hostState.Cpu[$ProcessId]; if ($null -eq $reading) { $null } else { [ordered]@{ start_ticks = $reading.start_ticks; cpu_seconds = $reading.cpu_seconds } } }.GetNewClosure()
+                -FindCandidate {
+                    param([string] $Name, $Spec)
+                    if ($hostState.DiscoveryThrows) { throw 'role discovery failed' }
+                    $found = $hostState.Candidates[$Name]
+                    if ($null -eq $found) { , @() } else { , @($found) }
+                }.GetNewClosure() `
+                -ReadProcessCpu {
+                    param([int] $ProcessId)
+                    if ($hostState.CpuThrows.ContainsKey($ProcessId)) { throw [System.ComponentModel.Win32Exception]::new(5) }
+                    $reading = $hostState.Cpu[$ProcessId]
+                    if ($null -eq $reading) { $null } else { [ordered]@{ start_ticks = $reading.start_ticks; cpu_seconds = $reading.cpu_seconds } }
+                }.GetNewClosure()
         }.GetNewClosure()
         $second = $global:QpcFrequency
     }
@@ -1163,6 +1276,50 @@ Describe 'Host sample state and optional values' {
             'cpu_background_pct', 'cpu_background_pct_na', 'cpu_background_floored')
     }
 
+    It 'records a role as counter_error, and keeps going, when its discovery throws' {
+        $hostState.DiscoveryThrows = $true
+        $state = & $newState
+        (Get-HostSampleRole -State $state).docker_vm.na | Should -Be 'counter_error'
+        (Get-HostSampleRole -State $state).docker_vm.pid | Should -BeNullOrEmpty
+        $row = Read-HostSample -State $state -Qpc $second
+        $row.cpu_docker_vm_pct | Should -Be 'NA'
+        $row.cpu_docker_vm_pct_na | Should -Be 'counter_error'
+        $row.cpu_background_pct_na | Should -Be 'counter_error'
+        $row.processor_time_pct | Should -Be '60.000'
+    }
+
+    It 'records the sampler as counter_error, and keeps going, when its own CPU read throws' {
+        $hostState.CpuThrows[9] = $true
+        $state = & $newState
+        (Get-HostSampleRole -State $state).sampler.na | Should -Be 'counter_error'
+        $row = Read-HostSample -State $state -Qpc $second
+        $row.cpu_sampler_pct | Should -Be 'NA'
+        $row.cpu_sampler_pct_na | Should -Be 'counter_error'
+        $row.cpu_docker_vm_pct | Should -Not -Be 'NA'
+    }
+
+    It 'still writes power rows and a ready record when role discovery and the sampler CPU read throw' {
+        $hostState.DiscoveryThrows = $true
+        $hostState.CpuThrows[9] = $true
+        $state = & $newState
+        $folder = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $folder | Out-Null
+        $time = @{ Qpc = [long]0; Utc = [datetime]::new(2026, 10, 24, 12, 0, 0, [DateTimeKind]::Utc) }
+        $online = [ordered]@{ utc = 'x'; call_succeeded = $true; win32_error = $null; ac_line_status = 1; battery_flag = 8; battery_life_percent = 80; system_status_flag = 0; scheme_query_succeeded = $true; scheme_query_failure = $null; scheme_guid = $global:BalancedScheme }
+        Invoke-PowerSampler -RunId 'run-1' -Identity ([ordered]@{ sampler_pid = 9 }) -Role (Get-HostSampleRole -State $state) -OptionalColumn (Get-HostSampleColumn -State $state) `
+            -ReadOptional { param([long] $Qpc) Read-HostSample -State $state -Qpc $Qpc }.GetNewClosure() `
+            -PowerPath (Join-Path $folder 'power.csv') -OptionalPath (Join-Path $folder 'optional.csv') -ReadyPath (Join-Path $folder 'ready.json') -StopPath (Join-Path $folder 'stop') `
+            -QpcFrequency $global:QpcFrequency -MaxTicks 2 -ReadPower { $online }.GetNewClosure() `
+            -ReadClock { $time.Qpc += 1000; $time.Utc = $time.Utc.AddTicks(1000); [ordered]@{ qpc = $time.Qpc; utc = $time.Utc } }.GetNewClosure() `
+            -Pause { param([int] $Milliseconds) $time.Qpc += [long]$Milliseconds * 10000; $time.Utc = $time.Utc.AddMilliseconds($Milliseconds) }.GetNewClosure()
+        $ready = Get-Content -LiteralPath (Join-Path $folder 'ready.json') -Raw | ConvertFrom-Json
+        $ready.roles.docker_vm.na | Should -Be 'counter_error'
+        $ready.roles.sampler.na | Should -Be 'counter_error'
+        $failures = Test-SamplerCoverage -Line (Get-Content -LiteralPath (Join-Path $folder 'power.csv')) -RunId 'run-1' -QpcFrequency $global:QpcFrequency -LaunchQpc 1000 -ExitQpc 5000000
+        $failures | Should -BeNullOrEmpty
+        @(Import-Csv -LiteralPath (Join-Path $folder 'optional.csv')).cpu_background_pct_na | Should -Be @('counter_error', 'counter_error')
+    }
+
     It 'refuses an unknown role' {
         { & $newState ([ordered]@{ browser = @{} }) } | Should -Throw '*Unknown sampler role*'
     }
@@ -1245,6 +1402,8 @@ Describe 'lane-postgresql.ps1 with synthetic command output' {
             if ($global:LaneScenario.WriteSamples) {
                 Write-TestSample $env:TIMING_EVIDENCE_OUTPUT_DIR $env:TIMING_EVIDENCE_RUN_LABEL 'postgresql' ([int]$env:TIMING_EVIDENCE_ROUNDS) ([int]$env:TIMING_EVIDENCE_SEED)
             }
+            # A sampler that dies by the exit dies while the collector runs, after its readiness.
+            if ($global:SamplerScenario.DeadAtExit -and $null -ne $global:SamplerScenario.Process) { $global:SamplerScenario.Process.State.Exited = $true }
             $global:LASTEXITCODE = $global:LaneScenario.CollectorExit
         }
 
@@ -1258,7 +1417,7 @@ Describe 'lane-postgresql.ps1 with synthetic command output' {
             $scenario.Arguments = $Argument
             $startQpc = [System.Diagnostics.Stopwatch]::GetTimestamp()
             $startUtc = [datetime]::UtcNow
-            $state = @{ Id = 4242; ExitsOnStop = -not $scenario.SlowShutdown; ExitCode = $scenario.ExitCode; Exited = $scenario.ExitBeforeReady; Written = $false }
+            $state = @{ Id = 4242; ExitsOnStop = -not $scenario.SlowShutdown; KillIneffective = $scenario.KillIneffective; ExitCode = $scenario.ExitCode; Exited = $scenario.ExitBeforeReady; Written = $false }
             $process = New-TestProcess $state
             $scenario.Process = $process
             if ($scenario.ExitBeforeReady) { return $process }
@@ -1266,8 +1425,8 @@ Describe 'lane-postgresql.ps1 with synthetic command output' {
             $first[0].Kind = $scenario.ReadyKind
             $firstLine = (ConvertTo-TestSampleLine $first -StartQpc $startQpc -StartUtc $startUtc)[0]
             Set-Content -LiteralPath $Argument.PowerPath -Value @(($global:SamplerColumns -join ','), $firstLine) -Encoding utf8NoBOM
-            Write-TestReady $Argument.ReadyPath $Argument.RunId 4242 $firstLine
-            if ($scenario.DeadAtExit) { $state.Exited = $true }
+            Write-TestReady -Path $Argument.ReadyPath -RunId $Argument.RunId -ProcessId 4242 -FirstRow $firstLine -RunLabel $Argument.RunLabel -LaneStamp $Argument.LaneStamp
+            if ($scenario.DeadBeforeLaunch) { $state.Exited = $true }
             $state.OnWait = {
                 if ($state.Written) { return }
                 $state.Written = $true
@@ -1308,7 +1467,7 @@ Describe 'lane-postgresql.ps1 with synthetic command output' {
             Inspections    = 0
         }
         Set-PowerSequence 'online'
-        $global:SamplerScenario = @{ ExitBeforeReady = $false; ReadyKind = 'online'; LastKind = 'online'; Step = 1; DeadAtExit = $false; SlowShutdown = $false; ExitCode = 0; Arguments = $null; Process = $null }
+        $global:SamplerScenario = @{ ExitBeforeReady = $false; ReadyKind = 'online'; LastKind = 'online'; Step = 1; DeadBeforeLaunch = $false; DeadAtExit = $false; SlowShutdown = $false; KillIneffective = $false; ExitCode = 0; Arguments = $null; Process = $null }
         $arguments = @{ RunLabel = 'pilot-a5'; Rounds = 20; WarmupRounds = 0; Seed = 301; OutputDir = $stage; CollectorRoot = $collector; TargetRoot = $target; WorkRoot = $work }
         $readProvenance = { Get-Content (Get-ChildItem $stage -Filter 'provenance-*.json').FullName -Raw | ConvertFrom-Json }
         $setupCalls = { @($global:LaneScenario.Calls | Where-Object { $_ -like '*setup-local-cms.ps1*' }) }
@@ -1508,6 +1667,7 @@ Describe 'lane-postgresql.ps1 with synthetic command output' {
 
     It 'refuses before the launch, and tears down, when the sampler <Name>' -ForEach @(
         @{ Name = 'exits before it is ready'; Change = @{ ExitBeforeReady = $true }; Unmet = @('sampler_exited_before_ready') }
+        @{ Name = 'dies after writing its ready record'; Change = @{ DeadBeforeLaunch = $true }; Unmet = @('sampler_exited_before_ready') }
         @{ Name = 'reports a first row that does not meet P'; Change = @{ ReadyKind = 'offline' }; Unmet = @('sampler_ready_not_p', 'ac_line_offline') }
     ) {
         foreach ($key in $Change.Keys) { $global:SamplerScenario[$key] = $Change[$key] }
@@ -1544,11 +1704,29 @@ Describe 'lane-postgresql.ps1 with synthetic command output' {
         Get-RefusalLine $stage | Should -BeNullOrEmpty
     }
 
-    It 'kills a sampler that does not stop in time' {
+    It 'kills a sampler that does not stop in time, confirms its termination and does not stop it again' {
         $global:SamplerScenario.SlowShutdown = $true
         & $lane @arguments
         $global:SamplerScenario.Process.State.Killed | Should -BeTrue
-        (& $readProvenance).sampler.stop.killed | Should -BeTrue
+        $sampler = (& $readProvenance).sampler
+        $sampler.stop.kill_requested | Should -BeTrue
+        $sampler.stop.terminated | Should -BeTrue
+        $sampler.cleanup_stop | Should -BeNullOrEmpty
+        @($global:SamplerScenario.Process.State.WaitCalls) | Should -Be @(10000, 5000)
+    }
+
+    It 'tries once more in cleanup, and reports a sampler that survives the kill' {
+        $global:SamplerScenario.SlowShutdown = $true
+        $global:SamplerScenario.KillIneffective = $true
+        & $lane @arguments
+        $LASTEXITCODE | Should -Be 1
+        $provenance = & $readProvenance
+        $provenance.sampler.stop.terminated | Should -BeFalse
+        @($provenance.sampler.coverage_failures) | Should -Contain 'sampler_not_terminated'
+        $provenance.sampler.cleanup_stop.terminated | Should -BeFalse
+        @($provenance.failures.stage) | Should -Be @('sampler-coverage', 'sampler-stop')
+        @($global:SamplerScenario.Process.State.WaitCalls) | Should -Be @(10000, 5000, 10000, 5000)
+        (Get-ChildItem $stage -Filter 'lane-postgresql-*.log' | Get-Content -Raw) | Should -Not -Match 'SAMPLER stopped during cleanup'
     }
 
     It 'judges the sampler after a failed collector and records both failures' {

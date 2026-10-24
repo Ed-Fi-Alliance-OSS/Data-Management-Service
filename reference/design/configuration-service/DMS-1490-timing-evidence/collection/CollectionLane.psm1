@@ -795,19 +795,31 @@ function Initialize-HostSampleState {
         try { $state.Counters[$name] = @{ Counter = (& $NewCounter $definition[0] $definition[1] $definition[2]); Na = $null } }
         catch { $state.Counters[$name] = @{ Counter = $null; Na = 'counter_unavailable' } }
     }
+    # Role discovery and the sampler's own CPU are optional: a failure there leaves that role
+    # unknown (`counter_error`, never a guessed candidate) and must not stop the power rows.
     $tracked = [ordered]@{}
     foreach ($name in $script:SamplerRoles) {
         if ($Role.Contains($name)) {
-            # Assigned first: @() around a call that returns its list as one object would nest it.
-            $found = & $FindCandidate $name $Role[$name]
-            [object[]] $candidates = @()
-            if ($null -ne $found) { $candidates = @($found) }
-            $resolved = Resolve-RoleIdentity -Candidate $candidates
-            $tracked["cpu_$($name)_pct"] = @{ Identity = $resolved.identity; Na = $resolved.na }
+            try {
+                # Assigned first: @() around a call that returns its list as one object would nest it.
+                $found = & $FindCandidate $name $Role[$name]
+                [object[]] $candidates = @()
+                if ($null -ne $found) { $candidates = @($found) }
+                $resolved = Resolve-RoleIdentity -Candidate $candidates
+                $tracked["cpu_$($name)_pct"] = @{ Identity = $resolved.identity; Na = $resolved.na }
+            }
+            catch {
+                $tracked["cpu_$($name)_pct"] = @{ Identity = $null; Na = 'counter_error' }
+            }
         }
     }
-    $self = & $ReadProcessCpu $SamplerProcessId
-    $tracked['cpu_sampler_pct'] = @{ Identity = $(if ($null -ne $self) { [ordered]@{ pid = $SamplerProcessId; start_ticks = [long]$self.start_ticks } }); Na = $(if ($null -eq $self) { 'process_absent' }) }
+    try {
+        $self = & $ReadProcessCpu $SamplerProcessId
+        $tracked['cpu_sampler_pct'] = @{ Identity = $(if ($null -ne $self) { [ordered]@{ pid = $SamplerProcessId; start_ticks = [long]$self.start_ticks } }); Na = $(if ($null -eq $self) { 'process_absent' }) }
+    }
+    catch {
+        $tracked['cpu_sampler_pct'] = @{ Identity = $null; Na = 'counter_error' }
+    }
     foreach ($name in $tracked.Keys) {
         $entry = $tracked[$name]
         $entry.LastCpu = $null
@@ -1037,31 +1049,56 @@ function Open-PowerSampler {
 .SYNOPSIS
     Waits for the sampler's ready record and checks it, or returns why the sampler is not ready.
 .DESCRIPTION
-    Returns failure null and the parsed first row when the record exists within TimeoutSeconds,
-    names this run and this sampler process, holds row 1 of this run, and that row meets P.
-    Otherwise failure is one of sampler_exited_before_ready, sampler_ready_timeout,
-    sampler_ready_malformed, sampler_identity_mismatch or sampler_ready_not_p (with the unmet parts
-    of P). The clock and pause are parameters, so that tests reach the timeout without waiting.
+    Returns failure null and the parsed first row only when, within TimeoutSeconds of elapsed
+    monotonic time, the record exists, has the ready schema, names this run (id, label, lane stamp)
+    and this sampler process (id and start time), holds row 1 of this run, that row meets P, and
+    the process is still alive both when the record is found and after it is read. Otherwise
+    failure is one of sampler_exited_before_ready, sampler_ready_timeout, sampler_ready_malformed
+    (unreadable, wrong schema, or a missing or malformed identity field), sampler_identity_mismatch
+    or sampler_ready_not_p (with the unmet parts of P).
+
+    The deadline and liveness are checked on every pass, including the one that finds the record,
+    so a record that appears late, or a sampler that has already died, is never accepted. The clock
+    returns monotonic seconds (by default the QueryPerformanceCounter, which a wall-clock change
+    does not move); it and the pause are parameters, so that tests reach the timeout without waiting.
 #>
 function Wait-PowerSamplerReady {
     param(
         [Parameter(Mandatory)] [psobject] $Process,
         [Parameter(Mandatory)] [string] $ReadyPath,
         [Parameter(Mandatory)] [string] $RunId,
+        [Parameter(Mandatory)] [string] $RunLabel,
+        [Parameter(Mandatory)] [string] $LaneStamp,
         [double] $TimeoutSeconds = 30,
-        [scriptblock] $Clock = { [datetime]::UtcNow },
+        [scriptblock] $Clock = { [System.Diagnostics.Stopwatch]::GetTimestamp() / [double][System.Diagnostics.Stopwatch]::Frequency },
         [scriptblock] $Pause = { param([int] $Milliseconds) Start-Sleep -Milliseconds $Milliseconds }
     )
     $result = [ordered]@{ failure = $null; unmet = @(); ready = $null; first_row = $null }
-    $deadline = (& $Clock).AddSeconds($TimeoutSeconds)
-    while (-not (Test-Path -LiteralPath $ReadyPath)) {
-        if ($Process.HasExited) { $result.failure = 'sampler_exited_before_ready'; return $result }
-        if ((& $Clock) -ge $deadline) { $result.failure = 'sampler_ready_timeout'; return $result }
+    $started = [double](& $Clock)
+    $alive = {
+        try { return -not $Process.HasExited } catch { return $false }
+    }
+    while ($true) {
+        $found = Test-Path -LiteralPath $ReadyPath
+        if (-not (& $alive)) { $result.failure = 'sampler_exited_before_ready'; return $result }
+        if ([double](& $Clock) - $started -ge $TimeoutSeconds) { $result.failure = 'sampler_ready_timeout'; return $result }
+        if ($found) { break }
         & $Pause 200
     }
     try {
-        $ready = Get-Content -LiteralPath $ReadyPath -Raw | ConvertFrom-Json -AsHashtable
+        $ready = Get-Content -LiteralPath $ReadyPath -Raw | ConvertFrom-Json -AsHashtable -DateKind String
         $row = ConvertFrom-PowerSampleRow ([string]$ready.first_row)
+        if ($ready.schema -cne 'power-sampler-ready/1') { throw 'The ready record has another schema.' }
+        $identity = $ready.identity
+        if ($identity -isnot [System.Collections.IDictionary]) { throw 'The ready record has no identity.' }
+        foreach ($field in 'run_label', 'lane_stamp', 'sampler_start_utc') {
+            if ($identity[$field] -isnot [string] -or $identity[$field] -eq '') { throw "The ready identity has no $field." }
+        }
+        if ($ready.run_id -isnot [string] -or -not ($identity.sampler_pid -is [int] -or $identity.sampler_pid -is [long])) { throw 'The ready identity is malformed.' }
+        $readyStart = [datetime]::MinValue
+        if (-not [datetime]::TryParseExact($identity.sampler_start_utc, 'o', [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind, [ref]$readyStart)) {
+            throw 'The ready start time is malformed.'
+        }
     }
     catch {
         $result.failure = 'sampler_ready_malformed'
@@ -1069,10 +1106,16 @@ function Wait-PowerSamplerReady {
     }
     $result.ready = $ready
     $result.first_row = $row
-    if ($ready.run_id -cne $RunId -or [long]$ready.identity.sampler_pid -ne $Process.Id -or $row.run_id -cne $RunId -or $row.seq -ne 1) {
+    try { $processStart = $Process.StartTime.ToUniversalTime().Ticks } catch { $processStart = $null }
+    if ($ready.run_id -cne $RunId -or $identity.run_label -cne $RunLabel -or $identity.lane_stamp -cne $LaneStamp -or
+        $identity.sampler_pid -ne $Process.Id -or $null -eq $processStart -or $readyStart.ToUniversalTime().Ticks -ne $processStart -or
+        $row.run_id -cne $RunId -or $row.seq -ne 1) {
         $result.failure = 'sampler_identity_mismatch'
         return $result
     }
+    # Checked again after reading: a sampler that died meanwhile is not ready.
+    if (-not (& $alive)) { $result.failure = 'sampler_exited_before_ready'; return $result }
+    if ([double](& $Clock) - $started -ge $TimeoutSeconds) { $result.failure = 'sampler_ready_timeout'; return $result }
     $unmet = Get-SamplePowerFailure $row
     if ($unmet.Count -gt 0) {
         $result.failure = 'sampler_ready_not_p'
@@ -1098,26 +1141,46 @@ function ConvertTo-SamplerRefusalRecord {
 .SYNOPSIS
     Signals the sampler to stop and waits for it; kills it if it does not stop in time.
 .DESCRIPTION
-    Records whether it was still alive when signalled, whether it stopped within the timeout, and
-    its exit code. Takes any object with the HasExited, Id and ExitCode properties and the
-    WaitForExit(int) and Kill(bool) methods of a process, so that tests use stand-ins.
+    Records whether it was still alive when signalled, whether it stopped within the timeout, its
+    exit code, and, if it did not, whether a kill was requested, the type of any error the kill or
+    the wait after it raised (the underlying exception, not PowerShell's method-call wrapper), and
+    whether termination was confirmed. `terminated` is true only when
+    a wait reported the process gone or the process reports it has exited; a requested kill alone
+    never counts. One kill and one bounded wait, no retry loop. Takes any object with the
+    HasExited, Id and ExitCode properties and the WaitForExit(int) and Kill(bool) methods of a
+    process, so that tests use stand-ins.
 #>
 function Close-PowerSampler {
     param(
         [Parameter(Mandatory)] [psobject] $Process,
         [Parameter(Mandatory)] [string] $StopPath,
-        [int] $TimeoutMilliseconds = 10000
+        [int] $TimeoutMilliseconds = 10000,
+        [int] $KillWaitMilliseconds = 5000
     )
-    $result = [ordered]@{ alive_at_stop = -not $Process.HasExited; stopped_in_time = $false; exit_code = $null; killed = $false }
+    $hasExited = { try { return [bool]$Process.HasExited } catch { return $false } }
+    $result = [ordered]@{
+        alive_at_stop   = -not (& $hasExited)
+        stopped_in_time = $false
+        exit_code       = $null
+        kill_requested  = $false
+        kill_error      = $null
+        wait_error      = $null
+        terminated      = $false
+    }
     [System.IO.File]::WriteAllText($StopPath, 'stop')
-    if ($Process.WaitForExit($TimeoutMilliseconds)) {
+    $stopped = $false
+    try { $stopped = [bool]$Process.WaitForExit($TimeoutMilliseconds) } catch { $result.wait_error = $_.Exception.GetBaseException().GetType().FullName }
+    if ($stopped) {
         $result.stopped_in_time = $true
-        $result.exit_code = [int]$Process.ExitCode
+        $result.terminated = $true
+        try { $result.exit_code = [int]$Process.ExitCode } catch { $result.exit_code = $null }
+        return $result
     }
-    else {
-        try { $Process.Kill($true); [void]$Process.WaitForExit(5000) } catch { $null = $_ }
-        $result.killed = $true
-    }
+    $result.kill_requested = $true
+    try { $Process.Kill($true) } catch { $result.kill_error = $_.Exception.GetBaseException().GetType().FullName }
+    $gone = $false
+    try { $gone = [bool]$Process.WaitForExit($KillWaitMilliseconds) } catch { $result.wait_error = $_.Exception.GetBaseException().GetType().FullName }
+    $result.terminated = $gone -or (& $hasExited)
     $result
 }
 
@@ -1130,6 +1193,7 @@ function Get-SamplerLifecycleFailure([System.Collections.IDictionary] $Stop) {
     if (-not $Stop.alive_at_stop) { $failures.Add('sampler_dead_at_exit') }
     if (-not $Stop.stopped_in_time) { $failures.Add('sampler_slow_shutdown') }
     elseif ($Stop.exit_code -ne 0) { $failures.Add('sampler_exit_nonzero') }
+    if (-not $Stop.terminated) { $failures.Add('sampler_not_terminated') }
     , $failures.ToArray()
 }
 

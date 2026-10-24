@@ -166,7 +166,7 @@ function Open-LaneSampler([System.Collections.IDictionary] $Role) {
     foreach ($name in $Role.Keys) { $arguments[$name] = $Role[$name] }
     $script:sampler = Open-PowerSampler -ScriptPath $samplerScript -Argument $arguments -StandardOutputPath $samplerFiles.stdout -StandardErrorPath $samplerFiles.stderr
     Write-LaneLog "SAMPLER started pid=$($script:sampler.Id)"
-    $ready = Wait-PowerSamplerReady -Process $script:sampler -ReadyPath $samplerFiles.ready -RunId $samplerRunId
+    $ready = Wait-PowerSamplerReady -Process $script:sampler -ReadyPath $samplerFiles.ready -RunId $samplerRunId -RunLabel $RunLabel -LaneStamp $stamp
     $provenance.sampler.ready_failure = $ready.failure
     if ($null -ne $ready.ready) {
         $provenance.sampler.identity = $ready.ready.identity
@@ -186,7 +186,8 @@ function Open-LaneSampler([System.Collections.IDictionary] $Role) {
 # Stops the sampler once the collector has exited and requires its coverage of the collection.
 function Complete-LaneSampler([long] $LaunchQpc, [long] $ExitQpc) {
     $stop = Close-PowerSampler -Process $script:sampler -StopPath $samplerFiles.stop
-    $script:samplerStopped = $true
+    # Only a confirmed termination ends the sampler; otherwise cleanup tries once more and reports it.
+    $script:samplerStopped = [bool]$stop.terminated
     $lines = @(if (Test-Path -LiteralPath $samplerFiles.power) { Get-Content -LiteralPath $samplerFiles.power })
     # Assigned first: @() around a call that returns its list as one object would nest it.
     $lifecycle = Get-SamplerLifecycleFailure $stop
@@ -525,7 +526,9 @@ finally {
     if ($locationPushed) { Pop-Location }
     if ($null -ne $sampler -and -not $samplerStopped) {
         try {
-            $provenance.sampler.cleanup_stop = Close-PowerSampler -Process $sampler -StopPath $samplerFiles.stop
+            $cleanup = Close-PowerSampler -Process $sampler -StopPath $samplerFiles.stop
+            $provenance.sampler.cleanup_stop = $cleanup
+            if (-not $cleanup.terminated) { throw "The power sampler (pid $($sampler.Id)) is still running after cleanup." }
             Write-LaneLog 'SAMPLER stopped during cleanup'
         }
         catch {

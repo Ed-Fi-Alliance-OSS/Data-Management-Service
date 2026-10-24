@@ -52,11 +52,28 @@ Each lane starts `power-sampler.ps1` once the deployment is verified, before the
 
 When the lane's stop signal appears, one last tick runs and the sampler exits 0.
 
-**Readiness, before the launch:** the lane waits at most 30 s for the ready record. It must name this run and this sampler process, hold row 1, and that row must meet P. Otherwise this is a **refusal** (`sampler_exited_before_ready`, `sampler_ready_timeout`, `sampler_ready_malformed`, `sampler_identity_mismatch` or `sampler_ready_not_p`), recorded like a failed power check, with cleanup.
+**Readiness, before the launch:** the lane waits at most 30 s, measured on the QueryPerformanceCounter so that a wall-clock change cannot stretch it.
+
+- **The ready record must:**
+  - have the ready schema;
+  - name this run (id, label, lane stamp) and this sampler process (id and start time);
+  - hold row 1, and that row must meet P.
+- **Checked on every pass:** the deadline and the sampler's liveness are checked on every pass, including the one that finds the record, and again after reading it. A record that appears late, or a sampler that has already died, is never accepted.
+
+Otherwise this is a **refusal**, recorded like a failed power check, with cleanup:
+
+- `sampler_exited_before_ready`;
+- `sampler_ready_timeout`;
+- `sampler_ready_malformed` (unreadable, another schema, or a missing or malformed identity field);
+- `sampler_identity_mismatch`;
+- `sampler_ready_not_p`.
 
 **Coverage, after the exit** (stage `sampler-coverage`, an attempt failure). Judged on `qpc`:
 
-- **The sampler itself:** it must be alive at the exit, then stop within 10 s with exit code 0; otherwise it is killed.
+- **The sampler itself:** it must be alive at the exit, then stop within 10 s with exit code 0.
+  - If it does not stop, it is killed once and waited for once more (5 s).
+  - The sampler counts as ended only when that termination is confirmed; a requested kill alone never counts. Otherwise the lane records `sampler_not_terminated` and the type of any kill or wait error.
+  - Cleanup tries once more (one more signal, wait and kill) and records a failed `sampler-stop` if the sampler is still running.
 - **The file:** the header is exact; every line splits into exactly the expected fields and parses strictly; every row carries this run's id; `seq` runs 1, 2, 3, … without a break; `qpc` increases; and the wall clock agrees with `qpc` to within 1 s between consecutive rows.
 - **The window:** there is a row at or before the launch and one at or after the exit. From the first of those to the second, no gap exceeds 3 s and every row meets P, both bracketing rows included.
 
@@ -68,6 +85,7 @@ Coverage detects gaps. It cannot show what the power source did between two rows
 - **Role CPU:** `cms` and `localdb` (LocalDB lane) or `docker_vm` (PostgreSQL lane), plus the sampler itself. Each role is fixed at start by process id and start time:
   - no candidate is `process_absent`;
   - several candidates, or an unreadable start time, is `process_ambiguous`;
+  - a discovery or CPU read that throws (including the sampler's own) is `counter_error`, with the identity left unknown; it never stops the power rows;
   - a later change is `process_changed` from then on.
 
   CPU % is the `TotalProcessorTime` delta over the `qpc` interval, divided by the logical CPU count, × 100.
