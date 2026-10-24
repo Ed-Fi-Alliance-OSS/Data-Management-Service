@@ -3215,6 +3215,203 @@ public class RevocationOwnershipTests
         public void It_does_not_attempt_revocation() =>
             A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
+
+    /// <summary>
+    /// Revocation over HTTP through a repository that also offers the narrow credential read, as
+    /// the shipped repositories do, with the real hasher. The caller is authenticated from the
+    /// credential alone: an absent caller, a wrong secret and an unapproved caller receive the same
+    /// invalid_client answer; the caller's own token is revoked under its application id even when
+    /// the stored client id is spelled differently from the one presented; a token issued to
+    /// another client is left alone; a credential that cannot be read is an outage. The full
+    /// application is never loaded.
+    /// </summary>
+    [TestFixture]
+    public class Given_revocation_requests_through_a_credential_reading_repository
+    {
+        private const string StoredOwnerClientId = "Revoke-Owner-Client";
+        private const string AbsentCallerId = "absent-caller";
+        private const string UnapprovedCallerId = "unapproved-caller";
+        private const string FaultingCallerId = "faulting-caller";
+        private const string WrongSecret = "Wrong-Secret-0123456789";
+
+        private static readonly (string Failure, string ClientId, string Secret)[] _failureCases =
+        [
+            ("an absent caller", AbsentCallerId, RealHasherSecret),
+            ("a wrong secret", OwnerClientId, WrongSecret),
+            ("an unapproved caller with its secret", UnapprovedCallerId, RealHasherSecret),
+        ];
+
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>(
+            options => options.Implements<IClientCredentialReader>()
+        );
+        private readonly Guid _ownerApplicationId = Guid.NewGuid();
+        private readonly Guid _ownJti = Guid.NewGuid();
+        private readonly Guid _foreignJti = Guid.NewGuid();
+        private readonly Dictionary<
+            string,
+            (HttpStatusCode Status, string? MediaType, bool BasicChallenge, string Body)
+        > _failures = [];
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpStatusCode _ownTokenStatus;
+        private HttpStatusCode _foreignTokenStatus;
+        private HttpResponseMessage _faultResponse = null!;
+        private JsonObject _faultBody = null!;
+
+        private IClientCredentialReader Reader => (IClientCredentialReader)_tokenRepository;
+
+        private async Task<HttpResponseMessage> RevokeAs(string clientId, string secret, string token)
+        {
+            using HttpClient client = CreateClientWithCredentials(_factory, clientId, secret);
+            return await PostRevocation(client, token);
+        }
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            string storedHash = await CreateRealHasher(
+                    RealHasherIterations,
+                    NullLogger<ClientSecretHasher>.Instance
+                )
+                .HashSecretAsync(RealHasherSecret);
+            A.CallTo(() => Reader.CanReadClientCredentials).Returns(true);
+            A.CallTo(() => Reader.GetClientCredentialAsync(AbsentCallerId)).Returns((ClientCredential?)null);
+            A.CallTo(() => Reader.GetClientCredentialAsync(OwnerClientId))
+                .Returns(
+                    new ClientCredential(
+                        _ownerApplicationId,
+                        StoredOwnerClientId,
+                        storedHash,
+                        IsApproved: true
+                    )
+                );
+            A.CallTo(() => Reader.GetClientCredentialAsync(UnapprovedCallerId))
+                .Returns(
+                    new ClientCredential(Guid.NewGuid(), UnapprovedCallerId, storedHash, IsApproved: false)
+                );
+            A.CallTo(() => Reader.GetClientCredentialAsync(FaultingCallerId))
+                .Throws(new InvalidOperationException("credential store unavailable"));
+
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
+                .Returns(
+                    new[]
+                    {
+                        new PublicKeyInfo { KeyId = keyId, PublicKey = publicKeySpki },
+                    }
+                );
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_ownJti, _ownerApplicationId)).Returns(true);
+
+            _factory = CreateFactory(
+                _tokenRepository,
+                CreateRealHasher(RealHasherIterations, NullLogger<ClientSecretHasher>.Instance)
+            );
+
+            foreach ((string failure, string clientId, string secret) in _failureCases)
+            {
+                using HttpResponseMessage response = await RevokeAs(clientId, secret, "irrelevant-token");
+                _failures[failure] = (
+                    response.StatusCode,
+                    response.Content.Headers.ContentType?.MediaType,
+                    response.Headers.WwwAuthenticate.Any(header => header.Scheme == "Basic"),
+                    await response.Content.ReadAsStringAsync()
+                );
+            }
+
+            using (
+                HttpResponseMessage own = await RevokeAs(
+                    OwnerClientId,
+                    RealHasherSecret,
+                    CreateSignedToken(signingKey, StoredOwnerClientId, _ownJti)
+                )
+            )
+            {
+                _ownTokenStatus = own.StatusCode;
+            }
+
+            using (
+                HttpResponseMessage foreign = await RevokeAs(
+                    OwnerClientId,
+                    RealHasherSecret,
+                    CreateSignedToken(signingKey, OtherClientId, _foreignJti)
+                )
+            )
+            {
+                _foreignTokenStatus = foreign.StatusCode;
+            }
+
+            _faultResponse = await RevokeAs(FaultingCallerId, RealHasherSecret, "irrelevant-token");
+            _faultBody = await ReadOAuthError(_faultResponse);
+        }
+
+        [OneTimeTearDown]
+        public void TearDown()
+        {
+            _faultResponse?.Dispose();
+            _factory?.Dispose();
+        }
+
+        public static IEnumerable<string> Failures() =>
+            _failureCases.Select(failureCase => failureCase.Failure);
+
+        [TestCaseSource(nameof(Failures))]
+        public void It_answers_401_in_the_oauth_error_format(string failure)
+        {
+            _failures[failure].Status.Should().Be(HttpStatusCode.Unauthorized);
+            _failures[failure].MediaType.Should().Be("application/json");
+        }
+
+        [TestCaseSource(nameof(Failures))]
+        public void It_reports_invalid_client(string failure)
+        {
+            JsonObject body = JsonNode.Parse(_failures[failure].Body)!.AsObject();
+            body["error"]!.GetValue<string>().Should().Be("invalid_client");
+            body["error_description"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Invalid client or Invalid client credentials");
+        }
+
+        [TestCaseSource(nameof(Failures))]
+        public void It_sends_a_basic_challenge(string failure) =>
+            _failures[failure].BasicChallenge.Should().BeTrue();
+
+        [Test]
+        public void It_returns_one_body_for_every_authentication_failure() =>
+            _failures.Values.Select(observed => observed.Body).Distinct().Should().ContainSingle();
+
+        [Test]
+        public void It_revokes_the_callers_own_token_under_its_application_id()
+        {
+            _ownTokenStatus.Should().Be(HttpStatusCode.OK);
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_ownJti, _ownerApplicationId))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public void It_leaves_a_token_issued_to_another_client_alone()
+        {
+            _foreignTokenStatus.Should().Be(HttpStatusCode.OK);
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_foreignJti, A<Guid>._)).MustNotHaveHappened();
+        }
+
+        [Test]
+        public void It_answers_an_unreadable_credential_as_temporarily_unavailable() =>
+            AssertTemporarilyUnavailable(_faultResponse, _faultBody);
+
+        [Test]
+        public void It_authenticates_every_request_from_the_credential() =>
+            A.CallTo(() => Reader.GetClientCredentialAsync(A<string>._))
+                .MustHaveHappened(_failureCases.Length + 3, Times.Exactly);
+
+        [Test]
+        public void It_never_loads_the_full_application() =>
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(A<string>._)).MustNotHaveHappened();
+
+        [Test]
+        public void It_revokes_nothing_for_a_failed_or_unavailable_authentication() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._))
+                .MustHaveHappenedOnceExactly();
+    }
 }
 
 public class IdentityProviderErrorParsingTests
@@ -4856,9 +5053,16 @@ public class TokenEndpointInvalidScopeTests
 /// client, with credentials in the form or in HTTP Basic, all receive the same 401 body apart from
 /// the request's own correlation id. The requests share one host, because each host start is
 /// costly and every request is independent of the others.
+/// <para>
+/// It runs over both ways the manager can authenticate: <c>legacy</c>, a repository that only
+/// offers the full application lookup, and <c>credential</c>, a repository that also offers
+/// <see cref="IClientCredentialReader"/>, as the shipped repositories do. The call-shape tests
+/// prove which one each run took.
+/// </para>
 /// </summary>
-[TestFixture]
-public class Given_TokenEndpoint_requests_that_fail_client_authentication
+[TestFixture("legacy")]
+[TestFixture("credential")]
+public class Given_TokenEndpoint_requests_that_fail_client_authentication(string repositoryPath)
 {
     private const string AbsentClientId = "absent-client";
     private const string KnownClientId = "known-client";
@@ -4899,7 +5103,10 @@ public class Given_TokenEndpoint_requests_that_fail_client_authentication
 
     private sealed record Observed(HttpStatusCode Status, string? MediaType, JsonNode Body);
 
-    private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+    /// <summary>Every failure case through both credential paths, and the one successful grant.</summary>
+    private static readonly int _requestCount = (_failureCases.Length * _credentialPaths.Length) + 1;
+
+    private IOpenIddictTokenRepository _tokenRepository = null!;
     private readonly Dictionary<(string Failure, string Path), Observed> _failures = [];
     private WebApplicationFactory<Program> _factory = null!;
     private HttpClient _client = null!;
@@ -4987,18 +5194,44 @@ public class Given_TokenEndpoint_requests_that_fail_client_authentication
             RevocationOwnershipTests.RealHasherIterations,
             NullLogger<ClientSecretHasher>.Instance
         );
+        _tokenRepository =
+            repositoryPath == "credential"
+                ? A.Fake<IOpenIddictTokenRepository>(options => options.Implements<IClientCredentialReader>())
+                : A.Fake<IOpenIddictTokenRepository>();
+        ApplicationInfo known = Application(
+            KnownClientId,
+            await hasher.HashSecretAsync(KnownSecret),
+            isApproved: true
+        );
+        ApplicationInfo unapproved = Application(
+            UnapprovedClientId,
+            await hasher.HashSecretAsync(UnapprovedSecret),
+            isApproved: false
+        );
         A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(AbsentClientId))
             .Returns((ApplicationInfo?)null);
-        A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(KnownClientId))
-            .Returns(Application(KnownClientId, await hasher.HashSecretAsync(KnownSecret), isApproved: true));
+        A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(KnownClientId)).Returns(known);
         A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(UnapprovedClientId))
-            .Returns(
-                Application(
-                    UnapprovedClientId,
-                    await hasher.HashSecretAsync(UnapprovedSecret),
-                    isApproved: false
-                )
-            );
+            .Returns(unapproved);
+        if (_tokenRepository is IClientCredentialReader credentialReader)
+        {
+            A.CallTo(() => credentialReader.CanReadClientCredentials).Returns(true);
+            A.CallTo(() => credentialReader.GetClientCredentialAsync(AbsentClientId))
+                .Returns((ClientCredential?)null);
+            A.CallTo(() => credentialReader.GetClientCredentialAsync(KnownClientId))
+                .Returns(
+                    new ClientCredential(known.Id, known.ClientId, known.ClientSecret, known.IsApproved)
+                );
+            A.CallTo(() => credentialReader.GetClientCredentialAsync(UnapprovedClientId))
+                .Returns(
+                    new ClientCredential(
+                        unapproved.Id,
+                        unapproved.ClientId,
+                        unapproved.ClientSecret,
+                        unapproved.IsApproved
+                    )
+                );
+        }
         ArrangeIssuance();
 
         _factory = RevocationOwnershipTests.CreateFactory(_tokenRepository, hasher);
@@ -5065,6 +5298,29 @@ public class Given_TokenEndpoint_requests_that_fail_client_authentication
     [Test]
     public void It_returns_an_access_token_to_that_client() =>
         _success.Body["access_token"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+
+    [Test]
+    public void It_authenticates_through_the_repository_path_under_test()
+    {
+        if (repositoryPath == "credential")
+        {
+            A.CallTo(() => ((IClientCredentialReader)_tokenRepository).GetClientCredentialAsync(A<string>._))
+                .MustHaveHappened(_requestCount, Times.Exactly);
+        }
+        else
+        {
+            _tokenRepository.Should().NotBeAssignableTo<IClientCredentialReader>();
+        }
+    }
+
+    /// <summary>
+    /// On the credential path only the successful grant loads the full application; a failed
+    /// authentication never does. Without the capability every request loads it, once.
+    /// </summary>
+    [Test]
+    public void It_loads_the_full_application_only_where_its_path_reads_it() =>
+        A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(A<string>._))
+            .MustHaveHappened(repositoryPath == "credential" ? 1 : _requestCount, Times.Exactly);
 }
 
 /// <summary>

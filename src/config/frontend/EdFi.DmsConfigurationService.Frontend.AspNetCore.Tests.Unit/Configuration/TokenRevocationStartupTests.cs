@@ -129,6 +129,66 @@ public class TokenRevocationStartupTests
             _boot.ProviderConnectionsAtStartup.Should().Be(0);
     }
 
+    /// <summary>
+    /// The self-contained host as <c>Program</c> composes it, with nothing replaced: each engine's
+    /// own token repository, wrapping that engine's data repository, offers the narrow credential
+    /// read, so the token manager authenticates from it rather than from the full application.
+    /// </summary>
+    [TestFixture("postgresql")]
+    [TestFixture("mssql")]
+    public class Given_a_self_contained_boot_with_the_shipped_repositories(string datastore)
+    {
+        private RevocationBoot _boot = null!;
+
+        [OneTimeSetUp]
+        public void OneTimeSetUp() => _boot = RevocationBoot.Run("self-contained", datastore);
+
+        [OneTimeTearDown]
+        public void OneTimeTearDown() => _boot.Dispose();
+
+        private T Resolve<T>()
+            where T : notnull
+        {
+            using IServiceScope scope = _boot.Factory.Services.CreateScope();
+            return scope.ServiceProvider.GetRequiredService<T>();
+        }
+
+        [Test]
+        public void It_starts() => _boot.StartupException.Should().BeNull();
+
+        [Test]
+        public void It_resolves_the_engines_token_repository() =>
+            Resolve<IOpenIddictTokenRepository>()
+                .Should()
+                .BeOfType(
+                    datastore == "mssql"
+                        ? typeof(Backend.Mssql.OpenIddict.Repositories.OpenIddictTokenRepository)
+                        : typeof(Backend.Postgresql.OpenIddict.Repositories.OpenIddictTokenRepository)
+                );
+
+        [Test]
+        public void It_resolves_the_engines_data_repository() =>
+            Resolve<IOpenIddictDataRepository>()
+                .Should()
+                .BeOfType(
+                    datastore == "mssql"
+                        ? typeof(Backend.Mssql.OpenIddict.Repositories.OpenIddictDataRepository)
+                        : typeof(Backend.Postgresql.OpenIddict.Repositories.OpenIddictDataRepository)
+                );
+
+        [Test]
+        public void It_resolves_a_token_repository_that_reads_client_credentials() =>
+            Resolve<IOpenIddictTokenRepository>()
+                .Should()
+                .BeAssignableTo<IClientCredentialReader>()
+                .Which.CanReadClientCredentials.Should()
+                .BeTrue();
+
+        [Test]
+        public void It_resolves_the_self_contained_token_manager() =>
+            Resolve<ITokenManager>().Should().BeOfType<OpenIddictTokenManager>();
+    }
+
     [TestFixtureSource(typeof(TokenRevocationStartupTests), nameof(Shapes))]
     public class Given_a_boot_with_no_revocation_manager_registered(string provider, string datastore)
     {

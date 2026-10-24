@@ -965,4 +965,94 @@ public class OpenIddictServiceCollectionExtensionsTests
             A.CallTo(() => _replacement.VerifySecretAsync(PresentedSecret, ReplacementPlaceholder))
                 .MustHaveHappenedTwiceExactly();
     }
+
+    /// <summary>
+    /// The production store registrations with nothing replaced but the client secret hasher, as
+    /// a plugin replaces it: the resolved token repository is the engine's own, over the engine's
+    /// own data repository, and offers the narrow credential read the token manager authenticates
+    /// from. The hasher replacement leaves that untouched. Nothing is resolved that would contact
+    /// a database.
+    /// </summary>
+    [TestFixture("postgresql")]
+    [TestFixture("mssql")]
+    public class Given_the_production_store_registrations_and_a_replacement_hasher(string registration)
+    {
+        private ServiceProvider _provider = null!;
+        private IClientSecretHasher _replacement = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(
+                    new Dictionary<string, string?>
+                    {
+                        ["IdentitySettings:Authority"] = "http://localhost",
+                        ["IdentitySettings:Audience"] = "account",
+                    }
+                )
+                .Build();
+
+            ServiceCollection services = [];
+            services.AddLogging();
+            services.Configure<DatabaseOptions>(options =>
+                options.DatabaseConnection =
+                    registration == "postgresql"
+                        ? "Host=localhost;Database=composition_test"
+                        : "Server=localhost;Database=composition_test;TrustServerCertificate=true"
+            );
+            _ =
+                registration == "postgresql"
+                    ? services.AddPostgresOpenIddictStores(configuration, "http://localhost")
+                    : services.AddMssqlOpenIddictStores(configuration, "http://localhost");
+
+            _replacement = A.Fake<IClientSecretHasher>();
+            services.AddSingleton(_replacement);
+
+            _provider = services.BuildServiceProvider();
+        }
+
+        [TearDown]
+        public void TearDown() => _provider.Dispose();
+
+        [Test]
+        public void It_resolves_the_engines_token_repository() =>
+            _provider
+                .GetRequiredService<IOpenIddictTokenRepository>()
+                .Should()
+                .BeOfType(
+                    registration == "postgresql"
+                        ? typeof(Postgresql.OpenIddict.Repositories.OpenIddictTokenRepository)
+                        : typeof(Mssql.OpenIddict.Repositories.OpenIddictTokenRepository)
+                );
+
+        [Test]
+        public void It_resolves_the_engines_data_repository_as_a_credential_reader() =>
+            _provider
+                .GetRequiredService<IOpenIddictDataRepository>()
+                .Should()
+                .BeOfType(
+                    registration == "postgresql"
+                        ? typeof(Postgresql.OpenIddict.Repositories.OpenIddictDataRepository)
+                        : typeof(Mssql.OpenIddict.Repositories.OpenIddictDataRepository)
+                )
+                .And.BeAssignableTo<IClientCredentialReader>();
+
+        [Test]
+        public void It_resolves_a_token_repository_that_reads_client_credentials() =>
+            _provider
+                .GetRequiredService<IOpenIddictTokenRepository>()
+                .Should()
+                .BeAssignableTo<IClientCredentialReader>()
+                .Which.CanReadClientCredentials.Should()
+                .BeTrue();
+
+        [Test]
+        public void It_keeps_the_replacement_hasher() =>
+            _provider.GetRequiredService<IClientSecretHasher>().Should().BeSameAs(_replacement);
+
+        [Test]
+        public void It_resolves_the_production_token_manager() =>
+            _provider.GetRequiredService<ITokenManager>().Should().BeOfType<OpenIddictTokenManager>();
+    }
 }
