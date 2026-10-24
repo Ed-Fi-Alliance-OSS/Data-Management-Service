@@ -1,0 +1,151 @@
+{
+  "purpose": "drift shape of each final/contrast run; quarters of consecutive rounds",
+  "rows": [
+    {
+      "input": "final-in-process-20261024T004212Z.csv",
+      "input_sha256": "8827f81910ba2b1787e2dfed9e069887d4acf31c0f45797a1d1a8fdeb7992779",
+      "rounds": 1000,
+      "arm_quarter_medians_us": {
+        "absent": [
+          1214.1,
+          1210.2,
+          1237.6,
+          1211.5
+        ],
+        "c0_no_derivation": [
+          0.4,
+          0.1,
+          0.1,
+          0.1
+        ],
+        "c1_absent_plus_3_bounds": [
+          1290.0,
+          1285.8,
+          1313.5,
+          1287.6
+        ],
+        "wrong_secret": [
+          1215.1,
+          1211.2,
+          1231.6,
+          1211.8
+        ]
+      },
+      "absent_minus_wrong_secret_by_quarter_us": [
+        -1.0,
+        -1.1,
+        6.0,
+        -0.2
+      ],
+      "absent_minus_wrong_secret_by_half_us": [
+        -0.3,
+        -1.1
+      ]
+    },
+    {
+      "input": "final-endpoint-postgresql-20261024T004408Z.csv",
+      "input_sha256": "2fc39cc2509b95b58d4c49b216883b1af9d3b2dffc2fd0335677c57432c27e74",
+      "rounds": 500,
+      "arm_quarter_medians_us": {
+        "absent": [
+          20688.5,
+          20740.5,
+          20791.8,
+          20663.9
+        ],
+        "unapproved_correct_secret": [
+          20814.8,
+          20838.8,
+          21033.4,
+          20917.8
+        ],
+        "wrong_secret": [
+          20860.5,
+          20813.9,
+          21111.3,
+          20889.1
+        ]
+      },
+      "absent_minus_wrong_secret_by_quarter_us": [
+        -172.0,
+        -73.4,
+        -319.5,
+        -225.2
+      ],
+      "absent_minus_wrong_secret_by_half_us": [
+        -124.2,
+        -266.0
+      ]
+    },
+    {
+      "input": "final-endpoint-mssql-20261024T004842Z.csv",
+      "input_sha256": "b18e5706cc96e1cccd945e05c6cf8340cece6aafa5b0bad3d00503dfe472bdad",
+      "rounds": 4000,
+      "arm_quarter_medians_us": {
+        "absent": [
+          14874.0,
+          13857.6,
+          13708.4,
+          13699.8
+        ],
+        "unapproved_correct_secret": [
+          15338.2,
+          14264.1,
+          14110.9,
+          14096.3
+        ],
+        "wrong_secret": [
+          15216.0,
+          14210.4,
+          14053.2,
+          14040.1
+        ]
+      },
+      "absent_minus_wrong_secret_by_quarter_us": [
+        -342.0,
+        -352.8,
+        -344.8,
+        -340.4
+      ],
+      "absent_minus_wrong_secret_by_half_us": [
+        -390.8,
+        -340.1
+      ]
+    },
+    {
+      "input": "contrast-prefix-endpoint-postgresql-20261024T004716Z.csv",
+      "input_sha256": "e89ad71d5028f8b93073bbaa790e7e39a3ee855e218f31259bb749dc23a34242",
+      "rounds": 500,
+      "arm_quarter_medians_us": {
+        "absent": [
+          2294.7,
+          2274.0,
+          2193.3,
+          2119.1
+        ],
+        "unapproved_correct_secret": [
+          22218.6,
+          22105.2,
+          21778.3,
+          21886.4
+        ],
+        "wrong_secret": [
+          22271.5,
+          22088.0,
+          21828.2,
+          21804.3
+        ]
+      },
+      "absent_minus_wrong_secret_by_quarter_us": [
+        -19976.8,
+        -19814.0,
+        -19634.9,
+        -19685.2
+      ],
+      "absent_minus_wrong_secret_by_half_us": [
+        -19854.8,
+        -19657.8
+      ]
+    }
+  ]
+}

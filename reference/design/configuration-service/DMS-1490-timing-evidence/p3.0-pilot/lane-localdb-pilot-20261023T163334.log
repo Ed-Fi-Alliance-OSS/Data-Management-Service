@@ -1,0 +1,27 @@
+
+[2026-10-23T16:33:34.4611399-07:00] LANE label=pilot rounds=200 warmup=50 seed=103 contract=current env='./.env.config.mssql.e2e' head=2c70ee881f37b6a2545d8684fd3e87e11ae06f3a worktreeClean=True db=edfi_configurationservice
+[2026-10-23T16:33:35.0496197-07:00] CMS DLL written=2026-10-23T16:32:49.1819519-07:00 sha256=8029c29afe84f7273597d7baf8b18caa84eb3324c36160675a14c287496416e9 headCommitTime=2026-10-23T16:21:11-07:00
+[2026-10-23T16:33:35.1683434-07:00] LOCALDB DMS1490 version=17.0.4025.3 pipe=np:\\.\pipe\LOCALDB#B069E17E\tsql\query
+[2026-10-23T16:33:36.0664510-07:00] DATABASE edfi_configurationservice recreated at C:\dev\simpat\specs\evidence\DMS-1490\lane-work\db\edfi_configurationservice-DMS1490.mdf
+[2026-10-23T16:33:36.0938008-07:00] CMS CONFIG Datastore=mssql IdentityProvider=self-contained ClientSecretHashingIterations=210000 AllowRegistration=true BearerTokenPerClientLimit=15 DatabaseServer=np:\\.\pipe\LOCALDB#B069E17E\tsql\query Database=edfi_configurationservice ClaimsSource=Hybrid
+[2026-10-23T16:33:36.1095583-07:00] CMS STARTED pid=28632
+[2026-10-23T16:33:39.3066253-07:00] CMS HEALTHY
+[2026-10-23T16:33:39.8034519-07:00] KEY INSERT rows=1
+[2026-10-23T16:33:48.3359859-07:00] OPENIDDICT APPS: CMSAuthMetadataReadOnlyAccess,CMSReadOnlyAccess,DmsConfigurationService
+[2026-10-23T16:33:49.0453817-07:00] RUN collector (Release, --no-build)
+Test run for C:\dev\simpat\Data-Management-Service-DMS-1490\src\config\tests\EdFi.DmsConfigurationService.Tests.E2E\bin\Release\net10.0\EdFi.DmsConfigurationService.Tests.E2E.dll (.NETCoreApp,Version=v10.0)
+A total of 1 test files matched the specified pattern.
+NUnit Adapter 4.6.0.0: Test execution started
+Running selected tests in C:\dev\simpat\Data-Management-Service-DMS-1490\src\config\tests\EdFi.DmsConfigurationService.Tests.E2E\bin\Release\net10.0\EdFi.DmsConfigurationService.Tests.E2E.dll
+   NUnit3TestExecutor discovered 2 of 2 NUnit test cases using Current Discovery mode, Explicit run
+NUnit Adapter 4.6.0.0: Test execution complete
+  Passed It_records_one_sample_per_arm_per_round [13 ms]
+  Passed It_writes_the_run_header [< 1 ms]
+
+Test Run Successful.
+Total tests: 2
+     Passed: 2
+ Total time: 15.7669 Seconds
+[2026-10-23T16:34:05.3793643-07:00] RUN EXIT 0
+[2026-10-23T16:34:05.4112830-07:00] CMS STOPPED pid=28632
+[2026-10-23T16:34:05.4117952-07:00] DONE

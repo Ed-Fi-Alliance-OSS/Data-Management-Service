@@ -1,0 +1,21 @@
+{
+  "method_version": "1",
+  "input": "pilot-endpoint-mssql-20261023T233351Z.csv",
+  "input_sha256": "fd8bb56dc34e6578e3694b9884207a753aa40459e970970ed7eadb078f6cef6b",
+  "pilot_rounds": 200,
+  "pilot_interval_us": [
+    -497.90624999999784,
+    -140.64749999999788
+  ],
+  "pilot_half_width_us": 178.62937499999998,
+  "predicted_half_width_us": {
+    "500": 112.975136402468,
+    "1000": 79.88548505566028,
+    "2000": 56.487568201234,
+    "4000": 39.94274252783014
+  },
+  "target_half_width_us": 125.0,
+  "chosen_rounds": 500,
+  "block_length_for_chosen": 8,
+  "note": "planning heuristic; the final run's own interval decides"
+}

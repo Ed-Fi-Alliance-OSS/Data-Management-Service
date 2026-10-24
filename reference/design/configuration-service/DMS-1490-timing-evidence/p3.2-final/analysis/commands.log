@@ -1,0 +1,29 @@
+python -B analyze_timing.py selftest  > selftest.json
+selftest.json exit=0
+python -B analyze_timing.py analyze --csv final-in-process-20261024T004212Z.csv --delta 25  > in-process-analyze-absent-vs-wrong_secret.json
+in-process-analyze-absent-vs-wrong_secret.json exit=0
+python -B analyze_timing.py analyze --csv final-in-process-20261024T004212Z.csv --delta 25 --arm-a c0_no_derivation  > in-process-analyze-c0-vs-wrong_secret.json
+in-process-analyze-c0-vs-wrong_secret.json exit=0
+python -B analyze_timing.py analyze --csv final-in-process-20261024T004212Z.csv --delta 25 --arm-a c1_absent_plus_3_bounds  > in-process-analyze-c1-vs-wrong_secret.json
+in-process-analyze-c1-vs-wrong_secret.json exit=0
+python -B analyze_timing.py analyze --csv final-endpoint-postgresql-20261024T004408Z.csv --delta 250  > endpoint-postgresql-analyze-absent-vs-wrong_secret.json
+endpoint-postgresql-analyze-absent-vs-wrong_secret.json exit=0
+python -B analyze_timing.py analyze --csv final-endpoint-postgresql-20261024T004408Z.csv --delta 250 --arm-a unapproved_correct_secret  > endpoint-postgresql-analyze-unapproved-vs-wrong_secret.json
+endpoint-postgresql-analyze-unapproved-vs-wrong_secret.json exit=0
+python -B analyze_timing.py analyze --csv final-endpoint-mssql-20261024T004842Z.csv --delta 250  > endpoint-mssql-analyze-absent-vs-wrong_secret.json
+endpoint-mssql-analyze-absent-vs-wrong_secret.json exit=0
+python -B analyze_timing.py analyze --csv final-endpoint-mssql-20261024T004842Z.csv --delta 250 --arm-a unapproved_correct_secret  > endpoint-mssql-analyze-unapproved-vs-wrong_secret.json
+endpoint-mssql-analyze-unapproved-vs-wrong_secret.json exit=0
+python -B analyze_timing.py analyze --csv contrast-prefix-endpoint-postgresql-20261024T004716Z.csv --delta 250  > contrast-prefix-postgresql-analyze-absent-vs-wrong_secret.json
+contrast-prefix-postgresql-analyze-absent-vs-wrong_secret.json exit=0
+python -B analyze_timing.py analyze --csv contrast-prefix-endpoint-postgresql-20261024T004716Z.csv --delta 250 --arm-a unapproved_correct_secret  > contrast-prefix-postgresql-analyze-unapproved-vs-wrong_secret.json
+contrast-prefix-postgresql-analyze-unapproved-vs-wrong_secret.json exit=0
+python -B diagnostics-by-quarter.py <script dir> <4 csv>  > diagnostics-by-quarter.json
+python -B analyze_timing.py observer --csv final-endpoint-postgresql-20261024T004408Z.csv  > endpoint-postgresql-observer.json
+endpoint-postgresql exit=0 2s
+python -B analyze_timing.py observer --csv final-endpoint-mssql-20261024T004842Z.csv  > endpoint-mssql-observer.json
+endpoint-mssql exit=0 1s
+python -B analyze_timing.py observer --csv contrast-prefix-endpoint-postgresql-20261024T004716Z.csv  > contrast-prefix-postgresql-observer.json
+contrast-prefix-postgresql exit=0 1s
+python -B analyze_timing.py observer --csv final-in-process-20261024T004212Z.csv  > in-process-observer.json
+in-process exit=0 1s

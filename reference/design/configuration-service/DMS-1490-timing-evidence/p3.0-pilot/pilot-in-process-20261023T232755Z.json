@@ -1,0 +1,42 @@
+{
+  "schema": "timing-evidence/1",
+  "boundary": "in-process",
+  "run_label": "pilot",
+  "collector_commit": "2c70ee881f37b6a2545d8684fd3e87e11ae06f3a",
+  "seed": 101,
+  "warmup_rounds": 50,
+  "rounds": 200,
+  "arms": [
+    "absent",
+    "wrong_secret",
+    "c0_no_derivation",
+    "c1_absent_plus_3_bounds"
+  ],
+  "order": "each round: every arm once, order shuffled by System.Random(seed)",
+  "samples_file": "pilot-in-process-20261023T232755Z.csv",
+  "started_utc": "2026-10-23T23:27:55.4876096\u002B00:00",
+  "finished_utc": "2026-10-23T23:27:56.4774013\u002B00:00",
+  "os": "Microsoft Windows 10.0.28000",
+  "architecture": "Arm64",
+  "processor_count": 18,
+  "framework": ".NET 10.0.13",
+  "stopwatch_frequency": 10000000,
+  "gc_collections_before": [
+    3,
+    1,
+    0
+  ],
+  "gc_collections_after": [
+    3,
+    1,
+    0
+  ],
+  "context": {
+    "iterations": "20000",
+    "bound_us": "25",
+    "c1_wait_us": "75",
+    "estimand": "median(absent) - median(wrong_secret)",
+    "repository": "fixed-cost in-memory stub; no database",
+    "target_build": "the collector\u0027s own build: the token manager under test is compiled into it"
+  }
+}

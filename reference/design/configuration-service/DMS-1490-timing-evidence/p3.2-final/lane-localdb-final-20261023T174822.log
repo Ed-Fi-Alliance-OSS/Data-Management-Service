@@ -1,0 +1,30 @@
+
+[2026-10-23T17:48:22.6060301-07:00] LANE label=final rounds=4000 warmup=200 seed=203 contract=current env='./.env.config.mssql.e2e' head=2c70ee881f37b6a2545d8684fd3e87e11ae06f3a worktreeClean=True db=edfi_configurationservice
+[2026-10-23T17:48:23.1668924-07:00] CMS DLL written=2026-10-23T16:32:49.1819519-07:00 sha256=8029c29afe84f7273597d7baf8b18caa84eb3324c36160675a14c287496416e9 headCommitTime=2026-10-23T16:21:11-07:00
+[2026-10-23T17:48:24.3127850-07:00] LOCALDB DMS1490 version=17.0.4025.3 pipe=np:\\.\pipe\LOCALDB#B799DCF3\tsql\query
+[2026-10-23T17:48:28.2515270-07:00] DATABASE edfi_configurationservice recreated at C:\dev\simpat\specs\evidence\DMS-1490\lane-work\db\edfi_configurationservice-DMS1490.mdf
+[2026-10-23T17:48:28.3014509-07:00] CMS CONFIG Datastore=mssql IdentityProvider=self-contained ClientSecretHashingIterations=210000 AllowRegistration=true BearerTokenPerClientLimit=15 DatabaseServer=np:\\.\pipe\LOCALDB#B799DCF3\tsql\query Database=edfi_configurationservice ClaimsSource=Hybrid
+[2026-10-23T17:48:28.3514855-07:00] CMS STARTED pid=17780 inheritedConfigVariables=0
+[2026-10-23T17:48:31.0420557-07:00] CMS HEALTHY
+[2026-10-23T17:48:31.4647575-07:00] KEY INSERT rows=1
+[2026-10-23T17:48:39.3781406-07:00] OPENIDDICT APPS: CMSAuthMetadataReadOnlyAccess,CMSReadOnlyAccess,DmsConfigurationService
+[2026-10-23T17:48:40.0352541-07:00] BEFORE pid=17780 start=2026-10-24T00:48:28.3336143Z alive=True dll=8029c29afe84f7273597d7baf8b18caa84eb3324c36160675a14c287496416e9
+[2026-10-23T17:48:40.0356394-07:00] RUN collector (Release, --no-build)
+Test run for C:\dev\simpat\Data-Management-Service-DMS-1490\src\config\tests\EdFi.DmsConfigurationService.Tests.E2E\bin\Release\net10.0\EdFi.DmsConfigurationService.Tests.E2E.dll (.NETCoreApp,Version=v10.0)
+A total of 1 test files matched the specified pattern.
+NUnit Adapter 4.6.0.0: Test execution started
+Running selected tests in C:\dev\simpat\Data-Management-Service-DMS-1490\src\config\tests\EdFi.DmsConfigurationService.Tests.E2E\bin\Release\net10.0\EdFi.DmsConfigurationService.Tests.E2E.dll
+   NUnit3TestExecutor discovered 2 of 2 NUnit test cases using Current Discovery mode, Explicit run
+NUnit Adapter 4.6.0.0: Test execution complete
+  Passed It_records_one_sample_per_arm_per_round [2 ms]
+  Passed It_writes_the_run_header [< 1 ms]
+
+Test Run Successful.
+Total tests: 2
+     Passed: 2
+ Total time: 3.1012 Minutes
+[2026-10-23T17:51:46.7396273-07:00] RUN EXIT 0
+[2026-10-23T17:51:46.7426932-07:00] AFTER pid=17780 start=2026-10-24T00:48:28.3336143Z alive=True sameThroughout=True
+[2026-10-23T17:51:46.7708275-07:00] CMS STOPPED pid=17780
+[2026-10-23T17:51:46.7765724-07:00] PROVENANCE C:\dev\simpat\specs\evidence\DMS-1490\p3.2\provenance-endpoint-mssql-final-20261023T174822.json
+[2026-10-23T17:51:46.7767858-07:00] DONE

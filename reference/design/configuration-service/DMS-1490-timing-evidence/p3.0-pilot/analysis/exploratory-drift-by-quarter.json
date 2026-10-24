@@ -1,0 +1,98 @@
+{
+  "purpose": "exploratory drift shape; quarters of 50 consecutive rounds; not pre-registered",
+  "rows": [
+    {
+      "boundary": "in-process",
+      "arm_quarter_medians_us": {
+        "absent": [
+          1256.1,
+          1255.8,
+          1250.2,
+          1252.4
+        ],
+        "wrong_secret": [
+          1253.2,
+          1265.8,
+          1248.2,
+          1254.6
+        ]
+      },
+      "absent_minus_wrong_secret_by_quarter_us": [
+        2.9,
+        -10.0,
+        2.1,
+        -2.2
+      ],
+      "absent_minus_wrong_secret_by_half_us": [
+        2.4,
+        0.8
+      ]
+    },
+    {
+      "boundary": "endpoint-postgresql",
+      "arm_quarter_medians_us": {
+        "absent": [
+          21187.6,
+          20809.3,
+          20717.0,
+          20735.4
+        ],
+        "wrong_secret": [
+          21188.3,
+          20890.1,
+          20796.5,
+          20817.1
+        ],
+        "unapproved_correct_secret": [
+          21321.7,
+          20879.5,
+          20778.3,
+          20795.5
+        ]
+      },
+      "absent_minus_wrong_secret_by_quarter_us": [
+        -0.8,
+        -80.8,
+        -79.5,
+        -81.7
+      ],
+      "absent_minus_wrong_secret_by_half_us": [
+        -37.1,
+        -87.8
+      ]
+    },
+    {
+      "boundary": "endpoint-mssql",
+      "arm_quarter_medians_us": {
+        "absent": [
+          17650.5,
+          17569.2,
+          18069.2,
+          17627.3
+        ],
+        "wrong_secret": [
+          18102.3,
+          17876.0,
+          18084.4,
+          18091.2
+        ],
+        "unapproved_correct_secret": [
+          18333.9,
+          18058.0,
+          17885.3,
+          17951.7
+        ]
+      },
+      "absent_minus_wrong_secret_by_quarter_us": [
+        -451.8,
+        -306.9,
+        -15.2,
+        -463.9
+      ],
+      "absent_minus_wrong_secret_by_half_us": [
+        -343.8,
+        -268.1
+      ]
+    }
+  ]
+}

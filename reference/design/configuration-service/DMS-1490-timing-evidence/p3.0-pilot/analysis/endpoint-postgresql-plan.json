@@ -1,0 +1,21 @@
+{
+  "method_version": "1",
+  "input": "pilot-endpoint-postgresql-20261023T233152Z.csv",
+  "input_sha256": "485d9f09b47ba3a41732dc12f526f087548263db3ca05465f813e10b9da6ecac",
+  "pilot_rounds": 200,
+  "pilot_interval_us": [
+    -150.2012500000007,
+    24.15624999999782
+  ],
+  "pilot_half_width_us": 87.17874999999925,
+  "predicted_half_width_us": {
+    "500": 55.13668271328035,
+    "1000": 38.987522238691625,
+    "2000": 27.568341356640175,
+    "4000": 19.493761119345812
+  },
+  "target_half_width_us": 125.0,
+  "chosen_rounds": 500,
+  "block_length_for_chosen": 8,
+  "note": "planning heuristic; the final run's own interval decides"
+}

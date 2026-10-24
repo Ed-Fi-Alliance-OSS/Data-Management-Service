@@ -1,0 +1,7 @@
+
+[2026-10-23T16:33:02.6334296-07:00] LANE label=pilot rounds=200 warmup=50 seed=103 contract=current env='./.env.config.mssql.e2e' head=2c70ee881f37b6a2545d8684fd3e87e11ae06f3a worktreeClean=True db=edfi_configurationservice
+[2026-10-23T16:33:03.2263596-07:00] CMS DLL written=2026-10-23T16:32:49.1819519-07:00 sha256=8029c29afe84f7273597d7baf8b18caa84eb3324c36160675a14c287496416e9 headCommitTime=2026-10-23T16:21:11-07:00
+[2026-10-23T16:33:04.6922717-07:00] LOCALDB DMS1490 created
+[2026-10-23T16:33:05.4930706-07:00] LOCALDB DMS1490 version=17.0.4025.3 pipe=np:\\.\pipe\LOCALDB#B069E17E\tsql\query
+[2026-10-23T16:33:06.1627239-07:00] LANE ERROR: sqlcmd failed (1): Msg 5170, Level 16, State 4, Server Sambook\LOCALDB#B069E17E, Line 1 Cannot create file 'C:\Users\Sam\edfi_configurationservice.mdf' because it already exists. Change the file path or the file name, and retry the operation. Msg 1802, Level 16, State 4, Server Sambook\LOCALDB#B069E17E, Line 1 CREATE DATABASE failed. Some file names listed could not be created. Check related errors.
+[2026-10-23T16:33:06.1638554-07:00] DONE
