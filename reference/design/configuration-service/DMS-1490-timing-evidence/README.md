@@ -11,6 +11,31 @@ test that runs in ordinary CI. The collectors are `[Explicit]` NUnit fixtures in
 (in-process) and `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/Timing/TokenEndpointTimingEvidenceTests.cs`
 (HTTP). The analysis is `analyze_timing.py` (numpy only, method version `1`).
 
+## Status of the A5 re-measurement (read first)
+
+The A5 batch in `a5-final/` is kept as **a disclosed, unsuccessful validation attempt**. Its raw samples, provenance and
+analysis outputs are unchanged and listed in `SHA256SUMS.txt`. **AC2 remains unmet.** The finite experimental bound
+is not accepted for this batch, and no residual has gone to the product decision.
+
+- **Nominal outputs:** the fixed method classifies both A5 finals as EQUIVALENT at `L = 8` and `2L = 16`.
+  - PostgreSQL: −58.80 µs, [−206.45, 72.55].
+  - SQL Server (LocalDB): −29.45 µs, [−139.12, 70.75].
+- **SQL Server validity, unresolved:** the SQL Server A5 run has a regime shift.
+  - About the first 125 measured rounds run near 59 ms per request, against about 19.7 ms afterwards.
+  - absent − wrong_secret is −620.45 µs in the first half and +5.80 µs in the second.
+  - unapproved − wrong_secret is −4,491.40 µs in the first half and +80.75 µs in the second.
+  - Each arm's autocorrelation is still about 0.75–0.80 at lag 20, beyond both block lengths.
+
+  The bootstrap and the pilot-calibrated simulations have not been shown to support the interval across that shift. So the result does not establish the 250 µs bound on SQL Server. This is a failed validation gate, not a reclassification to NOT EQUIVALENT, and not evidence that A5 is incorrect. No round was trimmed and no run was repeated.
+- **PostgreSQL:** the A5 result is an observation with its own dependence and drift, and it shares the power-source limitation below.
+- **SQL Server baseline:** the baseline run (−529.95 µs, NOT EQUIVALENT) also has a slow segment. It stays a descriptive, time-separated comparison.
+- **Power source, unverified:** `on_ac_power` in `a5-pilot/environment-pilot.json` (`true`) and `a5-final/environment-final.json` (`false`) came from a single reading of `Win32_Battery.BatteryStatus == 2`.
+  - That test does not classify the charging states (6–9) and records neither the raw status nor whether the query succeeded.
+  - It was not enforced before collection.
+  - **Whether either stage ran on AC power is therefore unknown.** The values are neither proof of battery use nor of AC use, and they are not an established cause of the slow segment. They are left as recorded.
+
+The Summary below is the earlier P3.2 batch, at application code `2c70ee881`.
+
 ## Summary
 
 | Boundary | δ (fixed) | Rounds | absent − wrong_secret, µs | 95% CI, µs | Decision |
