@@ -6,6 +6,8 @@
 # Checks of the collection lanes' failure paths with synthetic command output. Nothing here starts
 # Docker, LocalDB, SQL Server, a build, a deployment or the collector: the native commands the lanes
 # call are replaced by functions of the same name, which PowerShell resolves before executables.
+# Power readings are synthetic too; one test reads the host's power status once, to check only that
+# the native structure marshals, and records nothing.
 #
 #   pwsh -NoProfile -Command "Import-Module Pester -RequiredVersion 5.7.1; Invoke-Pester -Path ./collection.Tests.ps1 -Output Detailed"
 #
@@ -66,6 +68,82 @@ BeforeAll {
 
     function global:Get-EvidenceText([string] $OutputDir) {
         (Get-ChildItem -LiteralPath $OutputDir -File -Recurse | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }) -join "`n"
+    }
+
+    # Power stand-ins. The module reads the native status through Read-SystemPowerStatus; an alias
+    # resolves before any function, even inside the module and after a lane imports it again, so
+    # no test reaches the real GetSystemPowerStatus. powercfg is replaced by a function of its name.
+    # Each read takes the next step of $global:PowerScenario.Sequence; the last step repeats.
+    $global:BalancedScheme = '381b4222-f694-41f0-9685-ff5bb260df2e'
+
+    function global:New-PowerStep([string] $Kind) {
+        $step = @{
+            NativeThrows       = $false
+            Succeeded          = $true
+            Win32Error         = 0
+            ACLineStatus       = [byte]1
+            BatteryFlag        = [byte]8
+            BatteryLifePercent = [byte]80
+            SystemStatusFlag   = [byte]0
+            SchemeThrows       = $false
+            SchemeExit         = 0
+            SchemeOutput       = @("Power Scheme GUID: $($global:BalancedScheme)  (Balanced)")
+        }
+        switch ($Kind) {
+            'online' { }
+            'offline' { $step.ACLineStatus = [byte]0 }
+            'unknown' { $step.ACLineStatus = [byte]255 }
+            # A failed call leaves the structure undefined; these values must not be reported.
+            'call_failed' { $step.Succeeded = $false; $step.Win32Error = 87 }
+            'saver_on' { $step.SystemStatusFlag = [byte]1 }
+            'wrong_scheme' { $step.SchemeOutput = @('Power Scheme GUID: 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c  (High performance)') }
+            'scheme_missing' { $step.SchemeOutput = @() }
+            'scheme_malformed' { $step.SchemeOutput = @('Power Scheme GUID: 381b4222-f694-41f0  (Balanced)') }
+            'scheme_twice' { $step.SchemeOutput = @("Power Scheme GUID: $($global:BalancedScheme)", 'Power Scheme GUID: 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c') }
+            'scheme_exit' { $step.SchemeExit = 1 }
+            'scheme_throws' { $step.SchemeThrows = $true }
+            'native_throws' { $step.NativeThrows = $true }
+            default { throw "Unknown power step $Kind." }
+        }
+        $step
+    }
+
+    function global:Set-PowerSequence([string[]] $Kind) {
+        $global:PowerScenario = @{ Sequence = @($Kind | ForEach-Object { New-PowerStep $_ }); Reads = 0 }
+    }
+
+    function global:Get-PowerStep {
+        $global:PowerScenario.Sequence[[Math]::Min($global:PowerScenario.Reads, $global:PowerScenario.Sequence.Count) - 1]
+    }
+
+    function global:Get-TestPowerStatus {
+        $global:PowerScenario.Reads++
+        $step = Get-PowerStep
+        if ($step.NativeThrows) { throw "native power read failed: $($global:LaneSentinel)" }
+        [pscustomobject]@{
+            Succeeded          = $step.Succeeded
+            Win32Error         = $step.Win32Error
+            ACLineStatus       = $step.ACLineStatus
+            BatteryFlag        = $step.BatteryFlag
+            BatteryLifePercent = $step.BatteryLifePercent
+            SystemStatusFlag   = $step.SystemStatusFlag
+        }
+    }
+
+    function global:powercfg {
+        $step = Get-PowerStep
+        if ($step.SchemeThrows) { throw "powercfg failed: $($global:LaneSentinel)" }
+        $global:LASTEXITCODE = $step.SchemeExit
+        $step.SchemeOutput
+    }
+
+    Set-Alias -Name Read-SystemPowerStatus -Value Get-TestPowerStatus -Scope Global
+    Set-PowerSequence 'online'
+
+    function global:Get-RefusalLine([string] $OutputDir) {
+        $path = Join-Path $OutputDir 'refusals.log'
+        if (-not (Test-Path -LiteralPath $path)) { return , @() }
+        , @(Get-Content -LiteralPath $path | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json })
     }
 }
 
@@ -422,6 +500,138 @@ Describe 'Assert-CollectorRun' {
     }
 }
 
+Describe 'Get-PowerSource and power condition P' {
+    It 'reports <Kind> as unmet <Unmet>' -ForEach @(
+        @{ Kind = 'online'; Unmet = @() }
+        @{ Kind = 'offline'; Unmet = @('ac_line_offline') }
+        @{ Kind = 'unknown'; Unmet = @('ac_line_unknown') }
+        @{ Kind = 'call_failed'; Unmet = @('call_failed') }
+        @{ Kind = 'saver_on'; Unmet = @('battery_saver_on') }
+        @{ Kind = 'wrong_scheme'; Unmet = @('scheme_not_balanced') }
+        @{ Kind = 'scheme_missing'; Unmet = @('scheme_query_failed') }
+        @{ Kind = 'scheme_malformed'; Unmet = @('scheme_query_failed') }
+        @{ Kind = 'scheme_twice'; Unmet = @('scheme_query_failed') }
+        @{ Kind = 'scheme_exit'; Unmet = @('scheme_query_failed') }
+        @{ Kind = 'scheme_throws'; Unmet = @('scheme_query_failed') }
+    ) {
+        Set-PowerSequence $Kind
+        $unmet = Get-PowerConditionFailure (Get-PowerSource)
+        $unmet | Should -Be $Unmet
+        $global:PowerScenario.Reads | Should -Be 1
+    }
+
+    It 'keeps the raw fields of a successful call and records no error, even a stale one' {
+        Set-PowerSequence 'unknown'
+        $global:PowerScenario.Sequence[0].Win32Error = 5
+        $reading = Get-PowerSource
+        $reading.call_succeeded | Should -BeTrue
+        $reading.win32_error | Should -BeNullOrEmpty
+        $reading.ac_line_status | Should -Be 255
+        $reading.battery_flag | Should -Be 8
+        $reading.battery_life_percent | Should -Be 80
+        $reading.system_status_flag | Should -Be 0
+        $reading.scheme_guid | Should -Be $global:BalancedScheme
+    }
+
+    It 'records the Win32 error of a failed call and none of its undefined power fields' {
+        Set-PowerSequence 'call_failed'
+        $reading = Get-PowerSource
+        $reading.call_succeeded | Should -BeFalse
+        $reading.win32_error | Should -Be 87
+        $reading.ac_line_status | Should -BeNullOrEmpty
+        $reading.system_status_flag | Should -BeNullOrEmpty
+    }
+
+    It 'records a failed scheme query as <Code>, never its output' -ForEach @(
+        @{ Kind = 'scheme_missing'; Code = 'no_guid' }
+        @{ Kind = 'scheme_malformed'; Code = 'no_guid' }
+        @{ Kind = 'scheme_twice'; Code = 'several_guids' }
+        @{ Kind = 'scheme_exit'; Code = 'exit_nonzero' }
+        @{ Kind = 'scheme_throws'; Code = 'command_error' }
+    ) {
+        Set-PowerSequence $Kind
+        $reading = Get-PowerSource
+        $reading.scheme_query_succeeded | Should -BeFalse
+        $reading.scheme_query_failure | Should -Be $Code
+        $reading.scheme_guid | Should -BeNullOrEmpty
+        ($reading | ConvertTo-Json) | Should -Not -Match $global:LaneSentinel
+    }
+
+    It 'reports a missing reading as an observation error' {
+        $unmet = Get-PowerConditionFailure $null
+        $unmet | Should -Be @('observation_error')
+    }
+
+    It 'does not accept <Name> by loose comparison' -ForEach @(
+        @{ Name = 'a string call result'; Field = 'call_succeeded'; Value = 'True'; Unmet = 'call_failed' }
+        @{ Name = 'a string line status'; Field = 'ac_line_status'; Value = '1'; Unmet = 'ac_line_unexpected' }
+        @{ Name = 'a Boolean line status'; Field = 'ac_line_status'; Value = $true; Unmet = 'ac_line_unexpected' }
+        @{ Name = 'an upper-case scheme'; Field = 'scheme_guid'; Value = '381B4222-F694-41F0-9685-FF5BB260DF2E'; Unmet = 'scheme_not_balanced' }
+    ) {
+        Set-PowerSequence 'online'
+        $reading = Get-PowerSource
+        $reading[$Field] = $Value
+        $unmet = Get-PowerConditionFailure $reading
+        $unmet | Should -Be @($Unmet)
+    }
+
+    It 'loads the native type once across repeated imports of the module' {
+        { Import-Module (Join-Path $PSScriptRoot 'CollectionLane.psm1') -Force } | Should -Not -Throw
+        { Import-Module (Join-Path $PSScriptRoot 'CollectionLane.psm1') -Force } | Should -Not -Throw
+        @([System.AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $null -ne $_.GetType('DmsTimingEvidence.SystemPower', $false) }).Count | Should -Be 1
+    }
+
+    It 'marshals the native status (one read of this host; only its shape is checked)' {
+        $native = [DmsTimingEvidence.SystemPower]::Read()
+        $native.Succeeded | Should -BeOfType [bool]
+        $native.ACLineStatus | Should -BeOfType [byte]
+        if ($native.Succeeded) { $native.Win32Error | Should -Be 0 }
+    }
+}
+
+Describe 'ConvertTo-PowerCheckRecord and Add-PowerRefusal' {
+    BeforeEach {
+        $folder = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $folder | Out-Null
+        $log = Join-Path $folder 'refusals.log'
+    }
+
+    It 'copies only the reading''s own fields' {
+        Set-PowerSequence 'offline'
+        $reading = Get-PowerSource
+        $reading.extra = $global:LaneSentinel
+        $record = ConvertTo-PowerCheckRecord -Check before_setup -Reading $reading
+        $record.reading.Keys | Should -Not -Contain 'extra'
+        $record.condition_met | Should -BeFalse
+        $record.unmet | Should -Be @('ac_line_offline')
+    }
+
+    It 'appends one line per refusal and never rewrites earlier lines' {
+        'earlier line' | Set-Content -LiteralPath $log -Encoding utf8NoBOM
+        Set-PowerSequence 'offline', 'saver_on'
+        Add-PowerRefusal -Path $log -Lane 'endpoint-postgresql' -RunLabel 'pilot-a6' -Record (ConvertTo-PowerCheckRecord -Check before_setup -Reading (Get-PowerSource))
+        Add-PowerRefusal -Path $log -Lane 'endpoint-postgresql' -RunLabel 'pilot-a6' -Record (ConvertTo-PowerCheckRecord -Check before_launch -Reading (Get-PowerSource))
+        $lines = @(Get-Content -LiteralPath $log)
+        $lines.Count | Should -Be 3
+        $lines[0] | Should -Be 'earlier line'
+        ($lines[1] | ConvertFrom-Json).unmet | Should -Be @('ac_line_offline')
+        ($lines[1] | ConvertFrom-Json).reading.ac_line_status | Should -Be 0
+        ($lines[2] | ConvertFrom-Json).check | Should -Be 'before_launch'
+        ($lines[2] | ConvertFrom-Json).unmet | Should -Be @('battery_saver_on')
+    }
+
+    It 'refuses to record a check that met P' {
+        Set-PowerSequence 'online'
+        { Add-PowerRefusal -Path $log -Lane 'endpoint-mssql' -RunLabel 'pilot-a6' -Record (ConvertTo-PowerCheckRecord -Check before_setup -Reading (Get-PowerSource)) } | Should -Throw '*not a refusal*'
+        Test-Path -LiteralPath $log | Should -BeFalse
+    }
+
+    It 'refuses to record a check after the launch as a refusal' {
+        Set-PowerSequence 'offline'
+        { Add-PowerRefusal -Path $log -Lane 'endpoint-mssql' -RunLabel 'pilot-a6' -Record (ConvertTo-PowerCheckRecord -Check after_exit -Reading (Get-PowerSource)) } | Should -Throw '*part of an attempt*'
+    }
+}
+
 Describe 'lane-postgresql.ps1 with synthetic command output' {
     BeforeAll {
         $lane = Join-Path $PSScriptRoot 'lane-postgresql.ps1'
@@ -492,7 +702,11 @@ Describe 'lane-postgresql.ps1 with synthetic command output' {
             ImagesThrow    = $false
             Inspections    = 0
         }
+        Set-PowerSequence 'online'
         $arguments = @{ RunLabel = 'pilot-a5'; Rounds = 20; WarmupRounds = 0; Seed = 301; OutputDir = $stage; CollectorRoot = $collector; TargetRoot = $target; WorkRoot = $work }
+        $readProvenance = { Get-Content (Get-ChildItem $stage -Filter 'provenance-*.json').FullName -Raw | ConvertFrom-Json }
+        $setupCalls = { @($global:LaneScenario.Calls | Where-Object { $_ -like '*setup-local-cms.ps1*' }) }
+        $teardownCalls = { @($global:LaneScenario.Calls | Where-Object { $_ -like '*teardown-local-cms.ps1*' }) }
     }
 
     AfterEach {
@@ -566,6 +780,109 @@ Describe 'lane-postgresql.ps1 with synthetic command output' {
         { & $lane @arguments } | Should -Throw '*OutputDir*'
         Test-Path -LiteralPath $arguments.OutputDir | Should -BeFalse
     }
+
+    It 'checks power before setup, before the launch and after the exit of a successful run' {
+        & $lane @arguments
+        $LASTEXITCODE | Should -Be 0
+        $provenance = & $readProvenance
+        @($provenance.power_checks.check) | Should -Be @('before_setup', 'before_launch', 'after_exit')
+        @($provenance.power_checks | Where-Object { -not $_.condition_met }) | Should -BeNullOrEmpty
+        $provenance.attempt_started | Should -BeTrue
+        $provenance.environment_protocol.version | Should -Be 'E1'
+        $provenance.environment_protocol.complete | Should -BeFalse
+        Get-RefusalLine $stage | Should -BeNullOrEmpty
+    }
+
+    It 'refuses before setup, without setup or collection, when the power source is <Kind>' -ForEach @(
+        @{ Kind = 'offline'; Unmet = 'ac_line_offline' }
+        @{ Kind = 'unknown'; Unmet = 'ac_line_unknown' }
+        @{ Kind = 'call_failed'; Unmet = 'call_failed' }
+        @{ Kind = 'saver_on'; Unmet = 'battery_saver_on' }
+        @{ Kind = 'wrong_scheme'; Unmet = 'scheme_not_balanced' }
+        @{ Kind = 'scheme_exit'; Unmet = 'scheme_query_failed' }
+    ) {
+        Set-PowerSequence $Kind
+        & $lane @arguments
+        $LASTEXITCODE | Should -Be 1
+        & $setupCalls | Should -BeNullOrEmpty
+        & $teardownCalls | Should -BeNullOrEmpty
+        $global:LaneScenario.Calls | Should -Not -Contain 'dotnet test'
+        $refusals = Get-RefusalLine $stage
+        $refusals.Count | Should -Be 1
+        $refusals[0].check | Should -Be 'before_setup'
+        $refusals[0].lane | Should -Be 'endpoint-postgresql'
+        $refusals[0].unmet | Should -Be @($Unmet)
+        $provenance = & $readProvenance
+        $provenance.attempt_started | Should -BeFalse
+        $provenance.refused_at | Should -Be 'before_setup'
+    }
+
+    It 'refuses before the launch, after setup, and still tears the stack down' {
+        Set-PowerSequence 'online', 'offline'
+        & $lane @arguments
+        $LASTEXITCODE | Should -Be 1
+        (& $setupCalls).Count | Should -Be 1
+        (& $teardownCalls).Count | Should -Be 1
+        $global:LaneScenario.Calls | Should -Not -Contain 'dotnet test'
+        $refusals = Get-RefusalLine $stage
+        $refusals.Count | Should -Be 1
+        $refusals[0].check | Should -Be 'before_launch'
+        (& $readProvenance).attempt_started | Should -BeFalse
+    }
+
+    It 'fails the attempt, without a refusal, when power is lost by the time the collector exits' {
+        Set-PowerSequence 'online', 'online', 'offline'
+        & $lane @arguments
+        $LASTEXITCODE | Should -Be 1
+        $global:LaneScenario.Calls | Should -Contain 'dotnet test'
+        (& $teardownCalls).Count | Should -Be 1
+        $provenance = & $readProvenance
+        $provenance.attempt_started | Should -BeTrue
+        @($provenance.failures.stage) | Should -Be @('power-after-exit')
+        $provenance.power_checks[2].unmet | Should -Be @('ac_line_offline')
+        Get-RefusalLine $stage | Should -BeNullOrEmpty
+    }
+
+    It 'checks power after a failed collector and records both failures' {
+        Set-PowerSequence 'online', 'online', 'saver_on'
+        $global:LaneScenario.CollectorExit = 1
+        & $lane @arguments
+        $LASTEXITCODE | Should -Be 1
+        $provenance = & $readProvenance
+        @($provenance.failures.stage) | Should -Be @('power-after-exit', 'run')
+        $provenance.power_checks[2].check | Should -Be 'after_exit'
+    }
+
+    It 'checks power after a failed collector even when power held' {
+        $global:LaneScenario.CollectorExit = 1
+        & $lane @arguments
+        $LASTEXITCODE | Should -Be 1
+        $provenance = & $readProvenance
+        $provenance.power_checks[2].check | Should -Be 'after_exit'
+        $provenance.power_checks[2].condition_met | Should -BeTrue
+        @($provenance.failures.stage) | Should -Be @('run')
+    }
+
+    It 'keeps every refusal across runs' {
+        Set-PowerSequence 'offline'
+        & $lane @arguments
+        Set-PowerSequence 'saver_on'
+        & $lane @arguments
+        $refusals = Get-RefusalLine $stage
+        $refusals.Count | Should -Be 2
+        $refusals[0].unmet | Should -Be @('ac_line_offline')
+        $refusals[1].unmet | Should -Be @('battery_saver_on')
+    }
+
+    It 'refuses when the power observation itself fails, and keeps its text out of the evidence' {
+        Set-PowerSequence 'native_throws'
+        & $lane @arguments
+        $LASTEXITCODE | Should -Be 1
+        & $setupCalls | Should -BeNullOrEmpty
+        (Get-RefusalLine $stage)[0].unmet | Should -Be @('observation_error')
+        Get-EvidenceText $stage | Should -Not -Match $global:LaneSentinel
+        (Get-ChildItem $work -Filter '*.diagnostics.txt' | Get-Content -Raw) | Should -Match $global:LaneSentinel
+    }
 }
 
 Describe 'lane-localdb.ps1 with synthetic command output, before the service starts' {
@@ -575,6 +892,7 @@ Describe 'lane-localdb.ps1 with synthetic command output, before the service sta
         function global:Get-NetTCPConnection { $null }
         function global:docker { $global:LASTEXITCODE = 0 }
         function global:sqllocaldb {
+            $global:LaneScenario.Calls.Add("sqllocaldb $($args -join ' ')")
             $global:LASTEXITCODE = 0
             if ($args.Count -eq 1 -and $args[0] -eq 'info') { return 'DMS1490' }
             if ($args[0] -eq 'info') { return @('Version: 17.0.4025.3', 'Instance pipe name: np:\\.\pipe\LOCALDB#TEST\tsql\query') }
@@ -614,6 +932,8 @@ Export-ModuleMember -Function ReadValuesFromEnvFile
         '' | Set-Content -LiteralPath (Join-Path $compose 'database-safety.psm1')
         '' | Set-Content -LiteralPath (Join-Path $compose 'OpenIddict-Crypto.psm1')
         $env:LANE_TEST_ITERATIONS = '210000'
+        $global:LaneScenario = @{ Calls = [System.Collections.Generic.List[string]]::new() }
+        Set-PowerSequence 'online'
         $arguments = @{ RunLabel = 'pilot-a5'; Rounds = 20; WarmupRounds = 0; Seed = 302; OutputDir = $stage; CollectorRoot = $collector; TargetRoot = $target; WorkRoot = $work }
     }
 
@@ -650,9 +970,41 @@ Export-ModuleMember -Function ReadValuesFromEnvFile
         & $lane @arguments
         Get-EvidenceText $stage | Should -Not -Match $global:LaneSentinel
     }
+
+    It 'refuses before any LocalDB or database work when the power source is <Kind>' -ForEach @(
+        @{ Kind = 'offline'; Unmet = 'ac_line_offline' }
+        @{ Kind = 'call_failed'; Unmet = 'call_failed' }
+        @{ Kind = 'scheme_throws'; Unmet = 'scheme_query_failed' }
+    ) {
+        Set-PowerSequence $Kind
+        & $lane @arguments
+        $LASTEXITCODE | Should -Be 1
+        $global:LaneScenario.Calls | Should -BeNullOrEmpty
+        Test-Path (Join-Path $work 'db') | Should -BeFalse
+        $refusals = Get-RefusalLine $stage
+        $refusals.Count | Should -Be 1
+        $refusals[0].check | Should -Be 'before_setup'
+        $refusals[0].lane | Should -Be 'endpoint-mssql'
+        $refusals[0].unmet | Should -Be @($Unmet)
+        $provenance = Get-Content (Get-ChildItem $stage -Filter 'provenance-*.json').FullName -Raw | ConvertFrom-Json
+        $provenance.attempt_started | Should -BeFalse
+        $provenance.refused_at | Should -Be 'before_setup'
+        Get-EvidenceText $stage | Should -Not -Match $global:LaneSentinel
+    }
+
+    It 'checks power before setup and proceeds to LocalDB when it holds' {
+        $env:LANE_TEST_ITERATIONS = '100000'
+        & $lane @arguments
+        $provenance = Get-Content (Get-ChildItem $stage -Filter 'provenance-*.json').FullName -Raw | ConvertFrom-Json
+        @($provenance.power_checks.check) | Should -Be @('before_setup')
+        $provenance.power_checks[0].condition_met | Should -BeTrue
+        $global:LaneScenario.Calls | Should -Contain 'sqllocaldb start DMS1490'
+        Get-RefusalLine $stage | Should -BeNullOrEmpty
+    }
 }
 
 AfterAll {
     Remove-Item -LiteralPath Function:\global:Get-TestHash, Function:\global:Get-ValidSetting, Function:\global:Get-ValidFingerprint, Function:\global:Write-TestTrx, Function:\global:Write-TestSample, Function:\global:Get-EvidenceText -ErrorAction SilentlyContinue
-    Remove-Variable -Name LaneScenario, LaneSentinel, LaneAssemblies, LaneFixtureClass -Scope Global -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath Alias:\Read-SystemPowerStatus, Function:\global:Get-TestPowerStatus, Function:\global:powercfg, Function:\global:New-PowerStep, Function:\global:Set-PowerSequence, Function:\global:Get-PowerStep, Function:\global:Get-RefusalLine -ErrorAction SilentlyContinue
+    Remove-Variable -Name LaneScenario, LaneSentinel, LaneAssemblies, LaneFixtureClass, PowerScenario, BalancedScheme -Scope Global -ErrorAction SilentlyContinue
 }

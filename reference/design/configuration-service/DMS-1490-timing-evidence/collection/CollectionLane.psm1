@@ -5,7 +5,8 @@
 
 # The checks both collection lanes rely on, kept here so that each can be exercised with synthetic
 # input (collection.Tests.ps1) without a deployment. Every check throws on failure; a lane turns a
-# throw into a recorded failure and a nonzero exit.
+# throw into a recorded failure and a nonzero exit. The power reader and power condition P are here
+# too; a lane decides what an unmet condition means at each of its checks.
 
 Set-StrictMode -Version Latest
 
@@ -30,6 +31,77 @@ $script:SettingsAllowlist = @(
 # The explicit collector fixture and the tests it must report as run and passed.
 $script:CollectorFixture = 'Given_token_endpoint_requests_measured_for_timing_evidence'
 $script:CollectorTests = @('It_records_one_sample_per_arm_per_round', 'It_writes_the_run_header')
+
+# Power condition P requires this scheme, the built-in Balanced plan.
+$script:BalancedSchemeGuid = '381b4222-f694-41f0-9685-ff5bb260df2e'
+
+# The fields of a power reading, the only ones a check or refusal record copies.
+$script:PowerReadingFields = @(
+    'utc',
+    'call_succeeded',
+    'win32_error',
+    'ac_line_status',
+    'battery_flag',
+    'battery_life_percent',
+    'system_status_flag',
+    'scheme_query_succeeded',
+    'scheme_query_failure',
+    'scheme_guid'
+)
+
+# GetSystemPowerStatus, with the last error read inside the same call, before any other native
+# operation can replace it. The guard keeps a repeated module import from defining the type again.
+if (-not ('DmsTimingEvidence.SystemPower' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System.Runtime.InteropServices;
+
+namespace DmsTimingEvidence
+{
+    public sealed class SystemPowerReading
+    {
+        public bool Succeeded { get; init; }
+        public int Win32Error { get; init; }
+        public byte ACLineStatus { get; init; }
+        public byte BatteryFlag { get; init; }
+        public byte BatteryLifePercent { get; init; }
+        public byte SystemStatusFlag { get; init; }
+    }
+
+    public static class SystemPower
+    {
+        [StructLayout(LayoutKind.Sequential)]
+        private struct SystemPowerStatus
+        {
+            public byte ACLineStatus;
+            public byte BatteryFlag;
+            public byte BatteryLifePercent;
+            public byte SystemStatusFlag;
+            public uint BatteryLifeTime;
+            public uint BatteryFullLifeTime;
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetSystemPowerStatus(out SystemPowerStatus status);
+
+        public static SystemPowerReading Read()
+        {
+            bool succeeded = GetSystemPowerStatus(out SystemPowerStatus status);
+            int error = succeeded ? 0 : Marshal.GetLastPInvokeError();
+            return new SystemPowerReading
+            {
+                Succeeded = succeeded,
+                Win32Error = error,
+                ACLineStatus = status.ACLineStatus,
+                BatteryFlag = status.BatteryFlag,
+                BatteryLifePercent = status.BatteryLifePercent,
+                SystemStatusFlag = status.SystemStatusFlag,
+            };
+        }
+    }
+}
+'@
+}
 
 <#
 .SYNOPSIS
@@ -294,4 +366,147 @@ function Assert-CollectorRun {
     }
 }
 
-Export-ModuleMember -Function Get-FingerprintedAssemblyName, Get-SettingAllowlist, Get-CollectorFixtureName, Resolve-LanePath, Assert-LaneRoot, Assert-OutsideWorktree, ConvertFrom-Sha256Listing, Assert-AssemblyFingerprint, Assert-RunSetting, Compare-LaneSnapshot, Assert-CollectorRun
+# The native call alone, so that tests can stand in for it.
+function Read-SystemPowerStatus { [DmsTimingEvidence.SystemPower]::Read() }
+
+<#
+.SYNOPSIS
+    Reads the power source and the active power scheme once.
+.DESCRIPTION
+    Returns the raw GetSystemPowerStatus fields and the active scheme from
+    `powercfg /getactivescheme`. A failed native call leaves every power field null and records its
+    Win32 error; a successful call records no error. A failed scheme query (an exception, a nonzero
+    exit, or output without exactly one GUID) leaves the scheme null and records a fixed reason code,
+    never the command's own output. Nothing here decides condition P; Get-PowerConditionFailure does.
+#>
+function Get-PowerSource {
+    $utc = (Get-Date).ToUniversalTime().ToString('o')
+    $native = Read-SystemPowerStatus
+    $reading = [ordered]@{
+        utc                    = $utc
+        call_succeeded         = [bool]$native.Succeeded
+        win32_error            = $null
+        ac_line_status         = $null
+        battery_flag           = $null
+        battery_life_percent   = $null
+        system_status_flag     = $null
+        scheme_query_succeeded = $false
+        scheme_query_failure   = $null
+        scheme_guid            = $null
+    }
+    if ($reading.call_succeeded) {
+        $reading.ac_line_status = [int]$native.ACLineStatus
+        $reading.battery_flag = [int]$native.BatteryFlag
+        $reading.battery_life_percent = [int]$native.BatteryLifePercent
+        $reading.system_status_flag = [int]$native.SystemStatusFlag
+    }
+    else {
+        $reading.win32_error = [int]$native.Win32Error
+    }
+
+    try {
+        $global:LASTEXITCODE = 0
+        $output = @(& powercfg /getactivescheme 2>$null)
+        $exit = $LASTEXITCODE
+        $guids = @([regex]::Matches(($output -join "`n"), '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}') | ForEach-Object { $_.Value.ToLowerInvariant() })
+        if ($exit -ne 0) { $reading.scheme_query_failure = 'exit_nonzero' }
+        elseif ($guids.Count -eq 0) { $reading.scheme_query_failure = 'no_guid' }
+        elseif ($guids.Count -gt 1) { $reading.scheme_query_failure = 'several_guids' }
+        else {
+            $reading.scheme_query_succeeded = $true
+            $reading.scheme_guid = $guids[0]
+        }
+    }
+    catch {
+        $reading.scheme_query_failure = 'command_error'
+    }
+    $reading
+}
+
+<#
+.SYNOPSIS
+    The parts of power condition P a reading does not meet; none means P holds.
+.DESCRIPTION
+    P is: the native call succeeded, ACLineStatus is 1 (online), SystemStatusFlag is 0 (battery saver
+    off), the scheme query succeeded, and the scheme is Balanced. Unknown (255) and every failure are
+    not P. A missing reading is `observation_error`.
+#>
+function Get-PowerConditionFailure {
+    param([AllowNull()] [System.Collections.IDictionary] $Reading)
+    if ($null -eq $Reading) { return , @('observation_error') }
+    # Exact types and values only, so that no string or Boolean can pass by loose comparison.
+    $unmet = [System.Collections.Generic.List[string]]::new()
+    if ($Reading.call_succeeded -isnot [bool] -or -not $Reading.call_succeeded) {
+        $unmet.Add('call_failed')
+    }
+    else {
+        $ac = $Reading.ac_line_status
+        if ($ac -isnot [int]) { $unmet.Add('ac_line_unexpected') }
+        elseif ($ac -eq 0) { $unmet.Add('ac_line_offline') }
+        elseif ($ac -eq 255) { $unmet.Add('ac_line_unknown') }
+        elseif ($ac -ne 1) { $unmet.Add('ac_line_unexpected') }
+        $flag = $Reading.system_status_flag
+        if ($flag -isnot [int]) { $unmet.Add('system_status_unexpected') }
+        elseif ($flag -eq 1) { $unmet.Add('battery_saver_on') }
+        elseif ($flag -ne 0) { $unmet.Add('system_status_unexpected') }
+    }
+    if ($Reading.scheme_query_succeeded -isnot [bool] -or -not $Reading.scheme_query_succeeded) { $unmet.Add('scheme_query_failed') }
+    elseif ($Reading.scheme_guid -isnot [string] -or $Reading.scheme_guid -cne $script:BalancedSchemeGuid) { $unmet.Add('scheme_not_balanced') }
+    , $unmet.ToArray()
+}
+
+<#
+.SYNOPSIS
+    One power check of a run: when, which parts of P were unmet, and the reading's own fields.
+.DESCRIPTION
+    Copies only the reading fields Get-PowerSource defines, so nothing else a reading may carry
+    reaches provenance or a refusal record.
+#>
+function ConvertTo-PowerCheckRecord {
+    param(
+        [Parameter(Mandatory)] [ValidateSet('before_setup', 'before_launch', 'after_exit')] [string] $Check,
+        [AllowNull()] [System.Collections.IDictionary] $Reading
+    )
+    $copy = $null
+    if ($null -ne $Reading) {
+        $copy = [ordered]@{}
+        foreach ($field in $script:PowerReadingFields) { $copy[$field] = $Reading[$field] }
+    }
+    $unmet = Get-PowerConditionFailure $copy
+    [ordered]@{
+        check         = $Check
+        utc           = if ($null -ne $copy -and $copy.utc) { $copy.utc } else { (Get-Date).ToUniversalTime().ToString('o') }
+        condition_met = $unmet.Count -eq 0
+        unmet         = $unmet
+        reading       = $copy
+    }
+}
+
+<#
+.SYNOPSIS
+    Appends one refusal to the stage's refusal log, as one JSON line. Never rewrites the file.
+.DESCRIPTION
+    A refusal is a check before the collector launch that did not meet P. It is not an attempt: the
+    environment may be corrected and the run started again, and every refusal stays in the log.
+#>
+function Add-PowerRefusal {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [string] $Lane,
+        [Parameter(Mandatory)] [string] $RunLabel,
+        [Parameter(Mandatory)] [System.Collections.IDictionary] $Record
+    )
+    if ($Record.condition_met) { throw 'A check that met power condition P is not a refusal.' }
+    if ($Record.check -eq 'after_exit') { throw 'A check after the collector launch is part of an attempt, not a refusal.' }
+    $line = [ordered]@{
+        utc       = $Record.utc
+        lane      = $Lane
+        run_label = $RunLabel
+        check     = $Record.check
+        unmet     = $Record.unmet
+        reading   = $Record.reading
+    } | ConvertTo-Json -Compress -Depth 4
+    [System.IO.File]::AppendAllText($Path, $line + "`n", [System.Text.UTF8Encoding]::new($false))
+}
+
+Export-ModuleMember -Function Get-FingerprintedAssemblyName, Get-SettingAllowlist, Get-CollectorFixtureName, Resolve-LanePath, Assert-LaneRoot, Assert-OutsideWorktree, ConvertFrom-Sha256Listing, Assert-AssemblyFingerprint, Assert-RunSetting, Compare-LaneSnapshot, Assert-CollectorRun, Get-PowerSource, Get-PowerConditionFailure, ConvertTo-PowerCheckRecord, Add-PowerRefusal

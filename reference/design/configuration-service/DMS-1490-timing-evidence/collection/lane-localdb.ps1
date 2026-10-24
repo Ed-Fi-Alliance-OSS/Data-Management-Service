@@ -10,8 +10,9 @@
     For hosts that cannot run the SQL Server container (an ARM64 Windows host cannot). Steps:
     1. Refuses to start unless the staging, work and target folders neither equal, contain nor lie
        inside the collector checkout (and the staging folder none of the others), the collector
-       checkout is clean, port 8081 is free, no cs-local container exists, and the prepared
-       target's Release assemblies still match the five fingerprints prepare-target.ps1 recorded.
+       checkout is clean, the prepared target's Release assemblies still match the five
+       fingerprints prepare-target.ps1 recorded, power condition P holds, port 8081 is free, and
+       no cs-local container exists.
     2. Starts the LocalDB instance, enables the sa login over its named pipe, and recreates the
        database with its files in -WorkRoot.
     3. Builds the service's launch environment as local-config.yml configures the container from
@@ -20,17 +21,24 @@
        Starts the target's Configuration Service as a host process, inserts the OpenIddict signing
        key and runs the target's setup-openiddict.ps1 -InsertData with `docker exec ... sqlcmd`
        routed to the host's sqlcmd, requiring each step to succeed.
-    4. Runs the explicit endpoint timing collector once, from the collector checkout (Release,
-       --no-build), with its output and results file in the work folder, and requires that it ran
-       the collector fixture's two tests and wrote this run's samples and header.
+    4. Requires power condition P again immediately before the collector launches, then runs the
+       explicit endpoint timing collector once, from the collector checkout (Release, --no-build),
+       with its output and results file in the work folder, checks power condition P as soon as it
+       exits, whatever its outcome, and requires that it ran the collector fixture's two tests and
+       wrote this run's samples and header.
     5. Requires the same live process, start time and assemblies after collection, then stops it.
 
     Any failed stage, including stopping the process, makes the script exit 1 after cleanup;
-    success exits 0.
+    success exits 0. A power check that fails before the collector launch is a refusal, not an
+    attempt: it is appended to the staging folder's refusals.log, which is never rewritten, and the
+    run may be started again once the environment is corrected. From the launch on, the run is its
+    one attempt. Only the power snapshots of protocol E1 are implemented; its sampler coverage is
+    not, so no run of this script is a complete E1 run.
 
     Written to -OutputDir (the evidence staging folder): the samples CSV and header JSON,
-    provenance-*.json and lane-localdb-*.log, which holds only status lines, checked counts and
-    exception type names. Written to -WorkRoot (never evidence): database files, the service's own
+    provenance-*.json, refusals.log and lane-localdb-*.log, which holds only status lines, checked
+    counts, unmet power condition codes and exception type names. Written to -WorkRoot (never
+    evidence): database files, the service's own
     output, the collector's output and results file, setup logs and the full text of any
     exception. Secrets come from the target's eng/docker-compose/.env.config.mssql.e2e and are
     referenced in provenance by key name only.
@@ -64,6 +72,7 @@ $secretSources = @(
     'CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET'
 )
 $failures = [System.Collections.Generic.List[object]]::new()
+$powerChecks = [System.Collections.Generic.List[object]]::new()
 
 # Every later file operation uses these normalized forms, so it acts on exactly the folders checked.
 $CollectorRoot = Resolve-LanePath $CollectorRoot
@@ -75,6 +84,7 @@ New-Item -ItemType Directory -Force -Path $OutputDir, $WorkRoot | Out-Null
 $stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMdd'T'HHmmss'Z'")
 $log = Join-Path $OutputDir "lane-localdb-$RunLabel-$stamp.log"
 $provenancePath = Join-Path $OutputDir "provenance-endpoint-mssql-$RunLabel-$stamp.json"
+$refusalLog = Join-Path $OutputDir 'refusals.log'
 $diagnostics = Join-Path $WorkRoot "lane-localdb-$RunLabel-$stamp.diagnostics.txt"
 $runnerLog = Join-Path $WorkRoot "collector-mssql-$RunLabel-$stamp.log"
 $trxName = "collector-mssql-$RunLabel-$stamp.trx"
@@ -98,6 +108,30 @@ function Invoke-Native([string] $What, [scriptblock] $Command) {
     $output = & $Command
     if ($LASTEXITCODE -ne 0) { throw "$What exited $LASTEXITCODE." }
     $output
+}
+
+# Observes the power source at one check, records it and throws unless condition P holds. A check
+# before the collector launch that fails is also a refusal, appended to the refusal log. The text
+# of a failed observation goes to the work folder only.
+function Invoke-PowerCheck([string] $Check) {
+    $reading = $null
+    try { $reading = Get-PowerSource }
+    catch { "[power $Check]`n$($_ | Out-String)" | Out-File -LiteralPath $diagnostics -Append -Encoding utf8NoBOM }
+    $record = ConvertTo-PowerCheckRecord -Check $Check -Reading $reading
+    $powerChecks.Add($record)
+    if ($record.condition_met) {
+        Write-LaneLog "POWER $Check condition P met"
+        return
+    }
+    if ($Check -ne 'after_exit') {
+        Add-PowerRefusal -Path $refusalLog -Lane 'endpoint-mssql' -RunLabel $RunLabel -Record $record
+        $provenance.refused_at = $Check
+        Write-LaneLog "REFUSED $Check, condition P not met: $($record.unmet -join ', ')"
+    }
+    else {
+        Write-LaneLog "POWER $Check condition P not met: $($record.unmet -join ', ')"
+    }
+    throw "Power condition P is not met at $Check."
 }
 
 function Get-AssemblyFingerprint {
@@ -125,7 +159,14 @@ function Get-ProcessSnapshot([System.Diagnostics.Process] $Process, [System.Coll
 
 "" | Out-File -LiteralPath $log -Encoding utf8NoBOM
 $provenance = [ordered]@{
-    schema                   = 'timing-provenance/3'
+    schema                   = 'timing-provenance/4'
+    environment_protocol     = [ordered]@{
+        version         = 'E1'
+        complete        = $false
+        implemented     = 'power condition P before setup, before the collector launch and after it exits'
+        not_implemented = 'sampler readiness and continuous coverage'
+    }
+    attempt_started          = $false
     lane                     = 'endpoint-mssql (LocalDB, host-process Configuration Service)'
     lane_script              = Split-Path -Leaf $PSCommandPath
     lane_script_sha256       = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -155,6 +196,7 @@ try {
         if ($current[$assembly] -ne $target.host_release.fingerprints.$assembly) { throw "$assembly no longer matches the prepared target." }
     }
     Write-LaneLog "LANE label=$RunLabel rounds=$Rounds warmup=$WarmupRounds seed=$Seed contract=$Contract collector=$collectorCommit target=$($target.commit)"
+    Invoke-PowerCheck 'before_setup'
 
     if (Get-NetTCPConnection -LocalPort 8081 -State Listen -ErrorAction SilentlyContinue) { throw 'Port 8081 is already in use.' }
     # Docker may not be running for this lane; then there is no cs-local container to collide with.
@@ -369,10 +411,18 @@ try {
     $provenance.before = $before
     if ($before.alive -ne 'True') { throw 'The service process is not running.' }
     Write-LaneLog "BEFORE pid=$($before.pid) start=$($before.start_time) settings and five fingerprints verified"
-    Write-LaneLog 'RUN collector (Release, --no-build; output and results file in the work folder)'
+    Invoke-PowerCheck 'before_launch'
+    Write-LaneLog 'RUN collector (Release, --no-build; output and results file in the work folder); the launch starts the attempt'
+    $provenance.attempt_started = $true
     $collectorStarted = (Get-Date).ToUniversalTime()
-    & dotnet test $e2eProject -c Release --no-build --no-restore --nologo --filter "FullyQualifiedName~$(Get-CollectorFixtureName)" --logger "trx;LogFileName=$trxName" --results-directory $WorkRoot *> $runnerLog
-    $collectorExit = $LASTEXITCODE
+    try {
+        & dotnet test $e2eProject -c Release --no-build --no-restore --nologo --filter "FullyQualifiedName~$(Get-CollectorFixtureName)" --logger "trx;LogFileName=$trxName" --results-directory $WorkRoot *> $runnerLog
+        $collectorExit = $LASTEXITCODE
+    }
+    finally {
+        # Whatever the collector did; a failure here is recorded beside any failure of the run.
+        try { Invoke-PowerCheck 'after_exit' } catch { Add-LaneFailure 'power-after-exit' $_ }
+    }
     $provenance.collector_exit = $collectorExit
     $summary = Assert-CollectorRun -ExitCode $collectorExit -TrxPath (Join-Path $WorkRoot $trxName) -OutputDir $OutputDir -RunLabel $RunLabel -Backend mssql -Rounds $Rounds -Seed $Seed -StartedUtc $collectorStarted
     $provenance.collector_run = $summary
@@ -406,6 +456,7 @@ finally {
     }
     foreach ($stream in $outputStreams) { $stream.Dispose() }
     Remove-Item Env:SQLCMDPASSWORD -ErrorAction SilentlyContinue
+    $provenance.power_checks = $powerChecks.ToArray()
     $provenance.failures = $failures.ToArray()
     $provenance.succeeded = $failures.Count -eq 0
     $provenance | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $provenancePath -Encoding utf8NoBOM

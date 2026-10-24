@@ -9,24 +9,32 @@
 .DESCRIPTION
     1. Refuses to start unless the staging, work and target folders neither equal, contain nor lie
        inside the collector checkout (and the staging folder none of the others), the collector
-       checkout is clean, port 8081 is free, and no cs-local container or ed-fi-api-config-local
-       image exists.
+       checkout is clean, power condition P holds, port 8081 is free, and no cs-local container or
+       ed-fi-api-config-local image exists.
     2. Builds and starts the stack from the prepared target (prepare-target.ps1) with that target's
        own setup-local-cms.ps1, which builds the image without cache.
     3. Before collection, requires the running container to carry the pre-registered values of the
-       exact settings allowlist and exactly five valid assembly fingerprints.
+       exact settings allowlist and exactly five valid assembly fingerprints, and power condition P
+       again immediately before the collector launches.
     4. Runs the explicit endpoint timing collector once, from the collector checkout (Release,
-       --no-build), with its output and results file in the work folder, and requires that it ran
-       the collector fixture's two tests and wrote this run's samples and header.
+       --no-build), with its output and results file in the work folder, checks power condition P
+       as soon as it exits, whatever its outcome, and requires that it ran the collector fixture's
+       two tests and wrote this run's samples and header.
     5. Requires the same container, image, settings and assemblies after collection, then tears the
        stack down.
 
     Any failed stage, including teardown, makes the script exit 1 after cleanup; success exits 0.
+    A power check that fails before the collector launch is a refusal, not an attempt: it is
+    appended to the staging folder's refusals.log, which is never rewritten, and the run may be
+    started again once the environment is corrected. From the launch on, the run is its one attempt.
+    Only the power snapshots of protocol E1 are implemented; its sampler coverage is not, so no run
+    of this script is a complete E1 run.
 
     Written to -OutputDir (the evidence staging folder): the samples CSV and header JSON,
-    provenance-*.json and lane-postgresql-*.log, which holds only status lines, checked counts and
-    exception type names. Written to -WorkRoot (never evidence): the collector's own output and
-    results file, setup and teardown logs, and the full text of any exception.
+    provenance-*.json, refusals.log and lane-postgresql-*.log, which holds only status lines,
+    checked counts, unmet power condition codes and exception type names. Written to -WorkRoot
+    (never evidence): the collector's own output and results file, setup and teardown logs, and the
+    full text of any exception.
 
     The lane reads no secret itself; the stack takes its settings from the target's
     eng/docker-compose/.env.config.e2e.
@@ -51,6 +59,7 @@ $container = 'ed-fi-api-config-service'
 $settingsAllowlist = Get-SettingAllowlist
 $fingerprintedAssemblies = Get-FingerprintedAssemblyName
 $failures = [System.Collections.Generic.List[object]]::new()
+$powerChecks = [System.Collections.Generic.List[object]]::new()
 
 # Every later file operation uses these normalized forms, so it acts on exactly the folders checked.
 $CollectorRoot = Resolve-LanePath $CollectorRoot
@@ -62,6 +71,7 @@ New-Item -ItemType Directory -Force -Path $OutputDir, $WorkRoot | Out-Null
 $stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMdd'T'HHmmss'Z'")
 $log = Join-Path $OutputDir "lane-postgresql-$RunLabel-$stamp.log"
 $provenancePath = Join-Path $OutputDir "provenance-endpoint-postgresql-$RunLabel-$stamp.json"
+$refusalLog = Join-Path $OutputDir 'refusals.log'
 $diagnostics = Join-Path $WorkRoot "lane-postgresql-$RunLabel-$stamp.diagnostics.txt"
 $runnerLog = Join-Path $WorkRoot "collector-postgresql-$RunLabel-$stamp.log"
 $trxName = "collector-postgresql-$RunLabel-$stamp.trx"
@@ -83,6 +93,30 @@ function Invoke-Native([string] $What, [scriptblock] $Command) {
     $output = & $Command
     if ($LASTEXITCODE -ne 0) { throw "$What exited $LASTEXITCODE." }
     $output
+}
+
+# Observes the power source at one check, records it and throws unless condition P holds. A check
+# before the collector launch that fails is also a refusal, appended to the refusal log. The text
+# of a failed observation goes to the work folder only.
+function Invoke-PowerCheck([string] $Check) {
+    $reading = $null
+    try { $reading = Get-PowerSource }
+    catch { "[power $Check]`n$($_ | Out-String)" | Out-File -LiteralPath $diagnostics -Append -Encoding utf8NoBOM }
+    $record = ConvertTo-PowerCheckRecord -Check $Check -Reading $reading
+    $powerChecks.Add($record)
+    if ($record.condition_met) {
+        Write-LaneLog "POWER $Check condition P met"
+        return
+    }
+    if ($Check -ne 'after_exit') {
+        Add-PowerRefusal -Path $refusalLog -Lane 'endpoint-postgresql' -RunLabel $RunLabel -Record $record
+        $provenance.refused_at = $Check
+        Write-LaneLog "REFUSED $Check, condition P not met: $($record.unmet -join ', ')"
+    }
+    else {
+        Write-LaneLog "POWER $Check condition P not met: $($record.unmet -join ', ')"
+    }
+    throw "Power condition P is not met at $Check."
 }
 
 # Reads the allowlisted settings (from the container environment, otherwise from the image's
@@ -131,7 +165,14 @@ function Get-ContainerSnapshot {
 
 "" | Out-File -LiteralPath $log -Encoding utf8NoBOM
 $provenance = [ordered]@{
-    schema                   = 'timing-provenance/3'
+    schema                   = 'timing-provenance/4'
+    environment_protocol     = [ordered]@{
+        version         = 'E1'
+        complete        = $false
+        implemented     = 'power condition P before setup, before the collector launch and after it exits'
+        not_implemented = 'sampler readiness and continuous coverage'
+    }
+    attempt_started          = $false
     lane                     = 'endpoint-postgresql (cs-local Docker stack)'
     lane_script              = Split-Path -Leaf $PSCommandPath
     lane_script_sha256       = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -150,6 +191,7 @@ try {
     $target = Get-Content -LiteralPath (Join-Path $TargetRoot 'target.json') -Raw | ConvertFrom-Json
     $provenance.target = $target
     Write-LaneLog "LANE label=$RunLabel rounds=$Rounds warmup=$WarmupRounds seed=$Seed contract=$Contract collector=$collectorCommit target=$($target.commit)"
+    Invoke-PowerCheck 'before_setup'
 
     if (Get-NetTCPConnection -LocalPort 8081 -State Listen -ErrorAction SilentlyContinue) { throw 'Port 8081 is already in use.' }
     $stackContainers = Invoke-Native 'docker ps' { docker ps -a --filter 'label=com.docker.compose.project=cs-local' --format '{{.Names}}' }
@@ -190,10 +232,18 @@ try {
     $env:TIMING_EVIDENCE_DECLARED_ITERATIONS = $before.settings['IdentitySettings__ClientSecretHashingIterations']
     Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
     & dotnet build-server shutdown *> $null
-    Write-LaneLog 'RUN collector (Release, --no-build; output and results file in the work folder)'
+    Invoke-PowerCheck 'before_launch'
+    Write-LaneLog 'RUN collector (Release, --no-build; output and results file in the work folder); the launch starts the attempt'
+    $provenance.attempt_started = $true
     $collectorStarted = (Get-Date).ToUniversalTime()
-    & dotnet test $e2eProject -c Release --no-build --no-restore --nologo --filter "FullyQualifiedName~$(Get-CollectorFixtureName)" --logger "trx;LogFileName=$trxName" --results-directory $WorkRoot *> $runnerLog
-    $collectorExit = $LASTEXITCODE
+    try {
+        & dotnet test $e2eProject -c Release --no-build --no-restore --nologo --filter "FullyQualifiedName~$(Get-CollectorFixtureName)" --logger "trx;LogFileName=$trxName" --results-directory $WorkRoot *> $runnerLog
+        $collectorExit = $LASTEXITCODE
+    }
+    finally {
+        # Whatever the collector did; a failure here is recorded beside any failure of the run.
+        try { Invoke-PowerCheck 'after_exit' } catch { Add-LaneFailure 'power-after-exit' $_ }
+    }
     $provenance.collector_exit = $collectorExit
     $summary = Assert-CollectorRun -ExitCode $collectorExit -TrxPath (Join-Path $WorkRoot $trxName) -OutputDir $OutputDir -RunLabel $RunLabel -Backend postgresql -Rounds $Rounds -Seed $Seed -StartedUtc $collectorStarted
     $provenance.collector_run = $summary
@@ -221,6 +271,7 @@ finally {
             Add-LaneFailure 'teardown' $_
         }
     }
+    $provenance.power_checks = $powerChecks.ToArray()
     $provenance.failures = $failures.ToArray()
     $provenance.succeeded = $failures.Count -eq 0
     $provenance | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $provenancePath -Encoding utf8NoBOM

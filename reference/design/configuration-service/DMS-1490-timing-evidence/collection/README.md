@@ -11,10 +11,33 @@ The scripts here produce evidence. They are not part of the product, and no ordi
 | `prepare-target.ps1` | Extracts one pinned commit with `git archive` into an empty folder that neither lies inside nor contains any worktree, refusing before it creates anything. With `-BuildHostRelease`, it also builds the Configuration Service in Release there and fingerprints its production assemblies into `target.json`. |
 | `lane-postgresql.ps1` | One PostgreSQL run: builds the target's `cs-local` stack without cache, verifies the deployment, runs the collector once, verifies the run and the deployment again, then tears the stack down |
 | `lane-localdb.ps1` | One SQL Server run on LocalDB, with the target's Configuration Service as a host process: recreates the database, starts a new process with a controlled launch environment, verifies, runs the collector once, verifies again, then stops the process |
-| `CollectionLane.psm1` | The checks both lanes and the preparer rely on: path normalization, root and worktree separation, exact fingerprints, pre-registered settings, deployment comparison and collector-run verification |
-| `collection.Tests.ps1` | Pester checks of the lanes' failure paths and the preparer's folder refusals with synthetic command output. No deployment, database or collector is used. |
+| `CollectionLane.psm1` | The checks both lanes and the preparer rely on: path normalization, root and worktree separation, exact fingerprints, pre-registered settings, deployment comparison, collector-run verification, the power reader and power condition P |
+| `collection.Tests.ps1` | Pester checks of the lanes' failure paths, the power checks and the preparer's folder refusals, with synthetic command output and synthetic power readings. No deployment, database or collector is used. One test reads the host's power status once, to check only that the native structure marshals. |
 
-Each lane exits **0 only when every stage succeeded**. Any failure exits 1 after cleanup. Failure stages include: setup, an unhealthy service, an unexpected setting value, a missing or malformed fingerprint, a collector that failed or ran anything other than the fixture's two tests, missing or mismatched samples, a deployment that changed during collection, and a failed teardown or process stop.
+Each lane exits **0 only when every stage succeeded**. Any failure exits 1 after cleanup. Failure stages include: a power refusal, setup, an unhealthy service, an unexpected setting value, a missing or malformed fingerprint, a collector that failed or ran anything other than the fixture's two tests, power condition P unmet after the collector exits, missing or mismatched samples, a deployment that changed during collection, and a failed teardown or process stop.
+
+## Power condition P (protocol E1, partly implemented)
+
+Spec §18.1. Each lane reads `GetSystemPowerStatus` and `powercfg /getactivescheme`. P holds only when:
+
+- the native call succeeded;
+- `ACLineStatus` is 1 (online);
+- `SystemStatusFlag` is 0 (battery saver off);
+- the scheme query succeeded;
+- the scheme is Balanced (`381b4222-f694-41f0-9685-ff5bb260df2e`).
+
+Unknown (255) and every failure are not P.
+
+| Check | When | Not P |
+| --- | --- | --- |
+| `before_setup` | Before any stack, LocalDB or database work | **Refusal**: nothing was set up and nothing is collected |
+| `before_launch` | Immediately before the collector process starts | **Refusal**: the stack is torn down or the process stopped, and nothing is collected |
+| `after_exit` | As soon as the collector exits, whatever its outcome | The attempt **fails** (`power-after-exit`), recorded beside any other failure |
+
+- **The collector launch is the attempt boundary.** Provenance records `attempt_started`.
+- **Refusals are not attempts.** Each is appended as one JSON line to `refusals.log` in the run's staging folder (`<Stage>\pilot` or `<Stage>\final`), with the check, the unmet parts of P and the raw power fields. The file is never rewritten. After correcting the environment, for example by plugging in, the same run may be started again.
+- **What is recorded:** every check, met or not, in `power_checks` in provenance. The scheme query's own output is never recorded, only a fixed reason code for a failure. Exception text from a failed observation goes to `<Work>\runs` only.
+- **What is not yet implemented:** the sampler's readiness and continuous coverage (§18.2). Provenance therefore records `environment_protocol.complete = false`, and no run of these lanes is a complete E1 run. No collection is authorised with them.
 
 ## Identities
 
@@ -32,7 +55,7 @@ Targets are always built from `git archive` extracts in their own folders. The c
 - Windows, PowerShell 7, the .NET 10 SDK, Git, `tar`, and Python 3.12 with numpy 2.5.2.
 - **PostgreSQL lane:** Docker Desktop running; no `cs-local` container and no `ed-fi-api-config-local` image present.
 - **SQL Server lane:** LocalDB with `sqllocaldb` and `sqlcmd` on the path. The default instance name is `DMS1490`.
-- **Host state:** idle, on AC power, with the power plan recorded. No other collection, simulation, analysis or build runs during a collection.
+- **Host state:** idle, plugged in, battery saver off and the Balanced plan active; the lanes refuse otherwise (see Power condition P). No other collection, simulation, analysis or build runs during a collection.
 
 ## Folders
 
