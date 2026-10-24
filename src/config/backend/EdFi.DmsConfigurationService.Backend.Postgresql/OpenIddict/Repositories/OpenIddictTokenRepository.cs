@@ -9,7 +9,8 @@ using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositories
 {
     public class OpenIddictTokenRepository(IOpenIddictDataRepository dataRepository)
-        : IOpenIddictTokenRepository
+        : IOpenIddictTokenRepository,
+            IClientCredentialReader
     {
         public async Task<TokenInfo?> GetTokenByIdAsync(Guid tokenId)
         {
@@ -77,6 +78,29 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositorie
         public async Task<IEnumerable<string>> GetClientRolesAsync(Guid clientId)
         {
             return await dataRepository.GetClientRolesAsync(clientId);
+        }
+
+        /// <summary>
+        /// Whether the wrapped data repository reads client credentials. Fixed by the instance
+        /// this repository wraps.
+        /// </summary>
+        public bool CanReadClientCredentials =>
+            dataRepository is IClientCredentialReader { CanReadClientCredentials: true };
+
+        /// <summary>
+        /// Reads the credential through the wrapped data repository.
+        /// </summary>
+        /// <exception cref="NotSupportedException">The wrapped data repository does not read credentials.</exception>
+        public async Task<ClientCredential?> GetClientCredentialAsync(string clientId)
+        {
+            if (dataRepository is not IClientCredentialReader { CanReadClientCredentials: true } reader)
+            {
+                throw new NotSupportedException(
+                    "The wrapped data repository does not read client credentials."
+                );
+            }
+
+            return await reader.GetClientCredentialAsync(clientId);
         }
     }
 }
