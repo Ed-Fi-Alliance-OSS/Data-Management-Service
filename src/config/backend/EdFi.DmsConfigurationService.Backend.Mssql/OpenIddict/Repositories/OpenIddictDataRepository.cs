@@ -18,7 +18,8 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
     /// Handles all database operations for OpenIddict using SQL Server-specific connections and SQL.
     /// </summary>
     public class OpenIddictDataRepository(IOptions<DatabaseOptions> databaseOptions)
-        : IOpenIddictDataRepository
+        : IOpenIddictDataRepository,
+            IClientCredentialReader
     {
         private readonly string _connectionString = databaseOptions.Value.DatabaseConnection;
 
@@ -353,6 +354,49 @@ UPDATE dmscs.OpenIddictApplication
             );
         }
 
+        /// <summary>
+        /// This repository always reads credentials with its own query.
+        /// </summary>
+        public bool CanReadClientCredentials => true;
+
+        /// <summary>
+        /// One statement and no further queries: the application's id, stored client id and
+        /// stored secret, and the approval <see cref="GetApplicationByClientIdAsync"/> reports
+        /// (every API client registered under the client id approved; approved when there is
+        /// none). The client id is matched with the same predicate as that lookup, so under the
+        /// database's collation. A stored null becomes an empty string.
+        /// </summary>
+        public async Task<ClientCredential?> GetClientCredentialAsync(string clientId)
+        {
+            await using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            const string credentialSql = """
+                SELECT a.Id AS ApplicationId,
+                       COALESCE(a.ClientId, N'') AS StoredClientId,
+                       COALESCE(a.ClientSecret, N'') AS StoredClientSecret,
+                       CAST(COALESCE((SELECT MIN(CAST(ac.IsApproved AS INT))
+                                      FROM dmscs.ApiClient ac
+                                      WHERE ac.ClientId = a.ClientId), 1) AS BIT) AS IsApproved
+                FROM dmscs.OpenIddictApplication a
+                WHERE a.ClientId = @ClientId
+                """;
+
+            return
+                await connection.QuerySingleOrDefaultAsync<ClientCredentialRow>(
+                    credentialSql,
+                    new { ClientId = clientId }
+                )
+                    is { } row
+                ? new ClientCredential(
+                    row.ApplicationId,
+                    row.StoredClientId ?? string.Empty,
+                    row.StoredClientSecret ?? string.Empty,
+                    row.IsApproved
+                )
+                : null;
+        }
+
         public async Task<ApplicationInfo?> GetApplicationByIdAsync(
             Guid id,
             IDbConnection connection,
@@ -664,6 +708,13 @@ UPDATE dmscs.OpenIddictApplication
             string? ProtocolMappers,
             bool IsApproved,
             bool HasNoApiClientRow
+        );
+
+        private sealed record ClientCredentialRow(
+            Guid ApplicationId,
+            string? StoredClientId,
+            string? StoredClientSecret,
+            bool IsApproved
         );
 
         private static string[] DeserializeStringArray(string? json) =>

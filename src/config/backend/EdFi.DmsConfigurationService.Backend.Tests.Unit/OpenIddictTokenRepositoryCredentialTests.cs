@@ -13,13 +13,14 @@ using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using MssqlTokenRepository = EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories.OpenIddictTokenRepository;
 using PostgresqlTokenRepository = EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositories.OpenIddictTokenRepository;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 
 /// <summary>
-/// The shipped token repository offers the credential read exactly when the data repository it
-/// wraps does, and the token manager takes its single full lookup when it does not.
+/// Each engine's shipped token repository offers the credential read exactly when the data
+/// repository it wraps does, and the token manager takes its single full lookup when it does not.
 /// </summary>
 public class OpenIddictTokenRepositoryCredentialTests
 {
@@ -27,6 +28,23 @@ public class OpenIddictTokenRepositoryCredentialTests
     private const string ClientSecret = "plain-secret";
     private const string StoredSecret = "hashed-secret";
     private const string EncryptionKey = "wrapper-test-encryption-key";
+
+    /// <summary>The shipped token repository of <paramref name="engine"/> over <paramref name="dataRepository"/>.</summary>
+    private static IOpenIddictTokenRepository TokenRepositoryOver(
+        string engine,
+        IOpenIddictDataRepository dataRepository
+    ) =>
+        engine switch
+        {
+            "postgresql" => new PostgresqlTokenRepository(dataRepository),
+            "mssql" => new MssqlTokenRepository(dataRepository),
+            _ => throw new ArgumentOutOfRangeException(nameof(engine), engine, null),
+        };
+
+    private static IClientCredentialReader CredentialReaderOver(
+        string engine,
+        IOpenIddictDataRepository dataRepository
+    ) => (IClientCredentialReader)TokenRepositoryOver(engine, dataRepository);
 
     /// <summary>A data repository fake that also implements the credential read.</summary>
     private static IOpenIddictDataRepository CredentialReadingDataRepository(bool canReadClientCredentials)
@@ -98,8 +116,9 @@ public class OpenIddictTokenRepositoryCredentialTests
         return manager.GetAccessTokenAsync([new("client_id", ClientId), new("client_secret", ClientSecret)]);
     }
 
-    [TestFixture]
-    public class Given_a_postgresql_token_repository_over_a_data_repository_that_reads_credentials
+    [TestFixture("postgresql")]
+    [TestFixture("mssql")]
+    public class Given_a_token_repository_over_a_data_repository_that_reads_credentials(string engine)
         : OpenIddictTokenRepositoryCredentialTests
     {
         private IOpenIddictDataRepository _dataRepository = null!;
@@ -116,7 +135,7 @@ public class OpenIddictTokenRepositoryCredentialTests
             _stored = new ClientCredential(Guid.NewGuid(), ClientId, StoredSecret, IsApproved: true);
             A.CallTo(() => reader.GetClientCredentialAsync(ClientId)).Returns(_stored);
             A.CallTo(() => reader.GetClientCredentialAsync("absent-client")).Returns((ClientCredential?)null);
-            PostgresqlTokenRepository tokenRepository = new(_dataRepository);
+            IClientCredentialReader tokenRepository = CredentialReaderOver(engine, _dataRepository);
 
             _canRead = tokenRepository.CanReadClientCredentials;
             _forwarded = await tokenRepository.GetClientCredentialAsync(ClientId);
@@ -138,14 +157,17 @@ public class OpenIddictTokenRepositoryCredentialTests
                 .MustHaveHappenedOnceExactly();
     }
 
-    [TestFixture("legacy-only")]
-    [TestFixture("reports-it-cannot-read")]
-    public class Given_a_postgresql_token_repository_over_a_data_repository_that_cannot_read_credentials(
+    [TestFixture("postgresql", "legacy-only")]
+    [TestFixture("postgresql", "reports-it-cannot-read")]
+    [TestFixture("mssql", "legacy-only")]
+    [TestFixture("mssql", "reports-it-cannot-read")]
+    public class Given_a_token_repository_over_a_data_repository_that_cannot_read_credentials(
+        string engine,
         string dataRepositoryKind
     ) : OpenIddictTokenRepositoryCredentialTests
     {
         private IOpenIddictDataRepository _dataRepository = null!;
-        private PostgresqlTokenRepository _tokenRepository = null!;
+        private IClientCredentialReader _tokenRepository = null!;
 
         [SetUp]
         public void Setup()
@@ -154,7 +176,7 @@ public class OpenIddictTokenRepositoryCredentialTests
                 dataRepositoryKind == "legacy-only"
                     ? A.Fake<IOpenIddictDataRepository>()
                     : CredentialReadingDataRepository(canReadClientCredentials: false);
-            _tokenRepository = new PostgresqlTokenRepository(_dataRepository);
+            _tokenRepository = CredentialReaderOver(engine, _dataRepository);
         }
 
         [Test]
@@ -171,8 +193,9 @@ public class OpenIddictTokenRepositoryCredentialTests
 
     // The manager's choice follows the wrapped data repository: over a legacy-only one it takes
     // the single full lookup and issues from it; over a reader it reads the credential first.
-    [TestFixture]
-    public class Given_a_token_grant_through_a_postgresql_token_repository_over_a_legacy_data_repository
+    [TestFixture("postgresql")]
+    [TestFixture("mssql")]
+    public class Given_a_token_grant_through_a_token_repository_over_a_legacy_data_repository(string engine)
         : OpenIddictTokenRepositoryCredentialTests
     {
         private IOpenIddictDataRepository _dataRepository = null!;
@@ -184,7 +207,7 @@ public class OpenIddictTokenRepositoryCredentialTests
             _dataRepository = A.Fake<IOpenIddictDataRepository>();
             ArrangeGrantableClient(_dataRepository);
 
-            _result = await GrantThroughAsync(new PostgresqlTokenRepository(_dataRepository));
+            _result = await GrantThroughAsync(TokenRepositoryOver(engine, _dataRepository));
         }
 
         [Test]
@@ -196,9 +219,11 @@ public class OpenIddictTokenRepositoryCredentialTests
                 .MustHaveHappenedOnceExactly();
     }
 
-    [TestFixture]
-    public class Given_a_token_grant_through_a_postgresql_token_repository_over_a_credential_reading_data_repository
-        : OpenIddictTokenRepositoryCredentialTests
+    [TestFixture("postgresql")]
+    [TestFixture("mssql")]
+    public class Given_a_token_grant_through_a_token_repository_over_a_credential_reading_data_repository(
+        string engine
+    ) : OpenIddictTokenRepositoryCredentialTests
     {
         private IOpenIddictDataRepository _dataRepository = null!;
         private TokenResult _result = null!;
@@ -211,7 +236,7 @@ public class OpenIddictTokenRepositoryCredentialTests
             A.CallTo(() => ((IClientCredentialReader)_dataRepository).GetClientCredentialAsync(ClientId))
                 .Returns(new ClientCredential(applicationId, ClientId, StoredSecret, IsApproved: true));
 
-            _result = await GrantThroughAsync(new PostgresqlTokenRepository(_dataRepository));
+            _result = await GrantThroughAsync(TokenRepositoryOver(engine, _dataRepository));
         }
 
         [Test]
