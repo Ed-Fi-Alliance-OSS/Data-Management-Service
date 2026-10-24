@@ -7,26 +7,28 @@
 .SYNOPSIS
     One PostgreSQL endpoint timing run against a freshly built cs-local Docker stack.
 .DESCRIPTION
-    1. Refuses to start unless the collector worktree is clean, port 8081 is free, no cs-local
-       container exists and no ed-fi-api-config-local image exists.
+    1. Refuses to start unless the staging, work and target folders lie outside the collector
+       checkout, the collector checkout is clean, port 8081 is free, and no cs-local container or
+       ed-fi-api-config-local image exists.
     2. Builds and starts the stack from the prepared target (prepare-target.ps1) with that target's
        own setup-local-cms.ps1, which builds the image without cache.
-    3. Records nonsecret provenance before and after collection: container and image identity,
-       start time, restart count, an exact allowlist of settings read from the running container
-       (never a whole settings group) and the SHA-256 of each Configuration Service production
-       assembly inside the container.
-    4. Runs the explicit endpoint timing collector once, from the collector worktree (Release,
-       --no-build).
-    5. Verifies the same container, image, settings and assemblies served the whole collection,
-       then tears the stack down.
+    3. Before collection, requires the running container to carry the pre-registered values of the
+       exact settings allowlist and exactly five valid assembly fingerprints.
+    4. Runs the explicit endpoint timing collector once, from the collector checkout (Release,
+       --no-build), with its output and results file in the work folder, and requires that it ran
+       the collector fixture's two tests and wrote this run's samples and header.
+    5. Requires the same container, image, settings and assemblies after collection, then tears the
+       stack down.
 
-    Written to -OutputDir (evidence): the samples CSV and header JSON, provenance-*.json and
-    lane-postgresql-*.log. Written to -WorkRoot (never evidence): setup and teardown logs, and the
-    full text of any exception. The committed log names an exception's type only.
+    Any failed stage, including teardown, makes the script exit 1 after cleanup; success exits 0.
+
+    Written to -OutputDir (the evidence staging folder): the samples CSV and header JSON,
+    provenance-*.json and lane-postgresql-*.log, which holds only status lines, checked counts and
+    exception type names. Written to -WorkRoot (never evidence): the collector's own output and
+    results file, setup and teardown logs, and the full text of any exception.
 
     The lane reads no secret itself; the stack takes its settings from the target's
-    eng/docker-compose/.env.config.e2e, and the collector its system client from its own test
-    source.
+    eng/docker-compose/.env.config.e2e.
 #>
 [CmdletBinding()]
 param(
@@ -42,28 +44,21 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+Import-Module (Join-Path $PSScriptRoot 'CollectionLane.psm1') -Force
 
 $container = 'ed-fi-api-config-service'
-$settingsAllowlist = @(
-    'AppSettings__Datastore',
-    'AppSettings__IdentityProvider',
-    'AppSettings__MultiTenancy',
-    'IdentitySettings__ClientSecretHashingIterations',
-    'IdentitySettings__AllowRegistration'
-)
-$fingerprintedAssemblies = @(
-    'EdFi.DmsConfigurationService.Frontend.AspNetCore.dll',
-    'EdFi.DmsConfigurationService.Backend.dll',
-    'EdFi.DmsConfigurationService.Backend.OpenIddict.dll',
-    'EdFi.DmsConfigurationService.Backend.Postgresql.dll',
-    'EdFi.DmsConfigurationService.Backend.Mssql.dll'
-)
+$settingsAllowlist = Get-SettingAllowlist
+$fingerprintedAssemblies = Get-FingerprintedAssemblyName
+$failures = [System.Collections.Generic.List[object]]::new()
 
+Assert-LaneRoot -CollectorRoot $CollectorRoot -OutputDir $OutputDir -WorkRoot $WorkRoot -TargetRoot $TargetRoot
 New-Item -ItemType Directory -Force -Path $OutputDir, $WorkRoot | Out-Null
 $stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMdd'T'HHmmss'Z'")
 $log = Join-Path $OutputDir "lane-postgresql-$RunLabel-$stamp.log"
 $provenancePath = Join-Path $OutputDir "provenance-endpoint-postgresql-$RunLabel-$stamp.json"
 $diagnostics = Join-Path $WorkRoot "lane-postgresql-$RunLabel-$stamp.diagnostics.txt"
+$runnerLog = Join-Path $WorkRoot "collector-postgresql-$RunLabel-$stamp.log"
+$trxName = "collector-postgresql-$RunLabel-$stamp.trx"
 $e2eProject = Join-Path $CollectorRoot 'src\config\tests\EdFi.DmsConfigurationService.Tests.E2E\EdFi.DmsConfigurationService.Tests.E2E.csproj'
 $targetE2eDirectory = Join-Path $TargetRoot 'src\config\tests\EdFi.DmsConfigurationService.Tests.E2E'
 
@@ -71,12 +66,25 @@ function Write-LaneLog([string] $Message) {
     "[$((Get-Date).ToUniversalTime().ToString('o'))] $Message" | Out-File -LiteralPath $log -Append -Encoding utf8NoBOM
 }
 
-# Reads only the allowlisted keys: from the container environment when set there, otherwise from
-# the image's appsettings.json, with the source recorded either way. Also fingerprints the
-# production assemblies the container actually runs.
+function Add-LaneFailure([string] $Stage, [System.Management.Automation.ErrorRecord] $ErrorRecord) {
+    $type = $ErrorRecord.Exception.GetType().FullName
+    $failures.Add([ordered]@{ stage = $Stage; error_type = $type })
+    "[$Stage]`n$($ErrorRecord | Out-String)" | Out-File -LiteralPath $diagnostics -Append -Encoding utf8NoBOM
+    Write-LaneLog "FAILED $Stage ($type; full text in the work folder)"
+}
+
+function Invoke-Native([string] $What, [scriptblock] $Command) {
+    $output = & $Command
+    if ($LASTEXITCODE -ne 0) { throw "$What exited $LASTEXITCODE." }
+    $output
+}
+
+# Reads the allowlisted settings (from the container environment, otherwise from the image's
+# appsettings.json, recording the source either way) and fingerprints the production assemblies
+# the container actually runs. Every native call must succeed and every fingerprint must be present.
 function Get-ContainerSnapshot {
-    $inspected = (docker inspect $container | ConvertFrom-Json)[0]
-    $image = (docker image inspect $inspected.Image | ConvertFrom-Json)[0]
+    $inspected = (Invoke-Native 'docker inspect' { docker inspect $container } | Out-String | ConvertFrom-Json)[0]
+    $image = (Invoke-Native 'docker image inspect' { docker image inspect $inspected.Image } | Out-String | ConvertFrom-Json)[0]
     $environment = @{}
     foreach ($line in $inspected.Config.Env) {
         $name, $value = $line -split '=', 2
@@ -84,70 +92,69 @@ function Get-ContainerSnapshot {
     }
     $appsettings = $null
     $settings = [ordered]@{}
+    $sources = [ordered]@{}
     foreach ($name in $settingsAllowlist) {
         if ($environment.ContainsKey($name)) {
-            $settings[$name] = [ordered]@{ value = $environment[$name]; source = 'container environment (docker inspect .Config.Env)' }
+            $settings[$name] = $environment[$name]
+            $sources[$name] = 'container environment (docker inspect .Config.Env)'
             continue
         }
-        if ($null -eq $appsettings) { $appsettings = (docker exec $container cat /app/appsettings.json) -join "`n" | ConvertFrom-Json }
+        if ($null -eq $appsettings) {
+            $appsettings = Invoke-Native 'docker exec cat appsettings.json' { docker exec $container cat /app/appsettings.json } | Out-String | ConvertFrom-Json
+        }
         $node = $appsettings
         foreach ($segment in $name -split '__') { $node = if ($null -ne $node) { $node.$segment } else { $null } }
-        $settings[$name] = [ordered]@{
-            value  = if ($null -ne $node) { [string]$node } else { $null }
-            source = if ($null -ne $node) { '/app/appsettings.json in the image (not set in the container environment)' } else { 'not set; the options class default applies' }
-        }
+        $settings[$name] = if ($null -ne $node) { [string]$node } else { $null }
+        $sources[$name] = if ($null -ne $node) { '/app/appsettings.json in the image (not set in the container environment)' } else { 'not set' }
     }
-    $fingerprints = [ordered]@{}
-    $hashed = docker exec $container sh -c "cd /app && sha256sum $($fingerprintedAssemblies -join ' ')"
-    foreach ($line in $hashed) {
-        $hash, $file = ($line.Trim() -split '\s+', 2)
-        $fingerprints[$file.TrimStart('*')] = $hash
-    }
+    $listing = Invoke-Native 'docker exec sha256sum' { docker exec $container sh -c "cd /app && sha256sum $($fingerprintedAssemblies -join ' ')" }
     [ordered]@{
-        utc            = (Get-Date).ToUniversalTime().ToString('o')
-        container_id   = $inspected.Id
-        container_name = $inspected.Name.TrimStart('/')
-        running        = $inspected.State.Running
-        started_at     = $inspected.State.StartedAt
-        restart_count  = $inspected.RestartCount
-        image_id       = $inspected.Image
-        image_created  = $image.Created
-        settings       = $settings
-        assemblies     = $fingerprints
+        utc             = (Get-Date).ToUniversalTime().ToString('o')
+        container_id    = $inspected.Id
+        container_name  = $inspected.Name.TrimStart('/')
+        running         = [string]$inspected.State.Running
+        started_at      = $inspected.State.StartedAt
+        restart_count   = [string]$inspected.RestartCount
+        image_id        = $inspected.Image
+        image_created   = $image.Created
+        settings        = $settings
+        setting_sources = $sources
+        assemblies      = ConvertFrom-Sha256Listing -Lines @($listing)
     }
 }
 
 "" | Out-File -LiteralPath $log -Encoding utf8NoBOM
 $provenance = [ordered]@{
-    schema                = 'timing-provenance/2'
-    lane                  = 'endpoint-postgresql (cs-local Docker stack)'
-    lane_script           = Split-Path -Leaf $PSCommandPath
-    lane_script_sha256    = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
-    parameters            = [ordered]@{ run_label = $RunLabel; rounds = $Rounds; warmup_rounds = $WarmupRounds; seed = $Seed; contract = $Contract }
-    settings_allowlist    = $settingsAllowlist
+    schema                   = 'timing-provenance/3'
+    lane                     = 'endpoint-postgresql (cs-local Docker stack)'
+    lane_script              = Split-Path -Leaf $PSCommandPath
+    lane_script_sha256       = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    lane_module_sha256       = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'CollectionLane.psm1') -Algorithm SHA256).Hash.ToLowerInvariant()
+    parameters               = [ordered]@{ run_label = $RunLabel; rounds = $Rounds; warmup_rounds = $WarmupRounds; seed = $Seed; contract = $Contract }
+    settings_allowlist       = $settingsAllowlist
     assemblies_fingerprinted = $fingerprintedAssemblies
 }
 $stackStarted = $false
 try {
-    $collectorCommit = (git -C $CollectorRoot rev-parse HEAD).Trim()
-    $collectorClean = [string]::IsNullOrEmpty((git -C $CollectorRoot status --porcelain))
-    $provenance.collector = [ordered]@{ commit = $collectorCommit; worktree_clean = $collectorClean }
-    if (-not $collectorClean) { throw 'The collector worktree is not clean.' }
+    $collectorCommit = (Invoke-Native 'git rev-parse' { git -C $CollectorRoot rev-parse HEAD } | Out-String).Trim()
+    $collectorStatus = Invoke-Native 'git status' { git -C $CollectorRoot status --porcelain }
+    $provenance.collector = [ordered]@{ commit = $collectorCommit; worktree_clean = [string]::IsNullOrWhiteSpace(($collectorStatus | Out-String)) }
+    if (-not $provenance.collector.worktree_clean) { throw 'The collector checkout is not clean.' }
 
     $target = Get-Content -LiteralPath (Join-Path $TargetRoot 'target.json') -Raw | ConvertFrom-Json
     $provenance.target = $target
     Write-LaneLog "LANE label=$RunLabel rounds=$Rounds warmup=$WarmupRounds seed=$Seed contract=$Contract collector=$collectorCommit target=$($target.commit)"
 
     if (Get-NetTCPConnection -LocalPort 8081 -State Listen -ErrorAction SilentlyContinue) { throw 'Port 8081 is already in use.' }
-    if (docker ps -a --filter 'label=com.docker.compose.project=cs-local' --format '{{.Names}}') { throw 'cs-local containers are present.' }
-    $existingImages = @(docker images ed-fi-api-config-local --format '{{.ID}}')
+    $stackContainers = Invoke-Native 'docker ps' { docker ps -a --filter 'label=com.docker.compose.project=cs-local' --format '{{.Names}}' }
+    if ($stackContainers) { throw 'cs-local containers are present.' }
+    $existingImages = @(Invoke-Native 'docker images' { docker images ed-fi-api-config-local --format '{{.ID}}' })
     $provenance.images_before_setup = $existingImages
     if ($existingImages.Count -gt 0) { throw 'An ed-fi-api-config-local image already exists.' }
 
-    $setupLog = Join-Path $WorkRoot "setup-local-cms-$RunLabel-$stamp.log"
     Write-LaneLog "SETUP target's setup-local-cms.ps1 (log in the work folder)"
     $stackStarted = $true
-    & pwsh -NoProfile -File (Join-Path $targetE2eDirectory 'setup-local-cms.ps1') *> $setupLog
+    & pwsh -NoProfile -File (Join-Path $targetE2eDirectory 'setup-local-cms.ps1') *> (Join-Path $WorkRoot "setup-local-cms-$RunLabel-$stamp.log")
     if ($LASTEXITCODE -ne 0) { throw "setup-local-cms.ps1 exited $LASTEXITCODE." }
     $deadline = (Get-Date).AddSeconds(240)
     $healthy = $false
@@ -160,10 +167,9 @@ try {
 
     $before = Get-ContainerSnapshot
     $provenance.before = $before
-    $settings = $before.settings
-    Write-LaneLog "BEFORE container=$($before.container_id) image=$($before.image_id) $(($settingsAllowlist | ForEach-Object { "$_=$($settings[$_].value)" }) -join ' ')"
-    if ($settings['AppSettings__Datastore'].value -ne 'postgresql') { throw 'The running service is not configured for postgresql.' }
-    if ($settings['AppSettings__IdentityProvider'].value -ne 'self-contained') { throw 'The running service is not self-contained.' }
+    if ($before.running -ne 'True') { throw 'The container is not running.' }
+    Assert-RunSetting -Value $before.settings -Datastore postgresql
+    Write-LaneLog "BEFORE container=$($before.container_id) image=$($before.image_id) settings and five fingerprints verified"
 
     $env:CONFIGURATION_SERVICE_E2E_API_URL = 'http://localhost:8081'
     $env:TIMING_EVIDENCE_OUTPUT_DIR = $OutputDir
@@ -175,35 +181,43 @@ try {
     $env:TIMING_EVIDENCE_BACKEND = 'postgresql'
     $env:TIMING_EVIDENCE_CONTRACT = $Contract
     $env:TIMING_EVIDENCE_TARGET_BUILD = "docker image $($before.image_id), built by this lane from $($target.commit) (git archive)"
-    $env:TIMING_EVIDENCE_DECLARED_ITERATIONS = $settings['IdentitySettings__ClientSecretHashingIterations'].value
+    $env:TIMING_EVIDENCE_DECLARED_ITERATIONS = $before.settings['IdentitySettings__ClientSecretHashingIterations']
     Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
     & dotnet build-server shutdown *> $null
-    Write-LaneLog 'RUN collector (Release, --no-build)'
-    & dotnet test $e2eProject -c Release --no-build --no-restore --nologo --filter 'FullyQualifiedName~Given_token_endpoint_requests_measured_for_timing_evidence' --logger 'console;verbosity=normal' *>> $log
-    $provenance.collector_exit = $LASTEXITCODE
-    Write-LaneLog "RUN EXIT $LASTEXITCODE"
+    Write-LaneLog 'RUN collector (Release, --no-build; output and results file in the work folder)'
+    $collectorStarted = (Get-Date).ToUniversalTime()
+    & dotnet test $e2eProject -c Release --no-build --no-restore --nologo --filter "FullyQualifiedName~$(Get-CollectorFixtureName)" --logger "trx;LogFileName=$trxName" --results-directory $WorkRoot *> $runnerLog
+    $collectorExit = $LASTEXITCODE
+    $provenance.collector_exit = $collectorExit
+    $summary = Assert-CollectorRun -ExitCode $collectorExit -TrxPath (Join-Path $WorkRoot $trxName) -OutputDir $OutputDir -RunLabel $RunLabel -Backend postgresql -Rounds $Rounds -Seed $Seed -StartedUtc $collectorStarted
+    $provenance.collector_run = $summary
+    Write-LaneLog "RUN tests_passed=$($summary.tests_passed) samples=$($summary.samples_file) rows=$($summary.sample_rows)"
 
     $after = Get-ContainerSnapshot
     $provenance.after = $after
-    $same = $after.container_id -eq $before.container_id -and $after.started_at -eq $before.started_at -and
-        $after.restart_count -eq $before.restart_count -and $after.running -and $after.image_id -eq $before.image_id
-    foreach ($name in $settingsAllowlist) { $same = $same -and ($after.settings[$name].value -eq $before.settings[$name].value) }
-    foreach ($assembly in $fingerprintedAssemblies) { $same = $same -and ($after.assemblies[$assembly] -eq $before.assemblies[$assembly]) }
-    $provenance.same_deployment_throughout = $same
-    Write-LaneLog "AFTER container=$($after.container_id) running=$($after.running) sameThroughout=$same"
+    Assert-RunSetting -Value $after.settings -Datastore postgresql
+    $differences = Compare-LaneSnapshot -Before $before -After $after -IdentityField container_id, started_at, restart_count, running, image_id
+    $provenance.deployment_differences = $differences
+    if ($differences.Count -gt 0) { throw "The deployment changed during collection: $($differences -join '; ')." }
+    Write-LaneLog 'AFTER the same container, image, settings and assemblies served the whole collection'
 }
 catch {
-    $provenance.lane_error_type = $_.Exception.GetType().FullName
-    $_ | Out-String | Out-File -LiteralPath $diagnostics -Encoding utf8NoBOM
-    Write-LaneLog "LANE ERROR $($provenance.lane_error_type) (full text in the work folder)"
+    Add-LaneFailure 'run' $_
 }
 finally {
-    $provenance | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $provenancePath -Encoding utf8NoBOM
-    Write-LaneLog "PROVENANCE $(Split-Path -Leaf $provenancePath)"
     if ($stackStarted) {
-        $teardownLog = Join-Path $WorkRoot "teardown-local-cms-$RunLabel-$stamp.log"
-        & pwsh -NoProfile -File (Join-Path $targetE2eDirectory 'teardown-local-cms.ps1') *> $teardownLog
-        Write-LaneLog "TEARDOWN exit=$LASTEXITCODE"
+        try {
+            & pwsh -NoProfile -File (Join-Path $targetE2eDirectory 'teardown-local-cms.ps1') *> (Join-Path $WorkRoot "teardown-local-cms-$RunLabel-$stamp.log")
+            if ($LASTEXITCODE -ne 0) { throw "teardown-local-cms.ps1 exited $LASTEXITCODE." }
+            Write-LaneLog 'TEARDOWN done'
+        }
+        catch {
+            Add-LaneFailure 'teardown' $_
+        }
     }
-    Write-LaneLog 'DONE'
+    $provenance.failures = $failures.ToArray()
+    $provenance.succeeded = $failures.Count -eq 0
+    $provenance | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $provenancePath -Encoding utf8NoBOM
+    Write-LaneLog "DONE succeeded=$($provenance.succeeded) provenance=$(Split-Path -Leaf $provenancePath)"
 }
+exit ([int]($failures.Count -gt 0))
