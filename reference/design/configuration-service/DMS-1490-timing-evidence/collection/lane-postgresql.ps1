@@ -240,10 +240,11 @@ function Get-ContainerSnapshot {
 $provenance = [ordered]@{
     schema                   = 'timing-provenance/4'
     environment_protocol     = [ordered]@{
-        version         = 'E1'
-        complete        = $false
-        implemented     = 'power condition P before setup, before the collector launch and after it exits; sampler readiness and coverage'
-        not_implemented = 'offline diagnostics and collector round timestamps'
+        version               = 'E1'
+        complete              = $false
+        implemented           = 'power condition P before setup, before the collector launch and after it exits; sampler readiness and coverage'
+        not_implemented       = 'offline diagnostics and collector round timestamps'
+        scheme_query_provider = Get-SchemeQueryProvider
     }
     attempt_started          = $false
     sampler                  = [ordered]@{

@@ -45,14 +45,27 @@ $script:PowerReadingFields = @(
     'battery_life_percent',
     'system_status_flag',
     'scheme_query_succeeded',
+    'scheme_query_status',
     'scheme_query_failure',
     'scheme_guid'
 )
 
+# The active scheme comes from this read-only native query; it never changes the scheme.
+$script:SchemeQueryProvider = 'PowerGetActiveScheme (powrprof.dll)'
+
 # GetSystemPowerStatus, with the last error read inside the same call, before any other native
-# operation can replace it. The guard keeps a repeated module import from defining the type again.
-if (-not ('DmsTimingEvidence.SystemPower' -as [type])) {
+# operation can replace it; and PowerGetActiveScheme, whose status is its own return value and
+# whose GUID buffer the caller owns and releases with LocalFree. The scheme query takes the query,
+# the GUID read and the release as delegates, so that tests can drive every status and allocation
+# path with memory they allocate, without calling the power API. The guard keeps a repeated module
+# import from defining the type again, and refuses an older definition left in the session.
+$existing = 'DmsTimingEvidence.SystemPower' -as [type]
+if ($null -ne $existing -and $null -eq $existing.GetMethod('ReadActiveScheme')) {
+    throw 'An older DmsTimingEvidence.SystemPower is loaded in this session; start a new PowerShell session.'
+}
+if ($null -eq $existing) {
     Add-Type -TypeDefinition @'
+using System;
 using System.Runtime.InteropServices;
 
 namespace DmsTimingEvidence;
@@ -65,6 +78,20 @@ public sealed class SystemPowerReading
     public byte BatteryFlag { get; init; }
     public byte BatteryLifePercent { get; init; }
     public byte SystemStatusFlag { get; init; }
+}
+
+public sealed class SchemeQueryResult
+{
+    public uint Status { get; init; }
+    public IntPtr Buffer { get; init; }
+}
+
+public sealed class ActiveSchemeReading
+{
+    public bool Succeeded { get; init; }
+    public uint? Status { get; init; }
+    public string Failure { get; init; }
+    public string SchemeGuid { get; init; }
 }
 
 public static class SystemPower
@@ -84,6 +111,12 @@ public static class SystemPower
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetSystemPowerStatus(out SystemPowerStatus status);
 
+    [DllImport("powrprof.dll")]
+    private static extern uint PowerGetActiveScheme(IntPtr userRootPowerKey, out IntPtr activePolicyGuid);
+
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr LocalFree(IntPtr memory);
+
     public static SystemPowerReading Read()
     {
         bool succeeded = GetSystemPowerStatus(out SystemPowerStatus status);
@@ -97,6 +130,85 @@ public static class SystemPower
             BatteryLifePercent = status.BatteryLifePercent,
             SystemStatusFlag = status.SystemStatusFlag,
         };
+    }
+
+    public static SchemeQueryResult QueryActiveScheme()
+    {
+        IntPtr buffer = IntPtr.Zero;
+        uint status = PowerGetActiveScheme(IntPtr.Zero, out buffer);
+        return new SchemeQueryResult { Status = status, Buffer = buffer };
+    }
+
+    public static Guid ReadSchemeGuid(IntPtr buffer) => Marshal.PtrToStructure<Guid>(buffer);
+
+    // LocalFree returns null when it released the memory.
+    public static bool ReleaseSchemeGuid(IntPtr buffer) => LocalFree(buffer) == IntPtr.Zero;
+
+    public static ActiveSchemeReading ReadActiveScheme() =>
+        InterpretActiveScheme(QueryActiveScheme, ReadSchemeGuid, ReleaseSchemeGuid);
+
+    // The buffer is owned, and released exactly once, only after a successful query returned it;
+    // after a failed query it is not the caller's and is never released. A failed release fails
+    // the reading.
+    public static ActiveSchemeReading InterpretActiveScheme(
+        Func<SchemeQueryResult> query,
+        Func<IntPtr, Guid> read,
+        Func<IntPtr, bool> release
+    )
+    {
+        SchemeQueryResult result;
+        try
+        {
+            result = query();
+        }
+        catch (Exception)
+        {
+            return new ActiveSchemeReading { Failure = "interop_error" };
+        }
+        if (result is null)
+        {
+            return new ActiveSchemeReading { Failure = "interop_error" };
+        }
+        if (result.Status != 0)
+        {
+            return new ActiveSchemeReading { Status = result.Status, Failure = "status_nonzero" };
+        }
+        if (result.Buffer == IntPtr.Zero)
+        {
+            return new ActiveSchemeReading { Status = 0, Failure = "null_result" };
+        }
+        string failure = null;
+        Guid scheme = Guid.Empty;
+        try
+        {
+            scheme = read(result.Buffer);
+        }
+        catch (Exception)
+        {
+            failure = "read_error";
+        }
+        bool released;
+        try
+        {
+            released = release(result.Buffer);
+        }
+        catch (Exception)
+        {
+            released = false;
+        }
+        if (failure is null && !released)
+        {
+            failure = "release_error";
+        }
+        if (failure is null && scheme == Guid.Empty)
+        {
+            failure = "empty_guid";
+        }
+        if (failure is not null)
+        {
+            return new ActiveSchemeReading { Status = 0, Failure = failure };
+        }
+        return new ActiveSchemeReading { Succeeded = true, Status = 0, SchemeGuid = scheme.ToString("D") };
     }
 }
 '@
@@ -365,18 +477,27 @@ function Assert-CollectorRun {
     }
 }
 
-# The native call alone, so that tests can stand in for it.
+# The native calls alone, so that tests can stand in for them.
 function Read-SystemPowerStatus { [DmsTimingEvidence.SystemPower]::Read() }
+function Read-ActivePowerScheme { [DmsTimingEvidence.SystemPower]::ReadActiveScheme() }
+
+<#
+.SYNOPSIS
+    The provider of the active-scheme reading, as provenance records it.
+#>
+function Get-SchemeQueryProvider { $script:SchemeQueryProvider }
 
 <#
 .SYNOPSIS
     Reads the power source and the active power scheme once.
 .DESCRIPTION
-    Returns the raw GetSystemPowerStatus fields and the active scheme from
-    `powercfg /getactivescheme`. A failed native call leaves every power field null and records its
-    Win32 error; a successful call records no error. A failed scheme query (an exception, a nonzero
-    exit, or output without exactly one GUID) leaves the scheme null and records a fixed reason code,
-    never the command's own output. Nothing here decides condition P; Get-PowerConditionFailure does.
+    Returns the raw GetSystemPowerStatus fields and the active scheme from PowerGetActiveScheme,
+    a read-only native query that creates no process. A failed power-status call leaves every power
+    field null and records its Win32 error; a successful call records no error. The scheme query
+    records its own status (the query's return value, never the power-status last error). A failed
+    query leaves the scheme null and records a fixed reason code: status_nonzero, null_result,
+    read_error, release_error, empty_guid, invalid_result (a GUID not in the normalized form) or
+    interop_error. Nothing here decides condition P; Get-PowerConditionFailure does.
 #>
 function Get-PowerSource {
     $utc = (Get-Date).ToUniversalTime().ToString('o')
@@ -390,6 +511,7 @@ function Get-PowerSource {
         battery_life_percent   = $null
         system_status_flag     = $null
         scheme_query_succeeded = $false
+        scheme_query_status    = $null
         scheme_query_failure   = $null
         scheme_guid            = $null
     }
@@ -404,20 +526,21 @@ function Get-PowerSource {
     }
 
     try {
-        $global:LASTEXITCODE = 0
-        $output = @(& powercfg /getactivescheme 2>$null)
-        $exit = $LASTEXITCODE
-        $guids = @([regex]::Matches(($output -join "`n"), '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}') | ForEach-Object { $_.Value.ToLowerInvariant() })
-        if ($exit -ne 0) { $reading.scheme_query_failure = 'exit_nonzero' }
-        elseif ($guids.Count -eq 0) { $reading.scheme_query_failure = 'no_guid' }
-        elseif ($guids.Count -gt 1) { $reading.scheme_query_failure = 'several_guids' }
+        $scheme = Read-ActivePowerScheme
+        if ($null -ne $scheme.Status) { $reading.scheme_query_status = [long]$scheme.Status }
+        if (-not $scheme.Succeeded) {
+            $reading.scheme_query_failure = if ([string]::IsNullOrEmpty($scheme.Failure)) { 'interop_error' } else { [string]$scheme.Failure }
+        }
+        elseif ([string]$scheme.SchemeGuid -cnotmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') {
+            $reading.scheme_query_failure = 'invalid_result'
+        }
         else {
             $reading.scheme_query_succeeded = $true
-            $reading.scheme_guid = $guids[0]
+            $reading.scheme_guid = [string]$scheme.SchemeGuid
         }
     }
     catch {
-        $reading.scheme_query_failure = 'command_error'
+        $reading.scheme_query_failure = 'interop_error'
     }
     $reading
 }
@@ -624,6 +747,7 @@ function ConvertFrom-PowerSampleRow {
         battery_life_percent   = ConvertFrom-SamplerInteger $text.battery_life_percent -AllowEmpty
         system_status_flag     = ConvertFrom-SamplerInteger $text.system_status_flag -AllowEmpty
         scheme_query_succeeded = if ($text.scheme_query_succeeded -eq '') { $null } else { ConvertFrom-SamplerBool $text.scheme_query_succeeded }
+        scheme_query_status    = ConvertFrom-SamplerInteger $text.scheme_query_status -AllowEmpty -Long
         scheme_query_failure   = if ($text.scheme_query_failure -eq '') { $null } else { $text.scheme_query_failure }
         scheme_guid            = if ($text.scheme_guid -eq '') { $null } else { $text.scheme_guid }
     }
@@ -985,8 +1109,9 @@ function Invoke-PowerSampler {
         Add-SamplerLine $PowerPath $powerValue
         if ($seq -eq 1) {
             $ready = [ordered]@{
-                schema           = 'power-sampler-ready/1'
+                schema           = 'power-sampler-ready/2'
                 run_id           = $RunId
+                scheme_provider  = $script:SchemeQueryProvider
                 identity         = $Identity
                 qpc_frequency    = $QpcFrequency
                 interval_seconds = $IntervalSeconds
@@ -1088,7 +1213,7 @@ function Wait-PowerSamplerReady {
     try {
         $ready = Get-Content -LiteralPath $ReadyPath -Raw | ConvertFrom-Json -AsHashtable -DateKind String
         $row = ConvertFrom-PowerSampleRow ([string]$ready.first_row)
-        if ($ready.schema -cne 'power-sampler-ready/1') { throw 'The ready record has another schema.' }
+        if ($ready.schema -cne 'power-sampler-ready/2') { throw 'The ready record has another schema.' }
         $identity = $ready.identity
         if ($identity -isnot [System.Collections.IDictionary]) { throw 'The ready record has no identity.' }
         foreach ($field in 'run_label', 'lane_stamp', 'sampler_start_utc') {
@@ -1197,4 +1322,4 @@ function Get-SamplerLifecycleFailure([System.Collections.IDictionary] $Stop) {
     , $failures.ToArray()
 }
 
-Export-ModuleMember -Function Get-FingerprintedAssemblyName, Get-SettingAllowlist, Get-CollectorFixtureName, Resolve-LanePath, Assert-LaneRoot, Assert-OutsideWorktree, ConvertFrom-Sha256Listing, Assert-AssemblyFingerprint, Assert-RunSetting, Compare-LaneSnapshot, Assert-CollectorRun, Get-PowerSource, Get-PowerConditionFailure, ConvertTo-PowerCheckRecord, Add-PowerRefusal, ConvertTo-PowerSampleValue, ConvertFrom-PowerSampleRow, Test-SamplerCoverage, Resolve-RoleIdentity, Select-LocalDbCandidate, Initialize-HostSampleState, Get-HostSampleColumn, Get-HostSampleRole, Read-HostSample, Invoke-PowerSampler, Open-PowerSampler, Wait-PowerSamplerReady, ConvertTo-SamplerRefusalRecord, Close-PowerSampler, Get-SamplerLifecycleFailure
+Export-ModuleMember -Function Get-FingerprintedAssemblyName, Get-SettingAllowlist, Get-CollectorFixtureName, Resolve-LanePath, Assert-LaneRoot, Assert-OutsideWorktree, ConvertFrom-Sha256Listing, Assert-AssemblyFingerprint, Assert-RunSetting, Compare-LaneSnapshot, Assert-CollectorRun, Get-PowerSource, Get-PowerConditionFailure, ConvertTo-PowerCheckRecord, Add-PowerRefusal, Get-SchemeQueryProvider, ConvertTo-PowerSampleValue, ConvertFrom-PowerSampleRow, Test-SamplerCoverage, Resolve-RoleIdentity, Select-LocalDbCandidate, Initialize-HostSampleState, Get-HostSampleColumn, Get-HostSampleRole, Read-HostSample, Invoke-PowerSampler, Open-PowerSampler, Wait-PowerSamplerReady, ConvertTo-SamplerRefusalRecord, Close-PowerSampler, Get-SamplerLifecycleFailure

@@ -19,7 +19,19 @@ Each lane exits **0 only when every stage succeeded**. Any failure exits 1 after
 
 ## Power condition P (protocol E1, partly implemented)
 
-Spec §18.1. Each lane reads `GetSystemPowerStatus` and `powercfg /getactivescheme`. P holds only when:
+Spec §18.1, with amendment A6.1. Each lane, and the sampler on every tick, reads `GetSystemPowerStatus` and the active scheme from `PowerGetActiveScheme` (powrprof.dll), a read-only native query that creates no process and never changes the scheme. The scheme query's status is its own return value, separate from the power-status call's last error. Its GUID buffer is owned by the caller and released once with `LocalFree`, only after a successful query. A failure is recorded as a fixed code with the query status:
+
+- `status_nonzero`;
+- `null_result`;
+- `read_error`;
+- `release_error`;
+- `empty_guid`;
+- `invalid_result` (a GUID not in the normalized form);
+- `interop_error`.
+
+There is no `powercfg` fallback. Provenance records the provider in `environment_protocol.scheme_query_provider`, and the sampler's ready record in `scheme_provider`.
+
+P holds only when:
 
 - the native call succeeded;
 - `ACLineStatus` is 1 (online);
@@ -37,7 +49,7 @@ Unknown (255) and every failure are not P.
 
 - **The collector launch is the attempt boundary.** Provenance records `attempt_started`.
 - **Refusals are not attempts.** Each is appended as one JSON line to `refusals.log` in the run's staging folder (`<Stage>\pilot` or `<Stage>\final`), with the check, the unmet parts of P and the raw power fields. The file is never rewritten. After correcting the environment, for example by plugging in, the same run may be started again.
-- **What is recorded:** every check, met or not, in `power_checks` in provenance. The scheme query's own output is never recorded, only a fixed reason code for a failure. Exception text from a failed observation goes to `<Work>\runs` only.
+- **What is recorded:** every check, met or not, in `power_checks` in provenance. A failed scheme query is recorded as its status and a fixed reason code, never as exception text. Exception text from a failed observation goes to `<Work>\runs` only.
 - **What is not yet implemented:** the offline diagnostics (§18.3) and the collector's round timestamps and warm-up file (§18.6 M2). Provenance therefore records `environment_protocol.complete = false`, and no run of these lanes is a complete E1 run. No collection is authorised with them.
 
 ## Power sampler (spec §18.2)

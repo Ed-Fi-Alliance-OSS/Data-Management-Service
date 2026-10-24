@@ -6,7 +6,7 @@
 # Checks of the collection lanes' failure paths with synthetic command output. Nothing here starts
 # Docker, LocalDB, SQL Server, a build, a deployment or the collector: the native commands the lanes
 # call are replaced by functions of the same name, which PowerShell resolves before executables.
-# Power readings are synthetic too; no test calls the native power function.
+# Power readings are synthetic too; no test calls a native power function.
 #
 #   pwsh -NoProfile -Command "Import-Module Pester -RequiredVersion 5.7.1; Invoke-Pester -Path ./collection.Tests.ps1 -Output Detailed"
 #
@@ -70,10 +70,11 @@ BeforeAll {
         (Get-ChildItem -LiteralPath $OutputDir -File -Recurse | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }) -join "`n"
     }
 
-    # Power stand-ins. The module reads the native status through Read-SystemPowerStatus; an alias
-    # resolves before any function, even inside the module and after a lane imports it again, so
-    # no test reaches the real GetSystemPowerStatus. powercfg is replaced by a function of its name.
-    # Each read takes the next step of $global:PowerScenario.Sequence; the last step repeats.
+    # Power stand-ins. The module reads the native status through Read-SystemPowerStatus and the
+    # active scheme through Read-ActivePowerScheme; an alias resolves before any function, even
+    # inside the module and after a lane imports it again, so no test reaches GetSystemPowerStatus
+    # or PowerGetActiveScheme. Each read takes the next step of $global:PowerScenario.Sequence; the
+    # last step repeats.
     $global:BalancedScheme = '381b4222-f694-41f0-9685-ff5bb260df2e'
 
     function global:New-PowerStep([string] $Kind) {
@@ -86,8 +87,10 @@ BeforeAll {
             BatteryLifePercent = [byte]80
             SystemStatusFlag   = [byte]0
             SchemeThrows       = $false
-            SchemeExit         = 0
-            SchemeOutput       = @("Power Scheme GUID: $($global:BalancedScheme)  (Balanced)")
+            SchemeSucceeded    = $true
+            SchemeStatus       = [uint32]0
+            SchemeFailure      = $null
+            SchemeGuid         = $global:BalancedScheme
         }
         switch ($Kind) {
             'online' { }
@@ -96,11 +99,17 @@ BeforeAll {
             # A failed call leaves the structure undefined; these values must not be reported.
             'call_failed' { $step.Succeeded = $false; $step.Win32Error = 87 }
             'saver_on' { $step.SystemStatusFlag = [byte]1 }
-            'wrong_scheme' { $step.SchemeOutput = @('Power Scheme GUID: 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c  (High performance)') }
-            'scheme_missing' { $step.SchemeOutput = @() }
-            'scheme_malformed' { $step.SchemeOutput = @('Power Scheme GUID: 381b4222-f694-41f0  (Balanced)') }
-            'scheme_twice' { $step.SchemeOutput = @("Power Scheme GUID: $($global:BalancedScheme)", 'Power Scheme GUID: 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c') }
-            'scheme_exit' { $step.SchemeExit = 1 }
+            'wrong_scheme' { $step.SchemeGuid = '8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c' }
+            # The native reader's own failures: a nonzero status, a null buffer, an unreadable or
+            # unreleasable buffer, an empty GUID, and a failure without a code.
+            'scheme_status' { $step.SchemeSucceeded = $false; $step.SchemeStatus = [uint32]2; $step.SchemeFailure = 'status_nonzero'; $step.SchemeGuid = $null }
+            'scheme_null' { $step.SchemeSucceeded = $false; $step.SchemeFailure = 'null_result'; $step.SchemeGuid = $null }
+            'scheme_read_error' { $step.SchemeSucceeded = $false; $step.SchemeFailure = 'read_error'; $step.SchemeGuid = $null }
+            'scheme_release_error' { $step.SchemeSucceeded = $false; $step.SchemeFailure = 'release_error'; $step.SchemeGuid = $null }
+            'scheme_empty' { $step.SchemeSucceeded = $false; $step.SchemeFailure = 'empty_guid'; $step.SchemeGuid = $null }
+            'scheme_no_code' { $step.SchemeSucceeded = $false; $step.SchemeStatus = $null; $step.SchemeFailure = $null; $step.SchemeGuid = $null }
+            # A reported success whose GUID is not in the normalized form.
+            'scheme_invalid' { $step.SchemeGuid = '381B4222-F694-41F0-9685-FF5BB260DF2E' }
             'scheme_throws' { $step.SchemeThrows = $true }
             'native_throws' { $step.NativeThrows = $true }
             default { throw "Unknown power step $Kind." }
@@ -130,14 +139,14 @@ BeforeAll {
         }
     }
 
-    function global:powercfg {
+    function global:Get-TestActiveScheme {
         $step = Get-PowerStep
-        if ($step.SchemeThrows) { throw "powercfg failed: $($global:LaneSentinel)" }
-        $global:LASTEXITCODE = $step.SchemeExit
-        $step.SchemeOutput
+        if ($step.SchemeThrows) { throw "scheme query failed: $($global:LaneSentinel)" }
+        [pscustomobject]@{ Succeeded = $step.SchemeSucceeded; Status = $step.SchemeStatus; Failure = $step.SchemeFailure; SchemeGuid = $step.SchemeGuid }
     }
 
     Set-Alias -Name Read-SystemPowerStatus -Value Get-TestPowerStatus -Scope Global
+    Set-Alias -Name Read-ActivePowerScheme -Value Get-TestActiveScheme -Scope Global
     Set-PowerSequence 'online'
 
     function global:Get-RefusalLine([string] $OutputDir) {
@@ -147,7 +156,7 @@ BeforeAll {
     }
 
     # Sampler stand-ins. The power file's columns are pinned here, independently of the module.
-    $global:SamplerColumns = @('run_id', 'seq', 'qpc', 'utc', 'observation_error', 'call_succeeded', 'win32_error', 'ac_line_status', 'battery_flag', 'battery_life_percent', 'system_status_flag', 'scheme_query_succeeded', 'scheme_query_failure', 'scheme_guid')
+    $global:SamplerColumns = @('run_id', 'seq', 'qpc', 'utc', 'observation_error', 'call_succeeded', 'win32_error', 'ac_line_status', 'battery_flag', 'battery_life_percent', 'system_status_flag', 'scheme_query_succeeded', 'scheme_query_status', 'scheme_query_failure', 'scheme_guid')
     $global:QpcFrequency = [long]10000000
 
     # One spec per row: seq, offset (seconds after the first row), power kind, run id, clock skew.
@@ -158,6 +167,7 @@ BeforeAll {
     function global:ConvertTo-TestSampleLine([object[]] $Spec, [long] $StartQpc = 1000000000, [datetime] $StartUtc = [datetime]::new(2026, 10, 24, 12, 0, 0, [DateTimeKind]::Utc)) {
         , @($Spec | ForEach-Object {
                 $online = $_.Kind -ne 'observation_error'
+                $schemeFailed = $_.Kind -eq 'scheme_failed'
                 $fields = @(
                     $_.RunId,
                     $_.Seq,
@@ -170,9 +180,10 @@ BeforeAll {
                     $(if ($online) { '8' } else { '' }),
                     $(if ($online) { '80' } else { '' }),
                     $(if ($online) { '0' } else { '' }),
-                    $(if ($online) { 'true' } else { '' }),
-                    '',
-                    $(if ($online) { $global:BalancedScheme } else { '' })
+                    $(if (-not $online) { '' } elseif ($schemeFailed) { 'false' } else { 'true' }),
+                    $(if (-not $online) { '' } elseif ($schemeFailed) { '2' } else { '0' }),
+                    $(if ($schemeFailed) { 'status_nonzero' } else { '' }),
+                    $(if ($online -and -not $schemeFailed) { $global:BalancedScheme } else { '' })
                 )
                 $fields -join ','
             })
@@ -184,7 +195,7 @@ BeforeAll {
         param(
             [string] $Path, [string] $RunId, [int] $ProcessId, [string] $FirstRow,
             [string] $RunLabel = 'pilot', [string] $LaneStamp = 'stamp', [datetime] $StartUtc = $global:TestStartUtc,
-            [string] $Schema = 'power-sampler-ready/1', [string[]] $Omit = @()
+            [string] $Schema = 'power-sampler-ready/2', [string[]] $Omit = @()
         )
         $identity = [ordered]@{ run_label = $RunLabel; lane_stamp = $LaneStamp; sampler_pid = $ProcessId; sampler_start_utc = $StartUtc.ToString('o') }
         foreach ($field in $Omit) { $identity.Remove($field) }
@@ -594,10 +605,13 @@ Describe 'Get-PowerSource and power condition P' {
         @{ Kind = 'call_failed'; Unmet = @('call_failed') }
         @{ Kind = 'saver_on'; Unmet = @('battery_saver_on') }
         @{ Kind = 'wrong_scheme'; Unmet = @('scheme_not_balanced') }
-        @{ Kind = 'scheme_missing'; Unmet = @('scheme_query_failed') }
-        @{ Kind = 'scheme_malformed'; Unmet = @('scheme_query_failed') }
-        @{ Kind = 'scheme_twice'; Unmet = @('scheme_query_failed') }
-        @{ Kind = 'scheme_exit'; Unmet = @('scheme_query_failed') }
+        @{ Kind = 'scheme_status'; Unmet = @('scheme_query_failed') }
+        @{ Kind = 'scheme_null'; Unmet = @('scheme_query_failed') }
+        @{ Kind = 'scheme_read_error'; Unmet = @('scheme_query_failed') }
+        @{ Kind = 'scheme_release_error'; Unmet = @('scheme_query_failed') }
+        @{ Kind = 'scheme_empty'; Unmet = @('scheme_query_failed') }
+        @{ Kind = 'scheme_no_code'; Unmet = @('scheme_query_failed') }
+        @{ Kind = 'scheme_invalid'; Unmet = @('scheme_query_failed') }
         @{ Kind = 'scheme_throws'; Unmet = @('scheme_query_failed') }
     ) {
         Set-PowerSequence $Kind
@@ -628,19 +642,45 @@ Describe 'Get-PowerSource and power condition P' {
         $reading.system_status_flag | Should -BeNullOrEmpty
     }
 
-    It 'records a failed scheme query as <Code>, never its output' -ForEach @(
-        @{ Kind = 'scheme_missing'; Code = 'no_guid' }
-        @{ Kind = 'scheme_malformed'; Code = 'no_guid' }
-        @{ Kind = 'scheme_twice'; Code = 'several_guids' }
-        @{ Kind = 'scheme_exit'; Code = 'exit_nonzero' }
-        @{ Kind = 'scheme_throws'; Code = 'command_error' }
+    It 'records a failed scheme query as <Code> with status <Status>, never an exception text' -ForEach @(
+        @{ Kind = 'scheme_status'; Code = 'status_nonzero'; Status = 2 }
+        @{ Kind = 'scheme_null'; Code = 'null_result'; Status = 0 }
+        @{ Kind = 'scheme_read_error'; Code = 'read_error'; Status = 0 }
+        @{ Kind = 'scheme_release_error'; Code = 'release_error'; Status = 0 }
+        @{ Kind = 'scheme_empty'; Code = 'empty_guid'; Status = 0 }
+        @{ Kind = 'scheme_no_code'; Code = 'interop_error'; Status = $null }
+        @{ Kind = 'scheme_invalid'; Code = 'invalid_result'; Status = 0 }
+        @{ Kind = 'scheme_throws'; Code = 'interop_error'; Status = $null }
     ) {
         Set-PowerSequence $Kind
         $reading = Get-PowerSource
         $reading.scheme_query_succeeded | Should -BeFalse
         $reading.scheme_query_failure | Should -Be $Code
+        $reading.scheme_query_status | Should -Be $Status
         $reading.scheme_guid | Should -BeNullOrEmpty
         ($reading | ConvertTo-Json) | Should -Not -Match $global:LaneSentinel
+    }
+
+    It 'records a successful scheme query with status 0 and the normalized GUID' {
+        Set-PowerSequence 'online'
+        $reading = Get-PowerSource
+        $reading.scheme_query_succeeded | Should -BeTrue
+        $reading.scheme_query_status | Should -Be 0
+        $reading.scheme_query_failure | Should -BeNullOrEmpty
+        $reading.scheme_guid | Should -BeExactly $global:BalancedScheme
+    }
+
+    It 'keeps the power-status error and the scheme status apart' {
+        Set-PowerSequence 'call_failed'
+        $reading = Get-PowerSource
+        $reading.win32_error | Should -Be 87
+        $reading.scheme_query_status | Should -Be 0
+        $reading.scheme_query_succeeded | Should -BeTrue
+        Set-PowerSequence 'scheme_status'
+        $global:PowerScenario.Sequence[0].Win32Error = 5
+        $reading = Get-PowerSource
+        $reading.win32_error | Should -BeNullOrEmpty
+        $reading.scheme_query_status | Should -Be 2
     }
 
     It 'reports a missing reading as an observation error' {
@@ -680,6 +720,24 @@ Describe 'Get-PowerSource and power condition P' {
         @($status.GetFields() | ForEach-Object { $_.FieldType.Name }) | Should -Be @('Byte', 'Byte', 'Byte', 'Byte', 'UInt32', 'UInt32')
     }
 
+    It 'declares PowerGetActiveScheme as a powrprof call whose status is its DWORD return, not the last error' {
+        $method = [DmsTimingEvidence.SystemPower].GetMethod('PowerGetActiveScheme', [System.Reflection.BindingFlags]'NonPublic, Static')
+        $import = [System.Reflection.CustomAttributeExtensions]::GetCustomAttribute[System.Runtime.InteropServices.DllImportAttribute]($method)
+        $import.Value | Should -Be 'powrprof.dll'
+        $import.SetLastError | Should -BeFalse
+        $method.ReturnType | Should -Be ([uint32])
+        @($method.GetParameters().ParameterType.Name) | Should -Be @('IntPtr', 'IntPtr&')
+        $method.GetParameters()[1].IsOut | Should -BeTrue
+    }
+
+    It 'declares LocalFree, which releases the scheme buffer, as a kernel32 call on a pointer' {
+        $method = [DmsTimingEvidence.SystemPower].GetMethod('LocalFree', [System.Reflection.BindingFlags]'NonPublic, Static')
+        $import = [System.Reflection.CustomAttributeExtensions]::GetCustomAttribute[System.Runtime.InteropServices.DllImportAttribute]($method)
+        $import.Value | Should -Be 'kernel32.dll'
+        $method.ReturnType | Should -Be ([System.IntPtr])
+        @($method.GetParameters().ParameterType.Name) | Should -Be @('IntPtr')
+    }
+
     It 'declares GetSystemPowerStatus as a kernel32 call that returns a BOOL and sets the last error' {
         $method = [DmsTimingEvidence.SystemPower].GetMethod('GetSystemPowerStatus', [System.Reflection.BindingFlags]'NonPublic, Static')
         $import = [System.Reflection.CustomAttributeExtensions]::GetCustomAttribute[System.Runtime.InteropServices.DllImportAttribute]($method)
@@ -688,6 +746,116 @@ Describe 'Get-PowerSource and power condition P' {
         $method.ReturnParameter.GetCustomAttributes([System.Runtime.InteropServices.MarshalAsAttribute], $false)[0].Value |
             Should -Be ([System.Runtime.InteropServices.UnmanagedType]::Bool)
         $method.GetParameters()[0].IsOut | Should -BeTrue
+    }
+}
+
+Describe 'Active scheme query interpretation' {
+    # InterpretActiveScheme with an injected query, GUID read and release. Buffers are real
+    # unmanaged memory from AllocHGlobal (LocalAlloc on Windows), so the GUID read and LocalFree
+    # release are exercised without calling PowerGetActiveScheme.
+    BeforeAll {
+        $power = [DmsTimingEvidence.SystemPower]
+        $newBuffer = {
+            param([guid] $Value)
+            $buffer = [System.Runtime.InteropServices.Marshal]::AllocHGlobal(16)
+            [System.Runtime.InteropServices.Marshal]::StructureToPtr($Value, $buffer, $false)
+            $buffer
+        }
+    }
+
+    BeforeEach {
+        $calls = @{ Read = 0; Release = [System.Collections.Generic.List[long]]::new() }
+        $recordRelease = [Func[IntPtr, bool]] {
+            param([IntPtr] $Buffer)
+            $calls.Release.Add($Buffer.ToInt64())
+            [System.Runtime.InteropServices.Marshal]::FreeHGlobal($Buffer)
+            $true
+        }.GetNewClosure()
+        $readGuid = [Func[IntPtr, guid]] { param([IntPtr] $Buffer) $calls.Read++; [DmsTimingEvidence.SystemPower]::ReadSchemeGuid($Buffer) }.GetNewClosure()
+    }
+
+    It 'returns the GUID of a successful query and releases its buffer exactly once' {
+        $buffer = & $newBuffer ([guid]$global:BalancedScheme)
+        $query = [Func[DmsTimingEvidence.SchemeQueryResult]] { [DmsTimingEvidence.SchemeQueryResult]@{ Status = 0; Buffer = $buffer } }.GetNewClosure()
+        $result = $power::InterpretActiveScheme($query, $readGuid, $recordRelease)
+        $result.Succeeded | Should -BeTrue
+        $result.Status | Should -Be 0
+        $result.SchemeGuid | Should -BeExactly $global:BalancedScheme
+        @($calls.Release) | Should -Be @($buffer.ToInt64())
+    }
+
+    It 'releases a real LocalAlloc buffer with the real release' {
+        $buffer = & $newBuffer ([guid]$global:BalancedScheme)
+        $query = [Func[DmsTimingEvidence.SchemeQueryResult]] { [DmsTimingEvidence.SchemeQueryResult]@{ Status = 0; Buffer = $buffer } }.GetNewClosure()
+        $result = $power::InterpretActiveScheme($query, [Func[IntPtr, guid]] $power::ReadSchemeGuid, [Func[IntPtr, bool]] $power::ReleaseSchemeGuid)
+        $result.Succeeded | Should -BeTrue
+        $result.SchemeGuid | Should -BeExactly $global:BalancedScheme
+    }
+
+    It 'reports a nonzero status without reading or releasing the buffer it does not own' {
+        # The buffer is not real memory, so the read and release here only count; neither may run.
+        $query = [Func[DmsTimingEvidence.SchemeQueryResult]] { [DmsTimingEvidence.SchemeQueryResult]@{ Status = 2; Buffer = [IntPtr]0x1234 } }
+        $countRead = [Func[IntPtr, guid]] { param([IntPtr] $Buffer) $calls.Read++; [guid]::NewGuid() }.GetNewClosure()
+        $countRelease = [Func[IntPtr, bool]] { param([IntPtr] $Buffer) $calls.Release.Add($Buffer.ToInt64()); $true }.GetNewClosure()
+        $result = $power::InterpretActiveScheme($query, $countRead, $countRelease)
+        $result.Succeeded | Should -BeFalse
+        $result.Status | Should -Be 2
+        $result.Failure | Should -Be 'status_nonzero'
+        $calls.Read | Should -Be 0
+        $calls.Release.Count | Should -Be 0
+    }
+
+    It 'reports a successful status with a null buffer as null_result, releasing nothing' {
+        $query = [Func[DmsTimingEvidence.SchemeQueryResult]] { [DmsTimingEvidence.SchemeQueryResult]@{ Status = 0; Buffer = [IntPtr]::Zero } }
+        $result = $power::InterpretActiveScheme($query, $readGuid, $recordRelease)
+        $result.Failure | Should -Be 'null_result'
+        $calls.Release.Count | Should -Be 0
+    }
+
+    It 'reports <Name> as <Failure> and still releases the buffer once' -ForEach @(
+        # Literal: -ForEach data is built at discovery, before BeforeAll sets the globals.
+        @{ Name = 'a read that throws'; Failure = 'read_error'; ReadThrows = $true; Value = '381b4222-f694-41f0-9685-ff5bb260df2e' }
+        @{ Name = 'an empty GUID'; Failure = 'empty_guid'; ReadThrows = $false; Value = [guid]::Empty.ToString() }
+    ) {
+        $buffer = & $newBuffer ([guid]$Value)
+        $query = [Func[DmsTimingEvidence.SchemeQueryResult]] { [DmsTimingEvidence.SchemeQueryResult]@{ Status = 0; Buffer = $buffer } }.GetNewClosure()
+        $read = if ($ReadThrows) { [Func[IntPtr, guid]] { param([IntPtr] $Buffer) throw 'unreadable' } } else { $readGuid }
+        $result = $power::InterpretActiveScheme($query, $read, $recordRelease)
+        $result.Succeeded | Should -BeFalse
+        $result.Failure | Should -Be $Failure
+        @($calls.Release) | Should -Be @($buffer.ToInt64())
+    }
+
+    It 'fails the reading as release_error when the release <Name>' -ForEach @(
+        @{ Name = 'reports failure'; Throws = $false }
+        @{ Name = 'throws'; Throws = $true }
+    ) {
+        $buffer = & $newBuffer ([guid]$global:BalancedScheme)
+        $query = [Func[DmsTimingEvidence.SchemeQueryResult]] { [DmsTimingEvidence.SchemeQueryResult]@{ Status = 0; Buffer = $buffer } }.GetNewClosure()
+        $throws = $Throws
+        $release = [Func[IntPtr, bool]] { param([IntPtr] $Buffer) [System.Runtime.InteropServices.Marshal]::FreeHGlobal($Buffer); if ($throws) { throw 'release failed' }; $false }.GetNewClosure()
+        $result = $power::InterpretActiveScheme($query, $readGuid, $release)
+        $result.Succeeded | Should -BeFalse
+        $result.Failure | Should -Be 'release_error'
+        $result.SchemeGuid | Should -BeNullOrEmpty
+    }
+
+    It 'reports a query that throws, or returns nothing, as interop_error, releasing nothing' -ForEach @(
+        @{ Query = { throw 'interop failed' } }
+        @{ Query = { $null } }
+    ) {
+        $result = $power::InterpretActiveScheme([Func[DmsTimingEvidence.SchemeQueryResult]] $Query, $readGuid, $recordRelease)
+        $result.Failure | Should -Be 'interop_error'
+        $result.Status | Should -BeNullOrEmpty
+        $calls.Release.Count | Should -Be 0
+    }
+
+    It 'refuses to load over an older definition of the native type left in the session' {
+        # A fresh process, so that this session's real type is not in the way; nothing native runs.
+        $module = Join-Path $PSScriptRoot 'CollectionLane.psm1'
+        $script = "Add-Type -TypeDefinition 'namespace DmsTimingEvidence { public static class SystemPower { public static int Read() { return 0; } } }'; try { Import-Module '$module' -Force; 'imported' } catch { 'refused: ' + `$_.Exception.Message }"
+        $output = & ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName) -NoProfile -NonInteractive -Command $script
+        ($output -join ' ') | Should -Match 'refused: An older DmsTimingEvidence.SystemPower is loaded'
     }
 }
 
@@ -821,7 +989,19 @@ Describe 'Test-SamplerCoverage' {
         { ConvertFrom-PowerSampleRow ($fields -join ',') } | Should -Throw '*wrong number of fields*'
     }
 
+    It 'reads the scheme query status and failure of a row whose query failed' {
+        $spec = New-TestSampleSpec 1
+        $spec[0].Kind = 'scheme_failed'
+        $row = ConvertFrom-PowerSampleRow (ConvertTo-TestSampleLine $spec)[0]
+        $row.scheme_query_succeeded | Should -BeFalse
+        $row.scheme_query_status | Should -Be 2
+        $row.scheme_query_failure | Should -Be 'status_nonzero'
+        $unmet = Get-PowerConditionFailure $row
+        $unmet | Should -Be @('scheme_query_failed')
+    }
+
     It 'parses <Value> in <Column> as malformed' -ForEach @(
+        @{ Column = 'scheme_query_status'; Value = '-1' }
         @{ Column = 'seq'; Value = '-1' }
         @{ Column = 'ac_line_status'; Value = '1.0' }
         @{ Column = 'observation_error'; Value = 'False' }
@@ -918,6 +1098,7 @@ Describe 'Wait-PowerSamplerReady' {
     It 'refuses a ready record that is <Name> as malformed' -ForEach @(
         @{ Name = 'not JSON'; Text = '{ not json' }
         @{ Name = 'of another schema'; Field = @{ Schema = 'power-sampler-ready/0' } }
+        @{ Name = 'of the previous schema, without the scheme status'; Field = @{ Schema = 'power-sampler-ready/1' } }
         @{ Name = 'missing the start time'; Field = @{ Omit = @('sampler_start_utc') } }
         @{ Name = 'missing the process id'; Field = @{ Omit = @('sampler_pid') } }
         @{ Name = 'missing the run label'; Field = @{ Omit = @('run_label') } }
@@ -1031,7 +1212,7 @@ Describe 'Invoke-PowerSampler' {
         }
         # Each clock read advances 0.1 ms; a pause advances by its length. Nothing sleeps.
         $time = @{ Qpc = [long]1000000000; Utc = [datetime]::new(2026, 10, 24, 12, 0, 0, [DateTimeKind]::Utc); Pauses = [System.Collections.Generic.List[int]]::new(); StopAfter = 0; StopPath = $paths.StopPath; PowerKinds = @('online'); Reads = 0 }
-        $online = [ordered]@{ utc = 'x'; call_succeeded = $true; win32_error = $null; ac_line_status = 1; battery_flag = 8; battery_life_percent = 80; system_status_flag = 0; scheme_query_succeeded = $true; scheme_query_failure = $null; scheme_guid = $global:BalancedScheme }
+        $online = [ordered]@{ utc = 'x'; call_succeeded = $true; win32_error = $null; ac_line_status = 1; battery_flag = 8; battery_life_percent = 80; system_status_flag = 0; scheme_query_succeeded = $true; scheme_query_status = 0; scheme_query_failure = $null; scheme_guid = $global:BalancedScheme }
         $loop = @{
             RunId          = 'run-1'
             Identity       = [ordered]@{ run_label = 'pilot'; sampler_pid = 4242 }
@@ -1305,7 +1486,7 @@ Describe 'Host sample state and optional values' {
         $folder = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
         New-Item -ItemType Directory -Path $folder | Out-Null
         $time = @{ Qpc = [long]0; Utc = [datetime]::new(2026, 10, 24, 12, 0, 0, [DateTimeKind]::Utc) }
-        $online = [ordered]@{ utc = 'x'; call_succeeded = $true; win32_error = $null; ac_line_status = 1; battery_flag = 8; battery_life_percent = 80; system_status_flag = 0; scheme_query_succeeded = $true; scheme_query_failure = $null; scheme_guid = $global:BalancedScheme }
+        $online = [ordered]@{ utc = 'x'; call_succeeded = $true; win32_error = $null; ac_line_status = 1; battery_flag = 8; battery_life_percent = 80; system_status_flag = 0; scheme_query_succeeded = $true; scheme_query_status = 0; scheme_query_failure = $null; scheme_guid = $global:BalancedScheme }
         Invoke-PowerSampler -RunId 'run-1' -Identity ([ordered]@{ sampler_pid = 9 }) -Role (Get-HostSampleRole -State $state) -OptionalColumn (Get-HostSampleColumn -State $state) `
             -ReadOptional { param([long] $Qpc) Read-HostSample -State $state -Qpc $Qpc }.GetNewClosure() `
             -PowerPath (Join-Path $folder 'power.csv') -OptionalPath (Join-Path $folder 'optional.csv') -ReadyPath (Join-Path $folder 'ready.json') -StopPath (Join-Path $folder 'stop') `
@@ -1555,6 +1736,7 @@ Describe 'lane-postgresql.ps1 with synthetic command output' {
         $provenance.attempt_started | Should -BeTrue
         $provenance.environment_protocol.version | Should -Be 'E1'
         $provenance.environment_protocol.complete | Should -BeFalse
+        $provenance.environment_protocol.scheme_query_provider | Should -Be 'PowerGetActiveScheme (powrprof.dll)'
         Get-RefusalLine $stage | Should -BeNullOrEmpty
     }
 
@@ -1564,7 +1746,11 @@ Describe 'lane-postgresql.ps1 with synthetic command output' {
         @{ Kind = 'call_failed'; Unmet = 'call_failed' }
         @{ Kind = 'saver_on'; Unmet = 'battery_saver_on' }
         @{ Kind = 'wrong_scheme'; Unmet = 'scheme_not_balanced' }
-        @{ Kind = 'scheme_exit'; Unmet = 'scheme_query_failed' }
+        @{ Kind = 'scheme_status'; Unmet = 'scheme_query_failed' }
+        @{ Kind = 'scheme_null'; Unmet = 'scheme_query_failed' }
+        @{ Kind = 'scheme_release_error'; Unmet = 'scheme_query_failed' }
+        @{ Kind = 'scheme_invalid'; Unmet = 'scheme_query_failed' }
+        @{ Kind = 'scheme_throws'; Unmet = 'scheme_query_failed' }
     ) {
         Set-PowerSequence $Kind
         & $lane @arguments
@@ -1618,6 +1804,30 @@ Describe 'lane-postgresql.ps1 with synthetic command output' {
         $provenance.power_checks[2].check | Should -Be 'after_exit'
     }
 
+    It 'fails the attempt, without a refusal, when the scheme query fails by the time the collector exits' {
+        Set-PowerSequence 'online', 'online', 'scheme_status'
+        & $lane @arguments
+        $LASTEXITCODE | Should -Be 1
+        $global:LaneScenario.Calls | Should -Contain 'dotnet test'
+        $provenance = & $readProvenance
+        @($provenance.failures.stage) | Should -Be @('power-after-exit')
+        $provenance.power_checks[2].unmet | Should -Be @('scheme_query_failed')
+        $provenance.power_checks[2].reading.scheme_query_status | Should -Be 2
+        $provenance.power_checks[2].reading.scheme_query_failure | Should -Be 'status_nonzero'
+        Get-RefusalLine $stage | Should -BeNullOrEmpty
+    }
+
+    It 'refuses before the launch, after setup, when the scheme query fails there' {
+        Set-PowerSequence 'online', 'scheme_null'
+        & $lane @arguments
+        $LASTEXITCODE | Should -Be 1
+        $global:LaneScenario.Calls | Should -Not -Contain 'dotnet test'
+        (& $teardownCalls).Count | Should -Be 1
+        $refusal = (Get-RefusalLine $stage)[0]
+        $refusal.check | Should -Be 'before_launch'
+        $refusal.reading.scheme_query_failure | Should -Be 'null_result'
+    }
+
     It 'checks power after a failed collector even when power held' {
         $global:LaneScenario.CollectorExit = 1
         & $lane @arguments
@@ -1669,6 +1879,7 @@ Describe 'lane-postgresql.ps1 with synthetic command output' {
         @{ Name = 'exits before it is ready'; Change = @{ ExitBeforeReady = $true }; Unmet = @('sampler_exited_before_ready') }
         @{ Name = 'dies after writing its ready record'; Change = @{ DeadBeforeLaunch = $true }; Unmet = @('sampler_exited_before_ready') }
         @{ Name = 'reports a first row that does not meet P'; Change = @{ ReadyKind = 'offline' }; Unmet = @('sampler_ready_not_p', 'ac_line_offline') }
+        @{ Name = 'reports a first row whose scheme query failed'; Change = @{ ReadyKind = 'scheme_failed' }; Unmet = @('sampler_ready_not_p', 'scheme_query_failed') }
     ) {
         foreach ($key in $Change.Keys) { $global:SamplerScenario[$key] = $Change[$key] }
         & $lane @arguments
@@ -1688,6 +1899,7 @@ Describe 'lane-postgresql.ps1 with synthetic command output' {
     It 'fails the attempt with <Code> when the sampler <Name>' -ForEach @(
         @{ Name = 'leaves a gap over 3 s'; Change = @{ Step = 5 }; Code = 'gap_exceeded' }
         @{ Name = 'reports power lost after the exit'; Change = @{ LastKind = 'offline' }; Code = 'power_unmet_in_window' }
+        @{ Name = 'reports a failed scheme query after the exit'; Change = @{ LastKind = 'scheme_failed' }; Code = 'power_unmet_in_window' }
         @{ Name = 'has died by the exit'; Change = @{ DeadAtExit = $true }; Code = 'sampler_dead_at_exit' }
         @{ Name = 'does not stop in time'; Change = @{ SlowShutdown = $true }; Code = 'sampler_slow_shutdown' }
         @{ Name = 'exits nonzero'; Change = @{ ExitCode = 1 }; Code = 'sampler_exit_nonzero' }
@@ -1858,7 +2070,7 @@ Export-ModuleMember -Function ReadValuesFromEnvFile
 
 AfterAll {
     Remove-Item -LiteralPath Function:\global:Get-TestHash, Function:\global:Get-ValidSetting, Function:\global:Get-ValidFingerprint, Function:\global:Write-TestTrx, Function:\global:Write-TestSample, Function:\global:Get-EvidenceText -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath Alias:\Read-SystemPowerStatus, Function:\global:Get-TestPowerStatus, Function:\global:powercfg, Function:\global:New-PowerStep, Function:\global:Set-PowerSequence, Function:\global:Get-PowerStep, Function:\global:Get-RefusalLine -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath Alias:\Read-SystemPowerStatus, Alias:\Read-ActivePowerScheme, Function:\global:Get-TestPowerStatus, Function:\global:Get-TestActiveScheme, Function:\global:New-PowerStep, Function:\global:Set-PowerSequence, Function:\global:Get-PowerStep, Function:\global:Get-RefusalLine -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath Function:\global:New-TestSampleSpec, Function:\global:ConvertTo-TestSampleLine, Function:\global:Write-TestReady, Function:\global:New-TestProcess -ErrorAction SilentlyContinue
     Remove-Variable -Name LaneScenario, LaneSentinel, LaneAssemblies, LaneFixtureClass, PowerScenario, BalancedScheme, SamplerScenario, SamplerColumns, QpcFrequency -Scope Global -ErrorAction SilentlyContinue
 }
