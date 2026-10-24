@@ -749,8 +749,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 } credentialReader
             )
             {
-                ClientCredential? credential = await credentialReader.GetClientCredentialAsync(clientId);
-                if (credential is null)
+                if (await credentialReader.GetClientCredentialAsync(clientId) is not { } credential)
                 {
                     await VerifyAgainstPlaceholderAsync(clientSecret);
                     return (null, InvalidClientError);
@@ -840,12 +839,16 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
             string requestedClientId
         )
         {
-            ApplicationInfo? applicationInfo = await _tokenRepository.GetApplicationByClientIdAsync(
-                requestedClientId
-            );
+            if (
+                await _tokenRepository.GetApplicationByClientIdAsync(requestedClientId)
+                is not { } applicationInfo
+            )
+            {
+                return null;
+            }
+
             bool isTheAuthenticatedApplication =
-                applicationInfo is not null
-                && applicationInfo.Id == authenticatedClient.ApplicationId
+                applicationInfo.Id == authenticatedClient.ApplicationId
                 && applicationInfo.IsApproved
                 && string.Equals(
                     applicationInfo.ClientSecret ?? string.Empty,
