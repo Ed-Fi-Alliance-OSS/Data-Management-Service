@@ -1,0 +1,43 @@
+{
+  "schema": "timing-evidence/1",
+  "boundary": "endpoint-postgresql",
+  "run_label": "pilot-a5",
+  "collector_commit": "d75e6e2f8568a311d30992faa4b50131584d4078",
+  "seed": 301,
+  "warmup_rounds": 1200,
+  "rounds": 200,
+  "arms": [
+    "absent",
+    "wrong_secret",
+    "unapproved_correct_secret"
+  ],
+  "order": "each round: every arm once, order shuffled by System.Random(seed)",
+  "samples_file": "pilot-a5-endpoint-postgresql-20261024T152213Z.csv",
+  "started_utc": "2026-10-24T15:22:13.9898996\u002B00:00",
+  "finished_utc": "2026-10-24T15:23:38.9125469\u002B00:00",
+  "os": "Microsoft Windows 10.0.28000",
+  "architecture": "Arm64",
+  "processor_count": 18,
+  "framework": ".NET 10.0.13",
+  "stopwatch_frequency": 10000000,
+  "gc_collections_before": [
+    4,
+    1,
+    0
+  ],
+  "gc_collections_after": [
+    5,
+    1,
+    0
+  ],
+  "context": {
+    "backend": "postgresql",
+    "contract": "current",
+    "target_build": "docker image sha256:99fc8ac03652de9c8e1b8f8e9fc187bc314b438cad06e710d1faed656bae9d71, built by this lane from b2b8d5df47e5e48c46f9ca26fe0f2a58b787c399 (git archive)",
+    "api_authority": "localhost:8081",
+    "declared_iterations": "210000",
+    "bound_us": "250",
+    "estimand": "median(absent) - median(wrong_secret)",
+    "timed_span": "form construction, HttpClient.PostAsync, reading the whole response body, response disposal"
+  }
+}

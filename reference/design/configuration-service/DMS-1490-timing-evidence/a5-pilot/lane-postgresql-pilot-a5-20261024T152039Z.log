@@ -1,0 +1,10 @@
+
+[2026-10-24T15:20:39.4276286Z] LANE label=pilot-a5 rounds=200 warmup=1200 seed=301 contract=current collector=d75e6e2f8568a311d30992faa4b50131584d4078 target=b2b8d5df47e5e48c46f9ca26fe0f2a58b787c399
+[2026-10-24T15:20:39.8034076Z] SETUP target's setup-local-cms.ps1 (log in the work folder)
+[2026-10-24T15:22:09.3854068Z] CMS HEALTHY
+[2026-10-24T15:22:09.6548704Z] BEFORE container=29f52c197f10aeb4fc04f1a591e377a9be4c534a041258029df3aa43d662c32f image=sha256:99fc8ac03652de9c8e1b8f8e9fc187bc314b438cad06e710d1faed656bae9d71 settings and five fingerprints verified
+[2026-10-24T15:22:10.1560382Z] RUN collector (Release, --no-build; output and results file in the work folder)
+[2026-10-24T15:23:39.0741565Z] RUN tests_passed=2 samples=pilot-a5-endpoint-postgresql-20261024T152213Z.csv rows=600
+[2026-10-24T15:23:39.2730996Z] AFTER the same container, image, settings and assemblies served the whole collection
+[2026-10-24T15:23:42.9758044Z] TEARDOWN done
+[2026-10-24T15:23:42.9841481Z] DONE succeeded=True provenance=provenance-endpoint-postgresql-pilot-a5-20261024T152039Z.json

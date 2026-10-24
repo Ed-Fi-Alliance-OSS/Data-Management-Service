@@ -1,0 +1,8 @@
+{
+  "input_sha256": "610f841c693a8c36f2100cd9b3cf2e8757dbc5d219d83acfe93dca7b0fa79cce",
+  "mu": 9.916140475366051,
+  "sigma": 0.03111997198405409,
+  "rho": 0.2422895109931372,
+  "drift_sd": 278.56338328039976,
+  "note": "mu/sigma: lognormal fit of the B arm; rho: lag-1 autocorrelation of per-round means; drift_sd: the share of their spread that rho attributes to drift"
+}

@@ -1,0 +1,98 @@
+{
+  "method_version": "1",
+  "rounds": 2000,
+  "delta_us": 250.0,
+  "block_length": 13,
+  "parameters": {
+    "mu": 9.62933751473609,
+    "sigma": 0.031164308700745075,
+    "rho": 0.09829181078157662,
+    "drift_sd": 99.63479405537014
+  },
+  "replicates": 500,
+  "resamples": 5000,
+  "seed": 1,
+  "rows": [
+    {
+      "effect_in_deltas": 0.0,
+      "effect_us": 0.0,
+      "rates": {
+        "EQUIVALENT": 1.0,
+        "INCONCLUSIVE": 0.0,
+        "NOT EQUIVALENT": 0.0
+      },
+      "monte_carlo_se": {
+        "EQUIVALENT": 0.0,
+        "INCONCLUSIVE": 0.0,
+        "NOT EQUIVALENT": 0.0
+      }
+    },
+    {
+      "effect_in_deltas": 0.5,
+      "effect_us": 125.0,
+      "rates": {
+        "EQUIVALENT": 1.0,
+        "INCONCLUSIVE": 0.0,
+        "NOT EQUIVALENT": 0.0
+      },
+      "monte_carlo_se": {
+        "EQUIVALENT": 0.0,
+        "INCONCLUSIVE": 0.0,
+        "NOT EQUIVALENT": 0.0
+      }
+    },
+    {
+      "effect_in_deltas": 1.0,
+      "effect_us": 250.0,
+      "rates": {
+        "EQUIVALENT": 0.022,
+        "INCONCLUSIVE": 0.97,
+        "NOT EQUIVALENT": 0.008
+      },
+      "monte_carlo_se": {
+        "EQUIVALENT": 0.006559878047646922,
+        "INCONCLUSIVE": 0.007628892449104264,
+        "NOT EQUIVALENT": 0.003983967871356395
+      }
+    },
+    {
+      "effect_in_deltas": 2.0,
+      "effect_us": 500.0,
+      "rates": {
+        "EQUIVALENT": 0.0,
+        "INCONCLUSIVE": 0.0,
+        "NOT EQUIVALENT": 1.0
+      },
+      "monte_carlo_se": {
+        "EQUIVALENT": 0.0,
+        "INCONCLUSIVE": 0.0,
+        "NOT EQUIVALENT": 0.0
+      }
+    },
+    {
+      "effect_in_deltas": 3.0,
+      "effect_us": 750.0,
+      "rates": {
+        "EQUIVALENT": 0.0,
+        "INCONCLUSIVE": 0.0,
+        "NOT EQUIVALENT": 1.0
+      },
+      "monte_carlo_se": {
+        "EQUIVALENT": 0.0,
+        "INCONCLUSIVE": 0.0,
+        "NOT EQUIVALENT": 0.0
+      }
+    }
+  ],
+  "expectations": {
+    "equivalent_at_0_at_least_0.90": 1.0,
+    "equivalent_at_delta_at_most_0.05": 0.022,
+    "not_equivalent_at_3_deltas_at_least_0.95": 1.0
+  },
+  "expectations_met": {
+    "equivalent_at_0_at_least_0.90": true,
+    "equivalent_at_delta_at_most_0.05": true,
+    "not_equivalent_at_3_deltas_at_least_0.95": true
+  },
+  "limitation": "validates the analysis on synthetic data, not the measurement pipeline"
+}

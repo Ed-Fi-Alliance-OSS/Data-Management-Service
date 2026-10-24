@@ -174,11 +174,12 @@ python -B analyze_timing.py observer --csv <any of the above>
 ```
 
 `p3.2-final/analysis/commands.log` lists the analysis commands that produced the saved outputs; it does not record
-the collection invocations. `SHA256SUMS.txt` has 84 entries: the size and SHA-256 of `analyze_timing.py` and of
-every file under `p3.0-pilot/` and `p3.2-final/`. It does not list `README.md`, `.gitattributes` or itself.
+the collection invocations. `SHA256SUMS.txt` has 116 entries: the size and SHA-256 of `analyze_timing.py` and of
+every file under `p3.0-pilot/`, `p3.2-final/` and `a5-pilot/`. It does not list `README.md`, `.gitattributes`,
+`collection/` or itself.
 
-The files under `p3.0-pilot/` and `p3.2-final/` are stored without line-ending normalisation (`.gitattributes`), so
-the checksums hold for a checkout. Because the collectors and the analysis wrote CRLF line endings, `git show --check`
+The files under `p3.0-pilot/`, `p3.2-final/` and `a5-pilot/` are stored without line-ending normalisation
+(`.gitattributes`), so the checksums hold for a checkout. Because the collectors and the analysis wrote CRLF line endings, `git show --check`
 on the commit that added them exits 2 with 26,418 "trailing whitespace" notices across 78 files. Every notice is a
 CRLF line ending in the preserved data; with the CR removed, no line ends in a space or tab. The data is kept
 byte-exact rather than normalised to silence the check.
@@ -187,4 +188,5 @@ byte-exact rather than normalised to silence the check.
 
 - `p3.0-pilot/`: the three 200-round pilots (planning only), the failed and successful LocalDB pilot lane logs, and the pilot analysis, planning, fit, C2 simulation and exploratory outputs. The PostgreSQL pilot's Docker setup and teardown logs are not included; their SHA-256 values are `fb81927d…` and `a1e42b24…`.
 - `p3.2-final/`: the final runs, the pre-fix contrast, their provenance and lane logs, and every analysis output.
+- `a5-pilot/`: the two 200-round endpoint pilots of the A5 target `b2b8d5df4`, collected with the `collection/` recipe at `d75e6e2f8` (planning only; excluded from any final decision). It holds the samples, headers, provenance, lane status logs, the environment record, both targets' `target.json`, the Stage 0 and Stage 1 command records, the secret-scan report, and the planning outputs in `analysis/` with their `commands.log`. Runner output, results files, setup logs and exception text stayed in the private work folder.
 - No file contains credentials, tokens, connection strings or client-identifying request content. All evidence files were scanned for the stack's configured secret values and for credential patterns before commit.

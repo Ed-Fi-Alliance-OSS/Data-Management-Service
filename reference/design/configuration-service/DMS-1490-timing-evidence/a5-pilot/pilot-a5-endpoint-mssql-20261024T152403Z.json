@@ -1,0 +1,43 @@
+{
+  "schema": "timing-evidence/1",
+  "boundary": "endpoint-mssql",
+  "run_label": "pilot-a5",
+  "collector_commit": "d75e6e2f8568a311d30992faa4b50131584d4078",
+  "seed": 302,
+  "warmup_rounds": 1200,
+  "rounds": 200,
+  "arms": [
+    "absent",
+    "wrong_secret",
+    "unapproved_correct_secret"
+  ],
+  "order": "each round: every arm once, order shuffled by System.Random(seed)",
+  "samples_file": "pilot-a5-endpoint-mssql-20261024T152403Z.csv",
+  "started_utc": "2026-10-24T15:24:03.2076658\u002B00:00",
+  "finished_utc": "2026-10-24T15:25:07.0048285\u002B00:00",
+  "os": "Microsoft Windows 10.0.28000",
+  "architecture": "Arm64",
+  "processor_count": 18,
+  "framework": ".NET 10.0.13",
+  "stopwatch_frequency": 10000000,
+  "gc_collections_before": [
+    4,
+    1,
+    0
+  ],
+  "gc_collections_after": [
+    5,
+    1,
+    0
+  ],
+  "context": {
+    "backend": "mssql",
+    "contract": "current",
+    "target_build": "host-process Release build of b2b8d5df47e5e48c46f9ca26fe0f2a58b787c399 (git archive); frontend dll sha256 4ad16a0a0c3d55551d1be8ffdefd60eaf1426b47b88ca294a5a0640a0063d151",
+    "api_authority": "localhost:8081",
+    "declared_iterations": "210000",
+    "bound_us": "250",
+    "estimand": "median(absent) - median(wrong_secret)",
+    "timed_span": "form construction, HttpClient.PostAsync, reading the whole response body, response disposal"
+  }
+}

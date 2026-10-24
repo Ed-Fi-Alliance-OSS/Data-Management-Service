@@ -2,4 +2,5 @@
 # and in each analysis output, so line endings must not be normalised.
 p3.0-pilot/** -text
 p3.2-final/** -text
+a5-pilot/** -text
 SHA256SUMS.txt -text

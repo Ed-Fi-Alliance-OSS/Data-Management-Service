@@ -1,0 +1,4 @@
+[2026-10-24T15:20:39.0492333Z] pwsh -NoProfile -File <Collection>\lane-postgresql.ps1 -RunLabel pilot-a5 -Rounds 200 -WarmupRounds 1200 -Seed 301 -OutputDir <Stage>\pilot -CollectorRoot <Repository> -TargetRoot <Work>\targets\a5 -WorkRoot <Work>\runs
+[2026-10-24T15:23:43.0029264Z] exit 0
+[2026-10-24T15:23:43.0040991Z] pwsh -NoProfile -File <Collection>\lane-localdb.ps1 -RunLabel pilot-a5 -Rounds 200 -WarmupRounds 1200 -Seed 302 -OutputDir <Stage>\pilot -CollectorRoot <Repository> -TargetRoot <Work>\targets\a5 -WorkRoot <Work>\runs
+[2026-10-24T15:25:07.1951448Z] exit 0
